@@ -100,11 +100,13 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await surveyCovs.getByLabel(`Rear motor bearing ${tag}'s own in this phase`).fill("1200");
   await expect(surveyCovs).toContainText("The other uses 1800 rpm (this phase)");
   await pane.getByRole("button", { name: "Calculate" }).click();
+  // The gimbal had no model when the drone's RBD was built, so its block is a placeholder: said first.
   const answer = pane.locator(".mission-answer");
-  await expect(answer).toContainText("The mission completes with probability", { timeout: 30_000 });
+  await expect(answer).toContainText("Not a real figure yet: 1 of 3 blocks have no model");
+  await expect(answer).toContainText("the mission completes with probability", { timeout: 30_000 });
   await expect(takeoff).toContainText("Completes");
   await expect(survey).toContainText("still going");
-  await expect(survey).toContainText("Weakest:");
+  await expect(survey).toContainText("Weakest with a model:");
   // Saving works the saved mission out for the table. That answer is held back here, so the table
   // has read the missions again before it exists: the row still gets it (below, the pane closed).
   const calculation = "**/api/rbds/*/missions/*/calculate";
@@ -137,13 +139,20 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=missions&mission=${built.model_id}:${made.mission.id}&on=${drone.id}`);
   await expect(pane).toBeVisible();
   await expect(pane.getByRole("button", { name: "Back to the table" })).toBeVisible();
-  await expect(pane.locator(".mission-answer")).toContainText("The mission completes with probability", { timeout: 30_000 });
+  await expect(pane.locator(".mission-answer")).toContainText("the mission completes with probability", { timeout: 30_000 });
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "mission-open-400");
   await page.setViewportSize({ width: 1440, height: 900 });
   await shot(page, "mission-open-1440");
   await expectHealthy(page, problems, { label: "missions on the Explorer" });
 });
+
+// Add a mission asks the mission's name first, in the table pane; nothing is saved until then.
+async function nameMission(page, name) {
+  const naming = page.getByRole("region", { name: "New mission" });
+  await expect(naming).toBeVisible();
+  await naming.getByLabel("Mission name").fill(name);
+}
 
 // One RBD per mission: Add a mission on a position with no RBD builds the mission an RBD of its own
 // from what's inside; the phase × block grid sets a pump on standby by day and the other by night;
@@ -161,12 +170,14 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   const stationRow = nameRow(page, `Pump station ${tag}`).first();
   await expect(stationRow).toContainText("Add a mission");
   await stationRow.locator(".tp-nm").click({ button: "right" });
-  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${station.id}/missions`) && r.request().method() === "POST");
   await page.getByRole("menuitem", { name: "Add a mission", exact: true }).click();
+  await nameMission(page, "Mission 1");  // named first, nothing saved until then (#833)
+  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${station.id}/missions`) && r.request().method() === "POST");
+  await page.getByRole("region", { name: "New mission" }).getByRole("button", { name: "Add the mission" }).click();
   expect((await made).status()).toBe(200);
   const pane = page.getByRole("region", { name: "Mission" });
   await expect(pane).toBeVisible();
-  await expect(pane).toContainText(`Flown on Pump station ${tag} — Mission 1`);
+  await expect(pane).toContainText(`Runs on Pump station ${tag} — Mission 1`);
   await expect(nameRow(page, "Mission 1")).toBeVisible();
   await shot(page, "mission-rbd-added-1440");
 
@@ -237,12 +248,14 @@ test("missions: a leaf with a model gets a one-block mission; the RBD list label
 
   // The leaf with a model: a mission of one block.
   await nameRow(page, `Arm ${tag}`).locator(".tp-nm").click({ button: "right" });
-  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${arm.id}/missions`) && r.request().method() === "POST");
   await page.getByRole("menuitem", { name: "Add a mission", exact: true }).click();
+  await nameMission(page, "Mission 1");  // named first (#833)
+  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${arm.id}/missions`) && r.request().method() === "POST");
+  await page.getByRole("region", { name: "New mission" }).getByRole("button", { name: "Add the mission" }).click();
   const body = await (await made).json();
   expect(body.built_from).toBe("model");
   const pane = page.getByRole("region", { name: "Mission" });
-  await expect(pane).toContainText(`Flown on Arm ${tag} — Mission 1`);
+  await expect(pane).toContainText(`Runs on Arm ${tag} — Mission 1`);
   await expect(pane.getByRole("region", { name: "Blocks in each phase" })).toBeVisible();
   await shot(page, "mission-leaf-one-block-1440");
   await page.setViewportSize({ width: 400, height: 860 });
@@ -261,4 +274,74 @@ test("missions: a leaf with a model gets a one-block mission; the RBD list label
   await row.scrollIntoViewIfNeeded();
   await shot(page, "rbd-list-mission-label-400");
   await expectHealthy(page, problems, { label: "a leaf's one-block mission and the RBD list" });
+});
+
+// Blocks with no model: a generator set whose engine and alternator have models and whose control
+// panel, fuel system and battery have none. The mission says which blocks are placeholders with
+// its answer, shows the chance without them, never names one the weakest, and marks them in the
+// grid and the tab; "Leave all 3 out" works the mission out from the blocks with models.
+test("missions: a mission resting on placeholders says so, and can leave them out", async ({ page, request, problems }) => {
+  const tag = `mp${Date.now()}`;
+  const set = await postOk(request, `${M}/positions`, { name: `Generator set ${tag}` });
+  for (const name of ["Engine", "Alternator", "Control panel", "Fuel system", "Battery"]) {
+    const kid = await postOk(request, `${M}/positions`, { name: `${name} ${tag}`, parent_id: set.id });
+    if (name === "Engine" || name === "Alternator") await postOk(request, `${M}/positions/${kid.id}/models`, { model_id: "sample-model-bearings-weibull" });
+  }
+  const made = await postOk(request, `${M}/positions/${set.id}/missions`, { name: `Deployment ${tag}` });
+  expect(made.placeholders).toHaveLength(3);
+  const put = await request.put(`/api/rbds/${made.rbd.id}/missions/mission`, {
+    data: { phases: [{ name: "Start and load", duration: 2 }, { name: "Run", duration: 98 }] },
+  });
+  expect(put.ok(), await put.text()).toBeTruthy();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${set.id}&tab=missions&mission=${made.rbd.id}:mission&on=${set.id}`);
+  const pane = page.getByRole("region", { name: "Mission" });
+  const answer = pane.locator(".mission-answer");
+  await expect(answer).toContainText("Not a real figure yet: 3 of 5 blocks have no model", { timeout: 30_000 });
+  await expect(answer).toContainText("With placeholders");
+  await expect(answer).toContainText("Without them");
+  const note = pane.getByRole("note", { name: "Blocks with no model" });
+  await expect(note).toContainText(`Battery ${tag}, Control panel ${tag} and Fuel system ${tag}`);
+  await expect(note).toContainText("from the blocks with models alone");
+  const grid = pane.getByRole("region", { name: "Blocks in each phase" });
+  await expect(grid.locator("tbody th", { hasText: "Placeholder" })).toHaveCount(3);
+  // The weakest block is one with a model, and says it was picked from those.
+  const phases = pane.getByRole("list", { name: /phases/ }).locator(":scope > li");
+  await expect(phases.nth(1)).toContainText("Weakest with a model:");
+  await expect(phases.nth(1).locator(".mission-phase-line")).not.toContainText(/Weakest[^:]*: (Battery|Control panel|Fuel system)/);
+  await shot(page, "mission-placeholders-1440", true);
+  await page.setViewportSize({ width: 400, height: 860 });
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await shot(page, "mission-placeholders-400", true);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  // The tab's row carries the flag with the figure.
+  await page.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(nameRow(page, `Deployment ${tag}`)).toContainText("placeholders");
+  await shot(page, "missions-tab-placeholders-1440");
+  await page.setViewportSize({ width: 400, height: 860 });
+  await expect(nameRow(page, `Deployment ${tag}`)).toContainText("placeholders");
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await shot(page, "missions-tab-placeholders-400");
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  // Leave them out: Not needed in every phase, and the answer is from the blocks with models.
+  await nameRow(page, `Deployment ${tag}`).locator(".tp-nm").dblclick();
+  await expect(note).toBeVisible({ timeout: 30_000 });
+  await note.getByRole("button", { name: "Leave all 3 out" }).click();
+  await expect(grid.getByRole("combobox", { name: `Battery ${tag} in Run` })).toHaveValue("off");
+  await pane.getByRole("button", { name: "Calculate" }).click();
+  await expect(answer).toContainText("The mission completes with probability", { timeout: 30_000 });
+  await expect(note).toHaveCount(0);
+  await expect(pane).toContainText("left out of this mission (Not needed in every phase)");
+  await expect(phases.nth(1)).toContainText("Weakest:");
+  await pane.getByRole("button", { name: "Save" }).click();
+  await expect(pane.getByRole("button", { name: "Save" })).toBeDisabled();
+  await shot(page, "mission-placeholders-left-out-1440", true);
+  await page.keyboard.press("Escape");
+  await expect(nameRow(page, `Deployment ${tag}`)).toContainText("%");
+  await expect(nameRow(page, `Deployment ${tag}`)).not.toContainText("placeholders");
+  await expectHealthy(page, problems, { label: "a mission on placeholders" });
 });

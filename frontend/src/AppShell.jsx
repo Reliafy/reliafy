@@ -29,6 +29,7 @@ const LibrarySource = lazy(() => import("./views/LibraryPages.jsx").then((m) => 
 const LibraryRecord = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryRecord })));
 const LibraryComponent = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryComponent })));
 const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
+const DegradationNewPage = lazy(() => import("./views/DegradationNewPage.jsx"));
 const AltModelPage = lazy(() => import("./views/AltModelPage.jsx"));
 const RbdHome = lazy(() => import("./views/RbdHome.jsx"));
 const RbdBuilder = lazy(() => import("./views/RbdBuilder.jsx"));
@@ -60,6 +61,7 @@ const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage
 const MaintainabilityPage = lazy(() => import("./views/MaintainabilityPage.jsx"));
 const MaintenanceOrders = lazy(() => import("./views/MaintenanceOrders.jsx"));
 const MaintenancePackages = lazy(() => import("./views/MaintenancePackages.jsx"));
+const MaintenanceFieldReports = lazy(() => import("./views/MaintenanceFieldReports.jsx"));
 const MaintenancePackage = lazy(() => import("./views/MaintenancePackage.jsx"));
 const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
 const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
@@ -250,6 +252,7 @@ function Shell() {
             {/* Maintenance opens on Orders (/maintenance redirects there, redirects.js), then Packages. */}
             {maintenanceEnabled && <Route path="/maintenance/work-orders" element={<MaintenanceOrders />} />}
             {maintenanceEnabled && <Route path="/maintenance/packages" element={<MaintenancePackages />} />}
+            {maintenanceEnabled && <Route path="/maintenance/field-reports" element={<MaintenanceFieldReports />} />}
             {maintenanceEnabled && <Route path="/maintenance/packages/:id" element={<MaintenancePackage />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
             {/* RCM studies: standalone worksheets, for every account (with or
@@ -272,6 +275,7 @@ function Shell() {
             <Route path="/models/new" element={<NewModelPage />} />
             <Route path="/models/m/:id" element={<ModelPage />} />
             <Route path="/models/degradation" element={<DegradationHome />} />
+            <Route path="/models/degradation/new" element={<DegradationNewPage />} />
             <Route path="/models/degradation/:id" element={<DegradationModelPage />} />
             <Route path="/models/recurrent" element={<RecurrentHome />} />
             <Route path="/models/recurrent/new" element={<RecurrentNewPage />} />

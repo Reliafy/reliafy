@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, markersOf, rowText } from "./assetTree.js";
 import { positionOf } from "./explorerRcm.js";
 import {
-  MODEL_CHIPS, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
+  MODEL_CHIPS, rangeBound, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
   isLifeModelLink, lifeModelOf, builtRbdLink,
-  opensInPane,
+  opensInPane, enteredParams, enteredStart, exponentialLabel, implausibleExponential,
 } from "./explorerModels.js";
 
 const DATA = {
@@ -133,7 +133,8 @@ test("a Bayesian update's numbers are credible intervals at its level, never bou
   assert.equal(meanText(bayes), "3.68 years, 90% credible 2.9–4.6");
   assert.equal(boundsLabel(bayes), "90% credible interval");
   assert.equal(boundsLabel({ ...bayes, credible_level: 0.95 }), "95% credible interval");
-  assert.equal(boundsLabel(WEIBULL), "95% bounds");
+  assert.equal(boundsLabel(WEIBULL), "90% bounds");
+  assert.equal(boundsLabel({ ...WEIBULL, ci_level: 0.95 }), "95% bounds"); // a repairable fit saved before the rule
   for (const text of [headline(bayes), meanText(bayes), boundsLabel(bayes)]) assert.doesNotMatch(text, /bound|confidence/i);
 });
 
@@ -198,13 +199,18 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   assert.deepEqual(g.map((x) => x.label), ["Life model", "RBD", "Prediction"]);
   assert.deepEqual(g[0].items.map((x) => x.label), ["Fit a life model…", "Assign a saved model…", "From the data library…",
     "From the class…", "Enter parameters…", "Add to a library…"]);
-  assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Link an existing RBD…"]);
+  assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Redundancy inside…", "New blank RBD…", "Link an existing RBD…"]);
+  // A leaf: nothing to build from, so a new blank RBD is the way in.
+  const leaf = attachGroups({ hasInside: false })[1].items;
+  assert.ok(leaf.find((x) => x.id === "model-attach-rbd-build").disabled);
+  assert.ok(!leaf.find((x) => x.id === "model-attach-rbd-new").disabled);
+  assert.ok(leaf.find((x) => x.id === "model-attach-redundancy").disabled);
   assert.deepEqual(g[2].items.map((x) => x.id), ["model-attach-predict", "model-refresh-predict"]);
   // A position that already has an RBD built from what's inside: the menu opens it, and a rebuild
   // is its own item. Building is never offered twice.
   const had = attachGroups({ builtRbd: true })[1].items;
-  assert.deepEqual(had.map((x) => x.label), ["Open the RBD", "Rebuild from what's inside…", "Link an existing RBD…"]);
-  assert.deepEqual(had.map((x) => x.id), ["model-attach-rbd-open", "model-attach-rbd-rebuild", "model-attach-rbd-link"]);
+  assert.deepEqual(had.map((x) => x.label), ["Open the RBD", "Rebuild from what's inside…", "Redundancy inside…", "New blank RBD…", "Link an existing RBD…"]);
+  assert.deepEqual(had.map((x) => x.id), ["model-attach-rbd-open", "model-attach-rbd-rebuild", "model-attach-redundancy", "model-attach-rbd-new", "model-attach-rbd-link"]);
   assert.ok(attachGroups({ builtRbd: true, viewOnly: "View only" })[1].items.find((x) => x.id === "model-attach-rbd-rebuild").disabled);
   // Which row that is: an RBD built from the tree on this position (the one in use first); a linked
   // diagram, a life model and another position's RBD are not it.
@@ -228,4 +234,64 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   assert.equal(bare[2].items.length, 1);
   assert.ok(attachGroups({ viewOnly: "View only" }).every((grp) => grp.items.every((x) => x.disabled)));
   assert.deepEqual(MODEL_POSITION_ITEMS, ["tree-rename"]);
+});
+
+test("a non-repairable RBD's headline is its mean life, never an MTBF; B10 says why it has no bounds", () => {
+  const note = "no bounds: the system curve is exact from the blocks' point models";
+  const rbd = { family: "rbd", kind: "RBD", unit: "Hours", numbers: [
+    { id: "mean", label: "Mean life", value: 964.2, lower: null, upper: null, unit: "Hours", bound: "", note },
+    { id: "b10", label: "B10 life", value: 441.3, lower: null, upper: null, unit: "Hours", bound: "", note },
+    { id: "reference", label: "", text: "reliability 61.2% at 500 hours" },
+  ] };
+  assert.equal(headline(rbd), "Mean life 964 hours · reliability 61.2% at 500 hours");
+  assert.doesNotMatch(headline(rbd), /MTBF/);
+  assert.equal(b10Text(rbd), "441 hours");
+  // A system that may never fail: words, not a number.
+  const never = { ...rbd, numbers: [{ id: "mean", label: "Mean life", value: null, text: "not finite (the system may never fail)" }] };
+  assert.equal(headline(never), "Mean life not finite (the system may never fail)");
+});
+
+// 12 Nov review: a fit with a prior gave the B10 as "3,506–6,994" (90% two-sided)
+// while the saved page said "≥ 3,810 at 90% credible". B-lives are one-sided now.
+test("a fitted B-life with a prior reads as a one-sided credible bound", () => {
+  assert.equal(rangeBound({ point: 5029.8, lower: 3813.5, upper: null, bound: "lower", level: 0.9 }), "≥ 3,814 at 90% credible");
+  assert.equal(rangeBound({ point: 582.37, lower: 467.25, upper: null, bound: "lower" }), "≥ 467");
+  assert.equal(rangeBound({ median: 13140, lower: 9239, upper: 24970 }), "9,239–24,970");
+  assert.equal(rangeBound({ median: 1 }), null);
+});
+
+// Enter parameters › Exponential: an MTBF or a failure rate, and a figure that can't be meant.
+test("an exponential is entered as an MTBF or a rate; an MTBF typed as a rate is flagged", () => {
+  const names = [["failure_rate", "Failure rate"]];
+  assert.deepEqual(enteredParams("exponential", names, { failure_rate: "90000" }, "mtbf"), [{ name: "failure_rate", value: 1 / 90000 }]);
+  assert.deepEqual(enteredParams("exponential", names, { failure_rate: "0.0001" }, "rate"), [{ name: "failure_rate", value: 0.0001 }]);
+  assert.deepEqual(enteredParams("weibull", [["alpha"], ["beta"]], { alpha: "60000", beta: "1.5" }), [{ name: "alpha", value: 60000 }, { name: "beta", value: 1.5 }]);
+  assert.match(implausibleExponential("rate", "90000", "hours"), /90,000 failures every hour is an MTBF of 0\.0000111 hours/);
+  assert.equal(implausibleExponential("rate", "0.0000111", "hours"), null);
+  assert.equal(implausibleExponential("mtbf", "90000", "hours"), null);
+  assert.match(implausibleExponential("mtbf", "0.5", "days"), /under one day/);
+  assert.equal(exponentialLabel("rate", "hours"), "Failure rate (failures per hour)");
+  assert.equal(exponentialLabel("mtbf", "hours"), "MTBF (mean hours between failures)");
+  // Edit parameters…: an exponential starts as its MTBF.
+  assert.deepEqual(enteredStart({ distribution: "exponential", params: { failure_rate: 1 / 90000 } }), { failure_rate: "90000" });
+  assert.deepEqual(enteredStart({ distribution: "weibull", params: { alpha: 60000, beta: 1.5 } }), { alpha: "60000", beta: "1.5" });
+});
+
+test("a typed-in model's row offers Edit parameters…", () => {
+  const r = (model) => ({ ref: { link: { id: "l", model_type: "model", role: "assigned", in_use: true, model } } });
+  const ids = (x) => rowActions(x).map((a) => a.id);
+  assert.ok(ids(r({ kind: "Exponential", entered: { distribution: "exponential", params: {} } })).includes("model-params-edit"));
+  assert.ok(!ids(r({ kind: "Weibull" })).includes("model-params-edit"));
+});
+
+test("classModelHint: a position with no model whose class has one says so, and how many failures since", async () => {
+  const { classModelHint } = await import("./explorerModels.js");
+  const r = { type: "pos", ref: { position_class: "Seal" }, lsum: { n: 0 } };
+  const cms = { Seal: { failures: 14, failures_now: 15 } };
+  assert.match(classModelHint(r, cms), /Its class \(Seal\) has one: Life model › From the class… \(fitted before 1 new failure: refit it\)/);
+  assert.equal(classModelHint(r, cms, { short: true }), "class model · 1 new failure since");
+  assert.equal(classModelHint(r, { Seal: { failures: 14, failures_now: 14 } }, { short: true }), "class model to attach");
+  assert.equal(classModelHint({ ...r, lsum: { n: 1 } }, cms), "");
+  assert.equal(classModelHint({ ...r, ref: { position_class: "Pump" } }, cms), "");
+  assert.equal(classModelHint(r, null), "");
 });

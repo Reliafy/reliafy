@@ -998,6 +998,8 @@ def _imports(script: _Script, repairable: bool) -> str:
             out.append(")")
         else:
             out.append(line)
+    if not repairable:  # the default time for the importance measures is solved for
+        out.append("from scipy.optimize import brentq")
     return "\n".join(out)
 
 
@@ -1255,6 +1257,30 @@ def b_life(times, sf, fraction):
     return float(times[i - 1] + step * (times[i] - times[i - 1]))
 
 
+def default_time(model, times, sf, **sf_kwargs):
+    """The time Reliafy's read-outs default to: when the system reliability
+    falls to 90%, solved exactly. If it doesn't cross 90% on the time axis,
+    the point on the axis closest to 90% (or the middle of the axis)."""
+    below = np.nonzero(sf <= 0.9)[0]
+    if sf[0] > 0.9 and below.size:
+        i = int(below[0])
+
+        def gap(t):
+            r = np.atleast_1d(model.sf(float(t), **sf_kwargs))
+            return float(r[0]) - 0.9
+
+        lo, hi = float(times[i - 1]), float(times[i])
+        if gap(hi) == 0.0:
+            return hi
+        if gap(lo) > 0.0 > gap(hi):
+            return float(brentq(gap, lo, hi, xtol=1e-12 * max(hi, 1.0),
+                                rtol=1e-12))
+    i = int(np.argmin(np.abs(sf - 0.9)))
+    if not 0.0 < sf[i] < 1.0:
+        i = len(times) // 2
+    return float(times[i])
+
+
 def save_results(results):
     """Write the numbers to $RELIAFY_RESULTS_JSON, when it is set."""
     path = os.environ.get("RELIAFY_RESULTS_JSON")
@@ -1276,11 +1302,15 @@ def main():
     b10 = b_life(times, system_sf, 0.10)
     b50 = b_life(times, system_sf, 0.50)
 
+    # Reliafy's default read-out time: when the system reliability falls
+    # to 90%.
+    t_rep = default_time(rbd, times, system_sf, **overrides)
+
     # R(t) at a few round times around the MTTF (around the middle of the
-    # time axis without one), plus the calculator's default read-out time.
+    # time axis without one), plus the default read-out time.
     centre = mttf if mttf is not None else t_max / 2
     checkpoints = [float(f"{centre * f:.2g}") for f in (0.25, 0.5, 1.0, 2.0)]
-    checkpoints.append(float(f"{t_max / 2:.4g}"))
+    checkpoints.append(t_rep)
     print("System reliability R(t)")
     reliability = {}
     for t in checkpoints:
@@ -1297,12 +1327,7 @@ def main():
         shown = f"{value:,.6g}{unit}" if value is not None else "beyond t_max"
         print(f"{name} life: {shown}")
 
-    # Importance measures at Reliafy's representative time: where the system
-    # reliability is closest to 0.9 (else the middle of the time axis).
-    i = int(np.argmin(np.abs(system_sf - 0.9)))
-    if not 0.0 < system_sf[i] < 1.0:
-        i = GRID_POINTS // 2
-    t_rep = float(times[i])
+    # Importance measures at the same default time.
     model = __IMP__
     with np.errstate(all="ignore"):
         measures = {
@@ -1555,7 +1580,8 @@ def _repairable_body(script: _Script, graph) -> str:
                "availability_tolerance)")
     out.append("# or MAX_SIMS have run (Reliafy's limit comes from a time "
                "budget).")
-    out.append(f"CONFIDENCE = {rbd_analysis._AVAIL_CONFIDENCE!r}")
+    out.append(f"STOP_CONFIDENCE = {rbd_analysis._AVAIL_STOP_CONFIDENCE!r}  # the precision target's level")
+    out.append(f"CONFIDENCE = {rbd_analysis._AVAIL_CONFIDENCE!r}  # the interval shown, as Reliafy's results")
     out.append(f"BATCH = {rbd_analysis._AVAIL_BATCH}")
     out.append(f"REL_TOLERANCE = {rbd_analysis._AVAIL_REL_TOLERANCE!r}")
     out.append(f"MAX_TOLERANCE = {rbd_analysis._AVAIL_MAX_TOLERANCE!r}")
@@ -1735,7 +1761,7 @@ def simulate(availability, tolerance, overrides):
         return rbd.availability(mc_samples=N_SIMS + N_SIMS % 2, **run, **overrides)
     max_n = max(2, MAX_SIMS - MAX_SIMS % 2)
     batch = min(BATCH, max_n)
-    sim = rbd.availability(mc_samples=batch, tolerance=tolerance, confidence=CONFIDENCE,
+    sim = rbd.availability(mc_samples=batch, tolerance=tolerance, confidence=STOP_CONFIDENCE,
                            max_samples=max_n, **run, **overrides)
     # One batch that saw no system downtime has a zero-width interval: for a
     # system that does go down, that's a lack of evidence, not precision.

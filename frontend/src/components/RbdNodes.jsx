@@ -20,6 +20,12 @@ export function standbyKind(data) {
   return `warm (${d})`;
 }
 
+// A cold spare's chance of starting on the block: "97%", "100%" (a perfect switch).
+export function startWords(p) {
+  const v = p == null || p === "" ? 1 : Number(p);
+  return Number.isFinite(v) ? `${Number((v * 100).toPrecision(3))}%` : "—";
+}
+
 // The RBD's unit is provided to node components so they can flag a model whose
 // unit doesn't match.
 export const RbdUnitContext = createContext("");
@@ -171,6 +177,7 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
   const rep = !repairable ? "" : data.instant_repair ? "instant repair" : repairLine(data.repair, rbdUnit);
   const detail = [
     data.model ? `Life: ${modelSummary(data.model)}` : null,
+    data.model_source ? `From: ${data.model_source}` : null,
     repairable && data.repair && !data.instant_repair ? `Repair: ${modelSummary(data.repair)}` : null,
     repairable && data.instant_repair ? "Repaired instantly" : null,
   ].filter(Boolean).join("\n");
@@ -302,6 +309,8 @@ export function StructureNode({ id, data: nodeData, type }) {
         <div className="rbd-block-sub one-line">
           {standbyKind(data) + (data.k > 1 ? ` · ${data.k} running` : "") /* k-of-n standby, #84 */ +
             ` · ${data.spares ?? 1} spare${(data.spares ?? 1) === 1 ? "" : "s"}`}
+          {/* A cold spare's chance of starting is part of the answer: shown on the block. */}
+          {standbyKind(data) === "cold" ? ` · starts ${startWords(data.startProb)}` : ""}
           {repairable && data.repair_one_at_a_time ? " · one repairer" : ""}
         </div>
         {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true, repairable })}</div>}
@@ -337,6 +346,7 @@ export function StructureNode({ id, data: nodeData, type }) {
   const title = [
     data.label,
     data.model ? `Life: ${modelSummary(data.model)}` : null,
+    data.model_source ? `From: ${data.model_source}` : null,
     repairable && data.repair ? `Repair: ${modelSummary(data.repair)}` : null,
   ].filter(Boolean).join("\n");
 

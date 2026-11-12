@@ -172,7 +172,7 @@ def test_uncertainty_is_repyabilitys():
     built = fitted._init_args["components"]
     assert built["pa"]["reliability"] is built["pb"]["reliability"]
     want = fitted.mean_availability_uncertainty(uncertainty, n_draws=rm.N_DRAWS, seed=rm.SEED, sampling="sobol")
-    lo, hi = want.interval(0.95)
+    lo, hi = want.interval(0.90)
     a = out["availability"]
     assert a["nominal"] == pytest.approx(want.nominal) and a["lower"] == pytest.approx(lo)
     assert a["upper"] == pytest.approx(hi)
@@ -200,8 +200,8 @@ def test_uncertainty_sobol_and_several_times():
                                                   sampling="sobol")
     mission = fitted.mission_availability_uncertainty(x, uncertainty, n_draws=rm.N_DRAWS_OVER_TIME, seed=rm.SEED,
                                                       sampling="sobol")
-    p_lo, p_hi = point.interval(0.95)
-    m_lo, m_hi = mission.interval(0.95)
+    p_lo, p_hi = point.interval(0.90)
+    m_lo, m_hi = mission.interval(0.90)
     for i, row in enumerate(out["at_times"]):
         assert row["t"] == x[i]
         assert row["availability"]["nominal"] == pytest.approx(point.nominal[i])

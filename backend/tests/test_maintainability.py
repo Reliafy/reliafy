@@ -37,7 +37,7 @@ def test_mct_is_the_failure_rate_weighted_mean_of_the_lines_mttrs():
     r = m.compute(TWO)
     assert r["mct"] == pytest.approx((10 * 1 + 30 * 3) / 40)  # 2.5 h
     assert r["unit"] == "hours" and r["mct_hours"] == pytest.approx(2.5)
-    assert r["weights"]["source"] == "typed" and "as typed" in r["weights"]["note"]
+    assert r["weights"]["source"] == "typed" and "typed here" in r["weights"]["note"]
     # The Pareto: B is 90 % of the maintenance time (30·3 of 10·1 + 30·3).
     assert [(p["name"], p["share"], p["cumulative"]) for p in r["pareto"]] == [("B", pytest.approx(0.9), pytest.approx(0.9)),
                                                                                  ("A", pytest.approx(0.1), pytest.approx(1.0))]
@@ -196,42 +196,116 @@ def test_refused_inputs_say_what_to_fix():
 
 # ---- failure rates from a saved reliability prediction ---------------------------------
 
-def _reliability_prediction(db, owner, product_id="prod-1", unit="per_million_hours"):
-    db.reliability_predictions.insert_one({
-        "_id": "rp-1", "name": "Quadcopter rates", "owner_id": owner, "updated_at": "2026-11-01",
-        "inputs": {"product_id": product_id, "failure_rate_unit": unit},
-        "results": {"lines": [{"ref": "SQ-M2210", "name": "Brushless motor", "failure_rate": 180},
-                              {"ref": "SQ-ESC30", "name": "Speed controller", "failure_rate": 120},
-                              {"ref": "SQ-X", "name": "No rate here"}]},
-    })
+def _reliability_prediction(db, owner, product_id="prod-1", by="product", stamp="2026-11-01", motor=180.0):
+    """A saved parts count as the app stores one: each line has its part number, its
+    quantity, one part's rate and the line's total (per million hours). It belongs to a
+    product (made from the product) or to a position (made in the Explorer)."""
+    link = {"product": {"id": product_id}} if by == "product" else {"position": {"id": product_id, "name": "Quad"}}
+    total = 4 * motor + 480 + 20
+    db.reliability_predictions.replace_one({"_id": "rp-1"}, {
+        "_id": "rp-1", "name": "Quadcopter rates", "owner_id": owner, "updated_at": stamp, "inputs": link,
+        "results": {"failure_rate_per_million_hours": total, "mtbf_hours": 1e6 / total, "lines": [
+            {"reference": "SQ-M2210", "name": "Brushless motor", "quantity": 4, "each_per_million_hours": motor,
+             "rate_per_million_hours": 4 * motor, "failure_rate": 4 * motor},
+            {"reference": "SQ-ESC30", "name": "Speed controller", "quantity": 4, "each_per_million_hours": 120,
+             "rate_per_million_hours": 480, "failure_rate": 480},
+            {"reference": "SQ-CAP", "name": "Capacitor", "quantity": 2, "each_per_million_hours": 10,
+             "rate_per_million_hours": 20, "failure_rate": 20},
+            {"reference": "SQ-X", "name": "No rate here", "quantity": 1, "excluded": True}]},
+    }, upsert=True)
 
 
-def test_rates_come_from_a_saved_reliability_prediction_for_the_product():
+def _rated_inputs():
+    return {"unit": "minutes", "product_id": "prod-1", "lines": [
+        _line("Brushless motor", ref="SQ-M2210", quantity=4, mttr=45),  # blank: the parts count's
+        _line("Speed controller", 150, ref="sq-esc30 ", quantity=4, mttr=60),  # typed over it
+        _line("Propeller", 600, ref="SQ-P1045", quantity=4, mttr=10),  # typed; not in the parts count
+    ]}
+
+
+def test_rates_come_from_a_saved_parts_count_matched_by_part_number():
     from backend.services import maintainability as m
 
     db = mongomock.MongoClient()["maint_rates"]
     assert m.prediction_rates(db, "prod-1", [A]) is None  # the collection isn't there yet
     _reliability_prediction(db, A)
     found = m.prediction_rates(db, "prod-1", [A])
-    assert found["id"] == "rp-1" and found["rates"]["sq-m2210"] == 180 and found["rates"]["speed controller"] == 120
-    assert "sq-x" not in found["rates"] and found["unit"] == "per_million_hours"
+    # One part's rate (the line's total over its quantity), by part number only: never by name.
+    assert found["id"] == "rp-1" and found["rates"] == {"sq-m2210": 180, "sq-esc30": 120, "sq-cap": 10}
+    assert found["unit"] == "per_million_hours" and found["unrated"] == ["No rate here"]
+    assert found["mtbf_hours"] == pytest.approx(1e6 / 1220)
     assert m.prediction_rates(db, "prod-2", [A]) is None and m.prediction_rates(db, "prod-1", ["other"]) is None
-    inputs = {"unit": "minutes", "product_id": "prod-1", "lines": [
-        _line("Brushless motor", ref="SQ-M2210", quantity=4, mttr=45),
-        _line("Speed controller", quantity=4, mttr=60),  # by name
-        _line("Propeller", 600, quantity=4, mttr=10),  # typed
-    ]}
-    r = m.compute(inputs, found)
-    assert [ln["rate_source"] for ln in r["lines"]] == ["reliability_prediction", "reliability_prediction", "typed"]
-    assert [ln["failure_rate"] for ln in r["lines"]] == [180, 120, 600]
-    assert r["weights"]["source"] == "mixed" and r["weights"]["prediction"] == {"id": "rp-1", "name": "Quadcopter rates"}
-    assert "Quadcopter rates" in r["weights"]["note"]
-    # The prediction's unit is converted to the inputs'.
-    r2 = m.compute({**inputs, "failure_rate_unit": "per_hour"}, found)
+    r = m.compute(_rated_inputs(), found)
+    assert [ln["rate_source"] for ln in r["lines"]] == ["reliability_prediction", "typed", "typed"]
+    assert [ln["failure_rate"] for ln in r["lines"]] == [180, 150, 600]
+    assert [ln["parts_count_rate"] for ln in r["lines"]] == [180, 120, None]
+    w = r["weights"]
+    assert w["source"] == "mixed" and w["prediction"] == {"id": "rp-1", "name": "Quadcopter rates"}
+    assert "1 line takes its failure rate from the parts count “Quadcopter rates”" in w["note"]
+    assert "matched by part number" in w["note"] and "2 lines use a rate typed here" in w["note"]
+    pc = w["parts_count"]
+    assert pc["taken"] == 1 and pc["typed_over"] == ["Speed controller"] and pc["not_in"] == ["Propeller"]
+    assert pc["extra"] == ["Capacitor"] and pc["mtbf_hours"] == pytest.approx(1e6 / 1220)
+    # The two MTBFs differ, and the result says why.
+    c = w["compare"]
+    assert not c["agree"] and c["mtbf_hours"] == pytest.approx(1e6 / (720 + 600 + 2400))
+    assert "They differ because" in c["note"] and "Speed controller" in c["note"] and "Capacitor" in c["note"]
+    # The parts count's unit is converted to the inputs'.
+    r2 = m.compute({**_rated_inputs(), "failure_rate_unit": "per_hour"}, found)
     assert r2["lines"][0]["failure_rate"] == pytest.approx(180e-6)
-    # A line it doesn't know keeps the lines equal, and the note names it.
-    r3 = m.compute({**inputs, "lines": inputs["lines"] + [_line("Unknown", mttr=5)]}, found)
-    assert r3["weights"]["source"] == "equal" and r3["weights"]["missing"] == ["Unknown"]
+    # A line with the same name but no part number is not matched: it has no rate, and the note says so.
+    lines = _rated_inputs()["lines"] + [_line("Capacitor", mttr=5)]
+    r3 = m.compute({**_rated_inputs(), "lines": lines}, found)
+    assert r3["weights"]["source"] == "equal" and r3["weights"]["missing"] == ["Capacitor"]
+    assert "matched by part number" in r3["weights"]["note"]
+
+
+def test_the_mtbf_agrees_with_the_parts_count_when_every_rate_is_its():
+    from backend.services import maintainability as m
+
+    db = mongomock.MongoClient()["maint_agree"]
+    _reliability_prediction(db, A, by="position")  # one made in the Explorer is found by its position
+    found = m.prediction_rates(db, "prod-1", [A])
+    r = m.compute({"unit": "minutes", "product_id": "prod-1", "lines": [
+        _line("Brushless motor", ref="SQ-M2210", quantity=4, mttr=45),
+        _line("Speed controller", ref="SQ-ESC30", quantity=4, mttr=60),
+        _line("Capacitor", ref="SQ-CAP", quantity=2, mttr=5)]}, found)
+    assert r["weights"]["source"] == "reliability_prediction"
+    assert "Every line's failure rate comes from the parts count" in r["weights"]["note"]
+    assert r["mtbf_hours"] == pytest.approx(found["mtbf_hours"])
+    assert r["weights"]["compare"]["agree"] and "agrees with the parts count" in r["weights"]["compare"]["note"]
+    # Without a parts count the rates are the user's own, and the result says so.
+    own = m.compute(_rated_inputs() | {"lines": _rated_inputs()["lines"][1:]})
+    assert own["weights"]["source"] == "typed" and "its own failure rates, typed here" in own["weights"]["note"]
+    assert own["weights"]["parts_count"] is None and own["weights"]["compare"] is None
+
+
+def test_a_saved_prediction_follows_the_parts_count_only_when_it_takes_its_rates():
+    from backend.services import maintainability as m
+
+    db = mongomock.MongoClient()["maint_follow"]
+    _reliability_prediction(db, A)
+    follows = m.save_prediction(db, "Follows", _rated_inputs(), A, m.prediction_rates(db, "prod-1", [A]))
+    typed = _rated_inputs()
+    typed["lines"][0]["failure_rate"] = 200
+    own = m.save_prediction(db, "Own rates", typed, A, m.prediction_rates(db, "prod-1", [A]))
+    # One saved before rates could follow: typed rates and none of the new fields.
+    old = m.save_prediction(db, "Older", typed, A)
+    db.maintainability_predictions.update_one({"_id": old.id}, {"$unset": {"results.weights.parts_count": ""}})
+    before = {d.id: m.get_prediction(db, d.id, A).results for d in (follows, own, old)}
+    assert before[follows.id]["lines"][0]["failure_rate"] == 180
+    # The parts count changes: only the one that takes rates from it is worked out again.
+    _reliability_prediction(db, A, stamp="2026-11-05", motor=90.0)
+    after = {d.id: m.get_prediction(db, d.id, A).results for d in (follows, own, old)}
+    assert after[follows.id]["lines"][0]["failure_rate"] == 90 and after[follows.id]["mct"] != before[follows.id]["mct"]
+    assert after[own.id] == before[own.id] and after[old.id] == before[old.id]
+    listed = {d.id: d for d in m.list_predictions(db, A, rate_owners=[A])}
+    assert listed[follows.id].results["lines"][0]["failure_rate"] == 90 and listed[own.id].results == before[own.id]
+    # What is stored is untouched, and the parts count going away keeps the saved figures.
+    assert m.get_prediction(db, follows.id, A, as_saved=True).results == before[follows.id]
+    db.reliability_predictions.delete_many({})
+    gone = m.get_prediction(db, follows.id, A).results
+    assert gone["mct"] == before[follows.id]["mct"] and "can't be found" in gone["weights"]["as_saved"]
 
 
 # ---- the app's routes --------------------------------------------------------------------
@@ -280,7 +354,23 @@ def test_the_sample_is_seeded_and_listed_as_a_sample(api):
     assert full["results"]["unit"] == "minutes" and full["results"]["m_max"] > full["results"]["mct"]
     assert {a["path"] for a in full["results"]["assemblies"]} == {
         "Airframe", "Propulsion", "Flight control", "Power", "Comms", "Payload gimbal"}
-    assert full["results"]["pareto"][0]["ref"] == "SQ-M2210"  # four motors, often, 45 min each
+    assert full["results"]["pareto"][0]["ref"] == "SQ-P1045"  # four propellers, replaced often
+    # Its electronics and motor rates are the sample parts count's, to four figures, and it says
+    # why its MTBF is the lower one. Seeding again changes nothing.
+    w = full["results"]["weights"]
+    count = samples.sample_maintainability_parts_count(api.db)
+    typed = {ln["ref"].lower(): ln["failure_rate"] for ln in samples.SAMPLE_MAINTAINABILITY_INPUTS["lines"]}
+    assert len(count["rates"]) == 7
+    for ref, rate in count["rates"].items():
+        assert typed[ref] == pytest.approx(rate, rel=5e-4), ref
+    assert w["parts_count"]["id"] == samples.SAMPLE_PREDICTION["id"] and len(w["parts_count"]["typed_same"]) == 7
+    assert len(w["parts_count"]["not_in"]) == 4 and w["parts_count"]["typed_over"] == []
+    assert "has a rate for 7 of these 11 lines, and the rates typed here are the same." in w["note"]
+    assert not w["compare"]["agree"] and "4 lines have a rate typed here and none in the parts count" in w["compare"]["note"]
+    assert w["compare"]["parts_count_mtbf_hours"] == pytest.approx(count["mtbf_hours"])
+    stored = api.db.maintainability_predictions.find_one({"_id": sample["id"]})
+    samples._seed_maintainability_predictions(api.db)
+    assert api.db.maintainability_predictions.find_one({"_id": sample["id"]}) == stored
     assert sample["id"] in samples.all_sample_ids(api.db)
     # "Deleting" a sample hides it for this user only.
     assert api.delete(f"/api/maintainability/predictions/{sample['id']}").json() == {"ok": True}
@@ -336,7 +426,11 @@ def test_a_products_parts_list_as_lines(api):
     _reliability_prediction(api.db, A, product_id=pid)
     out = api.get(f"/api/maintainability/products/{pid}/lines").json()
     assert out["rates"]["source"] == "reliability_prediction" and out["rates"]["matched"] == 2
-    assert lines["SQ-M2210"].get("failure_rate") is None and {ln["ref"]: ln.get("failure_rate") for ln in out["lines"]}["SQ-M2210"] == 180
+    assert out["rates"]["prediction"] == {"id": "rp-1", "name": "Quadcopter rates"}
+    # The parts count's rate comes beside each line it has one for; the line's own rate stays blank.
+    after = {ln["ref"]: ln for ln in out["lines"]}
+    assert after["SQ-M2210"].get("failure_rate") is None and after["SQ-M2210"]["parts_count_rate"] == 180
+    assert after["SQ-ESC30"]["parts_count_rate"] == 120 and after["SQ-P1045"].get("parts_count_rate") is None
     assert api.get("/api/maintainability/products/nope/lines").status_code == 404
     # A product with no part: no lines, and why.
     m = Maintenance(router.get_store(), A, A)

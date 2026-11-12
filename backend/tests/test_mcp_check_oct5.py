@@ -124,16 +124,16 @@ def test_alt_fit_and_use_level_keep_positive_coefficients_positive():
     # Reliafy's interval on b stays positive (on the log scale); since 0.24
     # SurPyval's own Wald interval is the same (SurPyval #655: it went below
     # zero before). a, which can be negative, keeps SurPyval's.
-    lo, hi = alt.param_interval(model, "b", 0.95)
+    lo, hi = alt.param_interval(model, "b", 0.90)  # the app's 90%
     b = float(model.params[model.parameter_names.index("b")])
     assert 0 < lo < b < hi
-    assert [lo, hi] == pytest.approx(list(model.param_cb("b", alpha_ci=0.05)), rel=1e-9)
-    assert alt.param_interval(model, "a", 0.95) == pytest.approx(list(model.param_cb("a", alpha_ci=0.05)))
+    assert [lo, hi] == pytest.approx(list(model.param_cb("b", alpha_ci=0.10)), rel=1e-9)
+    assert alt.param_interval(model, "a", 0.90) == pytest.approx(list(model.param_cb("a", alpha_ci=0.10)))
     bounds = alt.use_level_bounds(model, [313.15], "arrhenius")
     by_name = {c["name"]: c for c in bounds["coefficients"]}
     assert by_name["b"]["ci"][0] > 0 and by_name["b"]["ci"] == pytest.approx([lo, hi])
     # A rehydrated (saved) model gives the same interval.
-    again = alt.param_interval(surpyval.from_dict(model.to_dict()), "b", 0.95)
+    again = alt.param_interval(surpyval.from_dict(model.to_dict()), "b", 0.90)
     assert again == pytest.approx([lo, hi])
 
 
@@ -156,8 +156,8 @@ def test_mcp_fit_alt_model_and_alt_use_level_intervals_stay_positive(env):
         "name": "Wide b", "life_model": "arrhenius", "data": x.tolist(), "stresses": [[t] for t in T],
         "unit": "hours"}))
     coeffs = {c["name"]: c for c in out["life_stress_coefficients"]}
-    assert coeffs["b"]["ci_95"][0] > 0
-    assert coeffs["a"]["ci_95"][0] < coeffs["a"]["value"] < coeffs["a"]["ci_95"][1]
+    assert coeffs["b"]["ci"][0] > 0
+    assert coeffs["a"]["ci"][0] < coeffs["a"]["value"] < coeffs["a"]["ci"][1]
     ev = _ok(_call(env.token[A], "analyse", {"action": "alt_use_level", "model_id": out["model_id"],
                                                         "use_stress": [313.15]}))
     intervals = {c["name"]: c for c in ev["bounds"]["parameter_intervals"]}

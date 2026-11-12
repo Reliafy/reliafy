@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
-import { listRcmStudies, createRcmStudy, deleteRcmStudy } from "../api.js";
+import { listRcmStudies, createRcmStudy, deleteRcmStudy, getWorkspaceRcm } from "../api.js";
+import { rcmRootLine, rcmTreeRoots } from "../rcmTreeRoots.js";
+import { explorerPath } from "../assetTree.js";
 import { relativeTime } from "../instrument.js";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
@@ -22,6 +24,15 @@ export default function RcmHome() {
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
+
+  // The RCM done on the asset tree (where a study's decisions drive the tasks): one row per
+  // asset, opening its RCM tab. Not offered where the asset tree isn't (the read is refused).
+  const [onTree, setOnTree] = useState(null);
+  useEffect(() => {
+    let on = true;
+    getWorkspaceRcm().then((d) => { if (on) setOnTree(rcmTreeRoots(d)); }, () => {});
+    return () => { on = false; };
+  }, []);
 
   const refresh = useCallback(() => {
     listRcmStudies()
@@ -83,6 +94,23 @@ export default function RcmHome() {
         </div>
       )}
 
+      {onTree?.length > 0 && (
+        <div className="card rcm-on-tree">
+          <h2 className="card-title">On your asset tree</h2>
+          <p className="lib-date">
+            RCM done on the asset tree sets the positions&apos; maintenance tasks directly. Open an asset to carry on there.
+          </p>
+          <ul className="rcm-on-tree-list">
+            {onTree.map((r) => (
+              <li key={r.id}>
+                <Link to={explorerPath("positions", { sel: r.id, tab: "rcm" })}>{r.name || "Unnamed position"}</Link>
+                <span className="lib-date"> · {rcmRootLine(r)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <SectionList
         rows={studies}
         noun={["study", "studies"]}
@@ -137,6 +165,12 @@ export default function RcmHome() {
           }
         >
           {createError && <div className="card error">{createError}</div>}
+          {onTree !== null && (
+            <p className="lib-date">
+              A study here stands on its own. To tie the RCM to your equipment (its tasks then go on the positions), start it on the
+              asset tree instead: <Link to={explorerPath("positions", { tab: "rcm" })}>open the asset tree&apos;s RCM</Link>.
+            </p>
+          )}
           <div className="rcm-form">
             <label className="login-field">
               <span>Name</span>

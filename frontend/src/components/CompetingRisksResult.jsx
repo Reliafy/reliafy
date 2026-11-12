@@ -22,6 +22,7 @@ import {
   ANY_MODE, anyAt, causesAt, effectsByMode, incidenceRows, leadSentence, modeSupport, pct, readingAt,
   timeToChance, widestBand,
 } from "../competingRisks.js";
+import { ciPct, levelPct } from "../levels.js";
 import "./NonParametric.css";
 import "./CompetingRisks.css";
 
@@ -63,7 +64,8 @@ function ModesAside({ result, onGroups }) {
           </span>
         </div>
         <div className="gofr cr-mode-head" aria-hidden="true">
-          <span className="gk">Mode</span><span className="gk">Share of failures</span>
+          <span className="gk">Mode</span>
+          <span className="gk" title="Its chance by then over any mode's: the estimate, allowing for units still running">Share of failures</span>
         </div>
         {causes.map((k, i) => (
           <div className="gofr cr-mode-row" key={k.name}>
@@ -72,7 +74,10 @@ function ModesAside({ result, onGroups }) {
               <span className="cr-mode-sub">
                 {pct(k.at?.cif)} of units{k.at?.lower != null && k.at?.upper != null ? ` (${band(k.at.lower, k.at.upper)})` : ""}
               </span>
-              <span className="cr-mode-sub">{formatNumber(k.failures)} failure{k.failures === 1 ? "" : "s"}</span>
+              <span className="cr-mode-sub">
+                {formatNumber(k.failures_by ?? k.failures)} failure{(k.failures_by ?? k.failures) === 1 ? "" : "s"} by then
+                {k.failures_by != null && k.failures_by !== k.failures ? ` (${formatNumber(k.failures)} in all)` : ""}
+              </span>
             </span>
             <span className="gv"><span className="sr-only">Share of failures: </span>{pct(k.share)}</span>
           </div>
@@ -96,7 +101,49 @@ function ModesAside({ result, onGroups }) {
         <div className="life-reading-title">{causes.length > 1 && top ? `${cap(top.name)} leads` : "Reading"}</div>
         <div>{readingAt(result, result.horizon, unit)}{lead ? ` ${lead}` : ""}</div>
       </div>
+      <EliminatedCard result={result} />
     </>
+  );
+}
+
+// Life if one mode were eliminated (training out installation errors, say):
+// a Weibull fitted to the other modes' failures, with that mode's failures
+// counted as still running. B10 with its 90% one-sided lower bound.
+function EliminatedCard({ result }) {
+  const rows = result.eliminated || [];
+  if (!rows.length) return null;
+  const unit = unitOf(result);
+  const level = levelPct(rows.find((r) => r.confidence)?.confidence ?? 0.9);
+  return (
+    <section className="gof-card cr-eliminated" aria-labelledby="cr-elim-title">
+      <div className="gofh mf-card-head">
+        <span>
+          <h3 className="mf-card-title" id="cr-elim-title">If a mode were eliminated</h3>
+          <span className="gof-sub">B10, at least at {level} one-sided</span>
+        </span>
+      </div>
+      {rows.map((r) => (
+        <div className="gofr" key={r.cause}>
+          <span className="gk">
+            No {r.cause.toLowerCase()}
+            <span className="cr-mode-sub">
+              {r.remaining.length === 1 ? `${cap(r.remaining[0])} alone` : `${r.remaining.map(cap).join(", ")} left`}
+              {r.beta != null ? ` · Weibull shape ${formatNumber(r.beta, { sig: 3 })}` : ""}
+            </span>
+          </span>
+          <span className="gv">
+            {r.b_life != null ? at(r.b_life, unit) : "—"}
+            {r.lower != null && <span className="life-lo"> ≥ {at(r.lower, unit)}</span>}
+            {r.reason && <span className="cr-mode-sub">{r.reason}</span>}
+          </span>
+        </div>
+      ))}
+      <p className="mf-note">
+        Each is a Weibull fitted to the other modes&apos; failures, with the eliminated mode&apos;s failures counted
+        as still running at the time they failed. It assumes the modes act independently: fixing one doesn&apos;t
+        change how the others wear.
+      </p>
+    </section>
   );
 }
 
@@ -115,7 +162,7 @@ function ModesTab({ result, name, onGroups }) {
               options={[
                 { value: true, label: "Stacked", title: "The modes stacked: the top is the chance of failing from any mode" },
                 { value: false, label: "Each mode",
-                  title: result.mode_bounds === false ? "Each mode on its own" : "Each mode on its own, with its 95% band" },
+                  title: result.mode_bounds === false ? "Each mode on its own" : `Each mode on its own, with its ${ciPct(result)} band` },
               ]}
               value={stacked}
               onChange={setStacked}
@@ -140,9 +187,9 @@ function EffectsTab({ result, name }) {
   const label = reg.ratio_label === "hazard ratio" ? "hazard ratio" : "subdistribution hazard ratio";
   const rows = reg.coefficients.map((c) => ({
     name: reg.covariates.length > 1 ? `${cap(c.cause)}: ${c.covariate}` : cap(c.cause),
-    ratio: c.ratio, lo: c.ratio_ci?.[0] ?? null, hi: c.ratio_ci?.[1] ?? null, p: c.p_value,
+    ratio: c.ratio, lo: c.ratio_ci?.[0] ?? null, hi: c.ratio_ci?.[1] ?? null, p: c.p_value, level: ciPct(result),
   }));
-  const words = effectsByMode(reg);
+  const words = effectsByMode(reg, ciPct(result));
   const failed = reg.maximum && reg.maximum !== "verified";
   return (
     <PlotPanel
@@ -222,7 +269,7 @@ function CrCalculator({ result, name, state, setState }) {
       <div className="cr-calc-table">
         <table className="calc-table">
           <thead>
-            <tr><th>Failure mode</th><th>Chance by then</th><th>95% band</th><th>Share of failures</th></tr>
+            <tr><th>Failure mode</th><th>Chance by then</th><th>{ciPct(result)} band</th><th>Share of failures</th></tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
@@ -254,8 +301,11 @@ function CrCalculator({ result, name, state, setState }) {
     }
     let range = null;
     if (r?.time != null) {
-      if (r.lower != null && r.upper != null) range = `we're 95% sure it's between ${at(r.lower, unit)} and ${at(r.upper, unit)}`;
-      else if (r.lower != null) range = `we're 95% sure it's after ${at(r.lower, unit)}; the data can't bound it from above`;
+      if (r.bound === "lower") {
+        // A life: 90% one-sided lower bound (the B-life rule).
+        range = r.lower != null ? `we're ${levelPct(r.level)} sure it's at least ${at(r.lower, unit)} (one-sided)` : null;
+      } else if (r.lower != null && r.upper != null) range = `we're ${ciPct(result)} sure it's between ${at(r.lower, unit)} and ${at(r.upper, unit)}`;
+      else if (r.lower != null) range = `we're ${ciPct(result)} sure it's after ${at(r.lower, unit)}; the data can't bound it from above`;
     }
     answer = (
       <div className="calc-answer">
@@ -348,7 +398,7 @@ function CrCalculator({ result, name, state, setState }) {
               )}
               <p className="calc-note">
                 Read off the curves on the Failure modes tab
-                {result.mode_bounds === false ? ", whose modes have no band of their own" : ", with their 95% bands"}.
+                {result.mode_bounds === false ? ", whose modes have no band of their own" : `, with their ${ciPct(result)} bands`}.
                 {last != null && ` The data ends at ${at(last, unit)}.`}
               </p>
             </div>
@@ -361,7 +411,7 @@ function CrCalculator({ result, name, state, setState }) {
 
 // ---- Diagnostics ------------------------------------------------------------
 
-// Each mode's chance by the horizon with its 95% band, as a dot and a bar.
+// Each mode's chance by the horizon with its band (90%), as a dot and a bar.
 function BandsChart({ result, name }) {
   const unit = unitOf(result);
   const rows = (result.causes || []).map((k) => ({ name: cap(k.name), ...k.at }));
@@ -378,7 +428,7 @@ function BandsChart({ result, name }) {
       arrayminus: rows.map((r) => (has(r) ? r.cif - r.lower : 0)),
     },
     customdata: rows.map((r) => (has(r) ? `${pct(r.lower)} to ${pct(r.upper)}` : "no band")),
-    hovertemplate: "%{y}: %{x:.1%} (95% %{customdata})<extra></extra>",
+    hovertemplate: `%{y}: %{x:.1%} (${ciPct(result)} %{customdata})<extra></extra>`,
   };
   return (
     <Plot fill data={[trace]} download={`${name || "Failure modes"} — bands`}
@@ -475,19 +525,19 @@ function CrDiagnostics({ result, name }) {
       <CheckCard question="Is there enough data for each mode?" term="failures per mode" tone={support.tone}
                  verdict={support.words}>
         <table className="mini-table cr-table">
-          <thead><tr><th>Failure mode</th><th>Failures</th><th>Of all failures</th></tr></thead>
+          <thead><tr><th>Failure mode</th><th>Failures</th><th>Share of failures by {at(result.horizon, unit)}</th></tr></thead>
           <tbody>
             {support.rows.map((r, i) => (
               <tr key={r.name}>
                 <td><ModeName name={r.name} i={i} />{r.few && <span className="cr-few"> · few</span>}</td>
                 <td>{formatNumber(r.failures, { sig: 6 })}</td>
-                <td>{total ? pct(r.failures / total) : "—"}</td>
+                <td>{r.share != null ? pct(r.share) : total ? pct(r.failures / total) : "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </CheckCard>
-      <CheckCard chart question="How sure is each mode's chance?" term={result.mode_bounds === false ? "Kaplan-Meier bounds" : "Aalen's 95% bounds"}
+      <CheckCard chart question="How sure is each mode's chance?" term={result.mode_bounds === false ? "Kaplan-Meier bounds" : `Aalen's ${ciPct(result)} bounds`}
                  verdict={result.mode_bounds === false
                    ? "Each mode's curve comes without a band here; only any mode has one."
                    : widestBand(result, unit)}>
@@ -505,8 +555,8 @@ function howNotes(result) {
   const out = [];
   out.push(result.mode_bounds === false
     ? "Non-parametric cumulative incidence (Aalen-Johansen): no distribution is assumed. The chance of failing from "
-      + "any mode has Kaplan-Meier 95% pointwise bounds; each mode's own curve comes without a band."
-    : "Non-parametric cumulative incidence (Aalen-Johansen), with Aalen's 95% pointwise bounds: no distribution is "
+      + `any mode has Kaplan-Meier ${ciPct(result)} pointwise bounds; each mode's own curve comes without a band.`
+    : `Non-parametric cumulative incidence (Aalen-Johansen), with Aalen's ${ciPct(result)} pointwise bounds: no distribution is `
       + "assumed.");
   out.push("A mode's curve is the chance of failing from it by each time while the other modes still act, so the "
     + "curves add up to the chance of failing from any mode.");
@@ -575,12 +625,12 @@ function CrDataTab({ result, datasetId }) {
             </div>
             <div className="cr-table-wrap">
               <table className="mini-table cr-table">
-                <thead><tr><th>Mode</th><th>Failures</th><th>Share</th><th>Chance</th><th>95% band</th></tr></thead>
+                <thead><tr><th>Mode</th><th>Failures by then</th><th>Share of failures</th><th>Chance</th><th>{ciPct(result)} band</th></tr></thead>
                 <tbody>
                   {(result.causes || []).map((k, i) => (
                     <tr key={k.name}>
                       <td><ModeName name={k.name} i={i} /></td>
-                      <td>{formatNumber(k.failures, { sig: 6 })}</td>
+                      <td>{formatNumber(k.failures_by ?? k.failures, { sig: 6 })}</td>
                       <td>{pct(k.share)}</td>
                       <td>{pct(k.at?.cif)}</td>
                       <td>{band(k.at?.lower, k.at?.upper)}</td>
@@ -591,12 +641,12 @@ function CrDataTab({ result, datasetId }) {
             </div>
           </section>
           {reg ? (
-            <ScrollCard title="Every coefficient" sub="per mode, with 95% intervals">
+            <ScrollCard title="Every coefficient" sub={`per mode, with ${ciPct(result)} intervals`}>
               <table className="mini-table cr-table cr-coef-table">
                 <thead>
                   <tr><th>Mode</th><th>Covariate</th><th>β</th>
                     <th>{reg.ratio_label === "hazard ratio" ? "Hazard ratio" : "Subdist. HR"}</th>
-                    <th>95% interval</th><th>p</th></tr>
+                    <th>{ciPct(result)} interval</th><th>p</th></tr>
                 </thead>
                 <tbody>
                   {reg.coefficients.map((c) => (

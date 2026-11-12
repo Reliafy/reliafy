@@ -1,24 +1,30 @@
 import { UNITLESS, isUnitless } from "../lifeData.js";
 
-// Unit selector for the time column: a combobox of common units that also
+// Unit selector for the value column: a combobox of common units that also
 // accepts a custom value (free text via the datalist).
-const COMMON_UNITS = [
+// Not only time: x may be cycles, km, volts or a load. Any other unit can be typed.
+export const COMMON_UNITS = [
   "Hours",
   "Days",
   "Weeks",
   "Months",
   "Years",
+  "Operating hours",
   "Cycles",
+  "Starts",
   "Kilometres",
   "Miles",
   "Operations",
   "Rounds",
+  "Volts",
+  "kV",
+  "MPa",
 ];
 
 export default function Units({ value, onChange }) {
   return (
     <label className="units-field">
-      <span className="units-label">Unit of the time (optional)</span>
+      <span className="units-label">Unit of the values (optional)</span>
       <input
         className="units-input"
         list="x-units"
@@ -62,8 +68,8 @@ export function RequiredUnit({ value, onChange, label = "Unit", listId = "x-unit
       </datalist>
       {!none && !String(value ?? "").trim() && (
         <span className="ds-hint">
-          Add a unit (Hours, Days, Cycles…) so results say what the numbers mean. Without one,
-          results have no unit: times are in whatever unit your data uses.
+          Add a unit (hours, cycles, km, volts…) so results say what the numbers mean. Without one,
+          results have no unit: values are in whatever unit your data uses.
         </span>
       )}
       <label className="ds-unitless">

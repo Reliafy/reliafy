@@ -194,6 +194,7 @@ def analyze_graph(
     time_budget_s: float | None = None,
     seed: int | None = None,
     max_replications: int | None = None,
+    evaluate_at: float | None = None,
 ) -> dict:
     """Run the RePyability reliability analysis for a graph.
 
@@ -204,7 +205,7 @@ def analyze_graph(
     covariate values for proportional-hazards nodes. ``conditional_age``
     conditions the curves on having already survived to that age.
     ``at_times`` (non-repairable) adds the system reliability evaluated
-    exactly at those times. ``band`` (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    exactly at those times. ``band`` (``{"level": 0.9}``) adds a confidence band from the fitted blocks'
     parameter uncertainty (non-repairable diagrams only). ``state`` (repairable, canonical: see
     :func:`rbd_analysis.parse_current_state`) starts the availability simulation from the blocks'
     current states. ``current_state`` (non-repairable, raw: see
@@ -212,6 +213,9 @@ def analyze_graph(
     now — failed and aged blocks — and ``target_reliability`` adds its design
     life (#173). ``time_budget_s`` / ``seed`` / ``max_replications``
     (repairable) make a quick, time-capped availability run (#147).
+    ``evaluate_at`` (non-repairable) is the time the importance measures and
+    the common-cause comparison are worked out at; left out, the default
+    (the time the system reliability falls to 90%).
     """
 
     resolve_subsystem, resolve_model = resolvers(db, owner_id)
@@ -237,6 +241,7 @@ def analyze_graph(
         band=band,
         current_state=current_state,
         target_reliability=target_reliability,
+        evaluate_at=evaluate_at,
     )
 
 

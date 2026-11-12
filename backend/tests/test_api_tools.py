@@ -287,6 +287,17 @@ def test_maintenance_tools_only_for_its_users(maint):
     assert not any("/maintenance/" in p for p in spec_b["paths"] if p != "/api/v1/maintenance/photos")
 
 
+def test_maintenance_redundancy_set_with_its_switching_over_rest(maint):
+    """topology.create_group / update_group take how a standby one takes over (-1 clears one)."""
+    a = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()["id"]
+    b = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump B"}).json()["id"]
+    g = maint.post("/api/v1/maintenance/topology.create_group", {
+        "member_ids": [a, b], "mode": "standby", "standby": "cold", "start_probability": 0.97}).json()
+    assert g["start_probability"] == 0.97
+    g = maint.post("/api/v1/maintenance/topology.update_group", {"group_id": g["id"], "start_probability": -1}).json()
+    assert g["start_probability"] is None
+
+
 def test_maintenance_names_over_the_limit_say_what_to_do(maint):
     pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Filter"}).json()
     r = maint.post("/api/v1/maintenance/tasks.create", {"position_id": pos["id"], "name": "x" * 397, "interval": 1})
@@ -453,8 +464,13 @@ def test_parity_every_mcp_action_has_rest_openapi_and_cli(maint, monkeypatch):
     # REST/CLI-only capabilities are an explicit allow-list, in the spec and the listing.
     rest_only = {op["operationId"] for item in spec["paths"].values() for op in item.values()
                  if op.get("x-reliafy-rest-only")}
-    assert rest_only == set(api_tools.REST_ONLY)
-    assert {r["name"] for r in listing["rest_only"]} == set(api_tools.REST_ONLY)
+    from backend.routers import field_reports, maintenance_sync
+
+    expected = set(api_tools.REST_ONLY) | set(field_reports.REST_ONLY) | set(maintenance_sync.REST_ONLY)
+    assert rest_only == expected
+    assert {r["name"] for r in listing["rest_only"]} == expected
+    for name, entry in field_reports.REST_ONLY.items():
+        assert spec["paths"][entry["path"]][entry["method"].lower()]["operationId"] == name
 
 
 def test_spec_is_valid_and_public_safe(env):

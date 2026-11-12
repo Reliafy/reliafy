@@ -4,19 +4,19 @@ import Plot from "./Plot.jsx";
 import { bandPair, fitLine } from "../plotTheme.js";
 import { altBounds, cancelRbdJob, evaluateAlt, getRbdJob } from "../api.js";
 import { CANCELLED_TEXT } from "../jobCancel.js";
-import { stressName } from "./stressName.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { PlotCard } from "./model/ModelLayouts.jsx";
-import { parseUse } from "../altFrame.js";
+import { enteredUnit, fromKelvin, inputStressName, kelvinWords, toKelvin, useForModel, useRangeWarning } from "../altFrame.js";
 import ProTag from "./ProTag.jsx";
+import { formatReadable } from "../format.js";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
     ? "—"
     : Math.abs(v) >= 1e-4 || v === 0
       ? Number(v).toLocaleString(undefined, { maximumSignificantDigits: 4 })
-      : Number(v).toExponential(3);
+      : formatReadable(v, { sig: 3 });
 const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toPrecision(4).replace(/\.?0+$/, "")}%`);
 
 const FUNCS = [
@@ -45,9 +45,13 @@ export function initAltCalc(results) {
   const stresses = r.stresses || [];
   const perDim = (j) => (r.levels || []).map((l) => l.stress?.[j]).filter((v) => v != null);
   // Reference: the harshest tested level of each stress.
-  const ref = stresses.map((_, j) => { const a = perDim(j); return a.length ? String(Math.max(...a)) : "0"; });
+  // In the user's units (a temperature given in °C reads in °C).
+  const ref = stresses.map((s, j) => {
+    const a = perDim(j);
+    return a.length ? String(fromKelvin(Math.max(...a), enteredUnit(s))) : "0";
+  });
   return {
-    ref, refOn: true, mission: "", confidence: 0.95, method: "wald", active: "sf",
+    ref, refOn: true, mission: "", confidence: 0.9, method: "wald", active: "sf",
     res: null, bounds: null, job: null, inputs: null,
   };
 }
@@ -103,9 +107,9 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
   const run = async () => {
     setBusy(true); setError(null);
     try {
-      const u = parseUse(use);
+      const u = useForModel(results, use);
       if (!u) throw new Error("Enter a number for each use-level stress.");
-      const rf = st.refOn ? st.ref.map(Number) : undefined;
+      const rf = st.refOn ? st.ref.map((v, j) => toKelvin(Number(v), enteredUnit(stresses[j]))) : undefined;
       if (rf && rf.some((v) => !Number.isFinite(v))) throw new Error("Enter a number for each reference stress.");
       const mt = missionTime();
       const out = await evaluateAlt(modelId, u, rf, { missionTime: mt, confidence: st.confidence });
@@ -208,7 +212,13 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
   const u = unit ? ` ${unitInText(unit)}` : "";
   const lower = (b) => (b && b.lower != null ? <small className="alt-lower">≥ {fmt(b.lower)} at {levelText}</small> : null);
   // The answer on screen is for another use stress than the one entered now.
-  const stale = res && JSON.stringify(parseUse(use)) !== JSON.stringify(res.use_stress);
+  const stale = res && JSON.stringify(useForModel(results, use)) !== JSON.stringify(res.use_stress);
+  const inKelvin = kelvinWords(results, use);
+  // The range on the life at the use stress (two-sided), where the bounds give one.
+  const lifeCi = Array.isArray(bounds?.characteristic_life?.ci) && bounds.characteristic_life.ci.every(Number.isFinite)
+    ? bounds.characteristic_life.ci : null;
+  // Far outside the tested stresses: said in words beside the answer.
+  const farWarning = res ? useRangeWarning(results, res.use_stress, af) : null;
 
   return (
     <div className="alt-calc mf-alt-calc">
@@ -216,7 +226,10 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
         {res ? (
           <>
             <div className="alt-metrics" role="status" aria-live="polite">
-              <div className="alt-metric"><span className="k">Characteristic life</span><span className="v">{fmt(m.characteristic_life)}{u}</span></div>
+              <div className="alt-metric">
+                <span className="k">Characteristic life</span><span className="v">{fmt(m.characteristic_life)}{u}</span>
+                {lifeCi && <small className="alt-lower">{levelText} {fmt(lifeCi[0])}–{fmt(lifeCi[1])}</small>}
+              </div>
               <div className="alt-metric"><span className="k">Mean life</span><span className="v">{fmt(m.mean_life)}{u}</span></div>
               <div className="alt-metric"><span className="k">B10 life</span><span className="v">{fmt(m.b10)}{u}</span>{lower(bl.b10)}</div>
               <div className="alt-metric"><span className="k">B1 life</span><span className="v">{fmt(m.b1)}{u}</span>{lower(bl.b1)}</div>
@@ -236,6 +249,7 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
               )}
             </div>
             {stale && <p className="hint alt-calc-note">You changed the use stress: press Compute to update.</p>}
+            {farWarning && <div className="calc-warn" role="note">{farWarning}</div>}
             {res.no_finite_maximum && <div className="calc-warn">{res.no_finite_maximum.message || "This fit has no finite maximum: the extrapolation means nothing."}</div>}
             {boundsBusy && (
               <p className="hint alt-calc-note" role="status" aria-live="polite">
@@ -289,18 +303,19 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
         <div className="alt-calc-inputs">
           {stresses.map((s, j) => (
             <label key={s.key} className="alt-use-field">
-              <span>Use {stressName(s)}</span>
+              <span>Use {inputStressName(s)}</span>
               <input type="number" value={use[j] ?? ""} inputMode="decimal" step="any"
                      onChange={(e) => onUse(use.map((v, k) => (k === j ? e.target.value : v)))} />
             </label>
           ))}
+          {inKelvin && <p className="muted alt-use-kelvin">{inKelvin}: the model is fitted in kelvin.</p>}
           <label className="alt-ref-toggle">
             <input type="checkbox" checked={st.refOn} onChange={(e) => set({ refOn: e.target.checked })} />
             <span>Acceleration factor against a reference</span>
           </label>
           {st.refOn && stresses.map((s, j) => (
             <label key={s.key} className="alt-use-field">
-              <span>Reference {stressName(s)}</span>
+              <span>Reference {inputStressName(s)}</span>
               <input type="number" value={st.ref[j] ?? ""} inputMode="decimal" step="any"
                      onChange={(e) => set((cur) => ({ ref: cur.ref.map((v, k) => (k === j ? e.target.value : v)) }))} />
             </label>

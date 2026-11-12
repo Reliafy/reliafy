@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, listMaintenanceLocations,
-  listMaintenanceParts, logLabour, removeWorkEntry,
+  listMaintenanceParts, logLabour, openWorkOrder, removeWorkEntry,
   setWorkStatus, updateWorkOrder,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -15,11 +15,16 @@ import PackageLines from "../components/PackageLines.jsx";
 import { closeBlocker, closePayload, unanswered } from "../packageLines.js";
 import { mergeValues, progressText, readingRows, readingsToSend } from "../workOrderReadings.js";
 import { partChoices, stockText } from "../maintenanceSpares.js";
-import { actionKinds, closeActionKind, defaultCloseKind, itemAtText, subjectPath } from "../maintenanceSubjects.js";
+import {
+  actionKinds, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, followUps, foundFailedText, itemAtText, newItemBody,
+  replaceReason, replaceRecordText, subjectPath,
+} from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { ORDERS_LABEL, ORDERS_PATH } from "../navigation.js";
+import { workOrderPath } from "../maintenanceOrders.js";
+import { reportLink } from "../failureReports.js";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -86,6 +91,11 @@ export default function MaintenanceWorkOrder() {
           inspection. A replacement is recorded on a position's own work order.</p>
       )}
       {wo.task && <p className="lib-date">From the task “{wo.task.name}”.</p>}
+      {(wo.failure_reports || []).map((r) => (
+        <p key={`${r.id}-${r.action.id}`} className="lib-date">
+          Corrective action on <Link to={reportLink(r)}>{r.label}</Link> {r.title ? `(${r.title})` : ""}: {r.action.what}
+        </p>
+      ))}
       {wo.warranty && (
         <div className="maint-ask">
           <p><strong>Under warranty.</strong>{" "}
@@ -148,6 +158,7 @@ export default function MaintenanceWorkOrder() {
               {wo.actions.map((a) => (
                 <li key={a.id}>
                   <strong>{KINDS.find((k) => k.id === a.kind)?.label || a.kind}</strong>
+                  {a.position && <span> · on <Link to={`/asset-register/positions/${a.position.id}`}>{a.position.name}</Link></span>}
                   {a.finding && <span> · finding: {a.finding.replace("_", " ")}</span>}
                   {a.failure_mode && <span> · failure mode: {a.failure_mode.text}</span>}
                   {a.removed && <span> · out: {a.removed.name}{a.removed.serial ? ` (${a.removed.serial})` : ""}</span>}
@@ -158,12 +169,55 @@ export default function MaintenanceWorkOrder() {
             </ul>
           )}
           {wo.close_notes && <p className="maint-notes">{wo.close_notes}</p>}
+          <FollowUps wo={wo} />
         </section>
       ) : (
         <CloseForm wo={wo} onClosed={setWo} readings={readingsToSend(readingRows(wo), values)} />
       )}
     </div>
   );
+}
+
+// A check that found something failed and nothing was fixed on this order: the
+// corrective work order to raise next, one click, on the position where it was found.
+function FollowUps({ wo }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(null);
+  const [failed, setFailed] = useState(null);
+  const todo = followUps(wo);
+  if (!todo.length) return null;
+  const raise = async (f) => {
+    setBusy(f.key);
+    setFailed(null);
+    try {
+      const made = await openWorkOrder(f.body);
+      navigate(workOrderPath(made.id));
+    } catch (e) {
+      setFailed(e.message);
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="maint-followups" role="group" aria-label="Follow-up work">
+      {todo.map((f) => (
+        <p key={f.key} className="maint-row" style={{ flexWrap: "wrap", gap: "0.5rem" }}>
+          <span>{f.finding === "found_failed" ? "Found failed" : "Found degraded"}{f.position.name ? ` on ${f.position.name}` : ""}, and nothing was fixed here.</span>
+          <button type="button" className="sm" disabled={busy != null} onClick={() => raise(f)}>
+            {busy === f.key ? "Raising…" : "Raise a corrective work order"}
+          </button>
+        </p>
+      ))}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </div>
+  );
+}
+
+// The failure mode a picker's value names, in words ("" when none).
+function modeName(target, mode) {
+  const choice = mode?.choice || "";
+  if (choice.startsWith("id:")) return (target.failure_modes || []).find((m) => m.id === choice.slice(3))?.text || "";
+  if (choice.startsWith("text:")) return choice.slice(5);
+  return choice === "new" ? (mode.typed || "").trim() : "";
 }
 
 function CloseForm({ wo, onClosed, readings }) {
@@ -176,17 +230,23 @@ function CloseForm({ wo, onClosed, readings }) {
   // A work package's work order: its lines say what was done (a problem is recorded at its line's
   // position), so it starts with no action of its own.
   const lines = wo.package ? wo.lines || [] : null;
-  const [actions, setActions] = useState(lines ? [] : [{ kind: defaultCloseKind(wo) }]);
+  // A breakdown (a corrective work order) starts its replacement as a failure, so the
+  // defaults never record a failure as planned.
+  // Where each action is recorded: the work order's own position, or one inside it (the
+  // seal inside the pump); the task's failure mode, when it's inside, is the starting point.
+  const inside = lines ? [] : wo.inside_positions || [];
+  const startWhere = wo.suggested_position_id || "";
+  const [actions, setActions] = useState(lines ? [] : [{ kind: defaultCloseKind(wo), failed: defaultFailed(wo), where: startWhere }]);
   const blocker = lines && closeBlocker(lines);
   const left = lines ? unanswered(lines) : [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const update = (i, patch) => setActions((as) => as.map((a, j) => (j === i ? { ...a, ...patch } : a)));
-  // The parts the position lists, replacement first: what a replacement is picked from.
-  const listed = partChoices(wo.suggested_parts || []).listed;
+  // The parts the action's position lists, replacement first: what a replacement is picked from.
+  const listedAt = (a) => partChoices(closeTarget(wo, a.where).suggested_parts).listed;
   const pickPart = (i, id) => {
-    const pt = listed.find((x) => x.id === id);
+    const pt = listedAt(actions[i]).find((x) => x.id === id);
     update(i, { part_id: id, from: pt ? mostStock(pt) : "" });
   };
   const removeAt = (i) => setActions((as) => as.filter((_, j) => j !== i));
@@ -196,11 +256,13 @@ function CloseForm({ wo, onClosed, readings }) {
     setError(null);
     try {
       const body = actions.map((a) => ({
-        ...(a.kind === "other" || a.kind === "checked" ? {} : failureModeBody(a.mode)),
+        ...(a.kind === "other" || a.kind === "checked" || (a.kind === "replace" && !a.failed) ? {} : failureModeBody(a.mode)),
+        ...(a.kind === "replace" ? { reason: replaceReason(a) } : {}),
         finding: a.kind === "inspect" ? a.finding || null : null,
         ...closeActionKind(a.kind),
         notes: a.notes || "",
-        new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
+        new_item: newItemBody(a),
+        ...(a.where ? { position_id: a.where } : {}),
         ...(a.kind === "replace" && a.part_id ? { part_id: a.part_id, from_location_id: a.from || null } : {}),
       }));
       onClosed(await closeWorkOrder(wo.id, closePayload({ actions: body, on, notes, readings, lines })));
@@ -221,9 +283,24 @@ function CloseForm({ wo, onClosed, readings }) {
           {wo.fitted?.item?.serial && ` (${wo.fitted.item.serial})`}
         </p>
       )}
-      {actions.map((a, i) => (
+      {actions.map((a, i) => {
+        const target = closeTarget(wo, a.where);
+        const listed = listedAt(a);
+        return (
         <div key={i} className="maint-action">
           <div className="rcm-form">
+            {inside.length > 0 && (
+              <Field label="On">
+                <select value={a.where || ""} onChange={(e) => update(i, { where: e.target.value, mode: null, part_id: "", from: "" })}>
+                  <option value="">{wo.position?.name || wo.subject?.name} (this work order's)</option>
+                  <optgroup label="Inside it">
+                    {inside.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}{p.fitted?.item ? `: ${p.fitted.item.name}${p.fitted.item.serial ? ` (${p.fitted.item.serial})` : ""}` : ""}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </Field>
+            )}
             <Field label="What was done">
               <select value={a.kind} onChange={(e) => update(i, { kind: e.target.value })}>
                 {kinds.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
@@ -239,11 +316,19 @@ function CloseForm({ wo, onClosed, readings }) {
                 </select>
               </Field>
             )}
-            {a.kind !== "other" && a.kind !== "checked" && atPosition && (
-              <Field label={a.kind === "replace" ? "Did it fail? Which way" : "Failure mode (optional)"}>
-                <FailureModePicker modes={wo.failure_modes} classModes={wo.class_failure_modes || []} value={a.mode}
+            {a.kind === "replace" && atPosition && (
+              <Field label="Did it fail?">
+                <select value={a.failed ? "yes" : "no"} onChange={(e) => update(i, { failed: e.target.value === "yes" })}>
+                  <option value="yes">Yes, it failed</option>
+                  <option value="no">No, a planned replacement</option>
+                </select>
+              </Field>
+            )}
+            {a.kind !== "other" && a.kind !== "checked" && atPosition && (a.kind !== "replace" || a.failed) && (
+              <Field label={a.kind === "replace" ? "Which way did it fail?" : "Failure mode (optional)"}>
+                <FailureModePicker modes={target.failure_modes} classModes={target.class_failure_modes} value={a.mode}
                                    onChange={(mode) => update(i, { mode })}
-                                   noneLabel={a.kind === "replace" ? "No, a planned replacement" : "None"} />
+                                   noneLabel={a.kind === "replace" ? "Not known" : "None"} />
               </Field>
             )}
             {a.kind === "replace" && listed.length > 0 && (
@@ -264,9 +349,9 @@ function CloseForm({ wo, onClosed, readings }) {
             )}
             {a.kind === "replace" && (
               <>
-                <Field label={a.part_id ? "New item (optional: named after the part)" : "New item"}>
+                <Field label={a.part_id || target.fitted ? "New item (optional: named after the part or what it replaces)" : "New item"}>
                   <input value={a.new_name || ""}
-                         placeholder={listed.find((x) => x.id === a.part_id)?.name || wo.fitted?.item?.name || "e.g. Rheem 315 L"}
+                         placeholder={listed.find((x) => x.id === a.part_id)?.name || target.fitted?.item?.name || "e.g. Rheem 315 L"}
                          onChange={(e) => update(i, { new_name: e.target.value })} />
                 </Field>
                 <Field label="New item's serial (optional)">
@@ -278,11 +363,18 @@ function CloseForm({ wo, onClosed, readings }) {
               <input value={a.notes || ""} onChange={(e) => update(i, { notes: e.target.value })} />
             </Field>
           </div>
+          {a.kind === "replace" && atPosition && (
+            <p className="lib-date" role="status">{replaceRecordText(a, target, modeName(target, a.mode))}</p>
+          )}
+          {a.kind === "inspect" && a.finding === "found_failed" && atPosition && (
+            <p className="lib-date" role="status">{foundFailedText(target)}</p>
+          )}
           {actions.length > 1 && <button className="secondary" onClick={() => removeAt(i)}>Remove this action</button>}
         </div>
-      ))}
+        );
+      })}
       <div className="maint-row">
-        <button className="secondary" onClick={() => setActions((as) => [...as, { kind: "repair" }])}>{actions.length ? "Add another action" : "Add an action"}</button>
+        <button className="secondary" onClick={() => setActions((as) => [...as, { kind: "repair", failed: defaultFailed(wo), where: as[as.length - 1]?.where || startWhere }])}>{actions.length ? "Add another action" : "Add an action"}</button>
       </div>
       <div className="rcm-form">
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
@@ -292,7 +384,7 @@ function CloseForm({ wo, onClosed, readings }) {
         <Field label="Closing notes (optional; the notes above are kept)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">
-        <button onClick={submit} disabled={busy || !!blocker || !actions.every((a) => a.kind === "checked" || failureModeReady(a.mode))}>
+        <button onClick={submit} disabled={busy || !!blocker || !actions.every((a) => a.kind === "checked" || (a.kind === "replace" && !a.failed) || failureModeReady(a.mode))}>
           {busy ? "Closing…" : blocker || "Close work order"}
         </button>
         {wo.subject && <Link to={subjectPath(wo.subject)} className="lib-date">Back to {wo.subject.name}</Link>}

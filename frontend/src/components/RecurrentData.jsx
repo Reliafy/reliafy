@@ -4,7 +4,8 @@ import { Link } from "react-router-dom";
 import { ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { DatasetRows } from "./model/DataTab.jsx";
 import { formatNumber } from "../format.js";
-import { ciText, familyOf, orderedParams, paramLabel, ratioCiText, ratioText } from "../recurrentResults.js";
+import { ciText, familyOf, orderedParams, ratioCiText, ratioText, scaledParam } from "../recurrentResults.js";
+import { ciPct } from "../levels.js";
 
 const sig = (v) => formatNumber(v, { sig: 4 });
 
@@ -19,7 +20,7 @@ export function howWords(r) {
   }
   if (fam === "nhpp") out.push("Minimal repair: each repair puts a system back as it was just before the failure (as bad as old).");
   if (fam === "regression") {
-    out.push(`Covariates scale one ${r.baseline?.name || "Crow-AMSAA"} failure rate up or down for each system. Rates "now" are for the fleet's average system.`);
+    out.push(`Covariates scale one ${r.baseline?.name || "Crow-AMSAA"} failure rate up or down for each system. Rates "now" are for each level of the first category, and for a system at the fleet's average covariates (no real system).`);
   }
   if (fam === "renewal") {
     out.push(`Imperfect repair${r.lifetime ? ` with a ${r.lifetime} time between failures` : ""}: each repair restores a system somewhere between as good as new and as bad as old.`);
@@ -105,13 +106,14 @@ function Parameters({ r }) {
   const params = orderedParams(r);
   const coefs = r.coefficients || [];
   return (
-    <ScrollCard title="Every parameter" sub={params.some((p) => p.ci) ? "with 95% intervals" : null}>
+    <ScrollCard title="Every parameter" sub={params.some((p) => p.ci) ? `with ${ciPct(r)} intervals` : null}>
       <table className="mini-table rec-stats-table">
-        <thead><tr><th>Parameter</th><th>Estimate</th><th>95% interval</th></tr></thead>
+        <thead><tr><th>Parameter</th><th>Estimate</th><th>{ciPct(r)} interval</th></tr></thead>
         <tbody>
-          {params.map((p) => (
-            <tr key={p.name}><td>{paramLabel(r, p.name)}</td><td>{sig(p.value)}</td><td>{ciText(p.ci) || "—"}</td></tr>
-          ))}
+          {params.map((p) => {
+            const d = scaledParam(r, p);
+            return <tr key={p.name}><td>{d.label}</td><td>{sig(d.value)}</td><td>{ciText(d.ci) || "—"}</td></tr>;
+          })}
           {coefs.map((c) => (
             <tr key={c.name}>
               <td>{c.name.replace(": ", " ")} <span className="gof-sub">coefficient</span></td>

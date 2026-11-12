@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import io
 import math
-import warnings
 from typing import Any, Optional
 
 import numpy as np
@@ -31,6 +30,7 @@ import pandas as pd
 
 from backend.fitting import FitError
 from backend.units import canonical_unit, normalize_unit, unit_in_text
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 #: The path models offered, by id: (SurPyval's class name, label, formula,
 #: a plain description). Linear first: the default.
@@ -55,8 +55,14 @@ MAX_READINGS = 20000
 MAX_UNITS_QUADRATIC = 600
 #: The running units whose risk the fit works out (each a prediction).
 MAX_RISK_UNITS = 500
-#: The confidence level of every interval shown.
-ALPHA_CI = 0.05
+#: Every interval and band shown: 90% two-sided (backend.levels).
+ALPHA_CI = 0.10
+# Life bounds shown with a position's risk (the Explorer): 90% one-sided, a lower bound on
+# life left (the workspace rule for B-lives and other life bounds), and 90% two-sided bands
+# on the curves.
+LIFE_ALPHA = 0.10
+# The time the risk table may spend on its bounds (each unit about 0.05 s).
+BOUNDS_SECONDS = 20.0
 #: The risk table's horizons in days, for a calendar time unit.
 HORIZON_DAYS = (30, 90, 365)
 _DAYS_PER = {"second": 1 / 86400, "minute": 1 / 1440, "hour": 1 / 24, "day": 1.0, "week": 7.0,
@@ -353,8 +359,7 @@ def fit_model(items: list[dict], covariates: list[str], path_model: str = DEFAUL
         if hazard is not None:
             kwargs["hazard_covariates"] = hazard
             kwargs["path_covariates"] = path
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         try:
             with np.errstate(all="ignore"):
                 model = fitter(path_model).fit_from_df(df, **kwargs)
@@ -428,9 +433,10 @@ def _part(heading: str) -> str:
 
 
 def parameter_rows(model) -> list[dict]:
-    """Each parameter with its standard error and 95% interval (and, for the
+    """Each parameter with its standard error and 90% interval (and, for the
     risk coefficients, the hazard ratio), and what it means in plain words."""
     table = model.summary(alpha_ci=ALPHA_CI).reset_index()
+    pct = f"{round(100 * (1 - ALPHA_CI)):g}%"
     path_names = list(model.path_model.parameter_names)
     out = []
     for row in table.to_dict("records"):
@@ -442,13 +448,13 @@ def parameter_rows(model) -> list[dict]:
             "name": name,
             "value": _f(row.get("coef")),
             "se": _f(row.get("se(coef)")),
-            "lower": _f(row.get("coef lower 95%")),
-            "upper": _f(row.get("coef upper 95%")),
+            "lower": _f(row.get(f"coef lower {pct}")),
+            "upper": _f(row.get(f"coef upper {pct}")),
             "p": _f(row.get("p")),
         }
         if part in ("survival", "link") and name not in ("alpha", "beta"):
-            rec.update(hr=_f(row.get("exp(coef)")), hr_lower=_f(row.get("exp(coef) lower 95%")),
-                       hr_upper=_f(row.get("exp(coef) upper 95%")))
+            rec.update(hr=_f(row.get("exp(coef)")), hr_lower=_f(row.get(f"exp(coef) lower {pct}")),
+                       hr_upper=_f(row.get(f"exp(coef) upper {pct}")))
         rec["meaning"] = _meaning(part, name, path_names, model)
         out.append(rec)
     return out
@@ -479,7 +485,7 @@ def _meaning(part: str, name: str, path_names: list, model) -> str:
     return f"Change in the log failure rate per 1 unit of {name}, at the same reading."
 
 
-def hazard_ratios(rows: list[dict], marker: str) -> list[dict]:
+def hazard_ratios(rows: list[dict], marker: str, level: float = 1 - ALPHA_CI) -> list[dict]:
     """The risk coefficients as hazard ratios, each said in plain words."""
     out = []
     for r in rows:
@@ -495,11 +501,41 @@ def hazard_ratios(rows: list[dict], marker: str) -> list[dict]:
         if r["part"] != "link":
             text += f" at the same {marker}"
         if lo is not None and hi is not None:
-            text += f" (95% CI {lo:.3g} to {hi:.3g})"
+            text += f" ({round(100 * level):g}% CI {lo:.3g} to {hi:.3g})"
             if lo <= 1 <= hi:
                 text += "; the interval includes 1, so the data can't rule out no effect"
         out.append({"name": r["name"], "kind": "marker" if r["part"] == "link" else "covariate",
                     "hr": hr, "lower": lo, "upper": hi, "text": text + "."})
+    return out
+
+
+def at_level(results: dict) -> dict:
+    """A saved joint fit's parameter and hazard-ratio intervals at 90%
+    two-sided (``ci_level``). A fit saved before the rule holds 95% Wald
+    intervals: each moves to 90% about its estimate on the scale it was taken
+    on (a hazard ratio's on the log scale). Its survival band keeps its saved
+    level, which ``confidence`` states. Nothing is written back."""
+    from backend import levels
+
+    if not isinstance(results, dict) or results.get("kind") != "joint" or results.get("ci_level") is not None:
+        return results
+    rows = []
+    for r in results.get("params") or []:
+        if not isinstance(r, dict):
+            rows.append(r)
+            continue
+        r = dict(r)
+        ci = levels.rescale(r.get("value"), r.get("lower"), r.get("upper"), log=None)
+        if ci:
+            r["lower"], r["upper"] = ci
+        if r.get("hr") is not None:
+            hr = levels.rescale(r.get("hr"), r.get("hr_lower"), r.get("hr_upper"), log=True)
+            if hr:
+                r["hr_lower"], r["hr_upper"] = hr
+        rows.append(r)
+    out = {**results, "params": rows, "ci_level": levels.LEVEL}
+    if results.get("hazard_ratios") is not None:
+        out["hazard_ratios"] = hazard_ratios(rows, results.get("marker") or "the reading", levels.LEVEL)
     return out
 
 
@@ -597,9 +633,69 @@ def risk_row(pred, h: list[float]) -> dict:
     }
 
 
-def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS) -> tuple[list[dict], list[str]]:
-    """The running units' risk, highest first over the middle horizon."""
+def risk_upper(pred, h: list[float], alpha: float = LIFE_ALPHA) -> Optional[list]:
+    """A one-sided ``1 - alpha`` upper bound on the unit's chance of failing over
+    each horizon: one less the lower bound on its survival from now (Wald, for
+    the parameters' uncertainty; the reading's own noise is in the estimate).
+    None where the bounds can't be worked out (never a made-up number)."""
+    try:
+        with np.errstate(all="ignore"), ignore_warnings():
+            lower = np.ravel(np.asarray(pred.cb(pred.age + np.asarray(h, dtype=float), on="sf",
+                                                alpha_ci=float(alpha), bound="lower"), dtype=float))
+    except (ValueError, TypeError, NotImplementedError, np.linalg.LinAlgError, ArithmeticError):
+        return None
+    if lower.size != len(h) or not np.isfinite(lower).all():
+        return None
+    return [_f(min(1.0, max(0.0, 1.0 - float(v)))) for v in lower]
+
+
+def median_left_lower(pred, alpha: float = LIFE_ALPHA) -> Optional[float]:
+    """A one-sided ``1 - alpha`` lower confidence bound on the unit's median life left:
+    where the lower bound on its survival (Wald, for the parameters' uncertainty) falls
+    to a half, less its age. None where the median isn't reached or the bounds can't be
+    worked out (never a made-up number). Found on a 9-point grid, then twice more on one
+    inside the step that crosses a half (to about 1/500 of the median)."""
+    with np.errstate(all="ignore"):
+        median = float(pred.remaining_life(0.5))
+    if not math.isfinite(median) or median <= 0:
+        return None
+
+    def lower(xs):
+        with np.errstate(all="ignore"):
+            out = np.ravel(np.asarray(pred.cb(xs, on="sf", alpha_ci=float(alpha), bound="lower"), dtype=float))
+        if out.size != xs.size or not np.isfinite(out).all():
+            raise ValueError("no bounds")
+        return out
+
+    try:
+        lo, hi = pred.age, pred.age + median
+        for _ in range(3):
+            grid = np.linspace(lo, hi, 9)
+            sf = lower(grid)
+            below = np.nonzero(sf <= 0.5)[0]
+            if not below.size:
+                return median  # the bound never falls below a half before the median: as the median
+            i = int(below[0])
+            if i == 0:
+                return 0.0
+            lo, hi, y0, y1 = grid[i - 1], grid[i], sf[i - 1], sf[i]
+    except (ValueError, NotImplementedError, np.linalg.LinAlgError, ArithmeticError):
+        return None
+    # Straight-line between the fine grid's points either side of a half.
+    x = hi if y0 == y1 else lo + (y0 - 0.5) * (hi - lo) / (y0 - y1)
+    return _f(max(0.0, float(x) - pred.age))
+
+
+def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS,
+               bounds_seconds: float = BOUNDS_SECONDS) -> tuple[list[dict], list[str]]:
+    """The running units' risk, highest first over the middle horizon. Each
+    row has the 90% one-sided upper bound on each chance (``risk_upper``) and
+    lower bound on its median life left (``median_lower``, ``life_level``),
+    worked out for as many units as ``bounds_seconds`` allows."""
+    import time
+
     rows, notes = [], []
+    started, cut = time.monotonic(), False
     for k, (uid, inp) in enumerate(inputs.items()):
         if k >= limit:
             notes.append(f"Risk is listed for the first {limit} running units; open any other in the unit view.")
@@ -610,6 +706,14 @@ def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS)
         except FitError as exc:
             notes.append(f"Unit {uid}: {exc}")
             continue
+        if time.monotonic() - started <= bounds_seconds:
+            row["risk_upper"] = risk_upper(pred, h)
+            row["median_lower"] = median_left_lower(pred)
+            row["life_level"] = 1 - LIFE_ALPHA
+        elif not cut:
+            cut = True
+            notes.append("The 90% bounds are worked out for the units listed first; open any other in the unit "
+                         "view for its own.")
         last = (inp.get("markers") or [None])[-1]
         rows.append({"id": uid, "age": inp.get("age"), "covariates": inp.get("covariates") or {},
                      "n_readings": len(inp.get("markers") or []), "last_reading": last, **row})
@@ -669,6 +773,7 @@ def results_payload(model, items: list[dict], covariates: list[str], *, path_mod
         "log_likelihood": _f(-model.neg_ll()) if hasattr(model, "neg_ll") else None,
         "aic": _f(model.aic()) if hasattr(model, "aic") else None,
         "confidence": 1 - ALPHA_CI,
+        "ci_level": 1 - ALPHA_CI,  # the parameters' and hazard ratios' intervals (at_level moves older fits)
         "params": rows,
         "hazard_ratios": hazard_ratios(rows, marker),
         "path": {"sample": _sample_paths(items), **new_dict["marker"]},
@@ -681,17 +786,22 @@ def results_payload(model, items: list[dict], covariates: list[str], *, path_mod
 
 
 def unit_view(model, covariates: Optional[dict], markers, age: Optional[float], unit: str,
-              h: Optional[dict] = None) -> dict:
+              h: Optional[dict] = None, alpha_ci: float = ALPHA_CI, life_bound: bool = False) -> dict:
     """One unit's updating prediction: its survival curve from its age now
     with bounds, its remaining-life quantiles, and its marker's smoothed and
-    projected path with an interval (``DynamicPrediction.to_dict``)."""
+    projected path with an interval (``DynamicPrediction.to_dict``), the bands
+    two-sided at ``1 - alpha_ci``. ``life_bound``: also the median life left's
+    one-sided 90% lower bound (``median_lower``, ``life_level``)."""
     pred = predict(model, covariates, markers, age)
     if h is None:
         alpha = float(model.params[model.parameter_names.index("alpha")])
         h = horizons(unit, alpha)
     with np.errstate(all="ignore"):
-        d = pred.to_dict(alpha_ci=ALPHA_CI)
+        d = pred.to_dict(alpha_ci=float(alpha_ci))
     row = risk_row(pred, h["values"])
+    if life_bound:
+        row = {**row, "median_lower": median_left_lower(pred), "life_level": 1 - LIFE_ALPHA,
+               "risk_upper": risk_upper(pred, h["values"])}
     return {
         "age": pred.age,
         "covariates": _covariate_dict(model, pred.covariates),

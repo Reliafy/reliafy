@@ -42,3 +42,21 @@ test("the answer at the time asked about", () => {
   assert.equal(answerAtTime({ r: null, t: 1 }), null);
   assert.equal(answerAtTime({ r: 0.9, t: "" }), null);
 });
+
+test("a life's band reads as its one-sided lower bound", async () => {
+  const { lifeBoundText } = await import("./rbdCalcText.js");
+  assert.equal(lifeBoundText({ lower: 915.7, upper: 1690, bound: 1012.3 }, 0.9), "≥ 1,012 at 90%");
+  // A result from before the rule: the two-sided lower end, at its own one-sided level.
+  assert.equal(lifeBoundText({ lower: 915.7, upper: 1690 }, 0.9), "≥ 915.7 at 95%");
+  assert.equal(lifeBoundText(null, 0.9), null);
+  assert.equal(lifeBoundText({ lower: null, upper: null }, 0.9), null);
+});
+
+test("the importance heading says which time it ranks at", async () => {
+  const { importanceHeading } = await import("./rbdCalcText.js");
+  const given = importanceHeading({ time: 8760, time_basis: "given" }, "Hours");
+  assert.equal(given.at, "8,760 hours");
+  assert.match(given.why, /Evaluate at t/);
+  assert.match(importanceHeading({ time: 1727.09, time_basis: "reliability_90" }, "Hours").why, /falls to 90%/);
+  assert.equal(importanceHeading({}, "Hours"), null);
+});

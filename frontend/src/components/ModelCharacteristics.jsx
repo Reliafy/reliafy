@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import RegressionLife from "./RegressionLife.jsx";
 import { useTvcEvaluation } from "./TvcResult.jsx";
+import { AUTO_BOUND } from "../levels.js";
 import { lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
@@ -18,6 +19,19 @@ import { SPREAD_LABEL, rateSpread, spreadMean, spreadTime, spreadWords } from ".
 // The fit carries its life at 90%; another level or horizon is fetched from
 // the model's life path and kept here, so going back to it doesn't ask again.
 const cache = new Map();
+
+// What the mean is beside the median, and which way round they are here:
+// a long right tail puts the mean later; a mixture's early group, or a
+// left-skewed curve, can put it earlier.
+export function meanVsMedian(noun, answer, median) {
+  const lead = `The average ${noun} to failure. It isn't the median (B50, when half have failed)`;
+  const mean = Number(answer?.value);
+  const med = Number(median);
+  if (!Number.isFinite(mean) || !Number.isFinite(med) || median == null) return `${lead}.`;
+  if (mean > med * 1.005) return `${lead}: a few long-lived units pull the mean up, so here it's the later of the two.`;
+  if (mean < med * 0.995) return `${lead}: a group of early failures pulls the mean down, so here it's the earlier of the two.`;
+  return `${lead}, though here the two are about the same.`;
+}
 
 function useMeanLife(result, level, tau) {
   const path = result.functions?.life_path;
@@ -106,10 +120,19 @@ function BLivesCard({ life, level, pending, unit, noun = "time", credible = fals
         <div className="gofr life-row" key={b.label}
              title={`${b.label}: the ${noun} by which ${Math.round(b.p * 100)}% have failed`}>
           <span className="gk">{B_NAMES[b.label] || b.label}</span>
-          <span className="gv">{b.value != null ? `${formatNumber(b.value)}${u}` : "—"}</span>
-          <span className="life-lo">{spread ? across(b) : b.lower != null ? `≥ ${formatNumber(b.lower)}` : pending ? "…" : ""}</span>
+          <span className="gv">{b.value != null ? `${formatNumber(b.value)}${u}`
+            : b.between ? `${formatNumber(b.between[0])}–${formatNumber(b.between[1])}${u}` : "—"}</span>
+          <span className="life-lo" title={b.lower_note || undefined}>
+            {spread ? across(b) : b.lower != null ? `≥ ${formatNumber(b.lower)}` : pending ? "…" : b.lower_note ? "no bound" : ""}
+          </span>
         </div>
       ))}
+      {rows.some((b) => b.between) && (
+        <p className="mf-note">
+          Inspection data: each B-life is the interval between the two inspections it falls in; the data can&apos;t
+          say where within it.{rows.some((b) => b.lower_note) ? ` ${rows.find((b) => b.lower_note).lower_note}` : ""}
+        </p>
+      )}
       <p className="mf-note">
         B10 is the {noun} by which 10% have failed (90% still running): the usual design life.
       </p>
@@ -218,7 +241,7 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
             {answer.kind !== "none" && <p>
               {answer.kind === "restricted"
                 ? "The average time to failure, counting only up to that time: some units were still running at the end of the data, so the full mean can't be estimated. Move the time to see how the mean grows."
-                : `The average ${noun} to failure. It isn't the median (B50, when half have failed): a few long-lived units pull the mean up, so it's usually the later of the two.`}
+                : meanVsMedian(noun, answer, median)}
               {median != null && answer.kind === "mean" && <> Here the median is <b>{withUnit(median)}</b>.</>}
             </p>}
             {answer.kind === "none" && median != null && (
@@ -334,11 +357,17 @@ function RegressionCharacteristics({ result, level, onLevel, calc, onCalc }) {
 // Covariates that change over time: the B-lives and mean along the
 // calculator's schedule.
 function TvcCharacteristics({ result, tvc, onCalc }) {
-  const { res, error, body } = useTvcEvaluation(result, tvc || {}, { on: "sf" });
+  // Each B-life with its 90% one-sided lower bound, whatever bound the
+  // Calculator shows (where the model has bounds along a schedule).
+  const { res, error, body } = useTvcEvaluation(result, { ...(tvc || {}), bound: AUTO_BOUND, level: 90 }, {
+    on: "sf", bound: "lower", reliability: B_LABELS.map(([, p]) => 1 - p),
+  });
   const unit = result.unit ? unitInText(result.unit) : "";
   const curves = res?.curves;
-  const rows = B_LABELS.map(([label, p]) => ({
-    label, p, value: curves ? timeAtValue(curves.x, curves.sf, 1 - p) : null, lower: null,
+  const lives = res?.life || [];
+  const rows = B_LABELS.map(([label, p], i) => ({
+    label, p, value: lives[i]?.time ?? (curves ? timeAtValue(curves.x, curves.sf, 1 - p) : null),
+    lower: lives[i]?.lower ?? null,
   }));
   const u = unit ? ` ${unit}` : "";
   const sched = body?.schedule || [];

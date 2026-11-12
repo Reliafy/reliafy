@@ -7,6 +7,7 @@ import {
   listDueTasks,
   listMaintenanceLocations,
   listMaintenanceWorkOrders,
+  raisePackageVisit,
   setMaintenanceSettings,
 } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
@@ -18,8 +19,8 @@ import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import { DueChip, LocationPicker, Proposals, flatten, fmtDate } from "../components/MaintenanceParts.jsx";
 import { ImportModal, NewPositionModal, SubjectCell, TimeZoneNudge } from "./MaintenanceHome.jsx";
 import {
-  DUE_WINDOWS, ORDER_TABS, createDetail, createLabel, createPlan, daysLate, doneText, dueWindow, groupDue,
-  lateText, linesText, orderKind, orderTab, ordersSummary, packagePath, splitOpen, workOrderPath,
+  DUE_WINDOWS, ORDER_TABS, createDetail, createLabel, createPlan, daysLate, doneText, dueSearchText, dueWindow, groupDue,
+  inArea, lateText, linesText, orderKind, orderTab, ordersSummary, packagePath, splitOpen, workOrderPath,
 } from "../maintenanceOrders.js";
 import { ORDERS_LABEL } from "../navigation.js";
 import "./Maintenance.css";
@@ -127,6 +128,7 @@ export default function MaintenanceOrders() {
             )}
             {tab === "due" && (
               <DueTab rows={due} horizon={horizon} onHorizon={(d) => setParam("days", d === 30 ? "" : String(d))}
+                      locations={locations} locationId={locationId} onLocation={(v) => setParam("location", v)}
                       onCreated={refresh} onError={setError} />
             )}
             {tab === "closed" && <ClosedTab navigate={navigate} />}
@@ -241,17 +243,36 @@ function OpenTable({ rows, today, navigate }) {
 }
 
 // Due soon: the tasks coming due in the window, grouped by package, then those in none.
-function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
+function DueTab({ rows, horizon, onHorizon, locations, locationId, onLocation, onCreated, onError }) {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [made, setMade] = useState(null);
-  const shown = (rows || []).filter((t) => matches(query, t.name, t.subject?.name, t.package?.name));
-  const plan = createPlan(rows || []);
+  const [raising, setRaising] = useState(null);
+  const [raised, setRaised] = useState(null);
+  // One site (the same choice as the Open tab's): the tasks whose work is there; then the search.
+  const here = (rows || []).filter((t) => inArea(t, locationId));
+  const shown = here.filter((t) => matches(query, ...dueSearchText(t)));
+  const where = locationId && locations?.find((l) => l.id === locationId)?.name;
+  // One package's visit on its own: nothing else that's due is raised.
+  const raise = async (pkg) => {
+    setRaising(pkg.id);
+    setRaised(null);
+    try {
+      const out = await raisePackageVisit(pkg.id);
+      setRaised({ ...out, name: pkg.name });
+      onCreated?.();
+    } catch (e) {
+      onError?.(e.message);
+    } finally {
+      setRaising(null);
+    }
+  };
+  const plan = createPlan(here);
   const create = async () => {
     setCreating(true);
     setMade(null);
     try {
-      const out = await generateWorkOrders(horizon);
+      const out = await generateWorkOrders(horizon, locationId || null);
       setMade((out.work_orders || []).length);
       onCreated?.();
     } catch (e) {
@@ -263,7 +284,7 @@ function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
   return (
     <section className="card">
       <div className="maint-head maint-wrap">
-        <h2>Due in the next {horizon} days</h2>
+        <h2>Due in the next {horizon} days{where ? ` in ${where}` : ""}</h2>
         {plan.total > 0 && (
           <div className="maint-create">
             <button onClick={create} disabled={creating}>{creating ? "Creating…" : createLabel(plan)}</button>
@@ -271,6 +292,13 @@ function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
           </div>
         )}
       </div>
+      {raised && (
+        <p className="lib-date" role="status">
+          {raised.raised ? "Raised " : "Already open: "}
+          <Link to={workOrderPath(raised.work_order.id)}>#{raised.work_order.number}</Link> for {raised.name}
+          {raised.lines_added ? `, with ${raised.lines_added} more ${raised.lines_added === 1 ? "line" : "lines"}` : ""}.
+        </p>
+      )}
       {made != null && (
         <p className="lib-date" role="status">
           {made === 0 ? "No new work orders: everything due has one." : `${made} work order${made === 1 ? "" : "s"} created.`}
@@ -278,9 +306,15 @@ function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
       )}
       <div className="tablebar section-tablebar maint-filters">
         <span className="count">
-          {rows == null ? "Loading…" : query ? `${shown.length} of ${rows.length} tasks` : `${rows.length} ${rows.length === 1 ? "task" : "tasks"}`}
+          {rows == null ? "Loading…" : shown.length !== rows.length ? `${shown.length} of ${rows.length} tasks` : `${rows.length} ${rows.length === 1 ? "task" : "tasks"}`}
         </span>
         <span className="grow" />
+        {locations?.length > 0 && (
+          <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.5rem" }}>
+            In
+            <LocationPicker locations={locations} value={locationId} emptyLabel="Every location" onChange={onLocation} />
+          </label>
+        )}
         <Select className="section-type-filter" ariaLabel="Window" value={String(horizon)}
                 onChange={(v) => onHorizon(Number(v))}
                 options={DUE_WINDOWS.map((d) => ({ value: String(d), label: `Next ${d} days` }))} />
@@ -289,7 +323,7 @@ function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
       {rows == null ? null : rows.length === 0 ? (
         <p className="lib-date">Nothing due.</p>
       ) : shown.length === 0 ? (
-        <p className="lib-date">Nothing due matches.</p>
+        <p className="lib-date">{here.length === 0 ? "Nothing due there." : "Nothing due matches."}</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
           <thead><tr><th>Task</th><th>On</th><th>Due</th><th>Work order</th></tr></thead>
@@ -303,6 +337,12 @@ function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
                       {g.package.active === false && <span className="lib-date"> · paused</span>}</>
                     : "Not in a package"}
                   <span className="lib-date"> · {g.tasks.length} {g.tasks.length === 1 ? "task" : "tasks"}</span>
+                  {g.package && g.package.active !== false && !g.tasks.every((t) => t.open_work_order) && (
+                    <button type="button" className="secondary sm maint-group-btn" disabled={raising === g.package.id}
+                            onClick={() => raise(g.package)}>
+                      {raising === g.package.id ? "Raising…" : "Raise this visit"}
+                    </button>
+                  )}
                 </th>
               </tr>
               {g.tasks.map((t) => (

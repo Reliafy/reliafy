@@ -38,15 +38,30 @@ above it: a gimbal's own missions are flown on the gimbal's own RBD.
 
 ## Add a mission
 
-On the position's **⋯** menu, choose **Add a mission**. Reliafy builds the
-mission an RBD of its own from what's inside the position, the same way
+Click **Add a mission** in the position's row (or choose it on the position's **⋯** menu),
+type the mission's name in the pane and choose **Add the mission**. Nothing is
+saved until it's named. A position with an RBD
+of its own gives the mission a copy of it, wired as it is there: parallel
+trains, standby and k-out-of-n stay as they are (a repairable RBD's repairs and
+planned work are left out: a mission doesn't repair). Without one, Reliafy
+builds the mission's RBD from what's inside the position, the same way
 **Build an RBD from what's inside…** does: each block takes the model in use
 at its position, and a position with none gets a placeholder block, flagged,
-never a made-up figure. It's saved once, named after the position and the
-mission ("Pump station — Mission 1"). A position with nothing inside starts
-from a copy of its own RBD or, without one, is a single block: the position's
-own model in use. A position with nothing inside and no model can't have a
-mission yet: give it a model on the **Modelling** tab first.
+never a made-up figure. Positions marked as backing each other up (the position's
+**Redundancy inside…**) are wired as redundancy. Where nothing says how the blocks are wired (no
+connections and no redundancy sets), they go in series, and the mission says so
+(**Check the wiring**) until you mark the sets or wire its RBD otherwise. It's saved once, named after the
+position and the mission ("Pump station — Summer peak"), and renamed with the mission. A position with nothing
+inside and no RBD is a single block: the position's own model in use. A
+position with nothing inside and no model can't have a mission yet: its row says
+why ("needs a life model or positions inside"). Give it a life model on the
+**Modelling** tab first; a condition-and-life model can't be a block, so its row says that instead.
+
+Click a mission's row to open it.
+
+The answer says why it has no bound: a mission is worked out from each block's
+model at its point values. A mission too large to work out exactly is
+simulated, and the range shown (90%, two-sided) is the simulation's own precision.
 
 Under **Modelling → System models → RBDs**, a mission's RBD has a **Mission**
 label and says which mission and position it belongs to.
@@ -125,6 +140,22 @@ chance the mission completes. Then, for each phase:
 - **Still going**: the chance the mission is still going at the phase's end.
 - **Weakest**: the block whose failures end the most missions in that phase,
   and its share of the phase's failures.
+
+### Blocks with no model
+
+A position with no model becomes a **placeholder** block: a stand-in life, so
+the diagram can be drawn, not a real figure. A mission that needs such a block
+says so with its answer. It names the blocks, shows the chance with the
+placeholders and the chance from the blocks with models alone, and never names
+a placeholder the weakest block. The grid marks each one **Placeholder**, and
+the Missions tab shows the result with "placeholders" beside it.
+
+You choose what to do with them:
+
+- **Give them a model**: open the mission's RBD and set each block's model.
+- **Leave them out**: mark them **Not needed** in every phase, so the mission
+  is worked out from the blocks with models.
+- Or set one **Not needed** only in the phases that don't use it.
 
 The parts age across the **whole** mission, not afresh in each phase: wear in a
 hot climb stays with a motor for the rest of the flight (except while a part

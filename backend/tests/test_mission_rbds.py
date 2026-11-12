@@ -194,7 +194,9 @@ def test_each_mission_builds_an_rbd_of_its_own_and_isn_t_a_model_of_the_position
     assert one["rbd"]["id"] != two["rbd"]["id"]
     assert one["mission"]["id"] == rm.LEGACY_ID and one["mission"]["phases"] == 0
     doc = db.rbds.find_one({"_id": one["rbd"]["id"]})
-    assert doc["graph"]["mission_of"] == {"position_id": plant} and doc["graph"]["mission_name"] == "Duty run"
+    # Nothing inside is connected, so the pumps went in series: the mission says so until it's rewired.
+    assert doc["graph"]["mission_of"] == {"position_id": plant, "built_in_series": True}
+    assert doc["graph"]["mission_name"] == "Duty run" and "placed in series" in one["series_warning"]
     labels = sorted(n["data"]["label"] for n in doc["graph"]["nodes"] if n["type"] == "component")
     assert labels == ["Pump A", "Pump B"]
     # Not linked as a model: no event written, and the position's models are as they were.
@@ -234,6 +236,86 @@ def test_a_position_with_nothing_inside_starts_from_a_copy_of_its_rbd(m, db):
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     assert "missions" not in graph and graph["mission_of"]["position_id"] == pump
     assert made["notes"][0].startswith("Started from a copy of Lone pump RBD")
+
+
+def _parallel_station_rbd(m, db, plant, repairable=False):
+    """The station's own RBD, rewired by hand: the two pumps in parallel (duty and standby)."""
+    link = pm.build_rbd(m, db, OWNERS, set(), plant)
+    doc = db.rbds.find_one({"_id": link["model_id"]})
+    g = doc["graph"]
+    blocks = [n["id"] for n in g["nodes"] if n["type"] == "component"]
+    ins = next(n["id"] for n in g["nodes"] if n["type"] == "input")
+    outs = next(n["id"] for n in g["nodes"] if n["type"] == "output")
+    g["edges"] = [{"id": f"e{i}{j}", "source": s, "target": t}
+                  for i, b in enumerate(blocks) for j, (s, t) in enumerate([(ins, b), (b, outs)])]
+    if repairable:
+        g["repairable"] = True
+        g["costs"] = {"downtime_cost": 800}
+        for n in g["nodes"]:
+            if n["type"] == "component":
+                n["data"]["repair"] = _exp(0.1)
+                n["data"]["duty"] = 0.5
+                n["data"]["tree_settings"] = {"threshold": 0.05}
+    db.rbds.update_one({"_id": link["model_id"]}, {"$set": {"graph": g}})
+    return link["model_id"]
+
+
+@pytest.mark.parametrize("repairable", [False, True])
+def test_a_mission_starts_from_the_positions_own_rbd_wired_as_it_is(m, db, repairable):
+    """Redundancy stays redundancy: a mission on a station whose RBD has its pumps in parallel is
+    flown on that wiring, never rebuilt from the tree in series (which understated the station)."""
+    plant = _station(m, db)
+    _parallel_station_rbd(m, db, plant, repairable)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Summer")
+    assert made["built_from"] == "copy" and made["series_warning"] is None
+    assert made["notes"][0].startswith("Started from a copy of Pump station (from the tree), wired as it is")
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    assert graph["mission_of"] == {"position_id": plant} and not graph.get("repairable") and "costs" not in graph
+    for n in graph["nodes"]:
+        assert not {"repair", "duty", "tree_settings"} & set(n.get("data") or {})
+    g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Run", "duration": 500}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert "series_warning" not in got
+    # The same two pumps in series (what the tree's build gives) complete with r²; in parallel,
+    # as drawn on the station, 1 − (1 − r)²: the higher figure is the one flown.
+    other = _station(m, db)
+    tree = pm.build_mission_rbd(m, db, OWNERS, set(), other, ORG, "Summer")
+    tg, _ = rm.save(db.rbds.find_one({"_id": tree["rbd"]["id"]})["graph"], rm.LEGACY_ID,
+                    phases=[{"name": "Run", "duration": 500}])
+    r = math.sqrt(rm.analyze(db, OWNERS, tg, tg["phases"])["reliability"])
+    assert got["reliability"] == pytest.approx(1 - (1 - r) ** 2, rel=1e-6)
+    assert got["reliability"] > r * r
+
+
+def test_a_mission_built_from_the_tree_in_series_says_so_until_it_is_rewired(m, db):
+    plant = _station(m, db)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Summer")
+    assert made["built_from"] == "tree" and "placed in series" in made["series_warning"]
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    g, mission = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Run", "duration": 500}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert got["series_warning"] == made["series_warning"] and got["notes"][0] == made["series_warning"]
+    assert rm.detail(db, OWNERS, g, mission)["series_warning"] == made["series_warning"]
+    # Survives a save of the diagram (normalize_graph carries it).
+    resolve = pm.fetcher(db, OWNERS, set())
+    kept = normalize_graph(g, resolve_saved_model=lambda mid: resolve("model", mid))
+    assert kept["mission_of"]["built_in_series"] is True
+    # Rewired in parallel: nothing more to say.
+    blocks = [n["id"] for n in g["nodes"] if n["type"] == "component"]
+    ins = next(n["id"] for n in g["nodes"] if n["type"] == "input")
+    outs = next(n["id"] for n in g["nodes"] if n["type"] == "output")
+    rewired = {**g, "edges": [{"source": s, "target": t} for b in blocks for s, t in ((ins, b), (b, outs))]}
+    assert rm.series_warning(rewired) is None
+    assert "series_warning" not in rm.analyze(db, OWNERS, rewired, g["phases"])
+
+
+def test_a_mission_result_says_why_it_has_no_bound(m, db):
+    g, _ = rm.save({**_parallel(), "mission_of": {"position_id": "p"}, "mission_name": "M"}, rm.LEGACY_ID,
+                   phases=[{"name": "Run", "duration": 10}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert got["method"] == "exact" and "interval" not in got
+    assert got["bound_note"].startswith("No bound:")
+    assert rbd_phases.agent_summary(got)["bound_note"] == got["bound_note"]
 
 
 def test_a_leaf_with_a_model_in_use_flies_a_one_block_mission(m, db):
@@ -337,3 +419,102 @@ def test_rest_add_set_states_calculate_and_delete_a_mission_with_its_own_rbd(cli
     assert [m["name"] for x in links if x["position_id"] == plant for m in x["missions"]] == ["Old way"]
     nothing = client.post(f"/api/maintenance/positions/{plant}/missions", json={"name": "Old way"})
     assert nothing.status_code == 422 and "already has a mission named" in nothing.json()["detail"]
+
+
+# ---- blocks with no model: a placeholder stands in, and the result says so --------------------
+
+MTBF = 17520.0  # hours
+
+
+def _genset(m, db):
+    """A generator set of five positions: the engine (constant rate) and the alternator (Weibull)
+    have models; the control panel, fuel system and battery have none."""
+    from backend.services import models as models_service
+
+    top = m.create_position("Generator set")["id"]
+    ids = {n: m.create_position(n, parent_id=top)["id"]
+           for n in ("Engine", "Alternator", "Control panel", "Fuel system", "Battery")}
+    seal = models_service.import_model(db, ORG, "Seal", "exponential", unit="hours",
+                                       params=[{"name": "failure_rate", "value": 1 / MTBF}])
+    belt = models_service.import_model(db, ORG, "Belt", "weibull", unit="hours",
+                                       params=[{"name": "alpha", "value": MTBF}, {"name": "beta", "value": 3}])
+    pm.link_saved(m, db, OWNERS, set(), ids["Engine"], "model", seal.id)
+    pm.link_saved(m, db, OWNERS, set(), ids["Alternator"], "model", belt.id)
+    return top
+
+
+DEPLOYMENT = [{"name": "Start and load", "duration": 2}, {"name": "Run", "duration": 98}]
+MODELLED = e(-100 / MTBF) * e(-((100 / MTBF) ** 3))  # 99.43%: the engine and the alternator in series
+
+
+def test_a_mission_resting_on_placeholders_says_which_blocks_and_what_it_is_without_them(m, db):
+    top = _genset(m, db)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), top, ORG, "100-hour deployment")
+    assert made["placeholders"] == ["Battery", "Control panel", "Fuel system"]
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    g, mission = rm.save(graph, rm.LEGACY_ID, phases=DEPLOYMENT)
+    # The pane's blocks say which are placeholders.
+    blocks = {b["label"]: b["placeholder"] for b in rm.detail(db, OWNERS, g, mission)["blocks"]}
+    assert blocks == {"Alternator": False, "Battery": True, "Control panel": True, "Engine": False, "Fuel system": True}
+
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    # Each placeholder is a 1,000-hour MTBF: three of them take the figure to 73.7%.
+    assert got["reliability"] == pytest.approx(MODELLED * e(-0.3), rel=1e-9)
+    assert round(got["reliability"], 3) == 0.737
+    assert sorted(p["label"] for p in got["placeholders"]) == ["Battery", "Control panel", "Fuel system"]
+    assert got["blocks"] == 5 and got["placeholders_left_out"] == []
+    # Without them: the two blocks with models, 99.43%.
+    assert got["without_placeholders"]["reliability"] == pytest.approx(MODELLED, rel=1e-9)
+    assert round(got["without_placeholders"]["reliability"], 4) == 0.9943
+    # A placeholder is never named the weakest block: the weakest is one with a model.
+    guessed = {p["id"] for p in got["placeholders"]}
+    assert all(r["weakest"]["id"] not in guessed for r in got["phases"])
+    assert {r["weakest"]["label"] for r in got["phases"]} == {"Engine"}
+    assert "isn't ranked" in got["weakest_note"]
+    # For the tools: said first, with the figure without them.
+    summary = rbd_phases.agent_summary(got)
+    assert summary["placeholders"] == ["Battery", "Control panel", "Fuel system"]
+    assert summary["mission_reliability_without_placeholders"] == pytest.approx(MODELLED)
+    assert summary["notes"][0].startswith("Battery, Control panel, Fuel system have no model: a placeholder")
+    # Kept with the result for the lists.
+    record = rm.result_record(g, rbd_phases.parse_phases(DEPLOYMENT), got)
+    row = rm.summary(g, mission, {mission["id"]: record})
+    assert row["result"]["placeholders"] == ["Battery", "Control panel", "Fuel system"]
+    assert row["result"]["without_placeholders"] == pytest.approx(MODELLED)
+
+
+def test_placeholders_not_needed_in_any_phase_are_left_out_and_the_result_no_longer_rests_on_them(m, db):
+    top = _genset(m, db)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), top, ORG, "100-hour deployment")
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    ids = {n["data"]["label"]: n["id"] for n in graph["nodes"] if n["type"] == "component"}
+    off = [ids["Battery"], ids["Control panel"], ids["Fuel system"]]
+    got = rm.analyze(db, OWNERS, graph, [{**p, "not_needed": off} for p in DEPLOYMENT])
+    assert got["reliability"] == pytest.approx(MODELLED, rel=1e-9)
+    assert got["placeholders"] == [] and got["without_placeholders"] is None
+    assert sorted(p["label"] for p in got["placeholders_left_out"]) == ["Battery", "Control panel", "Fuel system"]
+    assert "placeholders" not in rbd_phases.agent_summary(got) and "weakest_note" not in got
+    # Needed in one phase only: it counts again.
+    part = rm.analyze(db, OWNERS, graph, [{**DEPLOYMENT[0], "not_needed": off}, {**DEPLOYMENT[1], "not_needed": off[1:]}])
+    assert [p["label"] for p in part["placeholders"]] == ["Battery"]
+    assert part["without_placeholders"]["reliability"] == pytest.approx(MODELLED, rel=1e-9)
+
+
+def test_a_mission_with_a_model_on_every_block_says_nothing_about_placeholders(m, db):
+    plant = _station(m, db)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Duty run")
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    got = rm.analyze(db, OWNERS, graph, [{"name": "Run", "duration": 100}])
+    assert got["placeholders"] == [] and got["without_placeholders"] is None and got["blocks"] == 2
+    assert "weakest_note" not in got and got["phases"][0]["weakest"]
+    record = rm.result_record(graph, rbd_phases.parse_phases([{"name": "Run", "duration": 100}]), got)
+    assert "placeholders" not in record
+
+
+def test_only_placeholders_gives_no_figure_without_them():
+    ph = {**_exp(0.001), "placeholder": True}
+    got = rbd_phases.analyze_phases(_diagram([("input", "a"), ("a", "b"), ("b", "output")], {"a": ph, "b": ph}),
+                                    phases=[{"name": "Run", "duration": 100}], weakest=True)
+    assert got["reliability"] == pytest.approx(e(-0.2))
+    assert len(got["placeholders"]) == 2 and got["without_placeholders"] is None
+    assert got["phases"][0]["weakest"] is None

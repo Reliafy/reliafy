@@ -141,7 +141,7 @@ def test_free_user_tries_every_tool_but_the_pro_only_ones_within_the_allowance(e
         "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000}))
     assert _ok(_call(token, "change", {"action": "dataset_upload", "name": "d", "csv": "t,c\n1,0\n2,0\n"}))["id"]
     assert _ok(_call(token, "analyse", {"action": "plan_demonstration_test",
-                                                   "reliability": 0.95}))["units"] == 59
+                                                   "reliability": 0.95}))["units"] == 45  # 90% by default
     assert _calls_used(env.db, FREE) == 5
 
     # Fitting and fleets are Pro-only: refused, and refusals aren't counted.

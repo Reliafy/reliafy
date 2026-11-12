@@ -1103,7 +1103,7 @@ _DemandBatches = Annotated[Optional[list[DemandBatch]], Field(
         "lots of different sizes or test campaigns are pooled into one failure probability per demand, "
         "with exact bounds."))]
 _DemandConfidence = Annotated[float, Field(
-    gt=0, lt=1, description="Confidence level of the exact bounds, e.g. 0.9 or 0.95 (default).")]
+    gt=0, lt=1, description="Confidence level of the exact bounds, e.g. 0.95 or 0.9 (default).")]
 
 
 def _plain_params(results: dict) -> list[dict]:
@@ -1153,33 +1153,36 @@ _RESIDUAL_SYSTEMS = 10  # get kind model lists this many systems, most excess fa
 
 def _recurrent_evidence(r: dict) -> dict:
     """A recurrent model's evidence (#81): the growth verdict and what it
-    rests on (β's 95% interval against 1), the ROCOF and instantaneous MTBF at
-    the end of observation with 95% bounds, the demonstrated MTBF's 90% lower
+    rests on (β's interval against 1), the ROCOF and instantaneous MTBF at
+    the end of observation with their intervals (90% two-sided; ``ci_level``
+    says the level, 95% for a fit saved before the rule), the demonstrated MTBF's 90% lower
     bound, both trend tests, the goodness of fit (AIC/BIC and the Cramér-von
     Mises test) and the systems failing most above the model."""
     out: dict[str, Any] = {}
+    level = float(r.get("ci_level") or 0.95)
+    out["ci_level"] = level
     basis = r.get("growth_basis")
     if basis:
         sym = f"{basis.get('symbol', 'β')} ({basis.get('what')})"
         if basis.get("ci"):
             lo, hi = basis["ci"]
             excludes = "excludes" if (lo > basis["no_trend"] or hi < basis["no_trend"]) else "includes"
-            reading = (f"{sym} = {basis['estimate']:.4g}, 95% interval [{lo:.4g}, {hi:.4g}] {excludes} "
+            reading = (f"{sym} = {basis['estimate']:.4g}, {level:.0%} interval [{lo:.4g}, {hi:.4g}] {excludes} "
                        f"{basis['no_trend']:g} (no trend)")
         else:
             reading = (f"{sym} = {basis['estimate']:.4g} (no interval: built from parameters or the "
                        "information matrix is singular, so the estimate decides)")
         out["growth_basis"] = reading
     if r.get("beta_ci"):
-        out["beta_ci_95"] = [_sig(v) for v in r["beta_ci"]]
+        out["beta_ci"] = [_sig(v) for v in r["beta_ci"]]
     if r.get("end_of_observation") is not None:
         out["end_of_observation"] = _sig(r["end_of_observation"])
     out["rocof"] = _sig(r.get("rocof"))
     if r.get("rocof_ci"):
-        out["rocof_ci_95"] = [_sig(v) for v in r["rocof_ci"]]
+        out["rocof_ci"] = [_sig(v) for v in r["rocof_ci"]]
     out["mtbf"] = _sig(r.get("mtbf"))
     if r.get("mtbf_ci"):
-        out["mtbf_ci_95"] = [_sig(v) for v in r["mtbf_ci"]]
+        out["mtbf_ci"] = [_sig(v) for v in r["mtbf_ci"]]
     dm = r.get("demonstrated_mtbf")
     if dm:
         method = "Crow's exact bound (MIL-HDBK-189C)" if dm.get("method") == "crow" else "Wald bound"
@@ -1223,7 +1226,7 @@ def _recurrent_extras(r: dict) -> dict:
     if r.get("coefficients"):
         out["covariate_effects"] = [
             {"covariate": c["name"], "rate_ratio": _sig(c.get("ratio")),
-             "rate_ratio_ci_95": [_sig(v) for v in c["ratio_ci"]] if c.get("ratio_ci") else None,
+             "rate_ratio_ci": [_sig(v) for v in c["ratio_ci"]] if c.get("ratio_ci") else None,
              "effect": c.get("effect"), "reading": c.get("reading")}
             for c in r["coefficients"]]
         out["covariates"] = r.get("covariates")
@@ -1232,7 +1235,7 @@ def _recurrent_extras(r: dict) -> dict:
         out["repair_effectiveness"] = {
             "parameter": rest.get("parameter"), "value": _sig(rest.get("value")),
             "effectiveness": _sig(rest.get("effectiveness")),
-            "effectiveness_ci_95": [_sig(v) for v in rest["effectiveness_ci"]] if rest.get("effectiveness_ci") else None,
+            "effectiveness_ci": [_sig(v) for v in rest["effectiveness_ci"]] if rest.get("effectiveness_ci") else None,
             "reading": rest.get("sentence"), "scale": rest.get("scale")}
     rt = r.get("repair_test")
     if rt:
@@ -1253,7 +1256,7 @@ def _recurrent_extras(r: dict) -> dict:
             out["by_cause"] = [
                 {"cause": c["label"], "failures": c["failures"], "share": _sig(c["share"]),
                  **({"beta": _sig(c["fit"]["beta"]),
-                     "beta_ci_95": [_sig(v) for v in c["fit"]["beta_ci"]] if c["fit"].get("beta_ci") else None,
+                     "beta_ci": [_sig(v) for v in c["fit"]["beta_ci"]] if c["fit"].get("beta_ci") else None,
                      "growth": c["fit"].get("growth")} if c.get("fit") else {})}
                 for c in bc["causes"][:_CAUSES_LISTED]]
         elif bc.get("reason"):
@@ -1312,12 +1315,16 @@ def _fit_failure_warning(fit_warning: str | None) -> str:
 
 def _cr_summary(result: dict) -> dict:
     """A fit by failure mode (#177) for an agent: each mode's share of the
-    failures and of the units by the horizon (with its 95% interval), which
+    failures and of the units by the horizon (with its interval, 90% two-sided;
+    ``ci_level`` says the level, 95% for a fit saved before the rule), which
     mode leads when, the reading, Gray's test and any regression — without
     the plotting curves. Without a per-mode band (SurPyval gives none for
-    one mode's incidence) ``ci_95`` is left out and ``how`` says so."""
+    one mode's incidence) ``ci`` is left out and ``how`` says so."""
     bounded = result.get("mode_bounds", True)
+    level = float(result.get("ci_level") or 0.95)
+    pct = f"{level:.0%}"
     out = {
+        "ci_level": level,
         "distribution": result.get("distribution"),
         "distribution_id": result.get("distribution_id"),
         "kind": "competing_risks",
@@ -1327,19 +1334,27 @@ def _cr_summary(result: dict) -> dict:
         "still_running": result.get("running"),
         "horizon": result.get("horizon"),
         "failure_modes": [{
-            "mode": k["name"], "failures": k["failures"], "share_of_failures_by_horizon": k.get("share"),
+            "mode": k["name"], "failures": k["failures"],
+            **({"failures_by_horizon": k["failures_by"]} if k.get("failures_by") is not None else {}),
+            "share_of_failures_by_horizon": k.get("share"),
             "units_failed_from_it_by_horizon": (k.get("at") or {}).get("cif"),
-            **({"ci_95": [(k.get("at") or {}).get("lower"), (k.get("at") or {}).get("upper")]} if bounded else {}),
+            **({"ci": [(k.get("at") or {}).get("lower"), (k.get("at") or {}).get("upper")]} if bounded else {}),
         } for k in result.get("causes") or []],
         "leads": result.get("leads"),
         "reading": result.get("reading"),
         "how": ("Non-parametric cumulative incidence (Aalen-Johansen)"
-                + (" with Aalen's 95% pointwise bounds" if bounded else "")
+                + (f" with Aalen's {pct} pointwise bounds" if bounded else "")
                 + ": the chance of failing from each mode by the horizon while the other modes still act. The "
                 "modes add up to the all-cause failure probability"
-                + ("." if bounded else ", which has Kaplan-Meier 95% bounds; a single mode's incidence comes "
+                + ("." if bounded else f", which has Kaplan-Meier {pct} bounds; a single mode's incidence comes "
                    "without an interval.")),
     }
+    if result.get("eliminated"):
+        # Life if each mode were eliminated: a Weibull on the other modes' failures, this one's as running.
+        out["if_mode_eliminated"] = [
+            {k: e.get(k) for k in ("cause", "remaining", "failures", "alpha", "beta", "b_life", "lower", "reason")
+             if e.get(k) is not None} | {"quantity": "B10", "bound": "90% one-sided lower"}
+            for e in result["eliminated"]]
     for key in ("gray", "regression"):
         if result.get(key):
             out[key] = result[key]
@@ -1441,11 +1456,11 @@ def get_model(
     ctx: Context,
     model_id: Annotated[str, Field(description="A model id from list kind models.")],
 ) -> dict[str, Any]:
-    """A saved model in full, life or recurrent. Life: parameters with 95% CIs, goodness of fit, metrics and
+    """A saved model in full, life or recurrent. Life: parameters with 90% CIs, goodness of fit, metrics and
     `life` (B1–B50 and MTTF with one-sided 90% lower bounds); regression models add `validation` (Harrell's C,
     Brier score, time-dependent AUC) and `diagnostics` (the proportional-hazards test with a plain reading;
-    Cox PH: robust errors, ties, strata); by failure mode (competing_risks): each mode's share with 95%
-    intervals and Gray's test. Recurrent: the growth verdict on β's 95% interval, ROCOF and MTBF with bounds,
+    Cox PH: robust errors, ties, strata); by failure mode (competing_risks): each mode's share with 90%
+    intervals, Gray's test and the life if each mode were eliminated. Recurrent: the growth verdict on β's 90% interval, ROCOF and MTBF with bounds,
     the demonstrated MTBF's lower bound, trend and goodness-of-fit tests, systems_vs_model, and where they
     apply covariate_effects, repair_effectiveness, repair_test, next_failure_by_system and by_cause."""
     user, db = _caller(ctx), _db()
@@ -1454,7 +1469,8 @@ def get_model(
     if m is not None and m.kind == joint_service.KIND:
         return {**_joint_brief(m), **_joint_report(m.results or {})}
     if m is not None and m.kind == "competing_risks":
-        out = {**_life_brief(m), **_cr_summary(m.results or {})}
+        # One saved before the 90% rule and the counts by the horizon is refitted from its data.
+        out = {**_life_brief(m), **_cr_summary(competing_risks.refreshed(db, m))}
         out.pop("params", None)
         if (m.spec or {}).get("notes"):
             out["notes"] = m.spec["notes"]
@@ -1507,6 +1523,7 @@ def get_model(
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
         doc = recurrent_service.ensure_diagnostics(db, doc)  # #81: bounds and tests for older saves
+        doc = recurrent_service.current_results(db, doc)  # 90% intervals and today's verdicts, on read
         r = doc.results or {}
         out = {**_recurrent_brief(doc), "params": r.get("params"), **_recurrent_evidence(r)}
         if r.get("projection"):
@@ -1607,7 +1624,7 @@ _FitCoxOptions = Annotated[Optional[CoxOptions], Field(
 _FitGroupColumn = Annotated[Optional[str], Field(
     description="With dataset_id, a column of groups (site, batch, supplier, unit). Shared-frailty models "
                 "(…_frailty): the column naming each row's group — the units that share a frailty. The fit "
-                "reports frailty.theta (the spread between groups, with a 95% interval: one reaching 0 means the "
+                "reports frailty.theta (the spread between groups, with a 90% interval: one reaching 0 means the "
                 "groups may not differ) and each group's frailty (above 1 = fails sooner than average). Competing "
                 "risks (competing_risks…): the groups to compare each failure mode across with Gray's test.")]
 _FitIncludeMixtures = Annotated[bool, Field(
@@ -1848,7 +1865,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         raise ToolError("groups / group_column apply to a shared-frailty model (e.g. weibull_frailty, with "
                         "covariates) or to competing risks (with causes / cause_column) — choose one of "
                         "those, or drop the group column.")
-    options: dict[str, Any] = {}
+    # Flags sent as codes are read as they are: an interval row is flagged 2.
+    options: dict[str, Any] = {fitting.STRICT_INTERVALS_KEY: True}
     if c_invert:
         if "c" not in mapping:
             raise ToolError("c_invert flips censoring flags — pass `censored` (or censor_column) too.")
@@ -1960,7 +1978,7 @@ def fit_distribution(
     group_column: _FitGroupColumn = None,
 ) -> dict[str, Any]:
     """Fit a life distribution (SurPyval) to inline times or a saved dataset and report it:
-    parameters with 95% CIs, goodness of fit, metrics, and `censoring`, the failures and censored units the fit
+    parameters with 90% CIs, goodness of fit, metrics, and `censoring`, the failures and censored units the fit
     used (check them against what the user said). Regression fits add validation and diagnostics, non-parametric
     ones `life`, competing_risks each failure mode's share. A fit that didn't converge leads with fit_ok false:
     don't quote it. Saves nothing (change model_fit keeps it). guide topic life_data has the options."""
@@ -2011,7 +2029,7 @@ def fit_and_save_model(
             "label?} per batch, as analyse fit_per_demand takes them. Give only name (and "
             "demand_confidence) with it."))] = None,
     demand_confidence: Annotated[float, Field(
-        gt=0, lt=1, description="Confidence of a per-demand model's exact bounds (default 0.95).")] = 0.95,
+        gt=0, lt=1, description="Confidence of a per-demand model's exact bounds (default 0.9).")] = 0.90,
 ) -> dict[str, Any]:
     """Fit exactly as analyse fit does and save the model (inline data is
     saved as a dataset too); returns its id and url. With demand_batches (only name and demand_confidence beside
@@ -2042,7 +2060,7 @@ def fit_and_save_model(
 def _per_demand_summary(result: dict) -> dict:
     """A per-demand result for an MCP caller (#233)."""
     d = result.get("per_demand") or {}
-    c = d.get("confidence", 0.95)
+    c = d.get("confidence", 0.95)  # a model saved before the bounds' level was stored: 95%
     out = {
         "kind": "per_demand",
         "demands": d.get("demands"),
@@ -2098,7 +2116,7 @@ def fit_per_demand(
     demands_column: Annotated[Optional[str], Field(description="Dataset column of demands per batch.")] = None,
     failures_column: Annotated[Optional[str], Field(description="Dataset column of failures per batch.")] = None,
     batch_column: Annotated[Optional[str], Field(description="Optional dataset column naming each batch.")] = None,
-    confidence: _DemandConfidence = 0.95,
+    confidence: _DemandConfidence = 0.90,
 ) -> dict[str, Any]:
     """Per-demand (one-shot) reliability: a valve that must open, a standby start. From
     batches of demands and failures (inline, or a dataset with a row per batch): the failure probability per
@@ -2566,7 +2584,7 @@ _AltStresses = Annotated[Optional[list[list[float]]], Field(
 def _alt_brief(results: dict) -> dict:
     """An ALT fit's results for an MCP caller."""
     def ci(items):
-        return [{"name": p["name"], "value": _finite(p["value"]), "ci_95": p.get("ci")} for p in items or []]
+        return [{"name": p["name"], "value": _finite(p["value"]), "ci": p.get("ci")} for p in items or []]
 
     # A fit saved before #262: positive coefficients' intervals on the log scale.
     results = alt_fit.positive_coefficient_intervals(results)
@@ -2601,6 +2619,12 @@ def _alt_stress_units(results: dict) -> dict:
         out["stress_units"] = units
     if results.get("unit_warnings"):
         out["unit_warnings"] = results["unit_warnings"]
+    entered = [s.get("entered_unit") or "" for s in results.get("stresses") or []]
+    if any(entered):
+        # A temperature given in °C or °F, fitted (and to be given back) in kelvin.
+        out["entered_units"] = entered
+    if results.get("fit_warnings"):
+        out["fit_warnings"] = results["fit_warnings"]
     return out
 
 
@@ -2636,14 +2660,15 @@ def fit_alt_model(
     trunc_right_column: _FitTruncRightCol = None,
     unit: _FitUnit = None,
     stress_units: Annotated[Optional[list[str]], Field(
-        max_length=2, description="Optional: the unit of each stress, in order — e.g. ['K'] or ['K', 'V'] "
-                                  "(blank for none). Shown with the stresses and use levels; a thermal model "
-                                  "given °C or °F is warned about (it needs kelvin).")] = None,
+        max_length=2, description="The unit of each stress, in order — e.g. ['°C'] or ['K', 'V'] (blank for "
+                                  "none). A thermal model's temperature (arrhenius, eyring and the dual "
+                                  "models' first stress) in °C or °F is converted to kelvin and fitted in K; "
+                                  "with no unit, temperatures below 200 are refused as probably °C.")] = None,
 ) -> dict[str, Any]:
     """Fit and save an accelerated life test model: failure times at several stress levels and
     a life-stress relationship, inline (data + stresses) or from a dataset (time_column + stress_columns), with the
-    usual censoring flags (inspection data: flag 2 with data_right) and delayed entry. Thermal models need kelvin.
-    Reports the coefficients with 95% CIs, the life at each tested level and which bound methods
+    usual censoring flags (inspection data: flag 2 with data_right) and delayed entry. Thermal models fit in kelvin.
+    Reports the coefficients with 90% CIs, the life at each tested level and which bound methods
     analyse alt_use_level offers for it."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
@@ -2775,16 +2800,16 @@ def alt_use_level(
     model_id: Annotated[str, Field(description="A saved ALT model id (change model_fit_alt, or the app's Accelerated "
                                                "life page).")],
     use_stress: Annotated[list[float], Field(min_length=1, max_length=2, description=(
-        "The use (field) stress level(s), in the same units and order as the fit — e.g. [313.15] for 40 °C "
-        "with an Arrhenius model fitted in kelvin."))],
+        "The use (field) stress level(s), in the model's units and order — a thermal model's temperature "
+        "in kelvin, even when it was given in °C: e.g. [313.15] for 40 °C."))],
     ref_stress: Annotated[Optional[list[float]], Field(max_length=2, description=(
         "Optional test stress to report the acceleration factor against (life at use / life at this "
         "stress)."))] = None,
     mission_time: Annotated[Optional[float], Field(gt=0, description=(
         "Optional mission length (model's unit): adds the reliability over it with its lower bound."))] = None,
     confidence: Annotated[float, Field(ge=0.5, lt=1, description=(
-        "Confidence level of the bounds (default 0.95): a two-sided band on R(t), one-sided lower bounds on "
-        "B10, B1 and the mission reliability."))] = 0.95,
+        "Confidence level of the bounds (default 0.9): a two-sided band on R(t), one-sided lower bounds on "
+        "B10, B1 and the mission reliability."))] = 0.90,
     bounds_method: Annotated[Literal["wald", "lr", "bootstrap"], Field(description=(
         "wald (Fisher matrix, instant; default), lr (likelihood ratio: needs no large-sample symmetry, a second "
         "or two) or bootstrap (200 parametric refits, BCa interval; best coverage when extrapolating with "
@@ -2898,7 +2923,7 @@ def _joint_body(name, dataset_id, unit_id_column, age_column, censor_column,
 
 
 def _joint_report(r: dict, top: int = 10) -> dict:
-    """A fitted joint model's results for an agent: the parameters with 95%
+    """A fitted joint model's results for an agent: the parameters with 90%
     intervals, the hazard ratios said plainly, and the riskiest running
     units (no mean life: it can be infinite)."""
     h = r.get("horizons") or {}
@@ -2907,7 +2932,10 @@ def _joint_report(r: dict, top: int = 10) -> dict:
         risk.append({
             "unit_id": u.get("id"), "age": u.get("age"),
             "risk": dict(zip(h.get("labels") or [], u.get("risk") or [])),
+            # 90% one-sided: the chance of failing is at most this.
+            **({"risk_upper_90": dict(zip(h.get("labels") or [], u["risk_upper"]))} if u.get("risk_upper") else {}),
             "median_remaining_life": u.get("median_remaining") if u.get("median_reached") else "not reached",
+            **({"median_remaining_life_lower_90": u["median_lower"]} if u.get("median_lower") is not None else {}),
         })
     return {
         "fit_ok": r.get("fit_ok"), "maximum": r.get("maximum"), "unit": r.get("unit"),
@@ -2972,7 +3000,7 @@ def fit_joint(
     c_invert: _FitInvert = False,
 ) -> dict[str, Any]:
     """Fit a condition and life (joint) model: how a reading drifts with age and how it raises the failure rate,
-    from one dataset of life data with measurements; reports parameters with 95% CIs, hazard ratios and the riskiest
+    from one dataset of life data with measurements; reports parameters with 90% CIs, hazard ratios and the riskiest
     running units. Pro; saves nothing (change model_fit_joint keeps it). guide topic life_data."""
     _joint_needs(dataset_id, unit_id_column, age_column, censor_column, reading_age_column, reading_value_column)
     body = _joint_body(None, dataset_id, unit_id_column, age_column, censor_column,
@@ -3038,7 +3066,7 @@ def predict_joint(
     unit_covariates: Annotated[Optional[dict[str, float]], Field(description=(
         "Instead of unit_id: the unit's covariates, {name: value}."))] = None,
 ) -> dict[str, Any]:
-    """A unit's updating risk from a saved joint model: survival over the model's horizons with 95% bounds, and
+    """A unit's updating risk from a saved joint model: survival over the model's horizons with 90% bounds, and
     median remaining life ('not reached' when it never falls to a half — never a mean)."""
     user, db = _caller(ctx), _db()
     m = _joint_model(db, model_id, _owners(user["uid"]))
@@ -3070,7 +3098,8 @@ def predict_joint(
         "unit": (m.results or {}).get("unit"), "age_now": v.get("age"), "covariates": v.get("covariates"),
         "n_readings": len(v.get("markers") or []),
         "survival": dict(zip(h.get("labels") or [], v.get("survival") or [])),
-        "survival_95ci": band or None,
+        "survival_ci": band or None,
+        "survival_ci_level": 0.9 if band else None,
         "median_remaining_life": v.get("median_remaining") if v.get("median_reached") else "not reached",
         "remaining_life_quantiles": {f"p{int(round(p * 100))}": (life if life is not None else "not reached")
                                      for p, life in zip(rl.get("p") or [], rl.get("life") or [])},
@@ -3245,13 +3274,18 @@ def upload_dataset(
         "lists them)."))] = None,
     no_header: Annotated[Optional[bool], Field(description=(
         "True if the first row is data, not column names; omit to guess."))] = None,
+    dataset_col: Annotated[Optional[str], Field(description=(
+        "Split the sheet by this column: one dataset per value, named by the value (\"<value> – <name>\" if "
+        "taken), the column itself left out; rows with no value are left out. Returns datasets, a list."))] = None,
 ) -> dict[str, Any]:
     """Save a dataset from CSV text (csv) or a file sent with change upload_create (upload_id; an .xlsx
     needs sheet); returns its id, columns and a preview. Censoring columns: 0 = failed, 1 = still running."""
     user, db = _caller(ctx), _db()
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
-    _cap(db, user, "datasets", "datasets")
+    split = (dataset_col or "").strip()
+    if not split:
+        _cap(db, user, "datasets", "datasets")
     upload, sheet_header = None, None
     if upload_id is not None:
         upload, text, sheet_header = _upload_table(db, user["uid"], upload_id, sheet, 0 if no_header else None)
@@ -3269,6 +3303,9 @@ def upload_dataset(
         apply = guess == 0 if no_header is None else bool(no_header)
         if apply and no_header is None:
             hint = fitting.HEADER_HINT
+    if split:
+        return _split_upload(db, user, name.strip(), datasets_service.normalize_pasted(text, apply), split,
+                             upload, guess, hint)
     ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text, apply),
                                          user["uid"])
     if upload is not None:
@@ -3276,6 +3313,27 @@ def upload_dataset(
     out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
            "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/{ds.id}"),
            "header_guess": guess}
+    if hint:
+        out["hint"] = hint
+    return out
+
+
+def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, hint) -> dict[str, Any]:
+    """upload_dataset with dataset_col: one dataset per value of the column, all or nothing against the cap."""
+    try:
+        wanted = datasets_service.count_new_parts(db, data, column, user["uid"])
+        if wanted:
+            _cap(db, user, "datasets", "datasets", n=wanted)
+        made, blank = datasets_service.create_split(db, data, column, user["uid"], name)
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
+    out = {"datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, "url": _url(f"/data/{d.id}"),
+                         **({"reused": True} if reused else {})} for d, reused in made],
+           "columns": [c["name"] for c in made[0][0].columns], "header_guess": guess}
+    if blank:
+        out["left_out"] = f"{blank} row{'' if blank == 1 else 's'} with no {column} left out."
     if hint:
         out["hint"] = hint
     return out
@@ -3485,13 +3543,27 @@ class BlockCosts(BaseModel):
         "Purchase price, once. analyse rbd_cheapest_design copies the blocks that have one."))
 
 
+class PreventiveRestoration(BaseModel):
+    """What a fixed-interval task leaves the unit as (Kijima virtual age)."""
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["as_new", "kijima1", "kijima2"] = Field(description=(
+        "as_new = renewed; kijima1 = each task removes part of the age gained since the last one; kijima2 = "
+        "part of the whole age."))
+    q: Optional[float] = Field(None, ge=0, le=1, description=(
+        "kijima1/kijima2: the share of the age left after a task (0 = as new, 1 = as before)."))
+
+
 class Preventive(BaseModel):
     model_config = ConfigDict(extra="forbid")
     policy: Literal["age", "block", "condition"] = Field("age", description=(
         "age = replaced at this age (a failure restarts the clock); block = at every multiple of the interval; "
         "condition = inspected every interval (in no time) and replaced when its chance of failing before the "
         "next inspection exceeds threshold."))
-    interval: float = Field(gt=0, description="Replacement interval (age/block) or inspection interval (condition).")
+    interval: Optional[float] = Field(None, gt=0, description=(
+        "Replacement interval (age/block) or inspection interval (condition). Give this or operating_interval."))
+    operating_interval: Optional[float] = Field(None, gt=0, description=(
+        "Instead of interval: the interval in the block's operating time, turned into the diagram's clock "
+        "through the block's duty (needs duty)."))
     duration: Optional[float] = Field(None, ge=0, description="Time off-line per replacement; 0/omit = instant.")
     cost: Optional[Cost] = Field(None, description="Per replacement.")
     threshold: Optional[float] = Field(None, ge=0, le=1, description=(
@@ -3501,6 +3573,12 @@ class Preventive(BaseModel):
     opportunity: Optional[float] = Field(None, ge=0, description=(
         "age only, with maintenance_group: renewed early at a stop of its group once at least this old "
         "(0 to interval)."))
+    restoration: Optional[PreventiveRestoration] = Field(None, description=(
+        "age or block: what each task leaves the unit as when it isn't renewed; omit = as good as new."))
+    replace_every: Optional[int] = Field(None, ge=1, description=(
+        "With restoration: every this many tasks is a full replacement (as new) instead."))
+    replacement_cost: Optional[float] = Field(None, ge=0, description=(
+        "With replace_every: the cost of each full replacement; omit = 0."))
 
 
 class ProofTest(BaseModel):
@@ -3618,6 +3696,8 @@ class RbdNode(BaseModel):
     repair_one_at_a_time: Optional[bool] = Field(None, description=(
         "Repairable standby group: one repairer of its own, so its failed units are repaired one at a time "
         "(otherwise each failed unit is a job for the diagram's repair crews). No costs on such a group."))
+    duty: Optional[float] = Field(None, gt=0, le=1, description=(
+        "Repairable component: the share of the time it runs; its model is then a life in operating time."))
     repair_quality: Optional[RepairQuality] = Field(None, description=(
         "Repairable component: how good each repair is — imperfect repair (Kijima I/II with q) and replacement "
         "at the N-th failure. Such a block has no exact long-run figures: analyse rbd simulates them (and "
@@ -3959,13 +4039,14 @@ class UpdateNodeOp(_Op):
     maintenance_group: Optional[str] = None
     crew_priority: Optional[float] = None
     repair_one_at_a_time: Optional[bool] = None
+    duty: Optional[float] = Field(None, gt=0, le=1)
     repair_quality: Optional[RepairQuality] = Field(None, description="Replaces the block's repair quality.")
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description="Replaces the capacity.")
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Replaces the block's covariate schedules (#52; see change rbd_create's node)."))
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
                                  "instant_repair", "repair_one_at_a_time", "repair_quality", "capacity",
-                                 "covariate_schedules"]]] = Field(
+                                 "covariate_schedules", "duty"]]] = Field(
         None, description="Remove these block settings.")
 
 
@@ -4205,6 +4286,7 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None,
         "curve": _downsample(t, sf),
         "importance": {
             **({"time": importance["time"]} if "time" in importance else {}),
+            **({"time_basis": importance["time_basis"]} if "time_basis" in importance else {}),
             **{k: _labelled(v, labels) for k, v in importance.items() if isinstance(v, dict)},
         },
         "structure": result.get("structure"),
@@ -4240,6 +4322,8 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
     if band:
         out["confidence"] = {
             "level": band.get("level"), "n_draws": band.get("n_draws"),
+            # Lives (MTTF, B-lives, design life): quote `bound`, the one-sided lower bound at `level`.
+            "lives": "quote bound (one-sided lower at level); lower-upper is the two-sided interval",
             "mttf": band.get("mttf"), "b_life": band.get("blife"),
             **({"design_life": band["design_life"]} if "design_life" in band else {}),
             # Several targets from the same draws (#325): B-lives and reliability at times.
@@ -4591,6 +4675,10 @@ def analyze_rbd(
     target_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description=(
         "Non-repairable: the design life at this reliability, e.g. 0.9 — the time the system reliability "
         "falls to it (from now with current_state)."))] = None,
+    evaluate_at: Annotated[Optional[float], Field(gt=0, description=(
+        "Non-repairable: the time (diagram unit) to rank importance at, e.g. the mission the user asks about. "
+        "Default: where the system reliability falls to 90% (importance.time_basis says which). The ranking "
+        "can change with time."))] = None,
     confidence: Annotated[Optional[float], Field(ge=0.5, lt=1, description=(
         "Non-repairable: also give confidence intervals at this level (e.g. 0.9) on the MTTF, B-lives and "
         "design life, from the parameter uncertainty of blocks that use saved fitted models; with `times` "
@@ -4642,9 +4730,10 @@ def analyze_rbd(
         raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
                         "(analysed for availability). Drop them — t_max sets the window (and the simulated "
                         "horizon); current_state starts it from now.")
-    if graph.get("repairable") and (target_reliability is not None or confidence is not None):
-        raise ToolError("target_reliability and confidence apply to non-repairable diagrams; this one is "
-                        "repairable (analysed for availability).")
+    if graph.get("repairable") and (target_reliability is not None or confidence is not None
+                                    or evaluate_at is not None):
+        raise ToolError("target_reliability, confidence and evaluate_at apply to non-repairable diagrams; this "
+                        "one is repairable (analysed for availability).")
     if discount_rate is not None and not graph.get("repairable"):
         raise ToolError("discount_rate prices a repairable diagram's total cost of ownership; this diagram is "
                         "non-repairable (analysed for reliability) and has no costs.")
@@ -4663,9 +4752,10 @@ def analyze_rbd(
         head["warnings"] = design
 
     if rbd_network.is_network(graph):  # #160: two-terminal reliability of an undirected network
-        if conditional_age is not None or current_state or target_reliability is not None or confidence is not None:
-            raise ToolError("conditional_age, current_state, target_reliability and confidence apply to block "
-                            "diagrams; this one is a network (its terminals' connection reliability). Drop them.")
+        if (conditional_age is not None or current_state or target_reliability is not None or confidence is not None
+                or evaluate_at is not None):
+            raise ToolError("conditional_age, current_state, target_reliability, confidence and evaluate_at apply "
+                            "to block diagrams; this one is a network (its terminals' connection reliability). Drop them.")
         result = rbd_network.analyze_for_owner(db, graph, owners, t_max=t_max, at_times=times)
         out = {**head, "available": True, **rbd_network.agent_summary(result)}
         if summary_only:
@@ -4753,7 +4843,7 @@ def analyze_rbd(
                  if current_state else None)
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
                                             at_times=times, current_state=state,
-                                            target_reliability=target_reliability,
+                                            target_reliability=target_reliability, evaluate_at=evaluate_at,
                                             band=({"level": confidence, "b_lives": b_lives,
                                                    "times": [t for t in times or [] if t > 0][:8] or None}
                                                   if confidence is not None else None))
@@ -4958,7 +5048,9 @@ def analyse_rbd_mission(
             try:
                 got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False)
                 rows.append({**rbd_missions.summary(graph, m), "mission_reliability": got["reliability"],
-                             **({"needs": got["needs"]} if got.get("needs") else {})})
+                             **({"needs": got["needs"]} if got.get("needs") else {}),
+                             **({"placeholders": [p["label"] for p in got["placeholders"]],
+                                 "note": rbd_phases.placeholder_note(got)} if got.get("placeholders") else {})})
             except AnalysisError as exc:
                 rows.append({**rbd_missions.summary(graph, m), "message": str(exc)})
         return {"rbd_id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "", "missions": rows,
@@ -5010,8 +5102,8 @@ def save_rbd_mission(
     except (rbd_missions.MissionError, rbd_graph.GraphError) as exc:
         raise ToolError(f"Nothing was saved — {exc}") from None
     try:
-        saved = rbds_service.save_rbd(db, rbd.name, graph, uid, rbd_id=rbd.id,
-                                      expected_updated_at=rbd.updated_at.isoformat())
+        saved = rbds_service.save_rbd(db, rbd_missions.rbd_name_after(rbd.name, rbd.graph or {}, graph), graph, uid,
+                                      rbd_id=rbd.id, expected_updated_at=rbd.updated_at.isoformat())
     except access_service.EditConflict:
         raise ToolError(f"“{rbd.name}” was saved by someone else meanwhile. Nothing was saved: retry.") from None
     out = {**_rbd_brief(saved), "missions": [rbd_missions.summary(graph, m) for m in rbd_missions.missions_of(graph)]}
@@ -5034,6 +5126,37 @@ def export_rbd_python(
     # The same pinned installs the script's own header lists (git tags, and
     # RePyability with --no-deps) — PyPI's releases lag behind.
     return {"filename": filename, "script": source, "run": rbd_export.run_command(filename)}
+
+
+def export_model_python(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="A model id from list kind models: any kind.")],
+) -> dict[str, Any]:
+    """A standalone SurPyval script that refits the model from its data (embedded) and prints the numbers its
+    page shows, with the command to run it. Free."""
+    from backend.services import alt_export, degradation_export, model_export, recurrent_export
+    from backend.services import degradation as degradation_service
+
+    user, db = _caller(ctx), _db()
+    owners = _owners(user["uid"])
+    try:
+        m = models_service.get_model(db, model_id, owners)
+        if m is not None and m.kind == joint_service.KIND:
+            filename, source = joint_service.export_python(db, m, [*owners, m.owner_id])
+        elif m is not None:
+            filename, source = model_export.export_python(db, m)
+        elif (doc := recurrent_service.get_model(db, model_id, owners)) is not None:
+            filename, source = recurrent_export.export_python(db, doc, owners)
+        elif (doc := alt_service.get_model(db, model_id, owners)) is not None:
+            filename, source = alt_export.export_python(db, doc, owners)
+        elif (doc := degradation_service.get_model(db, model_id, owners)) is not None:
+            filename, source = degradation_export.export_python(db, doc, owners)
+        else:
+            raise ToolError("Model not found.")
+    except FitError as exc:
+        raise ToolError(client_message(exc)) from None
+    return {"filename": filename, "script": source,
+            "run": f'pip install "surpyval=={rbd_export.detect_versions()["surpyval"]}" && python {filename}'}
 
 
 def export_rbd_json(
@@ -5070,7 +5193,8 @@ _COSTS_HOW = {
 #: The app's pointers in a refusal, which an agent can't follow (#265): it
 #: gets the change rbd_edit ops instead.
 _APP_POINTERS = re.compile(r"\s*\((?:in its Cost & maintenance section|double-click (?:it|a block) → Cost & "
-                           r"maintenance)\)")
+                           r"maintenance|set it in the builder's Maintenance plan|the builder's Maintenance plan, "
+                           r"or double-click a block for its costs)\)")
 
 
 def _without_app_pointers(message: str) -> str:
@@ -5271,9 +5395,8 @@ def rbd_fault_tree(
     ctx: Context,
     rbd_id: Annotated[str, Field(description="An RBD id from list kind rbds.")],
     t: Annotated[Optional[float], Field(gt=0, description=(
-        "Non-repairable diagrams: the time (diagram unit) the tree is evaluated at; default the calculator's "
-        "design point, where the system reliability is about 90%. Ignored for a repairable diagram (steady "
-        "state)."))] = None,
+        "Non-repairable diagrams: the time (diagram unit) the tree is evaluated at; default the time the "
+        "system reliability falls to 90%. Ignored for a repairable diagram (steady state)."))] = None,
     max_cut_sets: Annotated[int, Field(ge=1, le=100, description="Cut sets returned, most likely first.")] = 20,
     max_events: Annotated[int, Field(ge=1, le=100, description=(
         "Basic events returned with their importance, most critical first."))] = 15,
@@ -6103,7 +6226,10 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
         r = m.results or {}
         # The fit's offset / LFP fraction / zero inflation, as the app's
         # calculators pass them: without them the answer is for another model.
-        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": _plain_params(r),
+        # Each parameter's fitted interval rides along, so the answers carry their bounds and ranges.
+        params = [{**p, **({"ci": q["ci"]} if isinstance(q.get("ci"), list) else {})}
+                  for p, q in zip(_plain_params(r), r.get("params") or [])]
+        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": params,
                 "extras": r.get("extras") or None, "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
@@ -6136,7 +6262,7 @@ def _sig(x: Optional[float]) -> Optional[float]:
 
 
 def _weibull_beta_ci(db, uid: str, model_id: Optional[str], inputs: dict) -> Optional[tuple[float, float, float]]:
-    """``(beta, lower, upper)``: a saved Weibull model's shape and its fit's 95%
+    """``(beta, lower, upper)``: a saved Weibull model's shape and its fit's 90%
     interval — None for inline params, another distribution, or a fit that
     gave β no interval."""
     if not model_id or inputs.get("distribution_id") != "weibull":
@@ -6151,7 +6277,7 @@ def _weibull_beta_ci(db, uid: str, model_id: Optional[str], inputs: dict) -> Opt
 
 def _shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, costs: dict, point: dict) -> dict:
     """How far the replacement answer moves across a fitted Weibull's shape
-    interval (#189): the optimum at each end of β's 95% CI, α held at its
+    interval (#189): the optimum at each end of β's 90% CI, α held at its
     estimate. A point estimate can read as firm wear-out when the data only
     weakly show it — at β ≈ 1 preventive replacement doesn't pay. Only for a
     saved Weibull model whose fit gave β an interval; {} otherwise."""
@@ -6172,20 +6298,20 @@ def _shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, cost
                 "savings": _sig(r["savings"])}
 
     low, high = at(lo), at(hi)
-    block = {"beta": _sig(beta_hat), "beta_ci_95": [_sig(lo), _sig(hi)],
+    block = {"beta": _sig(beta_hat), "beta_ci": [_sig(lo), _sig(hi)],
              "held_fixed": "alpha at its estimate", "at_beta_lower": low, "at_beta_upper": high}
     out: dict[str, Any] = {"shape_uncertainty": block}
     if not point.get("beneficial"):
         return out
     if lo <= 1:
         out["uncertainty_note"] = (
-            f"The shape's 95% interval [{lo:.3g}, {hi:.3g}] includes 1: the data don't clearly show wear-out. "
+            f"The shape's 90% interval [{lo:.3g}, {hi:.3g}] includes 1: the data don't clearly show wear-out. "
             "If failures are close to random, preventive replacement saves little or nothing — treat this "
             "recommendation as tentative and say so.")
     elif low is not None and (not low["beneficial"] or (low["savings"] or 0) < 0.5 * point["savings"]):
         saving = f"saves {low['savings']:.0%}" if low["beneficial"] else "doesn't pay"
         out["uncertainty_note"] = (
-            f"The shape's 95% interval reaches down to {lo:.3g}: the data only weakly show wear-out. At that "
+            f"The shape's 90% interval reaches down to {lo:.3g}: the data only weakly show wear-out. At that "
             f"end preventive replacement {saving} (vs {point['savings']:.0%} at the estimate), so the "
             "recommendation is less firm than the point estimate suggests — say so.")
     return out
@@ -6200,14 +6326,19 @@ def optimal_replacement(
     params: _PARAMS = None,
     unit: _UNIT = None,
     include_curve: _INCLUDE_CURVE = False,
+    use_per_year: Annotated[Optional[float], Field(gt=0, description="Use a unit runs a year (model units): adds "
+                                                                     "yearly, the saving a year.")] = None,
+    units: Annotated[Optional[float], Field(gt=0, description="Units in the fleet: the saving a year for all.")] = None,
 ) -> dict[str, Any]:
     """The cost-optimal age-replacement interval for a component with a known life
-    model; beneficial=false means run to failure is cheaper. For a saved Weibull fitted to data,
-    shape_uncertainty answers at each end of β's 95% interval: relay uncertainty_note when present."""
+    model; beneficial=false means run to failure is cheaper; block is the block-replacement alternative. For a saved
+    Weibull fitted to data, shape_uncertainty answers at each end of β's 90% interval: relay uncertainty_note when
+    present."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
     costs = {"planned_cost": planned_cost, "unplanned_cost": unplanned_cost}
-    out = strategy_store.compute("optimal_replacement", {**inputs, **costs})
+    out = strategy_store.compute("optimal_replacement", {**inputs, **costs, "use_per_year": use_per_year,
+                                                         "units": units})
     out.update(_shape_uncertainty(db, user["uid"], model_id, inputs, costs, out))
     return _maybe_curve(out, include_curve)
 
@@ -6329,13 +6460,19 @@ def failure_finding_interval(
     distribution_id: _DIST_ID = None,
     params: _PARAMS = None,
     unit: _UNIT = None,
+    test_duration: Annotated[Optional[float], Field(ge=0, description="Time off-line per test (model units).")] = None,
+    test_cost: Annotated[Optional[float], Field(ge=0, description="Cost per test.")] = None,
+    renewed_at_test: Annotated[bool, Field(description="Each test renews the device (overhauled or replaced); "
+                                                       "false: a working one is left as it was.")] = True,
 ) -> dict[str, Any]:
     """The proof-test interval keeping a hidden protective function (relief valve,
-    trip, standby unit) at a target availability. For a saved Weibull fitted to data, shape_uncertainty answers at
+    trip, standby unit) at a target availability, from the model's curve; interval_bound is the cautious 90%
+    one-sided end. For a saved Weibull fitted to data, shape_uncertainty answers at
     each end of β's interval: relay uncertainty_note (the shorter interval is the safe side)."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
-    target = {"target_availability": target_availability}
+    target = {"target_availability": target_availability, "test_duration": test_duration, "test_cost": test_cost,
+              "renewed_at_test": renewed_at_test}
     out = strategy_store.compute("failure_finding", {**inputs, **target})
     out.update(_ffi_shape_uncertainty(db, user["uid"], model_id, inputs, target, out))
     return out
@@ -6349,7 +6486,7 @@ _FFI_SHORTER = 0.8
 def _ffi_shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, target: dict,
                            point: dict) -> dict:
     """``analyse optimal_replacement``'s shape treatment (#189) for the failure-finding
-    interval: the interval at each end of a fitted Weibull's β 95% CI, α held
+    interval: the interval at each end of a fitted Weibull's β 90% CI, α held
     at its estimate, and a note when either end asks for a test interval at
     least 20% shorter than the estimate's — testing less often than needed is
     the unsafe side for a hidden protective function. {} for inline params or
@@ -6370,7 +6507,7 @@ def _ffi_shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, 
         return {"beta": _sig(b), "interval": _sig(r["interval"]), "mttf": _sig(r["mttf"])}
 
     low, high = at(lo), at(hi)
-    block = {"beta": _sig(beta_hat), "beta_ci_95": [_sig(lo), _sig(hi)],
+    block = {"beta": _sig(beta_hat), "beta_ci": [_sig(lo), _sig(hi)],
              "held_fixed": "alpha at its estimate", "at_beta_lower": low, "at_beta_upper": high}
     out: dict[str, Any] = {"shape_uncertainty": block}
     ends = [e for e in (low, high) if e is not None and e["interval"] is not None]
@@ -6378,7 +6515,7 @@ def _ffi_shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, 
     if shortest is not None and point.get("interval") and shortest["interval"] < _FFI_SHORTER * point["interval"]:
         u = f" {unit_in_text(point['unit'])}" if point.get("unit") else ""
         out["uncertainty_note"] = (
-            f"Across the shape's 95% interval [{lo:.3g}, {hi:.3g}] the interval could need to be as short as "
+            f"Across the shape's 90% interval [{lo:.3g}, {hi:.3g}] the interval could need to be as short as "
             f"{shortest['interval']:.3g}{u} (β = {shortest['beta']:.3g}) vs {point['interval']:.3g}{u} at the "
             "estimate. For a protective function, testing too rarely is the unsafe side: say the interval is "
             "uncertain and consider the shorter one.")
@@ -6408,7 +6545,7 @@ def plan_demonstration_test(
     reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Reliability to demonstrate over one "
                                                                          "mission, e.g. 0.95. Needed unless "
                                                                          "method='mtbf'.")] = None,
-    confidence: Annotated[float, Field(gt=0, lt=1, description="Confidence level, e.g. 0.9 or 0.95.")] = 0.95,
+    confidence: Annotated[float, Field(gt=0, lt=1, description="Confidence level, e.g. 0.9 (default) or 0.95.")] = 0.90,
     mission_time: Annotated[Optional[float], Field(gt=0, description="The mission (time, cycles) the "
                                                                      "reliability is over, e.g. 1000. Optional: "
                                                                      "without it the plan is in missions.")] = None,
@@ -6442,11 +6579,12 @@ def plan_demonstration_test(
         "Optional: a B-life requirement instead of `reliability` — the percent failed, e.g. 10 for "
         "'B10 >= mission_time' (= reliability 0.9 over mission_time, which is then required)."))] = None,
     shape_model_id: Annotated[Optional[str], Field(description=(
-        "Optional: a saved Weibull model (list kind models) to take the shape β from, instead of `shape`. The "
-        "plan then reports shape_sensitivity across β's 95% interval, with a warning when β is too poorly "
+        "Optional: a saved Weibull model (list kind models, or an accelerated life one) to take the shape β from, "
+        "instead of `shape`. The "
+        "plan then reports shape_sensitivity across β's 90% interval, with a warning when β is too poorly "
         "known for the plan."))] = None,
     shape_bound: Annotated[Literal["estimate", "lower"], Field(description=(
-        "With shape_model_id: plan with β's estimate, or its 95% lower bound (conservative when each unit "
+        "With shape_model_id: plan with β's estimate, or its 90% interval's lower end (conservative when each unit "
         "runs longer than the mission)."))] = "estimate",
 ) -> dict[str, Any]:
     """Plan a reliability demonstration test: units, test time per unit and failures
@@ -6477,6 +6615,26 @@ _DEMO_ARG = {name: p.annotation for name, p in inspect.signature(plan_demonstrat
 _PCT = Annotated[Optional[float], Field(gt=0, lt=1, description="A chance, e.g. 0.8.")]
 
 
+#: The plan actions' optional Download as Python.
+_PYTHON = Annotated[bool, Field(description=(
+    "Also return the plan as a standalone SurPyval script (script: filename, script, run), as the app's "
+    "Download as Python."))]
+
+
+def _run_plan(plan: str, python: bool, /, **kw) -> dict:
+    """A test-planning calculator's answer, with its script when ``python``
+    (positional-only: the comparison plan has an argument called ``kind``)."""
+    from backend.services import test_plan_export
+
+    out = test_plan_export.CALCULATORS[plan](**kw)
+    if python:
+        filename, source = test_plan_export.export_python(plan, kw)
+        out = {**out, "script": {"filename": filename, "script": source,
+                                 "run": f'pip install "surpyval=={rbd_export.detect_versions()["surpyval"]}" '
+                                        f"&& python {filename}"}}
+    return out
+
+
 def _lean_plan(out: dict, drop: tuple = ()) -> dict:
     """A test plan without the page's chart arrays."""
     return {k: v for k, v in out.items() if k not in ("oc_curve", "curve", *drop) and v is not None}
@@ -6498,12 +6656,13 @@ def plan_sequential_test(
                                                                     "now.")] = None,
     time_seen: Annotated[Optional[float], Field(ge=0, description="Total test time so far (method mtbf).")] = None,
     units_seen: Annotated[Optional[int], Field(ge=0, description="Units tested so far (method attribute).")] = None,
+    python: _PYTHON = False,
 ) -> dict[str, Any]:
     """A truncated sequential test of an MTBF or a reliability against a good design: accept/reject lines,
     both risks as run, average length against the fixed-length test; with failures_seen, accept, reject or
     continue."""
     _caller(ctx)
-    out = test_planning_service.sequential_test(
+    out = _run_plan("sequential", python,
         method=method, mtbf=mtbf, good_mtbf=design_mtbf, reliability=reliability,
         good_reliability=design_reliability, confidence=confidence, producer_risk=producer_risk, unit=unit,
         failures_seen=failures_seen, time_seen=time_seen, units_seen=units_seen)
@@ -6542,11 +6701,12 @@ def plan_life_test(
     b_life: Annotated[Optional[float], Field(gt=0, lt=100)] = 10,
     confidence: _DEMO_ARG["confidence"] = 0.9,
     unit: _UNIT = None,
+    python: _PYTHON = False,
 ) -> dict[str, Any]:
     """How precisely a life test estimates a B-life or the mean from planning values, or the units or test
     length for a precision."""
     _caller(ctx)
-    out = test_planning_service.life_test(
+    out = _run_plan("life", python,
         solve_for=solve_for, distribution=distribution, params=[p.model_dump() for p in params], units=units,
         precision=within_pct, test_end=test_end, censor_time=censor_time, failure_fraction=failure_fraction,
         quantity=quantity, b_life=b_life, confidence=confidence, unit=unit)
@@ -6575,12 +6735,13 @@ def plan_accelerated_test(
     b_life: Annotated[Optional[float], Field(gt=0, lt=100)] = 10,
     confidence: _DEMO_ARG["confidence"] = 0.9,
     unit: _UNIT = None,
+    python: _PYTHON = False,
 ) -> dict[str, Any]:
     """An accelerated life test plan from planning values: stresses, units at each, expected failures and the
     B-life's precision at the use stress (or the precision of your own test)."""
     _caller(ctx)
     check = stresses is not None or units_at is not None
-    out = test_planning_service.accelerated_test(
+    out = _run_plan("accelerated", python,
         mode="check" if check else "plan", distribution=distribution, life_model=life_model,
         life_params=[p.model_dump() for p in life_params], shape=shape, use_stress=use_stress[0],
         high_stress=high_stress, units=units, censor_time=censor_time, levels=levels, stresses=stresses,
@@ -6606,14 +6767,15 @@ def plan_comparison(
     rate_ratio: Annotated[Optional[float], Field(gt=0, description="The change to detect: rate after over "
                                                                    "before, e.g. 0.5.")] = None,
     power: _PCT = 0.8,
-    confidence: _DEMO_ARG["confidence"] = 0.95,
+    confidence: _DEMO_ARG["confidence"] = 0.90,
     one_sided: Optional[bool] = False,
     unit: _UNIT = None,
+    python: _PYTHON = False,
 ) -> dict[str, Any]:
     """Did the change work? A log-rank test's failures, units and power, or a before/after failure-rate
     test's exposure, smallest detectable change and power."""
     _caller(ctx)
-    out = test_planning_service.comparison(
+    out = _run_plan("comparison", python,
         kind=kind, solve_for=solve_for, hazard_ratio=hazard_ratio, event_probability=event_probability,
         units_per_group=units_per_group, power=power, confidence=confidence, one_sided=bool(one_sided),
         failures_before=failures_before, exposure_before=exposure_before, exposure_after=exposure_after,
@@ -6623,11 +6785,15 @@ def plan_comparison(
 
 def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
     """A saved Weibull model's β for a demonstration plan (#295): ``shape``
-    (the estimate or its 95% lower bound), ``shape_interval``, ``shape_model``
+    (the estimate or its 90% interval's lower end), ``shape_interval``, ``shape_model``
     (its name) and its ``unit``."""
     m = models_service.get_model(db, model_id, _owners(uid))
     if m is None:
-        raise ToolError("Model not found.")
+        # An accelerated life fit's Weibull shape is the same at every stress, use included.
+        alt_doc = alt_service.get_model(db, model_id, _owners(uid))
+        if alt_doc is None:
+            raise ToolError("Model not found.")
+        return _demo_shape_from_alt(alt_doc, bound)
     r = m.results or {}
     if m.kind != "distribution" or (r.get("distribution_id") or m.distribution_id) != "weibull":
         raise ToolError(f"“{m.name}” isn't a Weibull non-repairable model, so it has no shape β to plan with.")
@@ -6641,6 +6807,25 @@ def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
     est, lo, hi = found
     return {"shape": lo if bound == "lower" else est, "shape_interval": [lo, hi], "shape_model": m.name,
             "unit": r.get("unit") or ""}
+
+
+def _demo_shape_from_alt(doc, bound: str) -> dict:
+    """An accelerated life model's Weibull β (and its 90% interval) for a
+    demonstration plan, as :func:`_demo_shape_from_model` gives a life model's."""
+    r = alt_fit.at_level(doc.results or {})
+    if r.get("distribution_id") != "weibull":
+        raise ToolError(f"“{doc.name}” isn't a Weibull accelerated life model, so it has no shape β to plan with.")
+    beta = next((p for p in r.get("params") or [] if p.get("name") == "beta"), None)
+    if beta is None or beta.get("value") is None:
+        raise ToolError(f"“{doc.name}” has no shape β.")
+    ci = beta.get("ci")
+    if not (isinstance(ci, (list, tuple)) and len(ci) == 2 and all(v is not None for v in ci)):
+        if bound == "lower":
+            raise ToolError(f"“{doc.name}” has no interval on β, so it has no lower bound: use shape_bound='estimate'.")
+        return {"shape": float(beta["value"]), "shape_model": doc.name, "unit": r.get("unit") or ""}
+    lo, hi = float(ci[0]), float(ci[1])
+    return {"shape": lo if bound == "lower" else float(beta["value"]), "shape_interval": [lo, hi],
+            "shape_model": doc.name, "unit": r.get("unit") or ""}
 
 
 def optimal_overhaul(
@@ -6673,7 +6858,7 @@ def optimal_overhaul(
 def _overhaul_shape_uncertainty(db, doc, cost_repair: float, cost_overhaul: float, t_max: Optional[float],
                                 point: dict) -> dict:
     """``analyse optimal_replacement``'s shape treatment (#189) for the overhaul
-    interval: the optimum at each end of a Crow-AMSAA fit's β 95% interval,
+    interval: the optimum at each end of a Crow-AMSAA fit's β 90% interval,
     α held at its estimate, and a note when the interval includes 1 (the data
     don't clearly show deterioration, and without it an overhaul never pays)
     or the saving at the lower end is under half the estimate's. Each end is
@@ -6702,7 +6887,7 @@ def _overhaul_shape_uncertainty(db, doc, cost_repair: float, cost_overhaul: floa
                 "horizon": _sig((r.get("never_overhaul") or {}).get("horizon")) if opt else None}
 
     low, high = at(lo), at(hi)
-    block = {"beta": _sig(found["beta"]), "beta_ci_95": [_sig(lo), _sig(hi)],
+    block = {"beta": _sig(found["beta"]), "beta_ci": [_sig(lo), _sig(hi)],
              "held_fixed": "alpha at its estimate", "at_beta_lower": low, "at_beta_upper": high}
     out: dict[str, Any] = {"shape_uncertainty": block}
     saving = point.get("saving_pct")
@@ -6710,13 +6895,13 @@ def _overhaul_shape_uncertainty(db, doc, cost_repair: float, cost_overhaul: floa
         return out
     if lo <= 1:
         out["uncertainty_note"] = (
-            f"The growth shape's 95% interval [{lo:.3g}, {hi:.3g}] includes 1: the data don't clearly show the "
+            f"The growth shape's 90% interval [{lo:.3g}, {hi:.3g}] includes 1: the data don't clearly show the "
             "system deteriorating. If its failure rate isn't rising, an overhaul doesn't pay — treat this "
             "interval as tentative and say so.")
     elif low is not None and saving and (not low["pays"] or (low["saving_pct"] or 0) < 0.5 * saving):
         what = f"saves {low['saving_pct']:.3g}%" if low["pays"] else "doesn't pay"
         out["uncertainty_note"] = (
-            f"The growth shape's 95% interval reaches down to {lo:.3g}: the data only weakly show deterioration. "
+            f"The growth shape's 90% interval reaches down to {lo:.3g}: the data only weakly show deterioration. "
             f"At that end overhauling {what} (vs {saving:.3g}% at the estimate), so the recommendation is less "
             "firm than the point estimate suggests — say so.")
     return out
@@ -6903,7 +7088,7 @@ def fit_recurrent_model(
 ) -> dict[str, Any]:
     """Fit a recurrent-event (repairable-system) model to failure histories, many
     failures per system, and save it (save=false: report only). Inline times + systems or a dataset. Reports the
-    growth verdict from β's 95% interval, ROCOF and MTBF with bounds; pi_nhpp each covariate's effect; imperfect
+    growth verdict from β's 90% interval, ROCOF and MTBF with bounds; pi_nhpp each covariate's effect; imperfect
     repair the repair effectiveness, its test and each system's next failure; causes each cause's growth."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
@@ -7035,6 +7220,12 @@ def compare_groups(
     c_invert: Annotated[bool, Field(description=(
         "True when the censoring flags use the opposite convention (1 = failed, 0 = running); Reliafy flips "
         "them before the tests."))] = False,
+    c_map: Annotated[Optional[dict[str, int]], Field(description=(
+        "A status column of words: what each means, 0 = failed, 1 = still running ({\"Failed\": 0, "
+        "\"Removed, OK\": 1}). Without it, words are read by their meaning where they can be."))] = None,
+    all_failed: Annotated[bool, Field(description=(
+        "With dataset_id and no censor_column: every row really failed. Otherwise a status column the "
+        "dataset has is read, so units still running aren't counted as failures."))] = False,
     groups: Annotated[Optional[list[str]], Field(description="Only these groups, in this order (default: "
                                                              "all, at most 12).")] = None,
     reference: Annotated[Optional[str], Field(description="Group the RMST differences are measured from "
@@ -7047,7 +7238,7 @@ def compare_groups(
 ) -> dict[str, Any]:
     """Is A better than B? Split life data by a column (or a group per time) and compare
     without fitting: the log-rank test (and Gehan-Wilcoxon, Tarone-Ware), each group's restricted mean life to
-    tau with 95% CIs and the difference from the reference, Gray's test per failure mode, and a verdict to relay.
+    tau with 90% CIs and the difference from the reference, Gray's test per failure mode, and a verdict to relay.
     Right-censored only (0 = failed, 1 = still running; c_invert flips)."""
     user, db = _caller(ctx), _db()
     if (data is None) == (dataset_id is None):
@@ -7091,11 +7282,18 @@ def compare_groups(
         df = datasets_service.load_dataframe(dataset)
         label = group_column
         url = _url(f"/data/{dataset.id}?compare={quote(group_column)}")
+    hint = None
+    if data is None:
+        censor_column, hint, flip = compare_groups_service.auto_status(
+            df, time_column=time_column, group_column=group_column, censor_column=censor_column,
+            cause_column=cause_column, all_failed=all_failed)
+        c_invert = c_invert or flip
     prepared = compare_groups_service.prepare(
         df, time_column=time_column, group_column=group_column, censor_column=censor_column,
-        count_column=count_column, cause_column=cause_column, c_invert=c_invert,
+        count_column=count_column, cause_column=cause_column, c_invert=c_invert, c_map=c_map,
         # Inline data: errors name the arguments, not the frame's columns (#211).
         names={"c": "`censored`", "n": "`counts`", "e": "`cause`"} if data is not None else None)
+    prepared["status_hint"] = hint
     result = compare_groups_service.compare_groups(
         prepared, groups=groups, reference=reference, tau=tau, unit=unit, group_column=label)
     verdict = result["verdict"]
@@ -7139,8 +7337,16 @@ def fleet_forecast(
         "How many replacement parts to hold, in the fleet's periods: {lead_time, service_level? (default 0.95), "
         "review?, per_failure?, stock?, unit_cost?, repairable? with turnaround?}. Default: the fleet's saved "
         "spares settings."))] = None,
+    strategy: Annotated[dict[str, Any] | None, Field(description=(
+        "What-if maintenance strategy for a renewals fleet: {strategy: run_to_failure or age, replace_at? (the age, "
+        "model units; items already past it are replaced in period 1), failure_cost?, planned_cost?}. Adds "
+        "forecast.strategy: failures, planned replacements, parts and cost per period and per year with 90% "
+        "ranges. Default: the fleet's saved strategy."))] = None,
+    use_model_data: Annotated[bool, Field(description=(
+        "Forecast the units still running in the model's own data (its suspensions, at their ages; a repairable "
+        "model: each system at the end of its record) instead of the fleet's saved items. Nothing is saved."))] = False,
 ) -> dict[str, Any]:
-    """A fleet's live failure forecast: expected failures over the horizon with a P10-P90
+    """A fleet's live failure forecast: expected failures over the horizon with a P5-P95 (90%)
     range, per period and per item (the top 20 unless include_items; item_probabilities adds each item's chance by
     period); regression and ALT fleets at each item's covariates or stress; recurrent fleets count every repeat
     failure. spares adds how many to hold for a lead time and service level. Pro."""
@@ -7151,8 +7357,26 @@ def fleet_forecast(
         raise ToolError("Fleet not found.")
     try:
         opts = fleet_service._clean_spares({**((fleet.settings or {}).get("spares") or {}), **(spares or {})})
+        if strategy and fleet.model_kind != "life":
+            raise ToolError("A maintenance strategy is for a fleet of replaceable items on a plain life model; this "
+                            "fleet's items are repaired, or each runs at its own conditions (first failures).")
+        if strategy:
+            fleet = fleet.model_copy(update={"settings": fleet_service._clean_settings(
+                {**(fleet.settings or {}), **strategy})})
     except fleet_service.FleetValidationError as exc:
         raise ToolError(str(exc)) from None
+    source = None
+    if use_model_data:
+        from backend.services import fleet_items
+
+        try:
+            units = fleet_items.running_units(db, fleet, [*owners, fleet.owner_id])
+            fleet = fleet.model_copy(update={"items": fleet_service._clean_items(units["items"])})
+        except (fleet_items.NoModelData, fleet_service.FleetValidationError) as exc:
+            raise ToolError(str(exc)) from None
+        source = {"items": "model_data", "n_items": len(fleet.items),
+                  **({"note": units["reason"]} if units.get("reason") else {}),
+                  **({"skipped": units["skipped"][:10]} if units.get("skipped") else {})}
     forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id], item_periods=item_probabilities,
                                      spares_opts=opts)
     names = {it.get("id"): it.get("name") for it in fleet.items or []}
@@ -7163,9 +7387,12 @@ def fleet_forecast(
         forecast = {**forecast, "per_item": top,
                     "per_item_note": f"Top {_TOP_ITEMS} of {len(items)} items by expected failures; pass "
                                      "include_items=true for all of them."}
-    return {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
-                      "model_kind": fleet.model_kind, "url": _url(f"/forecasts/{fleet.id}")},
-            "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
+    out = {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
+                     "model_kind": fleet.model_kind, "url": _url(f"/forecasts/{fleet.id}")},
+           "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
+    if source is not None:
+        out["items_source"] = source
+    return out
 
 
 def _alertable_fleet(db, uid: str, fleet_id: str):
@@ -8309,11 +8536,18 @@ def revoke_share_link(
 # "report") and change share_revoke manage it like any other.
 
 _ReportItemKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis",
-                          "fleet", "recurrent_model"]
+                          "fleet", "recurrent_model", "alt_model", "fault_tree", "prediction"]
+# Kinds a report can hold besides those with a link of their own (_SHARE_KINDS).
+_REPORT_ONLY_KINDS = {"alt_model": "alt_models", "fault_tree": "fault_trees",
+                      "prediction": "reliability_predictions"}
+_REPORT_KINDS = {**{k: v for k, v in _SHARE_KINDS.items() if k != "report"}, **_REPORT_ONLY_KINDS}
+_KIND_OF_REPORT_ITEM = {collection: kind for kind, collection in _REPORT_KINDS.items()}
 
 
 class ReportItem(BaseModel):
-    kind: _ReportItemKind = Field(description="The item's kind, as for change share_link.")
+    kind: _ReportItemKind = Field(description="The item's kind, as for change share_link; also alt_model (an "
+                                              "accelerated life model), fault_tree and prediction (a "
+                                              "reliability prediction), which go in a report only.")
     id: str = Field(description="The id of one of the user's own items of that kind, or of a shared sample.")
     note: Optional[str] = Field(default=None, max_length=reports_service.MAX_NOTE,
                                 description="A short note shown above this item's section (plain text).")
@@ -8344,7 +8578,7 @@ def create_report(
     introduction and a note per item, each item as its share page shows it. Same password, expiry and revoke as
     create_link. Write notes from the items' results, quoting their figures as returned. Confirm first."""
     user, db = _caller(ctx), _db()
-    sections = [{"collection": _SHARE_KINDS[it.kind], "artifact_id": it.id, "note": it.note or ""}
+    sections = [{"collection": _REPORT_KINDS[it.kind], "artifact_id": it.id, "note": it.note or ""}
                 for it in items]
     try:
         report = reports_service.create(db, user["uid"], {
@@ -8360,7 +8594,7 @@ def create_report(
     out = {
         **_share_brief(db, link),
         "report_id": report["_id"],
-        "sections": [{"kind": _KIND_OF.get(s["collection"]), "id": s["artifact_id"], "name": s["name"]}
+        "sections": [{"kind": _KIND_OF_REPORT_ITEM.get(s["collection"]), "id": s["artifact_id"], "name": s["name"]}
                      for s in reports_service.public(db, report)["sections"]],
     }
     if link.get("passphrase"):
@@ -9333,6 +9567,7 @@ _A = {  # new tool -> {action: the function it runs}
         "fault_tree": _act(analyse_fault_tree),
         "rbd_allocate_targets": _act(allocate_targets),
         "rbd_system_history": _act(system_history),
+        "model_export_python": _act(export_model_python),
         "rbd_export_python": _act(export_rbd_python),
         "rbd_export_json": _act(export_rbd_json),
         "rbd_mission": _act(analyse_rbd_mission),
@@ -9397,11 +9632,11 @@ _action_tool("list", _READ, "List items", "kind",
              "The user's items of one kind (with samples), what changed, the data library.",
              _A["list"])
 _action_tool("analyse", _READ, "Analyse", "action",
-             "Every calculation, saving nothing: life data, test plans, repairable systems, intervals, fleets, "
-             "RBDs, fault trees.", _A["analyse"], docs={
+             "Every calculation (life, repairable, plans, RBDs); saves nothing.", _A["analyse"], docs={
     "model_id": ("A saved model id (list kind models): non-repairable for reliability_at, check_life_requirement, "
                  "optimal_replacement and failure_finding_interval; ALT for alt_use_level; joint for "
-                 "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul."),
+                 "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul; any for "
+                 "model_export_python."),
     "dataset_id": "A saved dataset (list kind datasets) instead of inline data (fit_per_demand: a row per batch).",
     "censored": ("Per time in data: 0 = failed, 1 = still running, -1 = left-censored, 2 = interval-censored (the "
                  "upper bound in data_right); omit when every time is a failure. compare_groups: 0 and 1 only."),

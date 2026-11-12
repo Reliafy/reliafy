@@ -19,8 +19,9 @@ machine. The baseline becomes a prior with SurPyval's helpers:
   ``prior.from_params(dist, params, within=...)`` (each within 10%, 30% or 60%);
 * a belief about a B-life: ``prior.on_quantities(Weibull, B10=around(...), beta=between(...))``.
 
-The results are credible intervals ("a 90% chance the B10 lies between ..."), never
-confidence bounds. A saved update keeps its recipe (the data and the prior) and is
+The results are credible intervals, never confidence bounds: the parameters' are 90%
+two-sided; the B10 and mean life carry a 90% one-sided lower bound ("we're 90% sure the
+B10 is at least ..."), as every life bound in the app does. A saved update keeps its recipe (the data and the prior) and is
 rebuilt by refitting (``rebuild``), about a third of a second, rather than storing the
 posterior grid (megabytes).
 """
@@ -122,14 +123,23 @@ def baseline_from(db, owners, hidden, spec: dict) -> dict:
     if spec.get("b10"):
         b, s = spec.get("b10") or {}, spec.get("shape") or {}
         v, lo, hi = _f(b.get("value")), _f(b.get("low")), _f(b.get("high"))
+        stated = _f(s.get("low")) is not None and _f(s.get("high")) is not None
         slo, shi = _f(s.get("low")) or 1.2, _f(s.get("high")) or 4.0
         if not (v and lo and hi and 0 < lo < v < hi):
             raise BayesError("Say the B10 as about a value, between a lower and a higher one (low < value < high).")
         if not 0 < slo < shi:
             raise BayesError("The shape's range must be low < high, both above 0.")
-        return {"source": "belief", "name": f"a B10 of about {num(v)} {_unit_word(spec.get('unit'))}".strip(),
+        u = _unit_word(spec.get("unit"))
+        us = f" {u}" if u else ""
+        # The whole prior in words: the B10 with its surprise values, and the
+        # shape, said to be assumed when the person didn't give one.
+        shape_words = (f"shape between {num(slo)} and {num(shi)}" if stated
+                       else f"shape not given, so taken as anywhere from {num(slo)} to {num(shi)}")
+        return {"source": "belief",
+                "name": (f"a B10 of about {num(v)}{us} (surprised under {num(lo)} or over {num(hi)}); "
+                         f"{shape_words}"),
                 "distribution": "weibull", "unit": spec.get("unit") or "", "params": {},
-                "belief": {"b10": [v, lo, hi], "shape": [slo, shi]}}
+                "belief": {"b10": [v, lo, hi], "shape": [slo, shi], "shape_stated": stated}}
     dist = str(spec.get("distribution") or "").lower()
     if dist not in DISTS:
         raise BayesError("Give the baseline as model_id, as distribution (weibull, exponential, lognormal) and "
@@ -434,11 +444,41 @@ def _moved(base: dict, post: list[dict], rows: list[dict], unit: str) -> str:
     return text + "."
 
 
+def chance_at_least(model, p: float, life: float) -> float | None:
+    """The posterior chance that the B-life at ``p`` (0.1 for B10) is at least
+    ``life``: "how likely is it that B10 ≥ 5,000 h?", the requirement question a
+    one-sided bound only answers yes or no. Read off SurPyval's posterior (its
+    grid points and weights, or its draws); None when it has neither."""
+    from surpyval.bayes.prior import quantity_at
+
+    post = getattr(model, "posterior", None) or getattr(getattr(model, "_model", None), "posterior", None)
+    dist = getattr(model, "dist", None)
+    if post is None or dist is None:
+        return None
+    try:
+        pts = np.asarray(post.points, dtype=float)
+        w = np.asarray(post.weights, dtype=float) if post.weights is not None else np.ones(len(pts))
+    except Exception:  # noqa: BLE001 - a posterior given as draws only
+        try:
+            pts = np.asarray(post.draws(k=20000, random_state=20261112), dtype=float)
+            w = np.ones(len(pts))
+        except Exception:  # noqa: BLE001 - no chance without either
+            return None
+    th = {name: pts[:, j] for j, name in enumerate(post.parameter_names)}
+    with np.errstate(all="ignore"):
+        vals = np.asarray(quantity_at(dist, ("q", float(p)), th), dtype=float).ravel()
+    ok = np.isfinite(vals) & np.isfinite(w)
+    if not ok.any() or w[ok].sum() <= 0:
+        return None
+    return _f(float((w[ok] * (vals[ok] >= float(life))).sum() / w[ok].sum()))
+
+
 def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
-           priors=None, subject: str = "the position's best B10") -> tuple[Any, dict, Any]:
+           priors=None, subject: str = "the position's best B10", need: float | None = None) -> tuple[Any, dict, Any]:
     """The update: (the SurPyval model or None with no data, the result for the reader, the prior).
     ``priors``: built by the caller (a power prior from the class's history: fit_life.py).
-    ``subject``: what the result's words call the B10 (a dataset's fit isn't a position's)."""
+    ``subject``: what the result's words call the B10 (a dataset's fit isn't a position's).
+    ``need``: a required B10 (in the data's unit): ``result["need"]`` says the chance it is met."""
     dist_id = base["distribution"]
     if priors is not None:
         pass
@@ -483,10 +523,9 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
                       words=f"No history to update with yet: the baseline ({base['name']}) stands as given, with the "
                             "range the trust allows. Add failures or running units first.")
         return None, result, priors
-    import warnings
+    from backend.warn_capture import collect_warnings
 
-    with warnings.catch_warnings(record=True) as said:
-        warnings.simplefilter("always")
+    with collect_warnings() as said:
         model = _fit(dist_id, x, c, priors, unit)
     # SurPyval says when the data disagree with the prior ("neither is taken as right"): pass it on.
     result["warnings"] = sorted({str(w.message) for w in said if "prior" in str(w.message).lower()})[:3]
@@ -495,27 +534,37 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
         lo, hi = model.param_cri(name, alpha_ci=ALPHA)
         post.append({"name": name, "label": WORDS.get(name, name), "median": _f(median),
                      "lower": _f(lo), "upper": _f(hi), "baseline": base["params"].get(name)})
-    b10 = model.quantile_cri(0.1, alpha_ci=ALPHA)
-    mean = model.mean_cri(alpha_ci=ALPHA)
+    # B-lives and the mean life: a 90% one-sided lower credible bound (a lower
+    # bound on life), the rule everywhere and what the saved model's page shows
+    # (life_bounds). Parameters keep their 90% two-sided credible intervals.
+    b10_lower = np.ravel(model.quantile_cri(0.1, alpha_ci=ALPHA, bound="lower"))[0]
+    mean_lower = np.ravel(model.mean_cri(alpha_ci=ALPHA, bound="lower"))[0]
     result.update(
         posterior=post,
-        b10={"point": _f(model.quantile_cri(0.1, alpha_ci=ALPHA, point=True)), "lower": _f(b10[0]), "upper": _f(b10[1]),
-             "next_unit": _f(model.qf(0.1))},
-        mean={"point": _f(np.ravel(model.mean())[0]), "lower": _f(mean[0]), "upper": _f(mean[1])},
+        b10={"point": _f(model.quantile_cri(0.1, alpha_ci=ALPHA, point=True)), "lower": _f(b10_lower), "upper": None,
+             "bound": "lower", "level": LEVEL, "next_unit": _f(model.qf(0.1))},
+        mean={"point": _f(np.ravel(model.mean())[0]), "lower": _f(mean_lower), "upper": None, "bound": "lower",
+              "level": LEVEL},
         at_age=None, curves=curves(model, base, dist_id, float(np.max(x)) if len(x) else None), can_save=True,
     )
     if age is not None and _f(age) and float(age) > 0:
-        lo_hi = np.ravel(model.cri(float(age), alpha_ci=ALPHA))
+        # Reliability is a chance of surviving: its 90% one-sided lower credible
+        # bound, as for a B-life.
+        lo_hi = np.ravel(model.cri(float(age), alpha_ci=ALPHA, bound="lower"))
         result["at_age"] = {"age": float(age), "reliability": _f(np.ravel(model.sf(float(age)))[0]),
-                            "lower": _f(lo_hi[0]), "upper": _f(lo_hi[1])}
+                            "lower": _f(lo_hi[0]), "upper": None, "bound": "lower", "level": LEVEL}
+    if need is not None and _f(need) and float(need) > 0:
+        # The requirement question in one number: how likely B10 is at least the need.
+        result["need"] = {"b": 10, "life": float(need), "chance": chance_at_least(model, 0.1, float(need))}
     result["moved"] = _moved(base, post, rows, unit)
     u = _unit_word(unit)
     b = result["b10"]
     how = ("its earlier prior" if base["source"] == "update" else "as stated" if base["source"] in ("around", "belief", "library")
            else t["label"].lower())
     result["words"] = (f"{result['moved']} Starting from {base['name']} ({how}), "
-                       f"{subject} is about {num(b['point'])}{(' ' + u) if u else ''}: there's a "
-                       f"{LEVEL:.0%} chance it lies between {num(b['lower'])} and {num(b['upper'])}.")
+                       f"{subject} is about {num(b['point'])}{(' ' + u) if u else ''}: we're {LEVEL:.0%} sure "
+                       f"it's at least {num(b['lower'])}{(' ' + u) if u else ''} ({LEVEL:.0%} one-sided credible "
+                       "bound).")
     return model, result, priors
 
 
@@ -600,10 +649,16 @@ def label_for(base: dict, failures: int, suspensions: int) -> str:
             f"{suspensions} suspension{'s' if suspensions != 1 else ''}")
 
 
-def save(db, owner_id: str, model, result: dict, priors, name: str | None = None, notes: str = ""):
+def save(db, owner_id: str, model, result: dict, priors, name: str | None = None, notes: str = "",
+         dataset=None, mapping: dict | None = None, options: dict | None = None):
     """Save an update as a non-repairable model (the usual shape, so RBD blocks, evidence links
     and the calculators use it): its parameters are the posterior medians with 90% credible
-    intervals, its curves the predictive ones, and its recipe (the data and the prior) rebuilds it."""
+    intervals, its curves the predictive ones, and its recipe (the data and the prior) rebuilds it.
+
+    ``dataset`` with ``mapping`` (and ``options``: ``c_map`` / ``c_invert``): the user's own table
+    and how its columns were read, kept with the model so a refit from it (with a prior, or
+    another model) starts from the same columns. Without them (a position's history) the rows
+    are saved as a table of their own."""
     from backend import fitting, life_bounds
     from backend.db import to_doc
     from backend.schema import Model
@@ -616,10 +671,13 @@ def save(db, owner_id: str, model, result: dict, priors, name: str | None = None
     dist_id = result["distribution"]
     rows = [r for r in result["rows"] if r.get("used", True)]
     xs, cs = arrays(rows)
-    buf = io.StringIO()
-    pd.DataFrame({"shortest": xs[:, 0], "longest": xs[:, 1], "censored": cs}).to_csv(buf, index=False)
     label = (name or result["label"]).strip()[:200]
-    dataset = datasets_service.create_dataset(db, f"{label[:150]}: data.csv", buf.getvalue().encode(), owner_id)
+    if dataset is None or not mapping:
+        buf = io.StringIO()
+        pd.DataFrame({"shortest": xs[:, 0], "longest": xs[:, 1], "censored": cs}).to_csv(buf, index=False)
+        dataset = datasets_service.create_dataset(db, f"{label[:150]}: data", buf.getvalue().encode(),
+                                                  owner_id)
+        mapping, options = {"xl": "shortest", "xr": "longest", "c": "censored"}, None
     unit = result.get("unit") or ""
     grid = np.asarray(result["curves"]["x"], dtype=float)
     curves_all = fitting._eval_functions(model, grid)
@@ -638,7 +696,7 @@ def save(db, owner_id: str, model, result: dict, priors, name: str | None = None
         # The page's "How it was fitted" and the API read these; the plot is the data's points under
         # the updated line (None, with the reason, under two failures); the life card's B-lives and
         # mean carry their credible lower bounds (life_bounds knows a Bayesian fit).
-        "options": {"how": HOW},
+        "options": {"how": HOW, **{k: v for k, v in (options or {}).items() if v}},
         "plot": plot_for(model, dist_id, xs, cs),
         "split": {"failed": result["counts"]["failures"], "running": result["counts"]["suspensions"], "other": 0},
         "bayes": {"label": result["label"], "baseline": result["baseline"], "trust": result["trust"],
@@ -650,7 +708,8 @@ def save(db, owner_id: str, model, result: dict, priors, name: str | None = None
     if life:
         results["life"] = life
     spec = {"method": METHOD, "distribution_id": dist_id, "unit": unit,
-            "mapping": {"xl": "shortest", "xr": "longest", "c": "censored"},
+            "mapping": {k: v for k, v in mapping.items() if v},
+            **({"options": {k: v for k, v in options.items() if v}} if options and any(options.values()) else {}),
             "notes": notes or "",
             "bayes": {"x": xs.tolist(), "c": cs.tolist(), "priors": model.to_dict()["priors"]}}
     doc = Model(id=models_service.uuid.uuid4().hex, name=label, owner_id=owner_id, dataset_id=dataset.id,

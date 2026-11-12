@@ -51,6 +51,41 @@ export function workspaceToday(now = new Date()) {
   return todayIn(current, now);
 }
 
+// The clock time ("14:05", 24-hour) it is in `zone` (UTC when unset) at `now`.
+// "" for a zone this browser doesn't know: no time is better than a wrong one.
+export function clockIn(zone, now = new Date()) {
+  if (zone && !isTimeZone(zone)) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone || "UTC", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get("hour")}:${get("minute")}`;
+}
+
+// The time now on the active workspace's clock: what a form's time of day
+// starts with. The device's own clock time is wrong whenever the device is in
+// another zone (a phone in Brisbane, a workspace on UTC).
+export function workspaceClock(now = new Date()) {
+  return clockIn(current, now);
+}
+
+// Whether this device's clock reads differently from the workspace's (another
+// zone): then a form says whose clock its times are on.
+export function deviceClockDiffers(now = new Date(), deviceZone = browserTimeZone()) {
+  return !!deviceZone && clockIn(deviceZone, now) !== workspaceClock(now);
+}
+
+// The zone the workspace's clock is on, to show beside a time field.
+export function workspaceZoneName() {
+  return current || "UTC";
+}
+
+// A day and a time of day on the workspace's clock, as the API takes a reading's
+// `at`: in the workspace's zone when it has one, else marked as UTC.
+export function workspaceMoment(day, time) {
+  return `${day}T${time}${current ? "" : "Z"}`;
+}
+
 // Every zone the browser can list, for the picker (a short list where it can't).
 export function timeZoneOptions() {
   try {

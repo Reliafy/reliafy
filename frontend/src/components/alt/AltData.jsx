@@ -3,16 +3,17 @@
 // and every parameter with its interval.
 import { Link } from "react-router-dom";
 import { ScrollCard, TablePanel } from "../model/ModelLayouts.jsx";
-import { formatNumber } from "../../format.js";
+import { formatNumber, formatReadable } from "../../format.js";
 import { shapeParam, stressName } from "../../altFrame.js";
 import { unitInText } from "../unitText.js";
+import { ciPct } from "../../levels.js";
 
 // "85.9–203", or "−0.862 to −0.366" where a dash would read as a minus.
 const ci = (pair) => {
   if (!Array.isArray(pair) || pair.length !== 2) return "—";
   const [lo, hi] = pair;
-  const b = hi == null ? "∞" : formatNumber(hi, { sig: 4 });
-  return lo < 0 || (hi != null && hi < 0) ? `${formatNumber(lo, { sig: 4 })} to ${b}` : `${formatNumber(lo, { sig: 4 })}–${b}`;
+  const b = hi == null ? "∞" : formatReadable(hi, { sig: 4 });
+  return lo < 0 || (hi != null && hi < 0) ? `${formatReadable(lo, { sig: 4 })} to ${b}` : `${formatReadable(lo, { sig: 4 })}–${b}`;
 };
 
 export default function AltData({ results, datasetId }) {
@@ -55,21 +56,21 @@ export default function AltData({ results, datasetId }) {
             </table>
             <p className="mf-note">Life is the characteristic life: the {r.distribution === "Weibull" ? "time by which 63.2% have failed" : "life parameter"} at that level.</p>
           </ScrollCard>
-          <ScrollCard title="Every parameter" sub="with 95% intervals" id="alt-params-h">
+          <ScrollCard title="Every parameter" sub={`with ${ciPct(results, 0.9)} intervals`} id="alt-params-h">
             <table className="mini-table">
-              <thead><tr><th>Parameter</th><th className="mf-num">Estimate</th><th className="mf-num">95% interval</th></tr></thead>
+              <thead><tr><th>Parameter</th><th className="mf-num">Estimate</th><th className="mf-num">{ciPct(results, 0.9)} interval</th></tr></thead>
               <tbody>
                 {(r.params || []).map((p, i) => (
                   <tr key={p.name}>
                     <td>{i === 0 && shape ? shape.label : p.name}</td>
-                    <td className="mf-num">{formatNumber(p.value, { sig: 4 })}</td>
+                    <td className="mf-num">{formatReadable(p.value, { sig: 4 })}</td>
                     <td className="mf-num">{ci(p.ci)}</td>
                   </tr>
                 ))}
                 {(r.coefficients || []).map((c) => (
                   <tr key={`c-${c.name}`}>
                     <td>{c.name} <span className="gof-sub">(life-stress)</span></td>
-                    <td className="mf-num">{formatNumber(c.value, { sig: 4 })}</td>
+                    <td className="mf-num">{formatReadable(c.value, { sig: 4 })}</td>
                     <td className="mf-num">{ci(c.ci)}</td>
                   </tr>
                 ))}
@@ -108,7 +109,7 @@ export default function AltData({ results, datasetId }) {
               maximum likelihood.
               {r.interval_censored ? " Inspection data: each failure lies between two inspections." : ""}
             </p>
-            {(r.unit_warnings || []).map((w) => <p className="mf-note" key={w}>{w}</p>)}
+            {[...(r.unit_warnings || []), ...(r.fit_warnings || [])].map((w) => <p className="mf-note" key={w}>{w}</p>)}
           </section>
         </>
       }

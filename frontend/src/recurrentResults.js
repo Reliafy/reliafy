@@ -2,6 +2,7 @@
 // names in full, the growth verdict and why, a rate in words, and the
 // model's family. Pure functions, so `node --test` covers them.
 import { formatNumber } from "./format.js";
+import { ciPct } from "./levels.js";
 
 // "Hours" → "hour", for "per hour"; any other unit as written, lower case.
 export function perUnit(unit) {
@@ -48,6 +49,28 @@ export function paramLabel(r, name) {
   return spec[0];
 }
 
+// A rate parameter shown per 1,000 (or 10,000…) units of time when it is
+// small, so it never reads in scientific notation: an HPP rate of 9.81e-4 per
+// hour is "0.981 per 1,000 hours". { label, value, ci, scale }.
+export function scaledParam(r, p) {
+  const spec = namesFor(r)[p?.name];
+  const v = Number(p?.value);
+  let k = 1;
+  if (spec?.[1] === "rate" && Number.isFinite(v) && v !== 0) {
+    while (Math.abs(v) * k < 0.1 && k < 1e9) k *= 10;
+    if (k > 1 && k < 1000) k = 1000;
+  }
+  if (k === 1) return { label: paramLabel(r, p.name), value: p.value, ci: p.ci, scale: 1 };
+  const unit = String(r?.unit || "").trim().toLowerCase();
+  const per = `per ${k.toLocaleString("en-US")} ${unit || "time units"}`;
+  return {
+    label: `${spec[0]} (${per})`,
+    value: v * k,
+    ci: Array.isArray(p.ci) ? p.ci.map((c) => (c == null ? c : c * k)) : p.ci,
+    scale: k,
+  };
+}
+
 // Shape first: the reading turns on it. The restoration parameter leads an
 // imperfect-repair model.
 const ORDER = ["q", "rho", "beta", "alpha", "b", "lambda"];
@@ -71,7 +94,7 @@ const GROWTH = {
   deteriorating: { title: "Deteriorating", note: "failures are accelerating" },
 };
 
-// The growth verdict and why (#81): the growth parameter's 95% interval
+// The growth verdict and why (#81): the growth parameter's interval (90%)
 // against its no-trend value, or the value itself for a model built from
 // parameters. Null when the model has no growth parameter.
 // The growth parameter's symbol, as the parameter table names it (Duane's
@@ -90,7 +113,7 @@ export function growthReading(r) {
   if (b.ci) {
     const [lo, hi] = b.ci;
     const where = lo > nul ? `wholly above ${nul}` : hi < nul ? `wholly below ${nul}` : `includes ${nul}`;
-    why = `${sym}'s 95% interval, ${ciText(b.ci)}, is ${where}`;
+    why = `${sym}'s ${ciPct(r)} interval, ${ciText(b.ci)}, is ${where}`;
   } else {
     why = `${sym} = ${formatNumber(b.estimate, { sig: 4 })}${r.from_params ? ", built from parameters (no interval)" : " (this fit gives no interval)"}`;
   }
@@ -109,10 +132,15 @@ export const ratioCiText = (ci) =>
 export const effectTone = (effect) => (effect === "lower" ? "success" : effect === "higher" ? "warning" : "neutral");
 
 // The repair-test verdict as a short title.
+// The verdict follows the restoration interval (an end is named only when the
+// interval includes it): "maybe_minimal" is an estimate well inside with the
+// interval reaching as bad as old.
 const REPAIR = {
   partial: "Partial repair",
   perfect: "As good as new",
   minimal: "As bad as old",
+  maybe_minimal: "Partial repair, can't rule out as bad as old",
+  maybe_perfect: "Partial repair, can't rule out as good as new",
   maximal: "Strongest repair ARI allows",
   unclear: "Repair quality unclear",
   renewal: "As good as new",
@@ -158,11 +186,14 @@ export const fittedToData = (r) => !r?.from_params && !!r?.mcf?.observed?.x?.len
 // The Plan ahead views that apply: each system's next failure (imperfect
 // repair), and on a saved model (``modelId``) the growth projection (data
 // models) and the overhaul interval (minimal repair). [{ value, label }].
+// A deteriorating fleet's question is when to overhaul, so that comes first;
+// a growth test's is the projection.
 export function planViews(r, { modelId = null, paramsOnly = false } = {}) {
+  const projection = modelId && !paramsOnly && !r?.from_params && "projection";
+  const overhaul = modelId && familyOf(r) === "nhpp" && "overhaul";
   const ids = [
     familyOf(r) === "renewal" && (r?.next_failure?.units || []).length > 0 && "next",
-    modelId && !paramsOnly && !r?.from_params && "projection",
-    modelId && familyOf(r) === "nhpp" && "overhaul",
+    ...(r?.growth === "deteriorating" ? [overhaul, projection] : [projection, overhaul]),
   ].filter(Boolean);
   return ids.map((value) => ({ value, label: PLAN_LABELS[value] }));
 }
@@ -205,22 +236,30 @@ const unitWord = (r) => String(r?.unit || "").trim().toLowerCase();
 const withUnitR = (v, r) => `${sig3(v)}${unitWord(r) ? ` ${unitWord(r)}` : ""}`;
 
 // "MTBF now 323 hours (≥ 230 at 90%)": the instantaneous MTBF at the end of
-// the data, with the demonstrated lower bound (or the 95% interval).
+// the data, with the demonstrated lower bound (or the interval, 90%).
 export function mtbfWords(r) {
   if (r?.mtbf == null || !Number.isFinite(r.mtbf)) return null;
   const dm = r.demonstrated_mtbf;
   const bound = dm?.lower != null
     ? ` (≥ ${sig3(dm.lower)} at ${Math.round((dm.confidence || 0.9) * 100)}%)`
-    : ciText(r.mtbf_ci) ? ` (95% ${ciText(r.mtbf_ci)})` : "";
-  const who = r.rates_at ? ", average system" : "";
+    : ciText(r.mtbf_ci) ? ` (${ciPct(r)} ${ciText(r.mtbf_ci)})` : "";
+  // A covariate model: each level's MTBF, not a made-up average system.
+  const groups = (r.rates_by_group || []).filter((g) => g.mtbf != null);
+  if (groups.length) {
+    return `MTBF now ${groups.map((g) => `${g.label} ${withUnitR(g.mtbf, r)}`).join(", ")}`;
+  }
+  const who = r.rates_at ? ", at the fleet's average covariates" : "";
   return `MTBF ${r.from_params ? "at the horizon" : "now"} ${withUnitR(r.mtbf, r)}${bound}${who}`;
 }
 
-// The growth shape in a few words: "β 2.06 (95% 1.44–2.95)".
+// The growth shape in a few words: "β 2.06 (90% 1.44–2.95)".
 function shapeWords(r) {
   const b = r?.growth_basis;
   if (!b || b.estimate == null) return null;
-  return `${growthSymbol(r)} ${formatNumber(b.estimate, { sig: 3 })}${ciText(b.ci) ? ` (95% ${ciText(b.ci)})` : ""}`;
+  // A small log-linear slope reads per 1,000 (or more) units of time.
+  const d = scaledParam(r, { name: b.parameter, value: b.estimate, ci: b.ci });
+  const per = d.scale > 1 ? ` per ${d.scale.toLocaleString("en-US")} ${unitWord(r) || "time units"}` : "";
+  return `${growthSymbol(r)} ${formatNumber(d.value, { sig: 3 })}${per}${ciText(d.ci) ? ` (${ciPct(r)} ${ciText(d.ci)})` : ""}`;
 }
 
 // The covariate with the largest effect: "site Inland: failures ×2.2 (1.37–3.40)".
@@ -242,9 +281,11 @@ export function recurrentAnswer(r, { saved = null } = {}) {
     add(r.repair_test ? repairTitle(r.repair_test.verdict) : r.model?.name);
     const rest = r.restoration;
     if (rest?.effectiveness != null) {
-      add(`repairs remove ${pct(rest.effectiveness)} of the age${rest.effectiveness_ci ? ` (95% ${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])})` : ""}`);
+      const verb = r.model?.id === "ari" ? "remove" : "restore";
+      const what = r.model?.id === "ari" ? "of the rise in failure rate" : r.model?.id === "grp_ii" ? "of the age" : "of the age gained";
+      add(`repairs ${verb} ${pct(Math.max(rest.effectiveness, 0))} ${what}${rest.effectiveness_ci ? ` (${ciPct(r)} range ${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])})` : ""}`);
     } else if (rest?.ratio != null) {
-      add(`gap ratio ${ratioText(rest.ratio)}${rest.ratio_ci ? ` (95% ${ciText(rest.ratio_ci)})` : ""}`);
+      add(`gap ratio ${ratioText(rest.ratio)}${rest.ratio_ci ? ` (${ciPct(r)} ${ciText(rest.ratio_ci)})` : ""}`);
     }
     const soon = r.next_failure?.units?.[0];
     if (soon?.median != null) add(`next failure: ${soon.system} in about ${withUnitR(soon.median, r)} (median)`);
@@ -339,7 +380,7 @@ export function growingCheck(r) {
       const [lo, hi] = b.ci;
       const nul = b.no_trend;
       const where = lo > nul ? `wholly above ${nul}` : hi < nul ? `wholly below ${nul}` : `includes ${nul}`;
-      why = ` (${growthSymbol(r)}'s 95% interval, ${ciText(b.ci)}, is ${where})`;
+      why = ` (${growthSymbol(r)}'s ${ciPct(r)} interval, ${ciText(b.ci)}, is ${where})`;
     } else if (b?.estimate != null) {
       why = ` (${growthSymbol(r)} = ${formatNumber(b.estimate, { sig: 3 })})`;
     }
@@ -363,8 +404,24 @@ export function cvmCheck(r) {
     : { tone: "bad", words: `No: the failure times don't follow the model (${pText(c.p_value)}). Try another model.` };
 }
 
+// The chance of ``k`` or more events from a Poisson count with mean ``mu``.
+export function poissonUpperTail(k, mu) {
+  if (!(mu > 0) || !(k > 0)) return 1;
+  // 1 − P(X ≤ k − 1), the terms summed in logs so a large mean doesn't overflow.
+  let term = Math.exp(-mu);
+  let below = 0;
+  for (let j = 0; j < Math.ceil(k); j++) {
+    below += term;
+    term *= mu / (j + 1);
+  }
+  return Math.min(1, Math.max(0, 1 - below));
+}
+
 // "Does any system fail more than the model expects?" from each system's
-// failures against the model's expectation over its own window.
+// failures against the model's expectation over its own window. A system is
+// called a bad actor only when that many failures would be unlikely by
+// chance with this many systems to pick from (a Poisson tail under 5% / the
+// number of systems); a small excess is said to be within chance.
 export function systemsCheck(r) {
   const rows = r?.system_residuals || [];
   if (rows.length < 2) return null;
@@ -372,9 +429,15 @@ export function systemsCheck(r) {
   if (!(top.excess >= 1)) {
     return { rows, words: "No system stands out: each has about the failures the model expects." };
   }
-  return {
-    rows,
-    words: `${top.system} fails most beyond the model: ${formatNumber(top.failures)} failures where it expects `
-      + `${formatNumber(top.expected, { sig: 2 })}. Worth a look as a bad actor.`,
-  };
+  const n = Math.max(rows.length, Number(r?.n_systems) || 0);
+  const p = poissonUpperTail(top.failures, top.expected);
+  const what = `${formatNumber(top.failures)} failures where it expects ${formatNumber(top.expected, { sig: 2 })}`;
+  if (p >= 0.05 / n) {
+    return {
+      rows,
+      words: `${top.system} has the most failures beyond the model (${what}), but no more than chance gives `
+        + `across ${n} systems: no system stands out.`,
+    };
+  }
+  return { rows, words: `${top.system} fails most beyond the model: ${what}. Worth a look as a bad actor.` };
 }

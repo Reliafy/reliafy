@@ -29,7 +29,7 @@ Reliafy fits any of the models below to the same event history, so the
 comparison between them is direct.
 
 **How Reliafy reads the trend.** A fit to data reports the growth parameter with
-its 95% confidence interval, and the verdict comes from that interval, not from
+its 90% confidence interval, and the verdict comes from that interval, not from
 the point estimate alone: *deteriorating* when the whole interval is above the
 no-trend value (β = 1), *improving* when it is all below, and *stable* when it
 includes it — the data don't show a trend either way. Two trend tests run
@@ -40,7 +40,7 @@ the fitted model against the event times; a small p-value means the model's
 shape doesn't match the data.
 
 The ROCOF and the instantaneous MTBF are reported at the end of observation
-with 95% bounds, along with the **demonstrated MTBF** — its one-sided 90% lower
+with 90% bounds, along with the **demonstrated MTBF** — its one-sided 90% lower
 bound, "MTBF ≥ X at 90%". For a Crow-AMSAA fit to a time-terminated test (every
 system from 0 to the same end) or one system run to its last failure these are
 Crow's exact bounds, as tabulated in MIL-HDBK-189C; otherwise they are Wald
@@ -126,7 +126,7 @@ M(t) = exp(α) · (exp(β·t) − 1) / β
 ```
 
 Here `β` is a slope, not a shape: `β > 0` is deteriorating, `β < 0` improving,
-and `β = 0` is the HPP. The verdict uses its 95% interval against 0.
+and `β = 0` is the HPP. The verdict uses its 90% interval against 0.
 
 **Use it as** the alternative to Crow-AMSAA when the trend doesn't look like a
 power law — a rate that was already well above zero at the start and grows

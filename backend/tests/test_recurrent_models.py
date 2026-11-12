@@ -71,11 +71,11 @@ def test_proportional_intensity_matches_surpyval_and_reads_each_covariate():
     by_name = {c["name"]: c for c in payload["coefficients"]}
     for name in ("site: Inland", "duty_pct"):
         assert by_name[name]["coef"] == pytest.approx(estimate[name], rel=1e-6)
-        lo = float(np.ravel(direct.param_cb(name, alpha_ci=0.05))[0])
+        lo = float(np.ravel(direct.param_cb(name, alpha_ci=0.10))[0])
         assert by_name[name]["ratio_ci"][0] == pytest.approx(np.exp(lo), rel=1e-6)
     params = {p["name"]: p for p in payload["params"]}
     assert params["beta"]["value"] == pytest.approx(estimate["beta"], rel=1e-6)
-    assert params["beta"]["ci"][0] == pytest.approx(float(np.ravel(direct.param_cb("beta", alpha_ci=0.05))[0]),
+    assert params["beta"]["ci"][0] == pytest.approx(float(np.ravel(direct.param_cb("beta", alpha_ci=0.10))[0]),
                                                     rel=1e-6)
 
     # Plain readings: inland pumps fail more often, and higher duty too.
@@ -129,15 +129,20 @@ def test_generalized_renewal_matches_surpyval(model_id, kijima):
     rest = payload["restoration"]
     assert rest["parameter"] == "q" and rest["value"] == pytest.approx(q, rel=1e-6)
     assert rest["effectiveness"] == pytest.approx(1 - q, rel=1e-6)
-    lo, hi = direct.param_cb("q", alpha_ci=0.05)
+    # The interval is the profile-likelihood one, which agrees with the LR repair test.
+    lo, hi = direct.param_cb("q", alpha_ci=0.10, method="lr")
+    assert rest["ci_method"] == "lr"
     assert rest["effectiveness_ci"] == pytest.approx([1 - hi, 1 - lo], rel=1e-6)
     assert f"{round((1 - q) * 100)}%" in rest["sentence"]
+    q_row = next(p for p in payload["params"] if p["name"] == "q")
+    assert q_row["ci"] == pytest.approx([lo, hi], rel=1e-6)
 
-    rt = direct.repair_test()
+    rt = direct.repair_test(alpha_ci=0.10)
     verdict = payload["repair_test"]
     assert verdict["perfect"]["p_value"] == pytest.approx(rt.perfect.p_value, rel=1e-6)
     assert verdict["minimal"]["p_value"] == pytest.approx(rt.minimal.p_value, rel=1e-6)
-    assert verdict["verdict"] == "partial"  # both rejected on the compressors
+    assert verdict["verdict"] == "partial"  # the interval excludes both ends on the compressors
+    assert 1 - hi > 0 and 1 - lo < 1
 
     # Each compressor's next failure, from SurPyval's next-failure survival.
     nf = payload["next_failure"]
@@ -169,7 +174,7 @@ def test_ara_ari_and_g1_options_and_words():
 
     ara, _ = rec.fit(df, CMP_MAP, "ara", "hours", gof_test=False, options={"m": "3"})
     direct = _quiet(ARA.fit, x, i=i, c=c, m=3)
-    assert ara["options"] == {"m": 3} and "ARA3" in ara["model"]["name"]
+    assert ara["options"] == {"m": 3} and "(ARA, last 3 repairs)" in ara["model"]["name"]
     assert ara["restoration"]["value"] == pytest.approx(float(direct.params[0]), rel=1e-6)
     assert "last 3 repairs" in ara["restoration"]["sentence"]
 
@@ -213,7 +218,7 @@ def test_by_cause_matches_cause_specific_mcf_and_nhpp():
     para = _quiet(CauseSpecificNHPP.fit, ended["x"], i=ended["i"], c=ended["c"], e=e)
     valve = bc["causes"][0]
     assert valve["mcf"]["mcf"] == pytest.approx(list(mcf.models["valve"].mcf_hat))
-    cb = mcf.mcf_cb(np.asarray(valve["mcf"]["x"]), "valve", alpha_ci=0.05)
+    cb = mcf.mcf_cb(np.asarray(valve["mcf"]["x"]), "valve", alpha_ci=0.10)
     assert valve["mcf"]["upper"] == pytest.approx(list(np.max(cb, axis=1)))
     assert valve["fit"]["beta"] == pytest.approx(float(para.models["valve"].params[1]), rel=1e-6)
     assert valve["fit"]["growth"] == "deteriorating"
@@ -368,7 +373,7 @@ def test_samples_seed_the_new_models(monkeypatch):
     assert grp["gof_test"]["adequate"] is True
 
 
-def test_fleet_refuses_a_covariate_or_imperfect_repair_model():
+def test_fleet_takes_an_imperfect_repair_model():
     from backend.services import datasets as ds_service
     from backend.services import fleet as fleet_service
     from backend.services import recurrent as svc
@@ -377,8 +382,8 @@ def test_fleet_refuses_a_covariate_or_imperfect_repair_model():
     db = mongomock.MongoClient()["reliafy_test"]
     dataset = ds_service.create_dataset(db, "cmp.csv", _COMPRESSOR_EVENTS_CSV, A)
     doc = svc.save_model(db, "GRP", dataset, {"mapping": CMP_MAP, "model_id": "grp_i", "unit": "hours"}, A)
-    with pytest.raises(fleet_service.FleetValidationError, match="minimal-repair"):
-        fleet_service.create_fleet(db, "Fleet", doc.id, A, model_kind="recurrent")
+    fleet = fleet_service.create_fleet(db, "Fleet", doc.id, A, model_kind="recurrent")
+    assert fleet.model_kind == "recurrent"
 
 
 # ---- Observation windows given to SurPyval as end-of-observation rows ------------------

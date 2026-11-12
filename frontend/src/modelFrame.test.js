@@ -2,8 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  answerParts, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
-  intervalLevel, listN, nextTabIndex, oddUnits, ppSummary, resolveTab,
+  answerParts, baseLevels, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
+  intervalLevel, listN, nextTabIndex, oddUnits, plainAnswer, ppSummary, ratioSign, resolveTab, termName,
 } from "./modelFrame.js";
 
 const labels = (tabs) => tabs.map((t) => t.label);
@@ -31,9 +31,11 @@ test("every kind of model gets the approved tabs, in order", () => {
     ["Effects", "Calculator", "Model characteristics", "Diagnostics", "Data"]);
   // Condition and life: no Fleet tab.
   assert.deepEqual(labels(modelTabs({ kind: "joint" })), ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"]);
-  // Where the Explorer shows risk now (by Classes), the model's page leaves its tab out.
-  assert.deepEqual(labels(modelTabs({ kind: "joint" }, { riskNow: false })), ["Calculator", "Effects", "Diagnostics", "Data"]);
-  assert.equal(resolveTab(modelTabs({ kind: "joint" }, { riskNow: false }), "risk"), "calc");
+  // Risk now stays for every account, Maintenance on or off: the Explorer scores only
+  // positions on the asset tree, so a dataset's own running units are scored here.
+  assert.deepEqual(labels(modelTabs({ kind: "joint" }, { riskNow: false })), ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"]);
+  assert.equal(resolveTab(modelTabs({ kind: "joint" }), "risk"), "risk");
+  assert.equal(resolveTab(modelTabs({ kind: "joint" }), undefined), "risk");
 });
 
 test("a tab that doesn't apply is left out, and a one-view model has none", () => {
@@ -102,9 +104,9 @@ test("other kinds answer in their own terms", () => {
   const sure = answerParts({ kind: "joint", risk: [{ id: "P-19", risk: [0.5, 0.9999] }],
     horizons: { labels: ["30 days", "90 days"] } });
   assert.deepEqual(sure, ["highest risk: unit P-19, > 99.9% in the next 90 days"]);
-  // ... and not at all where the page has no Risk now tab to show it in.
+  // ... for every account: the Risk now tab it points to is always there.
   assert.deepEqual(answerParts({ kind: "joint", risk: [{ id: "P-19", risk: [0.5, 0.9999] }],
-    horizons: { labels: ["30 days", "90 days"] } }, { riskNow: false }), []);
+    horizons: { labels: ["30 days", "90 days"] } }, { riskNow: false }), ["highest risk: unit P-19, > 99.9% in the next 90 days"]);
   const reg = answerParts({ kind: "regression", distribution: "Weibull PH", ratio_label: "hazard ratio", unit: "Hours",
     coefficients: [{ name: "temp_C", value: 0.138, ci: [0.093, 0.183] }, { name: "load", value: 0.5, ci: [-1, 2] }],
     validation: { available: true, concordance: { value: 0.868 } }, n: 32 });
@@ -151,6 +153,7 @@ test("effects read as ratios with their intervals, and in words", () => {
   assert.match(effectText({ name: "load", ratio: 0.5, lo: 0.4, hi: 0.6 }, "time ratio"), /multiplies the life by 0.5/);
   // A category against its base level.
   assert.match(effectText({ name: "C(site)[T.B]", ratio: 2, lo: 1.2, hi: 3 }), /^site = B \(against the base level\)/);
+  assert.match(effectText({ name: "C(site)[T.B]", ratio: 2, lo: 1.2, hi: 3, base: "A" }), /^site = B \(against A, the base level\)/);
   // An additive model has no ratio.
   const add = forestRows({ kind: "regression", coefficients: [{ name: "x", value: 0.002, ci: [0.001, 0.003] }] });
   assert.equal(add[0].additive, true);
@@ -230,4 +233,87 @@ test("the model list's n: none for a model made from parameters, data plus prior
   assert.equal(listN({ n: 1, method: "bayesian_update" }).text, "1 + prior");
   assert.equal(listN({ n: 1200 }).text, "1,200");
   assert.equal(listN({ n: 1200 }).title, undefined);
+});
+
+// SurPyval's AFT coefficient accelerates the clock: a positive β (dust)
+// shortens the life. Numbers from a Weibull AFT fit to 300 conveyor idlers
+// (dusty β = 0.4388; site North β = -0.2807 against East).
+const aft = {
+  kind: "regression", effect: "aft", ratio_label: "time ratio", ci_level: 0.9,
+  coefficients: [
+    { name: "dusty", value: 0.4388, ci: [0.3, 0.58], ratio: Math.exp(0.4388) },
+    { name: "site[T.North]", value: -0.2807, ci: [-0.44, -0.12] },
+  ],
+  functions: { covariates: [{ name: "dusty", type: "number" }, { name: "site", type: "category", options: ["East", "North"] }] },
+};
+
+test("an AFT time ratio is what the life is multiplied by: dust shortens it", () => {
+  const [dusty, north] = forestRows(aft);
+  // The stored exp(β) of a model saved before is ignored: worked out from β.
+  assert.ok(Math.abs(dusty.ratio - Math.exp(-0.4388)) < 1e-12);
+  assert.ok(dusty.ratio < 1 && dusty.lo < dusty.hi && dusty.hi < 1);
+  assert.ok(Math.abs(dusty.lo - Math.exp(-0.58)) < 1e-12);
+  assert.equal(effectText(dusty, "time ratio"),
+    "Each +1 in dusty multiplies the life by 0.645 (90% 0.56 to 0.741): it ages 1.55× as fast.");
+  assert.ok(north.ratio > 1);
+  assert.match(effectText(north, "time ratio"),
+    /^site = North \(against East, the base level\) multiplies the life by 1\.32 .*: it ages 1\.32× more slowly\.$/);
+  assert.equal(north.label, "site = North vs East");
+});
+
+test("a PO odds ratio is on the odds of having failed; a hazard ratio keeps its sign", () => {
+  const po = forestRows({ kind: "regression", effect: "odds", ratio_label: "odds ratio",
+    coefficients: [{ name: "dusty", value: -1.26, ci: [-1.6, -0.9] }] });
+  assert.ok(po[0].ratio > 1);
+  assert.match(effectText(po[0], "odds ratio"), /multiplies the odds of having failed by 3\.53/);
+  assert.equal(ratioSign({ effect: "hazard", ratio_label: "hazard ratio" }), 1);
+  // A result saved with only its label.
+  assert.equal(ratioSign({ ratio_label: "time ratio" }), -1);
+});
+
+test("a category's base level is named, from the payload or the calculator's levels", () => {
+  assert.deepEqual(baseLevels(aft), { site: "East" });
+  assert.deepEqual(baseLevels({ base_levels: { site: "Mine" } }), { site: "Mine" });
+  assert.deepEqual(termName("C(site)[T.B]"), { label: "site = B", categorical: true, variable: "site", level: "B" });
+  assert.equal(termName("`belt site`[T.B]").variable, "belt site");
+});
+
+test("a share page's plain answer: one in ten, its bound in words, then the pattern", () => {
+  assert.equal(plainAnswer(weibull),
+    "One in ten is expected to have failed by about 582 hours (at least 467 hours with 90% confidence); "
+    + "failures become more likely with age.");
+  // No bound with this fit: no bound said.
+  const noBound = { ...weibull, life: { ...weibull.life, b_lives: [{ label: "B10", value: 582.37 }] } };
+  assert.equal(plainAnswer(noBound), "One in ten is expected to have failed by about 582 hours; failures become more likely with age.");
+  // Inspection data: the interval, never one end.
+  const between = { ...weibull, randomness: { verdict: "random" },
+    life: { confidence: 0.9, b_lives: [{ label: "B10", between: [400, 600] }] } };
+  assert.equal(plainAnswer(between),
+    "One in ten is expected to have failed between 400 and 600 hours; failures are about as likely at any age.");
+  // A Bayesian update's bound is credible, not confidence.
+  const bayes = { ...weibull, method: "bayesian_update", credible_level: 0.9 };
+  assert.match(plainAnswer(bayes), /with 90% credibility/);
+  // Per demand: the share of demands, and "one in N".
+  assert.equal(plainAnswer({ kind: "per_demand", per_demand: { p: 0.015 } }), "About 1.5% of demands fail (about one in 67).");
+  // Kinds whose answer isn't one B-life say nothing here.
+  for (const kind of ["regression", "competing_risks", "joint"]) assert.equal(plainAnswer({ ...weibull, kind }), null);
+  assert.equal(plainAnswer({}), null);
+});
+
+test("effects over the data's range when +1 misleads (load spans 0.5 to 0.9)", () => {
+  const r = {
+    kind: "regression", effect: "ph", ratio_label: "hazard ratio",
+    coefficients: [{ name: "load", value: Math.log(205), ci: [Math.log(20), Math.log(2000)] },
+                   { name: "dusty", value: Math.log(1.5), ci: [Math.log(1.1), Math.log(2)] }],
+    functions: { covariates: [{ name: "load", type: "number", default: 0.7, min: 0.5, max: 0.9 },
+                              { name: "dusty", type: "number", default: 0, min: 0, max: 1, flag: true }] },
+  };
+  const [load, dusty] = forestRows(r);
+  assert.deepEqual(load.range, [0.5, 0.9]);
+  assert.equal(dusty.range, null);
+  const text = effectText(load, "hazard ratio");
+  assert.match(text, /^Each \+1 in load multiplies the failure rate by 205/);
+  // 205 ** 0.4 = 8.41: across the data's range, not per +1.
+  assert.match(text, /across the data's range, 0\.5 to 0\.9, it multiplies it by 8\.41 \(\d+% 3\.31 to 20\.9\)/);
+  assert.doesNotMatch(effectText(dusty, "hazard ratio"), /across/);
 });

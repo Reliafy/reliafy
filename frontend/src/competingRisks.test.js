@@ -92,13 +92,33 @@ test("timeToChance gives the time to a share failed, its 95% range, or how far i
   // Bearing wear: 30% at 3,000 (the upper band reaches 30% at 3,000 too, the
   // lower one at... never: 28% at most).
   assert.deepEqual(timeToChance(FULL, "bearing wear", 0.1),
-    { time: 1000, lower: 1000, upper: 3000, top: 0.4, last: 5000 });
+    { bound: "two-sided", time: 1000, lower: 1000, upper: 3000, top: 0.4, last: 5000 });
   assert.deepEqual(timeToChance(FULL, ANY_MODE, 0.5),
-    { time: 3000, lower: 3000, upper: 5000, top: 0.6, last: 5000 });
+    { bound: "two-sided", time: 3000, lower: 3000, upper: 5000, top: 0.6, last: 5000 });
   const never = timeToChance(FULL, "seal leak", 0.5);
   assert.equal(never.time, null);
   assert.equal(never.top, 0.2);
   assert.equal(never.last, 5000);
+});
+
+test("timeToChance is a life: a 90% one-sided lower bound where the fit gives one-sided bounds", () => {
+  // The one-sided upper bound on the chance reaches 10% at 1,000 and 50% (any
+  // mode) at 3,000: those are the times we're 90% sure it's at least.
+  const one = {
+    ...FULL,
+    one_sided: {
+      level: 0.9,
+      upper: { "bearing wear": FULL.curves.upper["bearing wear"] },
+      all_upper: FULL.curves.all_upper,
+    },
+  };
+  const r = timeToChance(one, "bearing wear", 0.1);
+  assert.equal(r.bound, "lower");
+  assert.equal(r.time, 1000);
+  assert.equal(r.lower, 1000);
+  assert.equal(r.upper, null);
+  assert.equal(r.level, 0.9);
+  assert.equal(timeToChance(one, ANY_MODE, 0.5).bound, "lower");
 });
 
 test("modeSupport flags a mode resting on few failures; widestBand names the least certain", () => {
@@ -128,7 +148,11 @@ test("effectsByMode words each mode's coefficients, with the interval", () => {
   });
   assert.equal(out.length, 2);
   assert.equal(out[0].lines[0].text,
-    "Each +1 in duty_pct multiplies the bearing wear failure rate by 1.14 (95% 1.08 to 1.21).");
+    "Each +1 in duty_pct multiplies the bearing wear failure rate by 1.14 (90% 1.08 to 1.21).");
+  // A fit saved before the 90% rule says its own level.
+  assert.match(effectsByMode({ ratio_label: "hazard ratio", coefficients: [
+    { cause: "bearing wear", covariate: "duty_pct", ratio: 1.14, ratio_ci: [1.08, 1.21], p_value: 0.0001 }] }, "95%")[0]
+    .lines[0].text, /\(95% 1\.08 to 1\.21\)/);
   assert.match(out[1].lines[0].text, /can't rule out no effect\.$/);
   assert.deepEqual(effectsByMode(null), []);
 });

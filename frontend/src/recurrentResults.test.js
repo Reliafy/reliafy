@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   cvmCheck, duanePoints, fittedToData, growingCheck, logSlope, mtbfWords, planViews, recurrentAnswer, recurrentTabs,
-  resolveRecurrentTab, systemsCheck, trendCheck,
+  resolveRecurrentTab, systemsCheck, trendCheck, poissonUpperTail, scaledParam,
   dataText, effectTone, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle,
 } from "./recurrentResults.js";
 
@@ -93,7 +93,10 @@ test("recurrentTabs: only the tabs that apply, in order", () => {
 });
 
 test("planViews: next failure, growth projection, overhaul where each applies", () => {
-  assert.deepEqual(planViews(crow, { modelId: "m1" }).map((v) => v.value), ["projection", "overhaul"]);
+  // Deteriorating: the overhaul first; a growth test: the projection first.
+  assert.deepEqual(planViews(crow, { modelId: "m1" }).map((v) => v.value), ["overhaul", "projection"]);
+  assert.deepEqual(planViews({ ...crow, growth: "improving" }, { modelId: "m1" }).map((v) => v.value),
+    ["projection", "overhaul"]);
   const grp = { ...crow, family: "renewal", next_failure: { units: [{ system: "A" }] } };
   assert.deepEqual(planViews(grp, { modelId: "m1" }).map((v) => v.value), ["next", "projection"]);
   assert.deepEqual(planViews(grp).map((v) => v.value), ["next"]);
@@ -117,7 +120,11 @@ test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
     "Deteriorating", "β 2.06 (95% 1.44–2.95)", "MTBF now 323 hours (≥ 230 at 90%)", "4 systems, 30 failures", "saved now",
   ]);
   assert.equal(mtbfWords({ ...crow, demonstrated_mtbf: null, mtbf_ci: [195, 577], rates_at: "x" }),
-    "MTBF now 323 hours (95% 195–577), average system");
+    "MTBF now 323 hours (95% 195–577), at the fleet's average covariates");
+  // A covariate model with levels: each level's MTBF, not an average system.
+  assert.equal(mtbfWords({ ...crow, rates_at: "x", rates_by_group: [
+    { label: "site Coastal", mtbf: 627.2 }, { label: "site Inland", mtbf: 263.2 }] }),
+  "MTBF now site Coastal 627 hours, site Inland 263 hours");
   // No bounds from the fit (Duane): the value alone, never "—–—".
   assert.equal(mtbfWords({ ...crow, demonstrated_mtbf: { lower: null }, mtbf_ci: [null, null] }), "MTBF now 323 hours");
   const grp = {
@@ -126,9 +133,16 @@ test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
     next_failure: { units: [{ system: "CMP-4", median: 91.3 }] },
   };
   assert.deepEqual(recurrentAnswer(grp), [
-    "Partial repair", "repairs remove 79% of the age (95% 78%–81%)", "next failure: CMP-4 in about 91.3 hours (median)",
-    "4 systems, 30 failures",
+    "Partial repair", "repairs restore 79% of the age gained (95% range 78%–81%)",
+    "next failure: CMP-4 in about 91.3 hours (median)", "4 systems, 30 failures",
   ]);
+  // The headline follows the interval: never "As bad as old" for an estimate
+  // well inside it.
+  const maybe = { ...grp, ci_level: 0.9, repair_test: { verdict: "maybe_minimal" },
+    restoration: { effectiveness: 0.52, effectiveness_ci: [-0.14, 0.7] } };
+  const words = recurrentAnswer(maybe);
+  assert.equal(words[0], "Partial repair, can't rule out as bad as old");
+  assert.equal(words[1], "repairs restore 52% of the age gained (90% range -14%–70%)");
   const hpp = { model: { id: "hpp" }, from_params: true, mtbf: 500, unit: "hours" };
   assert.deepEqual(recurrentAnswer(hpp), ["Constant failure rate", "MTBF at the horizon 500 hours", "made from parameters"]);
 });
@@ -161,7 +175,32 @@ test("cvmCheck and systemsCheck", () => {
   assert.equal(cvmCheck({ gof_test: { p_value: null, reason: "Skipped" } }).words, "Skipped");
   assert.equal(cvmCheck({}), null);
   const rows = [{ system: "P-06", failures: 13, expected: 8.84, excess: 4.16 }, { system: "P-01", failures: 4, expected: 3.5, excess: 0.5 }];
-  assert.match(systemsCheck({ system_residuals: rows }).words, /^P-06 fails most beyond the model: 13 failures where it expects 8\.8/);
+  // 13 against 8.8 is within chance across two systems; 30 against 12 isn't.
+  assert.match(systemsCheck({ system_residuals: rows }).words, /^P-06 has the most failures beyond the model \(13 failures where it expects 8\.8\), but no more than chance/);
+  const bad = [{ system: "HT-11", failures: 30, expected: 12, excess: 18 }, rows[1]];
+  assert.match(systemsCheck({ system_residuals: bad, n_systems: 12 }).words, /^HT-11 fails most beyond the model: 30 failures where it expects 12\. Worth a look as a bad actor\./);
+  // 27 against 24.4 is never a bad actor.
+  const w16 = [{ system: "C-3", failures: 27, expected: 24.4, excess: 2.6 }, rows[1]];
+  assert.doesNotMatch(systemsCheck({ system_residuals: w16, n_systems: 8 }).words, /bad actor/);
   assert.match(systemsCheck({ system_residuals: [{ ...rows[1] }, rows[1]] }).words, /^No system stands out/);
   assert.equal(systemsCheck({ system_residuals: [rows[0]] }), null);
+});
+
+test("poissonUpperTail", () => {
+  assert.ok(Math.abs(poissonUpperTail(1, 2) - (1 - Math.exp(-2))) < 1e-12);
+  assert.equal(poissonUpperTail(0, 3), 1);
+  assert.ok(poissonUpperTail(30, 12) < 1e-4);
+});
+
+test("scaledParam: a small rate reads per 1,000 units, never in scientific notation", () => {
+  const hpp = { model: { id: "hpp" }, unit: "Hours" };
+  const d = scaledParam(hpp, { name: "lambda", value: 9.81e-4, ci: [8e-4, 1.2e-3] });
+  assert.equal(d.label, "Failure rate λ (per 1,000 hours)");
+  assert.ok(Math.abs(d.value - 0.981) < 1e-9);
+  assert.ok(Math.abs(d.ci[0] - 0.8) < 1e-9);
+  const cl = scaledParam({ model: { id: "cox_lewis" }, unit: "hours" }, { name: "beta", value: 8.65e-5 });
+  assert.equal(cl.label, "Log-linear slope β (per 10,000 hours)");
+  // A rate that isn't small, and a parameter that isn't a rate, stay as they are.
+  assert.equal(scaledParam(hpp, { name: "lambda", value: 0.5 }).scale, 1);
+  assert.equal(scaledParam({ model: { id: "crow_amsaa" } }, { name: "beta", value: 1e-5 }).scale, 1);
 });

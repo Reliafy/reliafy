@@ -17,10 +17,19 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/rcm/interval/failure-finding"],
   // Life models on positions (the Explorer's Modelling tab).
   ["GET", "/api/maintenance/position-models"],
+  // Trade rates: they price each task's labour (its cost each time; Nov 2026).
+  ["GET", "/api/maintenance/trade-rates"],
+  // A repairable RBD's maintenance read from the tree, and the RBDs that use a position's tasks.
+  ["POST", "/api/maintenance/rbd-tree-plan"],
+  ["GET", "/api/maintenance/rbd-plan-uses"],
+  // Field reports (notes, photos and sound from the field).
+  ["GET", "/api/maintenance/captures"],
   // The data library as models and priors (Models › Library).
   ["POST", "/api/models/from-library"],
   ["GET", "/api/library/used"],
   ["POST", "/api/models/fit-with-prior"],
+  // How the Data step reads inspection rows before a fit.
+  ["POST", "/api/data-reading"],
   // Reliability prediction: the parts count, the saved predictions, a product's parts list.
   ["POST", "/api/predictions/compute"],
   ["POST", "/api/predictions"],
@@ -28,6 +37,10 @@ const SIGNED_IN = [
   ["GET", "/api/predictions/smoke"],
   ["GET", "/api/predictions/from-product/smoke"],
   ["POST", "/api/v1/analyse/prediction"],
+  // A device that works offline: its queued changes pushed in a batch, and a queued photo.
+  ["POST", "/api/v1/maintenance/sync/push"],
+  ["POST", "/api/v1/maintenance/sync/photo"],
+  ["POST", "/api/v1/maintenance/sync/pack"],
   // Maintainability prediction: the calculator, the saved predictions, a product's lines.
   ["POST", "/api/maintainability/analyse"],
   ["GET", "/api/maintainability/predictions"],

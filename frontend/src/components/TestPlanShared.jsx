@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
-import { cancelRbdJob, getRbdJob, simulateTestPlan, testPlan } from "../api.js";
+import { cancelRbdJob, downloadTestPlanPython, getRbdJob, simulateTestPlan, testPlan } from "../api.js";
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { percentApiMessage } from "../percent.js";
 import ProTag from "./ProTag.jsx";
@@ -74,12 +74,51 @@ export function ComputeButton({ loading, onClick, disabled = false }) {
   );
 }
 
-// The answer first: the plan in plain words, then up to four figures.
-export function PlanAnswer({ result, stats, tone = "neutral", note = null }) {
+export const TEST_PLAN_PYTHON_TIP =
+  "A script that works out this plan with SurPyval from the inputs above, and prints the numbers on this page";
+
+// "Download as Python" for a test plan: a SurPyval script for the inputs
+// last calculated (kind: demonstration, sequential, life, accelerated or
+// comparison). Free, like the plans.
+export function TestPlanPythonButton({ kind, inputs }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const onClick = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await downloadTestPlanPython(kind, inputs);
+    } catch (e) {
+      setError(percentApiMessage(e.message));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <ResultSummary tone={tone} sentence={result.summary} stats={stats}>
-      {note}
-    </ResultSummary>
+    <>
+      <button type="button" className="secondary" onClick={onClick} disabled={busy || !inputs}
+              title={TEST_PLAN_PYTHON_TIP}>
+        {busy ? "Preparing…" : "Download as Python"}
+      </button>
+      {error && <span className="calc-warn" role="alert">{error}</span>}
+    </>
+  );
+}
+
+// The answer first: the plan in plain words, then up to four figures; with
+// ``kind`` and the ``inputs`` it was worked out from, the Python download.
+export function PlanAnswer({ result, stats, tone = "neutral", note = null, kind = null, inputs = null }) {
+  return (
+    <>
+      <ResultSummary tone={tone} sentence={result.summary} stats={stats}>
+        {note}
+      </ResultSummary>
+      {kind && inputs && (
+        <div className="row tp-actions">
+          <TestPlanPythonButton kind={kind} inputs={inputs} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -214,7 +253,7 @@ export function SimulationCheck({ kind, inputs }) {
         </div>
       )}
       {error && <div className="calc-warn">{error}</div>}
-      {out && <p className="tp-sim-out" role="status">{out.summary}</p>}
+      {out && <p className={`tp-sim-out${out.verdict === "weak" ? " calc-warn" : ""}`} role="status">{out.summary}</p>}
     </div>
   );
 }

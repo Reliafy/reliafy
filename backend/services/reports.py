@@ -13,12 +13,19 @@ creation, expiry, passphrase, revocation and noindex as any other share.
 Nothing is published when a report is saved; a link is a separate, explicit
 step.
 
-Which items a report may hold: the owner's own personal items and the shared
-samples (which every account can already see). Team items can't be linked
-publicly yet, so they can't go in a report either. Ownership is checked when
-the report is saved and again, per section, every time the page is opened:
-a section whose item was deleted or moved shows as unavailable, never as
-someone else's data.
+A report belongs to a workspace, like a dataset or a model: its
+``owner_id`` is the workspace's write principal (a uid for Personal,
+``team:<id>`` for a team), so a team's members all see and edit the team's
+reports, and the Personal workspace's reports never show in a team. Reports
+made before this were all Personal (their items had to be), and their
+``owner_id`` is already the uid: nothing to migrate.
+
+Which items a report may hold: the workspace's own items and the shared
+samples (which every account can already see). Ownership is checked when the
+report is saved and again, per section, every time the page is opened: a
+section whose item was deleted or moved shows as unavailable, never as
+someone else's data. Public links stay Personal-only for now
+(``public_links.owned_artifact``), so a team report is read in the app.
 """
 
 from __future__ import annotations
@@ -36,9 +43,12 @@ COLLECTION = "reports"
 # picker lists them.
 ITEM_KINDS = {
     "models": "Non-repairable model",
-    "recurrent_models": "Recurrent-event model",
+    "recurrent_models": "Repairable model",
+    "alt_models": "Accelerated life model",
     "degradation_models": "Degradation model",
     "rbds": "Block diagram",
+    "fault_trees": "Fault tree",
+    "reliability_predictions": "Reliability prediction",
     "strategy_analyses": "Strategy analysis",
     "fleets": "Fleet forecast",
     "datasets": "Dataset",
@@ -71,15 +81,16 @@ def _text(value, limit: int, what: str, *, one_line: bool = False) -> str:
     return text
 
 
-def item_allowed(doc: dict | None, uid: str) -> bool:
-    """Whether an item may appear in ``uid``'s report: theirs, or a sample."""
+def item_allowed(doc: dict | None, owner: str) -> bool:
+    """Whether an item may appear in a report of the workspace ``owner`` (a
+    uid or ``team:<id>``): the workspace's own, or a sample."""
     if doc is None:
         return False
-    owner = doc.get("owner_id")
-    return owner == uid or samples_service.is_sample(owner)
+    item_owner = doc.get("owner_id")
+    return item_owner == owner or samples_service.is_sample(item_owner)
 
 
-def clean_sections(db, uid: str, sections) -> list[dict]:
+def clean_sections(db, owner: str, sections) -> list[dict]:
     if not isinstance(sections, list) or not sections:
         raise ReportError("Add at least one item to the report.")
     if len(sections) > MAX_SECTIONS:
@@ -96,10 +107,11 @@ def clean_sections(db, uid: str, sections) -> list[dict]:
             raise ReportError("Each item can appear in a report only once.")
         seen.add((collection, artifact_id))
         doc = db[collection].find_one({"_id": artifact_id}, {"owner_id": 1})
-        if not item_allowed(doc, uid):
+        if not item_allowed(doc, owner):
             if doc is not None and access.is_team_owner(doc.get("owner_id")):
-                raise ReportError("Team items can't go in a report yet.")
-            raise ReportError("One of the items wasn't found among your own.", 404)
+                raise ReportError("A report holds items from its own workspace: switch to that team's "
+                                  "workspace to report on its items.")
+            raise ReportError("One of the items wasn't found in this workspace.", 404)
         out.append({
             "collection": collection,
             "artifact_id": artifact_id,
@@ -108,7 +120,7 @@ def clean_sections(db, uid: str, sections) -> list[dict]:
     return out
 
 
-def _fields(db, uid: str, body: dict) -> dict:
+def _fields(db, owner: str, body: dict) -> dict:
     title = _text(body.get("title"), MAX_TITLE, "title", one_line=True)
     if not title:
         raise ReportError("Give the report a title.")
@@ -116,44 +128,47 @@ def _fields(db, uid: str, body: dict) -> dict:
         "name": title,
         "author": _text(body.get("author"), MAX_AUTHOR, "author line", one_line=True),
         "introduction": _text(body.get("introduction"), MAX_INTRO, "introduction"),
-        "sections": clean_sections(db, uid, body.get("sections")),
+        "sections": clean_sections(db, owner, body.get("sections")),
     }
 
 
-def create(db, uid: str, body: dict) -> dict:
-    fields = _fields(db, uid, body)
-    if db[COLLECTION].count_documents({"owner_id": uid}) >= MAX_REPORTS:
-        raise ReportError(f"You can keep up to {MAX_REPORTS} reports: delete one you no longer need.")
+# ``owner`` below is always one workspace's principal: the uid (Personal) or
+# ``team:<id>`` (a team), i.e. ``AccessCtx.write_owner``.
+
+def create(db, owner: str, body: dict) -> dict:
+    fields = _fields(db, owner, body)
+    if db[COLLECTION].count_documents({"owner_id": owner}) >= MAX_REPORTS:
+        raise ReportError(f"A workspace can keep up to {MAX_REPORTS} reports: delete one you no longer need.")
     now = _now()
-    doc = {"_id": uuid.uuid4().hex, "owner_id": uid, "created_at": now, "updated_at": now, **fields}
+    doc = {"_id": uuid.uuid4().hex, "owner_id": owner, "created_at": now, "updated_at": now, **fields}
     db[COLLECTION].insert_one(doc)
     return doc
 
 
-def get_owned(db, uid: str, report_id: str) -> dict | None:
+def get_owned(db, owner: str, report_id: str) -> dict | None:
     doc = db[COLLECTION].find_one({"_id": report_id})
-    return doc if doc is not None and doc.get("owner_id") == uid else None
+    return doc if doc is not None and doc.get("owner_id") == owner else None
 
 
-def update(db, uid: str, report_id: str, body: dict) -> dict | None:
-    if get_owned(db, uid, report_id) is None:
+def update(db, owner: str, report_id: str, body: dict) -> dict | None:
+    if get_owned(db, owner, report_id) is None:
         return None
-    fields = {**_fields(db, uid, body), "updated_at": _now()}
-    db[COLLECTION].update_one({"_id": report_id, "owner_id": uid}, {"$set": fields})
-    return get_owned(db, uid, report_id)
+    fields = {**_fields(db, owner, body), "updated_at": _now()}
+    db[COLLECTION].update_one({"_id": report_id, "owner_id": owner}, {"$set": fields})
+    return get_owned(db, owner, report_id)
 
 
-def delete(db, uid: str, report_id: str) -> bool:
+def delete(db, owner: str, report_id: str) -> bool:
     """Delete a report and every public link to it (they'd show nothing)."""
-    result = db[COLLECTION].delete_one({"_id": report_id, "owner_id": uid})
+    result = db[COLLECTION].delete_one({"_id": report_id, "owner_id": owner})
     if not result.deleted_count:
         return False
-    db.public_links.delete_many({"collection": COLLECTION, "artifact_id": report_id, "grantor_uid": uid})
+    db.public_links.delete_many({"collection": COLLECTION, "artifact_id": report_id})
     return True
 
 
-def list_reports(db, uid: str) -> list[dict]:
-    return list(db[COLLECTION].find({"owner_id": uid}).sort("updated_at", -1))
+def list_reports(db, owner: str) -> list[dict]:
+    return list(db[COLLECTION].find({"owner_id": owner}).sort("updated_at", -1))
 
 
 def _names(db, sections: list[dict]) -> dict:
@@ -197,14 +212,16 @@ def public(db, doc: dict) -> dict:
     }
 
 
-def pickable_items(db, uid: str, hidden: set | None = None) -> list[dict]:
-    """Everything the user could add to a report: their own items (newest
-    first) and then the samples they haven't hidden."""
+def pickable_items(db, owner: str, hidden: set | None = None) -> list[dict]:
+    """Everything that could go in a report of the workspace ``owner``: its
+    own items (newest first) and then the samples the user hasn't hidden.
+    Each carries its kind and dates, so two items with one name can be told
+    apart."""
     hidden = hidden or set()
     own, samples = [], []
     for coll, kind in ITEM_KINDS.items():
         cursor = db[coll].find(
-            {"owner_id": {"$in": [uid, SAMPLE_OWNER]}},
+            {"owner_id": {"$in": [owner, SAMPLE_OWNER]}},
             {"name": 1, "owner_id": 1, "updated_at": 1, "created_at": 1},
         )
         for doc in cursor:
@@ -218,6 +235,7 @@ def pickable_items(db, uid: str, hidden: set | None = None) -> list[dict]:
                 "name": doc.get("name") or "Untitled",
                 "is_sample": sample,
                 "updated_at": _iso(doc.get("updated_at") or doc.get("created_at")),
+                "created_at": _iso(doc.get("created_at")),
             }
             (samples if sample else own).append(row)
     own.sort(key=lambda r: str(r["updated_at"] or ""), reverse=True)

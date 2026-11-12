@@ -85,6 +85,19 @@ Trigger = Annotated[dict[str, Any] | None, Field(description=(
 
 
 # A task's LSA record: what doing it needs (Maintenance.set_task_resources).
+Restoration = Annotated[dict[str, Any] | None, Field(description=(
+    "update: what a fixed-interval task leaves the item as: {kind: as_new | kijima1 (takes away a share of "
+    "the age since the last task) | kijima2 (of its whole age), q (0 as good as new to 1 as bad as old) or "
+    "restores (the %), replace_every? (every Nth task a full replacement), replacement_cost?, "
+    "failure_mode_id? (that mode's decision only)}; {} clears it."))]
+OlderThan = Annotated[dict[str, Any] | None, Field(description=(
+    "update: at a shutdown, do it only on an item older than {value, unit (days/weeks/months/years)}; "
+    "{} clears it."))]
+Shutdown = Annotated[dict[str, Any] | None, Field(description=(
+    "create/update: the package is a shutdown, its visits planned outages: {duration_hours, cost?, scope? "
+    "(position ids inside it; default the whole position), idle_ageing? (default true), dates? (in place of "
+    "the cadence)}; {} makes it an ordinary package."))]
+
 Resources = Annotated[dict[str, Any] | None, Field(description=(
     "Sections, each optional: labour [{trade, people, hours}] (hours per person), tools [{name, qty?, note?, "
     "point_id? (the measuring point or channel it reads)}], spares [{part_id? | name, qty}], consumables [{name, "
@@ -461,12 +474,14 @@ TASKS: Table = {
         or a reading past a limit). maintenance guide topic plan has examples."""),
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
-               "while_stored include_positions trigger clear_trigger start", """Rename it or change its interval, second limit (also_interval 0
+               "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
-        falls due (start, a date; then every interval; '' goes back to one interval from last done). Its subject can't
-        change: move it, or retire it and create another."""),
+        falls due (start, a date; then every interval; '' goes back to one interval from last done). cost: what it costs
+        each time, typed (in place of its LSA's labour at trade rates, spares and consumables; clear_cost true
+        goes back to that); the RCM's calculators read it. Its subject can't change: move it, or retire it and
+        create another."""),
     "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
              "its other links stay."),
     "unlink": ("task_id failure_mode_id", "", "Take that one mode off it."),
@@ -476,9 +491,10 @@ TASKS: Table = {
     "restore": ("task_id", "", "Put a retired task back on the schedule as it was."),
     "set_last_done": ("task_id on", "", """When it was last done before it was tracked here, so its next due
         date counts from then."""),
-    "set_resources": ("task_id resources", "", """What doing it needs (its LSA record): labour, tools, spares,
+    "set_resources": ("task_id resources", "trade_rates", """What doing it needs (its LSA record): labour, tools, spares,
         consumables, access, method, duration_hours. Each section given replaces that one (null clears it);
-        guide topic plan has an example."""),
+        guide topic plan has an example. trade_rates: hourly rates by trade for the whole workspace
+        ({'Fitter': 95}; null clears one), which price every task's labour (its cost)."""),
 }
 
 PROPOSALS: Table = {
@@ -499,18 +515,20 @@ WORK_ORDERS: Table = {
         and settings taken at it now, linked to it (get.work_order reading_points lists what it asks for)."""),
     "status": ("work_order_id status", "note", "Move an open one along: planned, in_progress, waiting, or open."),
     "close": ("work_order_id", "actions on notes readings not_done", """Close it with what was done (actions, in order).
-        A replace ends the fitted item's time at the position (a failure if a failure mode is named, else
-        planned) and fits the new one: that builds the life data. Get the failure-mode ids from maintenance get.work_order
+        A replace ends the fitted item's time at the position (reason failure, planned or other; not given: a
+        failure if a failure mode is named, else planned) and fits the new one: that builds the life data. Get the failure-mode ids from maintenance get.work_order
          first; if none fits, use failure_mode_text, never a failure as planned. An item's work
         order acts at the position it's fitted to now; a location's (a round) takes repair, inspect and other
-        only. A work package's: not_done for lines not ticked; an action's position_id picks a line's position.
+        only. A work package's: not_done for lines not ticked. An action's position_id: a line's position, or a
+        position inside the work order's (get.work_order inside_positions: the seal in the pump's check).
         readings: values read or set during the work (a new chlorinator setting), linked to it. Nothing is saved
         if any action or reading is invalid."""),
     "cancel": ("work_order_id", "reason", """Cancel one that won't be done (a duplicate, raised by mistake);
         reason kept as cancel_reason. Work that was done: close."""),
-    "generate": ("", "horizon_days", """Open a preventive work order for every task due within horizon_days
+    "generate": ("", "horizon_days package_id location_id", """Open a preventive work order for every task due within horizon_days
         (default 30, at most 366) that has none open, on the task's subject; one per work package visit (lines
-        added to its open one instead); skipped: any it couldn't, and why."""),
+        added to its open one instead); skipped: any it couldn't, and why. package_id: only that package's next
+        visit, raised now whenever it is (nothing else). location_id: only the work in that area."""),
     "labour": ("work_order_id hours", "who rate on note", "Hours worked, by whom, at an hourly rate if known."),
     "part_used": ("work_order_id", "part quantity unit_cost part_number note part_id from_location_id", """A part
         or consumable used: free text (part) or a catalogue part (part_id, from the work order's
@@ -528,10 +546,11 @@ PACKAGES: Table = {
         and trade, each with a ready create and warnings; weekday: longer cadences as layers on the shortest.
         Saves nothing: show the user."""),
     "create": ("name", "position_id location_id parent_id timing every unit weekday nth day anchor tolerance "
-               "tolerance_unit trade notes tasks season", """A package on exactly one of position_id or location_id, or
+               "tolerance_unit trade notes tasks season shutdown", """A package on exactly one of position_id or location_id, or
         a layer on parent_id. Timing, cadence and visit rules: maintenance guide topic plan."""),
     "update": ("package_id", "name timing every unit weekday nth day clear_pattern anchor tolerance tolerance_unit "
-               "trade notes tasks season", "Change it; tasks: members' visit rules; season {} clears it."),
+               "trade notes tasks season shutdown", "Change it; tasks: members' visit rules; season {} clears it; "
+               "shutdown: its visits are planned outages ({} clears it)."),
     "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
     "remove_task": ("package_id task_id", "", "Take a task out: it's raised on its own again."),
     "pause": ("package_id reason", "until full_visit", """Pause it until a date (back by itself then; none:
@@ -690,7 +709,7 @@ POSITION_MODELS: Table = {
         position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
         replace_link_id: the model on it this replaces. library_record_id: a data library record (list kind library)
         as an exponential model, cited, with every one of its covariates given (pipe length, clock, demands a year...). fit true with data (position, class, both: the class's history
-        as the prior) and method (mle: plain, 95% confidence; bayes: with a prior {kind: class | model | params | b10,
+        as the prior) and method (mle: plain, 90% confidence; bayes: with a prior {kind: class | model | params | b10,
         ...}, 90% credible); trust weighs a prior (close, guide, start). fit true with baseline: a Bayesian update of a
         baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
         prediction {environment?, mission_time?, assign?: {part number: {record_id, quality_factor?} or
@@ -713,17 +732,20 @@ TOPOLOGY: Table = {
         Its ends don't change: disconnect and connect again."""),
     "disconnect": ("interface_id", "", "Remove a connection (its id is in the position's connections)."),
     "reconnect": ("interface_id", "", "Put a removed connection back as it was."),
-    "create_group": ("member_ids", "name k mode standby", """Positions doing the same job where k of them are
-        enough (two pumps, either will do: k = 1, the default; duty and standby: mode standby). Record it while
-        building the register: generate_rbd and impact depend on it. mode active (default) or standby (the others
-        wait; standby cold, warm or hot)."""),
-    "update_group": ("group_id", "name k mode standby add remove",
-                     "Rename it, change k or mode, add / remove members."),
+    "create_group": ("member_ids", "name k mode standby start_probability dormancy", """Positions doing the same
+        job where k of them are enough (two pumps, either will do: k = 1, the default; duty and standby: mode
+        standby). Record it while building the register: generate_rbd, build_rbd and impact depend on it. mode
+        active (default) or standby (the others wait; standby cold, warm or hot; start_probability: the chance a
+        waiting one starts, cold; dormancy: how fast a warm one ages waiting, 0-1). One set per position."""),
+    "update_group": ("group_id", "name k mode standby add remove start_probability dormancy",
+                     "Rename it, change k, mode or standby, add / remove members, or its start_probability / "
+                     "dormancy (-1 clears one)."),
     "set_duty": ("group_id position_id", "", "Which member of a standby group runs now (a duty / standby swap)."),
     "retire_group": ("group_id", "reason", "Take a redundancy group out of use (kept in the history)."),
     "restore_group": ("group_id", "", "Bring a retired group back with its members."),
     "generate_rbd": ("position_id", "", """Generate (or regenerate) an RBD for a system position from the
-        positions inside it: connections wire the blocks, groups become k of n, blocks take their class's
+        positions inside it: connections wire the blocks, groups become k of n (or one standby block), blocks
+        take their class's
         fitted model (placeholders otherwise, listed in notes). Saved as a normal RBD: analyse rbd."""),
 }
 
@@ -815,7 +837,8 @@ RCM: Table = {
         task's numbers now. pf_unit may be a unit of use (cycles, flight hours): the answer is then in it, without
         costs. save_evidence true, with failure_mode_id (task_id: which task, else its first on-condition one): also
         sets the task's interval to recommended, adds a line to the mode's notes and saves the calculation as its
-        evidence (saved)."""),
+        evidence (saved). With task_id, found_cost and failure_cost but no inspection_cost, the task's own cost
+        is used (task_cost_used)."""),
     "ff_interval": ("", "failure_rate model_id distribution_id params model_unit target_unavailability "
                                  "test_cost repair_cost demand_rate consequence_cost unit current_interval current_unit "
                                  "failure_mode_id task_id save_evidence",
@@ -826,7 +849,8 @@ RCM: Table = {
         met by a failed device) add cost_optimal, the cheapest interval (alone, without a target, they give it). Returns the interval, recommended (rounded down), the mean unavailability and
         cost a year there and, with current_interval + current_unit, the task's numbers now and whether they meet
         the target. A model in a unit of use (cycles, flight hours) answers in it, with a target and no costs.
-        save_evidence true, with failure_mode_id (task_id optional): as pf_interval's."""),
+        save_evidence true, with failure_mode_id (task_id optional): as pf_interval's. With task_id and demand_rate
+        but no test_cost, the task's own cost is used (task_cost_used)."""),
 }
 
 
@@ -1613,7 +1637,9 @@ def register() -> None:
                                       "interval_unit, task_id?, evidence?, on_found?}, ...] instead of outcome, "
                                       "task and interval (a member's evidence, else the decision's, is checked "
                                       "for it). on_found: what's done when an on_condition or failure_finding "
-                                      "check finds it ('Replace the bearing'; left out: kept). notes: deprecated, "
+                                      "check finds it ('Replace the bearing'; left out: kept). restoration (a "
+                                      "fixed_interval decision or member): what its task leaves the item as, "
+                                      "as tasks.update's. notes: deprecated, "
                                       "added to the mode's notes and rationale (one place: update notes)."))] = None,
                                   cause_id: str | None = None, task_id: str | None = None,
                                   name: str | None = None, interval: float | None = None,
@@ -1786,6 +1812,16 @@ def register() -> None:
                           reason: str | None = None, measurement: Measurement = None,
                           last_done_reading: float | None = None, trigger: Trigger = None,
                           clear_trigger: bool | None = None, resources: Resources = None,
+                          cost: Annotated[float | None, Field(description=(
+                              "update: what the task costs each time it's done (typed), e.g. 180."))] = None,
+                          clear_cost: bool | None = None, restoration: Restoration = None,
+                          basis: Annotated[Literal["calendar", "operating"] | None, Field(description=(
+                              "update: operating counts its interval in running hours (an RBD puts it on "
+                              "the calendar through the block's duty); calendar (default)."))] = None,
+                          older_than: OlderThan = None,
+                          trade_rates: Annotated[dict[str, float | None] | None, Field(description=(
+                              "set_resources: hourly rates by trade, e.g. {'Fitter': 95}; null clears "
+                              "one."))] = None,
                           start: Annotated[str | None, Field(description=(
                               "create/update: the date it (next) falls due, e.g. 2027-10-01; then every "
                               "interval. Default one interval from today; '' clears."))] = None) -> dict[str, Any]:
@@ -1804,11 +1840,24 @@ def register() -> None:
                        failure_mode_ids=failure_mode_ids, trigger=trigger, start=start)
         if action == "update":
             mode = "" if unlink_failure_mode else failure_mode_id
-            return run(m.update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
-                       instructions, checklist, mode, source, reference,
-                       None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
-                       include_positions, last_done_reading,
-                       None if clear_trigger else trigger if trigger is not None else ..., start=start)
+
+            def update():
+                view = m.update_task(task_id, name, interval, unit, also_interval, also_unit, point_id,
+                                     instructions, checklist, mode, source, reference,
+                                     None if clear_outcome else outcome if outcome is not None else ..., trade,
+                                     while_stored, include_positions, last_done_reading,
+                                     None if clear_trigger else trigger if trigger is not None else ..., start=start)
+                if clear_cost or cost is not None:
+                    view = m.set_task_cost(task_id, None if clear_cost else cost)
+                if restoration is not None:
+                    given = dict(restoration)
+                    view = m.set_task_restoration(task_id, given, failure_mode_id=given.pop("failure_mode_id", None))
+                if basis is not None:
+                    view = m.set_task_basis(task_id, basis)
+                if older_than is not None:
+                    view = m.set_task_older_than(task_id, older_than)
+                return view
+            return run(update)
         if action == "link":
             return run(m.link_task, task_id, failure_mode_id)
         if action == "unlink":
@@ -1820,7 +1869,11 @@ def register() -> None:
         if action == "restore":
             return run(m.restore_task, task_id)
         if action == "set_resources":
-            return run(m.set_task_resources, task_id, resources)
+            def set_resources():
+                for trade_name, rate in (trade_rates or {}).items():
+                    m.set_trade_rate(trade_name, rate)
+                return m.set_task_resources(task_id, resources)
+            return run(set_resources)
         return run(m.set_last_done, task_id, on)
 
     @tool("maintenance_proposals", _WRITE, "Accept or reject a proposed plan change", PROPOSALS)
@@ -1844,6 +1897,8 @@ def register() -> None:
                 "open / close: notes. update: replaces the WHOLE note (to add, use append_note)."))] = None,
             append_note: AppendNote = None, trade: str | None = None, include_positions: bool | None = None,
             assignee: str | None = None, planned_for: str | None = None,
+            package_id: Annotated[str | None, Field(description=(
+                "generate: only this work package's next visit, raised now on its own."))] = None,
             status: Literal["open", "planned", "in_progress", "waiting"] | None = None,
             note: str | None = None,
             actions: Annotated[list[dict] | None, Field(description=(
@@ -1898,7 +1953,9 @@ def register() -> None:
         if action == "cancel":
             return run(m.cancel_work_order, work_order_id, reason or "")
         if action == "generate":
-            return run(m.generate, max(0, min(_d(horizon_days, 30), 366)))
+            if package_id:
+                return run(m.raise_package_visit, package_id)
+            return run(m.generate, max(0, min(_d(horizon_days, 30), 366)), location_id)
         if action == "labour":
             return run(m.log_labour, work_order_id, hours, who or "", rate, on, note or "")
         if action == "part_used":
@@ -2043,7 +2100,7 @@ def register() -> None:
             = None,
             season: Annotated[dict[str, Any] | None, Field(description=(
                 "Active only part of the year: {months: [10, 11, 12, 1, 2, 3]} or {start: 'MM-DD', end: 'MM-DD'}; "
-                "update: {} for all year."))] = None) -> dict[str, Any]:
+                "update: {} for all year."))] = None, shutdown: Shutdown = None) -> dict[str, Any]:
         """Work packages: tasks done together on one visit (the weekly check), raising one work order per
         visit, with layers adding lines on some visits (the first Saturday of the month). How-to: maintenance
         guide topic plan (making them) and run (their work orders)."""
@@ -2051,13 +2108,21 @@ def register() -> None:
         if action == "propose":
             return run(m.propose_packages, position_id, location_id, weekday)
         if action == "create":
-            return run(m.create_package, name, position_id, location_id, parent_id, _d(timing, "fixed"),
-                       _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance, tolerance_unit,
-                       trade or "", notes or "", tasks, season)
+            def create():
+                m.check_shutdown(shutdown)  # refused before the package is made
+                made = m.create_package(name, position_id, location_id, parent_id, _d(timing, "fixed"),
+                                        _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance,
+                                        tolerance_unit, trade or "", notes or "", tasks, season)
+                return m.set_package_shutdown(made["id"], shutdown) if shutdown else made
+            return run(create)
         if action == "update":
-            return run(m.update_package, package_id, name, timing, every, unit, weekday, nth, day,
-                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
-                       ... if season is None else season)
+            def update():
+                m.check_shutdown(shutdown)
+                out = m.update_package(package_id, name, timing, every, unit, weekday, nth, day,
+                                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
+                                       ... if season is None else season)
+                return m.set_package_shutdown(package_id, shutdown) if shutdown is not None else out
+            return run(update)
         if action == "add_task":
             return run(m.add_package_task, package_id, task_id, visit_rule, every_nth, suppresses)
         if action == "remove_task":
@@ -2485,7 +2550,9 @@ def register() -> None:
                              standby: Literal["cold", "warm", "hot"] | None = None,
                              group_id: str | None = None, add: list[str] | None = None,
                              remove: list[str] | None = None, position_id: str | None = None,
-                             clear_realised_by: bool | None = None, reason: str | None = None) -> dict[str, Any]:
+                             clear_realised_by: bool | None = None, reason: str | None = None,
+                             start_probability: float | None = None,
+                             dormancy: float | None = None) -> dict[str, Any]:
         """How positions depend on each other: connections (what passes from one to another) and
         redundancy groups (k of n will do). They drive impact (maintenance get.impact) and the RBD
         generate_rbd makes from a system."""
@@ -2504,10 +2571,13 @@ def register() -> None:
             return run(lambda: (m.retire_group(group_id, reason or ""), {"retired": group_id})[1])
         if action == "restore_group":
             return run(m.restore_group, group_id)
+        clear = lambda v: "" if v is not None and v < 0 else v  # noqa: E731 - -1 clears a setting
         if action == "create_group":
-            return run(m.create_group, name or "", member_ids, _d(k, 1), _d(mode, "active"), _d(standby, "cold"))
+            return run(m.create_group, name or "", member_ids, _d(k, 1), _d(mode, "active"), _d(standby, "cold"),
+                       start_probability, dormancy)
         if action == "update_group":
-            return run(m.update_group, group_id, name, k, mode, standby, add or [], remove or [])
+            return run(m.update_group, group_id, name, k, mode, standby, add or [], remove or [],
+                       clear(start_probability), clear(dormancy))
         if action == "set_duty":
             return run(m.set_duty, group_id, position_id)
         return run(rbd_derive.save, m, _db(), position_id)
@@ -2743,6 +2813,23 @@ def register() -> None:
         m = m_for(ctx)  # Maintenance users only, like the rest of the tool
         if save_evidence and not failure_mode_id:
             raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
+        # The task's own cost (its position's figure, task_costs.py) where a priced call leaves it out:
+        # what a check costs (P-F) or a test (failure finding). Said in the answer (task_cost_used).
+        task_cost = None
+        if task_id and (inspection_cost if action == "pf_interval" else test_cost) is None and (
+                (found_cost is not None and failure_cost is not None) if action == "pf_interval"
+                else demand_rate is not None):
+            try:
+                task_cost = m.task_cost(task_id)
+            except Exception:  # noqa: BLE001 - an unknown task is refused where it's used, as before
+                task_cost = None
+            if task_cost and task_cost["amount"] is not None:
+                if action == "pf_interval":
+                    inspection_cost = task_cost["amount"]
+                else:
+                    test_cost = task_cost["amount"]
+            else:
+                task_cost = None
         try:
             if action == "pf_interval":
                 inputs = {k: v for k, v in {
@@ -2773,6 +2860,8 @@ def register() -> None:
                 out = rcm_intervals.failure_finding_interval(**inputs)
         except StrategyError as exc:
             raise ToolError(str(exc)) from None
+        if task_cost:
+            out = {**out, "task_cost_used": {"amount": task_cost["amount"], "source": task_cost["source"]}}
         if not save_evidence:
             return out
         from backend.mcp_server import _require_scope

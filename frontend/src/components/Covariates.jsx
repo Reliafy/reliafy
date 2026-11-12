@@ -1,6 +1,6 @@
 // Covariate selection for proportional-hazards models. Two modes:
 //   - simple: tick CSV columns to use as covariates (Z)
-//   - advanced: write a formulaic formula (e.g. "age + sex + age:sex")
+//   - advanced: write a formula (e.g. "load + speed + site")
 // The two are mutually exclusive. ``folded``: inside a disclosure that already
 // names them, so no heading or rule of its own. ``units``/``onSetUnit`` (optional, #265)
 // give each ticked covariate a unit ("°C", "kN"), shown with its calculator
@@ -35,28 +35,29 @@ export default function Covariates({
 
       <p className="cov-hint">
         Add covariates to fit a regression model (proportional-hazards or
-        accelerated-failure-time). Leave empty to fit a plain distribution. For
-        categorical (text) columns, use the advanced formula.
+        accelerated-failure-time). Leave empty to fit a plain distribution. A
+        text column (a site, a supplier) is compared as groups, each against
+        the first in A–Z order, which the results name as the base level.
       </p>
 
       {advanced ? (
         <div className="cov-formula">
           <input
             type="text"
-            placeholder="e.g. age + sex + age:temperature"
+            placeholder="e.g. load + speed + site"
             value={formula}
             onChange={(e) => onSetFormula(e.target.value)}
           />
           <span className="map-help">
-            A{" "}
+            A formula over your columns: + adds a column, load:speed lets two
+            act together. Text columns are compared as groups automatically.{" "}
             <a
               href="https://matthewwardrop.github.io/formulaic/"
               target="_blank"
               rel="noreferrer"
             >
-              formulaic
-            </a>{" "}
-            formula over your columns. Categoricals are expanded automatically.
+              Formula syntax
+            </a>
           </span>
         </div>
       ) : (

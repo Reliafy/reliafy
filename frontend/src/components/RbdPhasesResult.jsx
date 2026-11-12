@@ -83,6 +83,9 @@ function MissionAnswer({ result, unit, name, dim }) {
   const iv = result.interval;
   const risky = result.riskiest;
   const rows = result.phases || [];
+  // Blocks with no model (a placeholder stands in): said with the answer, never left unsaid.
+  const guessed = (result.placeholders || []).map((p) => p.label);
+  const without = result.without_placeholders?.reliability ?? null;
   const how = simulated
     ? <>, simulated from {iv?.n_samples?.toLocaleString() || "many"} missions
         {iv ? <> ({Math.round((iv.confidence || 0.95) * 100)}% interval {pct(iv.lower)} to {pct(iv.upper)})</> : null}</>
@@ -115,7 +118,15 @@ function MissionAnswer({ result, unit, name, dim }) {
   const chartH = Math.min(360, 70 + 34 * rows.length);
   return (
     <div className={"rbd-mission-body" + (dim ? " is-stale" : "")}>
-      <ResultSummary tone="neutral" sentence={sentence} stats={stats} />
+      <ResultSummary tone={guessed.length ? "caveat" : "neutral"} sentence={sentence} stats={stats}>
+        {guessed.length ? (
+          <>
+            Not a real figure yet: {guessed.join(", ")} {guessed.length === 1 ? "has" : "have"} no model, so a placeholder
+            stands in. {without != null ? `With ${guessed.length === 1 ? "that block" : "those blocks"} left out, the mission succeeds with probability ${pct(without)}. ` : ""}
+            Give {guessed.length === 1 ? "it a model" : "each a model"}, or mark {guessed.length === 1 ? "it" : "them"} not needed in the phases.
+          </>
+        ) : null}
+      </ResultSummary>
       {rows.length > 1 && (
         <div className="rbd-mission-chart">
           <Plot

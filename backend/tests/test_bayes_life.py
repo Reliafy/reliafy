@@ -70,8 +70,11 @@ def test_an_early_failure_pulls_the_life_in_and_the_result_says_so():
     assert post["alpha"]["lower"] < post["alpha"]["median"] < post["alpha"]["upper"]
     assert result["counts"] == {"failures": 2, "suspensions": 2}
     assert result["moved"].startswith("2 failures at 1,400 and 1,900 hours pulled the characteristic life from 3,000")
-    assert "90% chance it lies between" in result["words"] and "confidence" not in result["words"]
-    assert 0 < result["at_age"]["lower"] < result["at_age"]["reliability"] < result["at_age"]["upper"] < 1
+    assert "we're 90% sure it's at least" in result["words"] and "one-sided credible" in result["words"]
+    assert "confidence" not in result["words"] and "lies between" not in result["words"]
+    # One-sided: a 90% lower credible bound on reliability, as for a B-life.
+    assert 0 < result["at_age"]["lower"] < result["at_age"]["reliability"] < 1
+    assert result["at_age"]["upper"] is None and result["at_age"]["bound"] == "lower"
     c = result["curves"]
     assert len(c["x"]) == bl.GRID and c["baseline_sf"][0] == pytest.approx(1)
     # Trusting the baseline closely moves it less.
@@ -232,3 +235,26 @@ def test_the_calculators_grid_survives_a_quantile_that_wont_converge():
     assert t == pytest.approx(float(sp.Weibull.qf(0.99, 2.35e6, 0.445)))
     with pytest.raises(ValueError):
         bl._upper_time(Stubborn(), None)
+
+
+def test_the_fit_result_gives_the_same_one_sided_b10_bound_as_the_saved_page(db):
+    """12 Nov review: the result said the B10 is "between 3,506 and 6,994" (90%
+    two-sided) while the saved model's page said "≥ 3,810 at 90% credible". B-lives
+    and the mean life are 90% one-sided lower bounds everywhere: the result now
+    gives the saved page's number, in its words."""
+    base = bl.baseline_from(None, OWNERS, set(), {"b10": {"value": 5000, "low": 3000, "high": 8000},
+                                                   "shape": {"low": 1.2, "high": 4}, "unit": "hours"})
+    rows = bl.given_rows([4200, 6100, 7900] + [8000] * 7, [0, 0, 0] + [1] * 7)
+    model, result, priors = bl.update(base, "guide", rows)
+    b10, mean = result["b10"], result["mean"]
+    assert b10["upper"] is None and b10["bound"] == "lower" and b10["level"] == 0.9
+    assert mean["upper"] is None and mean["bound"] == "lower"
+    # The one-sided 90% lower bound is above the two-sided 90% interval's lower end.
+    two = np.ravel(model.quantile_cri(0.1, alpha_ci=0.1))
+    assert two[0] < b10["lower"] < b10["point"] < two[1]
+    saved = bl.save(db, ORG, model, result, priors).results["life"]
+    page_b10 = next(b for b in saved["b_lives"] if b["label"] == "B10")
+    assert saved["confidence"] == 0.9
+    assert b10["lower"] == pytest.approx(page_b10["lower"], rel=1e-6)
+    assert mean["lower"] == pytest.approx(saved["mttf"]["lower"], rel=1e-6)
+    assert f"at least {bl.num(b10['lower'])} hours (90% one-sided credible bound)" in result["words"]

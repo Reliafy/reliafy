@@ -32,6 +32,9 @@ const weibullShape = (result) => {
 //   { kind: "restricted", value, lower, tau }    the mean counted to a horizon
 //   { kind: "none", why }                        no finite mean, and why
 // ``caveat``: a line for a mean that's far out (a Weibull shape below 1).
+// Fewer failures than this and a mean life is mostly the fitted shape talking.
+export const FEW_FAILURES = 5;
+
 export function meanLifeAnswer(result, mttf) {
   const np = result?.kind === "nonparametric";
   if (!mttf || mttf.value == null || !Number.isFinite(Number(mttf.value))) {
@@ -45,13 +48,19 @@ export function meanLifeAnswer(result, mttf) {
   const lower = mttf.lower != null && Number.isFinite(Number(mttf.lower)) ? Number(mttf.lower) : null;
   const value = Number(mttf.value);
   const beta = weibullShape(result);
-  const caveat = beta != null && beta < 1
+  // Very few failures: the mean is read off the fitted curve far past the
+  // data (a mean of 25,000 h from three failures by 2,240 h).
+  const failed = Number(result?.split?.failed);
+  const few = !np && result?.method !== "bayesian_update" && Number.isFinite(failed) && failed > 0 && failed < FEW_FAILURES;
+  const caveat = few
+    ? `Only ${failed} failure${failed === 1 ? "" : "s"} behind this fit, so the mean (and life well past the data) is a long extrapolation from the curve's shape. Quote a B-life with its lower bound instead, or fit With a prior if a datasheet or similar equipment says more.`
+    : beta != null && beta < 1
     ? "The shape β is below 1, so a few long-lived units pull the mean far beyond most lives: the median is usually the better figure to quote."
     : null;
   if (np && mttf.tau != null && mttf.restricted !== false) {
     return { kind: "restricted", value, lower, tau: Number(mttf.tau), caveat };
   }
-  return { kind: "mean", value, lower, caveat };
+  return { kind: "mean", value, lower, caveat, ...(few ? { fewFailures: failed } : {}) };
 }
 
 // The median (B50) from the same answer, for the comparison line.

@@ -57,6 +57,9 @@ def _with_evaluate_path(results: dict, model_id: str) -> dict:
 def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> AltModelDoc:
     """Fit and persist an ALT model. Raises ``FitError`` on a bad fit."""
     df = datasets_service.load_dataframe(dataset)
+    # A temperature in °C or °F is fitted in kelvin (and a bare one that reads
+    # as °C refused): the spec keeps how, so every refit converts the same way.
+    spec = alt_fit.with_kelvin(spec, df)
     payload, cache_id = alt_fit.fit(
         df,
         spec.get("mapping", {}),
@@ -66,6 +69,7 @@ def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> AltModelDoc
         unit=spec.get("unit", ""),
         stress_labels=spec.get("stress_labels"),
         stress_units=spec.get("stress_units"),
+        kelvin_from=spec.get("kelvin_from"),
     )
     model_id = uuid.uuid4().hex
     doc = AltModelDoc(
@@ -164,7 +168,7 @@ def _fit_inputs(db, doc: AltModelDoc) -> dict:
         raise FitError(DATASET_DELETED)
     spec = doc.spec or {}
     return alt_fit.build_inputs(datasets_service.load_dataframe(dataset), spec.get("mapping", {}),
-                                spec.get("stress_cols", []))
+                                spec.get("stress_cols", []), spec.get("kelvin_from"))
 
 
 def bounds(db, model_id: str, owner_id, *, uid: str, use_stress: list, method: str = "wald",
@@ -315,6 +319,7 @@ def _refit(db, doc: AltModelDoc):
         unit=spec.get("unit", ""),
         stress_labels=spec.get("stress_labels"),
         stress_units=spec.get("stress_units"),
+        kelvin_from=spec.get("kelvin_from"),
     )
     _remember_live(doc.id, cache_id)
     return alt_fit.get_live(cache_id)

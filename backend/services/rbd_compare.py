@@ -37,7 +37,6 @@ which is what ``compare`` works out without them.
 from __future__ import annotations
 
 import time
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -45,6 +44,7 @@ import numpy as np
 from backend.services import rbd_analysis as ra
 from backend.services import repy_compat
 from backend.services.rbd_analysis import AnalysisError
+from backend.warn_capture import ignore_warnings
 
 # Pilot replications timing one paired simulation, drawn from streams of their
 # own (a batch index no real run reaches) and then discarded.
@@ -241,7 +241,8 @@ def compare_availability(
     tolerance = _TOLERANCE_FRACTION * ra._availability_tolerance(worse)
     expect_downtime = bool(np.isfinite(worse) and worse > 0.0)
 
-    z = ra._z(ra._AVAIL_CONFIDENCE)
+    z = ra._z(ra._AVAIL_CONFIDENCE)  # the interval shown (90%)
+    z_stop = ra._z(ra._AVAIL_STOP_CONFIDENCE)  # the precision target's, so the run length is unchanged
     fa: list = []
     fb: list = []
     ca: list = []
@@ -261,7 +262,7 @@ def compare_availability(
         est, se = _difference(np.asarray(fa), np.asarray(fb), paired)
         # Batches that saw no downtime in either design say nothing yet.
         evidence = not expect_downtime or min(min(fa), min(fb)) < 1.0
-        reached = bool(np.isfinite(se) and z * se <= tolerance and evidence)
+        reached = bool(np.isfinite(se) and z_stop * se <= tolerance and evidence)
         if reached and not n_simulations:
             break
     fa_arr, fb_arr = np.asarray(fa), np.asarray(fb)
@@ -347,8 +348,7 @@ def _exact_window(a: dict, b: dict, t_sim: float, quantities) -> dict:
         if any(need and r[key] not in ra._OVER_TIME_OK for need, r in zip(needs, routes)):
             continue
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore", RuntimeWarning)
+            with ignore_warnings(RuntimeWarning), np.errstate(all="ignore"):
                 values = tuple(_window_value(d, t_sim, q) for d in (a, b))
                 difference = None
                 if not (_held(a) or _held(b)):

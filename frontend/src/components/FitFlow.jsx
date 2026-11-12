@@ -11,13 +11,15 @@ import {
 } from "../api.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import ColumnMapper from "./ColumnMapper.jsx";
-import ColumnRoles from "./ColumnRoles.jsx";
+import Covariates from "./Covariates.jsx";
+import PreviewTable from "./PreviewTable.jsx";
+import XRangeWarning from "./XRangeWarning.jsx";
 import HeaderNote, { detectHeader } from "./HeaderNote.jsx";
 import { useUnsavedFitScope } from "./UnsavedFitReminder.jsx";
+import { useAskText } from "./ConfirmProvider.jsx";
+import { PASTED_FILE, dataName, defaultFitName } from "../fitName.js";
 import { forgetUnsavedFit, rememberUnsavedFit, unsavedFitRecord } from "../unsavedFit.js";
-import Covariates from "./Covariates.jsx";
 import CoxOptions from "./CoxOptions.jsx";
-import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import CompetingRisksStep, { CR_OPTIONS } from "./CompetingRisksStep.jsx";
 import { frailtyFitOptions, groupProblem, withGroup } from "../moreModels.js";
@@ -28,11 +30,12 @@ import ModelNextSteps from "./ModelNextSteps.jsx";
 import { answerParts } from "../modelFrame.js";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { TvcToggle } from "./TvcColumns.jsx";
-import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts, tvcUnit } from "../tvcData.js";
-import { guessUnit, isNumeric } from "../datasetGuess.js";
+import { guessTvc, tvcMapping, tvcProblems, tvcUnit } from "../tvcData.js";
+import { isNumeric, timeUnitOf } from "../datasetGuess.js";
 import {
-  EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
-  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
+  EMPTY_MAPPING, columnFacts, isSimplePaste, startingMapping, statusSummary, summaryParts,
+  dataStepProblems, dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
+  dataQuestions, answerQuestion, unitCounts, keptChoices, dataStepNotes, issueRow,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -44,7 +47,7 @@ import { METHOD_CHOICES, METHOD_LINE, initialFit, refusalWords, showsTrust } fro
 import {
   DATASET_PRIOR_CHOICES, priorAsksDistribution, priorBlocked, priorProblem, priorRequest,
 } from "../priorFit.js";
-import { fitDatasetWithPrior, getLibraryRecord, getLibrarySources, listModels } from "../api.js";
+import { fitDatasetWithPrior, getDataReading, getLibraryRecord, getLibrarySources, listModels } from "../api.js";
 import { rowFromDetail } from "../libraryPicker.js";
 
 const STEPS = ["Source", "Data", "Model", "Result"];
@@ -54,17 +57,21 @@ const SOURCES = [
   { value: "paste", label: "Paste or type" },
   { value: "upload", label: "Upload a file" },
 ];
-const PASTED = "pasted-values.csv";
+const PASTED = PASTED_FILE;
 
 // A saved dataset's detail in the shape /api/columns gives.
 const datasetColumns = (full) => ({
   columns: full.preview_columns || [],
   preview: full.preview || [],
-  n_rows: full.n_rows,
+  // Wholly blank rows are skipped by every fit, so they aren't counted.
+  n_rows: full.n_rows - (full.blank_rows || 0),
+  blank_rows: full.blank_rows || 0,
   n_unique: full.n_unique,
   dtypes: full.dtypes,
   blanks: full.blanks,
   values: full.values,
+  whole: full.whole,
+  nonpositive: full.nonpositive,
 });
 
 // The paste parser lives in lifeData.js (unit-tested there).
@@ -76,6 +83,10 @@ export { parsePastedValues };
 // ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
 // ``initialSource`` opens the source step on "saved" (default: the user's
 // datasets and the samples), "paste" or "upload".
+// Non-parametric estimators that need exact failure times: inspection data
+// (failed between two times) takes Turnbull instead.
+const EXACT_TIMES_ONLY = ["kaplan_meier", "nelson_aalen", "fleming_harrington"];
+
 export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit, initialSource }) {
   const [step, setStep] = useState(1);
   // Source step: "saved" (a saved dataset), "paste" (values typed / pasted in) or "upload" (a file).
@@ -95,6 +106,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [sourceName, setSourceName] = useState("");
   const [csv, setCsv] = useState(null); // { columns, preview, n_rows, dtypes, blanks, values }
   const [mapping, setMapping] = useState(EMPTY_MAPPING);
+  // Questions about the first reading already answered "no" (see dataQuestions).
+  const [answered, setAnswered] = useState([]);
   const [unit, setUnit] = useState("");
   // A paste of one or two plain columns skips the mapping: only the unit is
   // asked for, with "Change columns" to see the full mapping (#291).
@@ -106,6 +119,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [advanced, setAdvanced] = useState(false);
   const [formula, setFormula] = useState("");
   const [distributions, setDistributions] = useState([]);
+  // The model whose column reading a dataset's fit started from, or null.
+  const [keptFrom, setKeptFrom] = useState(null);
   const [distribution, setDistribution] = useState("weibull");
   const [fitOpts, setFitOpts] = useState({});
   const [coxOpts, setCoxOpts] = useState({}); // Cox PH: ties, strata, cluster (#61)
@@ -116,13 +131,20 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
   // An Excel workbook becomes a CSV of the chosen sheet before anything else.
-  const { toCsv, modal: sheetModal } = useSpreadsheet();
+  // Part of the source step, not a modal over it.
+  const { toCsv, modal: sheetModal } = useSpreadsheet({ inline: true });
   const inputRef = useRef(null);
 
   // Step 4 (Result): the fit, a name, and the save action.
   const [result, setResult] = useState(null);
   const [split, setSplit] = useState(null);
-  const [name, setName] = useState("");
+  const [name, setNameRaw] = useState("");
+  // Whether the user has typed a name: until they have, Save asks for one,
+  // starting from the default (the distribution and the data's name).
+  const [nameTyped, setNameTyped] = useState(false);
+  const setName = (value) => { setNameRaw(value); setNameTyped(false); };
+  const typeName = (value) => { setNameRaw(value); setNameTyped(true); };
+  const askText = useAskText();
   const [saving, setSaving] = useState(false);
   const [fitMethods, setFitMethods] = useState([]);
 
@@ -177,10 +199,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // column (#177) fits the modes as competing risks.
   const byMode = !!mapping.e;
   // Covariates over time (#60) take the regressions that can fit them.
+  // Inspection data (an earliest and a latest time) takes Turnbull, not the
+  // estimators that need exact failure times: those aren't offered.
+  const intervalTimes = !!(mapping.xl || mapping.xr);
   const options = useMemo(
     () => (byMode ? CR_OPTIONS : distributions)
-      .filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false)),
-    [distributions, hasCovariates, byMode, tvc]
+      .filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false)
+        && !(intervalTimes && EXACT_TIMES_ONLY.includes(d.id))),
+    [distributions, hasCovariates, byMode, tvc, intervalTimes]
   );
 
   // Keep the selected model valid for the current filtered list.
@@ -201,18 +227,38 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   // New columns in: guess the mapping and unit, clear covariates. Returns
   // them (the guided first run fits straight away).
-  const loadColumns = (cols, simplePaste = false) => {
+  // ``saved``: a dataset's ``last_mapping``, how its newest model read the
+  // columns (the status words, the late-entry column): used when it fits.
+  // ``previous``: the choices made on the file loaded before; a corrected copy
+  // of it (every column they name still there) keeps them.
+  const loadColumns = (cols, simplePaste = false, saved = null, previous = null) => {
     const facts = columnFacts(cols);
-    const g = guessMapping(cols.columns, facts);
+    const again = simplePaste ? null : keptChoices(previous, cols.columns);
+    if (again) {
+      setCsv(cols);
+      setMapping(again.mapping);
+      setTvc(again.tvc);
+      setUnit(again.unit);
+      setSimple(false);
+      setCovariates(again.covariates);
+      setKeptFrom("the file you loaded before");
+      return { mapping: again.mapping, unit: again.unit };
+    }
+    // The saved reading when it still reads cleanly, else a fresh guess (startingMapping).
+    const g = startingMapping(simplePaste ? null : saved, cols.columns, facts, cols.n_rows);
+    const kept = g.from ? g : null;
     const map = simplePaste
       // A pasted flag column is 0 = failed, 1 = still running, as the paste box says.
       ? { ...EMPTY_MAPPING, x: "time", c: cols.columns.includes("censored") ? "censored" : "" }
       : g.mapping;
+    setKeptFrom(kept ? `“${kept.from || "the last model"}”, the last model fitted to this dataset` : null);
     // Start and stop rows of items (#60): fit their covariates over time.
-    const timeVarying = simplePaste ? null : guessTvc(cols.columns, facts, cols.n_rows);
-    const tvcMap = timeVarying && tvcMapping(map, "intervals", cols.columns, facts, cols.n_rows);
+    const timeVarying = simplePaste ? null
+      : kept ? (kept.mapping.i ? "intervals" : null) : guessTvc(cols.columns, facts, cols.n_rows);
+    const tvcMap = timeVarying && !kept && tvcMapping(map, "intervals", cols.columns, facts, cols.n_rows);
     const used = new Set(Object.values(tvcMap || {}).filter((v) => typeof v === "string" && v));
     setCsv(cols);
+    setAnswered([]);
     setMapping(tvcMap || map);
     setTvc(timeVarying ? "intervals" : null);
     const guessedUnit = simplePaste ? "" : (timeVarying && tvcUnit(timeVarying)) || g.unit || "";
@@ -246,7 +292,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setLoading(true);
     try {
       const cols = await getColumns(use);
-      loadColumns(cols, isSimplePaste(cols.columns) && use.name === PASTED);
+      // A corrected copy of the file loaded before keeps the choices made on it.
+      const previous = csv && file && file.name !== PASTED && !simple
+        ? { mapping, unit, covariates: advanced ? [] : covariates, tvc } : null;
+      loadColumns(cols, isSimplePaste(cols.columns) && use.name === PASTED, null, previous);
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -271,12 +320,15 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     if (!picked?.detail) return null;
     const cols = datasetColumns(picked.detail);
     const facts = columnFacts(cols);
-    const g = guessMapping(cols.columns, facts);
+    const g = startingMapping(picked.detail.last_mapping, cols.columns, facts, cols.n_rows);
     const status = statusSummary(g.mapping, facts, cols.n_rows);
+    // Where the reading is a guess, the pane asks rather than counts.
+    const questions = dataQuestions(g.mapping, facts, cols.columns, cols.n_rows);
     return {
       words: mappingWords(g.mapping, facts, g.unit),
-      problems: dataStepProblems(g.mapping, facts, cols.n_rows),
-      summary: status ? summaryParts(status) : [],
+      problems: dataStepProblems(g.mapping, facts, cols.n_rows, g.unit),
+      summary: status && !questions.length ? summaryParts(status) : [],
+      questions,
     };
   }, [picked?.detail]);
   // Next on a picked dataset: its columns into the Data step — no re-upload needed.
@@ -288,7 +340,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setDatasetId(full.id);
     setSourceName(full.name);
     setError(null);
-    loadColumns(datasetColumns(full));
+    loadColumns(datasetColumns(full), false, full.last_mapping);
     setStep(2);
   };
 
@@ -308,12 +360,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         setFile(null);
         setDatasetId(initialDatasetId);
         setSourceName(full.name || "dataset");
-        const { mapping: map, unit: guessedUnit } = loadColumns(datasetColumns(full));
+        const { mapping: map, unit: guessedUnit } = loadColumns(datasetColumns(full), false, full.last_mapping);
         if (autoFit && map.x) {
           const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId, unit: guessedUnit });
           setSplit(null);
           setResult(res);
-          setName(`${res.distribution} — ${(full.name || "dataset").replace(/\s*\(sample\)\s*$/i, "")}`);
+          setName(defaultFitName(res.distribution, { sourceName: full.name }));
           setStep(4);
         } else {
           setStep(2);
@@ -369,17 +421,52 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   // What the mapping reads as, and what stops it fitting, before the fit.
   const facts = useMemo(() => (csv ? columnFacts(csv) : {}), [csv]);
-  const problems = useMemo(
-    () => (!csv ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0)
-      : dataStepProblems(mapping, facts, csv.n_rows)),
+  // Each with the column it comes from, shown beside the selector it concerns.
+  const issues = useMemo(
+    () => (!csv ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0).map((text) => ({ col: null, text }))
+      : dataStepIssues(mapping, facts, csv.n_rows, unit)),
     [csv, mapping, facts, tvc, hasCovariates, unit]
   );
+  const problems = useMemo(() => issues.map((i) => i.text), [issues]);
   // Covariates over time on or off, or the rows' layout changed (#60).
   const changeTvc = (layout) => {
     setTvc(layout);
     setMapping((m) => tvcMapping(m, layout, csv.columns, facts, csv.n_rows));
   };
-  const mappingValid = problems.length === 0;
+  // Where the first reading is a guess (a blank failure mode, a status-like
+  // column left unused), the step asks before it counts or fits.
+  const questions = useMemo(
+    () => (csv && !tvc && !simple ? dataQuestions(mapping, facts, csv.columns, csv.n_rows, answered) : []),
+    [csv, tvc, simple, mapping, facts, answered]
+  );
+  const answer = (q, yes) => {
+    const next = answerQuestion(mapping, q, yes, facts, answered);
+    if (yes && q.field === "u" && !timeUnitOf(unit)) {
+      const counts = unitCounts(q.column, facts) || {};
+      const common = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (common) setUnit(common);
+    }
+    setMapping(next.mapping);
+    setAnswered(next.answered);
+  };
+  // A range (xl to xr, with or without x) is read row by row, so its count
+  // comes from the server, as the fit will read it: { failed, running, left,
+  // interval, notes, x_and_range_rows } or { error }.
+  const [reading, setReading] = useState(null);
+  const inspection = !!(csv && !tvc && mapping.xl && mapping.xr);
+  // A tr column is checked row by row on the server too (a value above it).
+  const readRows = inspection || !!(csv && !tvc && mapping.tr);
+  useEffect(() => {
+    setReading(null);
+    if (!readRows || problems.length > 0 || (!file && !datasetId)) return undefined;
+    let live = true;
+    getDataReading(file, mapping, datasetId).then(
+      (r) => live && setReading(r),
+      (err) => live && setReading({ error: err.message }),
+    );
+    return () => { live = false; };
+  }, [readRows, problems.length, file, datasetId, mapping]);
+  const mappingValid = problems.length === 0 && questions.length === 0 && !reading?.error && !reading?.tr_problem;
   // With a count column the value counts aren't units: read the file instead.
   const [fileSplit, setFileSplit] = useState(null);
   useEffect(() => {
@@ -392,11 +479,56 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
     return () => { live = false; };
   }, [file, mapping]);
-  const summary = csv && !tvc ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
+  const summary = !csv || tvc || questions.length ? null
+    : inspection ? (reading && !reading.error ? reading : null)
+    : statusSummary(mapping, facts, csv.n_rows) || fileSplit;
   // Most units still running often means the sheet's flags are 1 = failed:
   // say so on the Data step, with the same flip the column mapper uses.
   const swapped = flagsLookSwapped(mapping, summary);
-  const swapFlags = () => setMapping((m) => ({ ...m, c_invert: !m.c_invert }));
+  const swapFlags = () => {
+    if (mapping.c) setAnswered((a) => [...a, `flags:${mapping.c}`]);
+    setMapping((m) => ({ ...m, c_invert: !m.c_invert }));
+  };
+  const swappedNotice = swapped && (
+    <div className="ds-flag-notice" role="status">
+      <span>
+        Most units are marked as still running ({swapped.code}).
+        If {swapped.code} means failed in your sheet, swap the flags.
+      </span>
+      <button type="button" className="secondary" onClick={swapFlags}>Swap the flags</button>
+    </div>
+  );
+
+  // Questions, and the flags notice, sit beside the selector they concern.
+  const asides = { x: [], c: [], e: [], tr: [] };
+  if (problems.length === 0) {
+    for (const q of questions) {
+      const row = q.field === "u" ? "x" : q.field === "e" ? "e" : "c";
+      asides[row].push(
+        <div className="ds-flag-notice" role="group" aria-label="A question about this column" key={q.id}>
+          <span>{q.text}</span>
+          <button type="button" className="secondary" onClick={() => answer(q, true)}>{q.yes}</button>
+          <button type="button" className="secondary" onClick={() => answer(q, false)}>{q.no}</button>
+        </div>,
+      );
+    }
+    if (swapped && mapping.c) asides.c.push(<div key="swapped">{swappedNotice}</div>);
+    if (reading?.error) asides.x.push(<p className="xcn-issue" role="status" key="reading">{reading.error}</p>);
+    if (reading?.tr_problem) asides.tr.push(<p className="xcn-issue" role="status" key="tr">{reading.tr_problem.text}</p>);
+    for (const note of reading?.notes || []) {
+      asides.x.push(<p className="ds-flag-notice" role="status" key={note}><span>{note}</span></p>);
+    }
+  }
+  // Next is never greyed without the reason beside it.
+  const rowNames = { x: "x", c: "c", n: "n", tl: "tl", tr: "tr", e: "failure mode" };
+  const flaggedRows = [...new Set([...issues.map((i) => issueRow(i, mapping)),
+    ...(problems.length === 0 && reading?.tr_problem ? ["tr"] : []),
+    ...(problems.length === 0 ? questions.map((q) => (q.field === "u" ? "x" : q.field === "e" ? "e" : "c")) : [])])];
+  const waitingFor = mappingValid ? null
+    : simple && problems.length ? problems[0]
+    : flaggedRows.length ? `First settle the note${flaggedRows.length === 1 ? "" : "s"} beside ${flaggedRows.map((r) => rowNames[r]).join(", ")}.`
+    : reading?.error ? "First settle the note beside x."
+    : "Waiting for the rows to be read…";
 
   // Cox PH's own options travel with a Cox fit only.
   const familyOpts = frailtyFitOptions(options.find((d) => d.id === distribution), fitOpts);
@@ -426,8 +558,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       }
       setPriorResult(res);
       setResult(null);
-      const src = file?.name === PASTED ? "pasted values" : file?.name || sourceName || "dataset";
-      setName(`${res.distribution_label || res.distribution} with a prior — ${src.replace(/\.csv$/i, "")}`);
+      setName(defaultFitName(res.distribution_label || res.distribution,
+                             { fileName: file?.name, sourceName }, { prior: true }));
       setStep(4);
     } catch (err) {
       setError(err.message);
@@ -437,6 +569,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   };
   // The age asked about on the Result step: asked again a moment after it's typed.
   const priorAge = prior.age;
+  const priorNeed = prior.need;
   useEffect(() => {
     if (step !== 4 || !priorResult) return undefined;
     let live = true;
@@ -444,7 +577,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       askPrior().then((res) => live && !res.refused && setPriorResult(res), () => {});
     }, 400);
     return () => { live = false; clearTimeout(t); };
-  }, [priorAge]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [priorAge, priorNeed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onFit = async () => {
     if (!file && !datasetId) return;
@@ -459,10 +592,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         ...(hasCovariates ? coxFit : byMode ? {} : { fitOptions: fitOpts }),
       };
       const res = await fitModel(distribution, file, fitMapping, opts);
-      setSplit(await dataSplit(file, mapping).catch(() => null));
+      setSplit((await dataSplit(file, mapping).catch(() => null)) || res.split || null);
       setResult(res);
-      const src = file?.name || sourceName || "dataset";
-      setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
+      setName(defaultFitName(res.distribution, { fileName: file?.name, sourceName }));
       setStep(4);
     } catch (err) {
       setError(err.message);
@@ -489,8 +621,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       setDistribution(id);
       setFitOpts({});
       setResult(res);
-      const src = file?.name || sourceName || "dataset";
-      setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
+      setName(defaultFitName(res.distribution, { fileName: file?.name, sourceName }));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -510,8 +641,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
       : byMode ? {} : { fitOptions: fitOpts }),
   };
-  const persist = async () => {
-    const model = await saveModel(name.trim(), distribution, file, fitMapping, {
+  const persist = async (as = name) => {
+    // Pasted values are saved as a dataset named for them and the day, not "pasted-values".
+    const upload = file?.name === PASTED
+      ? new File([file], `${dataName({ fileName: PASTED })}.csv`, { type: file.type || "text/csv" })
+      : file;
+    const model = await saveModel(as.trim(), distribution, upload, fitMapping, {
       ...saveOpts, datasetId: datasetId || undefined,
     });
     forgetUnsavedFit(fitScope);
@@ -533,18 +668,33 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   const onSave = async () => {
     if (!name.trim()) return;
+    // Not named yet: ask, starting from the default, so a model never ends up
+    // called "pasted-values" by accident (it's what goes in a report).
+    let as = name.trim();
+    if (!nameTyped) {
+      const answer = await askText({
+        title: "Name this model",
+        body: "Give it a name you'll recognise later, in lists and reports. You can rename it any time.",
+        label: "Model name",
+        value: as,
+        confirmLabel: file ? "Save model and data" : "Save model",
+      });
+      if (answer == null || !String(answer).trim()) return;
+      as = String(answer).trim();
+      typeName(as);
+    }
     remembered.current += 1; // a remember still reading the file is stale now
     setSaving(true);
     setError(null);
     try {
       if (priorResult) {
         // Saved as a Bayesian model: its prior (what it was, how far it was trusted) kept with it.
-        const saved = await askPrior({ save: true, name: name.trim() });
+        const saved = await askPrior({ save: true, name: as });
         if (saved.refused) throw new Error(refusalWords(saved.refused));
         onSaved?.(saved);
         return;
       }
-      onSaved?.(await persist());
+      onSaved?.(await persist(as));
     } catch (err) {
       setError(err);
       setSaving(false);
@@ -607,9 +757,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       </>
     );
   } else if (step === 2) {
+    // Next is never greyed without the reason beside it.
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+        {!mappingValid && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{waitingFor}</span>}
         <button data-wt="fit-next" onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
       </>
     );
@@ -619,7 +771,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
         {bayes ? (
           <button data-wt="fit-run" onClick={onFit} disabled={loading || !!priorWanting} title={priorWanting || undefined}>
-            {loading ? "Fitting…" : "Fit with the prior"}
+            {loading ? "Fitting: about 10 seconds…" : "Fit with the prior"}
           </button>
         ) : (
           <button data-wt="fit-run" onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}
@@ -636,6 +788,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   return (
     <div className="card fit-flow">
+      <div className="fit-flow-head">{stepper}</div>
       {step === 1 && (
         <>
           <div className="source-toggle" role="tablist" aria-label="Where the data comes from">
@@ -672,6 +825,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                         <ul className="ds-problems" role="status">
                           {pickedGuess.problems.map((p) => <li key={p}>{p}</li>)}
                         </ul>
+                      ) : pickedGuess.questions.length > 0 ? (
+                        <p className="ds-flag-notice" role="status">
+                          <span>{pickedGuess.questions[0].text} The next step asks.</span>
+                        </p>
                       ) : pickedGuess.summary.length > 0 ? (
                         <p className="ds-summary" role="status">
                           {pickedGuess.summary.map((part, i) => {
@@ -722,7 +879,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             </div>
           )}
 
-          {source === "upload" && (
+          {source === "upload" && !sheetModal && (
           <div
             className={`dropzone${dragging ? " dragging" : ""}`}
             onClick={() => inputRef.current?.click()}
@@ -777,42 +934,51 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       {step === 2 && csv && (
         <div className="fit-step" data-wt="fit-data">
           <p className="muted-line">
-            {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows} rows
-            {!simple && ` · ${csv.columns.length} columns`}
+            {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows.toLocaleString()} rows
           </p>
           <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
+          {keptFrom && (
+            <p className="muted-line" role="status">Columns read as for {keptFrom}.</p>
+          )}
           {simple ? (
-            <div className="ds-row">
-              <RequiredUnit label="Unit of these times" value={unit} onChange={setUnit} listId="paste-units" autoFocus />
-            </div>
+            <>
+              <div className="ds-row">
+                <RequiredUnit label="Unit of these values" value={unit} onChange={setUnit} listId="paste-units" autoFocus />
+              </div>
+              {problems.length > 0 && (
+                <ul className="ds-problems" role="status">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+              )}
+              {problems.length === 0 && mapping.c && mapping.c_invert && !swapped && (
+                <p className="ds-flag-notice" role="status">
+                  <span>Flags swapped: 1 = failed, 0 = still running.</span>
+                  <button type="button" className="link" onClick={swapFlags}>Swap back</button>
+                </p>
+              )}
+              {problems.length === 0 && swapped && swappedNotice}
+              <button type="button" className="link ds-change" onClick={() => setSimple(false)}>
+                Change columns
+              </button>
+            </>
           ) : (
             <>
               <PreviewTable columns={csv.columns} rows={csv.preview} />
               <ColumnMapper
                 columns={csv.columns}
                 mapping={mapping}
-                onChange={setMapping}
+                onChange={(next, how) => {
+                  // Meanings set by hand answer the which-way-round question.
+                  if (how?.meanings && mapping.c) setAnswered((a) => [...a, `flags:${mapping.c}`]);
+                  setMapping(next);
+                }}
                 unit={unit}
                 onUnitChange={setUnit}
-                renderUnit={() => <RequiredUnit value={unit} onChange={setUnit} listId="x-units" />}
                 facts={facts}
                 timeVarying={tvc}
                 failureMode
-              />
-              <ColumnRoles
-                columns={csv.columns}
-                mapping={mapping}
-                covariates={advanced ? [] : covariates}
-                facts={facts}
-                timeVarying={tvc}
-                covariatesAllowed={!advanced}
-                failureMode
-                onChange={(next, { col, role }) => {
-                  // A unit guessed from the old time column follows the new one.
-                  if (role === "x" && (!unit || unit === guessUnit(mapping.x))) setUnit(guessUnit(col));
-                  setMapping(next.mapping);
-                  if (!advanced) setCovariates(next.covariates);
-                }}
+                issues={issues}
+                notes={tvc ? [] : dataStepNotes(mapping, facts)}
+                asides={asides}
+                warning={<XRangeWarning reading={reading} />}
               />
               <ResultDetails
                 summary="Advanced (regression): covariates"
@@ -834,58 +1000,6 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 />
               </ResultDetails>
             </>
-          )}
-          {problems.length > 0 ? (
-            <ul className="ds-problems" role="status">
-              {problems.map((p) => <li key={p}>{p}</li>)}
-            </ul>
-          ) : tvc ? (
-            <p className="ds-summary" role="status">
-              {tvcSummaryParts(mapping, facts, csv.n_rows, tvc).map((part, i) => {
-                const [num, ...rest] = part.split(" ");
-                return <span key={part}>{i > 0 && ", "}<b>{num}</b> {rest.join(" ")}</span>;
-              })}
-              <span className="ds-summary-note"> · covariates change over time</span>
-            </p>
-          ) : summary ? (
-            <p className="ds-summary" role="status">
-              {summaryParts(summary).map((part, i) => {
-                const [num, ...rest] = part.split(" ");
-                return (
-                  <span key={part}>
-                    {i > 0 && ", "}
-                    <b>{num}</b> {rest.join(" ")}
-                  </span>
-                );
-              })}
-              {!mapping.c && (
-                <span className="ds-summary-note">
-                  {simple ? " · every value is a time to failure"
-                    : mapping.e ? " · a blank failure mode is a unit still running"
-                    : " · no status column, so every row is a failure"}
-                </span>
-              )}
-            </p>
-          ) : null}
-          {problems.length === 0 && swapped && (
-            <div className="ds-flag-notice" role="status">
-              <span>
-                Most units are marked as still running ({swapped.code}).
-                If {swapped.code} means failed in your sheet, swap the flags.
-              </span>
-              <button type="button" className="secondary" onClick={swapFlags}>Swap the flags</button>
-            </div>
-          )}
-          {problems.length === 0 && !swapped && simple && mapping.c && mapping.c_invert && (
-            <p className="ds-flag-notice" role="status">
-              <span>Flags swapped: 1 = failed, 0 = still running.</span>
-              <button type="button" className="link" onClick={swapFlags}>Swap back</button>
-            </p>
-          )}
-          {simple && (
-            <button type="button" className="link ds-change" onClick={() => setSimple(false)}>
-              Change columns
-            </button>
           )}
         </div>
       )}
@@ -945,7 +1059,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             {byMode
               ? hasCovariates
                 ? `Failure modes from “${mapping.e}”, with covariates — choose a regression by mode.`
-                : `Failure modes from “${mapping.e}” — they are fitted as competing risks.`
+                : `Failure modes from “${mapping.e}” — they are fitted as competing risks. To fit every failure as one, set “${mapping.e}” to Ignore on the Data step.`
               : tvc
               ? "Covariates change over time — choose a regression model. Each item's covariates follow its rows."
               : hasCovariates
@@ -1013,7 +1127,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 title="Model name"
                 value={name}
                 placeholder="Model name"
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => typeName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onSave()}
               />
               <button type="button" onClick={onSave} disabled={!name.trim() || saving}
@@ -1029,6 +1143,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               <FitOutcome d={priorResult} priorKind={prior.priorKind} unit={(priorResult.unit || "").toLowerCase()}
                           chart={chart} onChart={setChart} download={name || "Life model"}
                           age={prior.age} onAge={(v) => setP("age", v)}
+                          need={prior.need} onNeed={(v) => setP("need", v)}
                           dataWords={file?.name === PASTED ? "the pasted values" : `“${(file?.name || sourceName || "the data").replace(/\.csv$/i, "")}”`} />
             </div>
           ) : (
@@ -1060,7 +1175,6 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
-        {stepper}
         <div className="row" style={{ margin: 0 }}>{nav}</div>
       </div>
     </div>

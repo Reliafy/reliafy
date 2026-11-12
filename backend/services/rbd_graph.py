@@ -18,6 +18,7 @@ Compact node (what an assistant writes and reads)::
      "costs": {"repair": 200, "replace": 1500, "downtime": 50, "acquisition": 20000},
      "preventive": {"policy": "age", "interval": 580, "duration": 7, "cost": 1000},
      "inspection": {"interval": 8760, "duration": 0, "cost": 300},  # hidden failures
+     "duty": 0.25,                            # repairable: runs a quarter of the time (life in operating time)
      # a per-action cost may be a range, drawn uniformly: "repair": {"min": 150, "max": 250}
      "n": 2, "k": 3, "spares": 1, "cold": true,
      "standbyModel": {...}, "startProb": 0.98,  # cold standby: spare's own model, switch reliability
@@ -58,7 +59,7 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
 MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection",
-                    "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality")
+                    "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality", "duty")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil", "conditions")
 #: A block's values for the covariates its position left open, and which of the diagram's

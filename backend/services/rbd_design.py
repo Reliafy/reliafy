@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import time
 from typing import Callable, Optional
 
@@ -306,8 +307,38 @@ def _reliability_at(rbd, t: float) -> float:
     return float(np.ravel(rbd.sf(np.atleast_1d(float(t))))[0])
 
 
+_BUDGET_TOO_LOW = re.compile(
+    r"budget\['cost'\] must be finite and at least (?P<need>[-+.\deE]+), the cost of (?P<what>.+?) costed node; "
+    r"got (?P<got>[-+.\deE]+)\.")
+
+
+def _money(v: float) -> str:
+    return f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.4g}"
+
+
+def _budget_words(message: str) -> Optional[str]:
+    """RePyability's "budget too low" in plain words: the budget is the whole
+    design's cost, not the extra spend — so say what the blocks as drawn
+    already cost and what to enter for the spend the user likely meant."""
+    m = _BUDGET_TOO_LOW.search(message)
+    if not m:
+        return None
+    try:
+        need, got = float(m.group("need")), float(m.group("got"))
+    except ValueError:
+        return None
+    words = (f"The cost budget is the total cost of the design, and {m.group('what')} designed block already "
+             f"costs {_money(need)}. Enter a total above that")
+    if got > 0:
+        words += f": to spend {_money(got)} more, enter {_money(need + got)}"
+    return words + "."
+
+
 def _friendly(message: str, blocks: list[dict]) -> str:
     """A RePyability message in the panel's terms (block labels, not ids)."""
+    budget = _budget_words(message)
+    if budget:
+        return budget
     for b in blocks:
         message = message.replace(f"node {b['id']!r}", f"“{b['label']}”")
         message = message.replace(f"Node {b['id']!r}", f"“{b['label']}”")

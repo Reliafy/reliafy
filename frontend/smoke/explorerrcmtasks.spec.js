@@ -112,7 +112,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(chipsOf(page)).toContainText("every 1 week");
   // The failure mode's grid style, "step | choice": a muted label column, one line per row. No
   // instructions (how it's done is the LSA's: Logistics links there) and no notes box.
-  await expect(panel(page).locator(".rw-sl")).toHaveText(["Kind", "Interval", "Then, if found", "Based on", "Serves", "Logistics"]);
+  await expect(panel(page).locator(".rw-sl")).toHaveText(["Kind", "Interval", "Then, if found", "Based on", "Serves", "Logistics", "Cost each time"]);
   await expect(panel(page).getByRole("textbox", { name: "Instructions" })).toHaveCount(0);
   await expect(panel(page).getByRole("region", { name: "Notes and rationale" })).toHaveCount(0);
   // Its kind is a small chip here too, changed on the task.

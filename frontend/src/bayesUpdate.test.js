@@ -15,5 +15,8 @@ test("the prior from each way of giving it", () => {
   assert.deepEqual(baselineOf({ kind: "params", distribution: "weibull", unit: "hours", params: { alpha: "3000", beta: "2" } }),
     { distribution: "weibull", unit: "hours", params: [{ name: "alpha", value: 3000 }, { name: "beta", value: 2 }] });
   assert.equal(baselineOf({ kind: "b10", b10: { value: 5000, low: 6000, high: 8000 } }), null);
-  assert.deepEqual(baselineOf({ kind: "b10", unit: "hours", b10: { value: "5000", low: "3000", high: "8000" }, shape: {} }).shape, { low: 1.2, high: 4 });
+  // No shape given: none sent (the server assumes a wide one and says so).
+  assert.equal(baselineOf({ kind: "b10", unit: "hours", b10: { value: "5000", low: "3000", high: "8000" }, shape: {} }).shape, undefined);
+  assert.deepEqual(baselineOf({ kind: "b10", unit: "hours", b10: { value: "5000", low: "3000", high: "8000" },
+                                shape: { low: "1.5", high: "2.5" } }).shape, { low: 1.5, high: 2.5 });
 });

@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import heapq
 import logging
-import warnings
 from itertools import combinations
 from math import comb
 from typing import Any, Callable, Optional
@@ -47,6 +46,7 @@ import numpy as np
 from backend.services import rbd_analysis as ra
 from backend.services import repy_compat
 from backend.services.rbd_analysis import AnalysisError
+from backend.warn_capture import ignore_warnings
 from repyability import FaultTree
 from repyability.rbd.ccf import VALIDITY as CCF_VALIDITY
 from repyability.rbd.helper_classes import PerfectReliability
@@ -298,10 +298,11 @@ def _repairable_tree(graph: dict, resolve_model) -> tuple[FaultTree, dict, float
     return FaultTree(tree.gates, events, top=tree.top), info, unavailability
 
 
-def _default_time(graph: dict, resolve_subsystem, resolve_model, covariates, t_max) -> float:
-    """The calculator's representative time for importance measures: where the
-    system reliability is closest to 0.9 on its time axis (else the axis
-    midpoint). Mirrors ``rbd_analysis.analyze`` (without a conditional age)."""
+def _default_time(graph: dict, resolve_subsystem, resolve_model, covariates, t_max) -> tuple[float, str]:
+    """The time the tree is evaluated at when none is given, and how it was
+    chosen: the calculator's own default for its importance measures
+    (``rbd_analysis.default_evaluation_time``, without a conditional age) —
+    the time the system reliability falls to 90%."""
     rbd, _, _, reliabilities, working, broken, _ = ra._build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
     )
@@ -312,10 +313,7 @@ def _default_time(graph: dict, resolve_subsystem, resolve_model, covariates, t_m
             0.0, ra._system_horizon(rbd, float(grid[-1]), 0.0, **overrides), ra._GRID_POINTS
         )
     sf = ra._conditional_sf(rbd, grid, 0.0, **overrides)
-    idx = int(np.argmin(np.abs(sf - 0.9)))
-    if not (0.0 < sf[idx] < 1.0):
-        idx = len(grid) // 2
-    return float(grid[idx])
+    return ra.default_evaluation_time(rbd, grid, sf, 0.0, **overrides)
 
 
 def _event_probabilities(tree: FaultTree, t: float) -> dict:
@@ -741,7 +739,9 @@ def fault_tree(
     """The fault tree of a builder graph, evaluated at time ``t``.
 
     ``t`` defaults to the calculator's importance time (see
-    :func:`_default_time`; ``t_max`` is the calculator's axis limit, if set).
+    :func:`_default_time`; ``t_max`` is the calculator's axis limit, if set);
+    ``t_default_basis`` says how that default was chosen and ``t_basis`` is
+    ``"given"`` when a time was asked for.
     A repairable diagram is evaluated at steady state and ``t`` is ignored.
     Raises :class:`AnalysisError` with a user-facing message when the diagram
     can't be converted.
@@ -778,16 +778,17 @@ def fault_tree(
             raise AnalysisError("The time must be a positive number.")
     b = _Builder(resolve_subsystem, resolve_model, covariates)
     top = _develop(b, graph, "", [], set(), top_level=True)
-    with warnings.catch_warnings():
+    with ignore_warnings(message=r"Common-cause group \["):
         # A probability-basis group past its range is noted below at the
         # tree's own time, not over the calculator's whole time axis.
-        warnings.filterwarnings("ignore", message=r"Common-cause group \[")
-        t_default = _default_time(graph, resolve_subsystem, resolve_model, covariates, t_max)
+        t_default, t_default_basis = _default_time(graph, resolve_subsystem, resolve_model, covariates, t_max)
     b.gate_info[top] = {"label": None, "role": "top"}
     tree = FaultTree(b.gates, b.events, top=top)
     t_eval = t if t is not None else t_default
     out = _payload(tree, b.gate_info, b.event_info, t_eval, "reliability")
     out["t_default"] = t_default
+    out["t_default_basis"] = t_default_basis
+    out["t_basis"] = "given" if t is not None else t_default_basis
     out["unit"] = unit
     out["notes"] = _ccf_notes(out["common_cause"])
     return out

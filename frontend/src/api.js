@@ -1,6 +1,9 @@
 // Thin wrappers around the backend endpoints.
 import { loadAuth } from "./firebase.js";
 import { trackEvent } from "./telemetry.js";
+import { mappingFields } from "./lifeData.js";
+import { altFields } from "./altGuess.js";
+import { recurrentFields } from "./recurrentMapping.js";
 
 // SSE streaming (the metered assistant) is served straight from Cloud Run to
 // bypass Firebase Hosting's CDN, which buffers Server-Sent Events. Cross-origin
@@ -183,6 +186,19 @@ export function getColumns(file) {
 }
 
 
+// How a mapping reads the rows, before a fit: { failed, running, left,
+// interval, total, notes }, counted as the fit will count them. For
+// inspection data (earliest and latest times), which can't be counted from
+// the columns' values alone.
+export function getDataReading(file, mapping, datasetId = null) {
+  const form = new FormData();
+  if (datasetId) form.append("dataset_id", datasetId);
+  else if (file) form.append("file", file);
+  const { x, c, n, xl, xr, tl, tr, c_invert, c_map } = mapping || {};
+  appendMapping(form, { x, c, n, xl, xr, tl, tr, c_invert, c_map });
+  return request("/api/data-reading", { method: "POST", body: form });
+}
+
 // Advanced fit options shared by fit + save: offset (3-parameter), zero
 // inflation, limited failure population, fixed parameter values, and a mixture
 // component count (mutually exclusive with the rest — see normalize_options),
@@ -210,12 +226,7 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
 // ``c_map`` ({"Failed": 0, "Running": 1}: a status column of words), sent as
 // JSON when it has entries (#291).
 function appendMapping(form, mapping) {
-  const { c_invert, c_map, ...columns } = mapping || {};
-  for (const [field, column] of Object.entries(columns)) {
-    if (column) form.append(field, column);
-  }
-  if (columns.c) form.append("c_invert", c_invert ? "1" : "0");
-  if (columns.c && c_map && Object.keys(c_map).length) form.append("c_map", JSON.stringify(c_map));
+  for (const [field, value] of mappingFields(mapping)) form.append(field, value);
 }
 
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
@@ -262,7 +273,8 @@ export function compareTwoModels(a, b, unit) {
 }
 
 // Compute the cost-optimal preventive-replacement interval for a distribution.
-export function optimalReplacement(distributionId, params, plannedCost, unplannedCost, unit, extras) {
+// ``more``: { use_per_year, units } for the saving a year (optional).
+export function optimalReplacement(distributionId, params, plannedCost, unplannedCost, unit, extras, more = {}) {
   return request("/api/strategy/optimal-replacement", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -273,6 +285,8 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
       unplanned_cost: unplannedCost,
       unit: unit || null,
       extras: extras || null,
+      use_per_year: more.use_per_year ?? null,
+      units: more.units ?? null,
     }),
   });
 }
@@ -404,7 +418,7 @@ export function deleteModel(id) {
 // { batches: [{label, demands, failures}] } (one row = one count) or
 // { dataset_id, demands_column, failures_column, batch_column? }; the bounds
 // are exact at ``confidence`` (#233).
-export function createPerDemandModel(name, source, confidence = 0.95) {
+export function createPerDemandModel(name, source, confidence = 0.9) {
   return withEvent(
     request("/api/models/per-demand", {
       method: "POST",
@@ -429,10 +443,37 @@ export function createModelFromParams(name, distribution, params, { unit, extras
   );
 }
 
+// Change a model saved from parameters in place (same id): a typed-in figure put right.
+// Rename a saved non-repairable model: { name } (the fit is untouched).
+export function renameModel(id, name) {
+  return request(`/api/models/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+// Rename a saved repairable model.
+export function renameRecurrentModel(id, name) {
+  return request(`/api/recurrent/models/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function updateModelParams(id, { distribution, params, unit } = {}) {
+  return request(`/api/models/${encodeURIComponent(id)}/params`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ distribution, params, unit: unit || null }),
+  });
+}
+
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, covariateUnits, formula, unit, fitOptions } = {}) {
-  const { c_invert, c_map, ...columns } = mapping || {};
+  const { c_invert, c_map, u, ...columns } = mapping || {};
   // Covariate units (#265): omitted keeps the model's own.
   const units = covariateUnits === undefined ? undefined : Object.fromEntries(
     (covariates || []).map((c) => [c, String(covariateUnits[c] || "").trim()]).filter(([, u]) => u)
@@ -445,6 +486,7 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       mapping: columns,
       c_invert: !!(columns.c && c_invert),
       c_map: columns.c && c_map && Object.keys(c_map).length ? c_map : null,
+      u_col: u || null,
       covariates: covariates || [],
       formula: formula || null,
       unit: unit || null,
@@ -497,6 +539,20 @@ export function uploadDataset(file, name, noHeader = null, excel = null) {
   if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
   if (excel?.sheet) form.append("sheet", excel.sheet);
   if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
+  return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
+}
+
+// One sheet saved as several datasets, split by ``datasetCol`` (one per
+// value, named by it; "<value> – <source>" when the name is taken): the Data
+// section's upload. ``noHeader`` as for uploadDataset; an Excel sheet comes
+// already converted to CSV. Answers { datasets: [{ id, name, n_rows, reused? }],
+// left_out }.
+export function uploadSplitDatasets(file, source, datasetCol, noHeader = false) {
+  const form = new FormData();
+  form.append("file", file);
+  if (source) form.append("name", source);
+  form.append("no_header", noHeader ? "true" : "false");
+  form.append("dataset_col", datasetCol);
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
 }
 
@@ -888,7 +944,7 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 export function analyzeRbd(
   graph, tMax, covariates, conditionalAge,
   { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
-    targetReliability = null, quick = false, runToken = null } = {}
+    targetReliability = null, quick = false, runToken = null, evaluateAt = null } = {}
 ) {
   return request("/api/rbds/analyze", {
     method: "POST",
@@ -905,6 +961,7 @@ export function analyzeRbd(
       ...(currentState ? { current_state: currentState } : {}),
       ...(exact ? { exact: true } : {}),
       ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
+      ...(evaluateAt != null ? { evaluate_at: evaluateAt } : {}),
       ...(quick ? { quick: true } : {}),
       ...(runToken ? { run_token: runToken } : {}),
     }),
@@ -1085,7 +1142,7 @@ export function compareRbds(graph, otherId, { name = null, otherName = null, tMa
 }
 
 // Check by simulation (#326): a standby or load-sharing block's exact mean
-// life beside its simulated mean and 95% interval. ``node`` is the block as
+// life beside its simulated mean and 90% interval. ``node`` is the block as
 // the builder stores it ({type, data}). Quick and free.
 export function checkBlockMean(node, unit = "") {
   return request("/api/rbds/check-block-mean", {
@@ -1121,6 +1178,16 @@ export function analyzeSavedRbd(id, tMax) {
 // Check whether an (unsaved) graph is a valid, analytically solvable RBD.
 // Returns { valid, analytic, can_calculate, errors, warnings,
 // non_analytic_nodes }.
+// A graph with its sub-system blocks expanded into their own blocks, wired as inside them (what a
+// repairable diagram needs). Nothing is saved: {graph, expanded, notes}.
+export function expandRbdSubsystems(graph) {
+  return request("/api/rbds/expand-subsystems", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph }),
+  });
+}
+
 export function validateRbd(graph) {
   return request("/api/rbds/validate", {
     method: "POST",
@@ -1283,14 +1350,10 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name, options, w
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  form.append("i", mapping.i);
-  form.append("x", mapping.x);
-  // Optional modifiers, matching the life-data column surface.
-  // ``mode`` is each failure's mode (or cause): a growth projection (#232)
-  // and the MCF by cause (#65); ``ws``/``we`` observation-window columns.
-  ["c", "n", "tl", "tr", "t", "mode", "ws", "we"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
-  // #65: covariate columns, a model's options, windows entered by hand.
-  (mapping.z || []).forEach((col) => form.append("z", col));
+  // i, x and the optional modifiers (``mode``: each failure's mode or cause,
+  // #232 / #65; ``ws``/``we``: observation windows), then the covariates (#65):
+  // recurrentMapping.js. Then a model's options and windows entered by hand.
+  for (const [k, v] of recurrentFields(mapping)) form.append(k, v);
   if (options?.baseline) form.append("baseline", options.baseline);
   if (options?.m != null && options.m !== "") form.append("m", String(options.m));
   if (windows && String(windows).trim()) form.append("windows", windows);
@@ -1340,6 +1403,26 @@ export function predictRecurrent(id, horizon) {
   });
 }
 
+// The Calculator's values with their 90% bounds at t (and over [start, t]);
+// ``profile`` the covariate values of a covariate model. Read-only.
+export function calculateRecurrent(id, { t, start = null, profile = null } = {}) {
+  return request(`/api/recurrent/models/${id}/calculate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ t, start, profile }),
+  });
+}
+
+// The fleet's failures over the next ``horizon`` from where each of the
+// model's systems is now, with a 90% range. Read-only.
+export function recurrentFromNow(id, horizon) {
+  return request(`/api/recurrent/models/${id}/from-now`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ horizon }),
+  });
+}
+
 // Optimal overhaul interval (minimal repair between overhauls) — read-only.
 export function recurrentOverhaul(id, costRepair, costOverhaul) {
   return request(`/api/recurrent/models/${id}/overhaul`, {
@@ -1375,14 +1458,9 @@ function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, un
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  // The failure time x, or inspection data's interval xl / xr (#237).
-  ["x", "xl", "xr", "c", "n", "tl", "tr"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
-  // stress = [{col,label}, …]; s1 required, s2 optional.
-  if (stress[0]) { form.append("s1", stress[0].col); if (stress[0].label) form.append("s1_label", stress[0].label); }
-  if (stress[1]) { form.append("s2", stress[1].col); if (stress[1].label) form.append("s2_label", stress[1].label); }
-  // Optional stress units, e.g. "K" or "kV" (#265).
-  if (stress[0]?.unit?.trim()) form.append("s1_unit", stress[0].unit.trim());
-  if (stress[1]?.unit?.trim()) form.append("s2_unit", stress[1].unit.trim());
+  // The value x and/or its range xl / xr (#237), c, n, tl, tr; the stresses
+  // s1 (required) and s2, with optional labels and units (#265): altGuess.js.
+  for (const [k, v] of altFields(mapping, stress)) form.append(k, v);
   if (distribution) form.append("distribution", distribution);
   if (lifeModel) form.append("life_model", lifeModel);
   if (unit) form.append("unit", unit);
@@ -1568,7 +1646,8 @@ export function getItemPrediction(modelId, itemId, confidence) {
 // ---- Strategy: failure finding + saved analyses ------------------------------
 
 // Failure-finding interval for a hidden function (protective device).
-export function failureFinding(distributionId, params, targetAvailability, unit, extras) {
+// ``more``: { test_duration, test_cost, renewed_at_test } (optional).
+export function failureFinding(distributionId, params, targetAvailability, unit, extras, more = {}) {
   return request("/api/strategy/failure-finding", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1578,6 +1657,9 @@ export function failureFinding(distributionId, params, targetAvailability, unit,
       target_availability: targetAvailability,
       unit: unit || null,
       extras: extras || null,
+      test_duration: more.test_duration ?? null,
+      test_cost: more.test_cost ?? null,
+      renewed_at_test: more.renewed_at_test ?? true,
     }),
   });
 }
@@ -2011,6 +2093,13 @@ export function downloadPublicRbdPython(token, unlock) {
   }, (u, o) => fetch(u, o));
 }
 
+// The same download for a publicly linked model (life, repairable, degradation).
+export function downloadPublicModelPython(token, unlock) {
+  return downloadFile(`/api/public/${encodeURIComponent(token)}/export.py`, "model.py", {
+    headers: unlockHeaders(unlock),
+  }, (u, o) => fetch(u, o));
+}
+
 // ---- Personal API tokens ------------------------------------------------------
 
 export function listApiTokens() {
@@ -2117,6 +2206,21 @@ export function putFleetItems(id, settings, items, expectedUpdatedAt) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ settings, items, expected_updated_at: expectedUpdatedAt || null }),
+  });
+}
+
+// The units still running in the fleet's model's data (a repairable model's
+// systems), as items to add; nothing is saved.
+export function getFleetRunningUnits(id) {
+  return request(`/api/fleet/fleets/${id}/running-units`);
+}
+
+// A copy of a forecast (items and settings) for another scenario.
+export function duplicateFleet(id, name) {
+  return request(`/api/fleet/fleets/${id}/duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name || null }),
   });
 }
 
@@ -2414,8 +2518,10 @@ export function listDueTasks(horizonDays = 30) {
   return request(`/api/maintenance/due?horizon_days=${encodeURIComponent(horizonDays)}`);
 }
 
-export function generateWorkOrders(horizonDays = 30) {
-  return postJson("/api/maintenance/work-orders/generate", { horizon_days: horizonDays });
+export function generateWorkOrders(horizonDays = 30, locationId = null) {
+  return postJson("/api/maintenance/work-orders/generate", {
+    horizon_days: horizonDays, ...(locationId ? { location_id: locationId } : {}),
+  });
 }
 
 export function getWorkOrder(id) {
@@ -2477,6 +2583,11 @@ export function saveFailureReportInvestigation(id, body) {
 
 export function addCorrectiveAction(id, body) {
   return postJson(`/api/maintenance/failure-reports/${id}/actions`, body);
+}
+
+// A corrective work order for one corrective action, on the report's position, linked to it.
+export function raiseActionWorkOrder(id, aid) {
+  return postJson(`/api/maintenance/failure-reports/${id}/actions/${aid}/work-order`, {});
 }
 
 export function updateCorrectiveAction(id, aid, body) {
@@ -2582,6 +2693,10 @@ export function cancelWorkOrder(id, reason) {
 }
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
+}
+// The same task (by name) on identical positions, with their intervals ({task, twins}).
+export function getTaskTwins(id) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(id)}/twins`);
 }
 // The condition points a task's trigger can watch ({points: [{id, name, unit,
 // alarm_above, alarm_below, on: {id, name}}]}), nearest first.
@@ -2754,8 +2869,16 @@ export function rcmFailureFindingInterval(body) {
   return postJson("/api/maintenance/rcm/interval/failure-finding", body);
 }
 // What those calculators start from for a failure mode (its evidence, its position's failures).
-export function getFailureModeIntervalInputs(id) {
-  return request(`/api/maintenance/failure-modes/${id}/interval-inputs`);
+// With taskId, task_cost too: what that task costs each time (typed, or from its LSA).
+export function getFailureModeIntervalInputs(id, taskId = null) {
+  return request(`/api/maintenance/failure-modes/${id}/interval-inputs${taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""}`);
+}
+// The workspace's hourly rates by trade ({rates: [{trade, rate, tasks}]}): they price each task's labour.
+export function listTradeRates() {
+  return request("/api/maintenance/trade-rates");
+}
+export function setTradeRate(trade, rate) {
+  return sendJson("PUT")("/api/maintenance/trade-rates", { trade, rate });
 }
 export function getFailureModeTasks(id) {
   return request(`/api/maintenance/failure-modes/${id}/tasks`);
@@ -2895,6 +3018,15 @@ export function setGroupDuty(groupId, positionId) {
 }
 export function retireRedundancyGroup(groupId) {
   return postJson(`/api/maintenance/groups/${groupId}/retire`, {});
+}
+// Rename a redundancy set, change k, mode or standby, add / remove members, or how a standby one
+// takes over ({start_probability, dormancy}: "" clears one).
+export function updateRedundancyGroup(groupId, body) {
+  return patchJson(`/api/maintenance/groups/${groupId}`, body);
+}
+// The positions inside one and the redundancy sets among them (the Explorer's Redundancy pane).
+export function getRedundancyInside(positionId) {
+  return request(`/api/maintenance/positions/${positionId}/redundancy`);
 }
 export function getPositionImpact(id) {
   return request(`/api/maintenance/positions/${id}/impact`);
@@ -3320,6 +3452,33 @@ export function downloadJointPython(id) {
   return downloadFile(`/api/joint/models/${encodeURIComponent(id)}/export.py`, "condition-based-risk.py");
 }
 
+// Download as Python for the other model kinds: a script that refits the model
+// with SurPyval from its data (embedded) and prints the page's numbers. Free for
+// every viewer. kind: "life" (non-repairable, regression and time-varying
+// covariate models), "recurrent", "alt" or "degradation".
+const PYTHON_EXPORT_PATHS = {
+  life: (id) => `/api/models/${id}/export.py`,
+  recurrent: (id) => `/api/recurrent/models/${id}/export.py`,
+  alt: (id) => `/api/alt/models/${id}/export.py`,
+  degradation: (id) => `/api/degradation/models/${id}/export.py`,
+};
+
+export function downloadModelPython(kind, id) {
+  const path = PYTHON_EXPORT_PATHS[kind];
+  if (!path) return Promise.reject(new Error(`No Python download for ${kind} models.`));
+  return withEvent(downloadFile(path(encodeURIComponent(id)), "model.py"), "model_export_python");
+}
+
+// A test plan as Python: the same inputs the calculator was given, as a
+// SurPyval script that works the plan out and prints it.
+export function downloadTestPlanPython(kind, body) {
+  return withEvent(downloadFile(`/api/test-planning/${encodeURIComponent(kind)}/export.py`, "test_plan.py", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }), "test_plan_export_python");
+}
+
 // ---- time to the limit (a watched band's trend, fitted with a degradation process) ----
 
 export function getTimeToLimit(pointId, { process = "wiener", limit, since, confidence } = {}) {
@@ -3382,6 +3541,33 @@ const qs = (params = {}) => {
   const s = q.toString();
   return s ? `?${s}` : "";
 };
+// ---- field reports: notes, photos and sound sent from the field -------------------------
+export function listFieldReports(scope = {}) {
+  return request(`/api/maintenance/captures${qs(scope)}`);
+}
+export function getFieldReport(id) {
+  return request(`/api/maintenance/captures/${encodeURIComponent(id)}`);
+}
+// An attachment's bytes (a photo: size "thumb" or "full"), for an object URL.
+export async function getFieldReportMediaBlob(id, mediaId, size = "full") {
+  const res = await authedFetch(`/api/maintenance/captures/${encodeURIComponent(id)}/media/${encodeURIComponent(mediaId)}?size=${size}`);
+  if (!res.ok) throw new Error(`The attachment failed to load (${res.status})`);
+  return res.blob();
+}
+export function setFieldReportStatus(id, status, note = "") {
+  return request(`/api/maintenance/captures/${encodeURIComponent(id)}/status`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, note }),
+  });
+}
+export function keepFieldReport(id, keep) {
+  return request(`/api/maintenance/captures/${encodeURIComponent(id)}/keep`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keep }),
+  });
+}
+export function deleteFieldReport(id) {
+  return request(`/api/maintenance/captures/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export function listPackages(scope = {}) {
   return request(`/api/maintenance/packages${qs(scope)}`);
 }
@@ -3417,6 +3603,11 @@ export function updatePackage(id, body) {
   });
 }
 // change: pause ({reason, until?, full_visit?}), resume, retire ({reason?}) or restore.
+// Raise one package's next visit now, on its own: {work_order, raised, lines_added, package}.
+export function raisePackageVisit(id) {
+  return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/raise`, {});
+}
+
 export function changePackage(id, change, body = {}) {
   return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/${change}`, body);
 }
@@ -3446,6 +3637,15 @@ export function linkPositionModel(positionId, body) {
   return request(`/api/maintenance/positions/${positionId}/models`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
+}
+// A saved RBD's maintenance plan as its position's tasks give it (rbd_tree_plan.py): each block
+// standing for a position, the tasks there and the one modelled. graph: the diagram as it stands.
+export function getRbdTreePlan(rbdId, graph) {
+  return postJson("/api/maintenance/rbd-tree-plan", { rbd_id: rbdId, ...(graph ? { graph } : {}) });
+}
+// The repairable RBDs whose plans read these tasks: {uses: [{rbd, block, task, used, last, outdated}]}.
+export function getRbdPlanUses(taskIds) {
+  return request(`/api/maintenance/rbd-plan-uses?task_ids=${encodeURIComponent((taskIds || []).join(","))}`);
 }
 export function unlinkPositionModel(linkId) {
   return request(`/api/maintenance/position-models/${linkId}`, { method: "DELETE" });

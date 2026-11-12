@@ -523,6 +523,14 @@ def update_corrective_action(report_id: str, action_id: str, body: dict = Body(.
                 **{k: v for k, v in body.items() if k != "by"})
 
 
+@router.post("/failure-reports/{report_id}/actions/{action_id}/work-order")
+def raise_action_work_order(report_id: str, action_id: str, body: dict | None = Body(None),
+                            ctx: AccessCtx = Depends(get_access),
+                            m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Raise a corrective work order for one corrective action, linked to it; returns the report."""
+    return _run(m.raise_action_work_order, report_id, action_id, by=_who(ctx, body or {}))
+
+
 @router.put("/failure-reports/{report_id}/verification")
 def verify_failure_report(report_id: str, body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
                           m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
@@ -1012,7 +1020,8 @@ def _attached_models(m: Maintenance, session, ctx: AccessCtx, position: dict | N
 
 
 @router.get("/failure-modes/{mode_id}/interval-inputs")
-def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+def failure_mode_interval_inputs(mode_id: str, task_id: str | None = None, session=Depends(get_session),
+                                 ctx: AccessCtx = Depends(get_access),
                                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """What the task card's interval calculators start from for this failure mode: its linked evidence
     (a non-repairable model, a saved analysis, a degradation model) and its position's failure history,
@@ -1025,7 +1034,11 @@ def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx
         _, position = m._live_mode(mode_id)
         rows = m.life_data(position["id"]) if position else []
         fetch = rcm_decisions.evidence_fetcher(session, ctx.read_owners, ctx.hidden)
-        return rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id))
+        out = rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id))
+        # The task's own cost per occurrence (its position's figure, typed or from its LSA): what a
+        # check, a test or a planned replacement costs, so the calculator doesn't ask for it again.
+        out["task_cost"] = m.task_cost(task_id) if task_id else None
+        return out
     return _run(go)
 
 
@@ -1075,10 +1088,46 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "resources" in body:
             # What doing it needs (its LSA record): each section given replaces that one.
             view = m.set_task_resources(task_id, body["resources"])
+        if "cost" in body:
+            # What it costs each time, typed (null: its LSA's figure again).
+            view = m.set_task_cost(task_id, body["cost"])
+        if "restoration" in body:
+            # What a fixed-interval task leaves the item as (null: as new); failure_mode_id inside it:
+            # that mode's decision only.
+            given = dict(body["restoration"] or {})
+            view = m.set_task_restoration(task_id, given or None, failure_mode_id=given.pop("failure_mode_id", None))
+        if "basis" in body:
+            # operating: its interval counts running hours; calendar or null: by its unit.
+            view = m.set_task_basis(task_id, body["basis"])
+        if "older_than" in body:
+            # At a shutdown, only on an item older than {value, unit} (null: every shut).
+            view = m.set_task_older_than(task_id, body["older_than"])
         if view is None:
             raise Invalid("Nothing to change.")
         return view
     return _run(go)
+
+
+@router.get("/trade-rates")
+def trade_rates(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every trade's hourly rate, and the trades the tasks' labour uses with none yet
+    ({rates: [{trade, rate, tasks}]}): what prices each task's labour (its cost)."""
+    return _run(lambda: {"rates": m.trade_rates()})
+
+
+@router.put("/trade-rates")
+def set_trade_rate(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A trade's hourly rate ({trade, rate}; rate null clears it), for every task whose labour uses it.
+    Also over MCP and the CLI: maintenance tasks.set_resources trade_rates."""
+    return _run(m.set_trade_rate, body.get("trade"), body.get("rate"))
+
+
+@router.get("/tasks/{task_id}/twins")
+def task_twins(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The same task (by name) on identical positions: the same position class, or with no class
+    the same parent and a name that differs only in its last letter or number. Each with its
+    interval and unit and whether they match this task's (same)."""
+    return _run(m.task_twins, task_id)
 
 
 @router.get("/tasks/{task_id}/lsa")
@@ -1118,11 +1167,20 @@ def retire_task(task_id: str, body: dict = Body(default={}), m: Maintenance = De
 
 
 @router.post("/positions/{position_id}/retire")
-def retire_position(position_id: str, body: dict = Body(default={}),
+def retire_position(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                    ctx: AccessCtx = Depends(get_access),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go.
-    return _run(m.retire_position, position_id, body.get("reason", ""), bool(body.get("cascade")),
-                bool(body.get("dry_run")))
+    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go,
+    # and name the RBDs built from the tree that have blocks for it (rbds: they keep them).
+    from backend.maintenance import rbd_tree_plan as tp
+
+    def run():
+        out = m.retire_position(position_id, body.get("reason", ""), bool(body.get("cascade")), bool(body.get("dry_run")))
+        if body.get("dry_run") and isinstance(out, dict):
+            out = {**out, "rbds": tp.rbds_holding(m, session, ctx.read_owners, ctx.hidden, position_id)}
+        return out
+
+    return _run(run)
 
 
 @router.post("/fitments/{fitment_id}/void")
@@ -1217,7 +1275,10 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
-    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids))})
+    # class_models: the classes with a fitted model, so a position of one with no model of its own
+    # can say so (From the class…), and whether the class has failed again since its fit.
+    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids)),
+                         "class_models": m.class_models()})
 
 
 @router.get("/position-missions")
@@ -1232,10 +1293,18 @@ def position_missions(position_ids: str | None = None, session=Depends(get_sessi
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
+
+    def read():
+        rows = m.all_position_models(ids)
+        has = pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden, rows)
+        # other_model: positions with a model in use that can't be a block (a condition-and-life
+        # model, say), so the tab can say why there's no Add a mission there.
+        other = sorted({x["position_id"] for x in rows if x.get("in_use") and x.get("model_type") != "rbd"} - set(has))
+        return {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
+                "has_model": has, "other_model": other}
+
     # has_model: positions whose model in use a mission's one-block RBD can take (a leaf's Add a mission).
-    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
-                         "has_model": pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden,
-                                                             m.all_position_models(ids))})
+    return _run(read)
 
 
 @router.post("/positions/{position_id}/missions")
@@ -1258,6 +1327,39 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
     return _run(pm.build_mission_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, name)
 
 
+@router.post("/rbd-tree-plan")
+def rbd_tree_plan(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A saved RBD's maintenance plan as its position's tasks give it (rbd_tree_plan.py): rbd_id, and
+    graph (the diagram as it stands in the builder; default the saved one). For each block standing
+    for a position inside the one the RBD is linked to: the position's tasks, the one modelled (its
+    kind, interval in the diagram's unit, time off-line, cost, package), what's blank and why, and a
+    missing repair time. Reads only: the tasks are edited on the Explorer's Maintenance tab."""
+    from backend.maintenance import rbd_tree_plan as tp
+    from backend.maintenance.position_models import fetcher
+
+    def run():
+        doc = fetcher(session, ctx.read_owners, ctx.hidden)("rbd", str(body.get("rbd_id") or ""))
+        if doc is None:
+            raise NotFound("RBD")
+        graph = body.get("graph") if isinstance(body.get("graph"), dict) else doc.graph or {}
+        return {"rbd_id": doc.id, **tp.plans_for_graph(m, doc.id, graph)}
+
+    return _run(run)
+
+
+@router.get("/rbd-plan-uses")
+def rbd_plan_uses(task_ids: str = "", session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The repairable RBDs whose plans read these tasks (task_ids, comma-separated): each RBD, the
+    block, whether the task is the one modelled there, and the RBD's last saved availability
+    calculation (and whether it used an older version of the task)."""
+    from backend.maintenance import rbd_tree_plan as tp
+
+    ids = [x for x in task_ids.split(",") if x]
+    return _run(lambda: {"uses": tp.rbds_using_tasks(m, session, ctx.read_owners, ctx.hidden, ids)})
+
+
 @router.get("/position-models/{link_id}")
 def position_model(link_id: str, age: float | None = None, session=Depends(get_session),
                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
@@ -1276,7 +1378,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     degradation_model, alt_model), the position class's (from_class true) or a new fit from its failure
     history (fit true; distribution, scope auto | position | class). failure_mode_ids: the failure modes it's
     for; replace_link_id: the model on the position it takes the place of; note. An RBD: rbd_id (an existing diagram, linked as
-    it is) or build_rbd true (a new one from the positions inside; with replace_link_id, rebuilt into the
+    it is), new_rbd {repairable, start: blank | self (one block, the position's own model in use)}, or
+    build_rbd true (a new one from the positions inside; with replace_link_id, rebuilt into the
     same diagram). use_link_id: make that row the position's model in use.
     """
     from backend import fitting
@@ -1299,6 +1402,17 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     if body.get("use_link_id"):
         # Which of the position's rows is the model in use.
         return _run(m.use_position_model, position_id, str(body["use_link_id"]))
+    if isinstance(body.get("new_rbd"), dict):
+        # New blank RBD: any position, a leaf included ({repairable, start: blank | self}).
+        from backend.services import billing as billing_service
+
+        if ctx.is_personal and not billing_service.is_admin_user(ctx.user) \
+                and billing_service.would_exceed_cap(session, ctx.uid, "rbds"):
+            return JSONResponse(status_code=402, content={
+                "detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True})
+        spec = body["new_rbd"]
+        return _run(pm.new_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner,
+                    bool(spec.get("repairable")), str(spec.get("start") or "blank"), note)
     if body.get("build_rbd"):
         return _run(pm.build_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, replace, note)
     if body.get("rbd_id"):
@@ -1379,7 +1493,7 @@ def preview_position_prediction(position_id: str, body: dict = Body(default={}),
 def preview_position_fit(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
                          ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """"Fit a life model…", previewed (nothing saved; a refusal comes back as {refused: words}): data (position, class, both), method (mle: a plain fit
-    with 95% confidence bounds; bayes: with a prior, 90% credible intervals), prior ({kind: class | model |
+    with 90% confidence bounds; bayes: with a prior, 90% credible intervals), prior ({kind: class | model |
     params | b10, ...}), distribution (weibull, exponential, lognormal; best for a plain fit), failure_mode_ids,
     exclude (fitment ids to leave out), trust (close, guide, start), age. Save with POST /positions/{id}/models
     {fit: true, data, method, prior, ...}."""
@@ -1418,7 +1532,7 @@ def class_forecast(position_class: str, period: str = "month", periods: int = 12
                    service_level: float | None = None, lead_time_days: float | None = None,
                    review_days: float | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The class's failure forecast from the register (#407): expected failures per
-    period with P10–P90, positions at risk, spares demand against stock and each
+    period with a 90% range (P5–P95), positions at risk, spares demand against stock and each
     spare's stock levels (#31: service_level and lead_time_days override every
     part's own), budget."""
     from backend.maintenance import forecast
@@ -1678,13 +1792,23 @@ def disconnect(interface_id: str, m: Maintenance = Depends(maintenance_write)) -
 @router.post("/groups")
 def create_group(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.create_group, body.get("name", ""), body.get("member_ids") or [], body.get("k", 1),
-                body.get("mode") or "active", body.get("standby") or "cold")
+                body.get("mode") or "active", body.get("standby") or "cold", body.get("start_probability"),
+                body.get("dormancy"))
 
 
 @router.patch("/groups/{group_id}")
 def update_group(group_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Rename a redundancy set, change k, mode or standby, add / remove members, or set how a
+    standby one takes over (start_probability, dormancy: '' clears one)."""
     return _run(m.update_group, group_id, body.get("name"), body.get("k"), body.get("mode"), body.get("standby"),
-                body.get("add") or [], body.get("remove") or [])
+                body.get("add") or [], body.get("remove") or [], body.get("start_probability"),
+                body.get("dormancy"))
+
+
+@router.get("/positions/{position_id}/redundancy")
+def redundancy_inside(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The Explorer's Redundancy pane: the positions inside one, and the redundancy sets among them."""
+    return _run(m.redundancy_inside, position_id)
 
 
 @router.post("/groups/{group_id}/duty")
@@ -1968,9 +2092,10 @@ def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance
 
 
 @router.post("/work-orders/generate")
-def generate_work_orders(horizon_days: int = Body(30, embed=True),
+def generate_work_orders(horizon_days: int = Body(30, embed=True), location_id: str | None = Body(None, embed=True),
                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.generate, max(0, min(horizon_days, 366)))
+    """Work orders for what's due in the window; location_id: only the work in that area."""
+    return _run(m.generate, max(0, min(horizon_days, 366)), location_id)
 
 
 @router.patch("/work-orders/{work_order_id}")
@@ -2496,19 +2621,30 @@ _PACKAGE_FIELDS = ("name", "timing", "every", "unit", "weekday", "nth", "day", "
 def create_package(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """On exactly one of position_id or location_id, or a layer on parent_id; tasks: task ids or
     {task_id, visit_rule, every_nth, suppresses}."""
-    return _run(m.create_package, body.get("name"), body.get("position_id"), body.get("location_id"),
-                body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
-                body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
-                body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"), body.get("trade", ""),
-                body.get("notes", ""), body.get("tasks"), body.get("season"))
+    def go():
+        m.check_shutdown(body.get("shutdown"))
+        made = m.create_package(body.get("name"), body.get("position_id"), body.get("location_id"),
+                                body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
+                                body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
+                                body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"),
+                                body.get("trade", ""), body.get("notes", ""), body.get("tasks"), body.get("season"))
+        # A shutdown: its visits are planned outages (shutdowns.py).
+        return m.set_package_shutdown(made["id"], body["shutdown"]) if body.get("shutdown") else made
+    return _run(go)
 
 
 @router.patch("/packages/{package_id}")
 def update_package(package_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Change its name, cadence, tolerance, trade, notes, or members' visit rules (tasks);
     clear_pattern true removes its pattern."""
-    return _run(m.update_package, package_id, clear_pattern=bool(body.get("clear_pattern")),
-                season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+    def go():
+        if "shutdown" in body:
+            m.check_shutdown(body["shutdown"])
+        out = m.update_package(package_id, clear_pattern=bool(body.get("clear_pattern")),
+                               season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+        # shutdown: its visits are planned outages; null makes it an ordinary package again.
+        return m.set_package_shutdown(package_id, body["shutdown"]) if "shutdown" in body else out
+    return _run(go)
 
 
 @router.post("/{kind}/{target_id}/out-of-service")
@@ -2542,7 +2678,9 @@ def remove_package_task(package_id: str, task_id: str, m: Maintenance = Depends(
 @router.post("/packages/{package_id}/{change}")
 def change_package(package_id: str, change: str, body: dict = Body(default={}),
                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """pause, resume, retire or restore."""
+    """pause, resume, retire, restore, or raise (its next visit's work order, now and on its own)."""
+    if change == "raise":
+        return _run(m.raise_package_visit, package_id)
     if change == "pause":
         return _run(m.pause_package, package_id, body.get("reason", ""), body.get("until"), body.get("full_visit"))
     if change == "retire":

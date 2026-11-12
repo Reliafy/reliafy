@@ -46,7 +46,7 @@ def test_incidence_bounds_and_horizon_are_surpyvals():
     # Each mode's band is SurPyval's (Aalen's variance, SurPyval 0.24).
     assert r["mode_bounds"] is True
     for k in model.event_idx_map:
-        cb = np.asarray(model.cb(grid, k, on="cif", alpha_ci=0.05), dtype=float).reshape(-1, 2)
+        cb = np.asarray(model.cb(grid, k, on="cif", alpha_ci=0.10), dtype=float).reshape(-1, 2)
         ok = np.isfinite(cb).all(axis=1)
         assert np.asarray(r["curves"]["lower"][k], dtype=float)[ok] == pytest.approx(cb[ok, 0])
         assert np.asarray(r["curves"]["upper"][k], dtype=float)[ok] == pytest.approx(cb[ok, 1])
@@ -54,7 +54,7 @@ def test_incidence_bounds_and_horizon_are_surpyvals():
     # The all-cause curve is the Kaplan-Meier one, with its Greenwood bounds.
     km = KaplanMeier.fit(x, c=c)
     assert r["curves"]["all"] == pytest.approx(km.ff(grid).tolist())
-    cb = np.asarray(km.cb(grid, on="ff", alpha_ci=0.05))
+    cb = np.asarray(km.cb(grid, on="ff", alpha_ci=0.10))
     ok = np.isfinite(cb).all(axis=1)
     assert np.asarray(r["curves"]["all_lower"])[ok] == pytest.approx(cb[ok, 0])
     assert np.asarray(r["curves"]["all_upper"])[ok] == pytest.approx(cb[ok, 1])
@@ -68,7 +68,7 @@ def test_incidence_bounds_and_horizon_are_surpyvals():
     assert [k["failures"] for k in r["causes"]] == [29, 15, 6]
     top = r["causes"][0]
     assert top["at"]["cif"] == pytest.approx(float(model.cif([5000], "bearing wear")[0]))
-    at = np.asarray(model.cb([5000.0], "bearing wear", on="cif", alpha_ci=0.05), dtype=float).ravel()
+    at = np.asarray(model.cb([5000.0], "bearing wear", on="cif", alpha_ci=0.10), dtype=float).ravel()
     assert [top["at"]["lower"], top["at"]["upper"]] == pytest.approx(at.tolist())
     assert top["share"] == pytest.approx(top["at"]["cif"] / float(model.ff([5000])[0]))
     assert sum(k["share"] for k in r["causes"]) == pytest.approx(1.0)
@@ -78,7 +78,7 @@ def test_incidence_bounds_and_horizon_are_surpyvals():
 def test_the_reading_and_who_leads_when():
     r = fitting.fit("competing_risks", _sample(), MAPPING, unit="hours")
     assert r["reading"].startswith("Bearing wear causes 58% of failures by 5,000 hours: 40% of units fail")
-    assert "(we're 95% sure it's between 28% and 52%)" in r["reading"]  # the mode's own band
+    assert "(we're 90% sure it's between 30% and 51%)" in r["reading"]  # the mode's own band
     assert [ld["cause"] for ld in r["leads"]] == ["seal leak", "bearing wear"]
     assert "Seal leak leads early; bearing wear overtakes it at about 2,810 hours." in r["reading"]
 
@@ -131,7 +131,7 @@ def test_regression_by_mode_is_surpyvals(dist_id, kind):
         se, p = (cr._values(own, name, 1)[0] for name in ("standard_errors", "p_values"))
         assert float(np.ravel(own.params if kind == "Cox" else own.beta)[0]) == pytest.approx(k["coef"], rel=1e-6)
         assert (k["se"], k["p_value"]) == (pytest.approx(se), pytest.approx(p))
-        lo, hi = np.exp(k["coef"] - 1.959963984540054 * se), np.exp(k["coef"] + 1.959963984540054 * se)
+        lo, hi = np.exp(k["coef"] - 1.6448536269514722 * se), np.exp(k["coef"] + 1.6448536269514722 * se)  # 90%
         assert k["ratio_ci"] == pytest.approx([lo, hi])
     bearing = next(k for k in reg["coefficients"] if k["cause"] == "bearing wear")
     assert bearing["ratio"] > 1 and bearing["p_value"] < 0.01  # duty wears bearings out sooner

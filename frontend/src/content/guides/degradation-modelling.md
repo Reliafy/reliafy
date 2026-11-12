@@ -50,18 +50,24 @@ being deliberate about, because everything downstream is expressed relative to i
 
 Go to **Modelling → Models → Degradation → New model** and pick your dataset under **Saved
 data** (datasets of readings come first; the rest are greyed out, with the reason), or upload a
-file. Then choose the
-item id, time and measurement columns, and set the **Failure threshold** along
-with the **Time unit** and **Measurement unit** so the outputs are labelled
-properly. A dataset that holds life data with its **Measurements** (readings on
+file. The **Data** step uses the same selectors as the other fits, with
+only the three a degradation fit reads: **i** (*which item each reading belongs
+to*), **x** (*when the reading was taken*) with its unit, and **m** (*the
+measured value*) with its unit, so the outputs are labelled properly. There is
+no **c**: an item's readings simply stop. Anything that needs settling (an item
+column with only one item, items read only once) is said beside its selector. A dataset that holds life data with its **Measurements** (readings on
 the same units; see [condition and life](/guides/condition-based-risk)) is read
 here by its measurements.
 
-In the next step you name the model. Under **Advanced** (the defaults are fine)
-you can choose a **path** — how degradation progresses. The
+On the **Model** step you name the model and set its fixed inputs: **Fails when
+m falls to** (or **rises to**) the **failure threshold**, in m's unit, and the
+**path** — how degradation progresses. Which way m goes is guessed from the
+first readings and checked against the threshold; the fit itself reads each
+item's path. The
 default, **Best (auto-select by AICc)**, tries all nine paths and keeps the one
 that fits best. **Linear** is the common case for steady wear; choose another
-when the physics says wear accelerates or plateaus. What the model does is fit a path to each item, extrapolate each to the
+when the physics says wear accelerates or plateaus. Under **Advanced** (the
+defaults are fine) are the life distribution and the population method. What the model does is fit a path to each item, extrapolate each to the
 threshold, and then fit a life distribution to the resulting crossing times —
 which is how a set of wear curves becomes a reliability model of the population.
 
@@ -70,9 +76,9 @@ which is how a set of wear curves becomes a reliability model of the population.
 For the sample brake pads (six pads, an 8 mm wear limit, linear paths) the
 crossing times fit a Weibull with a mean life of **5,960 hours**. The line under
 the model's name gives the answer: B10 is **4,710 hours** (the time by which 10%
-of pads reach the limit), with **≥ 3,210 at 95%** beside it: we're 95% sure at
-least 90% of pads last 3,210 hours. That lower bound (the lower end of the
-two-sided 90% band, so a one-sided 95% bound) is the design life to plan with.
+of pads reach the limit), with **≥ 3,670 at 90%** beside it: we're 90% sure at
+least 90% of pads last 3,670 hours. That one-sided lower bound is the design
+life to plan with; the shaded band on the reliability curve is two-sided 90%.
 
 ## Reading the model's page
 
@@ -98,11 +104,14 @@ The page has five tabs:
 
 The population model is useful, but the real payoff is per-asset.
 
-Under **Decisions → Risk →** [Condition monitoring](/risk) (or **Track items** on the model's page),
+Under **Decisions → Risk →** [Condition monitoring](/risk) (or **Track items** on the model's page, which opens the model's fleet, or a new one on that model),
 register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much
-confidence to place in that.
+confidence to place in that. Each asset's remaining life comes with a 90% lower
+bound (the sample Truck 12 pad: *4,585 hours, at least 4,290 at 90%*), and its page says when, with 90%
+confidence, it won't cross before: the date to plan with. Change the
+**Confidence** there for a stricter or looser bound.
 
 That's the loop that makes condition monitoring worth the effort. A reading taken
 on Tuesday can change a replacement date by Wednesday, for one named asset,
@@ -120,6 +129,11 @@ sharp one.
 Treat early predictions as *ordering information* — which assets are ahead of the
 pack — rather than dates to put in a plan. As readings accumulate the predictions
 tighten, and that's when they're worth scheduling against.
+
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits a degradation model with
+SurPyval from its data and prints the numbers on the page. It's free for everyone who can open the model.
 
 ## Where to go next
 

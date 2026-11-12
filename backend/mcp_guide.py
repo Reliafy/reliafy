@@ -24,8 +24,8 @@ with SurPyval, the way when fitting isn't on the plan): change model_save with t
 and delta to the best, under 2 is a tie, what it skipped and why, and guidance in words: relay it; \
 include_mixtures lets two-mode mixtures compete, decided by BIC); discrete, bounded, spline, regression (with \
 covariates and a dataset: weibull_ph, weibull_aft, loglogistic_aft, weibull_po, weibull_ah, cox_ph, …; \
-id_column for covariates that change over time; the read is a hazard ratio for _ph, a time ratio for _aft, an \
-odds ratio for _po and an added failure rate for _ah; diagnostics.model_checks says whether the model's own \
+id_column for covariates that change over time; the read is a hazard ratio for _ph, a time ratio (the life ×) for \
+_aft, an odds ratio (of having failed) for _po and an added failure rate for _ah; diagnostics.model_checks says whether the model's own \
 assumption holds, with what to try if not), shared frailty (group_column; frailty_family lognormal for a \
 heavier-tailed frailty), competing risks (causes / cause_column: each failure mode's share). method: MLE unless \
 the user asks.
@@ -35,8 +35,8 @@ B10 the user believes): analyse bayes_update (Pro) updates the baseline with the
 {distribution, params, unit} or {b10: {value, low, high}, shape: {low, high}, unit}; trust close / guide / start \
 (each number within about 10 / 30 / 60%; a fitted baseline counts as all, half or a fifth of its evidence); x and c \
 in the baseline's unit. E.g. baseline {model_id: <the class's Weibull>}, trust guide, x [1400, 1900, 2500], c \
-[0, 0, 1]. It returns posterior medians with 90% credible intervals ("a 90% chance the B10 lies between ..."), \
-never confidence bounds, and says what moved the baseline. It's a Bayesian update of a baseline: use it for \
+[0, 0, 1]. It returns posterior medians with 90% credible intervals (the B10 and mean life with a 90% one-sided \
+lower bound: "90% sure the B10 is at least ..."), never confidence bounds, and says what moved the baseline. It's a Bayesian update of a baseline: use it for \
 sparse data with a baseline the user trusts, say the baseline and the trust when quoting it; with plenty of \
 failures fit instead. No data: the baseline stands as given. With Reliafy Maintenance, baseline \
 {class_power_prior: true, position_id} uses that position's class's other positions' history as a power prior \
@@ -45,7 +45,10 @@ method bayes and prior {kind: library, record_id} (e.g. a motor-operated valve's
 library): on an exponential its gamma is the prior exactly (conjugate). On a maintenance position, maintenance models.link \
 with fit and baseline saves one and attaches it.
 - Weibull beta < 1 = infant mortality, ≈ 1 = random failures, > 1 = wear-out.
-- Read saved models: list kind models, get kind model (parameters with 95% CIs, goodness of fit, B-lives with \
+- Every bound is at 90%: life quantities (B-lives, mean life, life left) one-sided lower, a chance of \
+failing one-sided upper, everything else (parameters, ratios, bands, forecast ranges) two-sided. Say the level \
+with each bound; a result's ci_level or confidence field gives it (95% on some fits saved before Nov 2026).
+- Read saved models: list kind models, get kind model (parameters with 90% CIs, goodness of fit, B-lives with \
 one-sided 90% lower bounds; regression models: validation and the proportional-hazards checks).
 - Evaluate: analyse reliability_at (R(t), F(t), hazard; conditional_age for a unit still working; \
 confidence for bounds, quoted with the point values; covariates or a covariate_schedule for regression \
@@ -68,7 +71,7 @@ once per unit, a reading on every row) works as it is, or change dataset_split m
 new, in one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates \
 change how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
 analyse fit_joint reports; change model_fit_joint saves. The fit runs on the calculation service (8-40 s): \
-it may come back as a job (get kind job). Quote each hazard ratio with its 95% CI, as its text says.
+it may come back as a job (get kind job). Quote each hazard ratio with its 90% CI, as its text says.
 - A running unit's risk: analyse predict_joint (unit_id, or age_now + readings + unit_covariates): \
 survival over the horizons with bounds, and the median remaining life. Never quote a mean life for these \
 units: a reading that levels off can leave a chance of never failing, so the mean can be infinite; "not \
@@ -126,7 +129,7 @@ Repairable systems: many failures per system.
 inline times + systems (censored: 0 failure, 1 end of observation; or observed_to) or a dataset. Minimal \
 repair: crow_amsaa (default), duane, hpp, cox_lewis; covariates on the repair rate: pi_nhpp; imperfect repair: \
 grp_i / grp_ii, ara, ari, g1. windows give observation gaps; causes add each cause's growth. Fitting is Pro.
-- get kind model on one: the growth verdict with β's 95% interval, ROCOF and MTBF with bounds, the \
+- get kind model on one: the growth verdict with β's 90% interval, ROCOF and MTBF with bounds, the \
 demonstrated MTBF's lower bound, trend and goodness-of-fit tests, and (imperfect repair) the repair \
 effectiveness and each system's next failure.
 - analyse next_failure: at a system's age, the chance of a failure within given times and the \
@@ -151,7 +154,9 @@ model (saved_model_id; same time unit).
 - Repairable diagrams (repairable=true, analysed for availability): every block needs a repair model. Blocks \
 may carry costs, preventive (age / block / condition replacement), inspection (hidden failures found by proof \
 tests: offset staggers, coverage + full_test for partial tests), maintenance_group, crew_priority, \
-repair_quality (Kijima: simulated figures); the diagram repair_crews, safety_function + target_sil (needs proof \
+repair_quality (Kijima: simulated figures), duty (0-1, the share of the time it runs, shown as 'Runs X% of \
+the time': its model is then a life in operating time; intervals stay on the clock); the diagram repair_crews, \
+safety_function + target_sil (needs proof \
 tests), costs (downtime_rate, horizon, discount_rate) and production (capacity demand). Common cause: \
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
 - Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \
@@ -313,9 +318,13 @@ export_openpsa=true adds the tree as Open-PSA XML.
     "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
 Maintenance strategy (analyse actions).
 - analyse optimal_replacement: the cost-optimal age-replacement interval from a non-repairable model (model_id, or \
-distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper.
+distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper. \
+optimal_time_range: how far the best age moves across the fit's 90% bounds. block: block (group) replacement at fixed \
+times, the usual alternative. use_per_year (+ units) adds yearly: the saving a year per unit and for the fleet.
 - analyse failure_finding_interval: the proof-test interval keeping a hidden protective function (relief valve, trip, \
-standby unit) at a target availability.
+standby unit) at a target availability, from the model's curve (not 2(1-A)MTTF, which holds only for a constant \
+rate). renewed_at_test (default true: each test overhauls or replaces it); test_duration and test_cost optional. \
+interval_bound: the cautious end from the fit's 90% one-sided bounds; quote it with the interval.
 - analyse optimal_overhaul: the overhaul interval of a repairable system from a minimal-repair recurrent model.
 - analyse calendar_replacement: when replacing costs less at shuts (annual, quarterly, weekly stops) than between \
 them, the long-run best rule: at each shut, replace the part if it is older than a threshold age (the threshold \
@@ -327,10 +336,10 @@ comparisons (run to failure, age replacement ignoring the shuts, every shut of a
 shuts with each one's threshold and chance of a replacement. method dp (default) and integration (no anytime_cost) \
 are exact and free; sampling (Pro) is for calendars whose cycle is very long, with cost_rate_se. Quote the unit.
 - analyse next_replacement: the same calendar plus the age of the unit in service today: replace it now, at the \
-next shut of each kind, between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
+coming shuts (the next, the one after, and on), between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
 (from that age replacing now beats waiting).
 - With a saved Weibull (or Crow-AMSAA) model fitted to data, shape_uncertainty gives the answer at each end of \
-the shape's 95% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
+the shape's 90% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
 (for a protective function, the shorter interval is the safe side).
 - A whole diagram's intervals together: analyse rbd_optimise_intervals. A demonstration test or a B-life \
 check: analyse plan_demonstration_test / check_life_requirement. Fleets: guide topic fleets."""),
@@ -339,9 +348,15 @@ check: analyse plan_demonstration_test / check_life_requirement. Fleets: guide t
 Fleets (Reliafy Pro).
 - A fleet is in-service items run against one saved model; the app creates them and usage arrives through \
 the ingest API. list kind fleets lists them (model_kind life, regression, alt or recurrent).
-- analyse fleet_forecast: expected failures over the horizon with a P10–P90 range, per period and per item (the \
+- analyse fleet_forecast: expected failures over the horizon with a 90% range (P5–P95), per period and per item (the \
 top 20 unless include_items; item_probabilities adds each item's chance by period). Recurrent fleets count every \
-repeat failure.
+repeat failure: an item named as a system in the model's data uses its own history (rate_factor; imperfect repair \
+simulated from its state), and the range carries the fit's uncertainty; covariate recurrent models aren't taken.
+- Strategy (renewals fleets): strategy = {strategy: run_to_failure or age, replace_at (model units), failure_cost, \
+planned_cost} (or the fleet's saved one) adds forecast.strategy: total, per_period and yearly, each with failures, \
+planned replacements, parts and (priced) cost, with 90% ranges. Items already past replace_at are replaced in period \
+1 (catch_up). Spares then count planned replacements too. Compare run to failure and age with two calls. First-failures and recurrent fleets carry forecast.strategy too (kind first_failures or repairable): failures and, with the fleet's failure_cost, cost, per period and per year with their 90% ranges.
+- use_model_data=true forecasts the units still running in the model's own data (its suspensions at their ages; a repairable model's systems at the end of their records) instead of the saved items; nothing is saved.
 - Spares: fleet_forecast with spares = {lead_time (in the fleet's periods), service_level (default 0.95), review, \
 per_failure, stock, unit_cost} (or the fleet's saved spares settings) adds spares: hold (the stock for that chance \
 of no stock-out over the lead time plus review), reorder_at, risk_at_stock, hold_cost, the same per period, and \
@@ -418,7 +433,9 @@ whether simulation is included. It, guide, get kind upgrade_link, change upload_
 - When a tool says a limit or the plan stops it, tell the user plainly what it says — the limit, when it \
 resets, how to upgrade — and don't retry. Calls refused that way aren't counted.
 - Without Pro, fit locally with SurPyval (pip install surpyval; 0 = failed, 1 = still running) and save the \
-parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python.
+parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python. \
+analyse model_export_python gives any saved model as a script that refits it locally (free); the plan_* \
+actions take python=true for the plan's script.
 - get kind upgrade_link gives the user a Stripe payment link to open themselves; nothing is charged until they complete \
 it. Never say an upgrade has happened."""),
 

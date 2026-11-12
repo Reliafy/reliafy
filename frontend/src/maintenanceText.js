@@ -47,3 +47,8 @@ export function charCount(value, { max = SHORT_TEXT, before = null } = {}) {
     message: over ? `Shorten it to ${fmt(max)} characters or fewer${changed ? " to save the change" : ""} (it's ${fmt(n)}).` : "",
   };
 }
+
+// "Replace at age" (Derryn, 12 Nov 2026: one name for it everywhere): the work orders count it from the
+// last time it was done or the item was replaced, as the RBD's age replacement does.
+export const AGE_NOTE = "Replace at age: counted from when it was last done, and a new item fitted (after a failure, say) " +
+  "restarts the count. In a package on fixed dates it's done on the package's dates instead.";

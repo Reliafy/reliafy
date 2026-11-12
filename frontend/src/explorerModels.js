@@ -24,7 +24,7 @@ const blank = () => ({ n: 0, stale: 0, missing: 0 });
 export const MODEL_COLUMNS = [
   { id: "kind", label: "Kind", width: 150 },
   { id: "source", label: "Source", width: 230 },
-  { id: "numbers", label: "Headline", width: 260, title: "The model's main numbers in its unit, with 95% bounds where it has them" },
+  { id: "numbers", label: "Headline", width: 260, title: "The model's main numbers in its unit, with 90% bounds where it has them" },
   { id: "mean", label: "Mean life", width: 150, num: true, title: "The mean life, with its 90% lower bound" },
   { id: "b10", label: "B10 life", width: 150, num: true, usual: false, title: "The age by which 10% have failed, with its 90% lower bound" },
   { id: "quality", label: "Confidence", width: 150, title: "How much data is behind it, in a word" },
@@ -42,6 +42,18 @@ export function fmt(v) {
   return Number(x.toPrecision(sig)).toLocaleString("en-AU", { maximumFractionDigits: 6 });
 }
 
+// The bound beside a fitted number: "1,410–2,530" (two-sided), or "≥ 467" (one-sided
+// lower). A B-life or mean life fitted with a prior carries its level (bayes_life.py):
+// "≥ 3,814 at 90% credible", as the saved model's page says it; a plain fit's
+// (``kind: "confidence"``) "≥ 3,810 at 90%". null with no bound.
+export function rangeBound(p) {
+  if (!p || p.lower == null) return null;
+  if (p.upper != null) return `${fmt(p.lower)}–${fmt(p.upper)}`;
+  const word = p.kind === "confidence" ? "" : " credible";
+  const level = p.bound === "lower" && p.level ? ` at ${Math.round(p.level * 100)}%${word}` : "";
+  return `≥ ${fmt(p.lower)}${level}`;
+}
+
 // A model's time unit as people write it ("Hours" → "hours").
 export const unitWord = (unit) => String(unit || "").trim().toLowerCase();
 
@@ -50,8 +62,9 @@ const pct = (level) => `${Math.round(Number(level || 0.9) * 100)}%`;
 
 // What a model's intervals are, for a column or a legend: a Bayesian update's are
 // credible intervals at its level ("90% credible interval"), never "bounds" or
-// "confidence"; a fitted model's are its 95% bounds.
-export const boundsLabel = (model) => (model?.credible ? `${pct(model.credible_level)} credible interval` : "95% bounds");
+// "confidence"; a fitted model's are its 90% bounds (``ci_level``).
+export const boundsLabel = (model) => (model?.credible ? `${pct(model.credible_level)} credible interval`
+  : `${pct(model?.ci_level ?? 0.9)} bounds`);
 
 // One number with its bounds and unit: "1,435 hours (1,234–1,669)"; a one-sided lower
 // bound: "1,239 hours (≥ 1,109)"; a credible interval (a Bayesian update, `level` its
@@ -71,7 +84,8 @@ const byId = (model, id) => (model?.numbers || []).find((n) => n.id === id) || n
 
 // The Headline cell: characteristic life and shape for a Weibull, MTBF for an
 // exponential, the failure rate and trend for a repairable model, where a degradation
-// model fails; a model with none of these, its mean life.
+// model fails; a non-repairable RBD, its mean life first (time to the system's first
+// failure: never an MTBF); a model with none of these, its mean life.
 export function headline(model) {
   if (!model) return "";
   const parts = [];
@@ -87,9 +101,11 @@ export function headline(model) {
   if (model.trend) parts.push(model.trend);
   for (const id of ["threshold", "marker", "reference"]) {
     const n = byId(model, id);
-    if (n) parts.push(`${n.label} ${n.text}`);
+    if (n) parts.push([n.label, n.text].filter(Boolean).join(" "));
   }
-  if (!parts.length && byId(model, "mean")) parts.push(`Mean life ${withBounds(byId(model, "mean"), lv)}`);
+  const mean = byId(model, "mean");
+  if (mean && model.family === "rbd") parts.unshift(`Mean life ${withBounds(mean, lv)}`);
+  else if (!parts.length && mean) parts.push(`Mean life ${withBounds(mean, lv)}`);
   return parts.join(" · ");
 }
 
@@ -197,6 +213,21 @@ export function rollupText(r, open = false) {
   return parts.join(" · ");
 }
 
+// A position with no model of its own whose class has a fitted one (`classModels`: the
+// position-models read's {class name: {failures, failures_now}}): "Its class has a model:
+// From the class… (1 new failure since its fit)"; "" otherwise. The class's model isn't the
+// position's until it's attached, so the roll-up never counts it.
+export function classModelHint(r, classModels, { short = false } = {}) {
+  if (!r || r.type !== "pos" || (r.lsum?.n || 0) > 0) return "";
+  const name = (r.ref?.position_class || "").trim();
+  const cm = name && classModels ? classModels[name] : null;
+  if (!cm) return "";
+  const fresh = Number.isFinite(cm.failures_now) && Number.isFinite(cm.failures) ? cm.failures_now - cm.failures : 0;
+  const since = fresh > 0 ? ` (fitted before ${fresh.toLocaleString("en-AU")} new failure${fresh === 1 ? "" : "s"}: refit it)` : "";
+  if (short) return fresh > 0 ? `class model · ${fresh.toLocaleString("en-AU")} new failure${fresh === 1 ? "" : "s"} since` : "class model to attach";
+  return `No model here yet. Its class (${name}) has one: Life model › From the class…${since}`;
+}
+
 // The model in use in a few words: "RBD", "Prediction", or the life model's kind.
 export function inUseWords(link) {
   if (!link) return "";
@@ -228,6 +259,8 @@ export function rowActions(r, { viewOnly = null } = {}) {
     bindingOf(link) ? { id: "model-bind", label: "Fix covariates at this position…", ...off } : null,
     // A life model (not an RBD or a prediction) can be snapshotted into one of the user's data libraries.
     isLifeModelLink(link) ? { id: "model-to-library", label: "Add to a library…", ...off } : null,
+    // Typed-in parameters (Assumed): changed in place, without unlinking and entering them again.
+    link.model?.entered ? { id: "model-params-edit", label: "Edit parameters…", ...off } : null,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
     { id: "model-unlink", label: "Unlink…", ...off },
   ].filter(Boolean);
@@ -348,7 +381,10 @@ export function predictionWords(source = {}) {
 // `builtRbd`: it already has an RBD built from what's inside (builtRbdLink), so the RBD group
 // opens that one and offers Rebuild instead of Build: a position has one built diagram, however
 // often the menu is used.
-export function attachGroups({ positionClass = "", hasPrediction = false, hasLifeModel = false, builtRbd = false, viewOnly = null } = {}) {
+// `hasInside`: positions inside it to build from (a leaf has none: Build is greyed and New blank
+// RBD… is the way in). New blank RBD… is offered on every position (Derryn, 12 Nov 2026).
+export function attachGroups({ positionClass = "", hasPrediction = false, hasLifeModel = false, builtRbd = false, viewOnly = null,
+  hasInside = true } = {}) {
   const off = viewOnly ? { disabled: true, reason: viewOnly } : {};
   return [
     { id: "model-group-life", label: "Life model", items: [
@@ -367,7 +403,12 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
       ...(builtRbd
         ? [{ id: "model-attach-rbd-open", label: "Open the RBD" },
            { id: "model-attach-rbd-rebuild", label: "Rebuild from what's inside…", ...off }]
-        : [{ id: "model-attach-rbd-build", label: "Build from what's inside…", ...off }]),
+        : [{ id: "model-attach-rbd-build", label: "Build from what's inside…", ...off,
+             ...(hasInside || viewOnly ? {} : { disabled: true, reason: "Nothing inside to build from: start a new blank RBD" }) }]),
+      // Which positions inside back each other up (Derryn, 12 Nov 2026): what Build wires as redundancy.
+      { id: "model-attach-redundancy", label: "Redundancy inside…", ...off,
+        ...(hasInside || viewOnly ? {} : { disabled: true, reason: "Nothing inside: redundancy is between the positions inside one" }) },
+      { id: "model-attach-rbd-new", label: "New blank RBD…", ...off },
       { id: "model-attach-rbd-link", label: "Link an existing RBD…", ...off },
     ] },
     { id: "model-group-prediction", label: "Prediction", items: [
@@ -377,13 +418,60 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
   ];
 }
 
-// Of a position's model rows, its RBD built from what's inside (the one in use first), or null.
+// Of a position's model rows, its own RBD: built from what's inside or started blank there (New
+// blank RBD…), the one in use first; or null.
 // The same pick as the backend's (position_models.built_rbd_link), which never builds a second.
 export function builtRbdLink(links, positionId) {
-  const built = (links || []).filter((l) => l.position_id === positionId && l.model_type === "rbd" && l.source?.built_from != null);
+  const built = (links || []).filter((l) => l.position_id === positionId && l.model_type === "rbd"
+    && (l.source?.built_from != null || l.source?.new));
   return built.find((l) => l.in_use) || built[0] || null;
 }
 
 // The position items that make sense on the Modelling tab, after the groups: Rename… only
 // (Focus › and Pin this branch are added by the page); the rest stay on Summary and RCM.
 export const MODEL_POSITION_ITEMS = ["tree-rename"];
+
+// Enter parameters › Exponential: given as an MTBF (what a handbook or data sheet gives) or as a
+// failure rate, in the model's unit. A handbook MTBF typed where a rate was asked for (90,000 as
+// 90,000 failures an hour) made a part that fails every 0.04 s.
+const ONE = { hours: "hour", days: "day", weeks: "week", months: "month", years: "year", cycles: "cycle" };
+export const unitOne = (unit) => ONE[unit] || String(unit || "unit").replace(/s$/, "");
+
+export function exponentialLabel(expAs, unit) {
+  return expAs === "rate" ? `Failure rate (failures per ${unitOne(unit)})` : `MTBF (mean ${unit || "time"} between failures)`;
+}
+
+// The parameters saved, by name (SurPyval's): an exponential's MTBF turned into its failure rate.
+export function enteredParams(distribution, names, values, expAs = "mtbf") {
+  return names.map(([k]) => {
+    const v = Number(values[k]);
+    if (distribution === "exponential" && k === "failure_rate" && expAs !== "rate") return { name: k, value: v > 0 ? 1 / v : v };
+    return { name: k, value: v };
+  });
+}
+
+// A typed-in exponential that can't be what was meant: a rate of one or more failures per unit of
+// time (an MTBF typed as a rate, most likely), or an MTBF under one unit. Words, or null.
+export function implausibleExponential(expAs, value, unit) {
+  const v = Number(value);
+  if (!(v > 0) || !Number.isFinite(v)) return null;
+  const one = unitOne(unit);
+  const fmtN = (x) => Number(x.toPrecision(3)).toLocaleString("en-AU", { maximumSignificantDigits: 3 });
+  if (expAs === "rate" && v >= 1) {
+    return `${fmtN(v)} failures every ${one} is an MTBF of ${fmtN(1 / v)} ${unit}. If ${fmtN(v)} is the MTBF, choose MTBF above.`;
+  }
+  if (expAs !== "rate" && v < 1) {
+    return `An MTBF under one ${one} means it fails more than once every ${one}. If ${fmtN(v)} is a failure rate, choose Failure rate above.`;
+  }
+  return null;
+}
+
+// Edit parameters…: the form's starting values from a row's entered model (an exponential shown as
+// its MTBF).
+export function enteredStart(entered) {
+  const values = Object.fromEntries(Object.entries(entered?.params || {}).map(([k, v]) => [k, v == null ? "" : String(v)]));
+  if (entered?.distribution === "exponential" && Number(values.failure_rate) > 0) {
+    values.failure_rate = String(Number((1 / Number(values.failure_rate)).toPrecision(6)));
+  }
+  return values;
+}

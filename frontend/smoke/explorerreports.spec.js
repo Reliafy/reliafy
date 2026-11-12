@@ -130,7 +130,8 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   // A corrective action, marked done.
   await detail(page).getByRole("button", { name: "Corrective actions" }).click();
   await detail(page).getByRole("textbox", { name: /What will be done/ }).fill("Replace the seal and check alignment");
-  await detail(page).getByRole("textbox", { name: /Work order/ }).fill("WO-77");
+  // Work order is now a picker of real work orders (#816); a number from elsewhere is the reference.
+  await detail(page).getByRole("textbox", { name: /Or a reference kept elsewhere/ }).fill("WO-77");
   await detail(page).getByRole("button", { name: "Add action" }).click();
   await expect(said(page)).toHaveText("Action added.");
   const actions = detail(page).locator("table.fr-actions");

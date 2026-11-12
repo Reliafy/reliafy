@@ -30,13 +30,13 @@ from __future__ import annotations
 
 import math
 import re
-import warnings
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
 from backend import param_intervals
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 LAYOUTS = ("intervals", "timeline")
 # Functions along a schedule: SurPyval gives survival and cumulative hazard
@@ -181,12 +181,17 @@ def readings(coefficients: list, effect: str, fields: list) -> list:
 
     A numeric covariate steps by its field's round ``step`` ("Every +10 % in
     load_pct multiplies the hazard by 1.53"), a categorical level reads
-    against the base level, anything else per unit of its term. The
-    multiplier is exp(β·step) — what it multiplies depends on the family:
-    the hazard (PH, Cox), how fast the item ages (AFT: SurPyval scales time
-    by exp(β'z)), the odds of surviving (PO: exp(β'z) multiplies them);
-    additive hazards add β·step to the hazard rate."""
+    against the base level it is compared with (named), anything else per
+    unit of its term. What the step multiplies depends on the family, read
+    the way SurPyval's coefficients act: the hazard by exp(β·step) (PH, Cox);
+    the life by exp(-β·step), the item ageing exp(β·step) times as fast
+    (AFT: SurPyval scales time by exp(β'z)); the odds of having failed by
+    exp(-β·step) (PO: exp(β'z) multiplies the odds of surviving); additive
+    hazards add β·step to the hazard rate."""
+    from backend.fitting import base_levels, coefficient_ratio
+
     by_name = {f["name"]: f for f in fields or []}
+    bases = base_levels([c["name"] for c in coefficients or []], fields)
     out = []
     for c in coefficients or []:
         name, beta, ci = c["name"], c.get("value"), c.get("ci")
@@ -200,30 +205,42 @@ def readings(coefficients: list, effect: str, fields: list) -> list:
             lead = f"Every +{_sig(step)}{(u if u == '%' else ' ' + u) if u else ''} in {name}"
         elif level:
             step = 1.0
-            lead = f"{level['var']} = {level['level']} (against its base level)"
+            var = level_variable(level["var"])
+            base = bases.get(var)
+            against = f"against {base}, the base level" if base else "against its base level"
+            lead = f"{var} = {level['level']} ({against})"
         else:
             step = 1.0
             lead = f"Every +1 in {name}"
         lo_hi = [v * step for v in ci] if ci else None
+        ageing = ""
         if effect == "additive":
             text = f"{lead} adds {_sig(beta * step)} to the hazard rate"
             interval = lo_hi
         else:
-            factor = math.exp(beta * step)
-            verb = {"hazard": "multiplies the hazard by",
-                    "aft": "makes the item age",
-                    "odds": "multiplies the odds of surviving by"}.get(effect, "multiplies the hazard by")
-            text = (f"{lead} {verb} {_sig(factor)}× as fast" if effect == "aft"
-                    else f"{lead} {verb} {_sig(factor)}")
-            interval = sorted(math.exp(v) for v in lo_hi) if lo_hi else None
+            factor, interval = coefficient_ratio(effect, beta * step, lo_hi)
+            if effect == "aft":
+                text = f"{lead} multiplies the life by {_sig(factor)}"
+                ageing = (f": the item ages {_sig(1.0 / factor)}× as fast" if factor < 1
+                          else f": the item ages {_sig(factor)}× more slowly")
+            elif effect == "odds":
+                text = f"{lead} multiplies the odds of having failed by {_sig(factor)}"
+            else:
+                text = f"{lead} multiplies the hazard by {_sig(factor)}"
         if interval and all(math.isfinite(v) for v in interval):
-            text += f" (95% interval {_sig(interval[0])} to {_sig(interval[1])})"
-        out.append({"name": name, "text": text + "."})
+            text += f" (90% interval {_sig(interval[0])} to {_sig(interval[1])})"
+        out.append({"name": name, "text": text + ageing + "."})
     return out
 
 
+def level_variable(term: str) -> str:
+    """``C(site)`` or ``C(site, ...)`` → ``site``; anything else as it is."""
+    m = re.match(r"^C\(\s*([^,()]+?)\s*(?:,.*)?\)$", term)
+    return m.group(1).strip("`") if m else term.strip("`")
+
+
 def _baseline_and_coefficients(model, effect: str, ratio_label):
-    """Baseline parameters and coefficients with 95% Wald intervals, in the
+    """Baseline parameters and coefficients with 90% Wald intervals, in the
     shape the regression payload uses (see ``fitting._fit_regression``)."""
     params = np.asarray(model.params, dtype=float)
     k = int(getattr(model, "k_dist", 0) or 0)
@@ -249,7 +266,9 @@ def _baseline_and_coefficients(model, effect: str, ratio_label):
         value = float(params[k + j])
         coef = {"name": n, "value": value, "ci": ci(k + j)}
         if ratio_label is not None:
-            coef["ratio"] = float(np.exp(value))
+            from backend.fitting import coefficient_ratio
+
+            coef["ratio"], coef["ratio_ci"] = coefficient_ratio(effect, value, coef["ci"])
             coef["hazard_ratio"] = coef["ratio"]
         coefficients.append(coef)
     return baseline, coefficients, list(features)
@@ -288,9 +307,13 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates=None, for
         except FormulaRejected as exc:
             raise fitting.FitError(str(exc)) from exc
         covariates = None
+    elif covariates:
+        # A ticked text column is a category, as for fixed covariates.
+        df, auto = fitting.covariates_as_formula(df, covariates)
+        if auto:
+            formula = check_formula(auto, df.columns)
     try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(fit_model(entry["fitter"], df, mapping, covariates, formula, layout))
         fitting.reissue_deprecations(caught)
         gof = fitting._goodness_of_fit(model)
@@ -346,6 +369,9 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates=None, for
             extra["at_covariate_means"] = {**at_means, "label": METRICS_LABEL}
     if units:
         extra["covariate_units"] = units
+    bases = fitting.base_levels(features, fields)
+    if bases:
+        extra["base_levels"] = bases
     counts = _data_counts(df, mapping, layout)
     return {
         **extra,
@@ -449,12 +475,49 @@ def _clean(a) -> list:
     return [float(v) if np.isfinite(v) else None for v in np.asarray(a, dtype=float).ravel()]
 
 
+def _given(value) -> Optional[float]:
+    """A survived-to age: None for blank or 0, else a finite age ≥ 0."""
+    from backend.fitting import FitError
+
+    if value in (None, ""):
+        return None
+    try:
+        g = float(value)
+    except (TypeError, ValueError) as exc:
+        raise FitError("The age it has survived to must be a number.") from exc
+    if not math.isfinite(g) or g < 0:
+        raise FitError("The age it has survived to must be 0 or more.")
+    return g or None
+
+
+def _along(model, sched, x, given=None) -> tuple[np.ndarray, np.ndarray]:
+    """Reliability and cumulative hazard at the ages ``x`` along ``sched``;
+    with ``given``, of surviving from that age (1 and 0 up to it)."""
+    x = np.asarray(x, dtype=float)
+    with np.errstate(all="ignore"):
+        Hf = np.asarray(model.Hf_tvc(x, sched), dtype=float)
+        if given is None:
+            sf = np.asarray(model.sf_tvc(x, sched), dtype=float)
+            return sf, Hf
+        sf = np.asarray(model.sf_tvc(x, sched, given=given), dtype=float)
+        H_g = float(np.asarray(model.Hf_tvc(np.array([given]), sched), dtype=float)[0])
+        return sf, np.where(x <= given, 0.0, Hf - H_g)
+
+
 def evaluate(model, fields: list, schedule, grid, *, on: str = "sf", alpha_ci: Optional[float] = None,
-             bound: str = "lower") -> dict:
+             bound: str = "lower", given=None, at=None, reliability=None) -> dict:
     """Reliability, failure probability and cumulative hazard along a
     covariate schedule over ``grid``; with ``alpha_ci``, confidence bounds on
     ``on`` (``cb_tvc``, Wald; parametric models only — the reason otherwise);
-    and the mean life along the schedule where SurPyval gives one."""
+    and the mean life along the schedule where SurPyval gives one.
+
+    ``given`` (an age): everything is for a unit that has survived to it —
+    the chance of surviving from that age on, and its bounds. ``at`` (an
+    age): ``point``, the exact values there with the bound on ``on``.
+    ``reliability`` (a fraction, or a list): ``life``, the age at which the
+    reliability falls to it, with the bound(s) read where the reliability's
+    own bound falls to it (a lower bound on the age from the lower bound on
+    the reliability)."""
     from backend.fitting import FitError
 
     if on not in _FUNCTION_IDS:
@@ -463,14 +526,13 @@ def evaluate(model, fields: list, schedule, grid, *, on: str = "sf", alpha_ci: O
         raise FitError("Unknown bound — use two-sided, lower or upper.")
     if alpha_ci is not None and not 0.0 < float(alpha_ci) < 1.0:
         raise FitError("Confidence level must be between 0% and 100% (exclusive).")
+    given = _given(given)
     times, rows, normalised = parse_schedule(schedule, fields)
     grid = np.asarray(grid, dtype=float)
     try:
         sched = step_schedule(model, times, rows)
-        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            sf = np.asarray(model.sf_tvc(grid, sched), dtype=float)
-            Hf = np.asarray(model.Hf_tvc(grid, sched), dtype=float)
+        with np.errstate(all="ignore"), collect_warnings() as caught:
+            sf, Hf = _along(model, sched, grid, given)
         # SurPyval 0.25: an additive-hazards model's points outside its
         # support (where H would go negative) are nan, with this warning.
         outside = any("outside the model's support" in str(w.message) for w in caught)
@@ -480,23 +542,31 @@ def evaluate(model, fields: list, schedule, grid, *, on: str = "sf", alpha_ci: O
         raise FitError(str(exc) or type(exc).__name__) from exc
     out = {"curves": {"x": grid.tolist(), "sf": _clean(sf), "ff": _clean(1.0 - sf), "Hf": _clean(Hf)},
            "schedule": normalised, "on": on}
+    if given is not None:
+        out["given"] = given
     if outside or (np.isfinite(sf) & (sf > 1.0 + 1e-6)).any():
         out["warning"] = ("The cumulative hazard would go negative along this schedule, so reliability would "
                           "rise above 1 — which is impossible. This additive-hazards fit isn't a distribution "
                           "here, and those points aren't shown; try a proportional-hazards model instead.")
     if alpha_ci is not None:
-        out["bounds"], out["bounds_note"] = _bounds(model, grid, sched, on, float(alpha_ci), bound)
+        out["bounds"], out["bounds_note"] = _bounds(model, grid, sched, on, float(alpha_ci), bound, given)
+    if at not in (None, ""):
+        out["point"] = _point(model, sched, float(at), on, alpha_ci, bound, given)
+    if reliability not in (None, ""):
+        targets = reliability if isinstance(reliability, (list, tuple)) else [reliability]
+        out["life"] = [_life(model, sched, float(r), alpha_ci, bound, given, float(grid[-1]))
+                       for r in targets[:8]]
     out["mean"] = _mean(model, sched)
     return out
 
 
-def _bounds(model, grid, sched, on, alpha_ci, bound):
+def _bounds(model, grid, sched, on, alpha_ci, bound, given=None):
     if not hasattr(model, "cb_tvc"):
         return None, "Cox models have no confidence bounds along a schedule; a parametric model does."
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            cb = np.asarray(model.cb_tvc(grid, sched, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+        with np.errstate(all="ignore"), ignore_warnings():
+            cb = np.asarray(model.cb_tvc(grid, sched, given=given, on=on, alpha_ci=alpha_ci, bound=bound),
+                            dtype=float)
     except Exception as exc:  # noqa: BLE001 - e.g. no covariance from a singular fit
         return None, f"No confidence bounds for this fit ({str(exc).strip() or type(exc).__name__})."
     if cb.ndim == 2:
@@ -510,13 +580,88 @@ def _bounds(model, grid, sched, on, alpha_ci, bound):
             "Wald (delta-method) bounds from the fit's covariance, carried along the schedule.")
 
 
+def _point(model, sched, at: float, on: str, alpha_ci, bound: str, given) -> dict:
+    """The exact values at the age ``at`` (no reading between grid points)."""
+    from backend.fitting import FitError
+
+    if not math.isfinite(at) or at < 0:
+        raise FitError("The age to evaluate at must be 0 or more.")
+    if given is not None and at < given:
+        raise FitError("Evaluate at an age after the one it has survived to.")
+    sf, Hf = _along(model, sched, np.array([at]), given)
+    out = {"t": at, "sf": _clean(sf)[0], "ff": _clean(1.0 - sf)[0], "Hf": _clean(Hf)[0]}
+    if alpha_ci is not None:
+        b, _ = _bounds(model, np.array([at]), sched, on, float(alpha_ci), bound, given)
+        if b:
+            out["lower"] = b["lower"][0] if b["lower"] else None
+            out["upper"] = b["upper"][0] if b["upper"] else None
+            out["bound"] = bound
+    return out
+
+
+def _crossing(fn, target: float, lo: float, hi: float) -> Optional[float]:
+    """The age in ``[lo, …)`` at which the falling ``fn`` reaches ``target``,
+    widening ``hi`` (the schedule's last values hold) up to a million times;
+    None when it never does."""
+    from scipy.optimize import brentq
+
+    def gap(x):
+        v = float(fn(x))
+        return v - target if math.isfinite(v) else -1.0
+
+    if gap(lo) <= 0:
+        return lo
+    hi = max(hi, lo * 2, 1e-9)
+    for _ in range(21):
+        if gap(hi) <= 0:
+            return float(brentq(gap, lo, hi, xtol=1e-9 * hi, rtol=1e-10, maxiter=200))
+        lo, hi = hi, hi * 2
+    return None
+
+
+def _life(model, sched, target: float, alpha_ci, bound: str, given, hi: float) -> dict:
+    """The age at which the reliability along ``sched`` (from ``given``) falls
+    to ``target``, and its bound(s): where the lower (or upper) bound on the
+    reliability falls to it gives the lower (or upper) bound on the age."""
+    from backend.fitting import FitError
+
+    if not 0.0 < target < 1.0:
+        raise FitError("The reliability must be between 0% and 100% (exclusive).")
+    start = given or 0.0
+    hi = max(hi, start * 1.5, 1.0)
+
+    def sf(x):
+        return _along(model, sched, np.array([x]), given)[0][0]
+
+    try:
+        out = {"reliability": target, "time": _crossing(sf, target, start, hi)}
+    except Exception as exc:  # noqa: BLE001 - a numerical failure: say so
+        raise FitError(f"Couldn't find the time ({str(exc).strip() or type(exc).__name__}).") from exc
+    if given is not None and out["time"] is not None:
+        out["further"] = out["time"] - given
+    if alpha_ci is None or not hasattr(model, "cb_tvc") or out["time"] is None:
+        return out
+    sides = ["lower", "upper"] if bound == "two-sided" else [bound]
+    for side in sides:
+        def edge(x, side=side):
+            with np.errstate(all="ignore"), ignore_warnings():
+                cb = np.asarray(model.cb_tvc(np.array([x]), sched, given=given, on="sf",
+                                             alpha_ci=float(alpha_ci), bound=bound), dtype=float)
+            return cb.ravel()[0 if side == "lower" else -1] if cb.ndim == 2 else cb.ravel()[0]
+        try:
+            out[side] = _crossing(edge, target, start, hi)
+        except Exception:  # noqa: BLE001 - no bound rather than a wrong one
+            out[side] = None
+    out["bound"] = bound
+    return out
+
+
 def _mean(model, sched) -> Optional[float]:
     fn = getattr(model, "mean_tvc", None)
     if not callable(fn):
         return None
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             v = float(fn(sched))
     except Exception:  # noqa: BLE001 - a convenience: absent rather than wrong
         return None
@@ -536,8 +681,7 @@ def evaluate_points(model, fields: list, schedule, times, *, conditional_age: Op
     stimes, rows, normalised = parse_schedule(schedule, fields)
     try:
         sched = step_schedule(model, stimes, rows)
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             sf = np.asarray(model.sf_tvc(t, sched), dtype=float)
             Hf = np.asarray(model.Hf_tvc(t, sched), dtype=float)
             cond = None

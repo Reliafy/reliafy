@@ -92,6 +92,18 @@ function arrangement(b) {
 }
 
 // ``readOnly``: a sample or a view-only share — ``onSaveCopy`` saves a copy to edit.
+// Under the budget: what the blocks as drawn cost (one of each designed block
+// at its unit cost) and what the budget leaves to spend on top of that.
+export function spendWords(current, budget) {
+  const n = (v) => Number(Number(v).toPrecision(6)).toLocaleString("en-US");
+  if (!(current > 0)) return "The whole design's cost, copies included.";
+  if (!Number.isFinite(budget)) return `As drawn: ${n(current)}.`;
+  const extra = budget - current;
+  return extra >= 0
+    ? `As drawn: ${n(current)} · up to ${n(extra)} more on copies.`
+    : `As drawn: ${n(current)} — the total must be at least that.`;
+}
+
 export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOnly = false, onSaveCopy = null }) {
   const nodes = graph.nodes || [];
   // A component drawn in several places (a repeated block, #102) — the copy
@@ -291,11 +303,12 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
         </div>
         {goal === "budget" ? (
           <label className="calc-t">
-            <span>Cost budget</span>
+            <span title="What the whole design may cost: the blocks as drawn plus any copies added">Total cost of the design</span>
             <input
               type="number" inputMode="decimal" min="0" step="any" value={budgetCost}
               onChange={(e) => setBudget((b) => ({ ...b, cost: e.target.value }))}
             />
+            <small className="hint">{spendWords(currentCost, Number(budgetCost))}</small>
           </label>
         ) : (
           <label className="calc-t">
@@ -570,7 +583,12 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
         </div>
         <div className="stat">
           <div className="value">{fmtN(result.current.cost)} → {fmtN(shown.cost)}</div>
-          <div className="name">Cost{result.mode === "budget" && result.budget.cost != null ? ` (budget ${fmtN(result.budget.cost)})` : ""}</div>
+          <div className="name">
+            Cost{result.mode === "budget" && result.budget.cost != null ? ` (budget ${fmtN(result.budget.cost)})` : ""}
+            {shown.cost != null && result.current.cost != null && shown.cost !== result.current.cost
+              ? ` · ${shown.cost > result.current.cost ? "+" : "−"}${fmtN(Math.abs(shown.cost - result.current.cost))} on the design as drawn`
+              : ""}
+          </div>
         </div>
         {extra.map((r) => (
           <div className="stat" key={r}>

@@ -34,7 +34,11 @@ before, as a plain ``NonRepairable``)::
                                                     #   the rest (#136)
         "maintenance_group": "north pumps",    # shares the group's set-up cost
         "crew_priority": 2,                    # its place in the repair-crew queue
+        "duty": 0.25,                          # runs a quarter of the time: its life is
+                                               #   in operating time (RePyability's duty)
     }
+    # A replacement given in operating time ("every 500 running hours"):
+    node.data["preventive"]["operating_interval"] = 500  # interval = 500 / duty
     graph["costs"] = {"downtime_rate": 500,    # per unit time the *system* is down
                       "horizon": 87600,        # ownership horizon for the total cost
                       "discount_rate": 7}      # % a year: the total as a present value (#219)
@@ -54,6 +58,13 @@ downtime cost and the purchase price are single numbers (as in RePyability).
 A block has either a
 preventive schedule or proof tests, not both (as in RePyability). Times are in
 the diagram's unit, costs in whatever currency the user works in.
+
+A block's ``duty`` (a fraction in (0, 1]) is the share of the time it runs:
+its life model is then read as operating time and RePyability stretches it onto
+the diagram's clock; repairs, maintenance and tests stay on the clock. A
+replacement may be given in operating time (``operating_interval``): it is
+turned into the clock's interval through the duty, and refused, with a note
+saying what to set, when the block has no duty.
 
 This module also splits the system's downtime into what failures cause and
 what planned outages (maintenance and test durations) add, and extends the
@@ -89,7 +100,7 @@ RANGED_COSTS = ("repair", "replace")
 POLICIES = ("age", "block", "condition")
 #: Block fields beyond the models that make a block a component spec.
 EXTRA_KEYS = ("instant_repair", "costs", "preventive", "inspection", "maintenance_group", "crew_priority",
-              "repair_quality")
+              "repair_quality", "duty")
 #: The default simulation window covers at least this many of the longest
 #: maintenance or test interval in the diagram.
 HORIZON_INTERVALS = 10
@@ -197,6 +208,32 @@ def _probability(value, what: str, label: str) -> Optional[float]:
     return x
 
 
+def duty_fraction(data: dict, label: str) -> Optional[float]:
+    """The block's duty, the share of the time it runs, in (0, 1]; None when
+    blank (it runs all the time)."""
+    value = data.get("duty")
+    if _blank(value):
+        return None
+    x = _number(value, "duty (the share of the time it runs)", label, positive=True)
+    if x > 1.0:
+        raise AnalysisError(
+            f"“{label}”: Runs (duty) is the share of the time it runs, from just above 0 to 1 (100%).")
+    return x
+
+
+def calendar_interval(pm: dict, data: dict, label: str) -> Optional[float]:
+    """A replacement's interval on the diagram's clock: its ``interval``, or,
+    when it is given in operating time (``operating_interval``), that over the
+    block's duty. A blank Runs share means the block runs all the time (the plan says "all the time",
+    and 100% is stored as blank), so running time is calendar time."""
+    operating = pm.get("operating_interval")
+    if _blank(operating):
+        return _number(pm.get("interval"), "preventive-maintenance interval", label, positive=True)
+    hours = _number(operating, "interval in operating time", label, positive=True)
+    duty = duty_fraction(data, label)
+    return hours / (1.0 if duty is None else duty)
+
+
 def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict]:
     """RePyability's ``"preventive"`` spec for the block, or None.
 
@@ -216,9 +253,12 @@ def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
             "replacement."
         )
     condition = policy == "condition"
-    interval = _number(pm.get("interval"),
-                       "inspection interval" if condition else "preventive-maintenance interval",
-                       label, positive=True)
+    if not _blank(pm.get("operating_interval")):
+        interval = calendar_interval(pm, data, label)
+    else:
+        interval = _number(pm.get("interval"),
+                           "inspection interval" if condition else "preventive-maintenance interval",
+                           label, positive=True)
     if interval is None:
         raise AnalysisError(
             f"“{label}”: set the inspection interval (how often its condition is checked)."
@@ -263,6 +303,19 @@ def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
                 f"“{label}”: early renewal needs a maintenance group whose stops give the "
                 "opportunity — set the block's maintenance group.")
         spec["opportunity"] = age
+    restoration = pm.get("restoration")
+    if restoration is not None:
+        # A task that restores the unit only partly (Kijima I or II), from the Explorer's task: the
+        # tree plan writes it only where the installed RePyability takes it (rbd_tree_plan).
+        from backend.services import repy_compat
+
+        if not repy_compat.plan_supports()["restoration"]:
+            raise AnalysisError(
+                f"“{label}”: its maintenance restores it only partly, which needs the next library update.")
+        spec["restoration"] = {"model": restoration.get("model"), "q": float(restoration.get("q"))}
+        if not _blank(pm.get("replace_every")):
+            spec["replace_every"] = int(pm["replace_every"])
+            spec["replacement_cost"] = float(pm.get("replacement_cost") or 0.0)
     return spec
 
 
@@ -373,6 +426,9 @@ def repairable_component(data: dict, label: str, reliability, resolve_model=None
     priority = crew_priority(data, label)
     if priority is not None:
         spec["priority"] = priority
+    duty = duty_fraction(data, label)
+    if duty is not None and duty < 1.0:
+        spec["duty"] = duty
     # Imperfect repair and replacement at the N-th failure (#68).
     from backend.services import rbd_repair_quality
 
@@ -479,6 +535,7 @@ def validation_errors(graph: dict) -> list[str]:
                     f"“{label}”: a block with hidden failures can't be in a maintenance group — "
                     "nobody knows it has failed when the group stops.")
             crew_priority(data, label)
+            duty_fraction(data, label)
             from backend.services import rbd_repair_quality
 
             errors.extend(rbd_repair_quality.errors(data, label))
@@ -609,3 +666,136 @@ def downtime_split(graph: dict, resolve_model, overrides: dict, steady, res,
     return {**out, "basis": "simulation", "total": total,
             "failures": max(total - maintenance, 0.0), "maintenance": maintenance,
             "paired_simulations": m}
+
+
+# ---------------------------------------------------------------------------
+# Planned vs unplanned, and what the plan buys (the Maintenance plan's results)
+# ---------------------------------------------------------------------------
+#: Cost categories that planned work causes, and those failures cause. A
+#: group's set-up (charged at failures and at planned work alike) and a block's
+#: own downtime are neither: they're reported as "not split".
+PLANNED_COSTS = ("preventive", "inspection")
+UNPLANNED_COSTS = ("repair", "replace")
+UNSPLIT_COSTS = ("setup", "component_downtime")
+
+
+def planned_unplanned(costs: Optional[dict], split: Optional[dict]) -> Optional[dict]:
+    """The running cost (per unit time) and the system's downtime split into
+    planned (maintenance and tests) and unplanned (failures), from what the
+    result already has: the cost categories and the downtime split. Lost
+    production is divided in the downtime split's proportions. None when
+    there's neither.
+
+    The split is worked out by Reliafy, not by RePyability: the downtime from
+    a copy of the diagram whose planned work takes no time
+    (:func:`downtime_split`), so its basis is that split's."""
+    if not split and not (costs or {}).get("by_category"):
+        return None
+    out: dict[str, Any] = {"method": "twin_without_planned_time"}
+    if split:
+        out["downtime"] = {"planned": split.get("maintenance"), "unplanned": split.get("failures"),
+                           "total": split.get("total"), "basis": split.get("basis")}
+    cats = (costs or {}).get("by_category") or None
+    if cats:
+        planned = math.fsum(float(cats.get(k) or 0.0) for k in PLANNED_COSTS)
+        unplanned = math.fsum(float(cats.get(k) or 0.0) for k in UNPLANNED_COSTS)
+        unsplit = math.fsum(float(cats.get(k) or 0.0) for k in UNSPLIT_COSTS)
+        lost = float(cats.get("system_downtime") or 0.0)
+        lost_planned = lost_unplanned = None
+        total_down = (split or {}).get("total") or 0.0
+        if lost and split and total_down > 0:
+            lost_planned = lost * float(split.get("maintenance") or 0.0) / total_down
+            lost_unplanned = lost - lost_planned
+        elif lost and not split:
+            lost_unplanned = lost  # nothing planned takes the system down
+            lost_planned = 0.0
+        out["cost"] = {
+            "planned": planned + (lost_planned or 0.0),
+            "unplanned": unplanned + (lost_unplanned or 0.0),
+            "not_split": unsplit + (lost if lost and lost_planned is None else 0.0),
+            "lost_production": {"planned": lost_planned, "unplanned": lost_unplanned} if lost else None,
+            "basis": (costs or {}).get("cost_rate_basis"),
+        }
+    return out
+
+
+def without_preventive(graph: dict) -> dict:
+    """The diagram run to failure: every scheduled replacement taken off (proof
+    tests stay, as they find failures rather than prevent them)."""
+    out = copy.deepcopy(graph)
+    for n in out.get("nodes") or []:
+        data = n.get("data") or {}
+        if isinstance(data.get("preventive"), dict):
+            data.pop("preventive", None)
+    return out
+
+
+def plan_effect(graph: dict, rbd, resolve_model, labels: dict, overrides: dict) -> Optional[dict]:
+    """What the scheduled replacements buy against running to failure, exact
+    long-run values only: each replaced block's failures per unit time with and
+    without its schedule, and the system's failures, unavailability and running
+    cost with and without. None when no block has a scheduled replacement;
+    ``{"available": False, "reason"}`` where RePyability has no exact long-run
+    values for the diagram or its run-to-failure copy (limited crews with
+    scheduled work, imperfect repair, ...)."""
+    from backend.services import rbd_analysis as ra
+    from backend.services import repy_compat
+
+    replaced = [n.get("id") for n in graph.get("nodes") or []
+                if n.get("type") == "component" and isinstance((n.get("data") or {}).get("preventive"), dict)]
+    if not replaced:
+        return None
+    working = set(overrides.get("working_nodes") or ())
+    broken = set(overrides.get("broken_nodes") or ())
+    try:
+        twin = ra._build_repairable_rbd(without_preventive(graph), resolve_model)[0]
+        with np.errstate(all="ignore"):
+            def figures(model):
+                availability = repy_compat.long_run_node_availability(model, working, broken)
+                per_block = {}
+                for nid in replaced:
+                    if nid in working or nid in broken or nid not in availability:
+                        continue
+                    per_block[nid] = float(repy_compat.node_actions(model, nid, availability[nid])[0])
+                cost = float(model.expected_cost_rate(**overrides)) if model.has_costs else None
+                return {
+                    "blocks": per_block,
+                    "system_failures": float(model.system_failure_frequency(**overrides)),
+                    "unavailability": 1.0 - float(model.mean_availability(**overrides)),
+                    "cost_rate": cost,
+                }
+
+            with_plan = figures(rbd)
+            run_to_failure = figures(twin)
+    except (NotImplementedError, ValueError) as exc:
+        return {"available": False,
+                "reason": "No exact long-run figures for this diagram with or without its scheduled "
+                          "replacements, so what they buy isn't worked out" + (f" ({exc})" if str(exc) else "") + "."}
+    except Exception:  # noqa: BLE001 - never lose the availability result
+        return {"available": False, "reason": "What the plan buys couldn't be worked out for this diagram."}
+
+    def ok(v):
+        return v is not None and np.isfinite(v)
+
+    blocks = []
+    for nid in replaced:
+        a, b = with_plan["blocks"].get(nid), run_to_failure["blocks"].get(nid)
+        if not (ok(a) and ok(b)):
+            continue
+        blocks.append({"id": str(nid), "label": labels.get(nid, str(nid)),
+                       "failures_with_plan": a, "failures_run_to_failure": b, "failures_avoided": b - a})
+    blocks.sort(key=lambda r: -r["failures_avoided"])
+    pair = {k: (with_plan[k], run_to_failure[k]) for k in ("system_failures", "unavailability", "cost_rate")}
+    from backend.units import normalize_unit
+
+    return {
+        "available": True,
+        "basis": "exact",
+        "blocks": blocks,
+        "block_failures_avoided": math.fsum(r["failures_avoided"] for r in blocks),
+        "system_failures": {"with_plan": pair["system_failures"][0], "run_to_failure": pair["system_failures"][1]},
+        "unavailability": {"with_plan": pair["unavailability"][0], "run_to_failure": pair["unavailability"][1]},
+        "cost_rate": ({"with_plan": pair["cost_rate"][0], "run_to_failure": pair["cost_rate"][1]}
+                      if ok(pair["cost_rate"][0]) and ok(pair["cost_rate"][1]) else None),
+        "units_per_year": UNITS_PER_YEAR.get(normalize_unit(graph.get("unit")) or ""),
+    }

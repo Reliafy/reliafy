@@ -79,6 +79,8 @@ NEW_ACTIONS = {
     ("change", "fault_tree_delete"),
     # Named phased missions on an RBD, with covariate values per phase (Nov 2026).
     ("analyse", "rbd_mission"), ("change", "rbd_mission"),
+    # Download as Python for every model kind, as the RBD's (Nov 2026).
+    ("analyse", "model_export_python"),
 }
 NEW_HEAVY = {"analyse.fault_tree"}
 NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
@@ -228,7 +230,8 @@ def test_the_listed_tools_are_small(env):
     reliability prediction actions, Nov 2026, after shortening the shared
     args and guide text; 7,972 with the user libraries' seven actions, after
     trimming the tool intros, titles and the replacement one-liners; 7,988 with the missions' analyse and
-    change rbd_mission, after shortening the analyse and guide intros) and
+    change rbd_mission, after shortening the analyse and guide intros; 7,981 with analyse model_export_python,
+    after shortening the analyse intro again) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 
@@ -257,7 +260,7 @@ def test_a_call_without_its_arguments_is_told_where_they_go(env):
     assert "confidence: Input should be less than 1" in msg and "guide(action='analyse.check_life_requirement')" in msg
     out = _ok(_run(token, lambda c: c.call_tool("analyse", {"action": "plan_demonstration_test",
                                                            "args": {"reliability": 0.95}})))
-    assert out["units"] == 59
+    assert out["units"] == 45  # at the default 90% confidence (59 at 95%)
 
 
 def test_the_guide_gives_any_actions_full_schema(env):
@@ -302,15 +305,15 @@ def test_a_call_is_held_to_its_actions_arguments(env):
 
 def test_null_means_left_out_and_defaults_are_each_actions(env):
     """Every argument defaults to null; a null one is as if not given, so the
-    action's own default applies (confidence 0.95 for alt_use_level, 0.9 for
-    check_life_requirement)."""
+    action's own default applies (confidence 0.9 for alt_use_level and
+    check_life_requirement: the app's 90%)."""
     from backend import mcp_server
 
     from backend.mcp_server import action_schema
 
     assert action_schema("analyse.check_life_requirement")["takes"] == "model_id, b_life, life, confidence?=0.9"
     assert action_schema("analyse.alt_use_level")["takes"].startswith(
-        "model_id, use_stress, ref_stress?, mission_time?, confidence?=0.95")
+        "model_id, use_stress, ref_stress?, mission_time?, confidence?=0.9")
     out = _ok(_call(env.oauth[PRO], "analyse", {"action": "fit", "data": [120, 340, 510, 700, 980],
                                                  "censored": None, "dataset_id": None}))
     assert out["distribution"] == "Weibull"  # distribution?=weibull

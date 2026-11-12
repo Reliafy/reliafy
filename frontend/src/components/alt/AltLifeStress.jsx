@@ -9,11 +9,12 @@ import { useEffect, useState } from "react";
 import Plot from "../Plot.jsx";
 import ChartPair from "../model/ChartPair.jsx";
 import { PlotCard, PlotPanel, ScrollCard } from "../model/ModelLayouts.jsx";
-import { COLORWAY, DATA_INK, INK, SURFACE, fitLine } from "../../plotTheme.js";
+import { COLORWAY, DATA_INK, INK, SURFACE, bandPair, fitLine } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { evaluateAlt } from "../../api.js";
-import { accelerationRows, levelWords, parseUse, shapeParam, stressName } from "../../altFrame.js";
+import { accelerationRows, inputStressName, kelvinWords, levelWords, shapeParam, useForModel } from "../../altFrame.js";
 import { unitInText } from "../unitText.js";
+import { ciPct } from "../../levels.js";
 
 const SERIES = COLORWAY;
 const USE_MARK = "#b45309";
@@ -41,6 +42,11 @@ export function LifeStressChart({ plot, unit, along = null, usePoint = null, oth
   // use value is a tested level (its line is already drawn).
   const onTested = two && otherUse != null && secLevels.some((v) => Math.abs(v - otherUse) <= 1e-9 * Math.max(1, Math.abs(v)));
   if (along?.stress?.length && !onTested) {
+    // The band on the life along the line: how soft the extrapolated end is.
+    if (Array.isArray(along.lower) && Array.isArray(along.upper)) {
+      const level = Number.isFinite(along.level) ? `${Math.round(along.level * 100)}% band` : "Band";
+      traces.push(...bandPair(along.stress, along.lower, along.upper, { name: level }));
+    }
     traces.push(fitLine({
       x: along.stress, y: along.life,
       line: two ? { color: USE_MARK, dash: "dash" } : { color: SERIES[0] },
@@ -135,9 +141,9 @@ function UseInputs({ results, use, onUse }) {
     <div className="alt-use-inputs">
       {(results.stresses || []).map((s, j) => (
         <label key={s.key || j} className="alt-use-field">
-          <span>{stressName(s)}</span>
+          <span>{inputStressName(s)}</span>
           <input type="number" inputMode="decimal" step="any" value={use[j] ?? ""}
-                 aria-label={`Use stress: ${stressName(s)}`}
+                 aria-label={`Use stress: ${inputStressName(s)}`}
                  onChange={(e) => onUse(use.map((v, k) => (k === j ? e.target.value : v)))} />
         </label>
       ))}
@@ -163,6 +169,7 @@ function Side({ results, modelId, use, onUse, edited, state }) {
           <div className="alt-use-box">
             <UseInputs results={r} use={use} onUse={onUse} />
             {!edited && <p className="alt-use-hint">The mildest tested level: enter your own.</p>}
+            {kelvinWords(r, use) && <p className="alt-use-hint">{kelvinWords(r, use)}, as the model reads it.</p>}
             {state?.error && <p className="alt-use-hint error-text" role="alert">{state.error}</p>}
           </div>
         )}
@@ -184,7 +191,7 @@ function Side({ results, modelId, use, onUse, edited, state }) {
             <span className="gk">{shape.label}</span>
             <span className="gv">
               {formatNumber(shape.value)}
-              {Array.isArray(shape.ci) && <span className="gof-sub alt-ci"> 95% {formatNumber(shape.ci[0])}–{formatNumber(shape.ci[1])}</span>}
+              {Array.isArray(shape.ci) && <span className="gof-sub alt-ci"> {ciPct(results, 0.9)} {formatNumber(shape.ci[0])}–{formatNumber(shape.ci[1])}</span>}
             </span>
           </div>
         )}
@@ -219,7 +226,9 @@ function Side({ results, modelId, use, onUse, edited, state }) {
 
 export default function AltLifeStress({ results, modelId, name, use, onUse, edited }) {
   const r = results || {};
-  const numeric = parseUse(use);
+  // In the model's units (kelvin for a temperature given in °C): what the
+  // model is asked at and where the chart (in kelvin) marks it.
+  const numeric = useForModel(r, use);
   const state = useLifeAtUse(modelId, numeric);
   const ev = state?.ev && state.key === JSON.stringify(numeric) ? state.ev : null;
   const lifeUse = ev?.metrics?.characteristic_life;

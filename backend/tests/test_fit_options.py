@@ -366,6 +366,35 @@ def test_create_from_params_endpoint(client):
     assert got["results"]["distribution"] == "Weibull"
 
 
+def test_a_typed_in_model_s_parameters_change_in_place(client):
+    """An MTBF typed where a rate was asked for (90,000 failures an hour) is put right without
+    unlinking and entering it again: same id, new numbers, its offset kept."""
+    made = client.post("/api/models/from-params", json={
+        "name": "Valve", "distribution": "exponential", "unit": "hours",
+        "params": [{"name": "failure_rate", "value": 90000}], "extras": {"gamma": 5}}).json()
+    r = client.put(f"/api/models/{made['id']}/params", json={
+        "distribution": "exponential", "unit": "hours", "params": [{"name": "failure_rate", "value": 1 / 90000}]})
+    assert r.status_code == 200, r.text
+    got = client.get(f"/api/models/{made['id']}").json()
+    assert got["id"] == made["id"] and got["name"] == "Valve"
+    rate = next(p["value"] for p in got["results"]["params"] if p["name"] == "failure_rate")
+    assert rate == pytest.approx(1 / 90000)
+    assert got["results"]["extras"] == {"gamma": 5.0} and got["results"]["params_only"] is True
+    # Its row on a position carries the numbers typed in, so the tree can offer Edit parameters….
+    from backend.maintenance import position_models
+    from backend.services import models as models_service
+
+    doc = models_service.get_model(client.db, made["id"], USERS[A]["uid"])
+    row = position_models.summary("model", doc)
+    assert row["quality"]["word"] == "Assumed"
+    assert row["entered"]["distribution"] == "exponential"
+    assert row["entered"]["params"]["failure_rate"] == pytest.approx(1 / 90000)
+    # Only a model saved from parameters: a fitted one is refitted instead; bad numbers refused.
+    assert client.put(f"/api/models/{made['id']}/params", json={
+        "distribution": "exponential", "params": [{"name": "failure_rate", "value": -1}]}).status_code == 422
+    assert client.put("/api/models/nope/params", json={"distribution": "weibull", "params": []}).status_code == 404
+
+
 def test_create_from_params_with_offset_and_validation(client):
     r = client.post(
         "/api/models/from-params",

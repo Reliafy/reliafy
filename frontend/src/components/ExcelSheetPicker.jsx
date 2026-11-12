@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import { excelToCsvFile, inspectExcel, isSpreadsheetFile } from "../api.js";
+import { nextSheet, rememberSheet, usedSheets } from "../sheetChoice.js";
 
 // Choose a sheet of an Excel workbook and the row holding its column headers.
 // ``inspection`` is the /api/excel/inspect response; ``value`` = { sheet,
@@ -138,18 +139,22 @@ export function useExcelInspection(file) {
   return state;
 }
 
-// A modal around the picker: resolves the chosen { sheet, headerRow }.
-function SheetModal({ file, confirmLabel, onDone, convert }) {
+// The picker with its buttons: resolves the chosen { sheet, headerRow }. In a
+// modal, or ``inline`` as part of the page it was opened from (the fit flow's
+// source step), so choosing a sheet isn't a separate box over the work.
+function SheetModal({ file, confirmLabel, onDone, convert, inline = false }) {
   const { inspection, error, loading } = useExcelInspection(file);
   const [value, setValue] = useState(null);
   const [busy, setBusy] = useState(false);
   const [convError, setConvError] = useState(null);
   useEffect(() => {
-    const first = inspection?.sheets?.find((s) => s.rows > 0) || inspection?.sheets?.[0];
+    // A sheet not used yet from this workbook (its readings after its life data).
+    const first = nextSheet(inspection?.sheets, usedSheets(file));
     if (first) setValue({ sheet: first.name, headerRow: first.guessed_header_row });
-  }, [inspection]);
+  }, [inspection, file]);
 
   const confirm = async () => {
+    rememberSheet(file, value?.sheet);
     if (!convert) return onDone(value);
     setBusy(true);
     setConvError(null);
@@ -161,27 +166,42 @@ function SheetModal({ file, confirmLabel, onDone, convert }) {
     }
   };
   const current = inspection?.sheets?.find((s) => s.name === value?.sheet);
-  return (
-    <Modal
-      title={`Import from ${file.name}`}
-      className="modal-xl"
-      locked={busy}
-      onClose={() => onDone(null)}
-      footer={
-        <>
-          <button className="secondary" onClick={() => onDone(null)} disabled={busy}>Cancel</button>
-          <button onClick={confirm} disabled={busy || !value || !current?.rows}>
-            {busy ? "Reading…" : confirmLabel}
-          </button>
-        </>
-      }
-    >
+  const buttons = (
+    <>
+      <button className="secondary" onClick={() => onDone(null)} disabled={busy}>Cancel</button>
+      <button onClick={confirm} disabled={busy || !value || !current?.rows}>
+        {busy ? "Reading…" : confirmLabel}
+      </button>
+    </>
+  );
+  const body = (
+    <>
       {loading && <p className="hint">Reading the workbook…</p>}
       {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
       {inspection && value && (
         <ExcelSheetPicker inspection={inspection} value={value} onChange={setValue} />
       )}
       {convError && <div className="error">{convError}</div>}
+    </>
+  );
+  if (inline) {
+    return (
+      <section className="xl-inline-panel" aria-label={`Import from ${file.name}`}>
+        <h3 className="xl-inline-title">Which sheet of {file.name}?</h3>
+        {body}
+        <div className="row xl-inline-actions">{buttons}</div>
+      </section>
+    );
+  }
+  return (
+    <Modal
+      title={`Import from ${file.name}`}
+      className="modal-xl"
+      locked={busy}
+      onClose={() => onDone(null)}
+      footer={buttons}
+    >
+      {body}
     </Modal>
   );
 }
@@ -191,8 +211,9 @@ function SheetModal({ file, confirmLabel, onDone, convert }) {
 // to a CSV File server-side — so everything downstream (column mapping,
 // censoring, the fit) behaves exactly as for a CSV. Resolves null on cancel.
 // ``chooseSheet(file)`` resolves just the { sheet, headerRow } choice.
-// Render ``modal`` somewhere in the component.
-export function useSpreadsheet() {
+// Render ``modal`` somewhere in the component; with ``inline`` it is a panel
+// to place where the file was picked, not a modal.
+export function useSpreadsheet({ inline = false } = {}) {
   const [pending, setPending] = useState(null); // { file, convert, resolve }
   const resolver = useRef(null);
   const ask = useCallback((file, convert) => new Promise((resolve) => {
@@ -205,6 +226,7 @@ export function useSpreadsheet() {
     <SheetModal
       file={pending.file}
       convert={pending.convert}
+      inline={inline}
       confirmLabel={pending.convert ? "Use this sheet" : "Continue"}
       onDone={(result) => {
         setPending(null);

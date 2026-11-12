@@ -17,13 +17,13 @@ it computes nothing itself.
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Optional
 
 import numpy as np
+from backend.warn_capture import ignore_warnings
 
 BAND_METHODS = ("hall-wellner", "nair")
-BAND_CONFIDENCE = 0.95
+BAND_CONFIDENCE = 0.90  # two-sided, the app's rule (backend.levels)
 
 
 def is_nonparametric(model) -> bool:
@@ -75,10 +75,9 @@ def mean_life(model, alpha: float, tau=None) -> dict:
     out = {"value": None, "lower": None, "upper": None, "tau": _num(horizon), "restricted": True}
     if horizon is None:
         return out
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         try:
-            out["value"] = _num(model.mean(horizon))
+            out["value"] = _num(model.mean(tau=horizon))
         except Exception:  # noqa: BLE001 - no mean: shown as a dash
             return out
         try:
@@ -86,7 +85,7 @@ def mean_life(model, alpha: float, tau=None) -> dict:
         except Exception:  # noqa: BLE001 - say restricted: the safe reading
             out["restricted"] = True
         try:
-            lo, hi = np.ravel(np.asarray(model.mean_cb(horizon, alpha_ci=min(2 * alpha, 0.999)), dtype=float))[:2]
+            lo, hi = np.ravel(np.asarray(model.mean_cb(tau=horizon, alpha_ci=min(2 * alpha, 0.999)), dtype=float))[:2]
             out["lower"], out["upper"] = _num(lo), _num(hi)
         except Exception:  # noqa: BLE001 - the value stands without its bounds
             pass
@@ -108,8 +107,7 @@ def bands(model, confidence: float = BAND_CONFIDENCE) -> dict:
         return out
     for method in BAND_METHODS:
         try:
-            with np.errstate(all="ignore"), warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
+            with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
                 b = np.asarray(model.band(xs, method=method, alpha_ci=1.0 - confidence), dtype=float).reshape(-1, 2)
         except Exception:  # noqa: BLE001 - that band isn't available for these data
             continue

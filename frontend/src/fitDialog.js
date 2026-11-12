@@ -118,6 +118,14 @@ export function bodyOf(s) {
   return out;
 }
 
+// A plain fit of the class's pooled history (no prior, nothing left out, one distribution named)
+// can be saved as the class's own model, which every position of the class can then take (From
+// the class…) and which the class's forecast uses; anything else is this position's alone.
+export function savesForClass(s, positionClass) {
+  return !!(positionClass && s.data === "class" && effective(s).method === "mle" && !(s.exclude || new Set()).size
+    && s.distribution && s.distribution !== "best");
+}
+
 // The preview's key: whenever the request (or what's missing) changes.
 export const previewKey = (s) => JSON.stringify({ body: bodyOf(s), problem: problem(s) });
 
@@ -130,7 +138,7 @@ export const DATA_CHIPS = [
 
 // The method's one line, the result pane's subtitle.
 export const METHOD_LINE = {
-  mle: "Maximum likelihood: the numbers that make the data most likely, with 95% confidence bounds.",
+  mle: "Maximum likelihood: the numbers that make the data most likely, with 90% confidence bounds.",
   bayes: "Bayesian: the prior moved by the data, with 90% credible intervals.",
 };
 

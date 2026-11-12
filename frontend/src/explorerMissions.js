@@ -46,6 +46,10 @@ export function latestOnly() {
   };
 }
 
+// The pane asking a new mission's name first (?mission=new&on=<position id>): nothing is saved
+// until it's named.
+export const NEW_MISSION = "new";
+
 // The pane's address value (?mission=<rbd id>:<mission id>&on=<position id>) and back.
 export const missionParam = (rbdId, missionId) => `${rbdId}:${missionId}`;
 export function parseMissionParam(value) {
@@ -58,7 +62,7 @@ export function parseMissionParam(value) {
 export const MISSION_COLUMNS = [
   { id: "phases", label: "Phases", width: 230, title: "How many phases, and their names" },
   { id: "duration", label: "Length", width: 130, num: true, title: "A phase's own length; a mission's is every phase added up. In the RBD's unit" },
-  { id: "reliability", label: "Completes", width: 150, num: true, title: "The chance the mission completes, once worked out" },
+  { id: "reliability", label: "Completes", width: 190, num: true, title: "The chance the mission completes, once worked out" },
   { id: "rbd", label: "RBD", width: 200, title: "The diagram the mission is flown on" },
 ];
 export const MISSION_TREE_HEAD = "Position, and its missions";
@@ -81,7 +85,15 @@ export function lengthText(v, unit) {
   if (Number(v) === 1 && u.endsWith("s")) u = u.slice(0, -1); // "1 hour"
   return `${fmt(v)}${u ? ` ${u}` : ""}`;
 }
-export const pct = reliabilityPercent;
+// A chance as a percentage: past 99.99% (or under 0.01%) it reads "> 99.99%" ("< 0.01%"), not
+// a string of nines no one can act on ("99.999985%").
+export function pct(v) {
+  const r = Number(v);
+  if (v == null || v === "" || !Number.isFinite(r)) return "—";
+  if (r > 0.9999 && r < 1) return "> 99.99%";
+  if (r > 0 && r < 0.0001) return "< 0.01%";
+  return reliabilityPercent(r);
+}
 
 // A mission's "Completes" cell: its chance, once worked out ("—" before), or how far it got.
 export function completesText(m) {
@@ -95,13 +107,14 @@ export function completesText(m) {
 // gain `msum` (their own: rbds, missions), `mall` (theirs and inside) and `rbds` (their RBD links).
 // `hasModel`: the positions whose model in use can be a mission's one block (GET
 // /position-missions: has_model), so a leaf can have a mission too.
-export function graftMissions(display, links = [], hasModel = []) {
+export function graftMissions(display, links = [], hasModel = [], otherModel = []) {
   const withModel = new Set(hasModel || []);
+  const withOther = new Set(otherModel || []);
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, missions: true };
   for (const r of rows.values()) {
-    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0 }, mall: { rbds: 0, missions: 0 }, rbds: [], hasModel: withModel.has(r.key) });
+    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0 }, mall: { rbds: 0, missions: 0 }, rbds: [], hasModel: withModel.has(r.key), otherModel: withOther.has(r.key) && !withModel.has(r.key) });
   }
   const byPos = new Map();
   for (const link of links) {
@@ -172,12 +185,29 @@ const usableRbds = (r) => (r?.rbds || []).filter((l) => l.rbd && !l.rbd.mission_
 // own non-repairable RBD, or (a leaf) one block from its own model in use.
 export const canAddMission = (r) => hasInside(r) || !!r?.hasModel || usableRbds(r).length > 0;
 
+// Why a position can't have a mission, in words (a roll-up's short form, or the menu's sentence).
+// `otherModel`: its model in use can't be a block (a condition-and-life model, say: GET
+// /position-missions: other_model).
+export function noMissionWhy(r, short = false) {
+  const linked = (r?.rbds || []).some((l) => l.rbd && !l.rbd.mission_rbd);
+  if (r?.otherModel) {
+    return short ? "its model can't be a block"
+      : "Its model in use can't be a block in a mission's RBD (only a life distribution or a covariate model can): give it one on the Modelling tab, or add positions inside it";
+  }
+  if (linked) {
+    return short ? "its RBD can't take missions"
+      : "Missions are flown on a non-repairable block diagram: give it a life model, or add positions inside it";
+  }
+  return short ? "needs a life model or positions inside"
+    : "Give it a life model on the Modelling tab, or add positions inside it: a mission's RBD is built from them";
+}
+
 // A position row's roll-up: its own ("2 missions", or "No missions yet · Add a mission" wherever
 // one can be added); closed, everything inside it too ("5 missions here and inside").
 export function rollupText(r, open = false) {
   if (!r?.msum) return "";
   const own = r.msum;
-  const none = canAddMission(r) ? "No missions yet · Add a mission" : "No missions yet";
+  const none = canAddMission(r) ? "No missions yet · Add a mission" : `No missions yet · ${noMissionWhy(r, true)}`;
   if (open) return own.missions ? count(own.missions, "mission") : none;
   const all = r.mall || own;
   if (all.missions) return own.missions === all.missions ? count(all.missions, "mission") : `${count(all.missions, "mission")} here and inside`;
@@ -232,14 +262,15 @@ export function positionMissionActions(r, { viewOnly = null } = {}) {
   const out = [];
   if (canAddMission(r)) out.push({ id: "mission-new", label: "Add a mission", ...off });
   else {
-    const why = linked.length ? "Missions are flown on a non-repairable block diagram: give it a life model, or add positions inside it"
-      : "Give it a life model on the Modelling tab, or add positions inside it: a mission's RBD is built from them";
+    const why = noMissionWhy(r);
     out.push({ id: "mission-none", label: "Add a mission", disabled: true, reason: why, title: why });
   }
   for (const l of linked) {
     out.push({ id: `mission-open-rbd:${l.rbd.id}`, label: (linked.length > 1 ? `Open ${l.rbd.name}` : "Open the RBD") });
   }
   if (!linked.length) out.push({ id: "mission-build-rbd", label: "Build an RBD from what's inside…", ...off });
+  // Which positions inside back each other up: a mission built from the tree wires them so.
+  if (hasInside(r)) out.push({ id: "mission-redundancy", label: "Redundancy inside…", ...off });
   return out;
 }
 
@@ -456,7 +487,7 @@ export function phaseLine(phase, { blocks = [], votes = [] } = {}) {
   const skipped = (phase.not_needed || []).filter((id) => labelOf.has(id));
   const standing = (phase.standby || []).filter((id) => labelOf.has(id));
   const parts = [skipped.length ? `Doesn't need ${skipped.length === 1 ? labelOf.get(skipped[0]) : `${skipped.length} blocks`}`
-    : standing.length ? "Every block working or standing by" : "Needs every block"];
+    : standing.length ? "Every block working or standing by" : "Every block in use, wired as in the RBD"];
   if (standing.length) parts.push(`${standing.length === 1 ? labelOf.get(standing[0]) : `${standing.length} blocks`} on standby`);
   for (const v of votes) {
     const n = phase.votes?.[v.id];
@@ -469,6 +500,38 @@ export function phaseLine(phase, { blocks = [], votes = [] } = {}) {
   return parts.join(" · ");
 }
 
+// ---- blocks with no model (a placeholder stands in) --------------------------------------------
+
+const listed = (names) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+
+// What a result that rests on placeholders has to say, or null when every block it needs has a
+// model: {n, of, names, count ("3 of 5 blocks have no model"), list ("Battery, … and Fuel
+// system"), without (the chance with those blocks left out; null when there is none to give)}.
+// `result`: a calculation (placeholders: [{id, label}], blocks) or a list row's kept result
+// (placeholders: [labels], without_placeholders: the number).
+export function placeholderWarning(result) {
+  const names = (result?.placeholders || []).map((p) => (typeof p === "string" ? p : p.label));
+  if (!names.length) return null;
+  const n = names.length;
+  const of = Number(result.blocks) || null;
+  const w = result.without_placeholders;
+  const without = w == null ? null : typeof w === "number" ? w : w.reliability ?? null;
+  const count = of && of > n ? `${n} of ${of} blocks have no model` : of === n && n > 1 ? `none of the ${n} blocks has a model`
+    : n === 1 ? (of === 1 ? "the block has no model" : "1 block has no model") : `${n} blocks have no model`;
+  return { n, of, names, count, list: listed(names), without: result.reliability == null ? null : without };
+}
+// The Completes cell's hover for a mission worked out on placeholders.
+export function placeholderTitle(result) {
+  const ph = placeholderWarning(result);
+  if (!ph) return "";
+  return `Not a real figure: ${ph.list} ${ph.n === 1 ? "has" : "have"} no model, so a placeholder stands in.`
+    + (ph.without != null ? ` Without ${ph.n === 1 ? "it" : "them"}: ${pct(ph.without)}.` : "");
+}
+// Every phase with the placeholder blocks Not needed (left out of the mission): the rows to keep.
+export function leaveOut(rows, ids) {
+  return rows.map((r) => ids.reduce((p, id) => ({ ...p, ...withBlockState(p, id, "off") }), r));
+}
+
 // The answer in words, first: "The mission completes with probability 98.2%. Survey is the
 // riskiest phase." Or, waiting on values: "Worked out to the end of Take-off (99.9%); Cruise needs
 // values first."
@@ -476,6 +539,8 @@ export function answerText(result) {
   if (!result) return "";
   if (result.reliability != null) {
     const risky = result.riskiest && (result.phases || []).length > 1 ? ` ${result.riskiest.name} is the riskiest phase.` : "";
+    const ph = placeholderWarning(result);
+    if (ph) return `Not a real figure yet: ${ph.count}. With a placeholder standing in for ${ph.n === 1 ? "it" : "each"}, the mission completes with probability ${pct(result.reliability)}.`;
     return `The mission completes with probability ${pct(result.reliability)}.${risky}`;
   }
   const waiting = (result.phases || []).filter((p) => p.waiting).map((p) => p.name);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addPackageTask, changePackage, createPackage, createPackages, getPackage, getTaskTable, listPackages, proposePackages,
@@ -12,12 +12,16 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
   DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
-  kindText, lateText, lsaColumns, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
+  kindText, lateText, lsaColumns, taskOnText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
   renameRow, rollupLines, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
+  MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money, tasksHere,
 } from "../lsaTab.js";
 import { saveText } from "../sparesPlan.js";
 import { exportFilename } from "../rcmImport.js";
 import LsaTask from "./LsaTask.jsx";
+import RbdTaskUses from "./RbdTaskUses.jsx";
+import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
+import { PlusIcon } from "./LibRows.jsx";
 import { isDesignRow } from "../explorerTabs.js";
 import { ColumnChooser } from "./RcmWorksheet.jsx";
 import "./RcmWorksheet.css";
@@ -148,6 +152,9 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
     const out = await createPackages(proposalBatch(rows, { tolerance }));
     onDone(`Made ${plural(out.created.length, "package")}.`);
   }, can);
+  // A refusal shows above the buttons, which a long list of drafts puts off screen.
+  const refusal = useRef(null);
+  useEffect(() => { if (send.error) refusal.current?.scrollIntoView?.({ block: "nearest" }); }, [send.error]);
   return (
     <div className="pk-view pk-packaging" role="region" aria-label="Package the tasks">
       <button type="button" className="link pk-back" onClick={onBack} disabled={send.busy}>← All tasks here</button>
@@ -198,7 +205,7 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
         </details>
       )}
       {data && rows.length > 0 && problem && <p className="lib-date" role="alert">{problem}</p>}
-      {send.error && <div className="card error">{send.error}</div>}
+      {send.error && <div className="card error" role="alert" ref={refusal}>{send.error}</div>}
       <div className="pk-packaging-foot">
         <button type="button" onClick={send.submit} disabled={send.busy || !can} aria-busy={send.busy || undefined}>
           {send.busy ? "Making…" : data && rows.some((r) => r.ticked) ? `Make ${plural(rows.filter((r) => r.ticked).length, "package")}` : "Make packages"}
@@ -215,6 +222,14 @@ const NTH = [[1, "first"], [2, "second"], [3, "third"], [4, "fourth"], [-1, "las
 // Package selected… (and Add a package…, with no tasks): a new package on the
 // picked position or place, with the tasks ticked; its cadence starts from
 // their commonest interval.
+// Overdue tasks going into a package stay overdue until done: the package's first visit
+// doesn't make them on time.
+export function overdueNote(n) {
+  return `${n === 1 ? "1 of these is" : `${n} of these are`} overdue. ${n === 1 ? "It stays" : "They stay"} overdue, from ` +
+    `${n === 1 ? "its" : "their"} own due date, until done: the package's first visit doesn't reset that. ` +
+    "To do them sooner, raise the visit now from the package's page.";
+}
+
 export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) {
   const start = useMemo(() => cadenceFor(tasks), [tasks]);
   const trades = [...new Set(tasks.map((t) => t.trade).filter(Boolean))];
@@ -244,9 +259,14 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
                canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
       <p className="lib-date">
         {tasks.length
-          ? <>A package {where}, done on one visit: {tasks.map((t) => t.name).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
+          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
           : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
       </p>
+      {tasks.some((t) => t.overdue) && (
+        <p className="maint-overdue" role="status">
+          {overdueNote(tasks.filter((t) => t.overdue).length)}
+        </p>
+      )}
       <Field label="Name" text={name}><input autoFocus value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="e.g. Weekly inspection" /></Field>
       <Field label="Dates">
         <select value={timing} onChange={(e) => setTiming(e.target.value)}>
@@ -340,7 +360,7 @@ function AddTasksDialog({ pkg, onClose, onDone }) {
             <li key={t.id}>
               <label className="pk-check">
                 <input type="checkbox" checked={picked.has(t.id)} onChange={() => flip(t.id)} />
-                <span>{t.name} <span className="lib-date">· {t.subject?.name} · every {t.interval} {t.unit}</span></span>
+                <span>{t.name} <span className="lib-date">· {[t.subject?.within, t.subject?.name].filter(Boolean).join(" › ")} · every {t.interval} {t.unit}</span></span>
               </label>
             </li>
           ))}
@@ -382,6 +402,7 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
     <FormModal title={`Add ${plural(tasks.length, "task")} to a package`} submitLabel="Add" pendingLabel="Adding…"
                canSubmit={!!pick && (rule === "every" || Number(nth) >= 2)} onClose={onClose} onSubmit={submit}>
       {error && <div className="card error">{error}</div>}
+      {tasks.some((t) => t.overdue) && <p className="maint-overdue" role="status">{overdueNote(tasks.filter((t) => t.overdue).length)}</p>}
       {!list && !error && <p className="lib-date">Loading…</p>}
       {list && list.length === 0 && <p className="lib-date">No packages on this part of the tree yet: use Package selected… to make one.</p>}
       {list && list.length > 0 && (
@@ -519,16 +540,20 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
 
 // ---- the tab: every task here and below, as a table --------------------------------
 
-const COLS_KEY = "reliafy.lsa.columns";
-function readCols() {
+// Each variant keeps its own columns: the LSA tab every column, the Maintenance tab the
+// planning ones (MAINTENANCE_COLUMNS) until changed.
+const COLS_KEY = { lsa: "reliafy.lsa.columns", maintenance: "reliafy.maintenance.columns" };
+// The LSA tab's usual columns are as they were; From and Cost each time are in its chooser.
+const USUAL_COLS = { lsa: DEFAULT_TASK_COLUMNS.filter((id) => id !== "from" && id !== "cost"), maintenance: MAINTENANCE_COLUMNS };
+function readCols(variant) {
   try {
-    const got = JSON.parse(localStorage.getItem(COLS_KEY) || "null");
+    const got = JSON.parse(localStorage.getItem(COLS_KEY[variant]) || "null");
     if (Array.isArray(got) && got.length) return DEFAULT_TASK_COLUMNS.filter((id) => got.includes(id));
   } catch { /* storage blocked: the usual columns */ }
-  return DEFAULT_TASK_COLUMNS;
+  return USUAL_COLS[variant];
 }
-function saveCols(cols) {
-  try { localStorage.setItem(COLS_KEY, JSON.stringify(cols)); } catch { /* not kept */ }
+function saveCols(variant, cols) {
+  try { localStorage.setItem(COLS_KEY[variant], JSON.stringify(cols)); } catch { /* not kept */ }
 }
 
 // ?q= and ?sort= (with ?package=, the package open), kept in the address.
@@ -550,7 +575,17 @@ function useTableQuery() {
   };
 }
 
-function TaskCell({ t, col, onPackage, onTask }) {
+function TaskCell({ t, col, onPackage, onTask, maint = false }) {
+  if (col === "cost") {
+    const c = t.cost;
+    if (c?.amount == null) return <span className="rw-blank" title={costWhere(c)}>Not set</span>;
+    const partial = c.source === "lsa" && !c.lsa?.complete;
+    return (
+      <span className="rw-txt pk-num" title={`${money(c.amount)} each time. ${costWhere(c)}`}>
+        {money(c.amount)}{partial ? <span className="rw-sum" aria-label="partial"> *</span> : null}
+      </span>
+    );
+  }
   if (col === "mode") {
     const m = t.modes?.[0];
     if (!m) return <span className="rw-blank">No failure mode</span>;
@@ -577,7 +612,7 @@ function TaskCell({ t, col, onPackage, onTask }) {
     return t.why_not ? <span className="rw-sum" title={`Stays on its own: ${t.why_not}`}>On its own</span> : null;
   }
   if (col === "task") {
-    return <button type="button" className="link pk-task-link" onClick={() => onTask(t.id)} title={`Open what ${t.name} needs`}>{t.name}</button>;
+    return <button type="button" className="link pk-task-link" onClick={() => onTask(t.id)} title={maint ? `Open ${t.name}` : `Open what ${t.name} needs`}>{t.name}</button>;
   }
   const text = cellText(t, col);
   const counted = countTitle(t, col);
@@ -586,9 +621,24 @@ function TaskCell({ t, col, onPackage, onTask }) {
 
 const TICK_W = 36;
 
-export default function LsaPanel({ row, today, onMenu = null }) {
+// variant "maintenance": the Explorer's Maintenance tab (Derryn, 12 Nov 2026: "all maintenance
+// tasks … from RCM or just added directly … the costs per task"). The same table and its search,
+// sort, columns and CSV, with the planning columns first (MAINTENANCE_COLUMNS: From and Cost each
+// time among them), the row's own tasks unless "Include what's inside" is ticked (?below=1), no
+// ticks or packaging (the LSA tab packages), "Add task" in its bar (?addtask=<the row>) and a task
+// opening as its own pane (?mtask=, MaintenanceTask.jsx) rather than its LSA. "Trade rates…" in the
+// heading's "…" (?rates=1) prices every task's labour.
+export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" }) {
+  const maint = variant === "maintenance";
   const open = useOpenParam("package");
-  const taskOpen = useOpenParam("task");
+  const taskOpen = useOpenParam(maint ? "mtask" : "task");
+  const adding = useOpenParam("addtask");
+  const ratesOpen = useOpenParam("rates");
+  // Held here as well as in the address, so the box answers at once.
+  const belowParam = useOpenParam("below");
+  const [belowOn, setBelowOn] = useState(belowParam.open === "1");
+  const below = !maint || belowOn;
+  const showBelow = (on) => { setBelowOn(on); belowParam.setOpen(on ? "1" : null); };
   // The row whose tasks are being packaged: only this row's (another row picked shows its table).
   const packaging = useOpenParam("packaging");
   const tq = useTableQuery();
@@ -598,7 +648,7 @@ export default function LsaPanel({ row, today, onMenu = null }) {
   const [modal, setModal] = useState(null);
   const [said, setSaid] = useState(null);
   const [version, setVersion] = useState(0);
-  const [cols, setColsState] = useState(readCols);
+  const [cols, setColsState] = useState(() => readCols(variant));
   const [colsOpen, setColsOpen] = useState(false);
   const [query, setQuery] = useState(tq.q);
   const key = `${row.key}:${version}`;
@@ -619,12 +669,16 @@ export default function LsaPanel({ row, today, onMenu = null }) {
     return () => clearTimeout(t);
   }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
   const data = state.key === key ? state.data : null;
-  const all = data?.tasks || null;
+  const all = useMemo(() => (data?.tasks ? tasksHere(data.tasks, row.key, below) : null), [data, row.key, below]);
   const shown = useMemo(() => all && sortTasks(searchTasks(all, query), tq.sort), [all, query, tq.sort]);
   const design = isDesignRow(row);
+  // No ticks or packaging bar: a design's (packaged on the built items) and the Maintenance tab's.
+  const plain = design || maint;
   const offered = lsaColumns({ design });
-  const columns = offered.filter((c) => cols.includes(c.id));
-  const tickW = design ? 0 : TICK_W;
+  // The row's own tasks alone are all on it: no Position column.
+  const chosenCols = offered.filter((c) => cols.includes(c.id) && (below || c.id !== "position"));
+  const columns = maint ? maintenanceOrder(chosenCols) : chosenCols;
+  const tickW = plain ? 0 : TICK_W;
   const total = tickW + columns.reduce((n, c) => n + c.width, 0);
   const refresh = () => setVersion((v) => v + 1);
   // A design's chooser lists fewer columns: the ones it leaves out keep their state for assets.
@@ -632,22 +686,40 @@ export default function LsaPanel({ row, today, onMenu = null }) {
     const kept = cols.filter((id) => !offered.some((c) => c.id === id));
     const merged = DEFAULT_TASK_COLUMNS.filter((id) => next.includes(id) || kept.includes(id));
     setColsState(merged);
-    saveCols(merged);
+    saveCols(variant, merged);
   };
   const chosen = all ? all.filter((t) => picked.has(t.id)) : [];
   const where = `at ${row.ref.name || "this row"}`;
   usePanelMenu(onMenu, [
+    ...(maint ? [{ id: "mt-add", label: "Add task…", onSelect: () => adding.setOpen(row.key) }] : []),
     { id: "pkg-cols", label: "Columns…", onSelect: () => setColsOpen(true) },
+    ...(maint ? [{ id: "mt-rates", label: "Trade rates…", title: "The hourly rate of each trade: it prices every task's labour", onSelect: () => ratesOpen.setOpen("1") }] : []),
     { id: "lsa-csv", label: "Export CSV", disabled: !all?.length, title: all?.length ? "The table with every column, for Excel" : "No tasks to export",
-      onSelect: () => saveText(lsaCsv(shown || all), exportFilename(row.ref.name, { what: "LSA" })) },
-    ...(design ? [] : [
+      onSelect: () => saveText(lsaCsv(shown || all), exportFilename(row.ref.name, { what: maint ? "Maintenance" : "LSA" })) },
+    ...(plain ? [] : [
       { id: "pkg-propose", label: "Package the tasks…", onSelect: () => packaging.setOpen(row.key), title: "Drafts packages from every task here not in one, by how often and by trade" },
       { id: "pkg-new", label: "Add a package…", onSelect: () => setModal("new") },
     ]),
   ]);
   if (!scope) return null;
   const done = (text) => { setModal(null); setSaid(text); setPicked(new Set()); refresh(); };
-  if (packaging.open === row.key && !design) {
+  if (maint && (adding.open === row.key || taskOpen.open)) {
+    const close = () => { adding.setOpen(null); taskOpen.setOpen(null); };
+    return (
+      <div className="td-tab-page pk-panel">
+        <MaintenanceTask row={row} taskId={adding.open === row.key ? null : taskOpen.open} onBack={close}
+                         onDone={(text) => { close(); done(text); }} />
+      </div>
+    );
+  }
+  if (maint && ratesOpen.open) {
+    return (
+      <div className="td-tab-page pk-panel">
+        <TradeRates onBack={() => ratesOpen.setOpen(null)} onChanged={refresh} />
+      </div>
+    );
+  }
+  if (packaging.open === row.key && !plain) {
     return (
       <div className="td-tab-page pk-panel">
         <PackageTasks scope={scope} where={`${where} and below`} onBack={() => packaging.setOpen(null)}
@@ -676,7 +748,9 @@ export default function LsaPanel({ row, today, onMenu = null }) {
   return (
     <div className="td-tab-page pk-panel rw">
       <p className="lib-date pk-purpose">
-        {design
+        {maint
+          ? `Every maintenance task ${below ? "here and below" : "here"}: from the RCM or added directly, how often, when it's next due and what it costs each time. The RCM reads each task's cost from here. Open a task to change it.`
+          : design
           ? "Every task in the design here and below, with what it needs: open a task to set its labour, tools, spares and method. Tasks are packaged into visits on the items built from it."
           : "Every task here and below, with what it needs: open a task to set its labour, tools, spares and method. Tick the ones done on the same visit and package them: each visit then raises one work order."}
       </p>
@@ -686,10 +760,21 @@ export default function LsaPanel({ row, today, onMenu = null }) {
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={design ? "Filter: position, failure mode, task" : "Filter: position, failure mode, task, package"}
                  aria-label="Search the tasks" />
         </label>
+        {maint && (
+          <label className="mt-below">
+            <input type="checkbox" checked={below} onChange={(e) => showBelow(e.target.checked)} />
+            Include what&apos;s inside
+          </label>
+        )}
+        {maint && (
+          <button type="button" className="secondary sm mt-add" onClick={() => adding.setOpen(row.key)}>
+            <PlusIcon /> Add task
+          </button>
+        )}
         {shown && <span className="lib-date pk-count">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>}
         {colsOpen && (
           <div className="pk-cols">
-            <ColumnChooser cols={cols} onCols={setCols} usual={DEFAULT_TASK_COLUMNS} columns={offered} open={colsOpen}
+            <ColumnChooser cols={cols} onCols={setCols} usual={USUAL_COLS[variant]} columns={offered} open={colsOpen}
                            onClose={() => setColsOpen(false)} />
           </div>
         )}
@@ -699,15 +784,21 @@ export default function LsaPanel({ row, today, onMenu = null }) {
       {data?.truncated && <p className="lib-date">Showing the first {all.length} of {data.total} tasks: pick a smaller branch to see the rest.</p>}
       {!shown && !state.error ? <div className="card empty">Loading…</div> : shown && all.length === 0 ? (
         <div className="card empty pk-empty">
-          <p>{design ? "No tasks in the design here or below yet. Decide the failure modes on the RCM tab: their tasks show here, to say what each needs."
+          <p>{maint ? `No maintenance tasks ${below ? "here or below" : "here"} yet. Add one (from the maker's manual, a regulation or your own practice), or decide the failure modes on the RCM tab: their tasks show here.`
+            : design ? "No tasks in the design here or below yet. Decide the failure modes on the RCM tab: their tasks show here, to say what each needs."
             : "No tasks here or below yet. Decide the failure modes on the RCM tab: their tasks show here to package."}</p>
-          <p className="section-empty-more"><ShowMe help={HELP}>Say what each task needs, and package tasks into visits</ShowMe></p>
+          {maint ? (
+            <p className="section-empty-more">
+              <button type="button" className="link" onClick={() => adding.setOpen(row.key)}>Add a task</button>
+              {!below && <> · <button type="button" className="link" onClick={() => showBelow(true)}>Include what&apos;s inside</button></>}
+            </p>
+          ) : <p className="section-empty-more"><ShowMe help={HELP}>Say what each task needs, and package tasks into visits</ShowMe></p>}
         </div>
       ) : shown && (
         <div className="maint-scroll rw-grid pk-grid">
-          <div className="pk-table" role="table" aria-label="Tasks here and below" aria-rowcount={shown.length + 1} style={{ minWidth: total }}>
+          <div className="pk-table" role="table" aria-label={below ? "Tasks here and below" : "Tasks here"} aria-rowcount={shown.length + 1} style={{ minWidth: total }}>
             <div className="rw-head" role="row">
-              {!design && (
+              {!plain && (
                 <div className="rw-h pk-tick" role="columnheader" style={{ width: TICK_W }}>
                   <input type="checkbox" aria-label="Tick every task shown" checked={tick === "all"} disabled={!shown.length}
                          ref={(el) => { if (el) el.indeterminate = tick === "some"; }}
@@ -734,7 +825,7 @@ export default function LsaPanel({ row, today, onMenu = null }) {
             ) : shown.map((t) => (
               <div key={t.id} role="row" className={"rw-row pk-trow" + (picked.has(t.id) ? " focus" : "")}
                    onClick={(e) => { if (!e.target.closest("button, a, input")) taskOpen.setOpen(t.id); }}>
-                {!design && (
+                {!plain && (
                   <div className="rw-c pk-tick" role="cell" style={{ width: TICK_W }}>
                     <input type="checkbox" checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
                            aria-label={`Tick ${t.name}`} title={t.why_not ? `Can't join a package: ${t.why_not}` : undefined} />
@@ -742,7 +833,7 @@ export default function LsaPanel({ row, today, onMenu = null }) {
                 )}
                 {columns.map((c) => (
                   <div key={c.id} role="cell" className="rw-c" style={{ width: c.width }}>
-                    <TaskCell t={t} col={c.id} onPackage={open.setOpen} onTask={taskOpen.setOpen} />
+                    <TaskCell t={t} col={c.id} onPackage={open.setOpen} onTask={taskOpen.setOpen} maint={maint} />
                   </div>
                 ))}
                 <div className="rw-c rw-fill" aria-hidden="true" />
@@ -758,7 +849,14 @@ export default function LsaPanel({ row, today, onMenu = null }) {
                   empty={<span className="lib-date">No labour, tools or spares set yet: open a task to add them.</span>} />
         </div>
       )}
-      {!design && picked.size > 0 && (
+      {maint && all?.length > 0 && <RbdTaskUses taskIds={all.map((t) => t.id)} version={version} />}
+      {maint && shown?.length > 0 && (
+        <div className="pk-actions pk-design-foot" role="region" aria-label="What the tasks cost">
+          <span className="pk-actions-n">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>
+          <span className="lib-date">{costFoot(shown)}</span>
+        </div>
+      )}
+      {!plain && picked.size > 0 && (
         <div className="pk-actions" role="region" aria-label="Selected tasks">
           <span className="pk-actions-n">{plural(picked.size, "task")} selected</span>
           <button type="button" className="link" disabled={!free.length} onClick={() => setModal("package")}

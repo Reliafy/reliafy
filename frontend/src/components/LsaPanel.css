@@ -105,3 +105,30 @@
 .lsa-field { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; }
 .lsa-field input { min-width: 0; }
 .lsa-full { width: 100%; box-sizing: border-box; }
+
+/* The Maintenance tab (LsaPanel variant "maintenance", MaintenanceTask.jsx). */
+.mt-below { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9em; white-space: nowrap; }
+.mt-add { display: inline-flex; align-items: center; gap: 4px; }
+.mt-pane { max-width: 640px; }
+.mt-fields { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.mt-fields input:not([type="checkbox"]), .mt-fields select { max-width: 100%; }
+.mt-every { display: flex; gap: 8px; margin-top: 0; flex-wrap: wrap; }
+.mt-every input { width: 6rem; }
+.mt-modes { border: 1px solid var(--border, #d0d7de); border-radius: 6px; padding: 6px 10px; margin: 0; min-width: 0; }
+.mt-modes legend { font-size: 0.9em; padding: 0 4px; }
+.mt-mode { display: flex; align-items: flex-start; gap: 6px; padding: 3px 0; overflow-wrap: anywhere; }
+.mt-note { margin: 0; overflow-wrap: anywhere; }
+.mt-rates { display: flex; flex-direction: column; gap: 6px; }
+.mt-rate { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mt-rate input { width: 7rem; }
+.mt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mt-retire { margin-left: auto; color: var(--danger, #b42318); }
+.mt-rate-list .lsa-num input { width: 7rem; }
+
+/* What a replace-or-restore task leaves the item as (MaintenanceTask.jsx): fits a phone. */
+.mt-restore { min-width: 0; max-width: 100%; box-sizing: border-box; margin: 0; padding: 8px 12px 10px;
+  border: 1px solid var(--border, #d0d7de); border-radius: 6px; }
+.mt-restore legend { padding: 0 4px; }
+.mt-restore select, .mt-restore input:not([type="checkbox"]) { max-width: 100%; box-sizing: border-box; }
+.mt-restore-row { flex-wrap: wrap; gap: 8px 12px; }
+.mt-restore-row > * { min-width: 0; flex: 1 1 10rem; }

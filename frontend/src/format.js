@@ -21,6 +21,16 @@ export function formatNumber(v, { sig = 3 } = {}) {
   return new Intl.NumberFormat("en-US", { maximumSignificantDigits: sig }).format(n);
 }
 
+// A number for reading, with very small or large values as "5.16 × 10⁻²⁶"
+// rather than "5.16e-26" (formatNumber's compact form).
+const SUPERSCRIPT = { "-": "⁻", 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" };
+export function formatReadable(v, { sig = 3 } = {}) {
+  const text = formatNumber(v, { sig });
+  const m = /^(-?[\d.]+)e(-?\d+)$/.exec(text);
+  if (!m) return text;
+  return `${m[1]} × 10${m[2].split("").map((ch) => SUPERSCRIPT[ch] ?? ch).join("")}`;
+}
+
 // A fraction as a percentage: 0.5714 → "57%", 0.0532 → "5.3%", 0.00123 → "0.12%".
 export function formatPercent(fraction, { sig = 2 } = {}) {
   if (fraction == null || fraction === "") return MISSING;
@@ -30,6 +40,15 @@ export function formatPercent(fraction, { sig = 2 } = {}) {
   if (a === 0) return "0%";
   if (a >= 10) return `${Math.round(p).toLocaleString("en-US")}%`;
   return `${formatNumber(p, { sig })}%`;
+}
+
+// A target percentage as it was typed: 0.995 → "99.5%", 0.9999 → "99.99%"
+// (formatPercent rounds 99.5 to "100%", which restates the target).
+export function formatTarget(fraction) {
+  if (fraction == null || fraction === "") return MISSING;
+  const p = Number(fraction) * 100;
+  if (!Number.isFinite(p)) return MISSING;
+  return `${Number(p.toPrecision(10))}%`;
 }
 
 // A plural unit read for exactly one: "hours" → "hour", "flight hours" →

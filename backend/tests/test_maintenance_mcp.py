@@ -1144,3 +1144,27 @@ def test_an_item_class_fleet_over_mcp_and_rest(env):
                                 headers={"Authorization": f"Bearer {env['token']}"})
     assert rest.status_code == 200, rest.text
     assert rest.json()["members"][0]["risk"] == pytest.approx(first["risk"])
+
+
+def test_generate_with_a_package_raises_only_that_packages_visit(env):
+    """work_orders.generate with package_id raises that package's next visit and nothing
+    else that's due (Nov 2026)."""
+
+    async def flow(client):
+        site = _ok(await _do(client, "maintenance", "positions.create", name="Station"))
+        pump = _ok(await _do(client, "maintenance", "positions.create", name="Pump", parent_id=site["id"]))
+        other = _ok(await _do(client, "maintenance", "positions.create", name="Other team's pump"))
+        mine = _ok(await _do(client, "maintenance", "tasks.create", name="Check seal", interval=1, unit="months",
+                             position_id=pump["id"], last_done="2026-01-01"))
+        _ok(await _do(client, "maintenance", "tasks.create", name="Their check", interval=1, unit="weeks",
+                      position_id=other["id"], last_done="2026-01-01"))
+        pkg = _ok(await _do(client, "maintenance", "packages.create", name="Round", position_id=site["id"],
+                            every=1, unit="months", tasks=[mine["id"]]))
+        out = _ok(await _do(client, "maintenance", "work_orders.generate", package_id=pkg["id"]))
+        listed = _ok(await client.call_tool("maintenance", {"action": "list.work_orders", "status": "open"}))
+        return out, listed
+
+    out, listed = _session(env["token"], flow)
+    assert out["raised"] is True and [t["name"] for t in out["work_order"]["tasks"]] == ["Check seal"]
+    rows = listed.get("work_orders", listed) if isinstance(listed, dict) else listed
+    assert len(rows) == 1

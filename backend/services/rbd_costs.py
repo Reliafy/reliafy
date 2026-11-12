@@ -282,7 +282,8 @@ def ownership(rbd, graph: dict, overrides: dict, rate: Optional[float], basis: O
     undiscounted), discounted the undiscounted total beside it, and
     ``by_horizon`` (:func:`rbd_discount.by_horizon`: from new and at the
     long-run rate, and an endless horizon's net present cost). A simulated
-    ``rate`` has no present value (``present_value_note`` says why)."""
+    ``rate`` is discounted the same way (``present_value_note`` says it is
+    simulated)."""
     table = rbd_discount.by_horizon(rbd, graph, overrides, horizon, rate, basis, disc)
     row = next(r for r in table["rows"] if r["set"])
     total = row["total_cost"]

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { SavedOfKind } from "../components/StrategyTool.jsx";
@@ -31,8 +31,20 @@ export default function StrategyTestPlanning() {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const tab = tabFromPath(pathname);
-  const initial = useMemo(() => parseDemoPrefill(search), [search]);
-  const altModel = useMemo(() => new URLSearchParams(search).get("model"), [search]);
+  const query = useMemo(() => new URLSearchParams(search), [search]);
+  // Each tab stays open once visited (hidden when another is shown), so what
+  // was typed on one survives a look at another. A link's prefill (a
+  // requirement, an ALT model) is kept by the tab it was for.
+  const [visited, setVisited] = useState(() => new Set([tab]));
+  useEffect(() => { setVisited((v) => (v.has(tab) ? v : new Set([...v, tab]))); }, [tab]);
+  const demoSearch = useRef(search);
+  if (tab === "demonstration") demoSearch.current = search;
+  const altLink = useRef({ model: query.get("model"), use: query.get("use") });
+  if (tab === "accelerated") altLink.current = { model: query.get("model"), use: query.get("use") };
+  const initial = useMemo(() => parseDemoPrefill(demoSearch.current), [demoSearch.current]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A chart drawn while its tab was hidden has no width: redraw on showing it.
+  useEffect(() => { window.dispatchEvent(new Event("resize")); }, [tab]);
+  const show = (id) => tab === id || visited.has(id);
 
   const tool = STRATEGY_TOOLS[tab === "accelerated" ? "accelerated" : "testPlanning"];
   return (
@@ -50,11 +62,18 @@ export default function StrategyTestPlanning() {
         onChange={(id) => navigate(TEST_PLAN_TABS.find((t) => t.id === id).path)}
       />
       <Card>
-        {tab === "demonstration" && <DemonstrationTest key={search} initial={initial} />}
-        {tab === "sequential" && <SequentialTestPlan />}
-        {tab === "life" && <LifeTestPlan />}
-        {tab === "accelerated" && <AcceleratedTestPlan key={altModel || ""} modelId={altModel} />}
-        {tab === "comparison" && <ComparisonPlan />}
+        {show("demonstration") && (
+          <div hidden={tab !== "demonstration"}><DemonstrationTest key={demoSearch.current} initial={initial} /></div>
+        )}
+        {show("sequential") && <div hidden={tab !== "sequential"}><SequentialTestPlan /></div>}
+        {show("life") && <div hidden={tab !== "life"}><LifeTestPlan /></div>}
+        {show("accelerated") && (
+          <div hidden={tab !== "accelerated"}>
+            <AcceleratedTestPlan key={`${altLink.current.model || ""}|${altLink.current.use || ""}`}
+                                 modelId={altLink.current.model} useStress={altLink.current.use} />
+          </div>
+        )}
+        {show("comparison") && <div hidden={tab !== "comparison"}><ComparisonPlan /></div>}
       </Card>
       {tab === "demonstration" && <SavedOfKind kind={tool.kind} noun={tool.noun} />}
     </div>

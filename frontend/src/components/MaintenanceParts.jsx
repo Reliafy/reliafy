@@ -5,7 +5,7 @@ import {
   uploadMaintenanceDocument,
 } from "../api.js";
 import {
-  DOCUMENT_KINDS, MAX_DOCUMENT_MB, PRECISIONS, datedText, daysText, documentFileProblem, fileSizeText,
+  DOCUMENT_KINDS, MAX_DOCUMENT_MB, PRECISIONS, datedText, daysText, daysTitle, documentFileProblem, fileSizeText, lifeOutcomeText,
   roughDateInput, roughDateValue, safeHref,
 } from "../maintenanceFields.js";
 import { formatDate } from "../dates.js";
@@ -330,14 +330,16 @@ export function DueChip({ task }) {
     return <span className="lib-date">{note || "—"}</span>;
   }
   return (
-    <span className={task.overdue ? "maint-overdue" : "lib-date"}>
+    <span className={task.overdue ? "maint-overdue" : "lib-date"}
+          title={task.overdue_before_package ? "Overdue before it went into its package: it stays overdue until it's done" : undefined}>
       {fmtDate(task.next_due)}{task.overdue ? " (overdue)" : ""}
+      {task.overdue_before_package && <span className="lib-date"> · late before it was packaged</span>}
     </span>
   );
 }
 
 export const OUTCOME_LABELS = {
-  fixed_interval: "Fixed interval replacement",
+  fixed_interval: "Replace at age",
   failure_finding: "Failure finding",
   on_condition: "On condition",
   rtf: "Run to failure",
@@ -363,9 +365,8 @@ export function LifeTable({ rows, showPosition = false, onFix }) {
             <td>{r.item}</td>
             <td className="lib-date">{fmtDated(r.from, r.from_precision)}</td>
             <td className="lib-date">{fmtDated(r.to, r.to_precision)}</td>
-            <td title={r.xl != null ? "The dates are known only roughly: the shortest and longest life they allow" : undefined}>
-              {daysText(r)}</td>
-            <td>{r.status}</td>
+            <td title={daysTitle(r)}>{daysText(r)}</td>
+            <td>{lifeOutcomeText(r, fmtDate)}</td>
             <td className="lib-date">{r.failure_mode || "—"}</td>
             {onFix && <td><button className="crumb-link" onClick={() => onFix(r)}>Fix</button></td>}
           </tr>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { recordWorkOrderReadings } from "../api.js";
 import { pointPagePath } from "../measurementsTab.js";
-import { boxLabel, clearSent, progressText, readingRows, readingsToSend, rowDetail, takenText } from "../workOrderReadings.js";
+import { boxLabel, boxProblem, clearSent, progressText, readingRows, readingsToSend, rowDetail, takenText } from "../workOrderReadings.js";
 import { fmtDate } from "./MaintenanceParts.jsx";
 
 // A work order's "Readings and settings" (workOrderReadings.js): a value box for
@@ -39,7 +39,10 @@ export default function WorkOrderReadings({ wo, values, setValues, onRecorded })
     }
   };
 
-  const box = (r) => (
+  const problems = rows.filter((r) => values[r.id]?.dirty && boxProblem(r, values[r.id]?.value));
+  const box = (r) => {
+    const problem = values[r.id]?.dirty ? boxProblem(r, values[r.id]?.value) : "";
+    return (
     <div key={r.id} className="wor-row">
       <label className="wor-label" htmlFor={`wor-${r.id}`}>
         <span className="wor-name">{boxLabel(r)}</span>
@@ -48,9 +51,12 @@ export default function WorkOrderReadings({ wo, values, setValues, onRecorded })
       <input id={`wor-${r.id}`} type="number" inputMode="decimal" step="any" className="wor-input"
              value={values[r.id]?.value ?? ""} placeholder={r.last != null ? `last: ${r.last}` : ""}
              min={r.range[0] ?? undefined} max={r.range[1] ?? undefined}
+             aria-invalid={problem ? "true" : undefined} aria-describedby={problem ? `wor-${r.id}-why` : undefined}
              onChange={(e) => set(r.id, e.target.value)} />
+      {problem && <p className="field-error wor-problem" id={`wor-${r.id}-why`} role="alert">{problem}</p>}
     </div>
-  );
+    );
+  };
 
   return (
     <section className="card" aria-label="Readings and settings">
@@ -71,7 +77,7 @@ export default function WorkOrderReadings({ wo, values, setValues, onRecorded })
             </details>
           )}
           <div className="maint-row">
-            <button type="button" className="secondary" disabled={busy || !pending.length} onClick={record}>
+            <button type="button" className="secondary" disabled={busy || !pending.length || problems.length > 0} onClick={record}>
               {busy ? "Recording…" : pending.length > 1 ? `Record ${pending.length} values` : "Record"}
             </button>
           </div>

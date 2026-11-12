@@ -1,5 +1,7 @@
 import Plot from "./Plot.jsx";
 import { COLORWAY, DATA_INK, NEUTRAL_BAND_FILL, bandPair } from "../plotTheme.js";
+import { ciPct } from "../levels.js";
+import { valueAxisTitle } from "../lifeData.js";
 
 // Each failure mode's colour, in the fit's order (most failures first).
 export const causeColor = (i) => COLORWAY[i % COLORWAY.length];
@@ -13,7 +15,7 @@ function tint(hex, alpha) {
 const sum = (a, b) => a.map((v, i) => (v == null || b[i] == null ? null : v + b[i]));
 
 // The cumulative incidence of each failure mode (#177): stacked, so the top
-// is the all-cause failure probability with its 95% band, or each mode on
+// is the all-cause failure probability with its band (90%), or each mode on
 // its own with its band. Step curves, as SurPyval estimates them.
 // ``fill``: the chart takes its box's height (the model frame). ``showAll``
 // (each mode only): the chance of failing from any mode as a dashed line.
@@ -40,7 +42,7 @@ export default function CompetingRisksPlot({ result, unit, stacked = true, downl
     });
     if ((c.all_lower || []).some((v) => v != null)) {
       traces.push(...bandPair(x, c.all_lower, c.all_upper, {
-        name: "95% CI, all modes", fillcolor: NEUTRAL_BAND_FILL, line: { shape: "hv" },
+        name: `${ciPct(result)} CI, all modes`, fillcolor: NEUTRAL_BAND_FILL, line: { shape: "hv" },
       }));
     }
   } else {
@@ -55,11 +57,11 @@ export default function CompetingRisksPlot({ result, unit, stacked = true, downl
         hovertemplate: `${name}: %{y:.1%}<extra></extra>`,
       });
     });
-    // Any mode alone (the calculator): with its 95% band.
+    // Any mode alone (the calculator): with its band.
     const anyAlone = showAll && only && only.length === 0;
     if (anyAlone && (c.all_lower || []).some((v) => v != null)) {
       traces.push(...bandPair(x, c.all_lower, c.all_upper, {
-        name: "95% CI, any mode", fillcolor: NEUTRAL_BAND_FILL, line: { shape: "hv" },
+        name: `${ciPct(result)} CI, any mode`, fillcolor: NEUTRAL_BAND_FILL, line: { shape: "hv" },
       }));
     }
     if (showAll && (c.all || []).length) {
@@ -81,7 +83,7 @@ export default function CompetingRisksPlot({ result, unit, stacked = true, downl
       layout={{
         height: 340,
         hovermode: "x unified",
-        xaxis: { title: { text: unit ? `Time (${unit})` : "Time" }, rangemode: "tozero" },
+        xaxis: { title: { text: valueAxisTitle(unit) }, rangemode: "tozero" },
         yaxis: { title: { text: "Chance of failing" }, range: [0, ymax], tickformat: ".0%" },
         showlegend: true,
         ...(shapes ? { shapes } : {}),

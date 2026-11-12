@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import math
 import time
-import warnings
 from typing import Any, Optional
 
 import numpy as np
@@ -52,6 +51,7 @@ from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError
 from backend.units import unit_in_text
 from backend.errors import client_message
+from backend.warn_capture import ignore_warnings
 
 MEASURES = ("over_time", "shares", "joint", "rate", "uncertainty")
 #: The plain question each measure answers (its tab's title).
@@ -79,7 +79,7 @@ N_DRAWS = 1000
 N_DRAWS_OVER_TIME = 200
 N_DRAWS_SOBOL = 500
 MAX_TIMES = 6
-LEVEL = 0.95
+LEVEL = 0.90  # two-sided, the app's rule (backend.levels); a request may ask for another
 SEED = 20261
 #: Uncertain inputs above which a Sobol run is refused (n_draws × (inputs + 2)
 #: evaluations).
@@ -159,7 +159,7 @@ def options(measure=None, window=None, group_by=None, method=None, times=None, l
             try:
                 lv = float(level)
             except (TypeError, ValueError):
-                raise AnalysisError("level must be a confidence level such as 0.95.") from None
+                raise AnalysisError("level must be a confidence level such as 0.9.") from None
             if not 0.5 <= lv < 1.0:
                 raise AnalysisError("The confidence level must be from 50% up to (not including) 100%.")
             out["level"] = lv
@@ -204,7 +204,9 @@ def _route(rbd, name: str) -> tuple[str, str]:
 
 
 def _refused(head: dict, name: str, reason: str, labels: dict) -> dict:
-    return {**head, "status": "refused", "basis": "refused",
+    # ``needs_exact``: refused for want of an exact route (not, say, a pin),
+    # so the app can point at the ranked steps, which simulate.
+    return {**head, "status": "refused", "basis": "refused", "needs_exact": True,
             "message": ra._with_labels(reason or f"RePyability has no {name} for this diagram.", labels)}
 
 
@@ -283,8 +285,7 @@ def analyze_measure(graph: dict, resolve_model=None, *, measure: str, window: Op
         notes.append(ra.common_cause_left_out(common["groups"], common["reason"]))
     ctx = dict(rbd=rbd, labels=labels, gates=gates, working=working, broken=broken, unit=unit, graph=graph)
     runner = {"over_time": _over_time, "shares": _shares, "joint": _joint, "rate": _rate}.get(measure)
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         try:
             if runner is not None:
                 out = runner(head, opts, **ctx)

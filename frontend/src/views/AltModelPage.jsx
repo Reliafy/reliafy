@@ -4,10 +4,11 @@ import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import AltResultView from "../components/AltResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { getAltModel, deleteAltModel, renameAltModel } from "../api.js";
+import { getAltModel, deleteAltModel, downloadModelPython, renameAltModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
+import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import useTabParam from "../components/model/useTabParam.js";
 import { altAnswerParts } from "../altFrame.js";
 import { itemName } from "../components/LibRows.jsx";
@@ -18,7 +19,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 
 // A saved accelerated life model in the model frame: the answer line, the
 // result's tabs (Life-stress, Probability plot, Calculator, Diagnostics,
-// Data), Share, and the ⋯ menu (plan the next test, rename, delete).
+// Data), Share, and the ⋯ menu (Download as Python, plan the next test, rename, delete).
 export default function AltModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -27,6 +28,8 @@ export default function AltModelPage() {
   // Not on this list (404): ModelNotFound looks in the others.
   const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
+  // The use stress entered on the page (the model's units), for "Plan the next test".
+  const [useStress, setUseStress] = useState(null);
 
   useEffect(() => {
     setModel(null);
@@ -66,8 +69,9 @@ export default function AltModelPage() {
       )}
       menu={model && (
         <>
+          <DownloadPythonItem download={() => downloadModelPython("alt", model.id)} onError={setError} />
           {altPrefill(r) && (
-            <Link className="ovm-item" to={altPlanLink(model.id)}
+            <Link className="ovm-item" to={altPlanLink(model.id, useStress)}
                   title="The stresses, the units at each and the failures to expect, from this fit">
               Plan the next test
             </Link>
@@ -84,7 +88,7 @@ export default function AltModelPage() {
         // A model this page can't draw shows a card here, not the whole-app error page.
         <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
           <AltResultView results={model.results} modelId={model.id} name={model.name} datasetId={model.dataset_id}
-                         tab={tab} onTab={(t) => setTab(t, "life")} />
+                         tab={tab} onTab={(t) => setTab(t, "life")} onUseStress={setUseStress} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="alt" />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}

@@ -29,10 +29,12 @@ top of the page. The panel on the right asks for:
 
 - **Time column**: the time to failure or removal.
 - **Split by**: the column that names each unit's group.
-- **Censor column (optional)**: which units failed and which are still
-  running. Tick **1 = failed here (invert it)** if your file uses 1 for a
-  failure. With no censor column, every row counts as a failure, unless you
-  choose a failure-mode column.
+- **Failed or still running?**: the column that says which units failed and
+  which are still running. A status column the data has (say *Status*, with
+  *Failed* and *Removed, OK*) is picked for you, and each of its values gets
+  **Failed** or **Still running**, as when you fit a model; the line under it
+  says how the rows were read (*35 failed, 25 still running*). Choose
+  **none: every row failed** only when every unit really failed.
 - **Failure mode (optional)**: to test each mode separately as well (see
   below). With no censor column, a row with a blank mode is a unit still
   running, just as when you fit a competing-risks model.
@@ -42,7 +44,7 @@ Press **Compare**. The sample *Valve seal life vs. temperature & load* split by
 `load` gives:
 
 > load 0.5 lasts longer: log-rank p = 0.02; on average 306 hours more over the
-> first 1,560 hours (95% CI 53.6 to 557 hours).
+> first 1,560 hours (90% CI 94.1 to 517 hours).
 
 ![Compare groups: the verdict, each group's reliability curve and the average-life table](/guides/img/cmp-01-groups.png)
 
@@ -65,7 +67,7 @@ luck. Here p = 0.02, so the seals at the lower load really do last longer.
 restricted mean survival time (RMST). It is the area under each group's curve
 up to the window, the dotted line on the chart. In plain words: over the first
 1,560 hours, a seal at load 0.5 runs 1,171 hours on average and one at load 0.9
-runs 865 hours. The difference is 306 hours, with a 95% interval of 54 to 557
+runs 865 hours. The difference is 306 hours, with a 90% interval of 94 to 517
 hours. An interval that doesn't cross zero agrees with the test.
 
 The window is needed because a curve that never reaches zero has no finite
@@ -115,7 +117,7 @@ both as covariates instead: see
 Each row must be one unit. A dataset with several rows per unit (a repair
 history, or repeated measurements) isn't offered for comparison, because it
 would count one unit many times. Fit a
-[recurrent-event model](/guides/recurrent-events) to a repair history instead.
+[repairable model](/guides/recurrent-events) to a repair history instead.
 
 ## Compare two items
 
@@ -146,8 +148,8 @@ time before**, and the **Drop in failure rate to detect** (a percentage). Then c
 to solve for:
 
 - **Operating time needed**: how long to run after the change. With 40 failures
-  in 100,000 hours before, seeing a 50% drop with 80% power at 95% confidence
-  takes about **159,300 hours** of operation after it.
+  in 100,000 hours before, seeing a 50% drop with 80% power at 90% confidence
+  (the default) takes about **99,800 hours** of operation after it.
 - **Smallest detectable change**: the smallest drop a given running time would
   reliably show.
 - **Chance of detecting**: the power of a plan you already have.
@@ -157,8 +159,8 @@ Operating time is the fleet's total: ten units for 100 hours is 1,000 hours.
 **Old and new side by side (two groups).** Old and new units running over the
 same period, judged by the log-rank test. Enter the **Drop in failure rate to
 detect** and the **Share of units failing during the study**, both as percentages. To see a
-failure rate 40% lower with 80% power at 95% confidence, you need about **121
-failures**: 121 new and 121 old units if half of them fail during the study.
+failure rate 40% lower with 80% power at 90% confidence, you need about **95
+failures**: 95 new and 95 old units if half of them fail during the study.
 
 ![Planning a side-by-side comparison: failures and units needed, and power against test size](/guides/img/cmp-02-plan.png)
 

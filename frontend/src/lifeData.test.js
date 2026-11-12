@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, statusMeaning, setStatusMeaning, encodeStatus,
   statusSummary, summaryParts, dataStepProblems, isSimplePaste, dataSplit,
-  countProblem, columnRoles, assignRole, roleSummary, roleChoices, roleLabel, flagsLookSwapped,
+  countProblem, setMappingField, flagsLookSwapped,
 } from "./lifeData.js";
 
 // A CMMS export: id, hours, a text status, a site.
@@ -49,12 +49,12 @@ test("an unknown word is asked about in plain words, and blocks the fit", () => 
 test("a text time column is refused before the fit, not with 'cannot contain NaN'", () => {
   const m = { ...EMPTY_MAPPING, x: "Pump ID" };
   const [p] = dataStepProblems(m, facts, 21);
-  assert.match(p, /“Pump ID” holds text \(e\.g\. “P-100”\), not times/);
+  assert.match(p, /“Pump ID” holds text \(e\.g\. “P-100”\), not numbers/);
   const blank = columnFacts({ ...PUMPS, blanks: [0, 2, 1, 0] });
   const { mapping } = guessMapping(PUMPS.columns, blank);
   assert.deepEqual(dataStepProblems(mapping, blank, 21), [
-    "2 rows have no time in “Operating Hours”. Fill them in or delete those rows, then load the file again.",
-    "1 row has no value in “Status”. Fill in whether each unit failed or was still running.",
+    "2 rows have no value in “Operating Hours”. Fill them in, give those rows a range (xl to xr), or delete them.",
+    "1 row has no value in “Status”. Say what a blank means (failed or still running) beside the column, or fill them in.",
   ]);
 });
 
@@ -97,10 +97,16 @@ test("no status column: every row is a failure; a count column defers to the fil
   assert.equal(statusSummary({ ...EMPTY_MAPPING, xl: "a", xr: "b" }, facts, 21), null);
 });
 
-test("the interval pair must come together", () => {
+test("the range must come as a pair; x alone, the range alone or both are fine", () => {
   const m = { ...EMPTY_MAPPING, xl: "Operating Hours" };
-  assert.match(dataStepProblems(m, facts, 21)[0], /both the earliest and the latest/);
-  assert.match(dataStepProblems(EMPTY_MAPPING, facts, 21)[0], /Pick the column that holds the time/);
+  assert.equal(dataStepProblems(m, facts, 21)[0], "Pick both xl and xr for the range, or neither.");
+  assert.equal(dataStepProblems({ ...m, x: "Operating Hours" }, facts, 21)[0], "Pick both xl and xr for the range, or neither.");
+  assert.equal(dataStepProblems(EMPTY_MAPPING, facts, 21)[0],
+    "Pick x: the column with the value when each unit failed or was removed.");
+  // Blanks in x are the rows read from the range: no problem when there is one.
+  const blank = columnFacts({ ...PUMPS, blanks: [0, 2, 0, 0] });
+  const both = { ...EMPTY_MAPPING, x: "Operating Hours", xl: "Operating Hours", xr: "Operating Hours" };
+  assert.deepEqual(dataStepProblems(both, blank, 21), []);
 });
 
 test("simple pastes are recognised by their columns", () => {
@@ -132,7 +138,7 @@ test("a failure-mode column without a status one: a blank mode is still running 
   const m = { ...EMPTY_MAPPING, x: "Operating Hours", e: "Mode" };
   assert.deepEqual(statusSummary(m, f, 21), { failed: 15, running: 6, left: 0, interval: 0 });
   assert.deepEqual(dataStepProblems(m, f, 21), []);
-  assert.match(dataStepProblems({ ...m, tl: "Operating Hours" }, f, 21)[0], /one time per unit/);
+  assert.match(dataStepProblems({ ...m, tl: "Operating Hours" }, f, 21)[0], /one exact value per unit/);
 });
 
 // ---- #434: a home for every column, and no decimals as counts ------------------
@@ -171,48 +177,20 @@ test("the guess never maps a decimal column as the count", () => {
   assert.equal(guessMapping(["hours", "count"], f).mapping.n, "");
 });
 
-test("every column has a role, and ignoring one frees it", () => {
-  const mapping = { ...EMPTY_MAPPING, x: "col 1" };
-  assert.deepEqual(columnRoles(RAW.columns, mapping, ["cost"]), { "col 1": "x", "col 2": "", cost: "cov", serial: "" });
-  // Give col 2 the time: col 1 is ignored now (one column per role).
-  let next = assignRole(mapping, ["cost"], "col 2", "x", rawFacts);
-  assert.equal(next.mapping.x, "col 2");
-  assert.deepEqual(columnRoles(RAW.columns, next.mapping, next.covariates), { "col 1": "", "col 2": "x", cost: "cov", serial: "" });
-  // A covariate ignored, then a mapped column made a covariate.
-  next = assignRole(next.mapping, next.covariates, "cost", "", rawFacts);
-  assert.deepEqual(next.covariates, []);
-  next = assignRole(next.mapping, next.covariates, "col 2", "cov", rawFacts);
-  assert.equal(next.mapping.x, "");
-  assert.deepEqual(next.covariates, ["col 2"]);
-  // The interval pair and the single time exclude each other, as in the fields.
-  next = assignRole({ ...EMPTY_MAPPING, x: "col 1" }, [], "col 2", "xl", rawFacts);
-  assert.equal(next.mapping.x, "");
-  assert.equal(next.mapping.xl, "col 2");
+test("x and a range go together: picking one never clears the other", () => {
+  let m = setMappingField({ ...EMPTY_MAPPING, x: "col 1" }, "xl", "col 2", rawFacts);
+  assert.equal(m.x, "col 1");
+  assert.equal(m.xl, "col 2");
+  m = setMappingField(m, "x", "cost", rawFacts);
+  assert.equal(m.xl, "col 2");
 });
 
-test("a status column picked as a role gets its guessed meanings", () => {
-  const next = assignRole({ ...EMPTY_MAPPING, x: "Operating Hours" }, [], "Status", "c", facts);
-  assert.deepEqual(next.mapping.c_map, { Failed: 0, Running: 1 });
-  const cleared = assignRole(next.mapping, [], "Status", "", facts);
-  assert.equal(cleared.mapping.c, "");
-  assert.equal(cleared.mapping.c_map, null);
-});
-
-test("the summary says what's used and what's ignored", () => {
-  const roles = columnRoles(RAW.columns, { ...EMPTY_MAPPING, x: "col 1" }, []);
-  assert.deepEqual(roleSummary(roles), { used: [{ col: "col 1", role: "x" }], ignored: ["col 2", "cost", "serial"] });
-  assert.equal(roleLabel("x"), "Time to failure");
-  assert.equal(roleLabel("xl", "intervals"), "Start of the row");
-});
-
-test("covariates are offered only where the model takes them; Ignore always", () => {
-  assert.deepEqual(roleChoices(), ["x", "c", "n", "xl", "xr", "tl", "tr", ""]);
-  assert.deepEqual(roleChoices({ covariates: true, failureMode: true }),
-                   ["x", "c", "n", "xl", "xr", "tl", "tr", "e", "cov", ""]);
-  assert.deepEqual(roleChoices({ timeVarying: "intervals", covariates: true }), ["i", "xl", "xr", "c", "cov", ""]);
-  for (const opts of [{}, { covariates: true }, { timeVarying: "timeline" }]) {
-    assert.equal(roleChoices(opts).at(-1), "");
-  }
+test("a status column picked gets its guessed meanings", () => {
+  const next = setMappingField({ ...EMPTY_MAPPING, x: "Operating Hours" }, "c", "Status", facts);
+  assert.deepEqual(next.c_map, { Failed: 0, Running: 1 });
+  const cleared = setMappingField(next, "c", "", facts);
+  assert.equal(cleared.c, "");
+  assert.equal(cleared.c_map, null);
 });
 
 test("flagsLookSwapped: most units still running from a 0/1 column says which code to question", () => {
@@ -246,4 +224,15 @@ test("a mapping reads back in words: time with its unit, each flag's meaning", a
     { label: "Count", value: "“n”" },
     { label: "Observed from", value: "“from”" },
   ]);
+});
+
+test("a life chart's axis says Time only for a time unit", async () => {
+  const { valueAxisTitle } = await import("./lifeData.js");
+  assert.equal(valueAxisTitle("Hours"), "Time (Hours)");
+  assert.equal(valueAxisTitle("Operating hours"), "Time (Operating hours)");
+  assert.equal(valueAxisTitle("hrs"), "Time (hrs)");
+  assert.equal(valueAxisTitle("kV"), "kV");
+  assert.equal(valueAxisTitle("Cycles"), "Cycles");
+  assert.equal(valueAxisTitle(""), "Time");
+  assert.equal(valueAxisTitle("units"), "Time");
 });

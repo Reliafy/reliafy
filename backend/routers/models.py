@@ -18,6 +18,7 @@ from backend.services import billing as billing_service
 from backend.services import excel as excel_service
 from backend.services import datasets as datasets_service
 from backend.services import models as models_service
+from backend.services import recurrent as recurrent_service
 from backend.services import model_split
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
@@ -132,6 +133,25 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
     }
 
 
+def _last_mapping(models: list, columns: list) -> dict | None:
+    """How the newest model fitted from a dataset read its columns, so a new
+    fit from the dataset starts there (the status words, the late-entry
+    column...) rather than from a fresh guess: ``{mapping, options, unit,
+    model_name}``, or None. Only a mapping whose columns are all still in the
+    dataset counts; options are the status reading only."""
+    names = {c.get("name") if isinstance(c, dict) else str(c) for c in columns or []}
+    for m in models:
+        spec = m.spec or {}
+        mapping = {k: v for k, v in (spec.get("mapping") or {}).items() if v}
+        if not (mapping.get("x") or mapping.get("xl")) or not set(mapping.values()) <= names:
+            continue
+        opts = spec.get("options") or {}
+        return {"mapping": mapping, "unit": spec.get("unit") or (m.results or {}).get("unit") or "",
+                "options": {k: opts[k] for k in ("c_map", "c_invert") if opts.get(k)},
+                "model_name": m.name}
+    return None
+
+
 def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     # A public link shows the dataset, not the grantor's models fitted to it:
     # a direct share of the dataset doesn't show those either.
@@ -168,7 +188,15 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "blanks": preview.get("blanks"),
         "values": preview.get("values"),
         "whole": preview.get("whole"),
+        "nonpositive": preview.get("nonpositive"),
+        # Wholly blank rows, skipped by every fit (n_rows still counts them).
+        "blank_rows": preview.get("blank_rows", 0),
         "models": [_model_summary(m, ctx) for m in models],
+        # How the newest model read the columns: a new fit from here starts there.
+        "last_mapping": _last_mapping(models, dataset.columns),
+        # The same for a repairable fit: the newest repairable model's columns.
+        "last_recurrent_mapping": None if public else recurrent_service.last_mapping(
+            session, dataset.id, ctx.read_owners, ctx.hidden, dataset.columns),
         "other_models": others,
         "profile": profile,
         # The measurements part (readings at ages), with its own preview and
@@ -244,10 +272,15 @@ def upload_dataset(
     no_header: bool | None = Form(default=None),
     sheet: str | None = Form(default=None),
     header_row: str | None = Form(default=None),
+    dataset_col: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Store an uploaded CSV as a standalone dataset (no fit required).
+
+    ``dataset_col``: split the sheet by this column, one dataset per value,
+    each named by the value (see ``_split_upload``). Datasets are stored as
+    their rows; the columns are read when fitting, so nothing else is kept.
 
     ``no_header``: true keeps the first row as data (columns ``col 1``,
     ``col 2``, …), false reads it as the column names; blank guesses, so a
@@ -264,6 +297,9 @@ def upload_dataset(
     if isinstance(read, JSONResponse):
         return read
     contents, guess, hint = read
+    if (dataset_col or "").strip():
+        return _split_upload(session, ctx, contents, dataset_col, (name or "").strip()
+                             or datasets_service.default_name(file.filename))
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:
@@ -316,6 +352,34 @@ def paste_dataset(
         logger.exception("Failed to store pasted dataset")
         return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
     return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
+
+
+def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source: str) -> JSONResponse:
+    """One dataset per value of ``column`` (datasets_service.create_split),
+    after checking the plan has room for every new one: past the cap nothing
+    is saved and the refusal says how many fit. Answers ``{datasets: [{id,
+    name, n_rows, reused}], left_out}``; ``left_out``: rows with no value in
+    the column."""
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
+    try:
+        wanted = datasets_service.count_new_parts(session, contents, column, ctx.write_owner)
+        room = (None if not ctx.is_personal or billing_service.is_admin_user(ctx.user)
+                else billing_service.room_left(session, ctx.uid, "datasets"))
+        if room is not None and room < wanted:
+            return JSONResponse(status_code=402, content={
+                "detail": billing_service.cap_room_message(session, ctx.uid, "datasets", wanted),
+                "code": "cap", "upgrade": True})
+        made, blank = datasets_service.create_split(session, contents, column, ctx.write_owner, source)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    return JSONResponse(content={
+        "datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, **({"reused": True} if reused else {})}
+                     for d, reused in made],
+        "left_out": blank,
+    })
 
 
 def _created(dataset, reused: bool, session, ctx: AccessCtx, guess: int = 1, hint: str | None = None) -> dict:
@@ -591,6 +655,7 @@ def save_model(
     criterion: str | None = Form(default=None),
     frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
+    u_col: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
     session=Depends(get_session),
@@ -621,7 +686,7 @@ def save_model(
                 )
         elif file is not None:
             dataset = datasets_service.create_dataset(
-                session, file.filename or "dataset.csv", read_upload(file), ctx.write_owner
+                session, datasets_service.default_name(file.filename), read_upload(file), ctx.write_owner
             )
         else:
             return JSONResponse(
@@ -634,7 +699,7 @@ def save_model(
             options=regression_diagnostics.with_cox_form(options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
                 include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
-            frailty_family=frailty_family,
+            frailty_family=frailty_family, u_col=u_col,
             ), cox),
             covariate_units=covariate_units_from_form(covariate_units),
         )
@@ -694,7 +759,8 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
     library, record_id, covariates?, shape?} (the record's covariates: a pipe's length, the clock, the
     demands a year...), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind:
     around, distribution, params, unit} or {kind: b10, b10, shape, unit}: the priors the Explorer's
-    "Fit a life model…" takes, but the class's history), trust, age (adds the reliability there).
+    "Fit a life model…" takes, but the class's history), trust, age (adds the reliability there), need (a
+    required B10: adds the chance it is met).
     Previewed (a refusal comes back as {refused}); with save true, saved as a model (counts against the
     model cap)."""
     from backend.maintenance import library_models
@@ -711,7 +777,8 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
             body.get("censor_column") or None, body.get("unit") or "hours", body.get("prior") or {},
             body.get("distribution") or "exponential", body.get("trust") or "guide", bool(body.get("c_invert")),
             hidden=ctx.hidden, content=content,
-            c_map=body.get("c_map") if isinstance(body.get("c_map"), dict) else None, age=body.get("age"))
+            c_map=body.get("c_map") if isinstance(body.get("c_map"), dict) else None, age=body.get("age"),
+            need=body.get("need"))
     except KeyError:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
     except ValueError as exc:
@@ -722,7 +789,19 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
     denied = _creation_denied(session, ctx, "models")
     if denied is not None:
         return denied
-    doc = bayes_life.save(session, ctx.write_owner, model, result, None, body.get("name"))
+    # The user's own table and columns go with the model (not a table of
+    # shortest / longest times), so a refit from it starts from the same reading.
+    dataset = None
+    if body.get("dataset_id"):
+        dataset = datasets_service.get_dataset(session, str(body["dataset_id"]), ctx.read_owners)
+    elif content is not None:
+        label = str(body.get("name") or result.get("label") or "Life data").strip()[:150]
+        dataset = datasets_service.create_dataset(session, f"{label}: data", content, ctx.write_owner)
+    mapping = {"x": str(body.get("time_column") or ""), "c": body.get("censor_column") or ""}
+    options = {"c_invert": bool(body.get("c_invert")) or None,
+               "c_map": body.get("c_map") if isinstance(body.get("c_map"), dict) else None}
+    doc = bayes_life.save(session, ctx.write_owner, model, result, None, body.get("name"),
+                          dataset=dataset, mapping=mapping if mapping["x"] else None, options=options)
     access_service.stamp_editor(session, "models", doc.id, ctx)
     return JSONResponse(content=_model_detail(doc, ctx))
 
@@ -760,7 +839,7 @@ def create_per_demand(
     name: str = Body(...),
     demands: int | None = Body(default=None),
     failures: int | None = Body(default=None),
-    confidence: float = Body(default=0.95),
+    confidence: float = Body(default=0.90),
     batches: list[dict] | None = Body(default=None),
     dataset_id: str | None = Body(default=None),
     demands_column: str | None = Body(default=None),
@@ -808,6 +887,11 @@ def get_model(
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if model.kind == "competing_risks":
+        # Saved before the 90% rule and the counts by the horizon: refitted from its data.
+        from backend import competing_risks
+
+        model.results = competing_risks.refreshed(session, model)
     detail = _model_detail(model, ctx)
     # "5 failed, 7 running" (#303), for a model saved before fits recorded it.
     split = model_split.split_for_model(session, model)
@@ -832,6 +916,30 @@ def model_validation(
     return JSONResponse(content=models_service.ensure_validation(session, model))
 
 
+@router.get("/models/{model_id}/export.py")
+def export_model_python(
+    model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+):
+    """Download as Python: a script that refits the model with SurPyval from
+    the data it was fitted to (embedded) and prints the numbers on its page.
+    Free for anyone who can view the model."""
+    from backend.routers.rbds import python_download
+    from backend.services import model_export
+
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None or model.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        filename, source = model_export.export_python(session, model)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export model %s as Python", model_id)
+        return JSONResponse(status_code=500,
+                            content={"detail": "Couldn't build the script. The error has been logged."})
+    return python_download(filename, source)
+
+
 @router.put("/models/{model_id}/fit")
 def update_model_fit(
     model_id: str,
@@ -852,6 +960,7 @@ def update_model_fit(
     criterion: str | None = Body(default=None),
     frailty_family: str | None = Body(default=None),
     c_map: dict | None = Body(default=None),
+    u_col: str | None = Body(default=None),
     covariate_units: dict | None = Body(default=None),
     cox: dict | None = Body(default=None),
     session=Depends(get_session),
@@ -870,7 +979,7 @@ def update_model_fit(
                "mixture": mixture, "mixture_distribution": mixture_distribution,
                "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures),
                "criterion": criterion or None, "frailty_family": frailty_family or None,
-               "c_map": c_map or None, "cox": cox or None}
+               "c_map": c_map or None, "cox": cox or None, "u_col": u_col or None}
     try:
         model = models_service.update_fit(
             session, model_id, existing.owner_id, distribution,
@@ -879,6 +988,33 @@ def update_model_fit(
             options if any(options.values()) else None,
             covariate_units=covariate_units,
         )
+        access_service.stamp_editor(session, "models", model.id, ctx)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    return JSONResponse(content=_model_detail(model, ctx))
+
+
+@router.put("/models/{model_id}/params")
+def update_model_params(
+    model_id: str,
+    distribution: str = Body(...),
+    params: list = Body(default=[]),
+    unit: str | None = Body(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Change a model saved from parameters in place (same id): a typed-in figure put right."""
+    existing, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if existing is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    denial = access_service.write_denial(ctx, existing.owner_id)
+    if denial:
+        status, payload = denial
+        return JSONResponse(status_code=status, content=payload)
+    try:
+        model = models_service.update_params(session, model_id, existing.owner_id, distribution, params, unit)
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})

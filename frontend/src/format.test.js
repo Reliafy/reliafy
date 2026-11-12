@@ -80,3 +80,9 @@ test("formatCell: long fractions read at four figures; ids and text untouched", 
   assert.equal(formatCell(null), "");
   assert.equal(formatCell(0), "0");
 });
+
+test("formatReadable: tiny constants as a power of ten", async () => {
+  const { formatReadable } = await import("./format.js");
+  assert.equal(formatReadable(5.159e-26), "5.16 × 10⁻²⁶");
+  assert.equal(formatReadable(1234.5, { sig: 4 }), "1,235");
+});

@@ -205,7 +205,9 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   } else if (!list.length && !narrowed) {
     body = (
       <div className="fr-empty">
-        <p>No failure reports here yet. To add one, {touch() ? "tap ⋯ on a position in the tree" : "right-click a position in the tree"} and choose Add failure report…, or use More actions (…) above.</p>
+        <p>No failure reports here yet.{canAdd
+          ? " Report a failure (above) when something here fails or is found failed."
+          : ` To add one, ${touch() ? "tap ⋯ on a position in the tree" : "right-click a position in the tree"} and choose Add failure report….`}</p>
         <p className="section-empty-more"><ShowMe help={HELP}>How failure reports work</ShowMe></p>
       </div>
     );
@@ -249,6 +251,9 @@ export default function FailureReportsPanel({ row, display, today, version, repo
     designAdd = builtError
       ? <p className="lib-date">Couldn't read the items built from this product: {builtError}</p>
       : <button type="button" className="secondary sm" onClick={addHere} disabled={!built?.length}>Report a failure</button>;
+  } else if (!design && !reports.viewOnly && canAdd) {
+    // The same button on a position, a place or an item (a place or an item: which position, first).
+    designAdd = <button type="button" className="secondary sm" onClick={addHere}>Report a failure</button>;
   }
 
   return (

@@ -23,7 +23,6 @@ from __future__ import annotations
 import math
 import re
 import uuid
-import warnings
 from collections import OrderedDict
 from typing import Optional
 
@@ -35,6 +34,7 @@ from backend.fitting import (
     FitError,
     _eval_functions,
     _json_safe,
+    combine_exact_and_ranges,
     failure_positions_mask,
     no_maximum_notice,
     outside_support_message,
@@ -43,9 +43,11 @@ from backend.fitting import (
 )
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
+from backend import levels as rule
 from surpyval import AcceleratedLife
 from surpyval.univariate.regression import accelerated_life as _al
 from backend.errors import client_message
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 _LM = _al.LIFE_MODELS
 
@@ -172,18 +174,23 @@ def _time_column(df: pd.DataFrame, col: str) -> np.ndarray:
     return pd.to_numeric(df[col], errors="coerce").to_numpy(float)
 
 
-def build_inputs(df: pd.DataFrame, mapping: dict, stress_cols: list) -> dict:
+def build_inputs(df: pd.DataFrame, mapping: dict, stress_cols: list, kelvin_from: Optional[list] = None) -> dict:
     """Extract SurPyval ALT inputs from a DataFrame.
 
     ``mapping`` carries the life-data columns: the failure time ``x``, or, for
     inspection data (#237), the interval ``xl`` (the last inspection the unit
     passed) and ``xr`` (the one that found it failed; blank = still running);
     ``c``/``n`` and the truncation ``tl``/``tr`` are optional. ``stress_cols``
-    is the ordered list of one or two stress columns. Returns a kwargs dict:
+    is the ordered list of one or two stress columns; ``kelvin_from`` (one
+    entry per stress: "°C", "°F" or "") converts a temperature typed in °C
+    or °F to kelvin (:func:`with_kelvin`). Returns a kwargs dict:
     ``x`` (times, or an n×2 array of interval bounds), ``Z`` (n×k stresses),
     and optional ``c``/``n``/``t`` (an n×2 truncation window).
     """
     mapping = {k: v for k, v in (mapping or {}).items() if v}
+    # x beside a range: an exact value where x is filled, the range elsewhere
+    # (rows giving both are left out; the fit says so).
+    df, mapping = combine_exact_and_ranges(df, mapping)
     interval = bool(mapping.get("xl") or mapping.get("xr"))
     if interval and (mapping.get("x") or not (mapping.get("xl") and mapping.get("xr"))):
         raise FitError("Map the failure time to x, or inspection data to both xl (the last inspection it "
@@ -197,6 +204,9 @@ def build_inputs(df: pd.DataFrame, mapping: dict, stress_cols: list) -> dict:
             raise FitError(f"Stress column '{s}' is not in the dataset.")
 
     Z = np.column_stack([pd.to_numeric(df[s], errors="coerce").to_numpy(float) for s in stress_cols])
+    for j, src in enumerate((kelvin_from or [])[: Z.shape[1]]):
+        if src:
+            Z[:, j] = to_kelvin(Z[:, j], src)
     if interval:
         lo = _time_column(df, mapping["xl"])
         hi = _time_column(df, mapping["xr"])
@@ -282,11 +292,16 @@ def fit(
     unit: str = "",
     stress_labels: Optional[list] = None,
     stress_units: Optional[list] = None,
+    kelvin_from: Optional[list] = None,
 ) -> tuple[dict, str]:
     """Fit an ALT model and build the JSON-safe results payload.
 
     ``stress_units`` (optional, one per stress column: "K", "kV", "°C", or
     blank) label the stresses wherever they are shown (#265).
+    ``kelvin_from`` (from :func:`with_kelvin`): the temperatures typed in °C
+    or °F, fitted in kelvin; the stress then reads "K" everywhere, with the
+    unit the user chose kept as its ``entered_unit``. A spec without it (a
+    model saved before 12 Nov 2026) fits its numbers as they are.
 
     Returns ``(payload, cache_id)`` addressing the live model.
     """
@@ -308,12 +323,21 @@ def fit(
             f"{'' if need == 1 else 's'}, but {len(stress_cols)} were mapped."
         )
     units = clean_stress_units(stress_units, len(stress_cols))
+    kelvin_from = (list(kelvin_from or []) + [""] * len(stress_cols))[: len(stress_cols)]
+    labels = list(stress_labels or stress_cols)
+    for j, src in enumerate(kelvin_from):
+        if src:
+            units[j] = "K"
+            if labels[j] == stress_cols[j]:
+                labels[j] = "Temperature"  # "temp_C (K)" would read as Celsius
 
-    inputs = build_inputs(df, mapping, stress_cols)
+    from backend.fitting import x_and_range_rows  # the Data step's warning, on the result too
+
+    both = x_and_range_rows(df, mapping)
+    inputs = build_inputs(df, mapping, stress_cols, kelvin_from)
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(AcceleratedLife(dist, entry["model"]).fit(**inputs))
         reissue_deprecations(caught)
     except FitError:
@@ -330,9 +354,12 @@ def fit(
         raise FitError(msg or str(exc) or f"{type(exc).__name__}") from exc
 
     payload = _build_payload(
-        model, inputs, distribution_id, life_model_id, unit, stress_cols, stress_labels,
+        model, inputs, distribution_id, life_model_id, unit, stress_cols, labels,
         stress_units=units,
     )
+    for j, src in enumerate(kelvin_from):
+        if src:
+            payload["stresses"][j]["entered_unit"] = src
     if any(units):
         warned = stress_unit_warnings(life_model_id, payload["stresses"])
         if warned:
@@ -347,7 +374,29 @@ def fit(
         payload["no_finite_maximum"] = notice
         payload["params"] = without_intervals(payload["params"])
         payload["coefficients"] = without_intervals(payload["coefficients"])
+    else:
+        # What SurPyval warned about the fit ("every stress is below 200 K…
+        # did you pass degrees Celsius?"), in the app's words, on the result.
+        said = fit_warnings(caught)
+        if said:
+            payload["fit_warnings"] = said
+    if both:
+        payload["fit_warnings"] = [*(payload.get("fit_warnings") or []), both["warning"]]
+        payload["x_and_range_rows"] = both
     return payload, store_live(model)
+
+
+def fit_warnings(caught) -> list:
+    """The fit's own warnings worth showing, plainly worded and once each:
+    not deprecations (reissued for the test suite) nor numerical noise."""
+    out: list = []
+    for w in caught or []:
+        if issubclass(w.category, (DeprecationWarning, FutureWarning, RuntimeWarning)):
+            continue
+        text = _plain_warning(str(w.message).strip())
+        if text and text not in out:
+            out.append(text)
+    return out
 
 
 def clean_stress_units(stress_units, n: int) -> list:
@@ -399,6 +448,74 @@ def stress_unit_warnings(life_model_id: str, stresses: list) -> list:
             f"coefficients and any use-level extrapolation are wrong."]
 
 
+# A thermal model's temperature must be absolute: these are the units the app
+# takes for it, and converts (to kelvin) before fitting.
+TEMPERATURE_UNITS = ("°C", "K", "°F")
+_CELSIUS = {"°c", "c", "degc", "deg c", "celsius", "℃", "degrees c", "degrees celsius"}
+_FAHRENHEIT = {"°f", "f", "degf", "deg f", "fahrenheit", "℉", "degrees f", "degrees fahrenheit"}
+_KELVIN = {"k", "kelvin", "°k", "degk", "deg k", "degrees k"}
+#: Below this a "kelvin" temperature is colder than -73 °C: almost surely °C.
+_KELVIN_FLOOR = 200.0
+
+
+def temperature_unit(unit) -> str:
+    """"°C", "°F" or "K" for a temperature unit however it's spelt; "" for
+    anything else (blank, "V", "kV")."""
+    u = str(unit or "").strip().lower()
+    if u in _CELSIUS:
+        return "°C"
+    if u in _FAHRENHEIT:
+        return "°F"
+    if u in _KELVIN:
+        return "K"
+    return ""
+
+
+def to_kelvin(values, unit: str):
+    """Temperatures in ``unit`` ("°C", "°F" or "K") in kelvin."""
+    v = np.asarray(values, dtype=float)
+    if unit == "°C":
+        return v + 273.15
+    if unit == "°F":
+        return (v - 32.0) * 5.0 / 9.0 + 273.15
+    return v
+
+
+def is_thermal(life_model_id: str) -> bool:
+    """Whether the model's first stress enters as exp(a / T), a temperature."""
+    return life_model_id in _THERMAL_FIRST_STRESS
+
+
+def with_kelvin(spec: dict, df: pd.DataFrame) -> dict:
+    """A new fit's spec, ready to fit: a thermal model's temperature (its
+    first stress) in °C or °F gets ``kelvin_from`` so it is fitted in kelvin.
+    A temperature whose unit isn't given (or isn't one) is refused when any
+    value is below 200, as kelvin that cold is almost surely a Celsius column
+    (105 °C read as 105 K extrapolates to lives a thousand times too long);
+    at 200 or above it is taken as kelvin, as before."""
+    spec = {k: v for k, v in (spec or {}).items() if k != "kelvin_from"}
+    life_model_id = spec.get("life_model_id", "arrhenius")
+    cols = list(spec.get("stress_cols") or [])
+    if not is_thermal(life_model_id) or not cols or cols[0] not in df.columns:
+        return spec
+    units = list(spec.get("stress_units") or []) + [""] * len(cols)
+    unit = temperature_unit(units[0])
+    if unit in ("°C", "°F"):
+        return {**spec, "kelvin_from": [unit] + [""] * (len(cols) - 1)}
+    if unit == "K":
+        return spec
+    values = pd.to_numeric(df[cols[0]], errors="coerce").to_numpy(float)
+    values = values[np.isfinite(values)]
+    if values.size and float(values.min()) < _KELVIN_FLOOR:
+        name = LIFE_MODELS[life_model_id]["name"]
+        given = f" (“{units[0]}” isn't a temperature unit)" if str(units[0]).strip() else ""
+        raise FitError(
+            f"Say which unit “{cols[0]}” is in: °C, K or °F{given}. The {name} model needs absolute "
+            f"temperature, and {_num(float(values.min()))}–{_num(float(values.max()))} read as kelvin is "
+            f"colder than −73 °C, so it is probably °C. The app converts °C and °F to kelvin for you.")
+    return spec
+
+
 def refit(inputs: dict, distribution_id: str, life_model_id: str):
     """Fit the live model again from :func:`build_inputs`' arrays (the
     compute service's bootstrap job has no dataset, only these). The same
@@ -407,14 +524,13 @@ def refit(inputs: dict, distribution_id: str, life_model_id: str):
         raise FitError("Unknown ALT distribution or life-stress model.")
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             return note_fit(AcceleratedLife(dist, LIFE_MODELS[life_model_id]["model"]).fit(**inputs))
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
         raise FitError(str(exc) or type(exc).__name__) from exc
 
 
-_Z95 = 1.959963984540054
+_Z95 = rule.Z95  # intervals saved before the 90% rule
 
 
 def _characteristic_life(model, Z: np.ndarray) -> np.ndarray:
@@ -444,17 +560,17 @@ def _build_payload(
     def _ci(i):
         if ses is None or not np.isfinite(ses[i]):
             return None
-        # SurPyval's own 95% Wald interval (#231): on the log scale for a
+        # SurPyval's own 90% Wald interval (#231): on the log scale for a
         # positive shape parameter, so it stays inside its support; a
         # positive life-stress coefficient (Arrhenius' b) on the log scale
         # too (#262); the unbounded coefficients' is symmetric.
         if i < len(model_names):
-            ci = param_interval(model, model_names[i], 0.95, "wald")
+            ci = param_interval(model, model_names[i], rule.LEVEL, "wald")
             if ci is not None:
                 return ci
             if _bounded_coefficient(model, model_names[i]) is not None:
                 return None  # never a symmetric interval that leaves its support
-        return [float(params[i] - _Z95 * ses[i]), float(params[i] + _Z95 * ses[i])]
+        return [float(params[i] - rule.Z * ses[i]), float(params[i] + rule.Z * ses[i])]
 
     # Distribution shape parameters: everything after the substituted scale
     # (index 0, a fixed placeholder). Names come from the distribution.
@@ -510,6 +626,7 @@ def _build_payload(
         "stresses": stresses,
         "params": shape_params,
         "coefficients": coeffs,
+        "ci_level": rule.LEVEL,  # every interval here, two-sided (at_level moves a fit saved before)
         "levels": levels,
         "n_failures": int(round(float(np.sum(failed)))),
         "life_stress_plot": _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels, inputs),
@@ -569,7 +686,7 @@ _MAX_OWN_FITS = 40
 def _own_fits(dist, inputs: dict, uniq: np.ndarray, failed: np.ndarray) -> list:
     """Each tested level's distribution fitted on its own data alone (as the
     probability plot's points are placed): its own characteristic life (the
-    parameter the life-stress model replaces) and shape, with 95% intervals,
+    parameter the life-stress model replaces) and shape, with 90% intervals,
     for the Diagnostics tab's "is the shape the same at every stress?" and
     "do the levels follow the life model?" charts. None for a level with
     fewer than two failures or no verified fit."""
@@ -587,8 +704,7 @@ def _own_fits(dist, inputs: dict, uniq: np.ndarray, failed: np.ndarray) -> list:
             if inputs.get(key) is not None:
                 kwargs[key] = np.asarray(inputs[key])[mask]
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
+            with ignore_warnings(), np.errstate(all="ignore"):
                 fit = dist.fit(**kwargs)
         except Exception:  # noqa: BLE001 - a level too small or all censored
             continue
@@ -601,9 +717,8 @@ def _own_fits(dist, inputs: dict, uniq: np.ndarray, failed: np.ndarray) -> list:
 
         def interval(name):
             try:
-                with warnings.catch_warnings(), np.errstate(all="ignore"):
-                    warnings.simplefilter("ignore")
-                    ci = np.asarray(fit.param_cb(name, alpha_ci=0.05, bound="two-sided"), dtype=float).ravel()
+                with ignore_warnings(), np.errstate(all="ignore"):
+                    ci = np.asarray(fit.param_cb(name, alpha_ci=rule.ALPHA, bound="two-sided"), dtype=float).ravel()
             except Exception:  # noqa: BLE001 - no covariance
                 return None
             return [float(ci[0]), float(ci[1])] if ci.size == 2 and np.all(np.isfinite(ci)) else None
@@ -897,7 +1012,7 @@ def evaluate(
     points: int = 300,
     *,
     mission_time: Optional[float] = None,
-    confidence: float = 0.95,
+    confidence: float = rule.LEVEL,
     bounds_method: Optional[str] = "wald",
     tested=None,
 ) -> dict:
@@ -983,7 +1098,7 @@ def evaluate(
 #: interval over ``n_boot`` refits; tens of seconds, so a compute job).
 BOUND_METHODS = ("wald", "lr", "bootstrap")
 METHOD_NAMES = {"wald": "Wald (Fisher matrix)", "lr": "Likelihood ratio", "bootstrap": "Bootstrap (BCa)"}
-DEFAULT_CONFIDENCE = 0.95
+DEFAULT_CONFIDENCE = rule.LEVEL  # the app's 90% (two-sided band, one-sided life bounds)
 #: Bootstrap refits: SurPyval's default. 1000 is steadier at a 5% tail, at
 #: five times the cost.
 DEFAULT_N_BOOT = 200
@@ -1023,8 +1138,32 @@ def life_lines(model, Zuse: np.ndarray, tested) -> list:
         G[:, j] = grid
         life = _characteristic_life(model, G)
         keep = np.isfinite(life) & (life > 0)
-        out.append({"stress": grid[keep].tolist(), "life": life[keep].tolist()})
+        line = {"stress": grid[keep].tolist(), "life": life[keep].tolist()}
+        band = _life_band(model, G[keep], life[keep])
+        if band:
+            line.update(band)
+        out.append(line)
     return out
+
+
+def _life_band(model, G: np.ndarray, life: np.ndarray, confidence: float = rule.LEVEL) -> dict | None:
+    """A two-sided Wald band on the life along a life-stress line (the delta
+    method on the log life at each point, as :func:`life_at_use_interval`),
+    so the chart shows how soft the extrapolated end is: ``{lower, upper,
+    level}``, or None where the fit has no usable covariance."""
+    from scipy.stats import norm
+
+    z = float(norm.ppf(0.5 + confidence / 2.0))
+    lower, upper = [], []
+    for row, value in zip(G, life):
+        se = _log_life_se(model, np.atleast_2d(row), float(value))
+        if se is None:
+            return None
+        with np.errstate(all="ignore"):
+            lo, hi = float(value * np.exp(-z * se)), float(value * np.exp(z * se))
+        lower.append(lo if np.isfinite(lo) else None)
+        upper.append(hi if np.isfinite(hi) else None)
+    return {"lower": lower, "upper": upper, "level": confidence}
 
 
 def _use_row(use_stress, life_model_id: str) -> np.ndarray:
@@ -1077,8 +1216,7 @@ def _quantiles(model, Zuse: np.ndarray, probs: list) -> list:
     """B-lives from SurPyval's quantile function (``qf``, 0.23), None where it
     gives none."""
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             q = np.asarray(model.qf(np.asarray(probs, dtype=float), Zuse), dtype=float).ravel()
     except Exception:  # noqa: BLE001 - fall back to the grid
         return [None] * len(probs)
@@ -1149,8 +1287,7 @@ def _bounded_wald(model, name: str, confidence: float):
     names = list(model.parameter_names)
     idx = names.index(name)
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             var = float(np.asarray(model.covariance(), dtype=float)[idx, idx])
     except Exception:  # noqa: BLE001 - no covariance
         return None
@@ -1161,8 +1298,8 @@ def _bounded_wald(model, name: str, confidence: float):
 
 
 def positive_coefficient_intervals(results: dict) -> dict:
-    """A saved fit's results with its bounded life-stress coefficients' 95%
-    intervals on the log scale (#262). Fits saved before then hold
+    """A saved fit's results with its bounded life-stress coefficients'
+    intervals on the log scale (#262), and every interval at 90% (:func:`at_level`). Fits saved before then hold
     SurPyval's symmetric Wald interval, ``value ± z·se``, which can go below
     zero for a positive coefficient (Arrhenius' ``b``): the standard error is
     read back from its width and the interval rebuilt as a new fit gives it.
@@ -1170,11 +1307,11 @@ def positive_coefficient_intervals(results: dict) -> dict:
     entry = LIFE_MODELS.get((results or {}).get("life_model_id"))
     coeffs = (results or {}).get("coefficients")
     if entry is None or not isinstance(coeffs, list):
-        return results
+        return at_level(results)
     pm = getattr(entry["model"], "phi_param_map", {}) or {}
     declared = getattr(entry["model"], "phi_bounds", None)
     if not pm or callable(declared) or not declared:
-        return results
+        return at_level(results)
     changed = False
     fixed = []
     for c in coeffs:
@@ -1189,7 +1326,7 @@ def positive_coefficient_intervals(results: dict) -> dict:
         except (TypeError, ValueError, KeyError):
             fixed.append(c)
             continue
-        symmetric = abs((lo + hi) / 2.0 - value) <= 1e-9 * max(1.0, abs(value), abs(hi - lo))
+        symmetric = abs((lo + hi) / 2.0 - value) <= 1e-9 * max(abs(value), abs(hi - lo), 1e-300)
         if (lower is None and upper is None) or not symmetric or hi <= lo:
             fixed.append(c)
             continue
@@ -1200,7 +1337,64 @@ def positive_coefficient_intervals(results: dict) -> dict:
             new = [v if v is not None and math.isfinite(v) else None for v in new]
         fixed.append({**c, "ci": new})
         changed = True
-    return {**results, "coefficients": fixed} if changed else results
+    return at_level({**results, "coefficients": fixed} if changed else results)
+
+
+def _rescaled(ci, value, lower=None):
+    """A stored 95% interval moved to 90%: on the log of the distance to
+    ``lower`` (a positive parameter, a bounded coefficient), else symmetric."""
+    if not (isinstance(ci, list) and len(ci) == 2) or any(v is None for v in ci):
+        return ci
+    try:
+        off = float(lower) if lower is not None else None
+        v, lo, hi = float(value), float(ci[0]), float(ci[1])
+    except (TypeError, ValueError):
+        return ci
+    if off is not None:
+        new = rule.rescale(v - off, lo - off, hi - off, log=True)
+        return [new[0] + off, new[1] + off] if new else ci
+    return rule.rescale(v, lo, hi) or ci
+
+
+def at_level(results: dict) -> dict:
+    """A saved fit's parameter, coefficient and per-level intervals at 90%
+    two-sided (``ci_level``). One saved before the rule holds 95% Wald
+    intervals: each is moved to 90% on the scale it was taken on (the shape
+    and the levels' own fits on the log scale; a bounded coefficient on the
+    log of its distance to the bound; any other coefficient symmetric). The
+    stored document is left as it is."""
+    if not isinstance(results, dict) or results.get("ci_level") is not None or results.get("kind") != "alt":
+        return results
+    entry = LIFE_MODELS.get(results.get("life_model_id")) or {}
+    pm = getattr(entry.get("model"), "phi_param_map", {}) or {}
+    declared = getattr(entry.get("model"), "phi_bounds", None)
+    declared = declared if isinstance(declared, (list, tuple)) else []
+    out = dict(results)
+    out["params"] = [{**p, "ci": _rescaled(p.get("ci"), p.get("value"), 0.0)} if isinstance(p, dict) else p
+                     for p in results.get("params") or []]
+    coeffs = []
+    for c in results.get("coefficients") or []:
+        if not isinstance(c, dict):
+            coeffs.append(c)
+            continue
+        off = pm.get(c.get("name"))
+        lower = declared[off][0] if off is not None and off < len(declared) and declared[off] else None
+        symmetric = isinstance(c.get("ci"), list) and len(c["ci"]) == 2 and None not in c["ci"] and abs(
+            (float(c["ci"][0]) + float(c["ci"][1])) / 2.0 - float(c.get("value") or 0)) <= 1e-9 * max(
+            abs(float(c.get("value") or 0)), abs(float(c["ci"][1]) - float(c["ci"][0])), 1e-300)
+        coeffs.append({**c, "ci": _rescaled(c.get("ci"), c.get("value"), None if symmetric else lower)})
+    out["coefficients"] = coeffs
+    lv = []
+    for row in results.get("levels") or []:
+        own = row.get("own") if isinstance(row, dict) else None
+        if isinstance(own, dict):
+            own = {**own, "life_ci": _rescaled(own.get("life_ci"), own.get("life"), 0.0),
+                   "shape": [{**s, "ci": _rescaled(s.get("ci"), s.get("value"), 0.0)} for s in own.get("shape") or []]}
+            row = {**row, "own": own}
+        lv.append(row)
+    out["levels"] = lv
+    out["ci_level"] = rule.LEVEL
+    return out
 
 
 def param_interval(model, name: str, confidence: float, method: str = "wald", **boot) -> Optional[list]:
@@ -1214,8 +1408,7 @@ def param_interval(model, name: str, confidence: float, method: str = "wald", **
         if bounded != "unbounded":
             return bounded
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             ci = np.asarray(model.param_cb(name, alpha_ci=1.0 - confidence, bound="two-sided",
                                            method=method, **boot), dtype=float).ravel()
     except Exception:  # noqa: BLE001 - e.g. no covariance
@@ -1278,8 +1471,7 @@ def _log_life_se(model, Zuse: np.ndarray, life_use: float) -> Optional[float]:
         return None
     k_dist = int(getattr(model, "k_dist", 1) or 1)
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             coeffs = np.asarray(model.params, dtype=float)[k_dist:]
             cov = np.asarray(model.covariance(), dtype=float)[k_dist:, k_dist:]
 
@@ -1406,8 +1598,7 @@ def use_level_bounds(
 
     caught_all = []
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with np.errstate(all="ignore"), collect_warnings() as caught:
             band = np.asarray(model.cb(grid, Zuse, on="sf", alpha_ci=alpha, bound="two-sided",
                                        method=method, **boot), dtype=float).reshape(-1, 2)
             probs = np.array([0.1, 0.01])
@@ -1430,8 +1621,7 @@ def use_level_bounds(
 
     names = list(getattr(model, "parameter_names", []) or [])
     k_dist = int(getattr(model, "k_dist", 1) or 1)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         coefficients = []
         for i, name in enumerate(names):
             if i == 0:
@@ -1594,8 +1784,7 @@ def diagnose(model, life_model_id: str, stresses: list, use_stress: Optional[lis
     if use_stress is not None:
         use = _use_row(use_stress, life_model_id).ravel()
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             d = model.diagnose(**({"use_stress": use.tolist() if use.size > 1 else float(use[0])}
                                   if use is not None else {}))
     except ValueError as exc:

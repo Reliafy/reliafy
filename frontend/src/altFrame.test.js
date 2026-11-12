@@ -39,7 +39,7 @@ test("tabs: old ids and names open the tab that holds them now", () => {
 test("answer line: the model, its shape, the life across the levels, the data", () => {
   assert.deepEqual(altAnswerParts(FLUID, { saved: "saved 1 min ago" }), [
     "Inverse power law model (Weibull)",
-    "β 0.777 (95% 0.63–0.959)",
+    "β 0.777 (90% 0.63–0.959)",
     "life 18.4–1,950 minutes across 2 tested levels",
     "70 failed, 6 still running",
     "saved 1 min ago",
@@ -112,4 +112,40 @@ test("diagnostics in words", () => {
   assert.match(shapeCheck({ shape: null }, { distribution_id: "exponential" }).words, /no shape/);
   assert.equal(lifeCheck({ life_stress: { computed: false, detail: "two levels" } }).words, "Can't tell: two levels.");
   assert.equal(compareCheck({ comparison: [{ current: true, delta: 0 }, { delta: 1.2 }] }).tone, "good");
+});
+
+test("the shape's interval says its level: 90% by the rule, a fit's own level where it carries one", () => {
+  assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.9 })[1], "β 0.777 (90% 0.63–0.959)");
+  assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.95 })[1], "β 0.777 (95% 0.63–0.959)");
+});
+
+test("a temperature given in °C is shown and entered in °C, asked in kelvin", async () => {
+  const { defaultUse, useForModel, levelWords, kelvinWords, inputStressName } = await import("./altFrame.js");
+  const r = {
+    stresses: [{ key: "s1", column: "temp_C", label: "Temperature", unit: "K", entered_unit: "°C" }],
+    levels: [{ stress: [378.15] }, { stress: [398.15] }, { stress: [418.15] }],
+  };
+  assert.deepEqual(defaultUse(r), [105]);
+  assert.deepEqual(useForModel(r, ["40"]), [313.15]);
+  assert.equal(levelWords([378.15], r.stresses), "105 °C");
+  assert.equal(kelvinWords(r, ["40"]), "40 °C is 313.15 K");
+  assert.equal(inputStressName(r.stresses[0]), "Temperature (°C)");
+  // A model fitted in kelvin is as before.
+  const k = { stresses: [{ key: "s1", label: "Temperature", unit: "K" }], levels: [{ stress: [378.15] }] };
+  assert.deepEqual(useForModel(k, ["313.15"]), [313.15]);
+  assert.equal(kelvinWords(k, ["313.15"]), null);
+  const f = { stresses: [{ unit: "K", entered_unit: "°F", label: "T" }], levels: [{ stress: [313.15] }] };
+  assert.deepEqual(defaultUse(f), [104]);
+  assert.deepEqual(useForModel(f, ["104"]), [313.15]);
+});
+
+test("useRangeWarning: says when the use stress is far from the tested ones", async () => {
+  const { useRangeWarning } = await import("./altFrame.js");
+  const r = { stresses: [{ label: "Voltage", unit: "kV" }], levels: [{ stress: [30] }, { stress: [33] }, { stress: [36] }] };
+  const w = useRangeWarning(r, [20], { value: 10990 });
+  assert.match(w, /^20 kV is well below the tested 30–36 kV \(an acceleration factor of 10,990×\)/);
+  assert.equal(useRangeWarning(r, [27]), null);
+  // A temperature entered in °C reads back in °C.
+  const t = { stresses: [{ label: "Temperature", entered_unit: "°C" }], levels: [{ stress: [378.15] }, { stress: [418.15] }] };
+  assert.match(useRangeWarning(t, [313.15]), /^40 °C is well below the tested 105–145 °C/);
 });

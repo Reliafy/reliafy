@@ -70,3 +70,35 @@ export function answerAtTime({ r, t, unit, now = false, survived = 0 }) {
     : `Failure probability ${formatProbability(f)}${n ? `: about 1 in ${n} systems fail in that time` : ""}.`;
   return { over, reliability: formatReliability(r), failure };
 }
+
+// A life's (MTTF, B-life, design life) confidence from the fitted blocks'
+// draws as the app's rule has it: the one-sided lower bound, "≥ 1,240 at 90%".
+// A result from before the rule has only the two-sided interval: its lower
+// end, which is a lower bound at (1 + level) / 2, is shown at that level.
+// Null when there is no bound.
+export function lifeBoundText(interval, level) {
+  if (!interval) return null;
+  const lv = Number(level);
+  if (!(lv > 0 && lv < 1)) return null;
+  const pct = (v) => `${Number((v * 100).toFixed(1))}%`;
+  if (interval.bound != null && Number.isFinite(Number(interval.bound))) {
+    return `≥ ${formatNumber(Number(interval.bound), { sig: 4 })} at ${pct(lv)}`;
+  }
+  if (interval.lower != null && Number.isFinite(Number(interval.lower))) {
+    return `≥ ${formatNumber(Number(interval.lower), { sig: 4 })} at ${pct((1 + lv) / 2)}`;
+  }
+  return null;
+}
+
+// The importance table's heading: the time it's at, and why that time —
+// the "Evaluate at t" asked for, or (none typed) where the system
+// reliability falls to 90%.
+export function importanceHeading(importance, unit) {
+  if (!importance || importance.time == null) return null;
+  const at = timeInWords(Number(Number(importance.time).toPrecision(4)), unit);
+  if (importance.time_basis === "given") return { at, why: "the time you asked about (Evaluate at t)" };
+  if (importance.time_basis === "reliability_90") {
+    return { at, why: "where the system reliability falls to 90%: type an Evaluate at t to rank at another time" };
+  }
+  return { at, why: "type an Evaluate at t to rank at another time" };
+}

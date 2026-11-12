@@ -18,7 +18,6 @@ Nothing here is fitted: every figure is a non-parametric estimate or a test.
 
 from __future__ import annotations
 
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -29,8 +28,10 @@ from backend.services.strategy import fmt_num
 from backend.units import unit_in_text
 from surpyval import KaplanMeier, gray_test, logrank, rmst_diff
 from backend.errors import client_message
+from backend.warn_capture import ignore_warnings
 
-ALPHA = 0.05
+ALPHA = 0.05  # the tests' significance level (a test, not a bound)
+CI_ALPHA = 0.10  # the average lives' and their differences' intervals: 90% two-sided (backend.levels)
 MAX_GROUPS = 12
 MAX_CAUSES = 8
 _CURVE_POINTS = 600  # per group; longer curves are thinned for the plot
@@ -119,13 +120,18 @@ def prepare(
     count_column: Optional[str] = None,
     cause_column: Optional[str] = None,
     c_invert: bool = False,
+    c_map: Optional[dict] = None,
     names: Optional[dict] = None,
 ) -> dict:
     """Pull times, flags, counts, group labels (and failure modes) out of a
     dataset, dropping rows with no time or no group. Only right-censoring
     (0 = failed, 1 = still running) is accepted: the log-rank test needs it.
-    ``names`` says how a column reads in an error message (for inline data,
-    the argument that filled it, e.g. ``{"c": "`censored`"}``, #211)."""
+    A status column of words ("Failed", "Removed, OK") is read as the fit
+    reads it: by ``c_map`` (``{"Failed": 0, "Removed, OK": 1}``) when given,
+    else by the words' meaning; a value whose meaning can't be told is
+    refused with the values to map. ``names`` says how a column reads in an
+    error message (for inline data, the argument that filled it, e.g.
+    ``{"c": "`censored`"}``, #211)."""
     names = names or {}
 
     def called(col: str, role: str) -> str:
@@ -138,7 +144,10 @@ def prepare(
                    censor_column=censor_column, count_column=count_column, cause_column=cause_column)
     if group_column == time_column:
         raise CompareGroupsError("Split by a column other than the time column.")
-    if c_invert:
+    status_words = None
+    if censor_column and (c_map or not _numeric_flags(df[censor_column])):
+        df, status_words = _read_status_words(df, censor_column, c_map, called(censor_column, "Status"))
+    if c_invert and status_words is None:
         if not censor_column:
             raise CompareGroupsError("'1 = failed' flips the censor column: choose one too.")
         try:
@@ -191,7 +200,80 @@ def prepare(
     out = {"x": x, "c": c, "n": n, "group": labels, "dropped": dropped}
     if cause is not None:
         out["cause"] = cause
+    # How the rows were read, to show beside the answer: "35 failed, 25
+    # still running", by the column (or none) that said so.
+    out["read_as"] = {
+        "failed": int(round(float(n[c == 0].sum()))), "running": int(round(float(n[c == 1].sum()))),
+        "status_column": censor_column or None, "cause_column": cause_column or None,
+    }
+    if status_words:
+        out["read_as"]["meanings"] = status_words
     return out
+
+
+def auto_status(df: pd.DataFrame, *, time_column: str, group_column: str, censor_column: Optional[str],
+                cause_column: Optional[str], all_failed: bool = False) -> tuple[Optional[str], Optional[str], bool]:
+    """The status column to read when none was chosen: a dataset that has one
+    ("Status": Failed / Removed, OK) never has its still-running units counted
+    as failures by default. ``all_failed`` says every row really failed.
+    Returns ``(censor_column, note, c_invert)``: the note says which column was
+    read; ``c_invert`` is true for a 0/1 flag named for failing ("failed",
+    "event"), which is 1 when the unit failed."""
+    if censor_column or cause_column or all_failed:
+        return censor_column, None, False
+    from backend.services.datasets import one_means_failed, status_column
+
+    found = status_column(df, skip={time_column, group_column})
+    if not found:
+        return None, None, False
+    invert = bool(_numeric_flags(df[found])) and one_means_failed(found)
+    return found, (f"“{found}” was read as which units failed and which were still running"
+                   f"{' (1 = failed)' if invert else ''}. If every row really is a failure, say so (all_failed) "
+                   "and it is left out."), invert
+
+
+def _numeric_flags(col: pd.Series) -> bool:
+    """A column of numbers (or blanks) only: read as 0/1 codes, not words."""
+    vals = col.dropna()
+    return bool(vals.empty or pd.to_numeric(vals, errors="coerce").notna().all())
+
+
+def _read_status_words(df: pd.DataFrame, column: str, c_map: Optional[dict], called: str):
+    """``df`` with a status column of words turned into 0 / 1, and what each
+    word was read as (``{"Failed": "failed", "Removed, OK": "still running"}``).
+    ``c_map`` wins; otherwise each word by its meaning, as the fit wizard
+    guesses it. A word whose meaning can't be told stops the comparison."""
+    from backend.services.datasets import status_code
+
+    if c_map:
+        try:
+            out = fitting.map_censor_column(df, column, c_map)
+        except fitting.FitError as exc:
+            raise CompareGroupsError(str(exc)) from exc
+        bad = ~out[column].isin((0, 1))
+        if bad.any():
+            raise CompareGroupsError(f"{called} can only mean failed or still running here: these tests need "
+                                     "right-censored data.")
+        codes = {str(k): int(v) for k, v in c_map.items()}
+    else:
+        values = [str(v).strip() for v in pd.unique(df[column].dropna()) if str(v).strip()]
+        codes = {v: status_code(v, column) for v in values}
+        unknown = [v for v, code in codes.items() if code is None]
+        if unknown:
+            shown = ", ".join(f"“{v}”" for v in unknown[:5])
+            raise CompareGroupsError(
+                f"Say whether {shown} in {called} mean{'s' if len(unknown) == 1 else ''} failed or still running "
+                "under the status column.")
+        blank = df[column].isna() | (df[column].astype(str).str.strip() == "")
+        if blank.any():
+            k = int(blank.sum())
+            raise CompareGroupsError(
+                f"{k} row{'s' if k != 1 else ''} {'have' if k != 1 else 'has'} no value in {called}. Fill in "
+                "whether each unit failed or was still running.")
+        out = df.copy()
+        out[column] = df[column].map(lambda v: codes.get(str(v).strip())).astype(int)
+    words = {k: ("failed" if int(v) == 0 else "still running") for k, v in codes.items()}
+    return out, words
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +396,7 @@ def compare_groups(
         m = lab == g
         failures = int(n[m][c[m] == 0].sum())
         units = int(round(n[m].sum()))
-        r = kms[g].rmst(tau=tau, alpha_ci=ALPHA)
+        r = kms[g].rmst(tau=tau, alpha_ci=CI_ALPHA)
         summaries.append({
             "group": g,
             "units": units,
@@ -336,8 +418,7 @@ def compare_groups(
 
     # The k-sample log-rank test and its weighted variants.
     tests = []
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with ignore_warnings():
         for wid, label in _WEIGHTINGS:
             r = logrank(x, lab, c=c, n=n, weighting=wid)
             tests.append({"id": wid, "label": label, "statistic": float(r.statistic), "dof": int(r.dof),
@@ -348,7 +429,7 @@ def compare_groups(
     for g in order:
         if g == reference:
             continue
-        d = rmst_diff(kms[g], kms[reference], tau=tau, alpha_ci=ALPHA)
+        d = rmst_diff(kms[g], kms[reference], tau=tau, alpha_ci=CI_ALPHA)
         differences.append({
             "group": g, "reference": reference,
             "difference": _num(d["difference"]), "lower": _num(d["lower"]), "upper": _num(d["upper"]),
@@ -362,12 +443,16 @@ def compare_groups(
         "reference": reference,
         "tau": float(tau),
         "alpha": ALPHA,
+        "ci_level": round(1.0 - CI_ALPHA, 6),
         "logrank": primary,
         "tests": tests,
         "rmst_differences": differences,
         "rows_used": int(len(x)),
         "rows_dropped": int(data.get("dropped") or 0),
     }
+    out["read_as"] = data.get("read_as")
+    if data.get("status_hint"):
+        notes.insert(0, data["status_hint"])
     if data.get("dropped"):
         notes.append(f"{data['dropped']} row{'s' if data['dropped'] != 1 else ''} with no time or no group "
                      "left out.")
@@ -455,7 +540,7 @@ def _verdict(out: dict, us: str) -> dict:
         else:
             best, worst, lo_b, hi_b = ref, other, -hi, -lo
         gain = abs(diff)
-        ci = f"(95% CI {fmt_num(lo_b)} to {fmt_num(hi_b)}{us})"
+        ci = f"(90% CI {fmt_num(lo_b)} to {fmt_num(hi_b)}{us})"
         # The two halves are judged separately (#211): the curves by the
         # log-rank p, the average life by whether its CI excludes 0.
         clear_gain = lo_b > 0

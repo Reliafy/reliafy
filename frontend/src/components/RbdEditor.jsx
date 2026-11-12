@@ -30,10 +30,11 @@ import RbdDesignPanel from "./RbdDesignPanel.jsx";
 import RbdTargets from "./RbdTargets.jsx";
 import RbdCostsModal from "./RbdCostsModal.jsx";
 import RbdCrewsModal from "./RbdCrewsModal.jsx";
+import RbdMaintenancePlan from "./RbdMaintenancePlan.jsx";
 import { applyBlockExtras } from "./RbdBlockCosts.jsx";
 import ValidationPanel, { emptyStatus, graphSignature } from "./RbdValidation.jsx";
 import {
-  saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
+  saveRbd, getRbd, validateRbd, expandRbdSubsystems, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
 } from "../api.js";
 import { registerRbdCanvas } from "../rbdBridge.js";
 import { normalizeRbdGraph } from "../rbdGraph.js";
@@ -56,7 +57,7 @@ import Chip from "./ui/Chip.jsx";
 import Switch from "./ui/Switch.jsx";
 import { formatPercent } from "../format.js";
 import {
-  allInstant, chainPairs, clearSpot, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
+  allInstant, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
 } from "../rbdBuilderOps.js";
 // Phased missions and undirected networks (#160).
 import RbdPhasesModal from "./RbdPhasesModal.jsx";
@@ -70,6 +71,9 @@ import FullScreenButton from "./FullScreenButton.jsx";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
 import { rbdDirty, rbdSaveSnapshot, rbdSaveStatus } from "../rbdSaveState.js";
 import { builderWidthClass } from "../rbdEditorLayout.js";
+import { applyTreePlan, treeGraph, treeKey, treePositionPath, treeRow } from "../rbdTreePlan.js";
+import { getRbdTreePlan } from "../api.js";
+import { useRoles } from "../RolesProvider.jsx";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -418,6 +422,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   }, []);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   // ?tab=outages is the page's: in the Explorer, ?tab= is the Explorer's own.
+  // The Maintenance plan (repairable): a table under the canvas, the one place planned work is edited.
+  const [planOpen, setPlanOpen] = useState(false);
   const [tab, setTab] = useState(() => (embedded ? "builder" : initialTab())); // 'builder' | 'calc' | 'tree' | 'design' | 'targets' | 'outages'
   // The canvas fills the frame; the result tabs scroll with the page (#311).
   useEffect(() => { onTab?.(tab); }, [onTab, tab]);
@@ -565,12 +571,42 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     []
   );
 
+  // A diagram linked to a position (built from it, or a New blank RBD there): each block standing
+  // for a position takes its planned work from that position's tasks (rbdTreePlan.js), read now
+  // and again when the blocks change or the window comes back into view. Nothing is copied into
+  // the diagram: calculations use calcNodes, saving uses nodes.
+  const maintenanceOn = !!useRoles()?.has?.maintenance;
+  const [treePlan, setTreePlan] = useState(null);
+  const [treeTick, setTreeTick] = useState(0);
+  const blocksKey = useMemo(() => treeKey(nodes, rbdUnit), [nodes, rbdUnit]);
+  useEffect(() => {
+    if (!maintenanceOn || !savedRbdId) {
+      setTreePlan(null);
+      return undefined;
+    }
+    let live = true;
+    const t = setTimeout(() => {
+      getRbdTreePlan(savedRbdId, treeGraph(liveRef.current.nodes, liveRef.current.unit))
+        .then((d) => live && setTreePlan(d?.position ? d : null))
+        .catch(() => live && setTreePlan(null));
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [maintenanceOn, savedRbdId, blocksKey, treeTick]);
+  useEffect(() => {
+    if (!maintenanceOn || !savedRbdId) return undefined;
+    const again = () => { if (document.visibilityState !== "hidden") setTreeTick((n) => n + 1); };
+    window.addEventListener("focus", again);
+    document.addEventListener("visibilitychange", again);
+    return () => { window.removeEventListener("focus", again); document.removeEventListener("visibilitychange", again); };
+  }, [maintenanceOn, savedRbdId]);
+  const calcNodes = useMemo(() => (repairable ? applyTreePlan(nodes, treePlan) : nodes), [nodes, treePlan, repairable]);
+
   // Validate the current diagram against the backend (RePyability). A
   // position-independent signature lets us flag the result as stale once the
   // diagram changes.
   const sig = useMemo(
-    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }),
-    [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]
+    () => graphSignature({ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }),
+    [calcNodes, edges, rbdUnit, repairable, ccfGroups, costsField]
   );
   const validationStale = validation != null && sig !== checkedSig;
   const saveGraph = useMemo(
@@ -600,9 +636,9 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   const runValidate = useCallback(async () => {
     setValidating(true);
     try {
-      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField });
+      const v = await validateRbd({ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField });
       setValidation(v);
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
+      setCheckedSig(graphSignature({ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
       return v;
     } catch (err) {
       const v = {
@@ -614,12 +650,12 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         non_analytic_nodes: {},
       };
       setValidation(v);
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
+      setCheckedSig(graphSignature({ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
       return v;
     } finally {
       setValidating(false);
     }
-  }, [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]);
+  }, [calcNodes, edges, rbdUnit, repairable, ccfGroups, costsField]);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge({ ...params, ...EDGE_OPTIONS }, eds)),
@@ -836,7 +872,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         Object.assign(data, {
           model: null,
           spares: 1,
-          cold: false,
+          // Cold: a duty unit with a spare that starts when it's switched in,
+          // the usual standby (a hot one is plain active redundancy). The
+          // chance it starts shows on the block and in its dialog.
+          cold: true,
+          dormancy: 0,
           startProb: 1,
           standbyModel: null,
         });
@@ -1126,6 +1166,14 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     fitWhenMeasured(norm.nodes);
   }, [setNodes, setEdges, fitWhenMeasured]);
 
+  // Expand the sub-system blocks into their own blocks, wired as inside them (the server reads each
+  // sub-system's RBD): what a repairable diagram and its Maintenance plan need. Unsaved until Save.
+  const expandSubsystems = useCallback(async () => {
+    const got = await expandRbdSubsystems(saveGraph);
+    if (got.expanded?.length) applyGraph(got.graph);
+    return got.notes || [];
+  }, [saveGraph, applyGraph]);
+
   // Put a redundancy design (Design tab) on the canvas as it is — unsaved, and
   // keeping the user's layout — clearing the id counter past any new ids.
   const applyDesign = useCallback((graph) => {
@@ -1384,7 +1432,10 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     const item = choice?.items.find((i) => i.key === key);
     if (!item || item.reason) return;
     const n = idRef.current++;
-    const block = {
+    // Alongside one block: a copy of it (model and all), the usual "another
+    // of these" redundancy; anything else starts as an empty component.
+    const copy = key === "alongside" ? copyForAlongside(nodes, choice.ids[0], newId(nodes.find((x) => x.id === choice.ids[0])?.type || "component")) : null;
+    const block = copy ? { ...copy, ...HORIZONTAL } : {
       id: `c${n}`,
       type: "component",
       data: { label: `Component ${n}`, model: null, ...(repairable && allInstant(nodes) ? { instant_repair: true } : {}) },
@@ -1403,7 +1454,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     setConnectHint(
       key === "after" ? `Added ${block.data.label} after ${name(choice.ids[0])}, in series.`
         : key === "split" ? `Added ${block.data.label} on the line, in series.`
-        : key === "alongside" ? `Added ${block.data.label} alongside ${name(choice.ids[0])}, in parallel.`
+        : key === "alongside" ? `Added ${block.data.label}, a copy of ${name(choice.ids[0])}, alongside it in parallel. Change its model if it differs.`
         : `Added ${block.data.label} alongside the ${choice.ids.length} selected blocks, in parallel.`
     );
   }, [nodes, edges, repairable, network, newId, setNodes, setEdges, fitWhenMeasured]);
@@ -1470,6 +1521,25 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     [nodes]
   );
   const labelFor = (id) => nodes.find((n) => n.id === id)?.data?.label || id;
+  // The Maintenance plan: open it (on one block, from its dialog), edit a block's data in it, and
+  // fit the diagram again once the canvas has given the plan its room.
+  const refitSoon = useCallback(() => {
+    window.setTimeout(() => fitView(fitOptionsFor(wrapper.current?.clientWidth || window.innerWidth, embedded)), 80);
+  }, [fitView, embedded]);
+  const togglePlan = useCallback((on) => {
+    setPlanOpen((was) => (typeof on === "boolean" ? on : !was));
+    refitSoon();
+  }, [refitSoon]);
+  const openPlanFor = useCallback((id) => {
+    setNodes((nds) => nds.map((n) => (n.selected === (n.id === id) ? n : { ...n, selected: n.id === id })));
+    togglePlan(true);
+  }, [setNodes, togglePlan]);
+  const setPlanNode = useCallback((id, data) => {
+    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data } : n)));
+  }, [setNodes]);
+  const clearSelection = useCallback(() => {
+    setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)));
+  }, [setNodes]);
   // A network's connections are drawn without arrows (#160).
   const flowEdges = useMemo(() => (network ? undirectedEdges(edges) : edges), [network, edges]);
 
@@ -1509,7 +1579,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     <Tabs tabs={RBD_TABS} value={tab} onChange={setTab} label="Diagram views" className="rbd-tabs" />
     <div
       ref={builderRef}
-      className={"rbd-builder" + (full ? " is-full" : "") + builderWidthClass(builderW)}
+      className={"rbd-builder" + (full ? " is-full" : "") + (planOpen && repairable ? " has-plan" : "") + builderWidthClass(builderW)}
       style={{ display: tab === "builder" ? undefined : "none" }}
       role={full ? "region" : undefined}
       aria-label={full ? "Diagram editor, full screen" : undefined}
@@ -1588,6 +1658,12 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         {repairable && policies.safety_function && (
           <Chip onClick={() => setModal("safety")} title="The SIL this function must meet. Click to change it.">
             {policies.target_sil ? `Target SIL ${policies.target_sil}` : "Set a target SIL"}
+          </Chip>
+        )}
+        {repairable && (
+          <Chip tone={planOpen ? "accent" : "neutral"} onClick={() => togglePlan()} aria-pressed={planOpen}
+                title="Every block's planned work and running share in one table, under the diagram" data-wt="rbd-plan-chip">
+            Maintenance plan
           </Chip>
         )}
         {/* Common-cause groups: a chip that drops the list beneath it. */}
@@ -1708,6 +1784,12 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             </button>
           )}
           {repairable && (
+            <button className="ovm-item" role="menuitemcheckbox" aria-checked={planOpen} onClick={() => togglePlan()}
+                    title="Every block's planned work and running share in one table, under the diagram">
+              Maintenance plan{planOpen ? " ✓" : ""}
+            </button>
+          )}
+          {repairable && (
             <button
               className="ovm-item"
               onClick={() => setModal("costs")}
@@ -1753,10 +1835,10 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       {full && <FullScreenButton ref={fullBtnRef} full onClick={toggleFull} />}
     </div>
     <div
-      className={"rbd-canvas" + (canvasH && !full ? " is-sized" : "")}
+      className={"rbd-canvas" + (canvasH && !full && !(planOpen && repairable) ? " is-sized" : "")}
       data-wt="rbd-canvas"
       ref={wrapper}
-      style={canvasH && !full ? { height: canvasH } : undefined}
+      style={canvasH && !full && !(planOpen && repairable) ? { height: canvasH } : undefined}
     >
       <ReactFlow
         nodes={nodes}
@@ -1875,6 +1957,19 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
               <span className="rbd-menu-note">Input/output can’t be removed</span>
             ) : (
               <>
+                {treePlan?.blocks?.[originalId(nodes, menu.id)] && (() => {
+                  const pos = treePlan.blocks[originalId(nodes, menu.id)].position;
+                  const path = treePositionPath(pos.id, repairable ? "maintenance" : "models");
+                  return (
+                    <>
+                      <Link className="rbd-menu-link" to={path} title={`${pos.name}, in the Explorer`}
+                            onClick={(e) => { closeMenu(); pane?.onOpenFull?.(e, path); }}>
+                        Open in the tree
+                      </Link>
+                      <div className="rbd-menu-sep" />
+                    </>
+                  );
+                })()}
                 {(menu.nodeType === "component" ||
                   menu.nodeType === "series" ||
                   menu.nodeType === "parallel") && (
@@ -2073,6 +2168,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             setModalNodeId(null);
           }}
           onSubmit={setNodeModel}
+          tree={repairable ? treeRow(treePlan, modalNodeId) : null}
+          onTreeLink={pane?.onOpenFull || null}
+          onEditPlan={repairable && nodes.find((n) => n.id === modalNodeId)?.type === "component"
+            ? (payload) => { const id = modalNodeId; setNodeModel(payload); openPlanFor(id); }
+            : null}
         />
       )}
       {modal === "ccf" && ccfCtx && (
@@ -2188,6 +2288,22 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         />
       )}
     </div>
+    {planOpen && repairable && (
+      <RbdMaintenancePlan
+        nodes={nodes}
+        unit={rbdUnit}
+        crews={!!policies.repair_crews}
+        groupNames={groupNames}
+        selected={selectedComponentIds}
+        onChange={setPlanNode}
+        onShowAll={clearSelection}
+        onCrewsAndGroups={() => setModal("crews")}
+        onClose={() => togglePlan(false)}
+        tree={treePlan}
+        onTreeLink={pane?.onOpenFull || null}
+        onExpand={expandSubsystems}
+      />
+    )}
     </div>
     <div
       className="rbd-calc-panel"
@@ -2195,7 +2311,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     >
       {network ? (
         <RbdNetworkPanel
-          graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+          graph={{ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
           active={tab === "calc"}
           name={savedRbdName}
           onNetworkChange={(n) => setMission((m) => ({ ...m, network: n }))}
@@ -2203,7 +2319,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         />
       ) : (
       <RbdCalculator
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        graph={{ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
         stale={validationStale}
         onValidate={runValidate}
@@ -2220,7 +2336,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       />
       )}
       <RbdPhasesResult
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        graph={{ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         active={tab === "calc"}
         name={savedRbdName}
         onEdit={savedRbdReadOnly ? null : () => setModal("phases")}
@@ -2232,7 +2348,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     >
       {network ? <NetworkOnlyNote what="A fault tree" onCalc={() => setTab("calc")} /> : (
       <RbdFaultTree
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        graph={{ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
         stale={validationStale}
         active={tab === "tree"}
@@ -2247,7 +2363,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     >
       {network ? <NetworkOnlyNote what="Redundancy design" onCalc={() => setTab("calc")} /> : (
       <RbdDesignPanel
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        graph={{ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         onApply={applyDesign}
         onBuild={toBuilder}
         readOnly={savedRbdReadOnly}
@@ -2266,7 +2382,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     >
       {network ? <NetworkOnlyNote what="Target allocation" onCalc={() => setTab("calc")} /> : (
       <RbdTargets
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        graph={{ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         onBuild={toBuilder}
       />
       )}

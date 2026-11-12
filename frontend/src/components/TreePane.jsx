@@ -10,6 +10,8 @@ import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel, phonePosi
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN, ROLE } from "../rcmWorksheet.js";
 import { isDeleteKey } from "../treeDelete.js";
+import { badge as redundancyBadge } from "../redundancy.js";
+import "./RedundancyPane.css";
 
 // The asset tree as a second-level menu beside the site menu: the outline
 // (indent, arrow, name, at most three markers). Over it, two lines: the title
@@ -299,6 +301,11 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
         <Highlight text={label(r)} query={query} />
       </span>
       {r.type === "cause" && <span className="tp-on" title={causeTip(r)}>on {r.ref.on}</span>}
+      {/* In a redundancy set (Redundancy inside… on its parent): "1 of 2", or "Standby set". */}
+      {r.type === "pos" && r.ref?.redundancy && (() => {
+        const b = redundancyBadge(r.ref.redundancy);
+        return <span className="redundancy-badge" title={b.title}><span className="sr-only">Redundancy: </span>{b.text}</span>;
+      })()}
       {/* A check's task: what's done when it finds it, quietly after its name (the rows are one line high). */}
       {r.type === "task" && r.ref.on_found && !phone && (
         <span className="tp-on tp-found" title={`${ROLE[r.ref.outcome]?.then || "Then, if found:"} ${r.ref.on_found}`}>
@@ -449,7 +456,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
             scroll and the tree column slid out of sight. */}
         {!table.cols.length ? null : span != null && span !== false && r.type !== "meas" && r.type !== "pmodel" ? (
           <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
-            {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={span}>{span}</span>}
+            {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={typeof span === "string" ? span : undefined}>{span}</span>}
           </div>
         ) : table.cols.map((c) => (
           <div key={c.id} role="gridcell" className={"rw-c" + (c.num ? " num" : "") + ` mt-c-${c.id}`} style={{ width: table.widths[c.id] }}>

@@ -68,6 +68,17 @@ REST_ONLY = {
 }
 
 
+def rest_only(tools: list) -> dict:
+    """REST_ONLY, with Reliafy Maintenance's field-report routes
+    (backend/routers/field_reports.py) and its offline-device routes
+    (backend/routers/maintenance_sync.py) for the callers who have it."""
+    if not any(t.name == "maintenance" for t in tools):
+        return dict(REST_ONLY)
+    from backend.routers import field_reports, maintenance_sync
+
+    return {**REST_ONLY, **field_reports.REST_ONLY, **maintenance_sync.REST_ONLY}
+
+
 # ---- the registry --------------------------------------------------------------
 
 def _tables() -> dict[str, tuple[str, dict]]:
@@ -289,7 +300,8 @@ async def list_tools(request: Request) -> JSONResponse:
     """The tools and actions this caller may call, each with its path."""
     user = await _caller(request)
     tools = []
-    for t in await visible_tools(user):
+    visible = await visible_tools(user)
+    for t in visible:
         selector = _selector_of(t)
         acts = actions_of(t)
         tools.append({
@@ -299,7 +311,7 @@ async def list_tools(request: Request) -> JSONResponse:
                          "optional": v["optional"], "doc": v["doc"]} for a, v in acts.items()],
         })
     return JSONResponse(content={"api": TOOLS_API, "tools": tools,
-                                 "rest_only": [{"name": k, **v} for k, v in REST_ONLY.items()]})
+                                 "rest_only": [{"name": k, **v} for k, v in rest_only(visible).items()]})
 
 
 @router.get("/openapi.json")
@@ -516,6 +528,12 @@ def build_spec(tools: list) -> dict:
                       "404": _ERROR, "409": _ERROR, "410": _ERROR, "413": _ERROR, "429": _ERROR},
         "x-reliafy-rest-only": True,
     }}
+    if any(t.name == "maintenance" for t in tools):
+        # Field reports and the offline-device routes (REST only): for the callers who have Reliafy Maintenance.
+        from backend.routers import field_reports, maintenance_sync
+
+        paths.update(field_reports.spec_paths(_ERROR))
+        paths.update(maintenance_sync.spec_paths(_ERROR))
     return {
         "openapi": "3.1.0",
         "info": {

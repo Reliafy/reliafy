@@ -9,8 +9,8 @@ export const STRATEGY_TOOLS = {
     help: { walkthrough: "replacement", guide: "optimal-replacement-interval" },
   },
   calendar: {
-    kind: "optimal_replacement",
-    noun: "replacement analyses",
+    kind: "calendar_replacement",
+    noun: "shutdown-calendar analyses",
     help: { guide: "optimal-replacement-interval" },
   },
   compare: { kind: "compare_two", noun: "comparisons", help: { guide: "compare-groups" } },
@@ -32,23 +32,39 @@ function modelMissing(model) {
   return null;
 }
 
-// Optimal replacement: the model and both costs. null when ready.
-export function replacementMissing({ model, planned, unplanned }) {
+// The time unit a Strategy result is in: a saved model's own unit, else the
+// one typed beside typed parameters. Never a default: a model fitted in days
+// read as hours gives an answer 24 times too short. null when there is none.
+export function strategyUnit(model, typed) {
+  const own = String(model?.unit ?? "").trim();
+  if (own) return own;
+  const t = String(typed ?? "").trim();
+  return t || null;
+}
+
+// Typed parameters carry no unit, so one must be entered (no default).
+function unitMissing(model, unit) {
+  if (strategyUnit(model, unit)) return null;
+  return "Enter the unit of the model's times (e.g. days).";
+}
+
+// Optimal replacement: the model, both costs and the model's time unit. null when ready.
+export function replacementMissing({ model, planned, unplanned, unit }) {
   const m = modelMissing(model);
   if (m) return m;
   if (blank(planned) && blank(unplanned)) return "Enter both costs.";
   if (blank(planned)) return "Enter the planned replacement cost.";
   if (blank(unplanned)) return "Enter the unplanned (failure) cost.";
-  return null;
+  return unitMissing(model, unit);
 }
 
 // Failure finding: the model and a usable target availability (``availCheck``
 // is percent.js's checkPercent of the field; the field itself says what's
 // wrong with a value). null when ready.
-export function failureFindingMissing({ model, availability, availCheck }) {
+export function failureFindingMissing({ model, availability, availCheck, unit }) {
   const m = modelMissing(model);
   if (m) return m;
   if (blank(String(availability ?? "").trim())) return "Enter a target availability.";
   if (availCheck && availCheck.state !== "ok") return "Check the target availability.";
-  return null;
+  return unitMissing(model, unit);
 }

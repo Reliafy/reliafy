@@ -51,7 +51,7 @@ When the bound falls short, plan a test. On the model's page, press **Use this
 model** and choose **Plan a demonstration test**: it opens
 [Test planning](/strategy/test-planning) on its **Demonstration** tab with the
 model's unit and its Weibull shape, *β from Bearing life — Weibull (sample):
-2.5, 95% interval 1.88–3.32*. Set **Requirement** to **B-life (e.g. B10 ≥ a
+2.5, 90% interval 1.96–3.17*. Set **Requirement** to **B-life (e.g. B10 ≥ a
 life)**, then the **B-life (% failed)** to **10**, the **Life required** to
 **500** and the **Confidence (%)** to **90**: a pass/fail test of **B10 ≥ 500
 hours at 90%**, solving for the number of units to test.
@@ -123,6 +123,11 @@ for a requirement written as a reliability ("R ≥ 95% over 2,000 hours"), or th
 **MTBF (constant rate)** test type for an MTBF requirement. **Solve for** can
 also give the test time per unit for a number of units you already have.
 
+## Run the plan in Python
+
+Each test plan has a **Download as Python** button under its answer: a script that works the plan out with
+SurPyval's test-planning functions from the inputs you gave, and prints the same numbers.
+
 ## Other kinds of test
 
 A demonstration test answers one question: *does it meet the target?* The other
@@ -135,8 +140,10 @@ own numbers. Every plan is free.
 - **[Sequential test](/strategy/test-planning/sequential)**: the same question, but you check after every failure and
   stop as soon as the answer is clear. Use it when test time is dear. The
   example (show an MTBF of 1,000 hours, where a good design has 2,000) decides a
-  good design after about 10,800 hours of testing on average, against 20,100
-  for a fixed-length test with the same risks. The accept and reject lines tell
+  good design after about 12,800 hours of testing on average, against 20,100
+  for a fixed-length test with the same risks. The headline says the confidence
+  the test gives as run: the lines are drawn so that stopping at the longest
+  test still keeps the confidence you asked for. The accept and reject lines tell
   you, failure by failure, whether to stop.
 - **[Life test](/strategy/test-planning/life)**: how precisely a test will *estimate* a B-life or the mean life,
   rather than pass or fail it. Use it to size a test before you fit a model to
@@ -157,7 +164,9 @@ own numbers. Every plan is free.
 The precision a life or accelerated plan quotes is an approximation that holds
 for large tests. **Simulate this test** (Pro) checks it: Reliafy runs your exact
 test hundreds of times, fits each result, and shows how far the estimates
-spread.
+spread. It also counts the simulated tests that ended with too few failures to
+fit at all: when more than one in ten do, it calls the plan weak, however
+tight the others look.
 
 Old links to the demonstration test page still work: they open the
 **Demonstration** tab.

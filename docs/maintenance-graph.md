@@ -845,6 +845,45 @@ the node with who and when (`history`), the way a work order keeps its notes.
   `Maintenance._report_scope`, which the list reads and the tree roll-up
   (`open_reports` on each row and inside it) follows.
 
+## Field reports: what someone saw, as they recorded it
+
+A field report (`captures.py`; "capture" in code) is a bundle of notes,
+photos, sound recordings and PDFs made in the field, often offline, and sent
+later. It may be about positions, locations, items or work orders. It is a
+plain data dump: it changes nothing else and proposes nothing; a person or
+their agent acts on it with the ordinary tools and marks it `parsed`, then
+`done`.
+
+- `Capture` {number, title, status (new, parsed, done), status_note,
+  status_by, status_on, taken_at (device time with offset), device_tz,
+  received_at, created_on, by, by_name, via, has_notes, has_location,
+  media_expected, about_missing, clock_suspect, media ([{id, kind (audio,
+  file), mime, size, sha256, name, duration_s, added_on}]), keep, expires_on,
+  expired, expired_on, expired_reason}.
+- `Capture ABOUT Position | Location | Item | WorkOrder` (any number; an id
+  that no longer exists when the report arrives is kept in `about_missing`
+  rather than refusing the report).
+- `Photo OF Capture`: a report's photo is an ordinary photo (`photo.added`,
+  `via: report`), cleaned the same way, so showing it on the pump it is of is
+  `photo.linked` or a move, never a copy.
+- **Content is outside the log.** Notes, the location and every byte live in
+  a content store (MongoDB or a folder); the events carry only what a report
+  is. That is what lets retention, or a privacy request, delete them: the log
+  is never rewritten.
+- **Sent twice, recorded once.** The report's id and each attachment's id are
+  made by the sender (a UUID). Creating a report that exists answers that
+  report; an attachment goes up in pieces by offset and resumes from what the
+  content store holds; the projector ignores a second `capture.media_added`
+  for the same id.
+- **Retention.** `expires_on` is 90 days after the report was made, or 30
+  days after it was marked done if sooner; none while `keep`. The daily run
+  emits `capture.expired` and deletes the content. A photo that also shows
+  somewhere else is taken off the report (`photo.unlinked`) and stays; the
+  rest are removed (`photo.removed`).
+
+Events: `capture.created`, `capture.media_added`, `capture.status`,
+`capture.kept`, `capture.expired`.
+
 ## Products: design trees and the items built from them
 
 For a user who designs and builds things, not only runs a plant. A product is
@@ -1160,6 +1199,26 @@ how. Each task carries its LSA record: what doing it needs.
   out and counted).
 - **Copies.** Copying a position copies its tasks' records, less the tools'
   `point_id` (the copy has no points yet).
+
+## A task's cost each time
+
+One figure per task, kept with the task on its position, so the RCM reads it
+rather than asking for it again (`backend/maintenance/task_costs.py`).
+
+- **Typed:** `task.cost_set {id, cost}` sets the task node's `cost` (a number;
+  `null` clears it). It stands in place of the LSA's figure.
+- **From the LSA:** each labour line's people × hours at its trade's hourly rate
+  (a line with no trade takes the task's), plus spares at their part's
+  `unit_cost` and consumables' `cost`. `trade.rate_set {id, trade, rate}` puts
+  a `TradeRate` node (id from the trade's name, case and spacing aside, so a
+  trade has one rate; `rate: null` clears it). What can't be priced is listed
+  (`missing_rates`, `missing_prices`) and the figure is marked partial.
+- **Reads:** every task view and task-table row has `cost` {amount, source
+  (`typed` | `lsa` | null), typed, lsa}. A failure mode's tasks in the RCM
+  reads carry `cost` {amount, source, complete}. A decision whose linked
+  saved calculation (on-condition, failure-finding, optimal replacement) used
+  another figure for its task than the task has now gets `cost_changed`; the
+  decision keeps its saved figures until it's calculated again.
 
 ## Settings, and readings taken at a work order
 

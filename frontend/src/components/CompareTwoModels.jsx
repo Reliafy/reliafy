@@ -8,28 +8,10 @@ import { getColumns, compareTwoModels, SPREADSHEET_ACCEPT } from "../api.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { modelFromSearch, plainName } from "../modelNext.js";
+import { guessLifeColumns } from "../datasetGuess.js";
+import { columnFacts } from "../lifeData.js";
+import { parseColumn, statusReading } from "../compareData.js";
 
-
-// Minimal CSV parse: pull a numeric column (and an optional 0/1 censor column).
-function parseColumn(text, col, censorCol) {
-  const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim());
-  const headers = lines[0].split(",").map((s) => s.trim());
-  const xi = headers.indexOf(col);
-  const ci = censorCol ? headers.indexOf(censorCol) : -1;
-  const x = [];
-  const c = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split(",");
-    const v = Number(cells[xi]);
-    if (!Number.isFinite(v)) continue;
-    x.push(v);
-    if (ci >= 0) {
-      const cv = Number(cells[ci]);
-      c.push(Number.isFinite(cv) ? cv : 0);
-    }
-  }
-  return ci >= 0 ? { x, c } : { x };
-}
 
 // Editor for one side of the comparison: a parametric non-repairable model, or a CSV of
 // raw times fit non-parametrically (Kaplan–Meier).
@@ -47,14 +29,18 @@ function SideEditor({ tag, side, onChange, wanted = null, onUnit = null }) {
     if (!f) return;
     try {
       const cols = await getColumns(f);
+      // The time and status columns guessed as the fit's Data step guesses them.
+      const facts = columnFacts(cols);
+      const g = guessLifeColumns((cols.columns || []).map((name) => ({ name, ...facts[name] })));
       set({
         file: f,
         columns: cols.columns,
-        timeCol: cols.columns[0] || "",
-        censorCol: "",
+        facts,
+        timeCol: g.x || cols.columns[0] || "",
+        censorCol: g.c || "",
       });
     } catch {
-      set({ file: f, columns: [], timeCol: "", censorCol: "" });
+      set({ file: f, columns: [], facts: {}, timeCol: "", censorCol: "" });
     }
   };
 
@@ -116,13 +102,18 @@ function SideEditor({ tag, side, onChange, wanted = null, onUnit = null }) {
                 />
               </label>
               <label className="calc-t">
-                <span>Censor column (optional)</span>
+                <span>Failed or still running? (optional)</span>
                 <Select
                   value={side.censorCol}
                   onChange={(v) => set({ censorCol: v })}
-                  options={[{ value: "", label: "— none —" }, ...side.columns]}
+                  options={[{ value: "", label: "— every row failed —" }, ...side.columns]}
                 />
               </label>
+              {side.censorCol && statusReading(side.facts?.[side.censorCol]?.values, side.censorCol) && (
+                <p className="hint" role="status">
+                  Read as: {statusReading(side.facts[side.censorCol].values, side.censorCol)}.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -139,6 +130,7 @@ const EMPTY_SIDE = (label) => ({
   columns: [],
   timeCol: "",
   censorCol: "",
+  facts: {},
 });
 
 async function buildSpec(side, fallback) {
@@ -160,6 +152,8 @@ async function buildSpec(side, fallback) {
     kind: "parametric",
     distribution_id: m.distribution_id,
     params: m.params,
+    // A saved model: its own fit gives the B10's lower bound.
+    ...(m.source === "saved" && m.modelId ? { model_id: m.modelId } : {}),
   };
 }
 

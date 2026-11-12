@@ -7,6 +7,7 @@
 // the page is components/LsaPanel.jsx, a task's LSA components/LsaTask.jsx.
 
 import { toCsv } from "./csv.js";
+import { formatCost } from "./money.js";
 import { OUTCOME_LABEL, triggerText, whenText } from "./rcmWorksheet.js";
 
 const DAY = 86400000;
@@ -133,11 +134,13 @@ export const TASK_COLUMNS = [
   { id: "position", label: "Position", width: 170, title: "The position or place the task is on" },
   { id: "mode", label: "Failure mode", width: 230, title: "The failure mode it prevents, with its function › functional failure" },
   { id: "task", label: "Task", width: 240 },
+  { id: "from", label: "From", width: 200, title: "Where the task came from: an RCM decision (the failure modes it serves) or added directly (and why)" },
   { id: "kind", label: "Kind", width: 140, title: "On condition, fixed interval or failure finding" },
   { id: "interval", label: "Interval", width: 130 },
   { id: "trade", label: "Trade", width: 110 },
   { id: "due", label: "Next due", width: 110 },
   { id: "package", label: "Package", width: 200, title: "The work package it's done in; blank when it's done on its own" },
+  { id: "cost", label: "Cost each time", width: 130, num: true, title: "What the task costs each time it's done: typed on the task, or from its LSA (labour at trade rates, spares, consumables)" },
   { id: "hours", label: "Labour", width: 150, title: "Hours by trade: each line's people × hours (hover for the lines)" },
   { id: "people", label: "People", width: 74, num: true, title: "How many people the work needs" },
   { id: "tools", label: "Tools", width: 170, title: "Tools and instruments (hover for the full list)" },
@@ -146,6 +149,16 @@ export const TASK_COLUMNS = [
   { id: "method", label: "Method", width: 180, title: "How it's done" },
 ];
 export const DEFAULT_TASK_COLUMNS = TASK_COLUMNS.map((c) => c.id);
+// The Maintenance tab (Derryn, 12 Nov 2026: "all maintenance tasks", from RCM or added
+// directly, with their costs) is the same table with the planning columns first; the
+// LSA's needs (labour, tools, spares…) stay in its chooser.
+export const MAINTENANCE_COLUMNS = ["position", "task", "from", "interval", "cost", "due", "package", "kind"];
+// The Maintenance tab draws its columns in that order (the cost beside the interval, in view
+// without scrolling); any other column chosen follows, in the table's own order.
+export function maintenanceOrder(columns) {
+  const rank = (id) => { const i = MAINTENANCE_COLUMNS.indexOf(id); return i < 0 ? MAINTENANCE_COLUMNS.length : i; };
+  return columns.map((c, i) => [c, i]).sort((a, b) => rank(a[0].id) - rank(b[0].id) || a[1] - b[1]).map(([c]) => c);
+}
 // A product's design (its maintenance programme) has no due dates and no
 // packages: its tasks fall due and are packaged into visits on the items built
 // from it. Its LSA table leaves those columns out.
@@ -174,6 +187,8 @@ export function cellText(t, col) {
     case "trade": return t.trade || "";
     case "due": return t.next_due || "";
     case "package": return t.package?.name || "";
+    case "from": return fromText(t);
+    case "cost": return t.cost?.amount != null ? money(t.cost.amount) : "";
     case "hours": return t.resources?.labour_hours ? labourText(t) : "";
     case "people": return t.resources?.people ? String(t.resources.people) : "";
     case "tools": case "spares": case "consumables":
@@ -181,6 +196,66 @@ export function cellText(t, col) {
     case "method": return t.resources?.method || "";
     default: return "";
   }
+}
+
+// Where a task came from, in words: "RCM: Seal leaks +1" (the failure modes it serves) for a
+// decision's task; "Added directly: law, regulation or standard (AS 1851)" for one added by
+// hand, which may serve failure modes too ("… · prevents Seal leaks").
+export const SOURCE_WORDS = {
+  manual: "own practice", oem: "maker's recommendation", statutory: "law, regulation or standard", other: "other",
+};
+export function fromRcm(t) {
+  return !t.source || t.source === "rcm";
+}
+export function fromText(t) {
+  const modes = (t.modes || []).map((m) => m.text).filter(Boolean);
+  const listed = modes.length ? `${modes[0]}${modes.length > 1 ? ` +${modes.length - 1}` : ""}` : "";
+  if (fromRcm(t)) return listed ? `RCM: ${listed}` : "RCM";
+  const why = SOURCE_WORDS[t.source] || "";
+  const head = `Added directly${why ? `: ${why}` : ""}${t.reference ? ` (${t.reference})` : ""}`;
+  return listed ? `${head} · prevents ${listed}` : head;
+}
+
+// Money as people read it, in the workspace's currency: "$1,250", "$124.5" (4 significant figures).
+export function money(v) {
+  return Number.isFinite(v) ? formatCost(v, undefined, { sig: 4 }) : "";
+}
+
+// Where a task's cost came from, in words, and what's missing from it.
+//   typed: "Typed on the task."; lsa: "From its LSA: labour $270, spares and consumables $124.50."
+//   (and "Partial: no rate for Electrician; no price for Gasket." when part of it couldn't be
+//   priced); none: "Not set yet: …".
+export function costWhere(cost) {
+  if (!cost || cost.amount == null) {
+    const missing = cost?.lsa?.missing_rates?.length ? ` Its labour needs a rate for ${cost.lsa.missing_rates.join(", ")}.` : "";
+    return `Not set yet: type what it costs each time, or price its LSA.${missing}`;
+  }
+  if (cost.source === "typed") return "Typed on the task.";
+  const l = cost.lsa || {};
+  const parts = [
+    l.labour_cost != null && `labour ${money(l.labour_cost)}`,
+    l.materials_cost != null && `spares and consumables ${money(l.materials_cost)}`,
+  ].filter(Boolean);
+  const gaps = [
+    l.missing_rates?.length && `no rate for ${l.missing_rates.join(", ")}`,
+    l.missing_prices?.length && `no price for ${l.missing_prices.join(", ")}`,
+  ].filter(Boolean);
+  return `From its LSA: ${parts.join(", ")}.${gaps.length ? ` Partial: ${gaps.join("; ")}.` : ""}`;
+}
+
+// The Maintenance tab's foot: what the tasks shown cost each time, together, and how many have
+// no cost yet ("$1,240 each time for 5 tasks; 2 have no cost yet").
+export function costFoot(tasks = []) {
+  const priced = tasks.filter((t) => t.cost?.amount != null);
+  const none = tasks.length - priced.length;
+  const sum = priced.reduce((n, t) => n + t.cost.amount, 0);
+  const head = priced.length ? `${money(sum)} each time for ${priced.length === tasks.length ? "them all" : `the ${priced.length} with a cost`}` : "No costs yet";
+  return none && priced.length ? `${head}; ${none} ${none === 1 ? "has" : "have"} no cost yet.` : `${head}.`;
+}
+
+// The Maintenance tab shows the row's own tasks unless "Include what's inside" is on.
+export function tasksHere(tasks, key, below = false) {
+  return below ? tasks : tasks.filter((t) => t.subject?.id === key);
 }
 
 // The first names and how many more: "Torque wrench, Multimeter +1".
@@ -232,6 +307,7 @@ function sortValue(t, col) {
   if (col === "interval") return t.on_event || t.interval == null ? null : t.interval * (DAYS[t.unit] ?? 1);
   if (col === "hours") return t.resources?.labour_hours || null;
   if (col === "people") return t.resources?.people || null;
+  if (col === "cost") return t.cost?.amount ?? null;
   const v = cellText(t, col);
   return v === "" ? null : v.toLowerCase();
 }
@@ -429,7 +505,7 @@ export function lsaCsv(tasks) {
     const r = t.resources || {};
     const names = (kind) => (r[kind] || []).map((x) => lineText(kind, x)).join("; ");
     return [
-      ...cols.map((c) => (c.id === "hours" ? r.labour_hours || "" : c.num ? (cellText(t, c.id) === "" ? "" : Number(cellText(t, c.id))) : cellText(t, c.id))),
+      ...cols.map((c) => (c.id === "hours" ? r.labour_hours || "" : c.id === "cost" ? t.cost?.amount ?? "" : c.num ? (cellText(t, c.id) === "" ? "" : Number(cellText(t, c.id))) : cellText(t, c.id))),
       names("labour"), names("tools"), names("spares"), names("consumables"),
       r.duration_hours ?? "", r.access?.downtime_hours ?? "", (r.access?.permits || []).join("; "), t.instructions || "",
     ];
@@ -492,4 +568,11 @@ export function sectionDraft(kind, resources = {}) {
   if (kind === "method") return resources.method || "";
   if (kind === "duration_hours") return s(resources.duration_hours);
   return "";
+}
+
+// A task with where it is, so six "Check the motor" tasks can be told apart:
+// "Check the motor (Pump 3 › Drive motor)".
+export function taskOnText(t) {
+  const on = [t?.subject?.within, t?.subject?.name].filter(Boolean).join(" › ");
+  return on ? `${t.name} (${on})` : t?.name || "";
 }

@@ -669,6 +669,8 @@ async function main() {
         await page.getByRole("radio", { name: /Bearing fatigue test/ }).click();
         await page.locator(".dsp-reads").waitFor({ timeout: 15000 }); await wait(600);
       } },
+    // The Data step: the first rows, then x (with its range), c, n, tl, tr and failure mode.
+    { file: "fit-04-data-step.png", url: "/models/new?dataset=sample-ds-pumps", settle: 1500 },
     { file: "fit-02-result.png", url: `/models/m/${S.bearings}`, settle: 2500 },
     { file: "fit-03-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000, act: modelCalculator },
     // --- Censored data (the pump model is right-censored) ---
@@ -820,7 +822,7 @@ async function main() {
     // site (on its Diagnostics tab) ---
     { file: "crisk-01-model-step.png", url: "/models/new?dataset=sample-ds-pump-modes", settle: 1500,
       async act(page) {
-        await chooseOption(page, "Failure mode (optional)", /^failure_mode/);
+        await chooseOption(page, "Failure mode", /^failure_mode/);
         await page.getByRole("button", { name: /^Next$/ }).click(); await wait(1200);
       } },
     { file: "crisk-02-incidence.png", url: "/models/m/sample-model-pump-modes", settle: 2500 },
@@ -1034,8 +1036,8 @@ async function main() {
         await page.getByLabel("load changes the path").check();
         await wait(800);
       } },
-    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000, noTree: true },
-    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000, noTree: true,
+    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000 },
+    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000,
       async act(page) {
         // Risk now shows the riskiest unit beside the table (no scrolling: the tab fits the screen).
         await page.locator(".joint-unit-sum").waitFor({ timeout: 20000 }); await wait(2000);
@@ -1136,6 +1138,12 @@ async function main() {
         await scrollTo(page.locator(".rbd-production"), 40);
       } },
     // --- Costs, intervals and what to improve ---
+    { file: "costs-00-plan.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
+      async act(page) {
+        await page.locator('[data-wt="rbd-plan-chip"]').click();
+        await page.locator(".rbd-plan-table").waitFor({ timeout: 20000 }); await wait(1000);
+        await scrollTo(page.locator(".rbd-plan"), 300);
+      } },
     { file: "costs-01-block.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-comp", { hasText: "Pump A" }).dblclick(); await wait(1000);
@@ -1173,9 +1181,8 @@ async function main() {
   const failed = [];
   const skipped = [];
 
-  // The model page keeps its Risk now tab only where the account has no asset
-  // tree (with one, risk now is in the Explorer by Classes): those shots answer
-  // the access check as such an account would get it.
+  // A shot of what an account without the asset tree sees answers the access
+  // check as such an account would get it (`noTree`).
   const NO_TREE = "**/api/maintenance/access";
   const noTree = (route) => route.fulfill({ json: { allowed: false } });
 

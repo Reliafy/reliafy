@@ -12,7 +12,7 @@ reliability-growth model — or Duane, HPP or the Cox-Lewis log-linear NHPP),
 two **trend tests** (Laplace and MIL-HDBK-189C) and a **goodness-of-fit** test
 (Cramér-von Mises) — and derive the ROCOF / MTBF at the end of observation with
 confidence bounds, the demonstrated MTBF, and a growth verdict from the growth
-parameter's 95% interval (#81).
+parameter's 90% interval (#81).
 
 Like the other fits, live surpyval objects can't be pickled, so they're kept in
 a bounded in-memory store and re-fitted on demand from the dataset + spec.
@@ -21,7 +21,6 @@ a bounded in-memory store and re-fitted on demand from the dataset + spec.
 from __future__ import annotations
 
 import uuid
-import warnings
 from collections import OrderedDict
 
 import numpy as np
@@ -32,6 +31,7 @@ from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval.recurrent import CoxLewis, CrowAMSAA, Duane, HPP, NonParametricCounting
 from backend.errors import client_message
+from backend.warn_capture import ignore_warnings
 
 # Parametric recurrence models offered: the power-law (Crow-AMSAA, Duane) and
 # constant (HPP) intensities, and the Cox-Lewis log-linear intensity
@@ -47,7 +47,7 @@ MODEL_CHOICES = list(MODELS.keys())
 FROM_PARAMS_MODELS = ("crow_amsaa", "duane")
 
 # Each model's growth parameter and its no-trend value. The growth verdict is
-# "deteriorating" when the parameter's 95% interval lies wholly above that
+# "deteriorating" when the parameter's 90% interval lies wholly above that
 # value, "improving" when wholly below, else "stable" (#81). Duane's shape is
 # SurPyval's ``alpha``; Cox-Lewis's ``beta`` is a log-linear slope (0 = flat).
 _GROWTH_PARAM = {
@@ -55,7 +55,7 @@ _GROWTH_PARAM = {
     "duane": {"param": "alpha", "symbol": "β", "what": "growth shape", "no_trend": 1.0},
     "cox_lewis": {"param": "beta", "symbol": "β", "what": "log-linear slope", "no_trend": 0.0},
 }
-CI_LEVEL = 0.95            # parameter, ROCOF and MTBF intervals
+CI_LEVEL = 0.90            # parameter, ROCOF, MTBF and MCF intervals, two-sided (backend.levels)
 DEMONSTRATED_LEVEL = 0.90  # the one-sided demonstrated-MTBF bound (MIL-HDBK-189C's usual level)
 _CVM_BUDGET = 400_000      # events x bootstrap replicates for the Cramér-von Mises p-value (about 4 s)
 _CVM_MAX_BOOT, _CVM_MIN_BOOT = 200, 40
@@ -215,6 +215,7 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
         payload, live = extra.fit(df, mapping, model_id, unit, gof_test=gof_test, options=options,
                                   windows=windows)
         _add_marks(payload, df, mapping)
+        _record_end_note(payload, df, mapping, windows)
         return payload, store_live(live)
     if model_id not in MODELS:
         choices = MODEL_CHOICES + list(extra.EXTRA_MODELS)
@@ -242,7 +243,27 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     if gaps:
         payload["windows"] = gaps
     _add_marks(payload, df, mapping, inputs=None if gaps else inputs)
+    _record_end_note(payload, df, mapping, windows)
     return payload, store_live(para)
+
+
+RECORD_END_NOTE = ("No end of record is mapped, so each system's record is taken to end at its last failure. That "
+                   "makes failures look closer together at the end than they were: map the column that says how "
+                   "far each system's records go (End of record) for a fair trend and MTBF.")
+
+
+def _record_end_note(payload: dict, df: pd.DataFrame, mapping: dict, windows=None) -> None:
+    """Warn when nothing says where each system's record ends: no window
+    (``tr``), no window columns or typed windows, and no end-of-record row
+    (``c = 1``). The fit then ends each system at its last failure."""
+    if mapping.get("tr") or mapping.get("t") or mapping.get("ws") or mapping.get("we") or windows:
+        return
+    col = mapping.get("c")
+    if col and col in df.columns:
+        flags = pd.to_numeric(df[col], errors="coerce")
+        if (flags == 1).any():
+            return
+    payload.setdefault("warnings", []).append({"id": "no_record_end", "text": RECORD_END_NOTE})
 
 
 def _fit_nhpp(model_id: str, inputs: dict):
@@ -257,10 +278,15 @@ def _fit_nhpp(model_id: str, inputs: dict):
 
     fitter = MODELS[model_id]["fitter"]
     inputs = observed(inputs)[0]
+    if model_id == "duane":
+        para = fitter.fit(**inputs)
+        if duane_needs_twin():
+            _attach_crow_twin(para, inputs)
+        return para
     if model_id != "crow_amsaa":
         return fitter.fit(**inputs)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)  # an unverified maximum is retried below
+    with ignore_warnings(UserWarning):
+        # an unverified maximum is retried below
         para = fitter.fit(**inputs)
     if getattr(para, "maximum", "verified") == "verified":
         return para
@@ -273,8 +299,7 @@ def _fit_nhpp(model_id: str, inputs: dict):
     if inputs.get("windows"):
         scaled["windows"] = {k: [(a / scale, b / scale) for a, b in v] for k, v in inputs["windows"].items()}
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             unit_fit = fitter.fit(**scaled)
         alpha, beta = (float(v) for v in np.asarray(unit_fit.params, dtype=float))
         if not (np.isfinite(alpha) and np.isfinite(beta)):
@@ -283,6 +308,89 @@ def _fit_nhpp(model_id: str, inputs: dict):
     except Exception:  # noqa: BLE001 - keep the first fit
         return para
     return retry if -retry.neg_ll() >= -para.neg_ll() or not np.all(np.isfinite(para.params)) else para
+
+
+# ---- Duane intervals on SurPyval 0.26 and earlier ---------------------------
+#
+# WORKAROUND, remove when the app adopts the next SurPyval release. SurPyval
+# 0.26's Duane fit takes its numerical Hessian with a step far larger than
+# its rate constant b (about 5e-6 in hours), so its standard errors come out
+# about 5x too small: on a 12-truck fleet its 90% interval on the growth
+# shape read 1.51-1.59 where the likelihood gives 1.34-1.79. Duane is the
+# same power-law process as Crow-AMSAA (Duane's alpha is Crow-AMSAA's beta,
+# and b = scale^-beta), with the same likelihood, so the Crow-AMSAA fit to
+# the same data gives Duane's covariance exactly. SurPyval's dev branch
+# fixes the step; the gate below turns this off for any later release.
+
+_DUANE_FIXED_IN = (0, 27)
+
+
+def duane_needs_twin() -> bool:
+    """Whether the installed SurPyval still has the Duane Hessian fault."""
+    from importlib.metadata import version
+
+    try:
+        parts = tuple(int(p) for p in version("surpyval").split(".")[:2])
+    except Exception:  # noqa: BLE001 - an unreadable version: keep the workaround
+        return True
+    return parts < _DUANE_FIXED_IN
+
+
+def _attach_crow_twin(para, inputs: dict) -> None:
+    """Keep the Crow-AMSAA fit to the same data on a Duane fit, for its
+    intervals (see above). Nothing is attached if that fit fails."""
+    try:
+        with ignore_warnings(), np.errstate(all="ignore"):
+            twin = CrowAMSAA.fit(**inputs)
+        if np.all(np.isfinite(np.asarray(twin.params, dtype=float))):
+            para._reliafy_crow_twin = twin
+    except Exception:  # noqa: BLE001 - keep SurPyval's own intervals
+        pass
+
+
+def crow_twin(model):
+    """The Crow-AMSAA twin of a Duane fit on SurPyval 0.26, else None."""
+    return getattr(model, "_reliafy_crow_twin", None)
+
+
+def duane_cov_from_twin(twin) -> np.ndarray:
+    """Duane's ``[alpha, b]`` covariance from the Crow-AMSAA twin's
+    ``[scale, beta]`` one, by the delta method: alpha = beta and
+    b = scale^-beta."""
+    scale, beta = (float(v) for v in np.asarray(twin.params, dtype=float))
+    b = scale ** (-beta)
+    J = np.array([[0.0, 1.0], [-beta * b / scale, -b * np.log(scale)]])
+    return J @ np.asarray(twin.covariance(), dtype=float) @ J.T
+
+
+def model_covariance(model) -> np.ndarray | None:
+    """A fit's parameter covariance (in ``parameter_names`` order), with the
+    Duane workaround; None when the model has none (built from parameters,
+    restored without its data)."""
+    twin = crow_twin(model)
+    try:
+        with ignore_warnings(), np.errstate(all="ignore"):
+            cov = duane_cov_from_twin(twin) if twin is not None else np.asarray(model.covariance(), dtype=float)
+    except Exception:  # noqa: BLE001 - no likelihood
+        return None
+    return cov if cov.ndim == 2 and cov.size else None
+
+
+def _duane_intervals(twin) -> dict:
+    """Duane's 90% intervals from its Crow-AMSAA twin: alpha is the twin's
+    beta; b's interval is Wald on the log scale from the mapped covariance."""
+    from backend.levels import Z
+
+    out = {}
+    lo, hi = (float(v) for v in np.asarray(twin.param_cb("beta", alpha_ci=1 - CI_LEVEL), dtype=float))
+    out["alpha"] = [lo, hi]
+    scale, beta = (float(v) for v in np.asarray(twin.params, dtype=float))
+    b = scale ** (-beta)
+    var = float(duane_cov_from_twin(twin)[1, 1])
+    if b > 0 and np.isfinite(var) and var >= 0:
+        se_log = np.sqrt(var) / b
+        out["b"] = [float(b * np.exp(-Z * se_log)), float(b * np.exp(Z * se_log))]
+    return out
 
 
 def _add_marks(payload: dict, df: pd.DataFrame, mapping: dict, inputs: dict | None = None) -> None:
@@ -341,11 +449,11 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
     n_systems = int(len(set(i.tolist())))
     n_events = int(len(x))
 
-    # Nonparametric MCF step (observed) with a 95% confidence band.
+    # Nonparametric MCF step (observed) with a 90% confidence band.
     nx = np.asarray(np_model.x, dtype=float)
     mcf_obs = np.asarray(np_model.mcf_hat, dtype=float)
     try:
-        cb = np.asarray(np_model.mcf_cb(nx, alpha_ci=0.05), dtype=float)
+        cb = np.asarray(np_model.mcf_cb(nx, alpha_ci=1 - CI_LEVEL), dtype=float)
         # Order-proof: SurPyval 0.22 returns (lower, upper); earlier releases
         # returned (upper, lower).
         lower, upper = np.minimum(cb[:, 0], cb[:, 1]).tolist(), np.maximum(cb[:, 0], cb[:, 1]).tolist()
@@ -372,6 +480,7 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
     tests = trend_tests(para)
     payload = {
         "kind": "recurrent",
+        "ci_level": CI_LEVEL,  # every interval and band, two-sided; one saved before has none (95%)
         "family": "nhpp",
         "unit": canonical_unit(unit),
         "n_systems": n_systems,
@@ -434,7 +543,7 @@ def _rates_at(model, t: float) -> tuple:
 
 
 def _shape_ci(model_id: str, cis: dict) -> list | None:
-    """The 95% interval on the power-law growth shape β (Crow-AMSAA's
+    """The 90% interval on the power-law growth shape β (Crow-AMSAA's
     ``beta``, Duane's ``alpha``); None for HPP and Cox-Lewis."""
     if model_id not in ("crow_amsaa", "duane"):
         return None
@@ -444,7 +553,7 @@ def _shape_ci(model_id: str, cis: dict) -> list | None:
 def growth_verdict(model_id: str, params, cis: dict | None = None) -> tuple:
     """``(growth, basis)``: improving / stable / deteriorating, and why.
 
-    With the growth parameter's 95% interval (a fit to data), the verdict is
+    With the growth parameter's 90% interval (a fit to data), the verdict is
     whether that interval excludes the no-trend value (β = 1 for a power law,
     a slope of 0 for Cox-Lewis): wholly above is deteriorating, wholly below
     improving, and an interval that includes it is "stable" — the data don't
@@ -472,7 +581,7 @@ def growth_verdict(model_id: str, params, cis: dict | None = None) -> tuple:
 
 
 def rate_bounds(model_id: str, model, t_end: float) -> dict:
-    """Confidence bounds at the end of observation (#81): the 95% intervals on
+    """Confidence bounds at the end of observation (#81): the 90% intervals on
     the ROCOF and the instantaneous MTBF, and the demonstrated MTBF's one-
     sided 90% lower bound ("demonstrated MTBF ≥ X at 90%").
 
@@ -485,10 +594,12 @@ def rate_bounds(model_id: str, model, t_end: float) -> dict:
         return out
     t = np.array([float(t_end)])
     methods = ("crow", "wald") if model_id == "crow_amsaa" else ("wald",)
+    # A Duane fit on SurPyval 0.26 takes its bounds from its Crow-AMSAA twin:
+    # the same curve, with the right covariance (see duane_needs_twin).
+    model = crow_twin(model) or model
     for method in methods:
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
+            with ignore_warnings(), np.errstate(all="ignore"):
                 mtbf_ci = np.asarray(model.mtbf_cb(t, alpha_ci=1 - CI_LEVEL, method=method), dtype=float).ravel()
                 rocof_ci = np.asarray(model.iif_cb(t, alpha_ci=1 - CI_LEVEL, method=method), dtype=float).ravel()
                 lower = _first(model.mtbf_cb(t, alpha_ci=1 - DEMONSTRATED_LEVEL, bound="lower", method=method))
@@ -517,8 +628,7 @@ def trend_tests(model) -> list:
     out = []
     for test_id, label in _TREND_TESTS:
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
+            with ignore_warnings(), np.errstate(all="ignore"):
                 tt = model.trend_test(test_id)
         except Exception:  # noqa: BLE001 - no data (built from parameters) or too few events
             continue
@@ -550,8 +660,7 @@ def cramer_von_mises(model, n_events: int) -> dict | None:
         return {**base, "statistic": None, "p_value": None, "n_boot": 0, "adequate": None,
                 "reason": f"Skipped: with {n_events:,} events the bootstrap p-value would take too long."}
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             g = model.cramer_von_mises(n_boot=n_boot, random_state=0)
     except Exception:  # noqa: BLE001 - no data or likelihood (built from parameters, restored)
         return None
@@ -566,8 +675,7 @@ def system_residuals(model) -> list | None:
     expected) — most excess failures first, capped at the top 50: the
     systems failing more (or less) than the fleet model explains."""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             res = np.asarray(model.residuals("martingale"), dtype=float)
         data = model.data
         items = list(data.ids)
@@ -586,19 +694,25 @@ def system_residuals(model) -> list | None:
 
 
 def param_intervals(model_id: str, model) -> dict:
-    """``{name: [lower, upper]}``: the 95% confidence interval on each of a
+    """``{name: [lower, upper]}``: the 90% confidence interval on each of a
     fit's parameters (SurPyval's Wald bounds from the observed information,
     kept inside each parameter's support). Only a maximum-likelihood fit to
     data has them: {} for a model built from its parameters or one restored
     without its data."""
     if model_id not in MODELS:
         return {}
+    twin = crow_twin(model)
+    if twin is not None:  # SurPyval 0.26's Duane intervals (see duane_needs_twin)
+        try:
+            with ignore_warnings(), np.errstate(all="ignore"):
+                return _duane_intervals(twin)
+        except Exception:  # noqa: BLE001 - fall back to SurPyval's own
+            pass
     out = {}
     for name in getattr(model, "parameter_names", None) or []:
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
-                lo, hi = (float(v) for v in np.asarray(model.param_cb(name, alpha_ci=0.05), dtype=float))
+            with ignore_warnings(), np.errstate(all="ignore"):
+                lo, hi = (float(v) for v in np.asarray(model.param_cb(name, alpha_ci=1 - CI_LEVEL), dtype=float))
         except Exception:  # noqa: BLE001 - no likelihood (from params / restored): no interval
             return {}
         if np.isfinite(lo) and np.isfinite(hi) and lo <= hi:
@@ -666,6 +780,7 @@ def _params_payload(para, model_id: str, values: list, horizon: float, unit: str
     growth, growth_basis = growth_verdict(model_id, values)
     payload = {
         "kind": "recurrent",
+        "ci_level": CI_LEVEL,  # every interval and band, two-sided; one saved before has none (95%)
         "unit": canonical_unit(unit),
         "n_systems": None,
         "n_events": None,
@@ -781,22 +896,57 @@ def projection_inputs(df: pd.DataFrame, mapping: dict, test_end=None) -> dict:
                 ends[sys_id] = max(ends.get(sys_id, 0.0), float(t))
     if test_end is not None:
         test_end = _positive(test_end, "The end of the test")
-    closed = set(i[c == 1].tolist())
-    extra = []
-    for sys_id in dict.fromkeys(i.tolist()):
-        if sys_id in closed:
-            continue
-        end = ends.get(sys_id, test_end)
-        if end is not None:
-            extra.append((end, sys_id))
-    if extra:
-        x = np.concatenate([x, [e for e, _ in extra]])
-        i = np.concatenate([i, [s for _, s in extra]])
-        c = np.concatenate([c, np.ones(len(extra), dtype=int)])
-        modes = modes + [None] * len(extra)
+    # Each system's own end: its c = 1 row, else its window, else the test end.
+    for sys_id, t in zip(i[c == 1], x[c == 1]):
+        ends[sys_id] = max(ends.get(sys_id, 0.0), float(t))
+    systems = list(dict.fromkeys(i.tolist()))
+    for sys_id in systems:
+        if sys_id not in ends and test_end is not None:
+            ends[sys_id] = test_end
+    cut = None
+    known = [ends[s] for s in systems if s in ends]
+    if len(known) == len(systems) and known and (len(set(known)) > 1 or (test_end is not None
+                                                                          and set(known) != {test_end})):
+        # Staggered ends (a field trial): a growth projection needs every
+        # system on test over the same (0, T]. Cut each at a common T — the
+        # one typed, else the earliest end — leaving out later failures and
+        # any system whose record stops before T, and say so.
+        T = test_end if test_end is not None else min(known)
+        keep_sys = {s for s in systems if ends[s] >= T}
+        if not keep_sys:
+            raise FitError(f"No system's record reaches {T:g}: choose an end of test no later than "
+                           f"{max(known):g}.")
+        events = (c == 0) & np.isin(i, list(keep_sys))
+        dropped = int(((c == 0) & np.isin(i, list(keep_sys)) & (x > T)).sum())
+        events &= x <= T
+        excluded = sorted(set(systems) - keep_sys)
+        lost = int(((c == 0) & np.isin(i, excluded)).sum())
+        x, i = x[events], i[events]
+        modes = [m for m, e in zip(modes, events) if e]
+        order = [s for s in systems if s in keep_sys]
+        x = np.concatenate([x, np.full(len(order), T)])
+        i = np.concatenate([i, np.asarray(order, dtype=i.dtype if i.size else object)])
+        c = np.concatenate([np.zeros(int(events.sum()), dtype=int), np.ones(len(order), dtype=int)])
+        modes = modes + [None] * len(order)
+        cut = {"T": float(T), "chosen": test_end is not None, "dropped_failures": dropped,
+               "excluded_systems": excluded, "excluded_failures": lost, "systems": len(order)}
+    else:
+        closed = set(i[c == 1].tolist())
+        extra = []
+        for sys_id in systems:
+            if sys_id in closed:
+                continue
+            end = ends.get(sys_id, test_end)
+            if end is not None:
+                extra.append((end, sys_id))
+        if extra:
+            x = np.concatenate([x, [e for e, _ in extra]])
+            i = np.concatenate([i, [s for _, s in extra]])
+            c = np.concatenate([c, np.ones(len(extra), dtype=int)])
+            modes = modes + [None] * len(extra)
     if len(set(m for m, cc in zip(modes, c) if cc == 0 and m is not None)) > _MAX_MODES:
         raise FitError(f"More than {_MAX_MODES} distinct failure modes; group them first.")
-    return {"x": x, "i": i, "c": c, "modes": modes}
+    return {"x": x, "i": i, "c": c, "modes": modes, "cut": cut}
 
 
 def failure_modes(df: pd.DataFrame, mapping: dict) -> list[dict]:
@@ -883,16 +1033,14 @@ def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=
         raise FitError(f"No failures of {', '.join(map(repr, unknown))} in the data: only modes seen in the test "
                        "can be classified.")
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with ignore_warnings(RuntimeWarning), np.errstate(all="ignore"):
             gp = CrowAMSAA.projection(ins["x"], np.asarray(ins["modes"], dtype=object), fef,
                                       i=ins["i"], c=ins["c"], bc=bc or None)
     except ValueError as exc:
         msg = str(exc)
         if "time-terminated" in msg:
-            msg = ("A growth projection needs a time-terminated test: every system run from 0 to the same end "
-                   "of test T. Give that time (the end of the test), or map each system's observation window "
-                   "(tr) or its end-of-test row (c = 1) — all at the same time.")
+            msg = ("A growth projection needs a time-terminated test: every system run from 0 to an end of test. "
+                   "Map each system's End of record column or type the end of the test.")
         raise FitError(msg) from exc
 
     total = gp.systems * gp.T
@@ -942,8 +1090,30 @@ def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=
         "fef": fef,
         "bc": bc,
         "test_end": float(test_end) if test_end is not None else None,
+        "common_end": _cut_words(ins.get("cut"), unit),
         "model": {"alpha": float(gp.model.params[0]), "beta": float(gp.model.params[1])},
     })
+
+
+def _cut_words(cut: dict | None, unit: str = "") -> dict | None:
+    """The common end of test a staggered trial was cut to, in words."""
+    if not cut:
+        return None
+    u = f" {canonical_unit(unit).lower()}" if unit else ""
+    how = "the end of test you gave" if cut["chosen"] else "the earliest end of record"
+    text = f"Every system is taken to {cut['T']:,.6g}{u}, {how}, so all were on test for the same time"
+    parts = []
+    if cut["dropped_failures"]:
+        k = cut["dropped_failures"]
+        parts.append(f"{k} later failure{'s' if k != 1 else ''} left out")
+    if cut["excluded_systems"]:
+        k = len(cut["excluded_systems"])
+        parts.append(f"{k} system{'s' if k != 1 else ''} whose record stops earlier left out "
+                     f"({cut['excluded_failures']} failures)")
+    text += (": " + "; ".join(parts) + "." if parts else ".")
+    if not cut["chosen"]:
+        text += " Type an end of test to choose another."
+    return {**cut, "text": text}
 
 
 # ---------------------------------------------------------------------------
@@ -988,8 +1158,7 @@ def next_failure(model, age, within=None, quantiles=None) -> dict:
         times = np.asarray(model.inv_cif(targets), dtype=float) - age
         for q, t in zip(quantiles, times):
             qs.append({"q": q, "time_ahead": float(t), "age_at": float(t + age)})
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             mean, _ = quad(lambda t: np.exp(-ahead(t)), 0.0, np.inf, limit=200)
     return _json_safe({
         "age": age,
@@ -1161,8 +1330,16 @@ def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, ho
         none_rate = cr * _cif_at(model, h) / h
     saving = (none_rate - g_star) / none_rate * 100.0 if none_rate > 0 else None
 
+    try:  # the optimum's 90% range from the fit's uncertainty (a fit to data only)
+        from backend.recurrent_forecast import overhaul_range
+
+        spread = (overhaul_range(model_or_params, cr, co) if not isinstance(model_or_params, dict)
+                  else {"ci": None, "reason": "No range: built from parameters, so there's no fit uncertainty."})
+    except Exception:  # noqa: BLE001 - the optimum stands without its range
+        spread = {"ci": None, "reason": "No range could be worked out for this fit."}
     return _json_safe({
         **base,
+        "interval_range": spread,
         "optimal": {
             "interval": t_star,
             "cost_rate": g_star,

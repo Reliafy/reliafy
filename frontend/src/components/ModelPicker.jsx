@@ -326,7 +326,9 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
               ...saved.map((m) => ({
                 value: m.id,
                 label: m.name,
-                hint: m.distribution + (m.kind === "regression" ? ", covariates" : ""),
+                // The unit too: a class's model fitted from maintenance records is in days.
+                hint: m.distribution + (m.kind === "regression" ? ", covariates" : "")
+                  + (m.unit ? ` · ${unitInText(m.unit)}` : ""),
               })),
             ]}
           />

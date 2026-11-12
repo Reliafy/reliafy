@@ -35,8 +35,8 @@ The answer comes first:
 
 Two tiles sit under it:
 
-- **Likely range (80%)** — **37–44**. In eight years out of ten the count falls
-  in this range; in one year in ten it's above 44. The range comes from
+- **Likely range (90%)** — **36–45**. In nine years out of ten the count falls
+  in this range; in one year in twenty it's above 45. The range comes from
   simulating the fleet many times, so it includes the chance in *which* items
   fail and when.
 - **Average a month** — **≈ 3.4**.
@@ -91,7 +91,9 @@ the answer is **Hold 11: a 95% chance of no stock-out over the lead time
 (2 months). Order one for one: replace each as it's used.** With 5 in stock now,
 it says the chance of running out is close to 100%, and to order 6. The figures
 come from simulating the fleet, so they count replacements that fail again.
-**Export spares plan (CSV)** downloads the plan.
+When items wearing out need more stock in a later period, the answer says so
+("Hold 2 now, rising to 3 from quarter 2"), and **Stock to hold by month** (or
+quarter) lists each period. **Export spares plan (CSV)** downloads the plan.
 
 **Export CSV** downloads the forecast for a purchasing system or a budget sheet:
 each item's expected failures and chance of failing, the fleet's expectation and
@@ -101,11 +103,26 @@ its range, and each month's expectation and range.
 
 1. On **Forecasts**, press **New forecast**. Give it a name,
    choose the **Equipment** — **Replaceable** (a life, regression or ALT model)
-   or **Repairable** (a recurrent model) — and the **Model**. With a regression
+   or **Repairable** (a repairable model) — and the **Model**. With a regression
    or ALT model each item is forecast at its own conditions or stress.
-2. **Add item** for each unit in service, with its **Current use** (its age in
-   the model's time unit). An item can have its **Own rate** if it runs harder
-   or lighter than the rest.
+2. Add the units in service, each with its **Current use** (its age in the
+   model's time unit). An item can have its **Own rate** if it runs harder or
+   lighter than the rest. Three ways save typing them one by one:
+   - **Use the … still-running units from this model's data** — the units the
+     model's data records as still running, each at the age it had reached (for a
+     repairable model, each system at the end of its record). One click.
+   - **Paste from Excel** — copy the rows (a name and an age; a header row is
+     optional) and paste them in. Columns are matched by their headers, and you
+     can change each one: name, current use, the date it was last replaced
+     (turned into an age at the usage rate), its own rate, and for a regression
+     model its covariates. Ages in hours, days, weeks or years are converted
+     to the model's unit when that is a time too. A preview says how many items
+     were read and why any row was skipped, before you **Add** them or
+     **Replace** the list.
+   - **Upload file** — the same from a CSV or Excel file.
+
+   To change many items at once, tick them (or tick the header to select all)
+   and set their current use or own rate, or remove them.
 3. Set the **Usage per month** for the fleet, the **Horizon** (12) and the
    **Period** (months, weeks, years…).
 4. Press **Save & forecast**.
@@ -124,7 +141,40 @@ Under **Advanced**:
   so the forecast follows how the fleet is actually being used.
 
 For **Repairable** equipment each failure is repaired and the item runs on, so
-every repeat failure is counted from the item's age.
+every repeat failure is counted from the item's age. Name an item as one of the
+model's systems (the same id as in its data) and it uses that system's own
+history: a bad actor that fails twice as often is forecast that way, and an
+imperfect-repair model starts it from where its repairs left it. The likely range
+allows for chance and for the model's own uncertainty. Covariate repairable
+models can't drive a forecast yet.
+
+## Run to failure, or replace at an age?
+
+Under **Change settings › Maintenance strategy**, choose how the fleet is run:
+
+- **Run to failure** — each item is replaced when it fails (the forecast above).
+- **Replace at an age** — each item is also replaced when it reaches the age you
+  give, in the model's unit, failed or not. Items already past that age are
+  replaced in the first period: the catch-up.
+
+Add the **Cost of a failure** (and, for planned replacement, the **Cost of a
+planned replacement**) and press **Save & forecast**. A card under the answer
+shows the failures, the planned replacements, the parts they need and what they
+cost, for the whole horizon and **year by year**, each with its likely range. The
+spares answer then counts planned replacements too, so it says how many parts the
+strategy needs over the lead time, catch-up included.
+
+To compare the two strategies for a budget, **Duplicate** the forecast (in its
+**⋯** menu), change the copy, then on **Forecasts** tick both and press
+**Compare**: failures, the spares to hold and the cost sit side by side, for up
+to four forecasts. Lead times and service levels compare the same way. **Export
+CSV** includes every period and every year with their ranges. The replacement
+age itself comes from
+[find the optimal replacement interval](/guides/optimal-replacement-interval).
+
+Forecasts that count first failures only, or every failure of repairable
+items, show their years too, and take a **Cost of a failure** under **Change
+settings** for what failures cost each year.
 
 ## Get told when it changes
 

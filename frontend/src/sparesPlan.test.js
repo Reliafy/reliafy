@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { daysText, fleetSparesCsv, leadTimeHint, levelText, overText, riskAt, riskText, stockingCsv, useText, windowText } from "./sparesPlan.js";
+import { daysText, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskAt, riskText, risingText, stockingCsv, useText, windowText } from "./sparesPlan.js";
 
 test("service levels and chances read plainly", () => {
   assert.equal(levelText(0.95), "95%");
@@ -87,4 +87,22 @@ test("a lead time in the forecast's periods reads back in days, weeks or months"
   assert.equal(leadTimeHint("", "weeks"), "");
   assert.equal(leadTimeHint(1, "shifts"), "");
   assert.equal(leadTimeHint("", "shifts"), "");
+});
+
+// 12 Nov review: the card said "Hold 2" while the table by quarter said 3 from
+// quarter 2. The card now shows the rise the server reports.
+test("the hold shows a later rise, so the card agrees with the table", () => {
+  const sp = { status: "ok", hold: 2, hold_rising: { hold: 3, from_period: 2, peak_period: 2 } };
+  assert.equal(holdText(sp), "2 → 3");
+  assert.equal(risingText(sp, "quarters"), "3 from quarter 2");
+  assert.equal(risingText({ hold: 1, hold_rising: { hold: 3, from_period: 3, peak_period: 5 } }, "quarters"), "3 by quarter 5");
+  assert.equal(holdText({ hold: 4 }), "4");
+  assert.equal(risingText({ hold: 4 }, "months"), "");
+});
+
+test("the fleet spares CSV rounds expected use", () => {
+  const sp = { status: "ok", service_level: 0.95, per_failure: 1, lead_time: 1,
+               per_period: [{ period: 1, hold: 2, reorder_at: 2, expected_demand: 0.7749999999999999 }] };
+  const row = fleetSparesCsv(sp, { fleet: "Belts", periodLabel: "quarters" }).split("\n")[1];
+  assert.equal(row, "Belts,1,2,2,0.775,0.95,1,,1,no,,,");
 });

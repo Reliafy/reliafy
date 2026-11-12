@@ -37,8 +37,14 @@ test("an ALT model's planning values for the next test", () => {
     unit: "hours",
     stressUnit: "K",
     highStress: "393",
+    // "Check a test of my own" starts from the test as run, mildest first.
+    stresses: "353, 373, 393",
+    unitsAt: "10, 10, 10",
   });
   assert.equal(altPlanLink("m 1"), "/strategy/test-planning/accelerated?model=m%201");
+  // The use stress entered on the model's page rides along.
+  assert.equal(altPlanLink("m1", [313.15]), "/strategy/test-planning/accelerated?model=m1&use=313.15");
+  assert.equal(altPlanLink("m1", null), "/strategy/test-planning/accelerated?model=m1");
 });
 
 test("a fit's raw values start the form at 4 significant figures", () => {
@@ -69,4 +75,11 @@ test("models a plan can't use give no prefill", () => {
   assert.equal(altPrefill({ ...ALT, distribution_id: "gamma" }), null);
   assert.equal(altPrefill({ ...ALT, stresses: [{}, {}] }), null);
   assert.equal(altPrefill({ ...ALT, coefficients: [{ name: "a", value: 1 }] }), null);
+});
+
+test("logTicks: whole numbers on a log axis, within the data", async () => {
+  const { logTicks } = await import("./testPlanning.js");
+  assert.deepEqual(logTicks([5, 8, 13, 20, 40, 80]).tickvals, [5, 10, 20, 50]);
+  assert.deepEqual(logTicks([10, 100, 1000]).ticktext, ["10", "20", "50", "100", "200", "500", "1,000"]);
+  assert.deepEqual(logTicks([]), {});
 });

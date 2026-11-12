@@ -11,6 +11,7 @@ import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
 
 const M = "/api/maintenance";
+const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
 const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
 const query = (page) => new URL(page.url()).searchParams;
 const row = (page, key) => page.locator(`.tp-row[data-key="${key}"]`);
@@ -162,9 +163,12 @@ test("roll-ups, the search, Needs attention, a reading in place, the row's ⋯",
   await page.getByRole("button", { name: /^Tree options/ }).click();
   await options.getByRole("menuitemcheckbox", { name: "Needs attention" }).click();
   await options.getByRole("menuitem", { name: "Done" }).click();
-  // A reading typed in place.
+  // A reading typed in place. The tree's rows are virtualised: with Needs attention off and
+  // a full workspace (the whole smoke run's positions), the filter's rows can be off screen
+  // and not in the page at all, so the search brings the gauge's row up.
   const r = row(page, `M:${gauge.id}`);
-  if (!(await r.count())) await row(page, filter.id).locator(".tp-chev").click();
+  await search.fill(`pt-${tag}`);
+  await expect(r).toBeVisible();
   const box = r.getByRole("textbox", { name: `New reading for Filter pressure ${tag} (kPa)` });
   await box.fill("130");
   await box.press("Enter");
@@ -270,4 +274,34 @@ test("a double-click on a measurement row's name spreads its details across the 
   expect(await spread()).toBe(true);
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "Measurements rows spread as RCM rows" });
+});
+
+// A phone whose clock is hours ahead of the workspace's (the workspace has no
+// time zone: UTC). The reading form starts on the workspace's date and time
+// and says whose clock that is, so saving it as it stands is accepted.
+test.describe("a device in another time zone", () => {
+  test.use({ timezoneId: "Pacific/Kiritimati" }); // UTC+14: always ahead
+  test("Record a reading… at 400 px saves as it opens, on the workspace's clock", async ({ page, request }) => {
+    const tag = `z${Date.now()}`;
+    const p = await plant(request, tag);
+    await page.setViewportSize({ width: 400, height: 860 });
+    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=measurements`);
+    await page.getByRole("button", { name: `Actions for Bearing ${tag}` }).first().click();
+    await page.getByRole("menuitem", { name: /Record a reading/ }).click();
+    const form = page.getByRole("dialog");
+    const at = form.getByLabel("At, UTC time (clear it if not known)");
+    const utc = (ms) => new Date(Date.now() + ms).toISOString().slice(11, 16);
+    expect([utc(-60000), utc(0)]).toContain(await at.inputValue());
+    await expect(form.getByLabel("Read on")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+    await expect(form).toContainText("on this workspace's clock (UTC), not this device's");
+    await form.getByRole("spinbutton").first().fill("7.4");
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/reading-form-400.png` });
+    await form.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(form).toHaveCount(0);
+    const point = await (await request.get(`${M}/points/${p.point.id}`)).json();
+    expect(point.reading).toBe(7.4);
+    expect(point.readings[0].precision).toBe("minute");
+    expect(await sideways(page)).toBeLessThanOrEqual(400);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/reading-saved-400.png` });
+  });
 });

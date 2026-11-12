@@ -184,7 +184,16 @@ class AltModelDoc(BaseModel):
     @field_validator("results")
     @classmethod
     def _results_unit(cls, results: dict) -> dict:
-        return _canonical_unit(results)  # #265: "hours" is shown "Hours"
+        """Every read serves the intervals at 90% two-sided, a fit saved before
+        the rule included (``backend.alt.at_level``); the stored document is
+        left as it is. The unit in its one spelling (#265)."""
+        try:
+            from backend.alt import positive_coefficient_intervals
+
+            results = positive_coefficient_intervals(results)
+        except Exception:  # noqa: BLE001 - never fail a read over the intervals
+            pass
+        return _canonical_unit(results)
 
 
 class AgentSessionDoc(BaseModel):

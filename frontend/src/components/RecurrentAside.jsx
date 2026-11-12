@@ -2,8 +2,9 @@ import { openGuide } from "./HelpButton.jsx";
 import { formatNumber } from "../format.js";
 import { boundWords } from "../lifeResults.js";
 import { COLORWAY } from "../plotTheme.js";
+import { ciPct } from "../levels.js";
 import {
-  ciText, dataText, familyOf, growthReading, paramLabel, pct, perUnit, ratioText, repairTitle,
+  ciText, dataText, familyOf, growthReading, pct, perUnit, ratioText, repairTitle, scaledParam,
 } from "../recurrentResults.js";
 
 const sig = (v, n = 3) => formatNumber(v, { sig: n });
@@ -36,7 +37,7 @@ export default function RecurrentAside({ r, onStats = null, onData = null, onNex
   return (
     <>
       {fam !== "renewal" && r.mtbf != null && <NowCard r={r} unit={unit} />}
-      {fam === "renewal" && rest && <RepairCard rest={rest} />}
+      {fam === "renewal" && rest && <RepairCard rest={rest} level={ciPct(r)} />}
       {fam === "renewal" && r.next_failure?.units?.length > 0 && <NextCard nf={r.next_failure} unit={unit} onNext={onNext} />}
 
       {reading && (
@@ -57,15 +58,18 @@ export default function RecurrentAside({ r, onStats = null, onData = null, onNex
           <span className="gk">Model</span>
           <span className="gv">{fam === "regression" && r.baseline ? `${r.baseline.name} baseline` : r.model?.name || "—"}</span>
         </div>
-        {shape && fam !== "renewal" && (
-          <div className="gofr">
-            <span className="gk">{paramLabel(r, shape.name)}</span>
-            <span className="gv-col">
-              <span className="gv">{sig(shape.value)}</span>
-              {ciText(shape.ci) && <span className="param-ci">95% {ciText(shape.ci)}</span>}
-            </span>
-          </div>
-        )}
+        {shape && fam !== "renewal" && (() => {
+          const d = scaledParam(r, shape);
+          return (
+            <div className="gofr">
+              <span className="gk">{d.label}</span>
+              <span className="gv-col">
+                <span className="gv">{sig(d.value)}</span>
+                {ciText(d.ci) && <span className="param-ci">{ciPct(r)} {ciText(d.ci)}</span>}
+              </span>
+            </div>
+          );
+        })()}
         {data && (
           <div className="gofr"><span className="gk">Data</span><span className="gv">{data}</span></div>
         )}
@@ -96,14 +100,22 @@ function NowCard({ r, unit }) {
   const mtbfTitle = [
     "MTBF now: 1 ÷ the failure rate at the end of the data",
     dm?.lower != null ? boundWords(level, "lower", dm.lower, null, fmtT) : null,
-    ciText(r.mtbf_ci) ? `95% interval ${ciText(r.mtbf_ci)}` : null,
+    ciText(r.mtbf_ci) ? `${ciPct(r)} interval ${ciText(r.mtbf_ci)}` : null,
   ].filter(Boolean).join(". ");
   return (
     <div className="gof-card life-card">
       <div className="gofh life-card-head">
         <span>{r.from_params ? "At the horizon" : "Now"}</span>
-        {at != null && <span className="gof-sub">at {formatNumber(at)}{unit ? ` ${unit}` : ""}{r.rates_at ? ", average system" : ""}</span>}
+        {at != null && <span className="gof-sub">at {formatNumber(at)}{unit ? ` ${unit}` : ""}{r.rates_at ? ", at the fleet's average covariates" : ""}</span>}
       </div>
+      {(r.rates_by_group || []).filter((g) => g.mtbf != null).map((g) => (
+        <div className="gofr life-row" key={g.label}
+             title={g.mtbf_lower != null ? `At least ${sig(g.mtbf_lower)} (90% one-sided)` : undefined}>
+          <span className="gk">MTBF, {g.label}</span>
+          <span className="gv">{sig(g.mtbf)}</span>
+          <span className="life-lo">{g.mtbf_lower != null ? `≥ ${sig(g.mtbf_lower)} (90%)` : ""}</span>
+        </div>
+      ))}
       <div className="gofr life-row" title={`${mtbfTitle}.`}>
         <span className="gk">MTBF{unit ? ` (${unit})` : ""}</span>
         <span className="gv">{sig(r.mtbf)}</span>
@@ -112,7 +124,7 @@ function NowCard({ r, unit }) {
         </span>
       </div>
       <div className="gofr life-row"
-           title={ciText(r.rocof_ci) ? `Failures per ${perUnit(unit) || "unit time"}. 95% interval ${ciText(r.rocof_ci)}.` : undefined}>
+           title={ciText(r.rocof_ci) ? `Failures per ${perUnit(unit) || "unit time"}. ${ciPct(r)} interval ${ciText(r.rocof_ci)}.` : undefined}>
         <span className="gk">Failure rate</span>
         <span className="gv">{sig(r.rocof)}</span>
         <span className="life-lo">{unit ? `per ${perUnit(unit)}` : ""}</span>
@@ -121,15 +133,24 @@ function NowCard({ r, unit }) {
   );
 }
 
+// A repair's effectiveness as shown: a little below 0% reads 0% (a minimal
+// repair) unless its whole interval is below 0%, as the words say.
+const shownEffectiveness = (rest) => {
+  const e = rest.effectiveness;
+  const ci = rest.effectiveness_ci;
+  return e < 0 && !(ci && ci[1] < 0) ? 0 : e;
+};
+
 // Imperfect repair: how much of the age a repair takes away (or, for G1, the
 // gap ratio), with its interval.
-function RepairCard({ rest }) {
+function RepairCard({ rest, level }) {
   return (
     <div className="gof-card life-card">
-      <div className="gofh life-card-head"><span>Each repair</span><span className="gof-sub">95% interval</span></div>
+      <div className="gofh life-card-head"><span>Each repair</span><span className="gof-sub">{level} interval</span></div>
       <div className="gofr life-row" title={`${rest.sentence} ${rest.scale || ""}`}>
-        <span className="gk">{rest.ratio != null ? "Gap ratio" : "Restores"}</span>
-        <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(rest.effectiveness)}</span>
+        <span className="gk">{rest.ratio != null ? "Gap ratio" : rest.parameter === "q"
+          ? <>Restores <span className="gof-sub">q = {formatNumber(rest.value, { sig: 3 })}</span></> : "Restores"}</span>
+        <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(shownEffectiveness(rest))}</span>
         <span className="life-lo">
           {rest.ratio != null
             ? rest.ratio_ci && ciText(rest.ratio_ci, 3)
@@ -148,7 +169,7 @@ function NextCard({ nf, unit, onNext }) {
     <div className="gof-card life-card">
       <div className="gofh life-card-head" title={unit ? `In ${unit} from now` : undefined}>
         <span>Next failure</span>
-        <span className="gof-sub">{unit ? `${unit}: ` : ""}median · 10%</span>
+        <span className="gof-sub">{unit ? `${unit} ahead: ` : ""}median · 1-in-10 by</span>
       </div>
       {rows.map((u) => (
         <div className="gofr life-row" key={u.system}
@@ -167,13 +188,17 @@ function NextCard({ nf, unit, onNext }) {
   );
 }
 
-// The By cause view's panel: each cause (choose one to see its 95% band), its
+// The By cause view's panel: each cause (choose one to see its band), its
 // failures and growth shape, and the chosen cause's reading.
 export function CausesSide({ r, chosen, onChoose }) {
   const bc = r.by_cause || {};
   const causes = bc.causes || [];
   const current = causes.find((c) => c.label === chosen) || causes[0];
-  const reading = current?.fit ? growthReading(current.fit) : null;
+  // Each cause's interval is at the level its fit was worked out at: its own
+  // ci_level, else the model's (a fit saved before either carries none: 95%).
+  const reading = current?.fit
+    ? growthReading({ ...current.fit, ci_level: current.fit.ci_level ?? bc.ci_level ?? r.ci_level })
+    : null;
   return (
     <>
       <div className="gof-card">
@@ -200,8 +225,8 @@ export function CausesSide({ r, chosen, onChoose }) {
         </div>
       )}
       <p className="life-method">
-        {bc.model || "Crow-AMSAA per cause"}{bc.aic != null ? ` · AIC ${formatNumber(bc.aic, { sig: 5 })}` : ""}.
-        {bc.note ? ` ${bc.note}` : ""} Choose a cause to see its 95% band.
+        {bc.model || "Crow-AMSAA per cause"}{bc.aic != null ? ` · AIC ${formatNumber(bc.aic, { sig: 5 })} (not comparable with the all-failures AIC)` : ""}.
+        {bc.note ? ` ${bc.note}` : ""} Choose a cause to see its {ciPct(r)} band.
       </p>
     </>
   );

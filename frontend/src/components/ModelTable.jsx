@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   createModelFromParams, getMaintenancePosition, getPositionModel, linkPositionModel, listAltModels, listDegradationModels, listModels,
-  listPositionModels, listRbds, listRecurrentModels, unlinkPositionModel,
+  listPositionModels, listRbds, listRecurrentModels, unlinkPositionModel, updateModelParams,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import Field from "./ui/Field.jsx";
@@ -17,7 +17,8 @@ import { ACCENT, BAND_FILL } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
 import { explorerHere } from "../products.js";
 import {
-  MODEL_COLUMNS, b10Text, boundsLabel, countsText, fmt, forText, headline, meanText, rowActions, unitWord, usedText, withBounds,
+  MODEL_COLUMNS, b10Text, boundsLabel, countsText, enteredParams, enteredStart, exponentialLabel, fmt, forText, headline,
+  implausibleExponential, meanText, rowActions, unitOne, unitWord, usedText, withBounds,
 } from "../explorerModels.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
@@ -35,12 +36,13 @@ export { MODEL_TREE_HEAD } from "../explorerModels.js";
 
 // Every attached model, read when the tab is on (and again on `load`).
 export function useTreeModels({ on }) {
-  const [state, setState] = useState({ links: null, error: null });
+  const [state, setState] = useState({ links: null, classModels: null, error: null });
   const load = useCallback(() => listPositionModels()
-    .then((d) => setState({ links: d.links || [], error: null }))
-    .catch((e) => setState((s) => ({ links: s.links, error: e.message }))), []);
+    .then((d) => setState({ links: d.links || [], classModels: d.class_models || {}, error: null }))
+    .catch((e) => setState((s) => ({ ...s, error: e.message }))), []);
   useEffect(() => { if (on) load(); }, [on, load]);
-  return { links: state.links, error: state.error, load };
+  // classModels: {class name: {model_id, failures, failures_now}}, the classes with a fitted model.
+  return { links: state.links, classModels: state.classModels, error: state.error, load };
 }
 
 const QUALITY_TONE = { success: "success", warning: "warning", neutral: "neutral" };
@@ -73,7 +75,7 @@ export function ModelCell({ r, col }) {
       return text ? <span className="ml-num" title={text}>{text}</span> : <span className="rw-blank">—</span>;
     }
     case "mean": return <span className="ml-num">{meanText(model)}</span>;
-    case "b10": return <span className="ml-num">{b10Text(model)}</span>;
+    case "b10": return <span className="ml-num" title={(model.numbers || []).find((n) => n.id === "b10")?.note || undefined}>{b10Text(model)}</span>;
     case "quality":
       return (
         <span className="ml-q">
@@ -105,7 +107,7 @@ export function modelPhoneRow(r, rollup) {
 
 export const modelRowActions = (r, opts) => rowActions(r, opts);
 
-// The plot: reliability (with its 95% bounds, or a Bayesian update's credible band) or hazard over age, or a repairable
+// The plot: reliability (with its 90% bounds, or a Bayesian update's credible band) or hazard over age, or a repairable
 // model's expected failures so far.
 function ModelPlot({ curves, unit, name }) {
   const [on, setOn] = useState("sf");
@@ -123,7 +125,8 @@ function ModelPlot({ curves, unit, name }) {
   const traces = [];
   if (!hazard && curves.sf_lower && curves.sf_upper) {
     traces.push({ x: curves.x, y: curves.sf_upper, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false });
-    const band = curves.band?.kind === "credible" ? `${Math.round(curves.band.level * 100)}% credible band` : "95% bounds";
+    const band = curves.band?.kind === "credible" ? `${Math.round(curves.band.level * 100)}% credible band`
+      : `${Math.round((curves.band?.level ?? 0.9) * 100)}% bounds`;
     traces.push({ x: curves.x, y: curves.sf_lower, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: BAND_FILL, name: band, hoverinfo: "skip" });
   }
   traces.push({ x: curves.x, y: hazard ? curves.hf : curves.sf, mode: "lines", line: { color: ACCENT, width: 2 }, name: hazard ? "Hazard rate" : curves.what || "Reliability" });
@@ -242,7 +245,8 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
                 <dt>Unit</dt><dd>{unit || "—"}</dd>
                 <dt>Time starts</dt><dd>{d?.origin || "…"}</dd>
                 {(model.numbers || []).filter((n) => n.id === "mean" || n.id === "b10").map((n) => (
-                  <span key={n.id} className="ml-dlrow"><dt>{n.label}</dt><dd>{withBounds(n, model.credible_level)}</dd></span>
+                  <span key={n.id} className="ml-dlrow"><dt>{n.label}</dt><dd>{withBounds(n, model.credible_level)}
+                    {n.note && <span className="rw-sum"> · {n.note}</span>}</dd></span>
                 ))}
               </dl>
             </section>
@@ -296,15 +300,24 @@ function RbdDetails({ d, model, age, onAge }) {
       <h3 className="ml-h">Blocks</h3>
       <div className="maint-scroll">
         <table className="ml-params ml-blocks">
-          <thead><tr><th>Block</th><th>Model</th><th>From</th></tr></thead>
+          {/* Two columns (block, model) so the narrow panel doesn't wrap each cell onto five lines;
+              where the model came from and the position are on hover and for screen readers. */}
+          <thead><tr><th>Block</th><th>Model</th></tr></thead>
           <tbody>
-            {blocks.map((b) => (
-              <tr key={b.id}>
-                <td>{b.label}</td>
-                <td>{b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}</td>
-                <td>{b.position ? b.position.name : <span className="rw-blank">—</span>}</td>
-              </tr>
-            ))}
+            {blocks.map((b) => {
+              const where = b.placeholder ? "No model in use, from its class or inside it" : b.source || "";
+              const from = b.position && b.position.name !== b.label ? `position ${b.position.name}` : "";
+              const hover = [where, from].filter(Boolean).join(" · ");
+              return (
+                <tr key={b.id} title={hover || undefined}>
+                  <td>{b.label}</td>
+                  <td>
+                    {b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}
+                    {hover && <span className="sr-only">. {hover}</span>}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -359,29 +372,98 @@ export function RbdLinkModal({ position, onClose, onDone }) {
   );
 }
 
+// "New blank RBD…" (RBD ›): a diagram of the position's own, any position (a leaf included),
+// linked here as its RBD (as a built one is) and opened in the table area. Which kind (default
+// non-repairable), and what it starts with: empty, or one block for the position itself with its
+// life model in use (the obvious start for a leaf; a placeholder, flagged, where it has none).
+export function NewRbdModal({ position, hasInside = false, hasModel = false, onClose, onDone }) {
+  const [repairable, setRepairable] = useState(false);
+  const [start, setStart] = useState(!hasInside ? "self" : "blank");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const made = await linkPositionModel(position.id, { new_rbd: { repairable, start } });
+      onDone(made, `Started ${made.name}.${made.placeholders?.length ? " Its block is a placeholder until the position has a life model." : ""}`);
+    } catch (e) {
+      setBusy(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
+  };
+  return (
+    <Modal title="New blank RBD" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+           footer={(
+             <>
+               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+               <button type="button" onClick={save} disabled={busy} aria-busy={busy || undefined}>{busy ? "Starting…" : "Start the RBD"}</button>
+             </>
+           )}>
+      <p className="rw-fhelp">A new diagram for {position.name}, saved in your RBDs and linked here as its RBD. It opens beside the tree.</p>
+      <Field label="Kind">
+        <SegmentedControl label="Kind of RBD" value={repairable ? "repairable" : "non"} onChange={(v) => setRepairable(v === "repairable")}
+                          options={[{ value: "non", label: "Non-repairable" }, { value: "repairable", label: "Repairable" }]} />
+      </Field>
+      <p className="rw-fhelp">{repairable
+        ? "Repairable: blocks are repaired when they fail, and the answer is availability (with maintenance read from the tree)."
+        : "Non-repairable: the answer is the system's reliability and life."}</p>
+      <div className="evidence-picker" role="radiogroup" aria-label="Start with">
+        <label className={"evidence-option" + (start === "self" ? " selected" : "")}>
+          <input type="radio" name="nr-start" checked={start === "self"} onChange={() => setStart("self")} />
+          <span className="evidence-name">One block for {position.name}</span>
+          <span className="rim-tquiet"> {hasModel ? "its life model in use" : "a placeholder until it has a life model"}</span>
+        </label>
+        <label className={"evidence-option" + (start === "blank" ? " selected" : "")}>
+          <input type="radio" name="nr-start" checked={start === "blank"} onChange={() => setStart("blank")} />
+          <span className="evidence-name">Empty</span>
+          <span className="rim-tquiet"> just In and Out: draw the blocks yourself</span>
+        </label>
+      </div>
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </Modal>
+  );
+}
+
 // "Enter parameters…" (Life model ›): a model from numbers you have (a data sheet, a handbook,
 // a vendor's figures), saved to Models through the usual save from parameters and attached here.
+// An exponential is given as an MTBF (a handbook's figure) or a failure rate, the unit shown, and a
+// figure that can't be what was meant says so. With `link` (Edit parameters… on a row whose model
+// was typed in), the same form changes that model's numbers in place.
 const PARAMS = {
   weibull: [["alpha", "Characteristic life (alpha)"], ["beta", "Shape (beta)"]],
-  exponential: [["failure_rate", "Failure rate (per unit of time)"]],
+  exponential: [["failure_rate", "Failure rate"]],
   lognormal: [["mu", "mu (log of the median)"], ["sigma", "sigma (spread)"]],
   normal: [["mu", "Mean (mu)"], ["sigma", "Standard deviation (sigma)"]],
   gamma: [["alpha", "alpha (shape)"], ["beta", "beta (rate)"]],
 };
-export function ParamsModal({ position, onClose, onDone }) {
-  const [distribution, setDistribution] = useState("weibull");
-  const [values, setValues] = useState({});
-  const [unit, setUnit] = useState("hours");
-  const [name, setName] = useState(`${position.name} (entered)`);
+const PARAM_UNITS = ["hours", "days", "weeks", "months", "years", "cycles"];
+export function ParamsModal({ position, link = null, onClose, onDone }) {
+  const entered = link?.model?.entered || null;
+  const [distribution, setDistribution] = useState(entered?.distribution && PARAMS[entered.distribution] ? entered.distribution : "weibull");
+  const [values, setValues] = useState(() => (entered ? enteredStart(entered) : {}));
+  const [unit, setUnit] = useState(() => {
+    const u = String(entered?.unit || "hours").toLowerCase();
+    return PARAM_UNITS.includes(u) ? u : "hours";
+  });
+  // An exponential's figure: an MTBF (what handbooks give) or a failure rate.
+  const [expAs, setExpAs] = useState("mtbf");
+  const [name, setName] = useState(link ? (link.model?.name || link.name || "") : `${position.name} (entered)`);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const names = PARAMS[distribution];
-  const ok = name.trim() && names.every(([k]) => Number(values[k]) > 0 || (k === "mu" && Number.isFinite(Number(values[k])) && values[k] !== ""));
+  const ok = (link || name.trim()) && names.every(([k]) => Number(values[k]) > 0 || (k === "mu" && Number.isFinite(Number(values[k])) && values[k] !== ""));
+  const odd = distribution === "exponential" ? implausibleExponential(expAs, values.failure_rate, unit) : null;
   const save = async () => {
     setBusy(true);
     setFailed(null);
+    const params = enteredParams(distribution, names, values, expAs);
     try {
-      const model = await createModelFromParams(name.trim(), distribution, names.map(([k]) => ({ name: k, value: Number(values[k]) })), { unit });
+      if (link) {
+        const model = await updateModelParams(link.model_id, { distribution, params, unit });
+        onDone(null, `Changed ${model.name}'s parameters: everything using it now takes them.`);
+        return;
+      }
+      const model = await createModelFromParams(name.trim(), distribution, params, { unit });
       const made = await linkPositionModel(position.id, { model_id: model.id, model_type: "model" });
       onDone(made, `Saved ${model.name} and attached it to ${position.name}.`);
     } catch (e) {
@@ -390,14 +472,20 @@ export function ParamsModal({ position, onClose, onDone }) {
     }
   };
   return (
-    <Modal title="Enter parameters" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+    <Modal title={link ? "Edit parameters" : "Enter parameters"} onClose={onClose} locked={busy} trapFocus className="ml-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={save} disabled={busy || !ok} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save and attach"}</button>
+               <button type="button" onClick={save} disabled={busy || !ok} aria-busy={busy || undefined}>
+                 {busy ? "Saving…" : link ? "Save" : "Save and attach"}
+               </button>
              </>
            )}>
-      <p className="rw-fhelp">A life model from numbers you have: a data sheet, a handbook or the vendor’s figures. It’s saved to Models (with no data behind it, so its row says Assumed) and attached to {position.name}.</p>
+      <p className="rw-fhelp">
+        {link
+          ? `${name || "This model"}'s parameters were typed in. Change them here: every position, RBD block and calculation that uses it takes the new numbers.`
+          : `A life model from numbers you have: a data sheet, a handbook or the vendor’s figures. It’s saved to Models (with no data behind it, so its row says Assumed) and attached to ${position.name}.`}
+      </p>
       <div className="ml-row">
         <Field label="Distribution">
           <Select value={distribution} onChange={(e) => { setDistribution(e.target.value); setValues({}); }}>
@@ -407,18 +495,35 @@ export function ParamsModal({ position, onClose, onDone }) {
         </Field>
         <Field label="Unit">
           <Select value={unit} onChange={(e) => setUnit(e.target.value)}>
-            {["hours", "days", "weeks", "months", "years", "cycles"].map((x) => <option key={x} value={x}>{x}</option>)}
+            {PARAM_UNITS.map((x) => <option key={x} value={x}>{x}</option>)}
           </Select>
         </Field>
       </div>
+      {distribution === "exponential" && (
+        <Field label="Give it as" as="fieldset">
+          <div className="ml-modes">
+            <label className="ml-mode">
+              <input type="radio" name="exp-as" checked={expAs === "mtbf"}
+                     onChange={() => { setExpAs("mtbf"); setValues({}); }} />
+              MTBF ({unit} between failures)
+            </label>
+            <label className="ml-mode">
+              <input type="radio" name="exp-as" checked={expAs === "rate"}
+                     onChange={() => { setExpAs("rate"); setValues({}); }} />
+              Failure rate (failures per {unitOne(unit)})
+            </label>
+          </div>
+        </Field>
+      )}
       <div className="ml-row">
         {names.map(([k, label]) => (
-          <Field key={k} label={label}>
+          <Field key={k} label={distribution === "exponential" ? exponentialLabel(expAs, unit) : label}>
             <TextInput inputMode="decimal" value={values[k] || ""} onChange={(e) => setValues((v) => ({ ...v, [k]: e.target.value }))} />
           </Field>
         ))}
       </div>
-      <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      {odd && <p className="field-warning" role="status">{odd}</p>}
+      {!link && <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>}
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
   );

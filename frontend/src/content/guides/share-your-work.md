@@ -41,8 +41,15 @@ When the story needs more than one item — the fitted model, the diagram built
 on it and the replacement interval that follows — put them in one report. In
 the Share dialog, choose **Add to a report…** at the bottom. Give the report a
 **Title** and an **Author or organisation**, write an **Introduction**, and add
-the other items under **Sections** with **Add an item**, each with an optional
-note. Reorder them with the arrows, then **Save report**.
+the other items under **Sections** with **Add an item**: type part of a name in
+the search box or pick a kind (each item shows its kind and when it was saved),
+then **Add**. **Rename** gives an item of yours a clearer name on the spot.
+A report can hold models of every kind (accelerated life included), block
+diagrams, fault trees, reliability predictions, forecasts, analyses and
+datasets. Give each an optional note, reorder them with the arrows, then
+**Save report**. On the shared page a model leads with its answer in one plain
+sentence ("One in ten is expected to have failed by about…") before its
+figures.
 
 Nothing is public until you create a link: once the report is saved, the same
 **Create public link** controls appear under it, and the page is laid out ready
@@ -55,6 +62,13 @@ and it flags any figure it can't find in the saved results.
 [Reports](/reports) in the menu lists your reports (open one to edit it, or
 press **New report** to start one there), your saved analyses, and every live
 share link with what it shows, so you can see at a glance what's out there.
+Reports belong to the workspace they're made in: in a team workspace you see
+that team's reports, which every member can read. Public links are for items
+in your Personal workspace for now.
+
+A public link to a model or a diagram also offers **Download as Python** (in the **⋯** menu on a
+model), so the person you share it with can rerun it without an account.
+
 
 ## Sharing with a named person — for a specific colleague
 

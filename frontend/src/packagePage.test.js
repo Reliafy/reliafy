@@ -106,3 +106,17 @@ test("taskLabel and visitTasksText tell like tasks apart, and count them", () =>
   assert.equal(visitTasksText(["a", "b", "c"], tasks), "Check seal ×2, Grease");
   assert.equal(visitTasksText(["x"], tasks), "");
 });
+
+test("a package becomes a shutdown, and back", () => {
+  const form = initialForm(PKG);
+  assert.equal(form.shutdown, false);
+  const on = { ...form, shutdown: true, shutHours: "72", shutCost: "15000" };
+  assert.equal(formProblem(on, PKG), null);
+  assert.deepEqual(editBody(PKG, on).shutdown, { duration_hours: 72, cost: 15000, idle_ageing: true });
+  assert.match(formProblem({ ...on, shutHours: "" }, PKG), /how long/);
+  const shut = { ...PKG, shutdown: { duration_hours: 72, idle_ageing: true, scope: [{ id: "p2", name: "Crusher" }] } };
+  const f2 = initialForm(shut);
+  assert.deepEqual(editBody(shut, f2), {});
+  assert.deepEqual(editBody(shut, { ...f2, shutHours: "48" }).shutdown, { duration_hours: 48, idle_ageing: true, scope: ["p2"] });
+  assert.deepEqual(editBody(shut, { ...f2, shutdown: false }), { shutdown: null });
+});

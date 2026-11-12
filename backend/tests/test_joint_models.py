@@ -88,7 +88,7 @@ def test_the_results_say_the_hazard_ratios_plainly_and_list_the_running_units(fi
     assert hr["marker_effect"]["hr"] == pytest.approx(np.exp(next(
         p["value"] for p in r["params"] if p["name"] == "marker_effect")))
     assert hr["marker_effect"]["text"].startswith("Each 1 unit higher vibration multiplies the failure rate by")
-    assert "at the same vibration" in hr["load"]["text"] and "95% CI" in hr["load"]["text"]
+    assert "at the same vibration" in hr["load"]["text"] and "90% CI" in hr["load"]["text"]
     assert r["horizons"]["labels"] == ["30 days", "90 days", "365 days"]
     running = fitted["L"][fitted["L"].running == 1]
     assert r["n_running"] == len(running) == len(r["risk"]) == len(fitted["out"]["units"])
@@ -100,6 +100,33 @@ def test_the_results_say_the_hazard_ratios_plainly_and_list_the_running_units(fi
         assert u["survival"][0] == pytest.approx(float(pred.sf(u["age"] + 30.0)), rel=1e-9)
         assert u["median_reached"] == np.isfinite(pred.remaining_life(0.5))
     json.dumps(fitted["out"], allow_nan=False)  # strict JSON: it crosses the wire and into Mongo
+
+
+def test_each_running_units_chance_carries_its_90_percent_upper_bound(fitted):
+    """The pull list says how sure: each chance of failing with its one-sided
+    90% upper bound (one less the lower bound on survival), and each median
+    life left with its lower bound."""
+    r = fitted["out"]["results"]
+    bounded = [u for u in r["risk"] if u.get("risk_upper")]
+    assert len(bounded) == len(r["risk"])
+    h = r["horizons"]["values"]
+    for u in r["risk"][:5]:
+        assert all(up >= p - 1e-12 for up, p in zip(u["risk_upper"], u["risk"]))
+        pred = joint.predict(fitted["model"], u["covariates"], fitted["out"]["units"][u["id"]]["markers"],
+                             u["age"])
+        lower = np.ravel(pred.cb(u["age"] + np.asarray(h), on="sf", alpha_ci=0.1, bound="lower"))
+        assert u["risk_upper"] == pytest.approx(list(1 - lower), rel=1e-9)
+        assert u["life_level"] == pytest.approx(0.9)
+        if u["median_reached"] and u["median_lower"] is not None:
+            assert u["median_lower"] <= u["median_remaining"] + 1e-9
+
+
+def test_risk_bounds_stop_at_their_time_budget(fitted):
+    model, units = fitted["model"], fitted["out"]["units"]
+    h = fitted["out"]["results"]["horizons"]["values"]
+    rows, notes = joint.risk_table(model, units, h, bounds_seconds=-1.0)
+    assert rows and not any(u.get("risk_upper") for u in rows)
+    assert any("90% bounds" in n for n in notes)
 
 
 def test_the_data_checks_say_what_to_fix():

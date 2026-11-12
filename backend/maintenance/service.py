@@ -69,6 +69,11 @@ from backend.maintenance.rcm_delete import PROJECTORS as _RCM_DELETE_PROJECTORS
 from backend.maintenance.rcm_delete import RcmDeleteOps
 from backend.maintenance.position_models import PROJECTORS as _POSITION_MODEL_PROJECTORS
 from backend.maintenance.position_models import PositionModelOps
+from backend.maintenance.captures import PROJECTORS as _CAPTURE_PROJECTORS
+from backend.maintenance import task_costs as _task_costs
+from backend.maintenance.captures import CaptureOps
+from backend.maintenance import restoration as _restoration
+from backend.maintenance import shutdowns as _shutdowns
 
 logger = logging.getLogger(__name__)
 
@@ -794,10 +799,11 @@ def _item_created(s: GraphStore, org: str, p: dict) -> None:
 # replaced by mistake can be read back. Events logged before 13 Oct 2026 carry
 # no date on an edit: those versions have "on": None.
 
-def _note_entry(history: list, on, change: str, text: str) -> list:
+def _note_entry(history: list, on, change: str, text: str, at: str | None = None) -> list:
     if change == "set" and not text and not history:
         return []
-    return (list(history) + [{"on": on, "change": change, "text": text}])[-NOTE_HISTORY:]
+    entry = {"on": on, "change": change, "text": text} | ({"at": at} if at else {})
+    return (list(history) + [entry])[-NOTE_HISTORY:]
 
 
 def _patch_noted(s: GraphStore, org: str, p: dict) -> None:
@@ -816,7 +822,7 @@ def _note_appended(s: GraphStore, org: str, p: dict) -> None:
     notes = node.get("notes") or ""
     s.patch_node(org, p["id"], {"notes": f"{notes}\n{line}" if notes else line,
                                 "note_history": _note_entry(node.get("note_history") or [], p["on"], "appended",
-                                                            p["text"])})
+                                                            p["text"], p.get("at"))})
 
 
 def _patch(s: GraphStore, org: str, p: dict) -> None:
@@ -912,6 +918,29 @@ def _item_removed(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["fitment_id"], {"to": p["on"], "end_reason": p["reason"],
                                         "failure_mode_id": p.get("failure_mode_id")}
                  | ({"to_precision": p["to_precision"]} if p.get("to_precision") else {}))
+
+
+def _fitment_found_failed(s: GraphStore, org: str, p: dict) -> None:
+    """An inspection found the fitted item failed (Nov 2026): it failed somewhere between
+    the last good check (last_good; none known: since it went in) and the finding (on).
+    The first finding on a fitment is what its life-data row goes by; a later one changes
+    nothing."""
+    f = s.node(org, p["fitment_id"])
+    if f is None or f.get("found_failed"):
+        return
+    s.patch_node(org, p["fitment_id"], {"found_failed": {
+        "on": p["on"], "last_good": p.get("last_good"), "action_id": p.get("action_id"),
+        "work_order_id": p.get("work_order_id")}})
+
+
+def _task_overdue_carried(s: GraphStore, org: str, p: dict) -> None:
+    """A task already overdue when it went into a package (Nov 2026): it stays overdue
+    from its own due date until it's next done (last_done moves on), whatever the
+    package's visits say."""
+    if s.node(org, p["task_id"]) is None:
+        return
+    s.patch_node(org, p["task_id"], {"carried_overdue": {
+        "due": p["due"], "last_done": p.get("last_done"), "package_id": p["id"], "on": p["on"]}})
 
 
 def _fitment_added(s: GraphStore, org: str, p: dict) -> None:
@@ -1635,13 +1664,40 @@ _TIME_RE = re.compile(
     r"(Z|[+-]\d{2}:?\d{2})?)?)?)?$")
 
 
-def _reading_time(at, precision, tz, now: datetime) -> tuple[str, str | None, str]:
+# How far ahead of the server's clock a reading's time may be. Phones, tablets and
+# loggers run a few minutes fast or slow; a time this close to now was read now.
+CLOCK_TOLERANCE = timedelta(minutes=10)
+
+
+def _future_reading(now: datetime, tz, given: datetime | None = None, what: str = "reading") -> Invalid:
+    """The refusal for a reading dated after now, saying what the workspace's clock
+    reads and what to do. ``given``: the time of day asked for (None: a day only)."""
+    local = now.astimezone(tz or timezone.utc)
+    zone = getattr(tz, "key", None) or "UTC"
+    today = date_text(local.date().isoformat(), None)
+    article = "An" if what[:1] in "aeiou" else "A"
+    if given is None:
+        return Invalid(f"{article} {what} can't be in the future: it's {today} in this workspace ({zone}). Use that "
+                       "date or an earlier one.")
+    asked = given.astimezone(tz or timezone.utc)
+    when = f"{asked:%H:%M}"
+    if asked.date() != local.date():
+        when += f" on {date_text(asked.date().isoformat(), None)}"
+    return Invalid(f"{article} {what} can't be in the future: {when} is later than the time in this workspace, "
+                   f"{local:%H:%M} on {today} ({zone}). Give the time on the workspace's clock, or leave the time "
+                   "out to record the day only. If the workspace's clock is the wrong one for you, change its time "
+                   "zone in Settings.")
+
+
+def _reading_time(at, precision, tz, now: datetime, what: str = "reading") -> tuple[str, str | None, str]:
     """``(on, at, precision)`` for a reading's time. ``at`` is "2026", "2026-10",
     "2026-10-19", or a time of day ("2026-10-19T10:14", seconds and up to nine
     decimals allowed; with Z or an offset, else the workspace's zone). ``on`` is
     the workspace day it falls on (a year or month: its first day); ``at`` the
     moment in UTC, "YYYY-MM-DDTHH:MM:SS[.fff…]Z", for a time of day, else None.
-    ``precision`` defaults to what was given and may only be coarser."""
+    ``precision`` defaults to what was given and may only be coarser. A time of
+    day up to CLOCK_TOLERANCE ahead of ``now`` (a device's clock running fast) is
+    taken as now; further ahead is refused, with what the workspace's clock reads."""
     m = _TIME_RE.match(str(at).strip())
     if not m:
         raise Invalid(f"“{at}” isn't a time: write 2026-10-19T10:14 (or 2026-10-19, 2026-10 or 2026).")
@@ -1663,8 +1719,9 @@ def _reading_time(at, precision, tz, now: datetime) -> tuple[str, str | None, st
             day = day.replace(month=1, day=1)
         elif precision == "month":
             day = day.replace(day=1)
-        if day > now.astimezone(tz or timezone.utc).date():
-            raise Invalid("A reading can't be in the future.")
+        # A day alone gets the same tolerance: a clock a little fast just before midnight says tomorrow.
+        if day > (now + CLOCK_TOLERANCE).astimezone(tz or timezone.utc).date():
+            raise _future_reading(now, tz, what=what)
         return day.isoformat(), None, precision
     zone_ = tz or timezone.utc
     if off == "Z":
@@ -1678,8 +1735,11 @@ def _reading_time(at, precision, tz, now: datetime) -> tuple[str, str | None, st
     except ValueError:
         raise Invalid(f"“{at}” isn't a real time.") from None
     moment = local.astimezone(timezone.utc)
-    if moment > now + timedelta(minutes=2):
-        raise Invalid("A reading can't be in the future.")
+    if moment > now:
+        if moment - now > CLOCK_TOLERANCE:
+            raise _future_reading(now, tz, moment, what)
+        # The device's clock is a little fast: it was read now (and so on today's day).
+        moment, frac = now.astimezone(timezone.utc), None
     digits = {"us": 6, "ns": 9}.get(precision, 0)
     frac = ((frac or "") + "0" * 9)[:digits]
     keep = {"hour": 13, "minute": 16}.get(precision)
@@ -2246,6 +2306,14 @@ def _duty_changed(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["group_id"], {"duty": p["position_id"], "duty_since": p["on"]})
 
 
+def _group_standby_set(s: GraphStore, org: str, p: dict) -> None:
+    """group.standby_set (Nov 2026): how a standby set's spare takes over: the chance it starts
+    when switched in (start_probability) and, warm, how fast it ages while waiting (dormancy, a
+    share of the running rate). None clears one."""
+    s.patch_node(org, p["group_id"], {"start_probability": p.get("start_probability"),
+                                      "dormancy": p.get("dormancy")})
+
+
 def stock_id(part_id: str, location_id: str) -> str:
     return f"stock-{part_id[:12]}-{location_id[:12]}"
 
@@ -2595,6 +2663,29 @@ def _failure_report_action_updated(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"actions": actions, "history": _report_history(r, p, _report_line(label, what))})
 
 
+def op_node_id(op_id: str) -> str:
+    """The id of the node that remembers a device's change by the id the device gave it."""
+    return f"op:{op_id}"
+
+
+def _op_applied(s: GraphStore, org: str, p: dict) -> None:
+    """op.applied: one change a device queued and sent later (sync.py), as the events
+    it comes to, in order. One event in the log, so it is recorded whole or not at
+    all; and its op_id is remembered on a SyncOp node, so the same change sent again
+    (a lost answer, two sends that crossed) is recognised: the first one in the log
+    counts and a later one changes nothing."""
+    nid = op_node_id(p["op_id"])
+    if s.node(org, nid) is not None:
+        return
+    for e in p["events"]:
+        PROJECTORS[e["type"]](s, org, e["payload"])
+    s.put_node(org, nid, "SyncOp", {
+        "op_id": p["op_id"], "apply_id": p["apply_id"], "device_id": p.get("device_id"),
+        "device_seq": p.get("device_seq"), "command": p["command"], "on": p["on"],
+        "device_time": p.get("device_time"), "ref": p.get("ref") or {}, "events": len(p["events"]),
+    })
+
+
 def _failure_report_verified(s: GraphStore, org: str, p: dict) -> None:
     r = s.node(org, p["id"])
     verification = {"result": p["result"], "notes": p.get("notes", ""), "verified_on": p["verified_on"],
@@ -2663,6 +2754,7 @@ PROJECTORS = {
     "group.member_removed": _group_member(False),
     "group.retired": _flag("retired"),
     "duty.changed": _duty_changed,
+    "group.standby_set": _group_standby_set,
     "position.rbd_linked": _patch,
     "condition_point.added": _point_added,
     "condition_point.updated": _patch,
@@ -2799,10 +2891,26 @@ PROJECTORS = {
     "failure_report.action_added": _failure_report_action_added,
     "failure_report.action_updated": _failure_report_action_updated,
     "failure_report.verified": _failure_report_verified,
+    # One change sent by a device that works offline, whole or not at all (Nov 2026).
+    "op.applied": _op_applied,
 }
 
 
 # ---- the domain ------------------------------------------------------------------
+
+
+def _flat_events(events: list[dict]) -> list[dict]:
+    """Events as recorded one by one: an op.applied (a device's change, one event in
+    the log) as the events inside it, each with the op's time and actor."""
+    out = []
+    for e in events:
+        if e["type"] == "op.applied":
+            inner = e["payload"].get("events") or []
+            # Newest first, as the log is read: the op's own events in reverse too.
+            out += [{**e, "type": i["type"], "payload": i["payload"]} for i in reversed(inner)]
+        else:
+            out.append(e)
+    return out
 
 
 def _walk_down(top: str, kids: dict) -> set[str]:
@@ -2817,12 +2925,17 @@ def _walk_down(top: str, kids: dict) -> set[str]:
     return out
 
 
-class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps):
+class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
+                  CaptureOps, _restoration.RestorationOps, _shutdowns.ShutdownOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
-                 time_zone: str | None = None):
+                 time_zone: str | None = None, as_of: str | None = None):
         self.s = store
+        # The day a change was made, when that isn't now: one queued on a device with
+        # no signal and sent later (sync.py). It is "today" for what the change
+        # records; "in the future" is still judged by the clock (latest_day).
+        self.as_of = as_of
         self.org = org
         self.actor = actor
         # The workspace's time zone (an IANA name, or None: the server's): "today"
@@ -2837,8 +2950,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         self._memo: dict = {}
 
     def today(self) -> str:
-        """Today's date in the workspace's time zone, as ISO text."""
-        return time_zones.today(self.time_zone).isoformat()
+        """Today's date in the workspace's time zone, as ISO text (the day the change
+        was made, for one sent later: ``as_of``)."""
+        return self.as_of or time_zones.today(self.time_zone).isoformat()
+
+    def latest_day(self) -> str:
+        """The latest day a change may carry: the workspace's day CLOCK_TOLERANCE from now,
+        so a clock a few minutes fast isn't "in the future" just before midnight."""
+        return time_zones.day_of(time_zones.now() + CLOCK_TOLERANCE, self.tz)
 
     def check_limits(self) -> None:
         """Before a change: refuse when the organisation has started too many
@@ -4631,6 +4750,48 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def decide_failure_mode(self, mode_id: str, consequence=..., decision=..., task_id=None, hidden=...,
                             strict=True) -> dict:
+        """A failure mode's RCM decision (:meth:`_decide_failure_mode`), with what its fixed-interval
+        task leaves the item as: decision.restoration, or a combination member's restoration
+        (restoration.py), checked before anything is written and set on the decision's task for
+        this mode (task.restoration_set with failure_mode_id)."""
+        wanted = self._decision_restorations(decision)
+        out = self._decide_failure_mode(mode_id, consequence, decision, task_id, hidden, strict)
+        if wanted:
+            fm = self._get(mode_id, "FailureMode")
+            fixed = ([o["task_id"] for o in fm.get("outcomes") or [] if o.get("outcome") == "fixed_interval"
+                      and o.get("task_id")]
+                     or ([fm["task_id"]] if fm.get("outcome") == "fixed_interval" and fm.get("task_id") else []))
+            for tid, value in zip(fixed, wanted):
+                if value is not ...:
+                    self.set_task_restoration(tid, value, failure_mode_id=mode_id)
+            out = self.rcm_mode(mode_id)
+        return out
+
+    def _decision_restorations(self, decision) -> list:
+        """What each fixed-interval task of a decision leaves the item as, in order (... where a
+        member says nothing), checked; [] when none is given."""
+        if not isinstance(decision, dict):
+            return []
+        members = decision.get("outcomes") if isinstance(decision.get("outcomes"), list) else None
+        given = ([m.get("restoration", ...) for m in members if isinstance(m, dict)
+                  and m.get("outcome") == "fixed_interval"] if members
+                 else [decision.get("restoration", ...)] if decision.get("outcome") == "fixed_interval" else [])
+        if members and "restoration" in decision and given and given[0] is ...:
+            given[0] = decision["restoration"]
+        if all(v is ... for v in given):
+            if "restoration" in decision or any(isinstance(m, dict) and "restoration" in m for m in members or []):
+                raise Invalid("restoration goes with a fixed-interval task (replace or restore at the interval).")
+            return []
+        for v in given:
+            if v is not ...:
+                try:
+                    _restoration.clean(v)
+                except _restoration.RestorationError as err:
+                    raise Invalid(str(err)) from None
+        return given
+
+    def _decide_failure_mode(self, mode_id: str, consequence=..., decision=..., task_id=None, hidden=...,
+                             strict=True) -> dict:
         """A failure mode's RCM decision: its two answers (hidden: is the failure
         hidden from the crew in normal operation; consequence: safety,
         environmental, operational or non_operational, for a hidden one what the
@@ -4714,6 +4875,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 return self.rcm_mode(mode_id)
             said = str(cleaned.get("task") or "").strip()
             outcome = cleaned.get("outcome")
+            if not task_id and task is None and outcome in SCHEDULED_OUTCOMES and said:
+                # A task of that name added on the position (on its Maintenance tab, serving no failure
+                # mode yet) is the decision's, its cost, LSA and package with it: never a second copy
+                # with no cost. One another mode's decision made stays that mode's own.
+                key = " ".join(said.split()).casefold()
+                same = [t for t in self._tasks_on(position["id"])
+                        if " ".join(str(t.get("name") or "").split()).casefold() == key
+                        and not self.s.out(self.org, t["id"], "MITIGATES")]
+                if len(same) == 1:
+                    task_id = same[0]["id"]
             if task_id:
                 # An existing task is the decision's: its name and interval stand in
                 # for any the decision doesn't give.
@@ -5733,6 +5904,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                  "instructions": t.get("instructions") or "",
                  "shared_with": shares(t["id"]) if shares else 0}
                 | ({"position_id": t["position_id"]} if t.get("position_id") else {})
+                # What it leaves the item as (restoration.py): the task's own, and any failure
+                # mode's decision's own, so the RCM can show and change one mode's.
+                | ({"restoration": t["restoration"]} if t.get("restoration") else {})
+                | ({"restorations": t["restorations"]} if t.get("restorations") else {})
                 | Maintenance._calendar_due(t) for t in tasks]
 
     @staticmethod
@@ -5826,6 +6001,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if (member.get("evidence") or {}).get("type") == "working":
                 member["working"] = self._working_ref(member["evidence"].get("id"))
         brief = self._tasks_brief(tasks, shares)
+        # What each task costs each time (Nov 2026): the RCM reads the task's own figure, and
+        # says where it came from, rather than asking for it again.
+        costs = {}
+        for t in tasks:
+            cost = self._task_cost(t)
+            costs[t["id"]] = {"amount": cost["amount"], "source": cost["source"],
+                              "complete": cost["source"] == "typed" or cost["lsa"]["complete"]}
+        for row in [*brief, *((decision or {}).get("tasks") or [])]:
+            if row.get("id") in costs:
+                row["cost"] = dict(costs[row["id"]])
         # A task raised by an event: the worksheet shows "on event: …" in place of its interval.
         triggers = {t["id"]: self._trigger_view(t.get("trigger")) for t in tasks if t.get("trigger")}
         if triggers:
@@ -6119,6 +6304,58 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     # ---- tasks and when they're due ------------------------------------------------
 
+    @staticmethod
+    def _name_stem(name: str) -> str:
+        """A position's name without its last token when that token only tells identical
+        positions apart ("Pump A", "Pump 2", "Pump #2", "Pump-B" → "pump")."""
+        text = " ".join(str(name or "").lower().split())
+        return re.sub(r"(?:[\s\-_#]+(?:[a-z]|\d+[a-z]?)|\d+[a-z]?)$", "", text).strip() or text
+
+    def task_twins(self, task_id: str) -> dict:
+        """The same task on identical positions (Nov 2026: change a pump's interval, and its
+        twin keeps the old one): live tasks with the same name on other positions of the same
+        position class, or, where it has no class, on positions inside the same parent whose
+        names differ only in their last letter or number. Each with its interval and unit, so
+        the page can offer to bring them in line. {task, twins: [{id, name, interval, unit,
+        outcome, position {id, name, path}, same}]}; same: its interval and unit match."""
+        task = self._get(str(task_id or ""), "Task")
+        here = _subject(self.s, self.org, task)
+        out = {"task": {"id": task["id"], "name": task["name"], "interval": task.get("interval"),
+                        "unit": task.get("unit")}, "twins": []}
+        if not here or here["label"] != "Position":
+            return out
+        cls = (here.get("position_class") or "").strip().lower()
+        parent = self._parent(here["id"])
+        stem = self._name_stem(here["name"])
+        want = " ".join(str(task["name"] or "").lower().split())
+
+        def alike(p: dict) -> bool:
+            if p["id"] == here["id"] or p.get("retired"):
+                return False
+            if cls:
+                return (p.get("position_class") or "").strip().lower() == cls
+            if (p.get("position_class") or "").strip():
+                return False
+            mine = self._parent(p["id"])
+            return bool(parent and mine and mine["id"] == parent["id"] and stem != " ".join(p["name"].lower().split())
+                        and self._name_stem(p["name"]) == stem)
+
+        for p in self.s.nodes(self.org, "Position"):
+            if not alike(p):
+                continue
+            for t in self._tasks_on(p["id"]):
+                if " ".join(str(t["name"] or "").lower().split()) != want:
+                    continue
+                path = [x["name"] for x in self._position_path(p["id"])]
+                out["twins"].append({
+                    "id": t["id"], "name": t["name"], "interval": t.get("interval"), "unit": t.get("unit"),
+                    "outcome": t.get("outcome"),
+                    "position": {"id": p["id"], "name": p["name"], "path": " › ".join(path + [p["name"]])},
+                    "same": t.get("interval") == task.get("interval") and t.get("unit") == task.get("unit")})
+        out["twins"].sort(key=lambda x: x["position"]["path"].lower())
+        out["twins"] = out["twins"][:MAX_LIST]
+        return out
+
     def _tasks_on(self, position_id: str) -> list[dict]:
         return [t for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task" and not t.get("retired")]
 
@@ -6282,6 +6519,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # What doing it needs (its LSA record: labour, tools, spares, consumables, access, method).
             "resources": self._resources_view(task),
         }
+        # What it costs each time it's done (typed on it, or from its LSA at trade rates).
+        out["cost"] = self._task_cost(task, out["resources"])
+        # What it leaves the item as, how its interval is counted, its age limit at a shutdown
+        # (restoration.py): what the RBD plan reads.
+        out |= self._restoration_view(task, out["by_use"])
         if on_event and not open_wo:
             out["status"] = "Waiting for the event"
         if subject and subject["label"] == "Item":
@@ -6301,6 +6543,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             out["next_due"], out["overdue"] = open_wo["due"], self._wo_overdue(open_wo)
             if not open_wo.get("visit_on"):
                 out["due_by"] = "work_order"
+        # Overdue when it went into its package (Nov 2026): still overdue from its own due
+        # date until it's done, whenever the package's visit is.
+        carried = task.get("carried_overdue")
+        if entry and entry["active"] and carried and carried.get("last_done") == task.get("last_done"):
+            out["next_due"] = min(out["next_due"] or carried["due"], carried["due"])
+            out["overdue"] = True
+            out["overdue_before_package"] = {"due": carried["due"], "since": carried.get("on")}
         # On something out of service: not due (nor late) until it's back.
         held = subject and not task.get("retired") and self._out_of_service_on(subject["id"], self.today())
         if held:
@@ -7431,8 +7680,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if precision not in (None, "", "day"):
                 raise Invalid("Give the time in at (e.g. 2026-10-19T10:14) to say how precisely it's known.")
             day = _day(on, today=self.today())
-        if day > self.today():
-            raise Invalid("A reading can't be in the future.")
+        if day > self.latest_day():
+            raise _future_reading(time_zones.now(), self.tz)
         lo, hi = point.get("range_min"), point.get("range_max")
         if (lo is not None and value < lo) or (hi is not None and value > hi):
             u = f" {point['unit']}" if point.get("unit") else ""
@@ -7759,10 +8008,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if view["next_due"] and view["next_due"] <= until:
                 if subject["label"] == "Position":
                     view["position"] = {"id": subject["id"], "name": subject["name"]}
+                    view["subject"]["within"] = self._within(subject["id"])
                 elif subject["label"] == "Item":
                     view["at"] = self._item_at(subject["id"])
+                # Where the work is (the position's place, set or inherited; where the item is
+                # now; or the place itself), so Due soon can be narrowed to one site.
+                view["location"] = self._wo_area(subject)
                 out.append(view)
         return sorted(out, key=lambda t: t["next_due"])
+
+    def _within(self, position_id: str, depth: int = 2) -> str:
+        """What a position sits in, briefly: its nearest ``depth`` parents, top first
+        ("Station 2 › Pump 3"), so six "Drive motor" rows can be told apart. "" at the top."""
+        path = self._position_path(position_id)
+        return " › ".join(a["name"] for a in path[-depth:])
 
     def _item_at(self, item_id: str) -> dict:
         """Where an item is now, briefly: the position it's fitted to (or None) and its
@@ -7857,7 +8116,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
           | ({"round": self._round(node["id"])} if include_positions else {}))
         return self.work_order(wid)
 
-    def generate(self, horizon_days: int = 30) -> dict:
+    def generate(self, horizon_days: int = 30, location_id: str | None = None) -> dict:
         """A work order for every task due within the horizon that has none open, on the
         task's subject: its position, its item (wherever it is) or its location.
 
@@ -7871,18 +8130,32 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         task due on that visit; one still open gets the tasks due on the visits since as
         lines instead. Their work orders are in work_orders too; the result adds packages
         (the visits raised), lines_added and packages_skipped. Every task in an active
-        package is then left to it."""
+        package is then left to it.
+
+        location_id: only the work in that area (a site and the places inside it): tasks
+        whose work is there, and packages on a position or place there."""
         made, skipped = [], []
+        inside = None
+        if location_id not in (None, ""):
+            self._get(str(location_id), "Location")
+            inside = set(self._location_ids_in(str(location_id)))
+
+        def there(subject) -> bool:
+            where = subject and self._wo_area(subject)
+            return bool(where) and where["id"] in inside
         packaged = bool(self.s.nodes(self.org, "WorkPackage"))
         members: set = set()
         if packaged:
             until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
-            raised = self._generate_packages(until)
+            raised = self._generate_packages(
+                until, None if inside is None else (lambda p: there(self._package_subject(p))))
             made += raised["work_orders"]
             # Every task in an active package goes on its work orders; a paused one's are held.
             members = {tid for tid, entry in self._package_index().items() if entry["active"] or entry["held"]}
         for task in self.due_tasks(horizon_days):
             if task["id"] in members or task["open_work_order"] or not task.get("subject"):
+                continue
+            if inside is not None and not (task.get("location") and task["location"]["id"] in inside):
                 continue
             try:
                 made.append(self.open_work_order(None, None, type="preventive", task_id=task["id"],
@@ -7901,9 +8174,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     "packages_skipped": raised["skipped"]}
         return out
 
-    def generate_work_orders(self, horizon_days: int = 30) -> list[dict]:
+    def generate_work_orders(self, horizon_days: int = 30, location_id: str | None = None) -> list[dict]:
         """The work orders generate() opened (its skipped tasks aside)."""
-        return self.generate(horizon_days)["work_orders"]
+        return self.generate(horizon_days, location_id)["work_orders"]
 
     def _work_position(self, subject: dict) -> str | None:
         """The position a work order's work is done at: its own, or for an item's, the
@@ -7931,7 +8204,17 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         line not ticked must be in not_done ([{task_id, reason}]): it's taken off the
         work order (work_order.task_released), isn't renewed, and goes on the next. An
         action may name position_id, one of its lines' positions: a replacement or a
-        failure found there is recorded at that position."""
+        failure found there is recorded at that position.
+
+        Any work order on a position: an action's position_id may also be a position
+        inside it (the seal inside the pump whose check this is), so a finding or a
+        replacement is recorded on the thing that failed. An inspection that finds the
+        fitted item failed records when it was last known good (fitment.found_failed):
+        its life is then interval censored, between that check and the finding.
+
+        A replacement's new item given only by its serial (no name, no part) is named
+        after what it replaces: the outgoing item's part, its name, else the position's
+        class or name."""
         wo = self._get(work_order_id, "WorkOrder")
         if wo["status"] not in OPEN_STATUSES:
             raise Invalid("This work order is already closed.")
@@ -7947,8 +8230,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     if c.get("task_id") and not c.get("step") and self._line_state(c) == "problem"
                     and (c.get("mark") or {}).get("finding")]
         line_positions = {line["position_id"] for line in wo.get("lines") or [] if line.get("position_id")}
+        inside_memo: list = []
+
+        def inside(pid: str) -> bool:
+            """Whether pid is a position inside the work order's own position or one of its lines'."""
+            if not inside_memo:
+                found: set = set()
+                for top in {position_id, *line_positions} - {None}:
+                    found |= set(self._report_scope(top))
+                inside_memo.append(found)
+            return pid in inside_memo[0]
+
         # Check everything before writing anything.
-        plans, issues, per_jobs = [], {}, {}
+        plans, issues, per_jobs, found_failed = [], {}, {}, {}
 
         def per_job_at(pid):
             if pid not in per_jobs:
@@ -7963,11 +8257,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             at = position_id
             if a.get("position_id") not in (None, ""):
                 at = str(a["position_id"])
-                if at != position_id and at not in line_positions:
-                    raise Invalid("An action's position_id is one of the positions on this work order's lines "
-                                  "(maintenance get.work_order: line_positions)." if line_positions else
-                                  "An action's position_id goes with a work package's work order, at one of its "
-                                  "lines' positions; this one's work is at its own position.")
+                if at != position_id and at not in line_positions and not inside(at):
+                    raise Invalid("An action's position_id is one of the positions on this work order's lines, or "
+                                  "a position inside one (maintenance get.work_order: line_positions)."
+                                  if line_positions else
+                                  "An action's position_id is this work order's position or a position inside it "
+                                  "(maintenance get.work_order: inside_positions)." if position_id else
+                                  "An action's position_id goes with a work order on a position (or a work "
+                                  "package's, at one of its lines' positions); this one is on a location.")
+                if self.s.node(self.org, at, "Position") is None or self.s.node(self.org, at).get("retired"):
+                    raise Invalid("That position has been retired: record the work where the item is now.")
             per_job = per_job_at(at)
             if at is None and (kind == "replace" or a.get("failure_mode_id") or a.get("failure_mode_text")):
                 raise Invalid(self._no_position_why(subject, kind) + (
@@ -7975,6 +8274,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if kind == "replace":
                 self._not_a_design(at)
             fm = at and self._mode_ref(at, a.get("failure_mode_id") or None, a.get("failure_mode_text"))
+            # A replacement says why the old item came out: reason failure (its mode named or
+            # not known), planned or other. Not given: a failure if a mode is named, else planned.
+            if kind == "replace":
+                a = {**a, "reason": _end_reason(a.get("reason"), fm)}
+            elif a.get("reason") not in (None, ""):
+                raise Invalid("Only a replacement takes a reason (failure, planned or other).")
             finding = a.get("finding") or None
             if kind == "inspect" and finding not in FINDINGS:
                 raise Invalid("An inspection's finding is ok, degraded or found_failed.")
@@ -8000,9 +8305,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                            "part_id": pt["id"]}}
             elif a.get("from_location_id"):
                 raise Invalid("Stock is issued from the catalogue: give the part_id.")
+            if kind == "replace" and not a.get("item_id") and not (a.get("new_item") or {}).get("name") \
+                    and any(str(v or "").strip() for v in (a.get("new_item") or {}).values()):
+                # A serial (or a part number, a maker) typed with no name: the new item is still made,
+                # named after what it replaces, so what was typed is never dropped.
+                a = {**a, "new_item": {**a["new_item"], "name": self._replacement_name(at)}}
             if kind == "replace" and not (a.get("item_id") or (a.get("new_item") or {}).get("name")) \
                     and not self.current_fitment(at):
                 raise Invalid("A replacement needs the item that went in.")
+            if kind == "inspect" and finding == "found_failed" and at and at not in found_failed:
+                current = self.current_fitment(at)
+                if current:
+                    found_failed[at] = (current, self._last_good_check(work_order_id, current, at, day))
             plans.append((kind, fm, finding, a, used, at))
         for at in {position_id, *(p[5] for p in plans)}:
             current = at and self.current_fitment(at)
@@ -8021,7 +8335,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 current = self.current_fitment(at)
                 if current:
                     self._emit("item.removed", {"fitment_id": current["id"], "on": day,
-                                                "reason": "failure" if fm else "planned",
+                                                "reason": a["reason"],
                                                 "failure_mode_id": fm})
                     ends = current["id"]
                 if a.get("item_id") or (a.get("new_item") or {}).get("name"):
@@ -8033,11 +8347,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             elif at:
                 fitted = self.current_fitment(at)
                 on_fitment = fitted and fitted["id"]
+            action_id = new_id()
+            if kind == "inspect" and finding == "found_failed" and at in found_failed:
+                on_fitment = found_failed[at][0]["id"]
             self._emit("action.recorded", {
-                "id": new_id(), "work_order_id": work_order_id, "kind": kind, "finding": finding,
+                "id": action_id, "work_order_id": work_order_id, "kind": kind, "finding": finding,
                 "failure_mode_id": fm, "notes": _text(a.get("notes"), "notes"), "on": day,
                 "ends": ends, "starts": starts, "on_fitment": on_fitment,
             })
+            if kind == "inspect" and finding == "found_failed" and at in found_failed:
+                fitment, last_good = found_failed.pop(at)
+                self._emit("fitment.found_failed", {"fitment_id": fitment["id"], "position_id": at, "on": day,
+                                                    "last_good": last_good, "action_id": action_id,
+                                                    "work_order_id": work_order_id})
             if used:
                 pt, qty, from_location_id = used
                 self.add_part_used(work_order_id, part_id=pt["id"], quantity=qty, from_location_id=from_location_id,
@@ -8058,6 +8380,38 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         self._emit("work_order.closed", {"id": work_order_id, "on": day, "notes": _text(notes, "notes"),
                                          "task_readings": task_readings})
         return self.work_order(work_order_id)
+
+    def _replacement_name(self, position_id: str | None) -> str:
+        """A name for a new item given only by its serial: the outgoing item's part, else
+        its name, else the position's class, else the position's name."""
+        current = position_id and self.current_fitment(position_id)
+        item = current and self.s.inn(self.org, current["id"], "IN")
+        if item:
+            part = self._item_part(item[0]["id"])
+            if part and part.get("name"):
+                return part["name"]
+            if item[0].get("name"):
+                return item[0]["name"]
+        position = position_id and self.s.node(self.org, position_id) or {}
+        return (position.get("position_class") or "").strip() or position.get("name") or "Replacement item"
+
+    def _last_good_check(self, work_order_id: str, fitment: dict, at: str, day: str) -> str | None:
+        """When the item fitted at ``at`` was last known good, before ``day``: the last time
+        a check on this work order (a task on ``at`` or a position it's inside, other than a
+        fixed-interval replacement) was done before, or an inspection of this fitment that
+        found it OK or degraded, whichever is later, and not before the item went in. None
+        when nothing says so: it may have failed any time since it went in."""
+        holders = {at, *(a["id"] for a in self._position_path(at))}
+        item = self.s.inn(self.org, fitment["id"], "IN")
+        if item:
+            holders.add(item[0]["id"])
+        days = [t["last_done"] for t in self.s.out(self.org, work_order_id, "FOR")
+                if t.get("last_done") and t.get("outcome") != "fixed_interval"
+                and (_subject(self.s, self.org, t) or {}).get("id") in holders]
+        days += [a["on"] for a in self.s.inn(self.org, fitment["id"], "ON")
+                 if a["label"] == "Action" and a.get("kind") == "inspect" and a.get("finding") in ("ok", "degraded")]
+        days = [d for d in days if fitment["from"] <= d < day]
+        return max(days, default=None)
 
     LINE_STATES = ("todo", "done", "not_done", "problem")
 
@@ -8266,17 +8620,33 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         restored = self._restore_tasks_retired_with(item_id, "Its item was retired.")
         return {**self.item(item_id), "tasks_restored": restored}
 
-    def _note_to_append(self, node: dict, text) -> dict | None:
+    def _note_to_append(self, node: dict, text, at=None) -> dict | None:
         """The note.appended payload for adding ``text`` as a dated line to a node's
-        notes (checked before anything is written), or None with no text."""
+        notes (checked before anything is written), or None with no text. ``at``: when
+        it was written, if not now (a time with Z or an offset: a note made on a phone
+        with no signal and sent later). The line is dated the workspace day ``at`` falls
+        on, and the moment is kept (UTC) beside it."""
         if text is None or not str(text).strip():
             return None
         text = _text(text, "note")
-        on = self.today()
+        on, timed = self.today(), {}
+        if at not in (None, ""):
+            on, stamp = self._note_time(at)
+            timed = {"at": stamp}
         if len(node.get("notes") or "") + len(on) + len(text) + 3 > MAX_NOTES:
             raise Invalid(f"The notes would be over {MAX_NOTES:,} characters. Replace them with a shorter "
                           "summary first.")
-        return {"id": node["id"], "on": on, "text": text}
+        return {"id": node["id"], "on": on, "text": text, **timed}
+
+    def _note_time(self, at) -> tuple[str, str]:
+        """``(on, at)`` for a note written at ``at``: the workspace day and the moment in
+        UTC to the second. A time of day is needed (a note's day alone is its ``on``).
+        Up to CLOCK_TOLERANCE ahead of the server it was written now; past that it's
+        refused, like a reading's."""
+        day, stamp, _precision = _reading_time(at, None, self.tz, time_zones.now(), what="note")
+        if stamp is None:
+            raise Invalid(f"“{at}” needs its time of day: write 2026-10-19T10:14:05+10:00.")
+        return day, stamp[:19] + "Z"
 
     def move_item(self, item_id: str, to_position_id: str, on=None) -> dict:
         """Move an item from wherever it's fitted to an empty position (a planned
@@ -8394,9 +8764,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return f"{name}{serial}, fitted {where} {when}"
 
     def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None,
-                          assignee=None, planned_for=None, append_note=None, trade=None, readings=None) -> dict:
+                          assignee=None, planned_for=None, append_note=None, trade=None, readings=None,
+                          note_at=None) -> dict:
         """Change an open work order. ``notes`` replaces the whole note; ``append_note``
         adds a dated line to the end of it (on any work order, closed or cancelled too).
+        ``note_at``: when the appended note was written, if not now (see _note_to_append).
         Every version is kept in note_history. trade: who may do the work. ``readings``
         records readings and settings taken at it now (as close does; a closed one
         too), each linked to the work order."""
@@ -8425,7 +8797,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             changes["planned_for"] = _day(planned_for, "planned date") if planned_for else None
         if trade is not None:
             changes["trade"] = _text(trade, "trade")
-        appended = self._note_to_append({**wo, **changes}, append_note)
+        if note_at not in (None, "") and (append_note is None or not str(append_note).strip()):
+            raise Invalid("note_at goes with append_note: the time that note was written.")
+        appended = self._note_to_append({**wo, **changes}, append_note, note_at)
         if changes:
             self._emit("work_order.updated", {"id": work_order_id, "changes": changes,
                                               "on": self.today()})
@@ -9305,11 +9679,31 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         pid = new_id()
         tol = self._tolerance_arg(tolerance, tolerance_unit)
         months = self._season_arg(season)
+        late = self._overdue_before_packaging(ids)
         self._emit("package.created", {
             "id": pid, "name": name, **ref, **fields, "trade": _text(trade, "trade"), "notes": _text(notes, "notes"),
             "tasks": members, "on": self.today()} | ({"tolerance": tol} if tol else {})
             | ({"season": months} if months else {}))
+        self._carry_overdue(pid, late)
         return self.package(pid)
+
+    def _overdue_before_packaging(self, task_ids) -> dict[str, dict]:
+        """The tasks overdue now on their own schedule (or their open work order's), before
+        they join a package: {task_id: {due, last_done}}."""
+        out = {}
+        for tid in task_ids:
+            task = self.s.node(self.org, tid, "Task")
+            view = task and self._task_view(task)
+            if view and view["overdue"] and view["next_due"]:
+                out[tid] = {"due": view["next_due"], "last_done": task.get("last_done")}
+        return out
+
+    def _carry_overdue(self, package_id: str, late: dict[str, dict]) -> None:
+        """Tasks that were overdue when they joined the package stay overdue, from their own
+        due date, until they're done: the package's next visit doesn't make them on time."""
+        for tid, was in late.items():
+            self._emit("task.overdue_carried", {"id": package_id, "task_id": tid, "due": was["due"],
+                                                "last_done": was["last_done"], "on": self.today()})
 
     def update_package(self, package_id: str, name=None, timing=None, every=None, unit=None, weekday=None, nth=None,
                        day=None, clear_pattern=False, anchor=None, tolerance=None, tolerance_unit=None, trade=None,
@@ -9385,7 +9779,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid(f"{task['name']} is in {pkg['name']} already: change its visit rule with "
                           "maintenance packages.update (tasks).")
         self._check_suppresses([member], self._tree_task_ids(pkg) | {task["id"]})
+        late = self._overdue_before_packaging([task["id"]])
         self._emit("package.task_added", {"id": pkg["id"], **member, "on": self.today()})
+        self._carry_overdue(pkg["id"], late)
         return self.package(pkg["id"])
 
     def remove_package_task(self, package_id: str, task_id: str) -> dict:
@@ -9634,6 +10030,36 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 visit = cad.after(v)
         return out
 
+    def raise_package_visit(self, package_id: str) -> dict:
+        """Raise one package's next visit now, on its own (nothing else that's due): its work
+        order, with a line per task due on that visit (and any owed), whenever the visit
+        is. With its work order already open, any visits since are added to it as lines and
+        that one is returned. A layer raises its top package's visit. Returns {work_order,
+        raised (a new one), lines_added, package}."""
+        pkg = self._live_package(package_id)
+        root = self._package_chain(pkg)[-1]
+        if self._pause_now(root):
+            raise Invalid(f"{root['name']} is paused: resume it first (its tasks are held while it's paused).")
+        if self._package_status(self._package_chain(pkg)) != "active":
+            raise Invalid(f"{pkg['name']} isn't active: resume or restore it first.")
+        today = self.today()
+        state = self._package_state(root)
+        out: dict = {"work_orders": [], "visits": [], "lines_added": [], "skipped": []}
+        if state["open"] is not None:
+            self._generate_package(root, today, today, out)
+            wo = self.work_order(state["open"]["id"])
+            return {"work_order": wo, "raised": False, "lines_added": sum(x["lines"] for x in out["lines_added"]),
+                    "package": {"id": root["id"], "name": root["name"]}}
+        until = state["next_visit"]
+        if until is None:
+            raise Invalid(f"{root['name']} has no visit to come (out of season for good, or its dates have ended).")
+        self._generate_package(root, until, today, out)
+        if not out["work_orders"]:
+            raise Invalid(f"Nothing is due on {root['name']}'s next visit ({until}): every task on it is retired, out "
+                          "of service or has a work order of its own.")
+        return {"work_order": out["work_orders"][0], "raised": True, "lines_added": 0,
+                "package": {"id": root["id"], "name": root["name"]}}
+
     def packages_due(self, horizon_days: int) -> int:
         """How many active top packages would get a work order within the horizon (their
         next visit inside it, none open): for a dry run's count."""
@@ -9642,13 +10068,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                    if not p.get("retired") and not self._pause_now(p) and not self._package_parent(p["id"])
                    and (self._package_state(p)["next_visit"] or "9999") <= until)
 
-    def _generate_packages(self, until: str) -> dict:
-        """Every active top package's turn in generate. Each stands alone: one that can't
-        is listed in skipped, and the others go ahead."""
+    def _generate_packages(self, until: str, keep=None) -> dict:
+        """Every active top package's turn in generate (``keep``: only those it accepts).
+        Each stands alone: one that can't is listed in skipped, and the others go ahead."""
         out: dict = {"work_orders": [], "visits": [], "lines_added": [], "skipped": []}
         today = self.today()
         roots = sorted((p for p in self.s.nodes(self.org, "WorkPackage")
-                        if not p.get("retired") and not self._pause_now(p) and not self._package_parent(p["id"])),
+                        if not p.get("retired") and not self._pause_now(p) and not self._package_parent(p["id"])
+                        and (keep is None or keep(p))),
                        key=lambda p: (p["name"].lower(), p["id"]))
         for root in roots:
             try:
@@ -9705,6 +10132,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                "task_count": len(live), "next_visit": None, "open_work_order": None,
                "season": pkg.get("season") and {**pkg["season"], "text": self._season_text(pkg["season"])},
                "in_season": self._in_season(pkg, self.today()), "pause": None, "flags": []}
+        # A shutdown: its visits take the position (or a set inside it) off-line (shutdowns.py).
+        out["shutdown"] = self._shutdown_view(pkg)
         if status == "retired":
             return out
         pause = self._pause_now(pkg)
@@ -9818,13 +10247,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 on = self._package_subject(entry["package"])
                 pkg = {"id": entry["package"]["id"], "name": entry["package"]["name"],
                        "subject": self._subject_brief(on)}
-            rows.append({"id": task["id"], "name": task["name"], "subject": self._subject_brief(subject),
+            brief = self._subject_brief(subject)
+            if subject["label"] == "Position":
+                brief["within"] = self._within(subject["id"])
+            rows.append({"id": task["id"], "name": task["name"], "subject": brief,
                          "modes": modes, "kind": kind, "interval": task.get("interval"), "unit": task.get("unit"),
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
                          "why_not": why_not, "resources": view["resources"],
-                         "instructions": task.get("instructions") or ""})
+                         "instructions": task.get("instructions") or "",
+                         # Where it came from: an RCM decision's (no source of its own) or added
+                         # directly (manual, oem, statutory, other, with its reference).
+                         "source": view["source"], "reference": view["reference"],
+                         "cost": view["cost"]})
         rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
         # A product's design (or one of its design locations): its programme, packaged on the built items.
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
@@ -9879,12 +10315,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 continue
             names[task["id"]] = task["name"]
             view = self._task_view(task)
+            if view["subject"] and view["subject"]["kind"] == "position":
+                view["subject"]["within"] = self._within(view["subject"]["id"])
             rows.append({"task_id": task["id"], "name": task["name"], "subject": view["subject"],
                          "interval": task["interval"], "unit": task["unit"], "trade": task.get("trade", ""),
                          "visit_rule": member.get("visit_rule", "every"), "every_nth": member.get("every_nth"),
                          "suppresses": list(member.get("suppresses") or []), "retired": bool(task.get("retired")),
                          "last_done": task.get("last_done"), "next_due": view["next_due"],
                          "overdue": view["overdue"], "owed": self._owed(task),
+                         "overdue_before_package": view.get("overdue_before_package"),
                          "open_work_order": view["open_work_order"]})
         for row in rows:
             row["suppresses"] = [{"id": sid, "name": names.get(sid) or (self.s.node(self.org, sid) or {}).get("name")}
@@ -10087,6 +10526,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 out.append({**top, "ref": ref, "layer_of": None, "create": create,
                             "cadence_text": self._cadence_text(top_pkg or {**create, "timing": "fixed"})})
                 left = []
+                visit = [t["subject"]["id"] for t in top["tasks"]]
                 for d, d_on, d_fields in rest:
                     if top_pkg is None or d_fields is None:
                         left.append((d, d_on, d_fields))
@@ -10102,6 +10542,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     out.append({**d, "ref": f"p{n}", "layer_of": ref,
                                 "create": {**c, **d_on, "anchor": layer["anchor"], "parent_id": f"@{ref}"},
                                 "cadence_text": self._cadence_text({**layer, "name": d["name"]})})
+                    visit += [t["subject"]["id"] for t in d["tasks"]]
+                # A layer's tasks must be on its top's position or inside it: the top goes
+                # on the lowest position that holds the whole visit, not only its own tasks.
+                if "position_id" in create and len(visit) > len(top["tasks"]):
+                    create["position_id"] = self._common_position(visit)
                 remaining = left
         return out
 
@@ -10640,12 +11085,73 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             self._emit("task.resources_set", {"id": task_id, "resources": record or None})
         return self._task_view(self._get(task_id, "Task"))
 
+    # ---- what a task costs each time (Nov 2026, task_costs.py) ----------------------------
+
+    def _trade_rates(self) -> dict:
+        """{trade key: {trade, rate}}: the workspace's hourly rates, read once per read."""
+        if "trade_rates" not in self._memo:
+            self._memo["trade_rates"] = _task_costs.rates_map(self.s.nodes(self.org, "TradeRate"))
+        return self._memo["trade_rates"]
+
+    def _task_cost(self, task: dict, resources: dict | None = None) -> dict:
+        """A task's cost per occurrence and where it came from (task_costs.cost_of)."""
+        return _task_costs.cost_of(task, resources if resources is not None else self._resources_view(task),
+                                   self._trade_rates())
+
+    def task_cost(self, task_id: str) -> dict:
+        """One task's cost per occurrence ({task_id, name, amount, source, typed, lsa})."""
+        task = self._get(str(task_id or ""), "Task")
+        return {"task_id": task["id"], "name": task["name"], **self._task_cost(task)}
+
+    def set_task_cost(self, task_id: str, cost) -> dict:
+        """What the task costs each time it's done, typed (a quote, a service's price): it stands
+        in place of its LSA's figure. None or '' clears it, and the LSA's figure is used again."""
+        task = self._get(task_id, "Task")
+        if task.get("retired"):
+            raise Invalid("That task has been retired.")
+        value = None if cost in (None, "") else round(_number(cost, "task's cost", 0, MAX_AMOUNT), 2)
+        if value != task.get("cost"):
+            self._emit("task.cost_set", {"id": task_id, "cost": value})
+        return self._task_view(self._get(task_id, "Task"))
+
+    def trade_rates(self) -> list[dict]:
+        """Every trade's hourly rate, and the trades the LSA records use that have none yet:
+        [{trade, rate (None: not set), tasks (how many live tasks' labour uses it)}], A–Z."""
+        rates = self._trade_rates()
+        used: dict[str, dict] = {}
+        for task in self.s.nodes(self.org, "Task"):
+            if task.get("retired"):
+                continue
+            for line in (task.get("resources") or {}).get("labour") or []:
+                trade = line.get("trade") or task.get("trade") or ""
+                if not trade.strip():
+                    continue
+                row = used.setdefault(_task_costs.trade_key(trade), {"trade": trade.strip(), "tasks": set()})
+                row["tasks"].add(task["id"])
+        out = {k: {"trade": v["trade"], "rate": v["rate"], "tasks": 0} for k, v in rates.items()}
+        for k, v in used.items():
+            out.setdefault(k, {"trade": v["trade"], "rate": None, "tasks": 0})["tasks"] = len(v["tasks"])
+        return sorted(out.values(), key=lambda r: r["trade"].lower())
+
+    def set_trade_rate(self, trade, rate) -> dict:
+        """A trade's hourly rate, for every task whose labour uses it (None or '' clears it)."""
+        name = " ".join(_text(trade, "trade", required=True).split())
+        value = None if rate in (None, "") else round(_number(rate, "hourly rate", 0, MAX_AMOUNT), 2)
+        key = _task_costs.trade_key(name)
+        current = self._trade_rates().get(key)
+        if value is not None and current is None:
+            self._quota("TradeRate", _task_costs.MAX_TRADE_RATES, what="trade rates")
+        if (current or {}).get("rate") != value or (current and current["trade"] != name and value is not None):
+            self._emit("trade.rate_set", {"id": _task_costs.trade_rate_id(self.org, name), "trade": name,
+                                          "rate": value})
+        return {"trade": name, "rate": value}
+
     def _resources_view(self, task: dict) -> dict:
         """A task's LSA record as read: every section (empty when not set), part and
         point names looked up, and the totals: labour_hours (people × hours, summed),
         people, materials_cost (spares at their part's unit cost plus consumables'
-        costs, where known) and cost_estimate (labour at a trade rate: blank, as the
-        workspace keeps no trade rates)."""
+        costs, where known) and cost_estimate (blank: a task's cost, labour at trade rates
+        included, is its ``cost``, task_costs.py)."""
         r = task.get("resources") or {}
         spares = []
         for line in r.get("spares") or []:
@@ -12126,12 +12632,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             cost = round(amount * part["unit_cost"], 2)
         timed = {}
         if at not in (None, ""):
-            day, stamp, _prec = _reading_time(at, None, self.tz, time_zones.now())
+            day, stamp, _prec = _reading_time(at, None, self.tz, time_zones.now(), "use")
             timed = {"at": stamp} if stamp else {}
         else:
             day = _day(on, today=self.today())
         if day > self.today():
-            raise Invalid("A use can't be in the future.")
+            raise _future_reading(time_zones.now(), self.tz, what="use")
         if work_order_id:
             self._open_or_closed(work_order_id)
         store = self._consumable_store(part["id"], position_id, amount, from_location_id) if part else None
@@ -12677,7 +13183,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         proposals behind them, newest first."""
         task = self._get(task_id, "Task")
         mine = []
-        for e in self.s.events(self.org, 5000):
+        for e in _flat_events(self.s.events(self.org, 5000)):
             pl = e["payload"]
             if pl.get("id") == task_id or pl.get("task_id") == task_id:
                 mine.append({"on": e["at"][:10], "type": e["type"], "by": e.get("actor"),
@@ -12798,10 +13304,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         self._get(position_id, "Position")
         return {"downstream": self._interfaces(position_id, "FROM"), "upstream": self._interfaces(position_id, "TO")}
 
-    def create_group(self, name, member_ids, k=1, mode="active", standby="cold") -> dict:
+    def create_group(self, name, member_ids, k=1, mode="active", standby="cold", start_probability=None,
+                     dormancy=None) -> dict:
         """A redundancy group: positions doing the same job where k of them are enough
         (two pumps, either will do: k = 1). mode 'standby': the others wait to take over
-        (standby cold, warm or hot)."""
+        (standby cold, warm or hot); start_probability: the chance a waiting one starts when
+        switched in; dormancy: how fast a warm one ages while it waits (a share of the running
+        rate, 0 to 1). A position is in one group at most."""
         members = [self._get(pid, "Position") for pid in dict.fromkeys(_list(member_ids, "positions"))]
         if len(members) < 2:
             raise Invalid("A redundancy group needs at least two positions.")
@@ -12813,15 +13322,54 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid(f"k (how many are needed) is 1 to {len(members) - 1} for {len(members)} positions.")
         if mode not in ("active", "standby") or standby not in ("cold", "warm", "hot"):
             raise Invalid("mode is active or standby; standby is cold, warm or hot.")
+        for m in members:
+            self._not_in_another_group(m)
+        switching = self._standby_settings(start_probability, dormancy)
         gid = new_id()
         self._emit("group.created", {"id": gid, "name": _text(name, "group's name") or
                                      " / ".join(m["name"] for m in members), "k": k, "mode": mode,
                                      "standby": standby, "on": self.today()})
         for m in members:
             self._emit("group.member_added", {"group_id": gid, "position_id": m["id"]})
+        if switching:
+            self._emit("group.standby_set", {"group_id": gid, **switching})
         return self.group(gid)
 
-    def update_group(self, group_id: str, name=None, k=None, mode=None, standby=None, add=(), remove=()) -> dict:
+    def _not_in_another_group(self, position: dict, group_id: str | None = None) -> None:
+        """A position stands in one redundancy group at most: two would wire it twice."""
+        for g in self.s.out(self.org, position["id"], "IN_GROUP"):
+            if g["label"] == "RedundancyGroup" and not g.get("retired") and g["id"] != group_id:
+                raise Invalid(f"{position['name']} is already in the redundancy set {g['name']}: take it out of "
+                              "that one first.")
+
+    @staticmethod
+    def _standby_settings(start_probability=None, dormancy=None, current: dict | None = None) -> dict:
+        """The group.standby_set payload for the values given ('' clears one; None leaves it as it
+        is), or {} when nothing changes."""
+        current = current or {}
+        out = {"start_probability": current.get("start_probability"), "dormancy": current.get("dormancy")}
+        for key, value, what in (("start_probability", start_probability,
+                                  "The chance a standby one starts when switched in"),
+                                 ("dormancy", dormancy, "How fast a warm standby one ages while it waits")):
+            if value is None:
+                continue
+            if value == "":
+                out[key] = None
+                continue
+            try:
+                x = float(value)
+            except (TypeError, ValueError):
+                raise Invalid(f"{what} is a number from 0 to 1 (0.98 for 98%).") from None
+            low_ok = x > 0 if key == "start_probability" else x >= 0
+            if not (low_ok and x <= 1) or x != x:
+                span = "above 0 and at most" if key == "start_probability" else "from 0 to"
+                raise Invalid(f"{what} is a number {span} 1 (0.98 for 98%).")
+            out[key] = x
+        changed = {k: v for k, v in out.items() if v != current.get(k)}
+        return out if changed else {}
+
+    def update_group(self, group_id: str, name=None, k=None, mode=None, standby=None, add=(), remove=(),
+                     start_probability=None, dormancy=None) -> dict:
         g = self._get(group_id, "RedundancyGroup")
         if g.get("retired"):
             raise Invalid("That group was retired: restore it first.")
@@ -12831,8 +13379,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         except (TypeError, ValueError):
             raise Invalid("k (how many are needed) is a whole number.")
         members = {m["id"] for m in self._members(group_id)}
+        after = (members | set(add or [])) - set(remove or [])
+        if len(after) < 2:
+            raise Invalid("A redundancy group needs at least two positions: retire it instead.")
+        if not 1 <= new_k < len(after):
+            raise Invalid(f"k (how many are needed) must be 1 to {len(after) - 1}.")
         for pid in add or []:
-            self._get(pid, "Position")
+            if pid not in members:
+                self._not_in_another_group(self._get(pid, "Position"), group_id)
+        switching = self._standby_settings(start_probability, dormancy, g)
+        for pid in add or []:
             if pid not in members:
                 self._emit("group.member_added", {"group_id": group_id, "position_id": pid})
                 members.add(pid)
@@ -12851,12 +13407,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if standby not in ("cold", "warm", "hot"):
                 raise Invalid("standby is cold, warm or hot.")
             changes["standby"] = standby
-        if not 1 <= new_k < max(len(members), 2):
-            raise Invalid(f"k (how many are needed) must be 1 to {len(members) - 1}.")
         if k is not None:
             changes["k"] = new_k
         if changes:
             self._emit("group.updated", {"id": group_id, "changes": changes})
+        if switching:
+            self._emit("group.standby_set", {"group_id": group_id, **switching})
         return self.group(group_id)
 
     def set_duty(self, group_id: str, position_id: str) -> dict:
@@ -12892,7 +13448,30 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         members = sorted(self._members(group_id), key=lambda m: m["name"].lower())
         return {"id": group_id, "name": g["name"], "k": g["k"], "n": len(members), "mode": g["mode"],
                 "standby": g["standby"], "duty": g.get("duty"), "retired": bool(g.get("retired")),
+                "start_probability": g.get("start_probability"), "dormancy": g.get("dormancy"),
                 "members": [{"id": m["id"], "name": m["name"]} for m in members]}
+
+    def redundancy_inside(self, position_id: str) -> dict:
+        """The Explorer's redundancy sets on a position (Nov 2026): the positions one level inside
+        it, and the live redundancy groups among them (each with its members inside; a member
+        elsewhere is listed under ``outside``). Building an RBD from the position wires each set
+        as k of n, or as a standby block (rbd_derive)."""
+        p = self._get(position_id, "Position")
+        kids = sorted([c for c in self.s.inn(self.org, position_id, "PART_OF")
+                       if c["label"] == "Position" and not c.get("retired")], key=lambda c: c["name"].lower())
+        ids = {c["id"] for c in kids}
+        sets, seen = [], set()
+        for c in kids:
+            for g in self.groups_of(c["id"]):
+                if g["id"] in seen:
+                    continue
+                seen.add(g["id"])
+                inside = [m for m in g["members"] if m["id"] in ids]
+                sets.append({**g, "members": inside, "outside": [m for m in g["members"] if m["id"] not in ids]})
+        in_set = {m["id"]: s_["id"] for s_ in sets for m in s_["members"]}
+        return {"position": {"id": p["id"], "name": p["name"]},
+                "children": [{"id": c["id"], "name": c["name"], "set_id": in_set.get(c["id"])} for c in kids],
+                "sets": sets}
 
     def groups_of(self, position_id: str) -> list[dict]:
         return [self.group(g["id"]) for g in self.s.out(self.org, position_id, "IN_GROUP")
@@ -13088,7 +13667,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise LimitReached(f"This maintenance workspace can hold at most {MAX_PHOTOS:,} photos. "
                                    "Remove some first.")
 
-    PHOTO_KINDS = ("Position", "Location", "Item", "WorkOrder", "FailureReport")
+    PHOTO_KINDS = ("Position", "Location", "Item", "WorkOrder", "FailureReport", "Capture")
 
     def photo_targets(self, photo_id: str) -> list[dict]:
         """Every place a photo shows: positions, then locations, items, work orders
@@ -13555,9 +14134,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         def lean(d: dict | None) -> dict | None:
             return {k: v for k, v in d.items() if v} or None if d else None
 
+        sets = self._redundancy_marks()
         positions = []
         for pid, r in rows.items():
             row = {"id": pid, "name": r["name"], "parent_id": r["parent_id"]}
+            if pid in sets:  # in a redundancy set: the tree's badge
+                row["redundancy"] = sets[pid]
             for key in ("tag", "position_class", "location_id", "location", "carried_by"):
                 if r[key]:
                     row[key] = r[key]
@@ -13584,6 +14166,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
         return {"today": self.today(), "positions": positions, "locations": [thing(x) for x in read["locations"]],
                 "spares": [thing(x) for x in read["spares"]], "unhomed": [thing(x) for x in read["unhomed"]]}
+
+    def _redundancy_marks(self) -> dict:
+        """{position id: {id, name, k, n, mode, standby}} for every member of a live redundancy group."""
+        out = {}
+        for g in self.s.nodes(self.org, "RedundancyGroup"):
+            if g.get("retired"):
+                continue
+            members = [m for m in self.s.inn(self.org, g["id"], "IN_GROUP") if m["label"] == "Position"]
+            mark = {"id": g["id"], "name": g.get("name") or "", "k": g.get("k") or 1, "n": len(members),
+                    "mode": g.get("mode") or "active", "standby": g.get("standby") or "cold"}
+            for m in members:
+                out.setdefault(m["id"], mark)
+        return out
 
     def position(self, id: str) -> dict:
         p = self._get(id, "Position")
@@ -13729,6 +14324,39 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         out["overdue"] = self._wo_overdue(w)
         return out
 
+    _MAX_INSIDE = 60
+
+    def _inside_positions(self, position_id: str) -> list[dict]:
+        """The live positions inside a position (itself aside), for a close form: each
+        with its path below the position, what's fitted, its failure modes, its class's
+        and its parts list."""
+        out = []
+        for pid in self._report_scope(position_id)[1:self._MAX_INSIDE + 1]:
+            p = self.s.node(self.org, pid)
+            path = self._position_path(pid)
+            ids = [a["id"] for a in path]
+            below = path[ids.index(position_id) + 1:] if position_id in ids else []
+            names = [a["name"] for a in below if a["kind"] == "Position"] + [p["name"]]
+            current = self.current_fitment(pid)
+            out.append({"id": pid, "name": p["name"], "label": " › ".join(names),
+                        "fitted": current and self._fitment_view(current),
+                        "failure_modes": [self._mode_view(m) for m in
+                                          sorted(self._modes_on(pid), key=lambda m: m["text"].lower())],
+                        "class_failure_modes": self.class_failure_modes(pid) if p.get("position_class") else [],
+                        "parts_list": self._parts_list(pid)})
+        return out
+
+    def _reports_linking(self, work_order_id: str) -> list[dict]:
+        """The failure reports with a corrective action linked to this work order."""
+        out = []
+        for r in self.s.nodes(self.org, "FailureReport"):
+            for a in r.get("actions") or []:
+                if a.get("work_order_id") == work_order_id:
+                    out.append({"id": r["id"], "label": self._report_label(r), "title": r.get("title"),
+                                "status": r.get("status"), "action": {"id": a["id"], "what": a.get("what")},
+                                "position_id": r.get("position_id")})
+        return sorted(out, key=lambda x: x["label"])
+
     def _package_wo_view(self, w: dict) -> dict:
         """A work package's work order's lines, as the page groups them: each task's line
         (its checklist index and whether it's ticked), its steps' indices, where it is,
@@ -13826,8 +14454,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             fm = self.s.out(self.org, a["id"], "FOUND")
             ended = self.s.out(self.org, a["id"], "ENDS")
             started = self.s.out(self.org, a["id"], "STARTS")
+            touched = ended or started or [f for f in self.s.out(self.org, a["id"], "ON") if f["label"] == "Fitment"]
+            at = touched and self.s.out(self.org, touched[0]["id"], "AT")
             actions.append({
                 "id": a["id"], "kind": a["kind"], "finding": a.get("finding"), "notes": a.get("notes", ""),
+                # Where it was recorded, when that's not the work order's own position (the seal in the pump).
+                "position": {"id": at[0]["id"], "name": at[0]["name"]} if at and at[0]["id"] != position_id else None,
                 "failure_mode": {"id": fm[0]["id"], "text": fm[0]["text"]} if fm else None,
                 "removed": self._fitment_view(ended[0])["item"] if ended else None,
                 "fitted": self._fitment_view(started[0])["item"] if started else None,
@@ -13873,6 +14505,17 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         }
         if subject["label"] == "Item":
             out["item"] = {**self._item_brief(subject), **self.whereabouts(subject["id"])}
+        # The positions inside its own (the seal inside the pump): an action may record a
+        # finding or a replacement there (close_work_order's position_id), each with what's
+        # fitted, its failure modes and parts list, as the close form needs them.
+        # suggested_position_id: where the work's task says its failure mode is, if inside.
+        out["inside_positions"] = self._inside_positions(position_id) if position_id and not out.get("package") else []
+        out["suggested_position_id"] = next(
+            (fm_pos["id"] for t in task for fm in self.s.out(self.org, t["id"], "MITIGATES")
+             for fm_pos in self.s.inn(self.org, fm["id"], "CAN_FAIL_AS")
+             if fm_pos["id"] in {x["id"] for x in out["inside_positions"]}), None)
+        # Failure reports whose corrective action this work order is (linked both ways).
+        out["failure_reports"] = self._reports_linking(id)
         if out.get("package"):
             # One work order for many tasks: tasks (every one it's for), not task.
             out |= self._package_wo_view(w)
@@ -14155,6 +14798,22 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                                      **self._report_stamp(by)})
         return self.failure_report(report_id)
 
+    def raise_action_work_order(self, report_id: str, action_id: str, by=None) -> dict:
+        """A corrective work order for one corrective action, on the report's position,
+        linked to the action (its work_order_id), so the report and the work order name
+        each other. The action keeps any reference typed before. Returns the report."""
+        r = self._open_report(report_id)
+        action = next((a for a in r.get("actions") or [] if a["id"] == action_id), None)
+        if action is None:
+            raise NotFound(f"CorrectiveAction {action_id}")
+        if action.get("work_order_id"):
+            raise Invalid("This action has a work order already: open it from the action.")
+        label = self._report_label(r)
+        wo = self.open_work_order(r["position_id"], shortened(f"{label}: {action['what']}")[0], type="corrective",
+                                  due=action.get("due"),
+                                  notes=f"Corrective action on {label} ({r.get('title') or ''}): {action['what']}")
+        return self.update_corrective_action(report_id, action_id, by=by, work_order_id=wo["id"])
+
     def verify_failure_report(self, report_id: str, result, notes="", verified_on=None, by=None) -> dict:
         """Did the corrective action work? result worked, not_worked or unclear, with
         notes and the date checked (default today). Saved whole; read repeat_check on
@@ -14237,6 +14896,34 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _open_actions(r: dict) -> int:
         return sum(1 for a in r.get("actions") or [] if a.get("status") == "open")
 
+    def _action_view(self, a: dict) -> dict:
+        """A corrective action, with the work order it links (number, title, status)."""
+        wo = a.get("work_order_id") and self.s.node(self.org, a["work_order_id"], "WorkOrder")
+        return {**a, "work_order": {"id": wo["id"], "number": wo["number"], "title": wo.get("title"),
+                                    "status": wo.get("status")} if wo else None}
+
+    def _report_in_life_data(self, r: dict) -> dict:
+        """What the report does to the life data: counts (the item fitted is failed on the
+        day it occurred), the fitment and its item; or why it doesn't count."""
+        if r.get("status") == "rejected":
+            return {"counts": False, "why": "rejected: not counted as a failure"}
+        if not self.s.node(self.org, r["position_id"], "Position"):
+            return {"counts": False, "why": "its position is gone"}
+        fitments = self._fitments_at(r["position_id"])
+        for fid, rep in self._reports_by_fitment(r["position_id"], fitments).items():
+            if rep["id"] == r["id"]:
+                f = next(x for x in fitments if x["id"] == fid)
+                item = self.s.inn(self.org, fid, "IN")
+                return {"counts": True, "on": r["occurred_on"], "fitment_id": fid,
+                        "item": self._item_brief(item[0]) if item else None,
+                        "replaced": bool(f.get("to")), "found_failed": bool(f.get("found_failed"))}
+        others = [x for x in self.s.inn(self.org, r["position_id"], "REPORTED_AT")
+                  if x["label"] == "FailureReport" and x["id"] != r["id"] and x.get("status") != "rejected"]
+        if others and r.get("item_id"):
+            return {"counts": False, "why": "an earlier report already counts this item's failure here: a repeat "
+                                            "failure of the same fitted item"}
+        return {"counts": False, "why": "no item was fitted there on that day"}
+
     def failure_report(self, report_id: str) -> dict:
         """A failure report in full: its facts, position (with path), item snapshot,
         failure mode, investigation, corrective actions, verification, repeat_check,
@@ -14253,7 +14940,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          "path": [{"id": a["id"], "name": a["name"]} for a in self._position_path(r["position_id"])]},
             "item": self._report_item_view(r),
             "failure_mode": {"id": fm["id"], "text": fm["text"], "ad_hoc": bool(fm.get("ad_hoc"))} if fm else None,
-            "investigation": r.get("investigation"), "actions": r.get("actions") or [],
+            "investigation": r.get("investigation"), "actions": [self._action_view(a) for a in r.get("actions") or []],
+            "life_data": self._report_in_life_data(r),
             "verification": r.get("verification"),
             "repeat_check": self._repeat_check(r, self.s.nodes(self.org, "FailureReport")),
             "closed": r.get("closed"), "rejected": r.get("rejected"), "history": r.get("history") or [],
@@ -14452,6 +15140,35 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         "display": self._location_brief(loc)["display"]})
         return out
 
+    def _reports_by_fitment(self, position_id: str, fitments: list[dict]) -> dict[str, dict]:
+        """Each fitment's first failure report at this position that isn't rejected: the
+        report's item's fitment that covers the day it occurred (a report with no item:
+        the item fitted then, the one that went in first when two meet on that day). One
+        report counts for at most one fitment."""
+        reports = sorted((r for r in self.s.inn(self.org, position_id, "REPORTED_AT")
+                          if r["label"] == "FailureReport" and r.get("status") != "rejected" and r.get("occurred_on")),
+                         key=lambda r: (r["occurred_on"], r["number"]))
+        if not reports:
+            return {}
+        today = self.today()
+        spans = []
+        for f in sorted(fitments, key=lambda f: f["from"]):
+            item = self.s.inn(self.org, f["id"], "IN")
+            spans.append((f, item[0]["id"] if item else None))
+        out: dict[str, dict] = {}
+        for r in reports:
+            day = r["occurred_on"]
+            match = next((f for f, item_id in spans
+                          if (not r.get("item_id") or r["item_id"] == item_id) and f["from"] <= day <= (f.get("to") or today)),
+                         None)
+            # Filed on the day an item was swapped, a report names the item fitted that evening (the one
+            # that went in): the failure is the one that came out that day.
+            if match is not None and match["from"] == day:
+                match = next((f for f, _ in spans if f.get("to") == day and f["id"] != match["id"]), match)
+            if match is not None:
+                out.setdefault(match["id"], r)
+        return out
+
     def life_data(self, position_id: str) -> list[dict]:
         """One row per fitment at this position: its life in days, and whether it
         ended in a failure (``c`` = 0) or not (``c`` = 1: removed on purpose, or
@@ -14461,18 +15178,54 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         estimate) has a life between ``xl`` and ``xr`` days, the shortest and longest
         the dates allow. A failure then is interval censored (``c`` = 2, ``x`` the
         middle); anything else is censored at the shortest (``x`` = ``xl``), the life
-        it surely reached. Exact rows are as they always were."""
+        it surely reached. Exact rows are as they always were.
+
+        Failures known another way (Nov 2026), each ending the row's life once (the
+        first failure of that item there; later ones on the same fitment are repeat
+        events, not more rows):
+        - a failure report (not rejected) on the item fitted: failed on the day it
+          occurred (``c`` = 0), even while the item is still fitted, or if it came out
+          later for another reason; a work order that later replaces it for the same
+          failure ends the same row, so it's never counted twice (``report``);
+        - an inspection that found it failed (fitment.found_failed): it failed between
+          the last good check and the finding (``c`` = 2, ``xl`` / ``xr``; ``found_failed``).
+          A report dated before the finding wins: it says when it failed."""
         today = self.today()
         rows = []
-        for f in self._fitments_at(position_id):
-            end = f.get("to") or today
+        fitments = self._fitments_at(position_id)
+        reported = self._reports_by_fitment(position_id, fitments)
+        for f in fitments:
+            to = f.get("to")
+            end, end_p = to or today, to and f.get("to_precision")
             failed = f.get("end_reason") == "failure"
+            report, found = reported.get(f["id"]), f.get("found_failed")
+            mode_id = f.get("failure_mode_id")
+            lower = None  # the last day it was known good, for a found-failed finding
+            how = None
+            if report and (not found or report["occurred_on"] < found["on"]):
+                if not failed or report["occurred_on"] <= end:
+                    end, end_p = report["occurred_on"], None
+                failed, how = True, "report"
+                mode_id = mode_id or report.get("failure_mode_id")
+            elif found:
+                end, end_p, lower, failed, how = found["on"], None, found.get("last_good") or f["from"], True, "found_failed"
+                named = not mode_id and found.get("action_id") and self.s.out(self.org, found["action_id"], "FOUND")
+                mode_id = mode_id or (named[0]["id"] if named else None)
             days = (date.fromisoformat(end) - date.fromisoformat(f["from"])).days
             c, extra = 0 if failed else 1, {}
-            from_p, to_p = f.get("from_precision"), f.get("to") and f.get("to_precision")
-            if from_p not in (None, "exact") or to_p not in (None, "exact"):
+            from_p = f.get("from_precision")
+            if lower is not None:
                 s_lo, s_hi = date_range(f["from"], from_p)
-                e_lo, e_hi = date_range(end, to_p)
+                lo = max(0, (date.fromisoformat(lower) - s_hi).days)
+                hi = max(lo, (date.fromisoformat(end) - s_lo).days)
+                if hi > lo:
+                    c, days = 2, round((lo + hi) / 2)
+                    extra = {"xl": lo, "xr": hi, "from_precision": from_p or "exact", "to_precision": None}
+                else:
+                    days = hi
+            elif from_p not in (None, "exact") or end_p not in (None, "exact"):
+                s_lo, s_hi = date_range(f["from"], from_p)
+                e_lo, e_hi = date_range(end, end_p)
                 s_hi, e_lo = min(s_hi, e_hi), max(e_lo, s_lo)
                 lo = max(0, (e_lo - s_hi).days)
                 hi = max(lo, (e_hi - s_lo).days)
@@ -14480,16 +15233,23 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     c, days = 2, round((lo + hi) / 2)
                 else:
                     days = lo
-                extra = {"xl": lo, "xr": hi, "from_precision": from_p or "exact", "to_precision": to_p or None}
+                extra = {"xl": lo, "xr": hi, "from_precision": from_p or "exact", "to_precision": end_p or None}
             view = self._fitment_view(f)
-            rows.append({
+            fm = mode_id and self.s.node(self.org, mode_id)
+            row = {
                 "fitment_id": f["id"],
-                "item": view["item"] and view["item"]["name"], "from": f["from"], "to": f.get("to"),
+                "item": view["item"] and view["item"]["name"], "from": f["from"], "to": to,
                 "x": days, "c": c,
-                "failure_mode": view["failure_mode"] and view["failure_mode"]["text"],
-                "status": "failed" if failed else "still fitted" if f.get("to") is None else "removed",
+                "failure_mode": fm["text"] if fm else None,
+                "status": "failed" if failed else "still fitted" if to is None else "removed",
                 **extra,
-            })
+            }
+            if how == "report":
+                row |= {"failed_on": end, "report": {"id": report["id"], "label": self._report_label(report)}}
+            elif how == "found_failed":
+                row |= {"failed_on": end, "found_failed": {"on": found["on"], "last_good": found.get("last_good"),
+                                                           "work_order_id": found.get("work_order_id")}}
+            rows.append(row)
         return sorted(rows, key=lambda r: r["from"])
 
 
@@ -14563,5 +15323,22 @@ PROJECTORS.update(_TREE_DELETE_PROJECTORS)
 PROJECTORS.update(_RCM_DELETE_PROJECTORS)
 # Life models attached to positions (Nov 2026, position_models.py).
 PROJECTORS.update(_POSITION_MODEL_PROJECTORS)
+# Field reports (Nov 2026, captures.py): notes, photos and sound from the field.
+PROJECTORS.update(_CAPTURE_PROJECTORS)
+# What a task costs each time (typed, or from its LSA at trade rates; Nov 2026, task_costs.py).
+PROJECTORS.update(_task_costs.PROJECTORS)
+# What a fixed-interval task leaves the item as (Kijima restoration, every Nth a replacement), how
+# its interval is counted, its age limit at a shutdown; and shutdown packages (Nov 2026,
+# restoration.py, shutdowns.py).
+PROJECTORS.update(_restoration.PROJECTORS)
+PROJECTORS.update(_shutdowns.PROJECTORS)
+
+# Records the walkthroughs found wrong (Nov 2026): an inspection's found-failed finding on
+# the fitment it found (its life-data row is interval censored from the last good check),
+# and a task overdue when it went into a package (it stays overdue until done).
+PROJECTORS.update({
+    "fitment.found_failed": _fitment_found_failed,
+    "task.overdue_carried": _task_overdue_carried,
+})
 
 PROJECTION_VERSION = 5

@@ -69,8 +69,8 @@ on its last row — upload it as it is: its page notices and offers to **split**
 it into the two parts.
 
 If failures were found at inspections, so you only know a unit failed between
-two ages, tick **Failures found at inspections** and give both ages. Units that
-were already in service when your records began can take an **Entry age**.
+two ages, leave **x** empty and map the range **xl to xr** under it. Units that
+were already in service when your records began can take a **tl** (late entry).
 
 ## Fit the model
 
@@ -79,7 +79,16 @@ model**. Under **1. Your dataset**, pick the dataset from the list (those holdin
 with its measurements come first; a dataset with life data alone says to add its measurements on
 its page). Its two parts show beside the list. Or press **Upload or paste a new dataset…** to
 add one with its measurements. Reliafy guesses the columns of each part under **2.
-Columns**; check them.
+Columns**; check them. Each part has the same selectors as the other fits,
+labelled with SurPyval's names:
+
+- **Life data**: **i** (which item each row is), **x** (the value when it
+  failed, or now if still running) with its unit, or a range **xl to xr**, **c**
+  (0 = failed, 1 = still running; tick **my column uses 1 = failed** if yours is
+  the other way round) and **tl**.
+- **Measurements**: **i** (which item each reading belongs to), **x** (when the
+  reading was taken, in the same unit) and **m** (the measured value) with its
+  unit. These are readings, not covariates.
 
 ![A new condition and life model: the dataset's two parts and their columns, with load ticked as a covariate](/guides/img/cbr-01-new.png)
 
@@ -110,7 +119,7 @@ that rises quickly then levels off, and **Quadratic** one whose rate of change
 itself changes with age (slower to fit). Each unit
 gets its own version of the path: its own starting level and its own rate.
 
-Set the time unit, name what is read and its unit (vibration, mm/s), and press
+Name what is read (vibration, say), and press
 **Check data**. It counts the units, failures, running units and readings, and
 says if anything doesn't line up. Then press **Fit model**. A fleet takes from a
 few seconds to about a minute.
@@ -119,7 +128,9 @@ few seconds to about a minute.
 
 The model opens on its answer, in the line under its name: how many units it
 learnt from, and the running unit at the highest risk now. Its tabs are **Risk
-now**, **Calculator**, **Effects**, **Diagnostics** and **Data**.
+now**, **Calculator**, **Effects**, **Diagnostics** and **Data**. **Risk now**
+is always there: it scores the running units in the data the model was fitted
+to.
 
 On **Risk now**, **Running units' risk** lists every unit still in service, highest risk first,
 with its chance of failing in the next **30, 90 and 365 days** (for a model in
@@ -138,7 +149,7 @@ The **Effects** tab charts each hazard ratio with its interval and puts the
 fitted effects in words: *each 1 mm/s higher vibration multiplies the failure
 rate by 2.79*. A hazard ratio of 2 doubles the failure rate at any moment; 0.5
 halves it. When the interval includes 1, it says the data can't rule out no
-effect. The **Data** tab has every fitted value with its 95% interval and a
+effect. The **Data** tab has every fitted value with its 90% interval and a
 line on what it means. **Diagnostics** draws the units' readings against the
 fitted path, says whether the fit settled, and gives its fit statistics.
 
@@ -151,7 +162,7 @@ charts:
 - **Survival from now**: the chance it is still running at each age ahead. It
   starts at 1 at its age now, because it has survived that far.
 - **Its vibration**: its readings, its own path through them, and where that
-  path is heading, with a 95% band.
+  path is heading, with a 90% band.
 
 ![One unit's view: its survival from now and its own reading path](/guides/img/cbr-03-unit.png)
 

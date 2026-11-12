@@ -48,11 +48,15 @@ the same.
 
 Go to **Modelling → Models → Accelerated life → New model** and pick your data: a saved
 dataset under **Saved data** (those with times to failure and a stress column come first), or a
-file under **Upload a file**. The flow then asks for the
-**model before the data**, which is deliberate — the life-stress relationship
-determines how many stress columns you'll be mapping.
+file under **Upload a file**.
 
-You pick two things:
+The **Data** step is the same as for a non-repairable fit: the first rows, then
+**x** (*the value when it failed or was removed*) with its unit and, where x is
+blank, a range **xl to xr** for failures found at an inspection; **c** (0 =
+failed, 1 = still running), **n**, **tl** and **tr**. The stresses aren't mapped
+there: they are the model's own inputs, on the **Model** step.
+
+On the **Model** step you pick:
 
 - **A life distribution** — Weibull, lognormal, normal, exponential or gamma.
   This describes the scatter in failure times at any fixed stress.
@@ -61,16 +65,21 @@ You pick two things:
 
 Match the relationship to the physics:
 
-- **Arrhenius** for thermal ageing. Use **absolute temperature (kelvin)** — this
-  trips people up constantly, and using Celsius will give you a nonsense fit.
+- **Arrhenius** for thermal ageing. The model needs **absolute temperature
+  (kelvin)**, so the Model step asks which unit the temperature column is in:
+  **°C**, **K** or **°F**. Reliafy converts °C and °F to kelvin before fitting,
+  and you enter the use temperature in the same unit you chose.
 - **Inverse power law** for voltage, load, or pressure.
 - **Eyring** as a physically-derived thermal alternative to Arrhenius.
 - **Linear** for a simple straight-line trend of life with stress.
 - **Dual exponential (temp–humidity)**, **Temperature–nonthermal** or **Dual
   power** for two stresses together.
 
-Then map your columns — the failure time, the stress column(s), and censoring if
-you have it — and fit.
+Then its fixed inputs: **Stress 1** (and **Stress 2** for a two-stress model),
+each a column not mapped on the Data step, with its **unit** (°C, K, °F, V, kV,
+MPa, or type your own) and, if you know it, the **use stress** in that unit:
+the Calculator starts there. Reliafy picks the stress columns from their names
+to start with. Then fit.
 
 ![Choosing a life distribution and a life-stress relationship](/guides/img/alt-01-new.png)
 
@@ -86,7 +95,7 @@ The **Life-stress** tab is the ALT signature: characteristic life against
 stress, with each tested level marked and the fitted relationship drawn through
 them. Enter your **use stress** beside the chart: the line runs on to it, a star
 marks the life there, and the table gives the **acceleration factor** against
-each tested level. The **life at use stress** is shown with its 95% range: the
+each tested level. The **life at use stress** is shown with its 90% range: the
 further your use stress is from the tested levels, the wider it gets. This is
 where you see whether the extrapolation is a short reach or a heroic one. A
 model with two stresses shows two charts side by side, one along each stress,
@@ -169,6 +178,11 @@ test you have already designed would give.
 Plans take one stress, a Weibull or lognormal distribution, and the Arrhenius,
 Eyring or inverse power law model. Without a fit, open the tab directly and type
 planning values from a similar part.
+
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits an accelerated-life model with
+SurPyval from its data and prints the numbers on the page. It's free for everyone who can open the model.
 
 ## Where to go next
 

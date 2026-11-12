@@ -12,6 +12,7 @@ import { hasMeanLife, meanLifeAnswer } from "./meanLife.js";
 import { unitInText } from "./components/unitText.js";
 import { anyAt } from "./competingRisks.js";
 import { riskText } from "./joint.js";
+import { LEVEL_TEXT, ciLevelOf, ciPct, levelPct } from "./levels.js";
 
 export const TAB_LABELS = {
   plot: "Probability plot",
@@ -41,8 +42,9 @@ const MAX_TABS = 6;
 
 // How a model's intervals were made and at what level, so every tab says the
 // same: a Bayesian update's are credible intervals at its own level (90%), a
-// library record's are its source's 5–95% range, anything else 95%
-// confidence. ``label`` goes before a range ("90% credible 2.3–3.9").
+// library record's are its source's 5–95% range, anything else confidence
+// at its ``ci_level`` (90%, the app's rule; 95% on a result saved before it
+// that the server couldn't move). ``label`` goes before a range ("90% credible 2.3–3.9").
 export function intervalLevel(result) {
   const r = result || {};
   if (r.method === "bayesian_update") {
@@ -50,7 +52,8 @@ export function intervalLevel(result) {
     return { pct, label: `${pct}% credible`, credible: true };
   }
   if (r.method === "library") return { pct: 90, label: "Source's 5–95%", credible: false };
-  return { pct: 95, label: "95%", credible: false };
+  const level = ciLevelOf(r);
+  return { pct: Math.round(level * 1000) / 10, label: levelPct(level), credible: false };
 }
 const tab = (id) => ({ id, label: TAB_LABELS[id] });
 
@@ -72,9 +75,10 @@ export function listN(m) {
 
 // The tabs of a model's page, in order: [{ id, label }]. Empty for a model
 // with one view (per demand); null for a kind the frame doesn't draw yet.
-// `riskNow: false`: a condition and life model where risk now is shown in the
-// Explorer instead (by Classes: each class's fleet), so its tab is left out.
-export function modelTabs(result, { riskNow = true } = {}) {
+// A condition and life model always has Risk now: its own running units' risk.
+// (The Explorer's class fleet scores positions on the asset tree as well; it is
+// an extra, never the only place a dataset's units are scored.)
+export function modelTabs(result) {
   const r = result || {};
   const fns = !!r.functions;
   let ids;
@@ -87,7 +91,7 @@ export function modelTabs(result, { riskNow = true } = {}) {
       ids = ["modes", r.regression?.coefficients?.length && "effects", r.curves?.x?.length && "calc", "diag", "data"];
       break;
     case "joint":
-      ids = [riskNow && "risk", "calc", "effects", "diag", "data"];
+      ids = ["risk", "calc", "effects", "diag", "data"];
       break;
     case "regression":
       ids = ["effects", fns && "calc", fns && regressionChars(r) && "chars", "diag", "data"];
@@ -166,7 +170,11 @@ const PATTERNS = {
 function bLifeWords(result, label = "B10") {
   const life = result?.life;
   const b = (life?.b_lives || []).find((x) => x.label === label);
+  // Inspection data: the interval it falls in, never one end as the value.
+  if (b?.between) return `${label} ${formatNumber(b.between[0])}–${withUnit(b.between[1], result.unit)} (between inspections)`;
   if (!b || !Number.isFinite(Number(b.value))) return null;
+  // No bound (a fit method without one): said, so its absence isn't read as certainty.
+  if (b.lower == null && life.bounds_note) return `${label} ${withUnit(b.value, result.unit)} (no bound with this fit)`;
   const bound = b.lower != null && Number.isFinite(Number(b.lower)) && life.confidence
     ? ` (≥ ${formatNumber(b.lower)} at ${Math.round(life.confidence * 100)}%${intervalLevel(result).credible ? " credible" : ""})` : "";
   return `${label} ${withUnit(b.value, result.unit)}${bound}`;
@@ -177,6 +185,8 @@ function meanWords(result) {
   const mttf = result.life?.mttf || (result.metrics?.mttf != null ? { value: result.metrics.mttf } : null);
   const answer = meanLifeAnswer(result, mttf);
   if (answer.kind !== "mean") return null;
+  // From a handful of failures the mean is the curve's shape talking: say so beside it.
+  if (answer.fewFailures) return `mean ${withUnit(answer.value, result.unit)} (from ${answer.fewFailures} failure${answer.fewFailures === 1 ? "" : "s"}: extrapolated)`;
   return `mean ${withUnit(answer.value, result.unit)}`;
 }
 
@@ -199,13 +209,13 @@ function strongestEffect(result) {
   const top = rows.reduce((a, b) => (Math.abs(Math.log(b.ratio)) > Math.abs(Math.log(a.ratio)) ? b : a));
   const per = top.unit ? ` per ${top.unit}` : "";
   const ci = top.lo != null && top.hi != null ? ` (${range(top.lo, top.hi)})` : "";
-  return `${top.name}: ${result.ratio_label || "ratio"} ${formatNumber(top.ratio)}${per}${ci}`;
+  return `${top.label || top.name}: ${result.ratio_label || "ratio"} ${formatNumber(top.ratio)}${per}${ci}`;
 }
 
 // The three or four numbers that answer "what does this model say?", as
 // short phrases for the line under the model's name. ``saved`` (a phrase,
 // e.g. "saved 3 min ago") ends it.
-export function answerParts(result, { split = null, saved = null, riskNow = true } = {}) {
+export function answerParts(result, { split = null, saved = null } = {}) {
   const r = result || {};
   const parts = [];
   const add = (p) => p && parts.push(p);
@@ -225,7 +235,7 @@ export function answerParts(result, { split = null, saved = null, riskNow = true
       const top = (r.risk || [])[0];
       const mid = r.horizons?.labels?.[1];
       // The Risk now table's words: "> 99.9%", never "100%".
-      if (top && mid && riskNow) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[1])} in the next ${mid}`);
+      if (top && mid) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[1])} in the next ${mid}`);
       add(r.fit_ok === false && "fit not verified");
       break;
     }
@@ -276,65 +286,163 @@ export function answerParts(result, { split = null, saved = null, riskNow = true
   return parts.filter(Boolean);
 }
 
+// ---- The answer in one sentence (share pages) ---------------------------------
+
+// What the failure pattern means, in words a manager reads.
+const PATTERN_WORDS = {
+  wear_out: "failures become more likely with age",
+  infant_mortality: "failures are most likely early in life",
+  random: "failures are about as likely at any age",
+};
+
+// A share page leads with this, before any parameter: the usual B-life as
+// "one in ten", its bound in words, and the failure pattern. Null when the
+// model has no such answer (a regression, competing risks, condition and
+// life): the answer line above the tabs then stands alone.
+export function plainAnswer(result) {
+  const r = result || {};
+  if (r.kind === "per_demand") {
+    const p = r.per_demand?.p;
+    if (!Number.isFinite(Number(p)) || p <= 0) return null;
+    const oneIn = Math.round(1 / p);
+    return `About ${formatPercent(p, { sig: 2 })} of demands fail${oneIn >= 2 ? ` (about one in ${oneIn.toLocaleString("en-US")})` : ""}.`;
+  }
+  if (["regression", "competing_risks", "joint"].includes(r.kind)) return null;
+  const b = (r.life?.b_lives || []).find((x) => x.label === "B10");
+  const pattern = PATTERN_WORDS[r.randomness?.verdict];
+  let lead = null;
+  if (b?.between) {
+    lead = `One in ten is expected to have failed between ${formatNumber(b.between[0])} and ${withUnit(b.between[1], r.unit)}`;
+  } else if (b && Number.isFinite(Number(b.value))) {
+    const lower = Number(b.lower);
+    const bound = b.lower != null && Number.isFinite(lower) && r.life?.confidence
+      ? ` (at least ${withUnit(lower, r.unit)} with ${Math.round(r.life.confidence * 100)}% ${intervalLevel(r).credible ? "credibility" : "confidence"})`
+      : "";
+    lead = `One in ten is expected to have failed by about ${withUnit(b.value, r.unit)}${bound}`;
+  }
+  if (!lead) return pattern ? `${pattern.charAt(0).toUpperCase()}${pattern.slice(1)}.` : null;
+  return `${lead}${pattern ? `; ${pattern}` : ""}.`;
+}
+
 // ---- Effects ---------------------------------------------------------------
 
 const RATIO_VERB = {
   "hazard ratio": "the failure rate",
   "time ratio": "the life",
-  "odds ratio": "the odds of failing",
+  "odds ratio": "the odds of having failed",
 };
 
-// "C(site)[T.B]" → "site B (against the first site)"; anything else as given.
-function termName(name) {
-  const m = /^(?:C\()?([^()[\]]+)\)?\[T\.([^\]]+)\]$/.exec(String(name));
-  return m ? { label: `${m[1]} = ${m[2]}`, categorical: true, base: m[1] } : { label: String(name) };
+// SurPyval's coefficient β accelerates the clock in an AFT model (the item
+// ages exp(β) times as fast, so its life is multiplied by exp(-β)) and
+// multiplies the odds of surviving in a PO model. The ratio shown reads the
+// way its words do: a time ratio is what the life is multiplied by, an odds
+// ratio what the odds of having failed are multiplied by. Both are exp(-β);
+// a hazard ratio is exp(β). Worked out from the coefficient, so a model saved
+// before this read the same way.
+export function ratioSign(result) {
+  const r = result || {};
+  if (r.effect === "aft" || r.effect === "odds") return -1;
+  if (!r.effect && (r.ratio_label === "time ratio" || r.ratio_label === "odds ratio")) return -1;
+  return 1;
 }
 
-// Every covariate's effect as a ratio with its 95% interval: [{ name,
-// ratio, lo, hi, unit, p }]; for an additive model (no ratio) the
-// coefficient itself, with ``additive``.
+// "C(site)[T.B]" → { label: "site = B", variable: "site", level: "B" };
+// anything else as given.
+export function termName(name) {
+  const m = /^(?:C\(\s*)?`?([^()[\],`]+?)`?\s*(?:,[^)]*)?\)?\[T\.([^\]]+)\]$/.exec(String(name));
+  return m ? { label: `${m[1]} = ${m[2]}`, categorical: true, variable: m[1], level: m[2] } : { label: String(name) };
+}
+
+// The base level each categorical covariate is compared with: the payload's
+// ``base_levels``, else the one level of the calculator's field with no term
+// of its own (a model saved before the payload named it).
+export function baseLevels(result) {
+  const r = result || {};
+  if (r.base_levels && Object.keys(r.base_levels).length) return r.base_levels;
+  const seen = {};
+  (r.coefficients || []).forEach((c) => {
+    const t = termName(c.name);
+    if (t.categorical) (seen[t.variable] ||= new Set()).add(t.level);
+  });
+  const out = {};
+  const fields = r.tvc?.covariates || r.functions?.covariates || [];
+  fields.forEach((f) => {
+    if (f.type !== "category" || !seen[f.name]) return;
+    const rest = (f.options || []).map(String).filter((o) => !seen[f.name].has(o));
+    if (rest.length === 1) out[f.name] = rest[0];
+  });
+  return out;
+}
+
+// Every covariate's effect as a ratio with its interval (90%; ``level`` says
+// it): [{ name, label, ratio, lo, hi, unit, p, level, base }]; for an additive
+// model (no ratio) the coefficient itself, with ``additive``.
 export function forestRows(result) {
   const r = result || {};
+  const level = ciPct(r);
   if (r.kind === "joint") {
     return (r.hazard_ratios || []).map((h) => ({
       name: h.kind === "marker" ? r.marker || h.name : h.name, ratio: h.hr, lo: h.lower, hi: h.upper,
-      unit: h.kind === "marker" ? r.marker_unit || "" : "", text: h.text,
+      unit: h.kind === "marker" ? r.marker_unit || "" : "", text: h.text, level,
     }));
   }
   const table = Object.fromEntries((r.coef_table || []).filter((t) => t.part === "coefficients").map((t) => [t.name, t]));
+  const bases = baseLevels(r);
+  const sign = ratioSign(r);
+  const fields = Object.fromEntries((r.functions?.covariates || []).map((f) => [f.name, f]));
   return (r.coefficients || []).map((c) => {
     const ci = c.ci || table[c.name]?.ci || null;
     const p = table[c.name]?.p ?? null;
     const unit = c.covariate_unit || r.covariate_units?.[c.name] || "";
+    const term = termName(c.name);
+    const base = term.categorical ? bases[term.variable] ?? null : null;
+    const label = term.categorical ? `${term.label}${base != null ? ` vs ${base}` : ""}` : c.name;
     if (!r.ratio_label) {
-      return { name: c.name, value: c.value, lo: ci?.[0] ?? null, hi: ci?.[1] ?? null, unit, p, additive: true };
+      return { name: c.name, label, value: c.value, lo: ci?.[0] ?? null, hi: ci?.[1] ?? null, unit, p, additive: true, level, base };
     }
-    const exp = (v) => (v == null ? null : Math.exp(v));
-    return { name: c.name, ratio: c.ratio ?? exp(c.value), lo: exp(ci?.[0]), hi: exp(ci?.[1]), unit, p };
+    const exp = (v) => (v == null ? null : Math.exp(sign * v));
+    const ends = ci && ci[0] != null && ci[1] != null ? [exp(ci[0]), exp(ci[1])].sort((a, b) => a - b) : [null, null];
+    const ratio = c.value != null ? exp(c.value) : c.ratio;
+    const f = fields[c.name];
+    const range = f && f.type === "number" && !f.flag && f.min != null && f.max != null && f.max > f.min
+      ? [f.min, f.max] : null;
+    return { name: c.name, label, ratio, lo: ends[0], hi: ends[1], unit, p, level, base, range };
   });
 }
 
 // One effect in words: "Each +1 °C in temp_C multiplies the failure rate by
-// 1.15 (95% 1.10 to 1.20)." For a small effect per unit it also gives a step
-// of 10 ("+10: ×4.0"), so it reads at a size people think in.
+// 1.15 (90% 1.10 to 1.20)." For a small effect per unit it also gives a step
+// of 10 ("+10: ×4.0"), so it reads at a size people think in. A time ratio
+// also says how much faster the item ages; a category names its base level.
 export function effectText(row, ratioLabel = "hazard ratio") {
   if (row.text) return row.text;
   const name = termName(row.name);
   const unit = row.unit ? ` ${row.unit}` : "";
-  const subject = name.categorical ? `${name.label}` : `Each +1${unit} in ${name.label}`;
+  const against = row.base != null ? `against ${row.base}, the base level` : "against the base level";
+  const subject = name.categorical ? `${name.label} (${against})` : `Each +1${unit} in ${name.label}`;
+  const lv = row.level || LEVEL_TEXT;
   if (row.additive) {
-    const ci = row.lo != null ? ` (95% ${formatNumber(row.lo)} to ${formatNumber(row.hi)})` : "";
+    const ci = row.lo != null ? ` (${lv} ${formatNumber(row.lo)} to ${formatNumber(row.hi)})` : "";
     return `${subject} adds ${formatNumber(row.value)} to the failure rate${ci}.`;
   }
   const verb = RATIO_VERB[ratioLabel] || "the rate";
   const r = row.ratio;
-  let text = name.categorical
-    ? `${subject} (against the base level) multiplies ${verb} by ${formatNumber(r)}`
-    : `${subject} multiplies ${verb} by ${formatNumber(r)}`;
+  let text = `${subject} multiplies ${verb} by ${formatNumber(r)}`;
   if (row.lo != null && row.hi != null) {
-    text += ` (95% ${formatNumber(row.lo)} to ${formatNumber(row.hi)})`;
+    text += ` (${lv} ${formatNumber(row.lo)} to ${formatNumber(row.hi)})`;
   }
-  if (!name.categorical && r > 0.95 && r < 1.05 && r !== 1) {
+  if (ratioLabel === "time ratio" && r > 0 && r !== 1) {
+    text += r < 1 ? `: it ages ${formatNumber(1 / r)}× as fast` : `: it ages ${formatNumber(r)}× more slowly`;
+  }
+  const span = !name.categorical && row.range ? row.range[1] - row.range[0] : null;
+  if (span != null && (span < 1 || span > 20) && r > 0) {
+    // Per +1 misleads when the data spans 0.5 to 0.9 (or 0 to 5,000):
+    // say what the whole range of the data does.
+    const ends = row.lo != null && row.hi != null && row.lo > 0
+      ? ` (${lv} ${formatNumber(row.lo ** span)} to ${formatNumber(row.hi ** span)})` : "";
+    text += `; across the data's range, ${formatNumber(row.range[0])} to ${formatNumber(row.range[1])}${unit}, `
+      + `it multiplies it by ${formatNumber(r ** span)}${ends}`;
+  } else if (!name.categorical && r > 0.95 && r < 1.05 && r !== 1) {
     text += `; +10${unit} multiplies it by ${formatNumber(r ** 10)}`;
   }
   if (row.lo != null && row.hi != null && row.lo <= 1 && row.hi >= 1) {

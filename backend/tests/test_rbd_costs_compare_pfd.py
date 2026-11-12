@@ -125,18 +125,26 @@ def test_horizons_given_replace_the_defaults_and_are_checked():
         rbd_discount.parse_horizons([-1])
 
 
-def test_a_simulated_rate_has_no_present_value():
-    """No exact long-run rate: the library can't discount the simulated one,
-    so the present values are left out and say why; undiscounted totals stay."""
+def test_a_simulated_rate_is_discounted_like_an_exact_one():
+    """No exact long-run rate: the simulated one is spent steadily over each
+    horizon and discounted as RePyability's total_cost discounts an exact
+    rate — (1 - exp(-r t)) / r, 1 / r for ever — and the note says it's
+    simulated; the undiscounted totals stay beside them."""
+    import math
+
     g = _crews()
     g["costs"]["discount_rate"] = 7
     c = ra.analyze_availability(g, n_simulations=40)["costs"]
     assert c["cost_rate_basis"] == "simulation"
-    assert c["total_cost"] is None and c["running_cost"] is None
-    assert "No present value" in c["present_value_note"]
+    r = math.log1p(0.07) / 8760
+    assert c["total_cost"] == pytest.approx(1500 + c["cost_rate"] * -math.expm1(-r * 8760) / r, rel=1e-12)
+    assert c["running_cost"] == pytest.approx(c["total_cost"] - 1500, rel=1e-12)
+    assert c["total_cost"] < c["undiscounted_total_cost"]
+    assert "simulated running cost" in c["present_value_note"]
     assert c["undiscounted_total_cost"] == pytest.approx(1500 + c["cost_rate"] * 8760, rel=1e-12)
     rows = c["by_horizon"]["rows"]
-    assert all(r["total_cost"] is None for r in rows) and rows[-1]["endless"]
+    assert all(row["total_cost"] is not None for row in rows) and rows[-1]["endless"]
+    assert rows[-1]["total_cost"] == pytest.approx(1500 + c["cost_rate"] / r, rel=1e-12)
     # Undiscounted, the simulated rate prices each horizon as before.
     del g["costs"]["discount_rate"]
     plain = ra.analyze_availability(g, n_simulations=40)["costs"]
@@ -194,7 +202,9 @@ def test_export_prices_the_horizons_as_the_app_does(tmp_path):
     app = ra.analyze_availability(g, n_simulations=60)["costs"]
     code = rbd_export.to_python(g, "Horizons", exported_at=WHEN)
     assert "COMPARE_HORIZONS = [43800, 175200]" in code or "COMPARE_HORIZONS = [43800.0, 175200.0]" in code
-    assert "np.expm1" not in code  # no discount factor of its own
+    # The exact rate is discounted by RePyability itself (its own factor only
+    # stands in for a simulated rate, which the library can't price).
+    assert "rbd.total_cost(times, discount_rate=DISCOUNT_RATE" in code
     res, proc = _run(code, tmp_path, n_sims="60")
     rows = res["costs"]["by_horizon"]
     assert [r["horizon"] for r in rows] == [r["horizon"] for r in app["by_horizon"]["rows"]]
@@ -206,12 +216,19 @@ def test_export_prices_the_horizons_as_the_app_does(tmp_path):
     assert "net present cost" in proc.stdout
 
 
-def test_export_with_a_simulated_rate_leaves_the_present_value_out(tmp_path):
+def test_export_discounts_a_simulated_rate_as_the_app_does(tmp_path):
+    import math
+
     g = _crews()
     g["costs"]["discount_rate"] = 7
     res, proc = _run(rbd_export.to_python(g, "Crews", exported_at=WHEN), tmp_path, n_sims="40")
-    assert res["costs"]["total_cost"] is None and res["costs"]["cost_rate_basis"] == "simulation"
-    assert "no present value" in proc.stdout
+    c = res["costs"]
+    assert c["cost_rate_basis"] == "simulation"
+    r = math.log1p(0.07) / 8760
+    h = c["horizon"]
+    assert c["total_cost"] == pytest.approx(c["acquisition_cost"] + c["cost_rate"] * -math.expm1(-r * h) / r,
+                                            rel=1e-9)
+    assert "at the simulated running cost" in proc.stdout
 
 
 # ---------------------------------------------------------------------------

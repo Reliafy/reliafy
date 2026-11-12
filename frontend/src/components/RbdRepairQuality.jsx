@@ -13,9 +13,9 @@ const MODELS = [
   { value: "perfect", label: "As good as new",
     hint: "Every repair leaves the block as good as new." },
   { value: "kijima1", label: "Kijima I",
-    hint: "Each repair removes part of the wear since the last repair. q = 0 is as good as new, q = 1 as bad as old." },
+    hint: "Each repair restores part of the age gained since the last repair. q = 0 is as good as new, q = 1 as bad as old." },
   { value: "kijima2", label: "Kijima II",
-    hint: "Each repair removes part of all the wear so far. q = 0 is as good as new, q = 1 as bad as old." },
+    hint: "Each repair restores part of the system's whole age. q = 0 is as good as new, q = 1 as bad as old." },
 ];
 
 const ordinal = (n) => {
@@ -76,6 +76,13 @@ export default function RbdRepairQuality({ initial, onChange }) {
               </label>
             </div>
             {!validQ && <p className="hint">q must be from 0 to 1.</p>}
+            {validQ && (
+              <p className="hint" aria-live="polite">
+                q = {qNum}: each repair restores {Math.round((1 - qNum) * 100)}% of{" "}
+                {model === "kijima1" ? "the age gained since the last repair" : "the system's age"}. A fitted
+                repairable model's page gives its q beside the same percentage.
+              </p>
+            )}
             {validQ && !validN && (
               <p className="hint">
                 {qNum > 0 ? "The failure number must be a whole number, 1 or more." : "Replacing at a failure needs q above 0."}

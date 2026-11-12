@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.6.0 (13 Nov 2026)
+
+Needs a server on this release.
+
+- **Every interval is 90%** (server change): life bounds (B-lives, mean or
+  median life, remaining life) are 90% one-sided lower bounds, and every other
+  interval is 90% two-sided. Results carry `ci_level`; result keys that named
+  a level are now level-free: `beta_ci_95` → `beta_ci`, `ci_95` → `ci`,
+  `rocof_ci_95`, `mtbf_ci_95`, `rate_ratio_ci_95`, `effectiveness_ci_95`
+  (now without `_95`) and `survival_95ci` → `survival_ci`. Forecast ranges are
+  90% (P5–P95); demonstration tests and per-demand bounds default to 90%.
+- **Split one sheet into several datasets**: dataset uploads take
+  `dataset_col`; each value of that column becomes its own dataset.
+- **Data mapping**: fits read `x` with an optional range (`xl`, `xr`) row by
+  row; rows with `x` and a range both filled are left out with a warning.
+  `tr` (observed only up to this value) is mapped like `tl`.
+- **Download as Python for every model**: `reliafy analyse model_export_python
+  --model-id ID` (or `POST /api/v1/analyse/model_export_python`) gives any
+  saved model (non-repairable, regression, time-varying covariates,
+  repairable, accelerated life, degradation, condition and life) as a
+  SurPyval script that refits it and prints the page's numbers. The
+  test-planning actions take `python: true` for the plan's script. Needs a
+  server on this release.
+- **Field reports** (Reliafy Maintenance): `reliafy capture new notes.txt
+  IMG_*.heic noise.m4a --about POSITION_ID` sends notes, photos, sound
+  recordings and PDFs as one report, in pieces that carry on after a dropped
+  connection and never arrive twice; `capture list | get | status | keep |
+  unkeep | delete | download`. In Python: `rf.new_capture(...)`,
+  `rf.captures()`, `rf.capture(id)`, `rf.set_capture_status(...)`. Needs a
+  server with `/api/v1/maintenance/captures`.
+
 ## 0.5.4 (11 Nov 2026)
 
 No change to the client's own code: the tools, routes and flags below come

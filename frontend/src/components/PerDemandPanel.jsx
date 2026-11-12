@@ -18,7 +18,7 @@ export default function PerDemandPanel({ onCreated, onBack }) {
   const [name, setName] = useState("");
   const [source, setSource] = useState("enter"); // "enter" | "dataset"
   const [rows, setRows] = useState([{ label: "", demands: "", failures: "" }]);
-  const [conf, setConf] = useState("95"); // confidence % of the exact bounds
+  const [conf, setConf] = useState("90"); // confidence % of the exact bounds (the app's 90%)
   const [datasets, setDatasets] = useState(null);
   const [datasetId, setDatasetId] = useState("");
   const [columns, setColumns] = useState([]);

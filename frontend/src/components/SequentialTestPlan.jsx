@@ -116,7 +116,7 @@ export default function SequentialTestPlan() {
   const [unit, setUnit] = useState("hours");
   const [failuresSeen, setFailuresSeen] = useState("");
   const [seen, setSeen] = useState("");
-  const { result, error, loading, run } = usePlan("sequential");
+  const { result, inputs, error, loading, run } = usePlan("sequential");
   const mtbf = method === "mtbf";
 
   const pcts = readPercents("sequential", { rTarget, rGood, confidence, producerRisk },
@@ -209,7 +209,7 @@ export default function SequentialTestPlan() {
       {error && <div className="error">{error}</div>}
       {result && (
         <>
-          <PlanAnswer
+          <PlanAnswer kind="sequential" inputs={inputs}
             result={result}
             stats={stats}
             tone={tone}

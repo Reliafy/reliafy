@@ -152,15 +152,40 @@ def fit(
 
 
 _DEFAULT_ALPHA = 0.10  # 90% two-stage confidence band by default
+LIFE_LEVEL_ALPHA = 0.10  # the B-lives' lower bounds: 90% one-sided (backend.levels)
 
 
 def _col(a) -> list:
     return [None if not np.isfinite(v) else float(v) for v in np.asarray(a, dtype=float)]
 
 
+# Where the reliability is this close to 1 its bounds are rounding noise: the
+# delta method's link (log(-log R) and the like) of 1 - 1e-15 swings wildly,
+# and a lognormal life's far left tail once read "90% band 6,000-41,900 km"
+# off one such grid point.
+_SF_NOISE = 1e-9
+
+
+def _steady_bound(sf, bound, *, lower: bool) -> np.ndarray:
+    """A reliability bound with its rounding noise taken out: equal to the
+    reliability where that is within ``_SF_NOISE`` of 1, and never rising
+    with time (a lower bound takes the largest value at any later time, an
+    upper bound the smallest at any earlier one), as the true bound can't."""
+    b = np.asarray(bound, dtype=float).copy()
+    s = np.asarray(sf, dtype=float)
+    flat = np.isfinite(s) & (1.0 - s < _SF_NOISE)
+    b[flat] = s[flat]
+    if lower:
+        return np.fmax.accumulate(b[::-1])[::-1]
+    return np.fmin.accumulate(b)
+
+
 def reliability_curves(model, alpha_ci: float = _DEFAULT_ALPHA) -> dict | None:
     """Population reliability curve (sf) with SurPyval's two-stage confidence
-    bounds. Returns ``{x, sf, lower, upper, alpha_ci}`` or ``None``."""
+    bounds. Returns ``{x, sf, lower, upper, alpha_ci}`` or ``None``; plus
+    ``life_lower``, the reliability's one-sided 90% lower bound (``life_level``),
+    whatever ``alpha_ci``: the B-lives' and the design life's lower bounds are
+    read off it, by the rule for life bounds (90% one-sided, backend.levels)."""
     try:
         life = model.life_model
         t_hi = float(life.qf(0.99))
@@ -172,8 +197,15 @@ def reliability_curves(model, alpha_ci: float = _DEFAULT_ALPHA) -> dict | None:
         try:
             cb = np.asarray(model.cb(grid, on="sf", alpha_ci=float(alpha_ci), bound="two-sided"), dtype=float)
             if cb.ndim == 2 and cb.shape[1] == 2:
-                out["lower"] = _col(cb[:, 0])
-                out["upper"] = _col(cb[:, 1])
+                out["lower"] = _col(_steady_bound(sf, cb[:, 0], lower=True))
+                out["upper"] = _col(_steady_bound(sf, cb[:, 1], lower=False))
+        except Exception:  # pragma: no cover - bounds are optional
+            pass
+        try:
+            lo = np.asarray(model.cb(grid, on="sf", alpha_ci=LIFE_LEVEL_ALPHA, bound="lower"), dtype=float).ravel()
+            if lo.size == grid.size:
+                out["life_lower"] = _col(_steady_bound(sf, lo, lower=True))
+                out["life_level"] = 1.0 - LIFE_LEVEL_ALPHA
         except Exception:  # pragma: no cover - bounds are optional
             pass
         return out
@@ -266,10 +298,17 @@ def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str
     return _json_safe(payload)
 
 
-def predict_item(model, t, y, alpha_ci: float = 0.05) -> dict:
+# A tracked item's stored prediction: a two-sided 80% interval, whose lower end is the 90%
+# one-sided lower bound on its crossing time and life left (the rule for life bounds: 90%,
+# one-sided, a lower bound on life).
+LIFE_ALPHA_CI = 0.20
+
+
+def predict_item(model, t, y, alpha_ci: float = LIFE_ALPHA_CI) -> dict:
     """Predict threshold crossing for one tracked item's measurements.
 
-    ``alpha_ci`` sets the credible-interval width (0.05 → 95%). Returns a
+    ``alpha_ci`` sets the two-sided credible-interval width (0.20 → 80%, so
+    its lower end is a one-sided 90% lower bound). Returns a
     JSON-safe blob for caching on the item document. Never raises for
     prediction problems — degraded results carry ``method: "point"`` (no
     measurement noise → no Bayesian posterior) or ``"error"`` (e.g. too few
@@ -329,7 +368,7 @@ def predict_item(model, t, y, alpha_ci: float = 0.05) -> dict:
 
 def _projection(model, theta, t, pred) -> dict | None:
     """Projected degradation path for the item chart: the path model at the
-    posterior-mean parameters, out past the credible interval, with a 95%
+    posterior-mean parameters, out past the credible interval, with a 90%
     credible band from the posterior parameter covariance (delta method via
     the path jacobian)."""
     try:
@@ -346,7 +385,7 @@ def _projection(model, theta, t, pred) -> dict | None:
             J = np.asarray(model.path_model.jacobian(grid, *theta), dtype=float)
             cov = np.asarray(pred.posterior_cov, dtype=float)
             se = np.sqrt(np.maximum(np.einsum("ij,jk,ik->i", J, cov, J), 0.0))
-            z = 1.959963984540054  # 95%
+            z = 1.6448536269514722  # 90% two-sided (the rule for bounds other than life's)
             out["lo"] = (vals - z * se).tolist()
             out["hi"] = (vals + z * se).tolist()
         except Exception:  # pragma: no cover - band is optional

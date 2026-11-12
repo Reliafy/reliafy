@@ -9,7 +9,7 @@ export function fitOptions(d) {
   const label = timeVarying(d) ? `Non-repairable model ${CHANGING}`
     : t.includes("Covariates") ? "Non-repairable model with covariates" : "Non-repairable model";
   const life = { label, to: `/models/new?dataset=${id}` };
-  const degradation = { label: "Degradation model", to: `/models/degradation?dataset=${id}` };
+  const degradation = { label: "Degradation model", to: `/models/degradation/new?dataset=${id}` };
   if (t.includes("Measurements") && t.includes("Non-repairable")) {
     return [{ label: "Condition and life model", to: `/models/joint/new?dataset=${id}` }, life, degradation];
   }
@@ -35,7 +35,7 @@ export function datasetActions(ds, parts = datasetParts(ds)) {
   const id = encodeURIComponent(ds.id);
   const t = ds.tags || [];
   const life = (label) => ({ label, to: `/models/new?dataset=${id}` });
-  const degradation = { label: "Fit a degradation model", to: `/models/degradation?dataset=${id}` };
+  const degradation = { label: "Fit a degradation model", to: `/models/degradation/new?dataset=${id}` };
   if (parts.life && (parts.measurements || parts.combined)) {
     return { primary: { label: "Fit a condition and life model", to: `/models/joint/new?dataset=${id}` }, secondary: null };
   }
@@ -45,7 +45,7 @@ export function datasetActions(ds, parts = datasetParts(ds)) {
     // as degradation: offered second.
     return { primary: life(`Fit a non-repairable model ${CHANGING}`), secondary: t.includes("Measurements") ? degradation : null };
   }
-  if (kind === "recurrent") return { primary: { label: "Fit a recurrent model", to: `/models/recurrent/new?dataset=${id}` }, secondary: null };
+  if (kind === "recurrent") return { primary: { label: "Fit a repairable model", to: `/models/recurrent/new?dataset=${id}` }, secondary: null };
   if (kind === "degradation" || parts.readingsOnly) return { primary: degradation, secondary: null };
   return { primary: life("Fit a model"), secondary: null };
 }

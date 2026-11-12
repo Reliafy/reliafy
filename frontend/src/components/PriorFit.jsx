@@ -8,7 +8,7 @@ import { RecordCovariatesField } from "./LibraryParts.jsx";
 import { ACCENT, BAND_FILL, MUTED } from "../plotTheme.js";
 import { TRUST_CHOICES } from "../bayesUpdate.js";
 import { AROUND_PARAMS, countsWords, libraryPriorWords } from "../fitDialog.js";
-import { fmt } from "../explorerModels.js";
+import { fmt, rangeBound } from "../explorerModels.js";
 import "./RcmWorksheet.css";
 import "./FitLifeModel.css";
 
@@ -25,7 +25,7 @@ const UNITS = ["hours", "days", "weeks", "months", "years"];
 
 export function Range({ p }) {
   if (!p) return "—";
-  const b = p.lower != null && p.upper != null ? `${fmt(p.lower)}–${fmt(p.upper)}` : p.lower != null ? `≥ ${fmt(p.lower)}` : null;
+  const b = rangeBound(p);
   return <>{fmt(p.median ?? p.point)}{b ? <span className="rw-sum"> ({b})</span> : null}</>;
 }
 
@@ -93,7 +93,7 @@ export function PriorFields({ state, set, kind, kinds = null, onKind, trust = tr
       {kind === "model" && (
         <Select aria-label="Prior model" value={state.modelId || ""} onChange={(e) => set("modelId", e.target.value || null)}>
           <option value="">{models === null ? "Loading models…" : "Pick a Weibull, exponential or lognormal model"}</option>
-          {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}{m.is_sample ? " (sample)" : ""}</option>)}
+          {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}{m.is_sample && !/\(sample\)\s*$/i.test(m.name || "") ? " (sample)" : ""}</option>)}
           {modelFallback}
         </Select>
       )}
@@ -115,6 +115,9 @@ export function PriorFields({ state, set, kind, kinds = null, onKind, trust = tr
           {unitField}
           <TextInput inputMode="decimal" aria-label="Surprised under" placeholder="Surprised under" value={state.b10.low || ""} onChange={(e) => set("b10", { ...state.b10, low: e.target.value })} />
           <TextInput inputMode="decimal" aria-label="Surprised over" placeholder="Surprised over" value={state.b10.high || ""} onChange={(e) => set("b10", { ...state.b10, high: e.target.value })} />
+          {/* A datasheet's shape range goes with its B10; left empty, a wide 1.2 to 4 is assumed and said. */}
+          <TextInput inputMode="decimal" aria-label="Shape from (optional)" placeholder="Shape from (optional)" value={state.shape?.low || ""} onChange={(e) => set("shape", { ...(state.shape || {}), low: e.target.value })} />
+          <TextInput inputMode="decimal" aria-label="Shape to (optional)" placeholder="Shape to (optional)" value={state.shape?.high || ""} onChange={(e) => set("shape", { ...(state.shape || {}), high: e.target.value })} />
         </div>
       )}
     </>
@@ -135,7 +138,9 @@ export function fitCharts(d, bayes) {
 //   download   the charts' download name
 //   age        the age typed; onAge (text) => void
 //   dataWords  where the data came from, for "How it was computed" ("this position's history")
-export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, download, age, onAge, dataWords }) {
+//   need       a required B10 typed; onNeed (text) => void (a fit with a prior: the chance it is met)
+export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, download, age, onAge, dataWords,
+                             need = "", onNeed = null }) {
   const bayes = d.method === "bayes";
   const charts = fitCharts(d, bayes);
   const shownChart = charts.some((c) => c.value === chart) ? chart : "sf";
@@ -160,7 +165,7 @@ export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, downloa
           ...(d.curves.sf_lower && d.curves.sf_upper ? [
             { x: d.curves.x, y: d.curves.sf_upper, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
             { x: d.curves.x, y: d.curves.sf_lower, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: BAND_FILL,
-              name: bayes ? "90% credible band" : "95% confidence band", hoverinfo: "skip" },
+              name: bayes ? "90% credible band" : "90% confidence band", hoverinfo: "skip" },
           ] : []),
           ...(d.curves.baseline_sf ? [{ x: d.curves.x, y: d.curves.baseline_sf, mode: "lines", line: { color: MUTED, width: 1.5, dash: "dash" },
             name: priorName }] : []),
@@ -194,12 +199,27 @@ export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, downloa
           <span className="fit2-age-r">
             {Math.round(d.at_age.reliability * 1000) / 10}%
             {d.at_age.lower != null && d.at_age.upper != null
-              ? ` (${bayes ? "90% credible" : "95% confidence"} ${Math.round(d.at_age.lower * 1000) / 10}–${Math.round(d.at_age.upper * 1000) / 10}%)` : ""}
+              ? ` (${bayes ? "90% credible" : "90% confidence"} ${Math.round(d.at_age.lower * 1000) / 10}–${Math.round(d.at_age.upper * 1000) / 10}%)`
+              : d.at_age.lower != null
+              ? `: we're 90% sure it's at least ${Math.round(d.at_age.lower * 1000) / 10}% (90% one-sided ${bayes ? "credible" : "confidence"} bound)` : ""}
           </span>
         )}
       </div>
+      {bayes && onNeed && (
+        <div className="fit2-age">
+          <label htmlFor="fit2-need">Chance B10 is at least</label>
+          <TextInput id="fit2-need" inputMode="decimal" value={need} onChange={(e) => onNeed(e.target.value)} placeholder="a required life" aria-label="Required B10 life" />
+          <span>{u}</span>
+          {d.need?.chance != null && (
+            <span className="fit2-age-r">
+              <b>{Math.round(d.need.chance * 100)}%</b>, given the prior and the data
+              {d.b10?.lower != null && d.need.life > d.b10.lower ? " (not yet shown at 90%)" : ""}
+            </span>
+          )}
+        </div>
+      )}
       <p className="rim-tquiet fit2-how">
-        How it was computed: {bayes ? `Bayesian (SurPyval fit_bayes), prior: ${d.baseline?.name || "—"}` : "maximum likelihood (SurPyval)"};
+        How it was computed: {bayes ? `Bayesian (the prior updated by the data), prior: ${d.baseline?.name || "—"}` : "maximum likelihood"};
         {" "}{countsWords(d.counts)} in {dataWords}.
         {d.prior_note ? ` ${d.prior_note}` : ""}
       </p>

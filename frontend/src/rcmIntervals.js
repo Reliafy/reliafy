@@ -14,6 +14,20 @@ export const CALCULATOR = {
 };
 export const calculatorFor = (outcome) => CALCULATOR[outcome] || null;
 
+// The calculator's input that is the task's own cost each time (Nov 2026: one figure, kept with
+// the task on its position, never asked for again): a check's, a test's, a planned replacement's.
+export const TASK_COST_FIELD = { pf: "inspection_cost", ff: "test_cost", fixed: "planned_cost" };
+
+// What the calculator says under that input: where the task's cost came from, or that it has
+// none yet and where it's set (the Explorer's Maintenance tab). `cost`: {amount, source} or null.
+export function taskCostWords(cost, money = (v) => `$${v}`) {
+  if (!cost || cost.amount == null) {
+    return "This task has no cost yet. Set it once on its Maintenance tab (typed, or from its LSA) and every calculation uses it.";
+  }
+  const where = cost.source === "typed" ? "typed on the task" : "from its LSA";
+  return `The task's cost each time, ${money(cost.amount)} (${where}, on its Maintenance tab). Change it there to change it everywhere.`;
+}
+
 const ALIASES = {
   h: "hours", hr: "hours", hrs: "hours", hour: "hours", d: "days", day: "days", wk: "weeks", wks: "weeks", week: "weeks",
   mo: "months", month: "months", mth: "months", mths: "months", y: "years", yr: "years", yrs: "years", year: "years",
@@ -52,10 +66,15 @@ export function withUnit(value, unit) {
   return `${num(value)} ${one ? u.slice(0, -1) : u}`.trim();
 }
 
-// An interval in a model's own unit, rounded down for the task: whole from 10, else to 0.1.
+// An interval in a model's own unit, rounded down for the task to three significant figures (as
+// withUnit shows it, so "Use 14,800 hours" saves 14,800, not 14,885): whole from 10, else to 0.1.
 export function roundDown(value) {
   const v = Number(value);
   if (!Number.isFinite(v) || v <= 0) return null;
+  if (v >= 1000) {
+    const step = 10 ** (Math.floor(Math.log10(v + 1e-9)) - 2);
+    return Math.floor(v / step + 1e-9) * step;
+  }
   if (v >= 10) return Math.floor(v + 1e-9);
   return Math.max(0.1, Math.floor(v * 10 + 1e-9) / 10);
 }

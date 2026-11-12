@@ -117,12 +117,42 @@ def carry(graph: dict, out: dict) -> None:
 
 
 def mission_of(graph: dict) -> Optional[dict]:
-    """The position a mission's own RBD belongs to ({position_id}), or None for any other diagram."""
+    """The position a mission's own RBD belongs to ({position_id}, and built_in_series true when its
+    blocks were put in series from the tree, which doesn't say what's redundant), or None for any
+    other diagram."""
     raw = (graph or {}).get("mission_of")
     if not isinstance(raw, dict):
         return None
     pid = str(raw.get("position_id") or "").strip()
-    return {"position_id": pid[:80]} if pid else None
+    if not pid:
+        return None
+    return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {})}
+
+
+def all_in_series(graph: dict) -> bool:
+    """Two or more blocks, each the only one after the one before: one chain from In to Out."""
+    nodes = [n for n in (graph or {}).get("nodes") or [] if isinstance(n, dict)]
+    io = {n.get("id") for n in nodes if n.get("type") in ("input", "output")}
+    blocks = [n for n in nodes if n.get("id") not in io]
+    if len(blocks) < 2 or any(n.get("type") == "knode" for n in blocks):
+        return False
+    outs: dict = {}
+    ins: dict = {}
+    for e in (graph or {}).get("edges") or []:
+        outs[e.get("source")] = outs.get(e.get("source"), 0) + 1
+        ins[e.get("target")] = ins.get(e.get("target"), 0) + 1
+    return all(outs.get(n.get("id"), 0) <= 1 and ins.get(n.get("id"), 0) <= 1 for n in nodes)
+
+
+def series_warning(graph: dict) -> Optional[str]:
+    """What a mission's RBD built from the tree with every block in series has to say until it's
+    rewired: the tree doesn't say which positions are redundant, so the figure may be too low."""
+    owner = mission_of(graph)
+    if not owner or not owner.get("built_in_series") or not all_in_series(graph):
+        return None
+    return ("Its blocks were placed in series when the mission was added: the tree doesn't say which positions "
+            "are redundant (duty and standby sets, parallel trains). This figure counts every block as needed. "
+            "If any are redundant, wire them so in the mission's RBD (open it) and calculate again.")
 
 
 def missions_of(graph: dict) -> list[dict]:
@@ -223,6 +253,20 @@ def save(graph: dict, mission_id: Optional[str] = None, name: Optional[str] = No
     return graph, {**mission, "own": False}
 
 
+def rbd_name_after(rbd_name: str, before: dict, after: dict) -> str:
+    """A mission's own RBD is saved as "<position> — <mission>": renamed with the mission, so the
+    RBDs list doesn't keep "— Mission 1". A diagram renamed by hand (no longer ending in the old
+    mission name), or any other diagram, keeps its name."""
+    if not mission_of(after):
+        return rbd_name
+    old = " ".join(str((before or {}).get("mission_name") or "").split())
+    new = " ".join(str((after or {}).get("mission_name") or "").split())
+    tail = f" — {old}"
+    if not old or not new or old == new or not str(rbd_name or "").endswith(tail):
+        return rbd_name
+    return f"{rbd_name[:-len(tail)]} — {new}"[:200]
+
+
 def remove(graph: dict, mission_id: str) -> dict:
     """The graph without that mission. Raises :class:`MissionError`."""
     graph = dict(graph or {})
@@ -274,14 +318,21 @@ def summary(graph: dict, mission: dict, results: Optional[dict] = None) -> dict:
     got = (results or {}).get(mission["id"])
     if isinstance(got, dict) and got.get("signature") == signature(graph, phases):
         out["result"] = {k: got.get(k) for k in ("reliability", "method", "complete", "at", "through")}
+        if got.get("placeholders"):  # the blocks it rests on a placeholder for, and the figure without them
+            out["result"]["placeholders"] = list(got["placeholders"])
+            out["result"]["without_placeholders"] = got.get("without_placeholders")
     return out
 
 
 def result_record(graph: dict, phases: list, result: dict) -> dict:
     """What's kept of a calculation on the RBD (``mission_results.<id>``) for the lists."""
-    return {"signature": signature(graph, phases), "reliability": result.get("reliability"),
-            "method": result.get("method"), "complete": not result.get("needs"),
-            "through": result.get("through"), "at": datetime.now(timezone.utc).isoformat()}
+    out = {"signature": signature(graph, phases), "reliability": result.get("reliability"),
+           "method": result.get("method"), "complete": not result.get("needs"),
+           "through": result.get("through"), "at": datetime.now(timezone.utc).isoformat()}
+    if result.get("placeholders"):
+        out["placeholders"] = [p["label"] for p in result["placeholders"]]
+        out["without_placeholders"] = (result.get("without_placeholders") or {}).get("reliability")
+    return out
 
 
 # ---- the covariates a mission's phases can set ------------------------------------------------
@@ -538,11 +589,17 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
         last = out["phases"][-1]
         out["through"] = {"phase": last["name"], "reliability": last["reliability_at_end"]}
         out["reliability"] = out["unreliability"] = out["riskiest"] = None
+        out["without_placeholders"] = None
         out.pop("interval", None)
+        out.pop("bound_note", None)
         out["phases"] += [_waiting(p, s) for p, s in zip(clean[gap:], starts[gap:])]
         out["needs"] = needs
     else:
         out["through"] = None
+    warn = series_warning(graph)
+    if warn:
+        out["series_warning"] = warn
+        out["notes"] = [warn, *(out.get("notes") or [])]
     return out
 
 
@@ -555,7 +612,7 @@ def _waiting(phase: dict, start: float) -> dict:
 
 def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callable] = None) -> dict:
     """A mission with what its phases can set: {mission, unit, blocks (those a phase can do
-    without), votes (vote nodes, the inputs feeding each and the count drawn), covariates (the rows
+    without; ``placeholder`` true for one with no model, a placeholder standing in), votes (vote nodes, the inputs feeding each and the count drawn), covariates (the rows
     of :func:`gather`), problems, phases: [{name, covariates: phase_rows, needs (block labels)}]}."""
     inputs_for = _inputs_cache(inputs_for or (lambda b: cb.inputs_of(b, db, owner_id)))
     got = gather(graph, inputs_for)
@@ -563,7 +620,9 @@ def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callab
     feeding: dict = {}
     for e in (graph or {}).get("edges") or []:
         feeding[e.get("target")] = feeding.get(e.get("target"), 0) + 1
-    blocks = [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or n.get("id")}
+    guessed = set(rbd_phases.placeholder_ids(graph or {}))
+    blocks = [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or n.get("id"),
+               "placeholder": n.get("id") in guessed}
               for n in nodes if n.get("type") not in ("input", "output", "knode")
               and not (n.get("data") or {}).get("repeat_of")]
     votes = [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or "Vote node",
@@ -575,7 +634,8 @@ def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callab
         phases.append({"name": p["name"], "covariates": rows,
                        "needs": sorted({b for r in rows for b in r["missing"]})})
     return {"mission": mission, "unit": (graph or {}).get("unit") or "", "blocks": blocks, "votes": votes,
-            "covariates": got["rows"], "problems": got["problems"], "phases": phases}
+            "covariates": got["rows"], "problems": got["problems"], "phases": phases,
+            "series_warning": series_warning(graph or {})}
 
 
 

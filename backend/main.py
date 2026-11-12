@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.db import get_session, init_db
+from backend import fitting as fitting_module
 from backend import life_bounds, more_models, regression_bands, regression_diagnostics
 from backend.fitting import (
     DISCRETE,
@@ -87,6 +88,8 @@ from backend.routers import reports as reports_router
 from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import api_tools as api_tools_router
+from backend.routers import field_reports as field_reports_router
+from backend.routers import maintenance_sync as maintenance_sync_router
 from backend.routers import support as support_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
@@ -273,9 +276,14 @@ app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
 # Operator support replies (fixed /api/v1/support routes, before the generic ones).
 app.include_router(support_router.router)
+# Field reports (fixed /api/v1/maintenance/captures routes, before the generic ones).
+app.include_router(field_reports_router.v1_router)
+app.include_router(field_reports_router.router)
 # Every MCP tool action over REST (POST /api/v1/{tool}/{action}), its OpenAPI
 # spec and the REST-only photo upload. After public_api: its fixed /api/v1
 # routes win over the generic {tool}/{action} ones.
+# A device that works offline: its queued changes, once each (fixed routes, before the generic ones).
+app.include_router(maintenance_sync_router.router)
 app.include_router(api_tools_router.router)
 app.include_router(email_prefs_router.router)
 app.include_router(walkthroughs_router.router)
@@ -451,6 +459,49 @@ def distributions_endpoint() -> dict:
             "fit_methods": FIT_METHODS}
 
 
+@app.post("/api/data-reading")
+def data_reading_endpoint(
+    file: UploadFile | None = File(default=None),
+    dataset_id: str | None = Form(default=None),
+    x: str | None = Form(default=None),
+    c: str | None = Form(default=None),
+    n: str | None = Form(default=None),
+    xl: str | None = Form(default=None),
+    xr: str | None = Form(default=None),
+    tl: str | None = Form(default=None),
+    tr: str | None = Form(default=None),
+    c_invert: str | None = Form(default=None),
+    c_map: str | None = Form(default=None),
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """How a column mapping reads a file's rows, before any fit: units that
+    failed at a known time, between two times (inspection data), at their
+    first look, and units still running, counted the way the fit will count
+    them. ``notes`` says where the reading rests on a guess."""
+    mapping = {k: v for k, v in {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}.items() if v}
+    try:
+        if dataset_id:
+            dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])
+            if dataset is None:
+                return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+            df = datasets_service.load_dataframe(dataset)
+        elif file is not None:
+            df = read_dataframe(read_upload(file))
+        else:
+            return JSONResponse(status_code=422, content={"detail": "Provide a CSV file or a dataset_id."})
+        options = options_from_form(c_invert=c_invert, c_map=c_map) or {}
+        if mapping.get("c") and options.get(fitting_module.CENSOR_MAP_KEY):
+            df = fitting_module.map_censor_column(df, mapping["c"], options[fitting_module.CENSOR_MAP_KEY])
+        elif mapping.get("c") and options.get(fitting_module.CENSOR_INVERT_KEY):
+            df = fitting_module.invert_censor_column(df, mapping["c"])
+        reading = fitting_module.data_reading(df, mapping)
+        reading["notes"] = fitting_module.reading_notes(df, mapping)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    return JSONResponse(content=reading)
+
+
 @app.post("/api/fit/{distribution}")
 def fit_endpoint(
     distribution: str,
@@ -482,6 +533,7 @@ def fit_endpoint(
     criterion: str | None = Form(default=None),
     frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
+    u_col: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
     session=Depends(get_session),
@@ -523,7 +575,7 @@ def fit_endpoint(
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
             include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
-            frailty_family=frailty_family,
+            frailty_family=frailty_family, u_col=u_col,
         )
         options = regression_diagnostics.with_cox_form(options, cox)  # Cox ties / strata / cluster (#61)
         result = fit(
@@ -601,7 +653,7 @@ def confidence_endpoint(
         return JSONResponse(content=confidence_bounds(
             model_id,
             on=body.get("on", "sf"),
-            alpha_ci=float(body.get("alpha_ci", 0.05)),
+            alpha_ci=float(body.get("alpha_ci", 0.10)),  # 90% two-sided by default
             bound=body.get("bound", "two-sided"),
             owner=user["uid"],
             values=body.get("values"),

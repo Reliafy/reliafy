@@ -42,7 +42,7 @@ export default function RecurrentResultView({
     setOwn(id);
     onTab?.(id);
   };
-  const label = name || r.model?.name || "Recurrent model";
+  const label = name || r.model?.name || "Repairable model";
   const causes = (r.by_cause?.causes || []).length > 0;
   const [chosen, setChosen] = useState(() => r.by_cause?.causes?.[0]?.label ?? null);
   const onStats = tabs.some((t) => t.id === "diag") ? () => setTab("diag") : null;
@@ -76,7 +76,7 @@ export default function RecurrentResultView({
       body = <RecurrentEffects r={r} name={label} />;
       break;
     case "calc":
-      body = <RecurrentCalculator r={r} name={label} />;
+      body = <RecurrentCalculator r={r} name={label} modelId={modelId} />;
       break;
     case "plan":
       if (planView === "next") body = <NextFailureView r={r} name={label} />;
@@ -115,6 +115,9 @@ export default function RecurrentResultView({
       before={(
         <>
           {r.fit_warning && <div className="mf-before life-reading caveat" role="note">{r.fit_warning}</div>}
+          {(r.warnings || []).map((w) => (
+            <div key={w.id} className="mf-before life-reading caveat" role="note">{w.text}</div>
+          ))}
           {tab === "plan" && plans.length > 1 && (
             <div className="mf-before rec-plan-bar">
               <SegmentedControl size="sm" label="Plan ahead" value={planView} onChange={setPlan} options={plans} />

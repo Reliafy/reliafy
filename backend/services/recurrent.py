@@ -86,6 +86,34 @@ def save_from_params(db, name: str, model_id: str, params: list, horizon, unit: 
     return doc
 
 
+_MAPPING_KEYS = ("i", "x", "c", "n", "tl", "tr", "mode", "ws", "we")
+
+
+def last_mapping(db, dataset_id: str, owner_id, hidden=frozenset(), columns=None) -> dict | None:
+    """How the newest repairable model fitted from a dataset read its
+    columns, so a new repairable fit from the dataset starts there (the end
+    of record, the unit, covariates) rather than from a fresh guess:
+    ``{mapping, unit, model_name}``, or None. Only a mapping whose columns
+    are all still in the dataset counts."""
+    names = {c.get("name") if isinstance(c, dict) else str(c) for c in columns or []}
+    query = {"dataset_id": dataset_id, "owner_id": {"$in": access.owner_in(owner_id)}}
+    for d in db.recurrent_models.find(query, {"spec": 1, "name": 1, "results.unit": 1}).sort("created_at", -1):
+        if d["_id"] in hidden:
+            continue
+        spec = d.get("spec") or {}
+        raw = spec.get("mapping") or {}
+        mapping = {k: raw[k] for k in _MAPPING_KEYS if isinstance(raw.get(k), str) and raw.get(k)}
+        z = [str(c) for c in (raw.get("z") or []) if c]
+        if not (mapping.get("i") and mapping.get("x")):
+            continue
+        if names and not (set(mapping.values()) | set(z)) <= names:
+            continue
+        return {"mapping": {**mapping, **({"z": z} if z else {})},
+                "unit": spec.get("unit") or (d.get("results") or {}).get("unit") or "",
+                "model_name": d.get("name") or ""}
+    return None
+
+
 def list_models(db, owner_id, hidden=frozenset(), shared=frozenset()) -> list[RecurrentModelDoc]:
     return [
         from_doc(RecurrentModelDoc, d)
@@ -168,7 +196,7 @@ def get_live_model(db, model_id: str, owner_id):
 
 def shape_interval(db, doc: RecurrentModelDoc) -> dict | None:
     """``{"beta", "alpha", "ci"}``: a data-fitted Crow-AMSAA model's growth
-    shape β, its scale and β's 95% interval — as stored with the fit, or for
+    shape β, its scale and β's interval (90%; 95% for a fit saved before the rule) — as stored with the fit, or for
     a model saved before intervals were, from a fresh fit of its dataset
     (then stored on the model). None for a model built from parameters,
     another model family, or one whose dataset is gone."""
@@ -219,6 +247,58 @@ def ensure_diagnostics(db, doc: RecurrentModelDoc) -> RecurrentModelDoc:
     fresh = {**results, **payload}
     db.recurrent_models.update_one({"_id": doc.id}, {"$set": {"results": fresh}})
     _remember_live(doc.id, cache_id)
+    doc.results = fresh
+    return doc
+
+
+# ---- Results at today's rules, on read -------------------------------------------
+
+_CURRENT: "OrderedDict[tuple, dict]" = OrderedDict()
+_CURRENT_MAX = 64
+
+
+def _stale_results(doc: RecurrentModelDoc) -> bool:
+    """A data-fitted model whose stored results predate today's rules: its
+    intervals at 95% (saved before the 90% rule: no ``ci_level``), or an
+    imperfect-repair verdict from before it followed the restoration
+    interval."""
+    spec = doc.spec or {}
+    results = doc.results or {}
+    if spec.get("params_only") or not doc.dataset_id:
+        return False
+    if results.get("ci_level") != recurrent_fit.CI_LEVEL:
+        return True
+    return results.get("family") == "renewal" and "ci_method" not in (results.get("restoration") or {})
+
+
+def current_results(db, doc: RecurrentModelDoc) -> RecurrentModelDoc:
+    """The model with its results at today's rules. A model saved before
+    them is re-fitted from its saved data on read (no goodness-of-fit
+    bootstrap: its stored test is kept, a p-value doesn't depend on the
+    interval level) and the fresh numbers shown; nothing is written back, so
+    the saved document is unchanged, and the result is kept in memory only
+    (per process, by the model's last update). A model whose data is gone
+    keeps its stored numbers."""
+    if not _stale_results(doc):
+        return doc
+    key = (doc.id, str(doc.updated_at))
+    fresh = _CURRENT.get(key)
+    if fresh is None:
+        try:
+            dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
+            if dataset is None:
+                return doc
+            payload, cache_id = recurrent_fit.fit_spec(datasets_service.load_dataframe(dataset), doc.spec or {},
+                                                       gof_test=False)
+        except Exception:  # noqa: BLE001 - the data no longer fits: the stored numbers stand
+            return doc
+        stored = doc.results or {}
+        fresh = {**stored, **payload, "gof_test": stored.get("gof_test", payload.get("gof_test")),
+                 "recomputed_on_read": True}
+        _CURRENT[key] = fresh
+        while len(_CURRENT) > _CURRENT_MAX:
+            _CURRENT.popitem(last=False)
+        _remember_live(doc.id, cache_id)
     doc.results = fresh
     return doc
 

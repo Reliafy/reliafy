@@ -36,7 +36,7 @@ tested at 60, 80 and 100 °C and at two loads.
 ## Add the covariates
 
 Start a new model under **Modelling → Models → Non-repairable** and choose **Fit to data**.
-Map the time and status columns in the **Data** step as usual (see
+Map **x** and **c** in the **Data** step as usual (see
 [fit your first non-repairable model](/guides/fit-your-first-model)). Then open
 **Advanced (regression): covariates** and tick each covariate column. Give each
 one a unit if you like (°C, kN); it's shown with its input and its coefficient.
@@ -95,14 +95,14 @@ in service.
 
 Fit the seal data with **Weibull PH** (the sample model *Valve seal life —
 Weibull PH on temp & load* is this fit). It opens on the **Effects** tab: a
-chart of each covariate's hazard ratio with its 95% interval (1 means no
+chart of each covariate's hazard ratio with its 90% interval (1 means no
 effect), each effect in words, and the baseline beside them. The **Data** tab
 has every coefficient:
 
-| Covariate | β | 95% interval | Hazard ratio e^β |
+| Covariate | β | 90% interval | Hazard ratio e^β |
 |---|---|---|---|
-| temp_C | 0.138 | 0.093 to 0.183 | 1.148 |
-| load | 5.32 | 3.02 to 7.63 | 205 |
+| temp_C | 0.138 | 0.101 to 0.176 | 1.148 |
+| load | 5.32 | 3.39 to 7.26 | 205 |
 
 ![The Effects tab: each covariate's hazard ratio with its interval, and the effects in words](/guides/img/cov-02-coefficients.png)
 
@@ -122,10 +122,11 @@ rate**: per +1 of the covariate, the failure rate rises by this amount per unit
 of time, whatever the age. It is not a ratio, so a negative number means the
 covariate lowers the failure rate.
 
-An AFT model reports a **time ratio** instead. For the same data, **Weibull
-AFT** gives temp_C a time ratio of 1.025: each extra degree makes the seal age
-2.5% faster. The two views agree. For a Weibull, the hazard ratio is the time
-ratio raised to the shape β: 1.025^5.58 ≈ 1.148.
+An AFT model reports a **time ratio** instead: what the life is multiplied by.
+For the same data, **Weibull AFT** gives temp_C a time ratio of 0.976: each
+extra degree makes the seal age 2.5% faster, so its life is 2.4% shorter. The
+two views agree. For a Weibull, the hazard ratio is how much faster it ages
+raised to the shape β: 1.025^5.58 ≈ 1.148.
 
 ## Ask about one operating condition
 
@@ -205,7 +206,7 @@ hours) = 36%, at least 26% at 90% confidence.
 ![A changing-load model's calculator: 60% load, then 90% from 4,800 hours](/guides/img/cov-03-schedule.png)
 
 Its **Effects** tab says it in words: *every +10% in load_pct multiplies
-the hazard by 1.74 (95% interval 1.19 to 2.55)*, and **Model characteristics**
+the hazard by 1.74 (90% interval 1.26 to 2.4)*, and **Model characteristics**
 gives the B-lives and the mean life along the Calculator's schedule.
 
 ## Use it elsewhere
@@ -214,6 +215,11 @@ Save the model and it can drive a block in a
 [reliability block diagram](/guides/build-an-rbd). The block takes the covariate
 values to run at. In a non-repairable diagram it can take a schedule of them
 over the mission instead.
+
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits a regression model (or one with covariates that change over time) with
+SurPyval from its data and prints the numbers on the page. It's free for everyone who can open the model.
 
 ## Where to go next
 

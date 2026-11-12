@@ -17,6 +17,7 @@ import {
 } from "../../altFrame.js";
 import { altPlanLink, altPrefill } from "../../testPlanning.js";
 import { unitInText } from "../unitText.js";
+import { ciPct } from "../../levels.js";
 
 const SMALL = { margin: { t: 6, r: 10, b: 44, l: 54 } };
 // A tested level as a category on a small chart's axis: one stress a line.
@@ -47,7 +48,7 @@ function noOwnFits() {
   return <p className="muted-line">Not stored with this model: fit it again to see each level's own fit.</p>;
 }
 
-// Each level's own shape (fitted to that level alone, with its 95% interval)
+// Each level's own shape (fitted to that level alone, with its interval, 90%)
 // against the model's one shape.
 function ShapeChart({ results, name }) {
   const r = results;
@@ -63,7 +64,7 @@ function ShapeChart({ results, name }) {
     traces.push({
       type: "scatter", mode: "lines", x: [...x, ...[...x].reverse()],
       y: [...x.map(() => shape.ci[1]), ...x.map(() => shape.ci[0])], fill: "toself", fillcolor: BAND_FILL,
-      line: { width: 0 }, hoverinfo: "skip", name: "Model's 95% interval",
+      line: { width: 0 }, hoverinfo: "skip", name: `Model's ${ciPct(results, 0.9)} interval`,
     });
   }
   traces.push({
@@ -84,7 +85,7 @@ function ShapeChart({ results, name }) {
   );
 }
 
-// Each level's own life (fitted alone, with its 95% interval) against the
+// Each level's own life (fitted alone, with its interval, 90%) against the
 // life the model gives that level.
 function LifeChart({ results, name }) {
   const r = results;
@@ -125,11 +126,18 @@ function deltaText(d) {
   return `${d > 0 ? "+" : "−"}${Math.abs(d).toFixed(1)}`;
 }
 
+// Why a life model in the comparison isn't one you can fit here.
+const NOT_OFFERED = {
+  "Inverse Eyring": "For comparison only: Eyring with the stress inverted. Reliafy fits Eyring; Download as Python gives SurPyval, which fits this form too.",
+  "General log-linear": "For comparison only: the general form the other relationships are special cases of. Download as Python gives SurPyval, which fits it.",
+};
+
 function CompareTable({ diag, unit }) {
   const rows = diag?.comparison || [];
   const hasUse = rows.some((r) => r.life_at_use != null);
   const u = unit ? unitInText(unit) : "";
   return (
+    <>
     <table className="mini-table">
       <thead>
         <tr><th>Life model</th><th className="mf-num">ΔAIC</th>{hasUse && <th className="mf-num">Life at use{u ? ` (${u})` : ""}</th>}</tr>
@@ -140,7 +148,11 @@ function CompareTable({ diag, unit }) {
             <td>
               {r.name}
               {r.current && <span className="gof-sub"> · this model</span>}
-              {!r.current && !r.life_model_id && <span className="gof-sub"> · not offered here</span>}
+              {!r.current && !r.life_model_id && (
+                <span className="gof-sub" title={NOT_OFFERED[r.name] || "A form the library compares against; Reliafy doesn't fit it as a model."}>
+                  {" "}· for comparison only
+                </span>
+              )}
             </td>
             <td className="mf-num">{r.current ? "—" : deltaText(r.delta)}</td>
             {hasUse && <td className="mf-num">{formatNumber(r.life_at_use)}</td>}
@@ -148,6 +160,14 @@ function CompareTable({ diag, unit }) {
         ))}
       </tbody>
     </table>
+    {rows.some((r) => !r.current && !r.life_model_id) && (
+      <p className="mf-note">
+        Rows marked “for comparison only” are forms the check fits for reference; they aren't offered as models
+        here ({rows.filter((r) => !r.current && !r.life_model_id).map((r) => NOT_OFFERED[r.name]
+          ? r.name.toLowerCase() : null).filter(Boolean).join(", ") || "see each row"}: hover for why).
+      </p>
+    )}
+    </>
   );
 }
 
@@ -200,7 +220,7 @@ export default function AltDiagnostics({ results, modelId, name, use }) {
                  tone={shape?.tone} verdict={shape?.words || pending}
                  footer={r.distribution_id !== "exponential" && (
                    <>
-                     <p className="muted-line">Dots: each level fitted alone, with its 95% interval. Line and band: the model's one shape.</p>
+                     <p className="muted-line">Dots: each level fitted alone, with its {ciPct(results, 0.9)} interval. Line and band: the model's one shape.</p>
                      {noteLines(noteOf(/common-shape/))}
                    </>
                  )}>
@@ -210,7 +230,7 @@ export default function AltDiagnostics({ results, modelId, name, use }) {
                  tone={life?.tone} verdict={life?.words || pending}
                  footer={(
                    <>
-                     <p className="muted-line">Dots: each level's own life, with its 95% interval. Diamonds: the life the model gives it.</p>
+                     <p className="muted-line">Dots: each level's own life, with its {ciPct(results, 0.9)} interval. Diamonds: the life the model gives it.</p>
                      {noteLines(noteOf(/life-stress test/))}
                    </>
                  )}>
@@ -237,7 +257,7 @@ export default function AltDiagnostics({ results, modelId, name, use }) {
                  tone={distance?.tone} verdict={distance?.words || pending}
                  footer={plan && (
                    <p className="muted-line">
-                     Testing again? <Link to={altPlanLink(modelId)}>Plan the next test from this fit</Link>.
+                     Testing again? <Link to={altPlanLink(modelId, use)}>Plan the next test from this fit</Link>.
                    </p>
                  )}>
         {diag && <DistanceTable diag={diag} />}

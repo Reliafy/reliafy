@@ -47,6 +47,16 @@ export function deleteLines(c) {
   return out;
 }
 
+// The RBDs with blocks for it (built from the tree, on a position above it): they keep those
+// blocks, so the dialog names them. "" with none. `rbds`: [{name, blocks}] from the dry run.
+export function rbdsNote(rbds) {
+  const list = (rbds || []).filter((r) => r && r.name);
+  if (!list.length) return "";
+  const names = list.slice(0, 3).map((r) => `“${r.name}”`).join(", ") + (list.length > 3 ? ` and ${list.length - 3} more` : "");
+  return `Used in ${n(list.length, "RBD")}: ${names}. ${list.length === 1 ? "It keeps" : "They keep"} the blocks for it: `
+    + "rebuild or edit the diagram to take them out.";
+}
+
 // The one sentence under the list.
 export const DELETE_NOTE = "Its history stays in the log: past fitments, work orders and failures still name it. "
   + "You can undo it straight after.";

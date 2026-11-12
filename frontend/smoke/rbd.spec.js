@@ -291,3 +291,30 @@ test("a new diagram built with Add block is connected from Input to Output", asy
   await expect(check).not.toContainText(/Not connected|Nothing feeds into|don't lead anywhere|not on any path/);
   await expectHealthy(page, problems, { label: "new diagram built with Add block" });
 });
+
+// The Maintenance plan (a repairable diagram): one table under the canvas, edited in place. A
+// replacement in running time converts through the block's Runs (blank: all the time); at phone
+// width the table scrolls inside its card, never the page.
+test("the maintenance plan edits planned work and duty in place", async ({ page, problems }) => {
+  await open(page, "/systems/b");
+  await page.getByRole("button", { name: "Add block" }).click();
+  await page.locator(".ovm-item", { hasText: /^Component$/ }).click();
+  await page.locator(".rbd-mode-select").first().click();
+  await page.getByRole("option", { name: "Repairable", exact: true }).click();
+  await page.locator(".rbd-unit-input").fill("Hours");
+  await page.locator('[data-wt="rbd-plan-chip"]').click();
+  const plan = page.getByRole("region", { name: "Maintenance plan" });
+  await expect(plan).toBeVisible();
+  await plan.getByLabel("Component 1: task").selectOption("age");
+  await plan.getByLabel("Component 1: interval in").selectOption("operating");
+  await plan.getByLabel("Component 1: every").fill("500");
+  // Runs blank is "all the time" since #829: running time is calendar time, nothing to fix.
+  await expect(plan.locator(".rbd-plan-problem")).toHaveCount(0);
+  await plan.getByLabel("Component 1: runs, % of the time").fill("25");
+  await expect(plan.locator(".rbd-plan-problem")).toHaveCount(0);
+  await expect(plan).toContainText("= 2,000");
+  await expect(page.locator(".rbd-chip", { hasText: "25%" })).toBeVisible();
+  await page.setViewportSize({ width: 400, height: 860 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+  await expectHealthy(page, problems, { label: "maintenance plan" });
+});

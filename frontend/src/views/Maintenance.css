@@ -622,3 +622,54 @@ button.maint-toggle {
 @media (max-width: 1100px) {
   .pkg-page.is-editing { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); }
 }
+
+/* Field reports: one report opened under its row. */
+.field-report {
+  display: grid;
+  gap: 10px;
+  max-width: 900px;
+}
+.field-report-panel {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.field-report-panel h3 {
+  margin: 0 0 8px;
+}
+.field-report-name {
+  min-width: 200px;
+}
+tr.field-report-open {
+  background: var(--acc-t);
+}
+.field-report-notes {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.field-report-sound {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.field-report-sound audio {
+  max-width: 100%;
+}
+.field-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.field-report-actions .grow {
+  flex: 1;
+}
+
+/* A package group's "Raise this visit" in Due soon: beside its name, wrapping on a phone. */
+.maint-group-btn { margin-left: 0.6rem; vertical-align: middle; }
+
+/* A place with no positions yet: the sentence, then its main action under it. */
+.maint-empty-add { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.maint-head { flex-wrap: wrap; gap: 8px; }

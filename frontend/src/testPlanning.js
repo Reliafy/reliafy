@@ -36,7 +36,11 @@ export const PLAN_LIFE_MODELS = {
 };
 export const PLAN_DISTRIBUTIONS = { weibull: "Weibull", lognormal: "Lognormal" };
 
-export const altPlanLink = (modelId) => `${TEST_PLANNING_PATH}/accelerated?model=${encodeURIComponent(modelId)}`;
+// ``use``: the use stress entered on the model's page (the model's units), carried over.
+export const altPlanLink = (modelId, use = null) => {
+  const u = Array.isArray(use) && use.length === 1 && Number.isFinite(Number(use[0])) ? Number(use[0]) : null;
+  return `${TEST_PLANNING_PATH}/accelerated?model=${encodeURIComponent(modelId)}${u != null ? `&use=${encodeURIComponent(String(u))}` : ""}`;
+};
 
 // A saved ALT model's planning values for the next test, or null when the
 // plan can't use it (two stresses, or a distribution other than Weibull or
@@ -71,9 +75,32 @@ export function altPrefill(results) {
     // The highest stress tested is a safe highest stress for the next test.
     const top = [...tested].sort((a, b) => b - a)[0];
     out.highStress = planningValue(top);
+    // "Check a test of my own" starts from the test as it was run.
+    const levels = (r.levels || []).filter((l) => Number.isFinite((l.stress || [])[0]))
+      .sort((a, b) => a.stress[0] - b.stress[0]);
+    out.stresses = levels.map((l) => planningValue(l.stress[0])).join(", ");
+    if (levels.every((l) => Number.isFinite(l.n))) out.unitsAt = levels.map((l) => String(l.n)).join(", ");
   }
   return out;
 }
 
 // Whether a number typed in a form is usable (finite).
 export const given = (s) => s !== "" && s != null && Number.isFinite(Number(s));
+
+// Whole-number ticks on a log axis (1, 2, 5, 10, 20, 50 …) within the data,
+// so no label loses a digit as Plotly's minor log labels do ("2" for 20).
+export function logTicks(xs) {
+  const v = (xs || []).filter((x) => Number.isFinite(x) && x > 0);
+  if (!v.length) return {};
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const ticks = [];
+  for (let d = 10 ** Math.floor(Math.log10(lo)); d <= hi * 10; d *= 10) {
+    for (const m of [1, 2, 5]) {
+      const t = m * d;
+      if (t >= lo / 1.0001 && t <= hi * 1.0001) ticks.push(t);
+    }
+  }
+  return ticks.length >= 2 ? { tickvals: ticks, ticktext: ticks.map((t) => t.toLocaleString("en-US")) } : {};
+}
+

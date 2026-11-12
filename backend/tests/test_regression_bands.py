@@ -240,7 +240,7 @@ def test_saved_model_band_and_life(client):
     assert fns["life_path"] == f"/api/models/{saved['id']}/life"
     band = client.post(fns["confidence_path"], json={"bound": "two-sided", "values": ROW}).json()
     x = np.asarray(band["x"])
-    want = _direct().cb(x[1:], Z, on="sf", alpha_ci=0.05, bound="two-sided")
+    want = _direct().cb(x[1:], Z, on="sf", alpha_ci=0.10, bound="two-sided")  # 90% by default
     assert np.allclose(band["lower"][1:], want[:, 0]) and np.allclose(band["upper"][1:], want[:, 1])
     life = client.post(fns["life_path"], json={"covariates": ROW, "reliability": [0.9]}).json()
     assert life["points"][0]["time"] == pytest.approx(float(_direct().qf(np.array([0.1]), Z)[0]))

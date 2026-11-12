@@ -176,7 +176,7 @@ def test_optimise_intervals_refusal_gives_the_edit_rbd_ops(env):
     rid = _proof_tested(env)
     msg = _err(_call(env.token[A], "analyse", {"action": "rbd_optimise_intervals", "rbd_id": rid}))
     assert "Nothing is priced" in msg
-    assert "double-click" not in msg and "Cost & maintenance" not in msg
+    assert "double-click" not in msg and "Cost & maintenance" not in msg and "Maintenance plan" not in msg
     ops = json.loads(msg[msg.index("["):msg.index("]", msg.rindex("downtime_rate")) + 1])
     by_id = {op.get("id"): op for op in ops}
     # Each update_node keeps the block's own schedule (update_node replaces it whole).
@@ -194,6 +194,7 @@ def test_optimise_intervals_without_schedules_says_how_to_add_them(env):
                                                  "stages": REPAIRABLE_STAGES}))["id"]
     msg = _err(_call(env.token[A], "analyse", {"action": "rbd_optimise_intervals", "rbd_id": rid}))
     assert "No block has scheduled replacement" in msg and "double-click" not in msg
+    assert "Maintenance plan" not in msg
     assert '"inspection": {"interval": "<time between tests>"' in msg and '"preventive": {"policy": "age"' in msg
     assert "Component block ids: s0c0, s1c0, s1c1" in msg
 

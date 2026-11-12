@@ -212,8 +212,8 @@ test("a section is saved cleaned: empty rows dropped, numbers as numbers, nothin
 
 test("the CSV names the tools, spares and consumables and gives the labour in full", () => {
   const csv = lsaCsv([{ ...clean1, subject: { name: "Chlorinator" }, modes: [] }]).split("\n");
-  assert.match(csv[0], /^Position,Failure mode,Task,Kind,Interval,Trade,Next due,Package,Labour \(h\),People,Method,Labour,Tools,Spares,Consumables,/);
-  assert.match(csv[1], /^Chlorinator,,Clean the cell,/);
+  assert.match(csv[0], /^Position,Failure mode,Task,From,Kind,Interval,Trade,Next due,Package,Cost each time,Labour \(h\),People,Method,Labour,Tools,Spares,Consumables,/);
+  assert.match(csv[1], /^Chlorinator,,Clean the cell,RCM,/);
   assert.match(csv[1], /,2,2,,2 × Pool technician for 1 h,2 × Photometer; Brush,1 × CELL-1 Chlorinator cell; 2 × O-ring,/);
 });
 
@@ -228,4 +228,11 @@ test("a design's LSA table leaves out Next due and Package: they belong to the b
   const design = lsaColumns({ design: true }).map((c) => c.id);
   assert.ok(!design.includes("due") && !design.includes("package"));
   assert.deepEqual(design, TASK_COLUMNS.map((c) => c.id).filter((id) => id !== "due" && id !== "package"));
+});
+
+test("taskOnText: a task named with the position it's on and what that sits in", async () => {
+  const { taskOnText } = await import("./lsaTab.js");
+  assert.equal(taskOnText({ name: "Check", subject: { name: "Drive motor", within: "Pump 3" } }), "Check (Pump 3 › Drive motor)");
+  assert.equal(taskOnText({ name: "Check", subject: { name: "Pump 3" } }), "Check (Pump 3)");
+  assert.equal(taskOnText({ name: "Check" }), "Check");
 });

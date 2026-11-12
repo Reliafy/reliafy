@@ -3,10 +3,13 @@ import { Link, useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import Select from "./Select.jsx";
 import CalendarReplacementResult from "./CalendarReplacementResult.jsx";
+import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
+import { analysisName } from "../modelNext.js";
+import { savedInputs } from "../analysisInputs.js";
 import { calendarNext, calendarReplacement, cancelRbdJob, getRbdJob } from "../api.js";
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { modelFromSearch } from "../modelNext.js";
-import { formatNumber } from "../format.js";
+import { formatNumber, formatPercent } from "../format.js";
 import { unitInText } from "./unitText.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 import { costLabel, formatCost } from "../money.js";
@@ -38,6 +41,7 @@ export default function CalendarReplacement() {
   const [method, setMethod] = useState("dp");
   const [result, setResult] = useState(null);
   const [body, setBody] = useState(null); // what produced the result
+  const [ranWith, setRanWith] = useState(null); // the model it was for
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [needsPro, setNeedsPro] = useState(false);
@@ -67,6 +71,7 @@ export default function CalendarReplacement() {
       const out = await calendarReplacement(built.body);
       if (!runGuard.current.isCurrent(token)) return; // cancelled while it ran
       runGuard.current.finish(token);
+      setRanWith(model);
       if (out.job) { setJob(out.job); setBody(built.body); return; }
       setResult(out);
       setBody(built.body);
@@ -254,7 +259,18 @@ export default function CalendarReplacement() {
 
       {result && (
         <>
-          <CalendarReplacementResult result={result} wt="cal-result" />
+          <CalendarReplacementResult
+            result={result}
+            wt="cal-result"
+            actions={body && result.method !== "sampling" && (
+              // Saved with today's date, so the plan's dates stay as they were; the server recomputes it.
+              <SaveAnalysisButton
+                kind="calendar_replacement"
+                inputs={{ ...body, today: result.today, ...savedInputs(ranWith) }}
+                defaultName={analysisName("Shutdown calendar", ranWith, result.distribution)}
+              />
+            )}
+          />
           {body && <UnitNow body={body} unit={result.unit} />}
         </>
       )}
@@ -285,7 +301,7 @@ function UnitNow({ body, unit }) {
   return (
     <section className="cal-block cal-now cal-form" data-testid="calendar-unit-now">
       <h3>One unit now</h3>
-      <p className="muted-line">The unit in service: replace it now, at the next shut, or later?</p>
+      <p className="muted-line">The unit in service: replace it now, at the next shut, the one after, or later?</p>
       <div className="strategy-costs">
         <label className="calc-t">
           <span>Its age today ({u})</span>
@@ -305,12 +321,13 @@ function UnitNow({ body, unit }) {
           <p className="cal-now-answer"><b>{out.recommendation}</b></p>
           <div className="table-scroll">
             <table className="mini-table">
-              <thead><tr><th>Choice</th><th>Price</th><th>Expected cost</th><th>Replacing now beats it from age</th></tr></thead>
+              <thead><tr><th>Choice</th><th>Price</th><th>Chance it fails first</th><th>Expected cost</th><th>Replacing now beats it from age</th></tr></thead>
               <tbody>
                 {out.choices.map((c, i) => (
                   <tr key={i} className={c === out.best || (c.kind === out.best.kind && c.time === out.best.time) ? "cal-best" : ""}>
                     <td>{c.label}</td>
                     <td>{formatCost(c.price, currency)}</td>
+                    <td>{c.fail_chance == null ? "—" : formatPercent(c.fail_chance)}</td>
                     <td>{formatCost(c.cost, currency, { sig: 4 })}</td>
                     <td>{c.kind === "now" ? "—" : c.break_even_age == null ? "never" : `${formatNumber(c.break_even_age)} ${u}`}</td>
                   </tr>

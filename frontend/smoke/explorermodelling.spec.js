@@ -119,7 +119,7 @@ test("update a baseline with a position's one failure, and save it as the positi
   await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("model");
   const option = await dialog.locator("option", { hasText: "Bearing life — Weibull" }).first().getAttribute("value");
   await dialog.getByRole("combobox", { name: "Prior model" }).selectOption(option);
-  await expect(dialog.getByRole("status")).toContainText("90% chance it lies between");
+  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound"); // B-life bounds are one-sided (#818)
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
   await saveFit(page, dialog, pump.id);
@@ -249,7 +249,7 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await headMenu(page);
   await page.getByRole("menuitem", { name: "RBD", exact: true }).click();
   await expect(page.getByRole("menu", { name: "RBD" }).getByRole("menuitem"))
-    .toHaveText(["Open the RBD", "Rebuild from what's inside…", "Link an existing RBD…"]);
+    .toHaveText(["Open the RBD", "Rebuild from what's inside…", "Redundancy inside…", "New blank RBD…", "Link an existing RBD…"]);  // + Redundancy (#829)
   await page.getByRole("menu", { name: "RBD" }).getByRole("menuitem", { name: "Open the RBD" }).click();
   await expect(pane).toBeVisible();
   expect(rbdOf(page)).toBe(first);
@@ -264,7 +264,8 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   expect(again.model_id).toBe(first);
   await expect(rbd.locator(".mt-c-kind")).toContainText("RBD");
   await expect(rbd.locator(".mt-c-source")).toHaveText("Built from 2 positions inside · 1 placeholder");
-  await expect(rbd.locator(".mt-c-numbers")).toContainText(/MTBF [\d,]+ hours/);
+  // A non-repairable RBD's headline is its mean life, never an MTBF (#815).
+  await expect(rbd.locator(".mt-c-numbers")).toContainText(/Mean life [\d,]+ hours/);
   await expect(rbd.locator(".mt-c-quality")).toContainText("1 placeholder");
   // Its own life model is in use by default.
   const life = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bearing life — Lognormal" }) });
@@ -443,7 +444,7 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await dialog.getByLabel("Characteristic life (alpha)").fill("4");
   await dialog.getByLabel("Shape (beta)").fill("2");
   await dialog.getByLabel("Unit").selectOption("years");
-  await expect(dialog.getByRole("status")).toContainText("90% chance it lies between");
+  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound"); // B-life bounds are one-sided (#818)
   await expect(dialog.getByRole("status")).toContainText("1 failure at");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
@@ -471,7 +472,7 @@ test("a position's row menu on the Modelling tab is two levels, and Enter parame
   // The keyboard: → opens a group.
   await menu.getByRole("menuitem", { name: "RBD", exact: true }).focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("menu", { name: "RBD" }).getByRole("menuitem")).toHaveText(["Build from what's inside…", "Link an existing RBD…"]);
+  await expect(page.getByRole("menu", { name: "RBD" }).getByRole("menuitem")).toHaveText(["Build from what's inside…", "Redundancy inside…", "New blank RBD…", "Link an existing RBD…"]);  // + Redundancy (#829)
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   // Enter parameters…: a Weibull typed in, saved and attached.
@@ -523,7 +524,7 @@ test("Fit a life model… through each Data choice on a class of two positions",
   await headPick(page, "Life model", "Fit a life model…");
   const dialog = page.getByRole("region", { name: "Fit a life model" });
   await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 2 failures and 1 suspension in this position's history");
-  await expect(dialog.locator(".fit2-numbers thead")).toContainText("95% confidence bounds");
+  await expect(dialog.locator(".fit2-numbers thead")).toContainText("90% confidence bounds");
   await dialog.getByRole("combobox", { name: "Data" }).selectOption("class");
   await expect(dialog).toContainText(`2 positions of ${klass}: 5 failures, 2 suspensions`);
   await expect(dialog.getByRole("status")).toContainText("5 failures and 2 suspensions in the class");

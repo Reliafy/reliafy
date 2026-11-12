@@ -132,11 +132,12 @@ def fit_preview(
                                c=c, n=n, xl=xl, xr=xr, tl=tl, tr=tr,
                                s1_label=s1_label, s2_label=s2_label,
                                s1_unit=s1_unit, s2_unit=s2_unit)
+        spec = alt_fit.with_kelvin(spec, df)
         payload, _ = alt_fit.fit(
             df, spec["mapping"], spec["stress_cols"],
             distribution_id=spec["distribution_id"], life_model_id=spec["life_model_id"],
             unit=spec["unit"], stress_labels=spec["stress_labels"],
-            stress_units=spec.get("stress_units"),
+            stress_units=spec.get("stress_units"), kelvin_from=spec.get("kelvin_from"),
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -220,6 +221,27 @@ def get_model(model_id: str, session=Depends(get_session), ctx: AccessCtx = Depe
     # A fit saved before #262 gets its positive coefficients' intervals on the log scale.
     results = alt_fit.positive_coefficient_intervals(doc.results)
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": results})
+
+
+@router.get("/alt/models/{model_id}/export.py")
+def export_python(model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)):
+    """Download as Python: a script that refits the model with SurPyval from
+    the data it was fitted to (embedded) and prints the page's numbers. Free
+    for anyone who can view the model."""
+    from backend.routers.rbds import python_download
+    from backend.services import alt_export
+
+    doc, _ = access_service.fetch_readable(session, "alt_models", AltModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        filename, source = alt_export.export_python(session, doc, [*ctx.read_owners, doc.owner_id])
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export ALT model %s as Python", model_id)
+        return JSONResponse(status_code=500, content={"detail": "Export failed. The error has been logged."})
+    return python_download(filename, source)
 
 
 @router.patch("/alt/models/{model_id}")

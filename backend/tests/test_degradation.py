@@ -371,3 +371,107 @@ def test_columns_and_dataset_detail_carry_distinct_counts(monkeypatch):
         assert detail["n_unique"][detail["preview_columns"].index("item")] == 3
     finally:
         app.dependency_overrides.clear()
+
+
+# ---- A lognormal life's band in its far left tail --------------------------------
+
+def _pad_wear(seed: int = 2) -> pd.DataFrame:
+    """Brake pads worn linearly from 12 mm, each at a lognormal rate (median
+    9 mm per 50,000 km, sigma 0.25), read every 5,000 km with 0.15 mm noise
+    until under 3 mm. Seed 2's lognormal fit has rounding noise in the raw
+    band where the reliability is within 1e-13 of 1."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for u in range(15):
+        rate = 9.0 / 50000 * np.exp(rng.normal(0, 0.25))
+        for km in range(0, 200001, 5000):
+            y = 12 - rate * km + rng.normal(0, 0.15)
+            rows.append({"pad": f"P{u}", "km": km, "mm": round(y, 2)})
+            if y < 3:
+                break
+    return pd.DataFrame(rows)
+
+
+def _time_at(x, y, r):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    i = int(np.argmax(y <= r))
+    return x[i - 1] + (r - y[i - 1]) * (x[i] - x[i - 1]) / (y[i] - y[i - 1])
+
+
+def test_lognormal_band_has_no_spike_and_matches_an_independent_bound():
+    import surpyval as sp
+    from scipy.stats import norm
+
+    from backend import degradation
+
+    payload, cache_id = degradation.fit(
+        _pad_wear(), {"i": "pad", "x": "km", "y": "mm"}, 3.0,
+        path="linear", distribution_id="lognormal", population_method="reml", unit="km",
+    )
+    curves = payload["life_model"]["curves"]
+    x = np.asarray(curves["x"], dtype=float)
+    live = degradation.get_live(cache_id)
+    raw = np.asarray(live.cb(x, on="sf", alpha_ci=0.1, bound="two-sided"), dtype=float)[:, 0]
+    # The library's raw band dips (to ~0) near the curve's start: what made the
+    # Calculator read "90% band 6,000-41,900 km".
+    assert np.nanmin(raw[:60]) < 0.5
+    for key in ("lower", "upper", "life_lower"):
+        v = np.asarray(curves[key], dtype=float)
+        assert np.all(np.diff(v) <= 1e-12), key  # never rises with distance
+
+    # Independent: a lognormal fitted to the crossing distances alone, with
+    # delta-method bounds on log B-life. The app's two-stage band also carries
+    # the paths' uncertainty, so it may sit a little lower, never far lower.
+    ln = sp.LogNormal.fit(np.asarray(live.pseudo_failure_times), c=np.asarray(live.c))
+    mu, s = ln.params
+    for q in (0.01, 0.10):
+        zp = norm.ppf(q)
+        g = np.array([1.0, zp])
+        se = float(np.sqrt(g @ ln.hess_inv @ g))
+        one_sided = np.exp(mu + zp * s - norm.ppf(0.90) * se)
+        band_low = np.exp(mu + zp * s - norm.ppf(0.95) * se)
+        app_one = _time_at(x, curves["life_lower"], 1 - q)
+        app_band = _time_at(x, curves["lower"], 1 - q)
+        assert 0.85 * one_sided < app_one < 1.02 * one_sided, (q, app_one, one_sided)
+        assert 0.85 * band_low < app_band < 1.02 * band_low, (q, app_band, band_low)
+
+
+def test_saved_model_header_curves_recomputed_on_read(session):
+    """A model saved before the 90% one-sided curve (or with the old spiky
+    band) is read back with its curves worked out afresh."""
+    from backend import degradation as degradation_fit
+    from backend.services import degradation as svc
+    from backend.services import datasets as datasets_service
+
+    ds = datasets_service.create_dataset(session, "wear", _deg_csv(), owner_id=A)
+    spec = {"mapping": MAPPING, "threshold": 8.0, "path": "linear", "distribution_id": "weibull",
+            "population_method": "moments", "unit": "hours", "measurement_unit": "mm"}
+    doc = svc.save_model(session, "old", ds, spec, A)
+    stale = dict(doc.results)
+    lm = dict(stale["life_model"])
+    lm["curves"] = {k: v for k, v in lm["curves"].items() if k not in ("life_lower", "life_level")}
+    lm["curves"]["alpha_ci"] = 0.05
+    session["degradation_models"].update_one({"_id": doc.id}, {"$set": {"results.life_model": lm}})
+    fresh = svc.current_results(session, svc.get_model(session, doc.id, A), A)
+    c = fresh["life_model"]["curves"]
+    assert c["life_level"] == pytest.approx(0.9)
+    assert c["alpha_ci"] == pytest.approx(degradation_fit._DEFAULT_ALPHA)
+    assert "life_lower" in c
+
+
+def test_induced_life_axis_stops_near_the_lives_not_at_the_slowest_path():
+    """Linear wear whose drawn rates come near zero: the induced life's 99th
+    percentile is ~100x its median. The chart's axis stops near the lives
+    (and says what share crosses later), not out at millions of km."""
+    from backend import degradation, degradation_induced
+
+    _, cache_id = degradation.fit(_pad_wear(), {"i": "pad", "x": "km", "y": "mm"}, 3.0, path="linear", unit="km")
+    live = degradation.get_live(cache_id)
+    out = degradation_induced.induced_life(live)
+    end = out["curve"]["x"][-1]
+    assert end <= 1.2 * max(out["b10"], 1) * 10  # well within an order of magnitude of the lives
+    assert end < 1.5 * max(float(live.life_model.qf(0.99)), float(live.induced_life(n_samples=10_000, random_state=0).qf(0.95)))
+    assert end > out["median"]
+    if "beyond" in out["curve"]:
+        assert 0 < out["curve"]["beyond"] < 0.2

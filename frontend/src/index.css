@@ -961,6 +961,22 @@ h6 {
   .strategy-costs .compute-why { flex-basis: auto; }
 }
 
+/* A yes/no beside a tool's fields: the box and its words on one line, wrapping on a phone. */
+.strategy-costs .calc-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.3rem;
+  font-size: var(--fs-14);
+  max-width: 100%;
+}
+.strategy-costs .calc-check input { width: 1.1rem; height: 1.1rem; margin: 0; flex: none; }
+
+/* A saved analysis' inputs: what gave the answer (a reviewer's first question). */
+.analysis-inputs { margin: 0 0 var(--sp-4); }
+.analysis-inputs h2 { font-size: var(--fs-16); margin: 0 0 var(--sp-2); }
+.analysis-inputs-actions { margin-top: var(--sp-3); }
+
 /* Under a Strategy tool: its saved analyses (a filtered view of the list). */
 .strategy-saved { margin-top: var(--sp-5); }
 .strategy-saved-head {
@@ -1629,6 +1645,17 @@ h6 {
   cursor: pointer;
 }
 
+.rbd-menu a.rbd-menu-link {
+  display: block;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+}
+.rbd-menu a.rbd-menu-link:hover { background: var(--acc-t); color: var(--acc); }
+
 .rbd-menu button:hover:not(:disabled) {
   background: var(--acc-t);
   color: var(--acc);
@@ -2265,6 +2292,16 @@ select.ctl { padding-right: 30px; }
 .field-error::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
   border-radius: 50%; background: var(--danger); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+}
+
+/* A value that's allowed but probably not what was meant: the same shape as an error, amber. */
+.field-warning {
+  display: flex; align-items: flex-start; gap: 6px; margin: 0;
+  font-size: var(--fs-12); font-weight: 500; line-height: 1.4; color: var(--warn);
+}
+.field-warning::before {
+  content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
+  border-radius: 50%; background: var(--warn); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
 }
 
 /* Controls joined into one: comparator + value + unit, interval + unit. */
@@ -4910,43 +4947,74 @@ h1 .chip,
 .ds-flag-notice > span { flex: 1 1 260px; min-width: 0; }
 .ds-flag-notice .link { font-size: inherit; }
 
-/* Every column and its role (#434), the used / ignored summary as its head. */
-.col-roles { display: flex; flex-direction: column; gap: var(--sp-2); }
-.col-roles-h { margin: 0; font-size: var(--fs-13); line-height: 1.5; overflow-wrap: anywhere; }
-.col-roles-sum { color: var(--muted); }
-.col-roles-sum b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
-.col-roles-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* The Data step's selectors (ColumnMapper): one row per SurPyval input, its
+   label (x, c, n, xl, xr, tl) and plain words, then the column picker. */
+.xcn { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-3); min-width: 0; }
+.xcn-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
   gap: var(--sp-2) var(--sp-4);
-}
-.col-role {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 190px);
   align-items: center;
-  gap: var(--sp-2);
-  padding: 6px var(--sp-2) 6px var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surf);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--line2);
+  min-width: 0;
 }
-.col-role.ignored { background: var(--surf-2); }
-.col-role.ignored .col-role-name { color: var(--muted); }
-.col-role-name {
+.xcn-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.xcn-key { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.xcn-key code, .xcn-pair code, .xcn-fields > code { font-weight: 600; color: var(--ink); font-size: var(--fs-14); white-space: nowrap; }
+.xcn-words { color: var(--muted); font-size: var(--fs-13); line-height: 1.4; }
+.xcn-fields { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-width: 0; }
+.xcn-pick { min-width: 0; width: 15rem; max-width: 100%; }
+.xcn-sub, .xcn-below, .xcn-row > .xcn-warning, .xcn-note-line { grid-column: 2; min-width: 0; }
+.xcn-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.xcn-pair { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.xcn-pair .xcn-pick { width: 12rem; }
+.xcn-hint { flex-basis: 100%; font-size: var(--fs-12); }
+.xcn-unit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--sp-2); margin-left: auto; }
+.xcn-unit .units-input { width: 11rem; max-width: 100%; padding: 6px 10px; font-size: var(--fs-13); }
+.xcn-unit .ds-unitless { min-height: 28px; font-size: var(--fs-12); }
+.xcn-tick { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); min-height: 32px; }
+.xcn-note-line { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.xcn-below { display: flex; flex-direction: column; gap: var(--sp-2); }
+.xcn-issue {
+  margin: 0;
+  padding: 6px var(--sp-2);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-13);
+  line-height: 1.45;
+}
+.xcn-issue.xcn-note { background: var(--surf-2); border-color: var(--line); color: var(--ink); }
+.xcn-below .ds-flag-notice { margin: 0; }
+/* Rows left out of the fit (x and a range both filled): loud, never blocking. */
+.xcn-warning {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  font-size: var(--fs-14);
-  font-weight: 500;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 4px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-left: 4px solid var(--warn);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-13);
+  line-height: 1.45;
 }
-.col-role-eg { font-size: var(--fs-12); font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.xcn-warning summary { cursor: pointer; }
+.ds-status-compact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); min-width: 0; }
+.ds-status-pair { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-13); }
+.ds-status-pair .ds-status-value { overflow-wrap: anywhere; }
+.ds-next-why { color: var(--warn); max-width: 420px; line-height: 1.4; }
+/* A phone: each row's label above its pickers. */
+@media (max-width: 720px) {
+  .xcn-row { grid-template-columns: minmax(0, 1fr); }
+  .xcn-sub, .xcn-below, .xcn-row > .xcn-warning, .xcn-note-line { grid-column: 1; }
+  .xcn-pick, .xcn-pair .xcn-pick { width: 100%; }
+  .xcn-unit { margin-left: 0; }
+  .xcn-tick, .ds-status-pair .seg-btn { min-height: 44px; }
+}
 
 /* "Your first row looks like data…" with its Undo (#434). */
 .ds-header-note {
@@ -7481,10 +7549,13 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 /* ---- New-model fit flow (page panel) ---------------------------------- */
+/* The stepper sits at the top of the flow. */
+.fit-flow-head { margin-bottom: 1rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--line2); }
+.fit-flow-head .steps { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
 .fit-flow-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1rem;
   margin-top: 1.25rem;
   padding-top: 1rem;
@@ -7493,7 +7564,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   flex-wrap: wrap;
 }
 .fit-flow-foot .row { flex-wrap: wrap; }
-.fit-flow-foot .steps { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
 /* Result step: the model's name sits beside Save (#311). */
 .fit-save-name {
   width: 280px;
@@ -7515,14 +7585,14 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* A phone: the stepper and the buttons wrap instead of scrolling the page. */
 @media (max-width: 560px) {
   .fit-flow-foot { flex-wrap: wrap; }
-  .fit-flow-foot .steps { flex-wrap: wrap; gap: 6px; min-width: 0; }
-  .fit-flow-foot .steps .step-wrap { gap: 6px; }
-  .fit-flow-foot .steps .sep { width: 10px; }
   .fit-flow-foot .row { flex-wrap: wrap; }
   .fit-save-name { flex: 1 1 100%; width: auto; order: -1; }
+  .fit-flow-head .steps { gap: 6px; }
+  .fit-flow-head .steps .step-wrap { gap: 6px; }
+  .fit-flow-head .steps .sep { width: 10px; }
   /* One line of numbered dots, with only the current step's name. */
-  .fit-flow-foot .steps { flex-wrap: nowrap; }
-  .fit-flow-foot .steps .step:not(.active) .step-label {
+  .fit-flow-head .steps { flex-wrap: nowrap; }
+  .fit-flow-head .steps .step:not(.active) .step-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -9134,6 +9204,10 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--line2);
 }
 .rbd-dlg-sec > h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; color: var(--ink); }
+/* The block's planned work in words; edited in the Maintenance plan (RbdMaintenancePlan.jsx). */
+.rbd-dlg-plan { align-items: flex-start; }
+.rbd-dlg-plan-sum { margin: 0; font-size: var(--fs-14); line-height: 1.45; }
+.rbd-dlg-plan > p.muted { margin: 0; font-size: var(--fs-13); }
 .rbd-dlg-sec .param-fields, .rbd-dlg-fold-body .param-fields { margin-top: 0; }
 .rbd-dlg-sec .hint, .rbd-dlg-fold-body .hint { margin: 0; }
 .rbd-dlg-sec .rbd-instant-repair { margin: 0; }
@@ -9237,6 +9311,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .rbd-costs .alt-metric small { font-size: var(--fs-12); font-weight: 400; }
 .rbd-avail-bar-fill.cost { background: var(--cat-teal); }
 .rbd-avail-bar-fill.planned { background: var(--cat-amber); }
+.rbd-split-sub { font-size: var(--fs-13); color: var(--muted); font-weight: 600; margin-top: 4px; }
 .rbd-costs-table td, .rbd-costs-table th { font-variant-numeric: tabular-nums; }
 .rbd-costs-table th:first-child { text-align: left; }
 .rbd-costs-table tr.changed td { font-weight: 600; }
@@ -9907,3 +9982,83 @@ main.content:focus { outline: none; }
   .sidebar.drawer .side-signout { min-width: 44px; min-height: 44px; }
   .navbar .brand { min-height: 44px; }
 }
+.rbd-compare-chosen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-13); }
+.rbd-compare-chosen li { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.rbd-importance-why { margin: 2px 0 6px; }
+
+/* Bulk items on a fleet forecast (FleetItemsImport.jsx): a pane in the Items card. */
+.fleet-import { margin: var(--sp-3) 0; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surf-2); }
+.fleet-import-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.fleet-import-paste { width: 100%; }
+.fleet-import-paste textarea { width: 100%; font-family: var(--mono, ui-monospace, monospace); font-size: var(--fs-13);
+  box-sizing: border-box; }
+.fleet-import-file { display: flex; flex-direction: column; gap: var(--sp-2); }
+.fleet-import-drop { padding: 22px 16px; }
+.fleet-import-map { margin-top: var(--sp-2); }
+.fleet-import-map .alt-map-k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-import-preview { margin-top: var(--sp-3); }
+.fleet-import-sum { margin: 0 0 var(--sp-1); font-size: var(--fs-14); }
+.fleet-import-skipped { margin: 0 0 var(--sp-2); padding-left: 1.2rem; font-size: var(--fs-13); color: var(--warn); }
+.fleet-import-acts { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-3); }
+.fleet-import-acts .muted-line { margin: 0; }
+.fleet-items-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
+.fleet-bulk-bar { display: flex; align-items: flex-end; gap: var(--sp-2); flex-wrap: wrap; margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--acc-t); font-size: var(--fs-14); }
+.fleet-bulk-bar .login-field { width: 150px; margin: 0; }
+.fleet-bulk-bar b { align-self: center; }
+.fleet-items .fleet-items-sel { width: 36px; text-align: center; }
+.fleet-compare { margin-top: var(--sp-4); }
+.fleet-compare table { min-width: 560px; }
+.fleet-compare td.num, .fleet-compare th.num { text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) {
+  .fleet-import-map .alt-map-row { flex-wrap: wrap; }
+  .fleet-import-map .alt-map-k { flex: 1 1 100%; }
+  .fleet-bulk-bar .login-field { width: calc(50% - var(--sp-2)); }
+}
+.fleet-items tr.selected td { background: var(--acc-t); }
+.lib-table .fleet-items-sel { width: 36px; text-align: center; }
+.fleet-compare .mini-table th[scope="row"] { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.fleet-items-tools button { white-space: normal; text-align: left; max-width: 100%; }
+
+/* The same task on identical positions, offered after an interval change (TaskTwins.jsx). */
+.task-twins { margin-top: 8px; padding: 10px 12px; }
+.task-twins p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.task-twins .maint-row { flex-wrap: wrap; gap: 8px; }
+/* The Decide dialog's cost row and a failure mode's own restoration (RCM). */
+.decision-cost { align-items: center; flex-wrap: wrap; gap: 8px; }
+.rim-restore { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rim-restore .rw-fhelp { flex-basis: 100%; margin: 0; }
+.rcm-on-tree { margin-bottom: 16px; }
+.rcm-on-tree-list { margin: 8px 0 0; padding-left: 18px; }
+.rcm-on-tree-list li { margin: 4px 0; overflow-wrap: anywhere; }
+
+/* A workbook's sheet chosen in the fit flow's source step, not in a modal. */
+.xl-inline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  min-width: 0;
+}
+.xl-inline-title { margin: 0; font-size: var(--fs-16); font-weight: 600; overflow-wrap: anywhere; }
+.xl-inline-actions { margin: 0; justify-content: flex-end; flex-wrap: wrap; }
+/* A phone: the header-row picker takes the panel's width, never more. */
+.xl-picker .xl-inline { max-width: 100%; min-width: 0; flex-wrap: wrap; }
+.xl-picker .xl-inline .select-wrap, .xl-picker .xl-inline > div { min-width: 0; max-width: 100%; flex: 1 1 12rem; }
+.xl-picker .xl-inline button { max-width: 100%; }
+
+/* The Data section upload's split: "This file makes 3 datasets", then what was saved. */
+.ds-split { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.ds-split-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-weight: 600; font-size: var(--fs-13); }
+.ds-split-pick > .sel-trigger { flex: 1 1 12rem; min-width: 0; max-width: 22rem; font-weight: 400; }
+.split-summary { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); min-width: 0; }
+.split-summary h3 { margin: 0; font-size: var(--fs-14); }
+.split-table { border-collapse: collapse; font-size: var(--fs-13); }
+.split-table th, .split-table td { padding: 4px var(--sp-4) 4px 0; text-align: left; vertical-align: baseline; }
+.split-table th { font-weight: 600; overflow-wrap: anywhere; }
+.split-table td { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { changePackage, getPackage, updatePackage } from "../api.js";
+import { changePackage, getPackage, raisePackageVisit, updatePackage } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
 import TablePane from "../components/TablePane.jsx";
@@ -100,7 +100,15 @@ export default function MaintenancePackage() {
       <div className={"pkg-page" + (editing && !phone ? " is-editing" : "")}>
         <div className="pkg-main">
           <Details pkg={pkg} />
-          <NextVisits pkg={pkg} today={today} />
+          <NextVisits pkg={pkg} today={today} onRaise={async () => {
+            try {
+              const out = await raisePackageVisit(pkg.id);
+              setPkg(await getPackage(pkg.id));
+              setSaid(`${out.raised ? "Raised" : "Already open:"} work order #${out.work_order.number} for this visit.`);
+            } catch (e) {
+              setSaid(e.message);
+            }
+          }} />
           <Tasks pkg={pkg} />
           <WorkOrders pkg={pkg} navigate={navigate} />
         </div>
@@ -128,6 +136,13 @@ function Details({ pkg }) {
         {pkg.tolerance?.amount ? <><dt>On time within</dt><dd>{pkg.tolerance.amount} {unitWord(pkg.tolerance.amount, pkg.tolerance.unit)} after the visit date</dd></> : null}
         {pkg.season?.text && <><dt>Season</dt><dd>{pkg.season.text}</dd></>}
         {pkg.trade && <><dt>Trade</dt><dd>{pkg.trade}</dd></>}
+        {pkg.shutdown && (
+          <><dt>Shutdown</dt><dd>
+            {pkg.shutdown.words[0].toUpperCase() + pkg.shutdown.words.slice(1)}
+            {pkg.shutdown.scope ? ` · takes down ${pkg.shutdown.scope.map((x) => x.name).join(", ")}` : pkg.subject ? ` · takes down all of ${pkg.subject.name}` : ""}
+            {pkg.shutdown.dates ? ` · on ${pkg.shutdown.dates.join(", ")}` : ""}
+          </dd></>
+        )}
         {wo && (
           <><dt>Open visit</dt><dd>
             <Link to={workOrderPath(wo.id)}>#{wo.number}</Link> for {fmtDate(wo.visit_on)}
@@ -157,11 +172,21 @@ function Details({ pkg }) {
   );
 }
 
-function NextVisits({ pkg, today }) {
+function NextVisits({ pkg, today, onRaise }) {
   const visits = pkg.next_visits || [];
+  const [busy, setBusy] = useState(false);
+  // Raise the next visit's work order now, on its own (nothing else that's due).
+  const canRaise = pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order;
   return (
     <section className="card">
-      <div className="maint-head"><h2>{visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2></div>
+      <div className="maint-head maint-wrap"><h2>{visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2>
+        {canRaise && (
+          <button type="button" className="secondary sm" disabled={busy}
+                  onClick={async () => { setBusy(true); await onRaise(); setBusy(false); }}>
+            {busy ? "Raising…" : `Raise the ${fmtDate(visits[0].on)} visit now`}
+          </button>
+        )}
+      </div>
       {visits.length === 0 ? (
         <p className="lib-date">
           {pkg.status === "paused" ? "None while it's paused."
@@ -339,6 +364,28 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
               </select>
             </Field>
           </div>
+        )}
+        {!layer && pkg.subject?.kind === "position" && (
+          <fieldset className="pkg-rules pkg-shut">
+            <legend>Shutdown</legend>
+            <label className="mt-mode">
+              <input type="checkbox" checked={form.shutdown} onChange={(e) => setForm((f) => ({ ...f, shutdown: e.target.checked }))} />
+              {" "}Each visit is a shutdown: it takes {pkg.subject?.name || "the position"} off-line
+            </label>
+            {form.shutdown && (
+              <>
+                <div className="pk-dialog-row">
+                  <Field label="Off-line for (hours)"><input type="number" min="0" step="any" inputMode="decimal" value={form.shutHours} onChange={set("shutHours")} placeholder="e.g. 72" /></Field>
+                  <Field label="Cost each shut (optional)"><input type="number" min="0" step="any" inputMode="decimal" value={form.shutCost} onChange={set("shutCost")} /></Field>
+                </div>
+                <label className="mt-mode">
+                  <input type="checkbox" checked={form.shutIdle} onChange={(e) => setForm((f) => ({ ...f, shutIdle: e.target.checked }))} />
+                  {" "}Items not worked on keep ageing during the shut
+                </label>
+                <p className="lib-date">Its tasks are the work done at each shut. A repairable RBD on {pkg.subject?.name || "the position"} reads it as a planned outage.</p>
+              </>
+            )}
+          </fieldset>
         )}
         <Field label="Trade (optional)" text={form.trade}><input value={form.trade} maxLength={200} onChange={set("trade")} placeholder="e.g. Fitter" /></Field>
         <Field label="Notes (optional)" text={form.notes} max={2000}>

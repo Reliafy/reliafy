@@ -457,10 +457,23 @@ def availability_payload(
     this process (see :func:`rbd_jobs.cancel_token`).
     Raises :class:`AnalysisError` for an invalid current state.
     """
+    from backend.maintenance import rbd_tree_plan
     from backend.services import rbd_analysis
 
+    # A block standing for a position takes its planned work from the position's tasks, read now
+    # (rbd_tree_plan.py): the tasks are the one source, never a copy kept in the diagram.
+    graph, tree = rbd_tree_plan.for_saved_rbd(ctx, rbd, graph)
     state = rbd_analysis.parse_current_state(graph, current_state)
     doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
+    tasks_now = rbd_tree_plan.fingerprint(tree) if tree else {}
+    tasks_changed = []
+    saved_tasks = (doc or {}).get("tree_tasks") or {}
+    saved_entry = (doc or {}).get("availability_cache") or {}
+    if saved_entry.get("key") and saved_tasks.get("key") == saved_entry.get("key"):
+        tasks_changed = rbd_tree_plan.changed_tasks(saved_tasks.get("tasks"), tasks_now,
+                                                    rbd_tree_plan.task_names(tree))
+    if tasks_changed and simulate is None and not force:
+        simulate = False  # the saved run is out of date: said so, never rerun unasked
     writable = rbd is not None and access_service.can_write(ctx, rbd.owner_id)
     entitled = billing_service.premium_compute_allowed(session, ctx.user)
     free = exact_payload(session, graph, t_max, state, doc, writable, resolve_owners, exact)
@@ -483,6 +496,9 @@ def availability_payload(
     run_quick = quick_ok and bool(quick) and simulate is not False and cached is None
     sim = None
     job = None
+    if (run or run_quick) and rbd is not None and writable and state is None:
+        # Which version of each tree task this run used, so a later read can say it's out of date.
+        session.rbds.update_one({"_id": rbd.id}, {"$set": {"tree_tasks": {"key": key, "tasks": tasks_now}}})
     if run or run_quick:
         code, res = rbd_jobs_service.run_availability(
             session,
@@ -524,6 +540,9 @@ def availability_payload(
         status = {"state": "not_run"}
     if on_request and sim is None:
         status["on_request"] = True
+    if tasks_changed and cached is None and sim is None:
+        status["tasks_changed"] = tasks_changed
+        status["saved_at"] = saved_entry.get("computed_at")
 
     if sim is None and job is None and not entitled and not _has_figures(free):
         # Simulation-only diagram (no exact figures at all): the paywall, as
@@ -534,6 +553,8 @@ def availability_payload(
 
     out = rbd_jobs_service.availability_out(
         sim, free, status=status, state=state, entitled=entitled, graph=graph)
+    if tree:
+        out["tree_plan"] = {"position": tree["position"], "tasks": tasks_now}
     if sim is not None and sim.get("free_sims"):
         out["free_sims"] = sim["free_sims"]
     if job is not None:
@@ -609,6 +630,7 @@ def analyze_graph(
     target_reliability: float | None = Body(default=None),
     quick: bool = Body(default=False),
     run_token: str | None = Body(default=None),
+    evaluate_at: float | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -618,7 +640,7 @@ def analyze_graph(
     ``covariates`` maps node id -> covariate values for proportional-hazards
     nodes. ``conditional_age`` conditions the curves on having already survived
     to that age (so the result is the conditional survival). ``band``
-    (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    (``{"level": 0.9}``) adds a confidence band from the fitted blocks'
     parameter uncertainty.
 
     Repairable graphs get the exact availability figures (free) and the
@@ -637,6 +659,9 @@ def analyze_graph(
     and B-lives run from now — and ``target_reliability`` (e.g. 0.9) adds the
     design life, the time the system reliability falls to it (with an
     interval when ``band`` is asked for). Both are exact, free for everyone.
+    ``evaluate_at`` is the time the importance measures and the common-cause
+    comparison are worked out at (default: the time the system reliability
+    falls to 90%).
     """
     try:
         if graph.get("repairable"):
@@ -657,6 +682,7 @@ def analyze_graph(
                 band=band,
                 current_state=current_state,
                 target_reliability=target_reliability,
+                evaluate_at=evaluate_at,
             )
         )
     except AnalysisError as exc:
@@ -776,6 +802,24 @@ def export_rbd_json(
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.post("/rbds/expand-subsystems")
+def expand_subsystems(
+    graph: dict = Body(..., embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """An (unsaved) graph with each sub-system block replaced by its own blocks, wired as inside it
+    (rbd_flatten.py): what a repairable diagram needs. Nothing is saved: {graph, expanded, notes}."""
+    from backend.services import rbd_flatten
+    from backend.services.rbd_graph import GraphError
+
+    try:
+        out = rbd_flatten.expand_saved(session, graph, ctx.read_owners)
+    except (rbd_flatten.FlattenError, GraphError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content=out)
 
 
 @router.post("/rbds/validate")

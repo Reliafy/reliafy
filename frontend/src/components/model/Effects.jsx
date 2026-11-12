@@ -1,23 +1,32 @@
 // The Effects tab (regressions, covariates that change over time, condition
 // and life): what changes the life. A chart of each covariate's ratio with
-// its 95% interval (a "forest" chart: 1 means no effect), each effect in
+// its 90% interval (a "forest" chart: 1 means no effect), each effect in
 // words, and a panel with the baseline the ratios multiply.
 import Plot from "../Plot.jsx";
 import CiNote from "../CiNote.jsx";
 import { paramView } from "../LifeSummary.jsx";
 import { PlotCard, PlotPanel, ScrollCard } from "./ModelLayouts.jsx";
-import { ACCENT, DATA_INK, referenceShape } from "../../plotTheme.js";
+import { ACCENT, DATA_INK, logTicks, referenceShape } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { dataWords, effectText, forestRows } from "../../modelFrame.js";
 import { fmtP } from "../RegressionChecks.jsx";
+import { LEVEL_TEXT, ciPct, levelPct } from "../../levels.js";
 
 const sentence = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
+// What the ratio multiplies, on the axis: below 1 a shorter life for a time
+// ratio, a lower failure rate for a hazard ratio.
+const AXIS_TITLE = {
+  "time ratio": "Time ratio: the life ×",
+  "odds ratio": "Odds ratio: the odds of having failed ×",
+  "hazard ratio": "Hazard ratio: the failure rate ×",
+};
 
 export function ForestChart({ rows, ratioLabel, name, download }) {
   const additive = rows.some((r) => r.additive);
   const shown = rows.filter((r) => (additive ? r.value != null : r.ratio != null && r.ratio > 0));
   if (!shown.length) return <p className="muted-line">No covariate effects to chart.</p>;
-  const label = (r) => (r.unit ? `${r.name} (per ${r.unit})` : r.name);
+  const label = (r) => (r.unit ? `${r.label || r.name} (per ${r.unit})` : r.label || r.name);
   const point = (r) => (additive ? r.value : r.ratio);
   const hasCi = (r) => r.lo != null && r.hi != null && (additive || (r.lo > 0 && r.hi > 0));
   const trace = {
@@ -31,7 +40,7 @@ export function ForestChart({ rows, ratioLabel, name, download }) {
       arrayminus: shown.map((r) => (hasCi(r) ? point(r) - r.lo : 0)),
     },
     customdata: shown.map((r) => (hasCi(r) ? `${formatNumber(r.lo)} to ${formatNumber(r.hi)}` : "no interval")),
-    hovertemplate: `%{y}: %{x:.3~g} (95% %{customdata})<extra></extra>`,
+    hovertemplate: `%{y}: %{x:.3~g} (${rows[0]?.level || LEVEL_TEXT} %{customdata})<extra></extra>`,
     name: additive ? "Coefficient" : sentence(ratioLabel || "ratio"),
   };
   const values = shown.flatMap((r) => [point(r), r.lo, r.hi]).filter((v) => v != null && (additive || v > 0));
@@ -39,6 +48,8 @@ export function ForestChart({ rows, ratioLabel, name, download }) {
   const hi = additive ? 0 : Math.max(1, ...values);
   const span = additive ? 0 : Math.log10(hi) - Math.log10(lo);
   const pad = Math.max(0.08, span * 0.12);
+  // Labelled in full (0.4, not Plotly's "4" between decades).
+  const ticks = additive ? null : logTicks(10 ** (Math.log10(lo) - pad), 10 ** (Math.log10(hi) + pad));
   const layout = {
     showlegend: false,
     margin: { t: 10, r: 16, b: 46, l: 12 },
@@ -46,11 +57,9 @@ export function ForestChart({ rows, ratioLabel, name, download }) {
       ? { title: { text: "Coefficient (0 = no effect)" }, zeroline: false }
       : {
           type: "log",
-          title: { text: `${sentence(ratioLabel || "ratio")} (1 = no effect)` },
+          title: { text: `${AXIS_TITLE[ratioLabel] || sentence(ratioLabel || "ratio")} (1 = no effect)` },
           range: [Math.log10(lo) - pad, Math.log10(hi) + pad],
-          // Over a decade or more, powers of ten only: the 2s and 5s between
-          // them crowd the axis.
-          ...(span >= 1.2 ? { dtick: 1 } : {}),
+          ...(ticks ? { tickmode: "array", tickvals: ticks.tickvals, ticktext: ticks.ticktext } : {}),
         },
     yaxis: { type: "category", autorange: "reversed", automargin: true, showgrid: false, ticks: "" },
     shapes: [referenceShape(additive ? { x: 0, line: { dash: "dot" } } : { x: 1, line: { dash: "dot" } })],
@@ -101,7 +110,7 @@ function EffectsPanel({ result, split }) {
               <span className="gk">{v.label}</span>
               <span className="gv-col">
                 <span className="gv">{v.value}</span>
-                {v.ci && <span className="param-ci">95% {v.ci}</span>}
+                {v.ci && <span className="param-ci">{ciPct(result)} {v.ci}</span>}
               </span>
             </div>
           );
@@ -119,23 +128,30 @@ function EffectsPanel({ result, split }) {
             <span className="gk" title="How much the groups' hidden multipliers vary">Spread θ</span>
             <span className="gv-col">
               <span className="gv">{formatNumber(f.theta)}</span>
-              {f.theta_ci && <span className="param-ci">95% {formatNumber(f.theta_ci[0])}–{formatNumber(f.theta_ci[1])}</span>}
+              {f.theta_ci && <span className="param-ci">{levelPct(f.theta_ci_level ?? 0.95)} {formatNumber(f.theta_ci[0])}–{formatNumber(f.theta_ci[1])}</span>}
             </span>
           </div>
           {f.reading && <p className="mf-note">{f.reading}</p>}
         </div>
       )}
-      <CiNote params={params} note={result.ci_note} />
+      <CiNote params={params} note={result.ci_note} level={ciPct(result)} />
       <p className="life-method">
-        {result.effect === "aft"
-          ? "A time ratio of 2 doubles the life; 0.5 halves it."
+        {result.effect === "aft" || result.ratio_label === "time ratio"
+          ? "A time ratio of 2 doubles the life; 0.5 halves it (the item ages twice as fast)."
           : result.ratio_label === "odds ratio"
-          ? "An odds ratio of 2 doubles the odds of failing by any time."
+          ? "An odds ratio of 2 doubles the odds of having failed by any age; 0.5 halves them."
           : result.ratio_label
           ? "A hazard ratio of 2 doubles the failure rate at any moment; 0.5 halves it."
           : "Additive effects: each coefficient adds to the failure rate."}
         {" "}Every coefficient, with its standard error, is in the Data tab.
       </p>
+      {params.length > 1 && !result.tvc && (
+        <p className="life-method">
+          One shape for every unit: the covariates stretch or shrink the life, but the way failures spread out
+          with age is the same for every group. If groups may wear out differently, fit each group on its own and
+          compare them.
+        </p>
+      )}
     </>
   );
 }
@@ -145,7 +161,7 @@ export default function Effects({ result, name, split }) {
   return (
     <PlotPanel
       plot={
-        <PlotCard title={result.ratio_label ? `Each covariate's ${result.ratio_label}, with its 95% interval` : "Each covariate's effect, with its 95% interval"}>
+        <PlotCard title={result.ratio_label ? `Each covariate's ${result.ratio_label}, with its ${ciPct(result)} interval` : `Each covariate's effect, with its ${ciPct(result)} interval`}>
           <ForestChart rows={rows} ratioLabel={result.ratio_label} name={name || result.distribution} />
         </PlotCard>
       }
@@ -166,7 +182,7 @@ export function JointEffects({ results, name }) {
   return (
     <PlotPanel
       plot={
-        <PlotCard title="What changes the risk: each hazard ratio, with its 95% interval">
+        <PlotCard title={`What changes the risk: each hazard ratio, with its ${ciPct(results)} interval`}>
           <ForestChart rows={rows} ratioLabel="hazard ratio" name={name} />
         </PlotCard>
       }

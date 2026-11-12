@@ -101,11 +101,13 @@ def test_alt_interval_without_flags_and_blank_upper_bounds():
     assert [p["value"] for p in flagged["params"]] == pytest.approx([p["value"] for p in with_flags["params"]])
 
 
-def test_alt_mapping_takes_x_or_both_interval_columns():
+def test_alt_mapping_takes_both_interval_columns():
+    # x with the range is read per row (test_alt_exact_and_ranges.py); a lone xl is refused.
     df = _inspected(_alt_df())
-    for mapping in ({"xl": "lo"}, {"x": "lo", "xl": "lo", "xr": "hi"}):
-        with pytest.raises(FitError, match="not both"):
-            alt.fit(df, mapping, ["tempK"], "weibull", "arrhenius")
+    with pytest.raises(FitError, match="not both"):
+        alt.fit(df, {"xl": "lo"}, ["tempK"], "weibull", "arrhenius")
+    with pytest.raises(FitError, match="Every row has x"):
+        alt.fit(df, {"x": "lo", "xl": "lo", "xr": "hi"}, ["tempK"], "weibull", "arrhenius")
 
 
 def test_alt_truncation_matches_surpyval():
@@ -187,7 +189,7 @@ def test_bounds_match_surpyval(fitted, method):
 def test_bootstrap_bounds_match_surpyval_with_the_same_seed(fitted):
     _, m = fitted
     b = alt.use_level_bounds(m, USE, "arrhenius", method="bootstrap", n_boot=100, seed=7)
-    q = m.quantile_cb([0.1, 0.01], [USE], bound="lower", method="bootstrap", n_boot=100, random_state=7)
+    q = m.quantile_cb([0.1, 0.01], [USE], alpha_ci=0.10, bound="lower", method="bootstrap", n_boot=100, random_state=7)
     assert [b["b_lives"]["b10"]["lower"], b["b_lives"]["b1"]["lower"]] == pytest.approx(q.tolist(), rel=1e-9)
     assert b["n_boot"] == 100 and b["seed"] == 7
 
@@ -200,7 +202,7 @@ def test_compute_job_gives_the_in_process_bootstrap(fitted):
     _, m = fitted
     inputs = alt.build_inputs(_alt_df(), {"x": "hours", "c": "cens"}, ["tempK"])
     request = compute_core.alt_bounds_request(
-        inputs, distribution_id="weibull", life_model_id="arrhenius", use_stress=USE, confidence=0.95,
+        inputs, distribution_id="weibull", life_model_id="arrhenius", use_stress=USE, confidence=0.90,
         mission_time=1500.0, t_max=40000.0, n_boot=100, seed=alt.BOOTSTRAP_SEED)
     json.dumps(request)  # self-contained, plain JSON
     job = compute_core.run("alt_bounds", request)
@@ -263,7 +265,7 @@ def test_evaluate_uses_qf_and_carries_wald_bounds(fitted):
     # The fit's coefficient CIs are SurPyval's param_cb (log scale for beta).
     payload, _ = fitted
     beta = payload["params"][0]
-    assert beta["ci"] == pytest.approx(m.param_cb("beta").tolist(), rel=1e-9)
+    assert beta["ci"] == pytest.approx(m.param_cb("beta", alpha_ci=0.10).tolist(), rel=1e-9)
 
 
 # ---- Service, routes and the compute job --------------------------------------------
@@ -296,7 +298,7 @@ def test_service_lr_refits_a_rehydrated_model_and_bootstrap_is_paid(session):
     alt_service._LIVE.clear()
     code, lr = alt_service.bounds(session, doc.id, OWNER, uid=OWNER, use_stress=USE, method="lr")
     assert code == 200 and lr["method"] == "lr"
-    ref = _direct(_alt_df()).quantile_cb(0.1, [USE], bound="lower", method="lr")
+    ref = _direct(_alt_df()).quantile_cb(0.1, [USE], alpha_ci=0.10, bound="lower", method="lr")
     assert lr["b_lives"]["b10"]["lower"] == pytest.approx(float(np.ravel(ref)[0]), rel=1e-6)
     code, body = alt_service.bounds(session, doc.id, OWNER, uid=OWNER, use_stress=USE, method="bootstrap",
                                     entitled=False)

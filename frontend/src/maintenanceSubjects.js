@@ -77,3 +77,97 @@ export function defaultCloseKind(wo) {
 export function closeActionKind(kind) {
   return kind === "checked" ? { kind: "inspect", finding: "ok" } : { kind };
 }
+
+// Whether a replacement on this work order starts as a failure. A corrective work
+// order is a breakdown: its replacement starts as "Yes, it failed", so closing it with
+// the defaults records a failure, not a planned removal (which life fits count as
+// still running). Preventive and other work starts as a planned replacement.
+export function defaultFailed(wo) {
+  return wo?.type === "corrective";
+}
+
+// A close form's replacement as the API takes it: why the old item came out, and its
+// failure mode only when it failed.
+export function replaceReason(action) {
+  return action?.failed ? "failure" : "planned";
+}
+
+// What closing records for a replacement, in words, so the user sees it before closing.
+export function replaceRecordText(action, wo, modeName = "") {
+  const old = wo?.fitted?.item?.name;
+  const where = wo?.position?.name || (wo?.subject?.kind === "position" ? wo.subject.name : "");
+  const what = old ? `${old}'s time${where ? ` at ${where}` : ""}` : "The fitted item's time";
+  if (!wo?.fitted) return "Nothing is fitted here, so no life ends; the new item starts its life today.";
+  if (action?.failed) {
+    return `Records a failure: ${what} ends as a failure${modeName ? ` (${modeName})` : " (mode not known)"}. Life fits count it as failed.`;
+  }
+  return `Records a planned replacement: ${what} ends without a failure. Life fits count it as still running (a suspension).`;
+}
+
+// Where one close-form action is recorded: the work order's own position ("" ), or a
+// position inside it (the seal inside the pump whose check this is). Returns what the
+// form shows for it: what's fitted, its failure modes and parts, and its name.
+export function closeTarget(wo, where) {
+  const inside = (wo?.inside_positions || []).find((p) => p.id === where);
+  if (inside) {
+    return {
+      id: inside.id, name: inside.label || inside.name, fitted: inside.fitted || null,
+      failure_modes: inside.failure_modes || [], class_failure_modes: inside.class_failure_modes || [],
+      suggested_parts: inside.parts_list || [], position: { id: inside.id, name: inside.label || inside.name },
+      subject: { kind: "position", name: inside.label || inside.name },
+    };
+  }
+  return {
+    id: "", name: wo?.position?.name || wo?.subject?.name || "", fitted: wo?.fitted || null,
+    failure_modes: wo?.failure_modes || [], class_failure_modes: wo?.class_failure_modes || [],
+    suggested_parts: wo?.suggested_parts || [], position: wo?.position, subject: wo?.subject,
+  };
+}
+
+// A replacement's new item as the API takes it: sent whenever a name or a serial is typed,
+// so a serial typed with no name is kept (the server names the item after what it replaces).
+export function newItemBody(action) {
+  if (action?.kind !== "replace") return null;
+  const name = (action.new_name || "").trim();
+  const serial = (action.new_serial || "").trim();
+  return name || serial ? { name, serial } : null;
+}
+
+// What an inspection that found it failed records, in words, before closing.
+export function foundFailedText(target) {
+  const item = target?.fitted?.item?.name;
+  const where = target?.name ? ` at ${target.name}` : "";
+  if (!target?.fitted) return `Nothing is fitted${where}, so no life is marked failed.`;
+  return `Records ${item || "the fitted item"}${where} as failed some time between its last good check and this ` +
+    "finding. Life fits count it as a failure in that interval.";
+}
+
+// A closed work order's findings that still need work: each inspection that found
+// something failed (or degraded) at a position where nothing was replaced or repaired on
+// the same order. Each gives the corrective work order to raise: on that position, its
+// title from the failure mode, the notes saying where it came from. [] when none.
+export function followUps(wo) {
+  if (!wo || wo.status !== "closed") return [];
+  const acts = wo.actions || [];
+  const posOf = (a) => a.position?.id || wo.position?.id || null;
+  const fixed = new Set(acts.filter((a) => a.kind === "replace" || a.kind === "repair").map(posOf));
+  const out = [];
+  const seen = new Set();
+  for (const a of acts) {
+    if (a.kind !== "inspect" || !["found_failed", "degraded"].includes(a.finding)) continue;
+    const pid = posOf(a);
+    if (!pid || fixed.has(pid) || seen.has(pid)) continue;
+    seen.add(pid);
+    const what = a.failure_mode?.text || (a.finding === "found_failed" ? "found failed" : "found degraded");
+    const name = a.position?.name || wo.position?.name || "";
+    out.push({
+      key: pid, position: { id: pid, name }, finding: a.finding,
+      body: {
+        position_id: pid, type: "corrective",
+        title: `Fix ${name ? `${name}: ` : ""}${what}`.slice(0, 200),
+        notes: `Raised from work order #${wo.number}, closed ${wo.closed || ""}: ${a.finding === "found_failed" ? "found failed" : "found degraded"}${a.notes ? `. ${a.notes}` : "."}`,
+      },
+    });
+  }
+  return out;
+}

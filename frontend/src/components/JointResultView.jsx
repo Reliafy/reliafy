@@ -4,7 +4,7 @@ import Plot from "./Plot.jsx";
 import { getJointUnit, predictJointUnit } from "../api.js";
 import { formatNumber } from "../format.js";
 import { bandPair, fitLine } from "../plotTheme.js";
-import { medianText, paramGroups, parseReadings, readingsText, sortRiskRows } from "../joint.js";
+import { medianText, paramGroups, parseReadings, readingsText, riskBoundNote, sortRiskRows } from "../joint.js";
 import { ModelTabs } from "./model/ModelFrame.jsx";
 import { PlotCard, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { RiskTable, SurvivalChart, UnitCharts, UnitSummary, sortColumn } from "./model/RiskTable.jsx";
@@ -12,14 +12,15 @@ import { JointEffects } from "./model/Effects.jsx";
 import { JointDiagnostics } from "./model/Diagnostics.jsx";
 import { modelTabs, resolveTab } from "../modelFrame.js";
 import { explorerPath } from "../assetTree.js";
+import { ciPct, levelPct } from "../levels.js";
 
 // A fitted condition and life model in the model frame's five tabs:
 //   Risk now     the running units' risk (highest first) and the chosen unit
 //                in words; under them its updating prediction (its survival
 //                from now and its reading's path). The table and the charts
-//                are the shared ones (model/RiskTable.jsx); where the account
-//                has the Explorer, this tab is left out (`riskNow`) and the
-//                Explorer's class fleet shows risk now instead
+//                are the shared ones (model/RiskTable.jsx). Always shown: where
+//                positions on the asset tree use the model (`onPositions`), a
+//                line adds a link to the Explorer's class fleet as well
 //   Calculator   enter a unit (age, covariates, readings so far) and predict;
 //                before that, a new unit's survival with typical covariates
 //   Effects      what changes the risk: the hazard ratios, charted and in words
@@ -33,7 +34,7 @@ const n3 = (v) => formatNumber(v);
 const FAINT = "rgba(20, 23, 28, 0.18)";
 const SIGN_IN = "Sign in to change this: a unit's prediction needs your own copy of the model.";
 
-function Params({ params }) {
+function Params({ params, level = "90%" }) {
   const groups = paramGroups(params);
   return (
     <table className="calc-table joint-params">
@@ -41,7 +42,7 @@ function Params({ params }) {
         <tr>
           <th>Parameter</th>
           <th className="num">Estimate</th>
-          <th className="num">95% interval</th>
+          <th className="num">{level} interval</th>
           <th>What it means</th>
         </tr>
       </thead>
@@ -75,7 +76,7 @@ export function PathChart({ results, name, fill = false }) {
     });
   });
   if (path.x) {
-    traces.push(...bandPair(path.x, path.lower, path.upper, { name: "95% of units' paths" }));
+    traces.push(...bandPair(path.x, path.lower, path.upper, { name: `${levelPct(results.confidence ?? 0.95)} of units' paths` }));
     traces.push(fitLine({ x: path.x, y: path.mean, name: "Mean path" }));
   }
   const layout = {
@@ -119,6 +120,7 @@ function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
             moves the curve: a unit whose {results.marker || "reading"} climbs faster than the fleet's carries more risk.
             {" "}“&gt; 99.9%” means very likely, not certain.
           </p>
+          {riskBoundNote(results.risk) && <p className="hint">{riskBoundNote(results.risk)}</p>}
           {!modelId && <p className="muted-line">{SIGN_IN}</p>}
           {error && <div className="card error" role="alert">{error}</div>}
           {busy && !shown && <p className="hint">Working…</p>}
@@ -217,8 +219,8 @@ function JointData({ results }) {
     <TablePanel
       className="mf-l5-wide"
       main={
-        <ScrollCard title="Every parameter" sub="with 95% intervals">
-          <Params params={r.params} />
+        <ScrollCard title="Every parameter" sub={`with ${ciPct(r)} intervals`}>
+          <Params params={r.params} level={ciPct(r)} />
           <p className="mf-note">Times and rates in {r.unit ? r.unit.toLowerCase() : "the model's time unit"}.</p>
         </ScrollCard>
       }
@@ -248,11 +250,12 @@ function JointData({ results }) {
   );
 }
 
-// `riskNow: false` (the model's own page, where the account has the Explorer):
-// no Risk now tab; a line says where risk now is.
-export default function JointResultView({ results, modelId, name, tab: wanted = undefined, onTab = null, riskNow = true }) {
+// `onPositions` (the model's own page, where positions on the asset tree use the
+// model): a line above the tabs links to the Explorer, where those positions are
+// scored too. Risk now for the model's own running units stays either way.
+export default function JointResultView({ results, modelId, name, tab: wanted = undefined, onTab = null, onPositions = false }) {
   const r = results || {};
-  const tabs = modelTabs({ ...r, kind: "joint" }, { riskNow });
+  const tabs = modelTabs({ ...r, kind: "joint" });
   const [own, setOwn] = useState(() => resolveTab(tabs, wanted));
   const tab = resolveTab(tabs, wanted !== undefined && onTab ? wanted : own);
   const setTab = (id) => { setOwn(id); onTab?.(id); };
@@ -286,12 +289,12 @@ export default function JointResultView({ results, modelId, name, tab: wanted = 
       tabs={tabs}
       value={tab}
       onChange={setTab}
-      before={(!r.fit_ok || !riskNow) && (
+      before={(!r.fit_ok || onPositions) && (
         <>
-          {!riskNow && (
+          {onPositions && (
             <p className="hint mf-before joint-risk-moved">
-              Risk now is in the Explorer: <Link to={explorerPath("classes")}>arrange it by Classes</Link> and
-              choose a class to see its positions, highest risk first.
+              Positions on your asset tree use this model too: see their risk in
+              the <Link to={explorerPath("classes")}>Explorer, arranged by Classes</Link>.
             </p>
           )}
           {!r.fit_ok && (

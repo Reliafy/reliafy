@@ -518,14 +518,20 @@ def test_public_link_download(client):
     assert client.get(f"/api/public/{token}/export.py").status_code == 404
 
 
-def test_public_link_to_non_rbd_is_404(client):
+def test_public_link_to_a_kind_with_no_python_download_is_404(client):
+    """Shared models download as Python too since #828 (test_model_export
+    covers that); a kind with no script, such as a report, still gets 404."""
     from backend.tests.test_public_links import _save_model
 
     client.act_as(A)
     model_id = _save_model(client)
+    report = client.post("/api/reports", json={
+        "title": "Review", "sections": [{"collection": "models", "artifact_id": model_id}]})
+    assert report.status_code == 200, report.text
     token = client.post("/api/public-links",
-                        json={"collection": "models", "artifact_id": model_id}).json()["token"]
+                        json={"collection": "reports", "artifact_id": report.json()["id"]}).json()["token"]
     client.act_as(None)
+    assert client.get(f"/api/public/{token}").status_code == 200
     assert client.get(f"/api/public/{token}/export.py").status_code == 404
 
 

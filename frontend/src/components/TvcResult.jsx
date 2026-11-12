@@ -7,6 +7,9 @@ import { evaluateAt } from "../api.js";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { formatNumber, formatPercent } from "../format.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
+import { AUTO_BOUND, boundOptions, effectiveBound } from "../levels.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Chip from "./ui/Chip.jsx";
 import { initialSchedule, scheduleBody, scheduleXMax, tvcPath } from "../tvcData.js";
 import "./Tvc.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
@@ -16,8 +19,9 @@ import { readPercents } from "../percentForms.js";
 // A regression model whose covariates change over time (#60): the
 // coefficients with a plain reading each, and a calculator that follows a
 // covariate schedule the user enters — reliability (or failure probability,
-// or cumulative hazard) along it with SurPyval's bounds, and the life it
-// gives. Same layout as the life calculator: the answer and chart on the
+// or cumulative hazard) along it with SurPyval's bounds, for a new unit or
+// one that has survived to an age, and the age at which reliability falls to
+// a level with its bound. Same layout as the life calculator: the answer and chart on the
 // left, every input in one card on the right.
 
 const FUNCTIONS = {
@@ -26,6 +30,8 @@ const FUNCTIONS = {
   Hf: { label: "Cumulative hazard H(t)", axis: "Cumulative hazard, H(t)" },
 };
 const MAX_ROWS = 12;
+// The usual B-lives, one click each in "Time at reliability": [R %, label].
+const B_LIVES = [[99, "B1"], [95, "B5"], [90, "B10"], [50, "B50"]];
 
 const fmtFn = (id, v) => (v == null ? "—" : FUNCTIONS[id]?.pct ? formatPercent(v, { sig: 3 }) : formatNumber(v, { sig: 4 }));
 
@@ -56,15 +62,20 @@ export function initTvcState(result) {
     nextId: rows.length,
     active: "sf",
     t: last > 0 ? Number((last * 1.25).toPrecision(2)) : Number((xEnd / 2).toPrecision(2)),
-    bound: result.tvc?.bounds ? "lower" : "none",
+    // The safe side by default: lower on reliability and lives, upper on a
+    // chance of failing and the cumulative hazard.
+    bound: result.tvc?.bounds ? AUTO_BOUND : "none",
     level: 90,
+    given: "", // the age it has survived to (blank: a new unit)
+    mode: "value", // "value": a function at an age; "time": the age at a reliability
+    rTarget: 90,
   };
 }
 
 // The curve along the schedule in ``state``, evaluated by the model (and
 // kept per request): { res, error, body, key, data }. The calculator and the
 // Model characteristics tab share it.
-export function useTvcEvaluation(result, state, { on } = {}) {
+export function useTvcEvaluation(result, state, { on, given = null, at = null, reliability = null, bound: side = null } = {}) {
   const fns = result.functions || {};
   const fields = result.tvc?.covariates || fns.covariates || [];
   const path = tvcPath(fns);
@@ -77,15 +88,25 @@ export function useTvcEvaluation(result, state, { on } = {}) {
   const levelCheck = readPercents("tvc", { level: String(level ?? "") }).checks.level;
   const levelNum = levelCheck.state === "ok" ? levelCheck.percent : Number(level);
   const alpha = hasBounds && bound !== "none" && levelCheck.state === "ok" ? 1 - levelCheck.fraction : null;
-  const xMax = scheduleXMax(rows, xEnd);
-  const key = JSON.stringify([body.schedule, active, alpha, bound, xMax]);
+  // The side asked for (the calculator's), else the rule's for the function.
+  const sent = side || effectiveBound(bound, active);
+  const g = Number(given) > 0 ? Number(given) : null;
+  const a = at != null && at !== "" && Number.isFinite(Number(at)) ? Number(at) : null;
+  // The axis reaches the age asked about.
+  const reach = Math.max(a ?? 0, g ?? 0);
+  const xMax0 = scheduleXMax(rows, xEnd);
+  const xMax = reach > (xMax0 ?? xEnd) ? Number((reach * 1.15).toPrecision(3)) : xMax0;
+  const key = JSON.stringify([body.schedule, active, alpha, sent, xMax, g, a, reliability]);
   const [data, setData] = useState({ key: null, res: null, error: null });
   useEffect(() => {
     if (!path || !body.schedule || data.key === key) return undefined;
     const id = setTimeout(() => {
       evaluateAt(path, {
-        schedule: body.schedule, on: active, alpha_ci: alpha, bound: bound === "none" ? "lower" : bound,
+        schedule: body.schedule, on: active, alpha_ci: alpha, bound: sent === "none" ? "lower" : sent,
         ...(xMax ? { x_max: xMax } : {}),
+        ...(g != null ? { given: g } : {}),
+        ...(a != null ? { at: a } : {}),
+        ...(reliability != null ? { reliability } : {}),
       })
         .then((res) => setData({ key, res, error: null }))
         .catch((err) => setData({ key, res: null, error: err.message }));
@@ -100,21 +121,48 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
   const unit = result.unit;
   const unitWord = unit ? ` ${unitInText(unit)}` : "";
   const { rows, active, t, bound, level } = state;
+  const given = state.given ?? "";
+  const timeMode = state.mode === "time";
   const set = (patch) => setState((st) => ({ ...st, ...patch }));
   const hasBounds = !!result.tvc?.bounds;
-  const { res, body, key, data, path, alpha, xMax, fields, xEnd } = useTvcEvaluation(result, state);
+  const rCheck = readPercents("tvc", { reliability: String(state.rTarget ?? "") }).checks.reliability;
+  const rOk = rCheck.state === "ok";
+  const tNum = Number(t);
+  const gNum = Number(given);
+  const hasGiven = given !== "" && Number.isFinite(gNum) && gNum > 0;
+  const givenBad = given !== "" && !(Number.isFinite(gNum) && gNum >= 0);
+  const tBad = !timeMode && hasGiven && Number.isFinite(tNum) && tNum < gNum;
+  // In time mode the curve is reliability and the bound a life's.
+  const on = timeMode ? "sf" : active;
+  const side = effectiveBound(bound, timeMode ? "time" : active);
+  const { res, body, key, data, path, alpha, xMax, fields, xEnd } = useTvcEvaluation(result, state, {
+    on, bound: side, given: hasGiven ? gNum : null,
+    at: !timeMode && !tBad && Number.isFinite(tNum) && t !== "" ? tNum : null,
+    reliability: timeMode && rOk ? rCheck.fraction : null,
+  });
   const levelCheck = readPercents("tvc", { level: String(level ?? "") }).checks.level;
   const levelNum = levelCheck.state === "ok" ? levelCheck.percent : Number(level);
   const curves = res?.curves;
   const band = alpha != null && res?.bounds ? res.bounds : null;
-  const tNum = Number(t);
-  const value = curves ? interp(curves.x, curves[active], tNum) : null;
-  const lo = band?.lower ? interp(band.x, band.lower, tNum) : null;
-  const hi = band?.upper ? interp(band.x, band.upper, tNum) : null;
-  const words = band ? boundWords(levelNum, bound, lo, hi, (v) => fmtFn(active, v)) : "";
+  // The exact answer at the age asked (the backend's), else read off the curve.
+  const point = res?.point && res.point.t === tNum ? res.point : null;
+  const value = point ? point[active] : curves ? interp(curves.x, curves[active], tNum) : null;
+  const lo = point ? point.lower ?? null : band?.lower ? interp(band.x, band.lower, tNum) : null;
+  const hi = point ? point.upper ?? null : band?.upper ? interp(band.x, band.upper, tNum) : null;
+  const words = alpha != null && (point?.bound || band) ? boundWords(levelNum, point?.bound || band.bound, lo, hi, (v) => fmtFn(active, v)) : "";
   const fmtTime = (v) => (v == null ? "—" : `${formatNumber(v)}${unitWord}`);
-  const b10 = curves ? timeAtValue(curves.x, curves.sf, 0.9) : null;
-  const median = curves ? timeAtValue(curves.x, curves.sf, 0.5) : null;
+  const life = timeMode ? res?.life?.[0] : null;
+  const lifeWords = life && alpha != null && life.bound
+    ? boundWords(levelNum, life.bound, life.lower, life.upper, fmtTime) : "";
+  const b10 = curves && !hasGiven ? timeAtValue(curves.x, curves.sf, 0.9) : null;
+  const median = curves && !hasGiven ? timeAtValue(curves.x, curves.sf, 0.5) : null;
+  const ageWords = (v) => `${Number.isFinite(v) ? v.toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"}${unitWord}`;
+  // [new unit, given survived to an age, the word before the later age].
+  const QUESTION = {
+    sf: ["Reliability R(t) at", "Chance of surviving from", "to"],
+    ff: ["Probability of failure F(t) at", "Chance of failing between", "and"],
+    Hf: ["Cumulative hazard H(t) at", "Cumulative hazard between", "and"],
+  };
 
   // Editing the schedule.
   const setRow = (id, patch) => set({ rows: rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
@@ -141,9 +189,11 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
     }
   }
   if (curves) {
-    traces.push({ x: curves.x, y: curves[active], mode: "lines", type: "scatter", line: { color, width: 2 },
-                  name: FUNCTIONS[active].axis, connectgaps: false });
-    if (value != null) traces.push({ ...pointMarker(color), x: [tNum], y: [value] });
+    traces.push({ x: curves.x, y: curves[on], mode: "lines", type: "scatter", line: { color, width: 2 },
+                  name: FUNCTIONS[on].axis, connectgaps: false });
+    if (timeMode) {
+      if (life?.time != null) traces.push({ ...pointMarker(color), x: [life.time], y: [life.reliability] });
+    } else if (value != null) traces.push({ ...pointMarker(color), x: [tNum], y: [value] });
   }
   const label = (values) => fields.map((f) => (fields.length === 1 ? "" : `${f.name} `) + `${values[f.name]}${f.unit ? (f.unit === "%" ? "%" : ` ${f.unit}`) : ""}`).join(", ");
   const schedule = body.schedule || [];
@@ -152,10 +202,11 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
     showlegend: false,
     margin: { t: 26, r: 12 },
     xaxis: { title: { text: `t${unit ? ` (${unit})` : ""}` }, ...(xMax ? { range: [0, xMax], autorange: false } : {}) },
-    yaxis: { title: { text: FUNCTIONS[active].axis } },
+    yaxis: { title: { text: hasGiven ? `${FUNCTIONS[on].axis}, from ${ageWords(gNum)}` : FUNCTIONS[on].axis } },
     shapes: [
       ...schedule.slice(1).map((r) => referenceShape({ x: r.t, line: { dash: "dot" } })),
-      referenceShape({ x: tNum, line: { dash: "dash" } }),
+      ...(timeMode ? (life?.time != null ? [referenceShape({ x: life.time, line: { dash: "dash" } })] : [])
+        : [referenceShape({ x: tNum, line: { dash: "dash" } })]),
     ],
     annotations: fields.length <= 2 ? schedule.map((r) => ({
       x: r.t, xanchor: "left", y: 1, yref: "paper", yanchor: "bottom", showarrow: false,
@@ -167,15 +218,36 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
     <div className="calc tvc-calc">
       <div className="calc-body">
         <div className="calc-main">
-          <div className="calc-answer">
-            <span>
-              {FUNCTIONS[active].label} at <b>{Number.isFinite(tNum) ? tNum.toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"}{unitWord}</b> on this schedule:
-            </span>
-            <span className="calc-answer-value">
-              <b>{fmtFn(active, value)}</b>
-              {words && <span className="calc-answer-ci"> — {words}</span>}
-            </span>
-          </div>
+          {timeMode ? (
+            <div className="calc-answer">
+              <span>
+                Age when {hasGiven ? <>the chance of surviving from <b>{ageWords(gNum)}</b></> : "reliability"} falls to{" "}
+                <b>{rOk ? `${rCheck.percent.toLocaleString(undefined, { maximumFractionDigits: 6 })}%` : "—"}</b>
+                {rOk && !hasGiven && Number.isInteger(Math.round((100 - rCheck.percent) * 1e6) / 1e6) ? ` (the B${100 - rCheck.percent} life)` : ""} on this schedule:
+              </span>
+              <span className="calc-answer-value">
+                <b aria-live="polite">{life?.time != null ? fmtTime(life.time) : res && data.key === key ? "it doesn't fall that far on this schedule" : "—"}</b>
+                {life?.further != null && <span className="calc-answer-ci"> (a further {fmtTime(life.further)})</span>}
+                {lifeWords && <span className="calc-answer-ci"> — {lifeWords}</span>}
+              </span>
+            </div>
+          ) : (
+            <div className="calc-answer">
+              <span>
+                {hasGiven ? <>{QUESTION[active][1]} <b>{ageWords(gNum)}</b> {QUESTION[active][2]}</> : QUESTION[active][0]}{" "}
+                <b>{ageWords(tNum)}</b> on this schedule:
+              </span>
+              <span className="calc-answer-value">
+                <b aria-live="polite">{fmtFn(active, value)}</b>
+                {words && <span className="calc-answer-ci"> — {words}</span>}
+              </span>
+            </div>
+          )}
+          {givenBad && <p className="hint tvc-msg">The age it has survived to must be 0 or more.</p>}
+          {tBad && <p className="hint tvc-msg">Evaluate at an age after the {ageWords(gNum)} it has survived to.</p>}
+          {timeMode && life && alpha != null && life.bound && life.time != null && !lifeWords && (
+            <p className="muted-line tvc-msg">No bound on this age: the reliability's own bound doesn't fall to it.</p>
+          )}
           {res?.warning && <p className="calc-warn">⚠ {res.warning}</p>}
           {body.error && <p className="hint tvc-msg">{body.error}</p>}
           {!body.error && data.key === key && data.error && <p className="hint tvc-msg">Couldn't evaluate the schedule: {data.error}</p>}
@@ -190,17 +262,44 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
           <div className="calc-rail-card calc-eval-card">
             <div className="gofh">Inputs</div>
             <div className="calc-eval-body">
-              <div className="tvc-pair">
+              <SegmentedControl
+                label="What to calculate" size="sm" className="calc-mode"
+                value={timeMode ? "time" : "value"} onChange={(v) => set({ mode: v })}
+                options={[
+                  { value: "value", label: "At an age" },
+                  { value: "time", label: "Time at reliability", title: "The age by which reliability falls to a level: R = 90% is the B10 life" },
+                ]}
+              />
+              {timeMode ? (
+                <>
+                  <PercentField label="Reliability" value={String(state.rTarget ?? "")} onChange={(v) => set({ rTarget: v })} check={rCheck} />
+                  <div className="chip-row calc-blives" role="group" aria-label="B-lives">
+                    {B_LIVES.map(([r, b]) => (
+                      <Chip key={b} tone={rOk && rCheck.percent === r ? "accent" : "neutral"} onClick={() => set({ rTarget: r })}
+                            aria-pressed={rOk && rCheck.percent === r} title={`Reliability ${r}%: the ${b} life`}>
+                        {b}
+                      </Chip>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="tvc-pair">
+                <label className="calc-t">
+                  <span>Function</span>
+                  <Select value={active} onChange={(v) => set({ active: v })}
+                          options={Object.entries(FUNCTIONS).map(([id, f]) => ({ value: id, label: f.label }))} />
+                </label>
+                <label className="calc-t">
+                  <span>At age{unit ? ` (${unitInText(unit)})` : ""}</span>
+                  <input type="number" inputMode="decimal" min={0} step="any" value={t} onChange={(e) => set({ t: e.target.value })} />
+                </label>
+                </div>
+              )}
               <label className="calc-t">
-                <span>Function</span>
-                <Select value={active} onChange={(v) => set({ active: v })}
-                        options={Object.entries(FUNCTIONS).map(([id, f]) => ({ value: id, label: f.label }))} />
+                <span>Given survived to age{unit ? ` (${unitInText(unit)})` : ""}</span>
+                <input type="number" inputMode="decimal" min={0} step="any" placeholder="0 (a new unit)" value={given}
+                       aria-invalid={givenBad || undefined} onChange={(e) => set({ given: e.target.value })} />
               </label>
-              <label className="calc-t">
-                <span>At{unit ? ` (${unitInText(unit)})` : ""}</span>
-                <input type="number" inputMode="decimal" min={0} step="any" value={t} onChange={(e) => set({ t: e.target.value })} />
-              </label>
-              </div>
               <div className="tvc-schedule" role="group" aria-label="Covariate schedule">
                 <span className="tvc-schedule-h">Covariate schedule <span className="tvc-schedule-sub">· each row holds until the next</span></span>
                 <ScrollCue className="tvc-table-wrap">
@@ -250,10 +349,7 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
                 <div className="tvc-pair">
                   <label className="calc-t">
                     <span>Confidence bound</span>
-                    <Select value={bound} onChange={(v) => set({ bound: v })} options={[
-                      { value: "none", label: "None" }, { value: "lower", label: "Lower" },
-                      { value: "upper", label: "Upper" }, { value: "two-sided", label: "Two-sided" },
-                    ]} />
+                    <Select value={bound} onChange={(v) => set({ bound: v })} options={boundOptions(timeMode ? "time" : active)} />
                   </label>
                   {bound !== "none" && (
                     <PercentField label="Level" value={String(level ?? "")} onChange={(v) => set({ level: v })} check={levelCheck} />
@@ -262,7 +358,7 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
               )}
             </div>
           </div>
-          {!fill && <div className="calc-rail-card calc-rail-params">
+          {!fill && !hasGiven && <div className="calc-rail-card calc-rail-params">
             <div className="gofh">Life on this schedule</div>
             <div className="gofr"><span className="gk">10% failed by (B10)</span><span className="gv">{fmtTime(b10)}</span></div>
             <div className="gofr"><span className="gk">Half failed by</span><span className="gv">{median != null ? fmtTime(median) : curves ? `after ${fmtTime(curves.x[curves.x.length - 1])}` : "—"}</span></div>

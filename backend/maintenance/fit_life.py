@@ -8,7 +8,7 @@ Two choices, in plain words:
   the class model uses), or both: this position's history, with the class's history as the
   prior.
 * **Which method:** a plain fit (maximum likelihood: the numbers that make the data most likely,
-  with 95% confidence bounds), or a fit with a prior (Bayesian: what was believed beforehand,
+  with 90% confidence bounds: parameters and band two-sided, B10 and mean life one-sided lower), or a fit with a prior (Bayesian: what was believed beforehand,
   moved by the data, with 90% credible intervals). The prior is the class's history, a saved
   model, numbers you know or a B10 you believe.
 
@@ -190,7 +190,7 @@ def _fit_on(m, db, p, position_id, data, method, prior, distribution, modes, tex
         result, model = _mle(p, rows, counts, distribution, unit, data, cls)
         c = result.get("curves") or {}
         if age and c.get("x") and c.get("sf"):
-            # Reliability at the age asked, read off the fitted curve (and its 95% band).
+            # Reliability at the age asked, read off the fitted curve (and its 90% band).
             t = float(age)
             at = lambda ys: float(np.interp(t, c["x"], ys)) if ys else None  # noqa: E731
             result["at_age"] = {"age": t, "reliability": at(c["sf"]), "lower": at(c.get("sf_lower")),
@@ -317,7 +317,7 @@ def _class_prior(sp, distribution: str, class_rows: list[dict], trust: str, cls:
 
 
 def _mle(p, rows: list[dict], counts: dict, distribution: str, unit: str, data: str, cls):
-    """A plain fit (maximum likelihood) in the shape the dialog shows, with 95% confidence bounds."""
+    """A plain fit (maximum likelihood) in the shape the dialog shows, with 90% confidence bounds."""
     import pandas as pd
 
     from backend import fitting
@@ -361,18 +361,20 @@ def _mle(p, rows: list[dict], counts: dict, distribution: str, unit: str, data: 
              f"and {counts['suspensions']} suspension{'s' if counts['suspensions'] != 1 else ''} in "
              f"{_words_for_data(data, cls)}")
     if lead and lead["name"] == "alpha":
-        words += (f": characteristic life about {num(lead['median'])} {u} (95% confidence {num(lead['lower'])}–"
+        words += (f": characteristic life about {num(lead['median'])} {u} (90% confidence {num(lead['lower'])}–"
                   f"{num(lead['upper'])})")
         if shape:
             words += f", shape {num(shape['median'])}"
     words += "."
     result = {
         "plot": res.get("plot"),  # the probability plot (data points, the fit, its bounds), as on the Models page
-        "method": "mle", "interval_label": "95% confidence bounds", "data": data, "distribution": res.get("distribution_id"),
+        "method": "mle", "interval_label": "90% confidence bounds", "level": 0.9, "data": data, "distribution": res.get("distribution_id"),
         "distribution_label": res.get("distribution"), "unit": unit, "counts": counts, "rows": rows, "prior": [],
         "posterior": post,
-        "b10": {"point": b10.get("value"), "lower": b10.get("lower"), "upper": None, "bound": "lower"} if b10 else None,
-        "mean": {"point": mttf.get("value"), "lower": mttf.get("lower"), "upper": None, "bound": "lower"} if mttf else None,
+        "b10": {"point": b10.get("value"), "lower": b10.get("lower"), "upper": None, "bound": "lower",
+                "level": life.get("confidence"), "kind": "confidence"} if b10 else None,
+        "mean": {"point": mttf.get("value"), "lower": mttf.get("lower"), "upper": None, "bound": "lower",
+                 "level": life.get("confidence"), "kind": "confidence"} if mttf else None,
         "curves": out_curves, "words": words, "can_save": True,
         "label": f"{p['name']}: plain fit to {_words_for_data(data, cls)}",
     }

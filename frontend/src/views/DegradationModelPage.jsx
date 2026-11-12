@@ -4,7 +4,8 @@ import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { deleteDegradationModel, getDegradationModel, renameDegradationModel } from "../api.js";
+import { deleteDegradationModel, downloadModelPython, getDegradationModel, renameDegradationModel } from "../api.js";
+import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
 import useTabParam from "../components/model/useTabParam.js";
@@ -17,7 +18,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 
 // One saved degradation model in the model frame: the answer line, the
 // result's tabs (in the address, ?tab=), "Track items" (the fleet of tracked
-// items lives under Risk), Share, and the ⋯ menu (rename, delete).
+// items lives under Risk), Share, and the ⋯ menu (Download as Python, rename, delete).
 export default function DegradationModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -61,8 +62,8 @@ export default function DegradationModelPage() {
       answer={model ? degradationAnswer(model.results, { saved: `saved ${relativeTime(model.updated_at || model.created_at)}` }) : null}
       id={model?.id}
       primary={model && (
-        <button type="button" onClick={() => navigate("/risk")}
-                title="The items you track on this model, under Risk">
+        <button type="button" onClick={() => navigate(`/risk?model=${encodeURIComponent(model.id)}`)}
+                title="Track items in service against this model: its fleet, or a new one">
           Track items{nItems > 0 ? ` (${nItems})` : ""}
         </button>
       )}
@@ -71,6 +72,7 @@ export default function DegradationModelPage() {
       )}
       menu={model && (
         <>
+          <DownloadPythonItem download={() => downloadModelPython("degradation", model.id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}

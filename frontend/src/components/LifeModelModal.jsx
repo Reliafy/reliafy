@@ -1,11 +1,12 @@
 import BoundBlockFields from "./BoundBlockFields.jsx";
 import { useContext, useState } from "react";
+import { Link } from "react-router-dom";
+import { treeBlockPlan } from "../rbdTreePlan.js";
 import Modal from "./Modal.jsx";
 import ModelPicker from "./ModelPicker.jsx";
 import { openGuide } from "./HelpButton.jsx";
-import {
-  CostFields, ExtrasErrors, MaintenanceFields, PriorityField, costsSummary, maintenanceSummary, useBlockExtras,
-} from "./RbdBlockCosts.jsx";
+import { CostFields, ExtrasErrors, PriorityField, costsSummary, useBlockExtras } from "./RbdBlockCosts.jsx";
+import { dutyWords, hasDuty, taskOf, taskSummary } from "../rbdMaintenancePlan.js";
 import { RbdUnitContext } from "./RbdNodes.jsx";
 import { unitAbbr } from "./rbdModelText.js";
 import useModelSummary from "./useModelSummary.js";
@@ -62,9 +63,9 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // Proof test) · Costs. A non-repairable block has only its non-repairable model. In a
 // safety function the proof test comes straight after Failure, open, and the
 // costs stay folded. Pre-filled with the node's current models.
-export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false, groups = [],
+export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false,
                                          safety = false, capacity = false, jointBlock = false, conditions = [],
-                                         nodeId = null }) {
+                                         nodeId = null, onEditPlan = null, tree = null, onTreeLink = null }) {
   // A block whose model's covariates were left open at its position (covariate_binding.py): its
   // covariates are set here (or from the diagram's values) unless another model is chosen.
   const wasBound = initial?.model?.kind === "bound";
@@ -75,7 +76,9 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   const [repair, setRepair] = useState(initial?.repair ?? null);
   const [instant, setInstant] = useState(!!initial?.instant_repair);
   const [extras, setExtras] = useState({ extras: null, valid: true });
-  const ctl = useBlockExtras(initial, setExtras);
+  // Planned work (schedule, group, duty) is edited in the Maintenance plan (D5): here only the
+  // costs and the crew priority, so saving the dialog leaves the plan as it is.
+  const ctl = useBlockExtras(initial, setExtras, "costs");
   const unit = useContext(RbdUnitContext) || "";
   // Two failure modes built here (#318); a saved mixture comes from the picker.
   const [mixture, setMixture] = useState(isMixture(initial?.model) && initial?.model?.source !== "saved");
@@ -87,17 +90,24 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   const capExtras = { ...(capacity ? { capacity: cap.value } : {}), ...(keepBound && covExtras ? covExtras : {}),
     ...(wasBound && !keepBound ? { covariate_values: null, covariate_map: null } : {}) };
 
-  const submit = () => {
-    if (!valid) return;
+  const payload = () => {
     const label = name.trim() || initial?.label;
-    if (!repairable) return onSubmit({ model, repair: undefined, label, extras: Object.keys(capExtras).length ? capExtras : undefined });
-    onSubmit({
+    if (!repairable) return { model, repair: undefined, label, extras: Object.keys(capExtras).length ? capExtras : undefined };
+    return {
       label,
       model,
       repair: instant ? repair ?? undefined : repair,
       extras: { ...(extras.extras || {}), instant_repair: instant || null, repair_quality: quality.value,
                 ...capExtras },
-    });
+    };
+  };
+  const submit = () => {
+    if (!valid) return;
+    onSubmit(payload());
+  };
+  // Save the block, then open the Maintenance plan on it.
+  const editPlan = () => {
+    if (valid) onEditPlan(payload());
   };
 
   const footer = (
@@ -118,17 +128,44 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
     </>
   );
 
-  const hasSchedule = !!(initial?.preventive || initial?.inspection || initial?.maintenance_group);
   const hasCosts = !!Object.keys(initial?.costs || {}).length;
-  const maintenance = safety ? (
-    <section className="rbd-dlg-sec">
-      <h3>Proof test</h3>
-      <MaintenanceFields ctl={ctl} unit={unit} groups={groups} />
+  // The block's planned work, in words; edited in the Maintenance plan (D5).
+  const planLines = [
+    taskSummary(initial || {}, unit),
+    hasDuty(initial || {}) && initial.duty < 1 ? dutyWords(initial.duty, unit) : null,
+    initial?.maintenance_group ? `Maintenance group “${initial.maintenance_group}”` : null,
+  ].filter(Boolean);
+  // A block standing for a position (a repairable diagram): its planned work is the position's
+  // task in the tree, the same the Maintenance plan and the Calculator use; shown, not edited, here.
+  const fromTree = repairable && tree ? treeBlockPlan(initial || {}, tree, unit) : null;
+  const maintenance = fromTree ? (
+    <section className="rbd-dlg-sec rbd-dlg-plan">
+      <h3>{safety ? "Proof test" : "Maintenance"}</h3>
+      <p className="rbd-dlg-plan-sum">
+        {[fromTree.summary, ...planLines.slice(1)].join(" · ")}
+      </p>
+      <p className="muted">{fromTree.source}.</p>
+      <Link to={fromTree.editPath} onClick={(e) => { onTreeLink?.(e, fromTree.editPath); onClose?.(); }}>
+        {fromTree.editLabel}
+      </Link>
     </section>
   ) : (
-    <Fold title="Maintenance" summary={maintenanceSummary(ctl, unit)} open={hasSchedule}>
-      <MaintenanceFields ctl={ctl} unit={unit} groups={groups} />
-    </Fold>
+    <section className="rbd-dlg-sec rbd-dlg-plan">
+      <h3>{safety ? "Proof test" : "Maintenance"}</h3>
+      <p className="rbd-dlg-plan-sum">
+        {safety && taskOf(initial || {}) === "none" ? "No proof test yet. " : ""}
+        {planLines.join(" · ")}
+      </p>
+      {onEditPlan ? (
+        <button type="button" className="secondary sm" onClick={editPlan} disabled={!valid}
+                title={valid ? "Save this block and edit its planned work and how much of the time it runs in the Maintenance plan, under the diagram"
+                  : "Finish the block first (it needs a failure model and a repair time)"}>
+          Edit in the plan
+        </button>
+      ) : (
+        <p className="muted">Set in the diagram’s Maintenance plan.</p>
+      )}
+    </section>
   );
 
   return (

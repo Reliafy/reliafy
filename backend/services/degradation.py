@@ -150,6 +150,26 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]):
     return live
 
 
+def current_results(db, doc: DegradationModelDoc, owner_id) -> dict:
+    """The saved results with the reliability curve worked out afresh from
+    the fitted model, so the header and the B-lives read today's rule (the
+    90% one-sided life bound) and today's band, not the ones stored when the
+    model was saved (a model saved before 12 Nov 2026 said "≥ 25,600 at 95%").
+    The stored results when the model can't be had."""
+    results = doc.results or {}
+    life = results.get("life_model")
+    if not isinstance(life, dict) or not life.get("curves"):
+        return results
+    try:
+        live = get_live_model(db, doc.id, owner_id)
+        curves = degradation_fit.reliability_curves(live) if live is not None else None
+    except Exception:  # noqa: BLE001 - the stored curve still reads
+        curves = None
+    if not curves:
+        return results
+    return {**results, "life_model": {**life, "curves": degradation_fit._json_safe(curves)}}
+
+
 def _refit(db, doc: DegradationModelDoc):
     dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
     if dataset is None:
@@ -279,7 +299,7 @@ def refresh_prediction(db, model_id: str, item: TrackedItem, owner_id: str) -> T
 
 
 def _predict(db, model_id: str, owner_id: str, measurements: list[dict],
-             alpha_ci: float = 0.05) -> dict:
+             alpha_ci: float = degradation_fit.LIFE_ALPHA_CI) -> dict:
     """Compute the prediction blob; fit problems become method="error" blobs so
     a measurement append never fails."""
     try:
@@ -294,6 +314,18 @@ def _predict(db, model_id: str, owner_id: str, measurements: list[dict],
     t = [m["t"] for m in measurements]
     y = [m["y"] for m in measurements]
     return degradation_fit.predict_item(live, t, y, alpha_ci=alpha_ci)
+
+
+def at_life_level(db, item: TrackedItem, owner_id) -> dict | None:
+    """An item's prediction at the life-bound level (degradation.LIFE_ALPHA_CI), for a
+    read: one stored before that level (a 95% interval) is worked out again, view-only
+    (the stored prediction is unchanged); anything else is as stored."""
+    pred = item.prediction
+    if not pred or pred.get("method") != "bayesian" \
+            or abs(float(pred.get("alpha_ci") or 0) - degradation_fit.LIFE_ALPHA_CI) < 1e-9:
+        return pred
+    again = _predict(db, item.model_id, owner_id, item.measurements)
+    return again if again.get("method") == "bayesian" else pred
 
 
 def predict_item_at(db, model_id: str, item_id: str, confidence: float,

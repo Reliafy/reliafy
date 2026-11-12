@@ -85,7 +85,7 @@ export default function MaintainabilityNewPage() {
       set({ product: { id: product.id, name: product.name }, lines: [...lines, emptyLine()] });
       if (data.note) setProductNote(data.note);
       else if (data.rates?.source === "reliability_prediction") {
-        setProductNote(`${lines.length} lines from ${product.name}'s parts list; failure rates from the reliability prediction “${data.rates.prediction?.name}” on ${data.rates.matched} of them.`);
+        setProductNote(`${lines.length} lines from ${product.name}'s parts list; the parts count “${data.rates.prediction?.name}” has a failure rate for ${data.rates.matched} of them, matched by part number. Leave a line's rate blank to take it from the parts count, or type your own.`);
       } else setProductNote(`${lines.length} lines from ${product.name}'s parts list. Type each line's repair times; add failure rates to weight them.`);
     } catch (e) {
       setError(e.message);

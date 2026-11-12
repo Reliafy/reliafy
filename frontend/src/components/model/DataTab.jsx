@@ -2,6 +2,7 @@
 // table (scrolling inside its card), how it was fitted (the method and its
 // options, the notes that used to sit under "Details") and every parameter
 // with its interval.
+import { extraParamView } from "../../paramLabels.js";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import CiNote from "../CiNote.jsx";
@@ -11,7 +12,8 @@ import { ScrollCard, TablePanel } from "./ModelLayouts.jsx";
 import { getDataset } from "../../api.js";
 import { formatNumber, formatPercent } from "../../format.js";
 import { bestFitSentence, compareRows } from "../../lifeResults.js";
-import { dataWords, intervalLevel } from "../../modelFrame.js";
+import { dataWords, intervalLevel, ratioSign } from "../../modelFrame.js";
+import { ciPct, levelPct } from "../../levels.js";
 import { unitInText } from "../unitText.js";
 import { fmtP } from "../RegressionChecks.jsx";
 
@@ -52,9 +54,16 @@ function howWords(result) {
   }
   if (result.mixture_summary) out.push(result.mixture_summary);
   if (result.mixture > 1) {
-    out.push("A mixture has no covariance matrix, so it reports no confidence bounds: judge it on the AIC against a single fit (Diagnostics).");
+    const bounded = (result.life?.b_lives || []).some((b) => b.lower != null || b.upper != null);
+    out.push(bounded
+      ? "A mixture's parameters carry no intervals; its B-lives are bounded from the whole fit. Judge it on the AIC against a single fit (Diagnostics)."
+      : "A mixture has no covariance matrix, so it reports no confidence bounds: judge it on the AIC against a single fit (Diagnostics).");
   }
   if (result.interval_censored) out.push("Inspection data: each failure lies between two inspections.");
+  if (result.late_entry?.units) {
+    const n = result.late_entry.units;
+    out.push(`${n.toLocaleString()} ${n === 1 ? "unit" : "units"} entered late (observed from “${result.late_entry.column}”): accounted for, so ${n === 1 ? "it counts" : "they count"} only from when ${n === 1 ? "it was" : "they were"} first seen.`);
+  }
   switch (result.kind) {
     case "nonparametric":
       out.push(`${result.distribution} estimate: no distribution assumed, so no fitted parameters to check.`);
@@ -160,7 +169,7 @@ function LifeTable({ result }) {
             {table && <th className="mf-num">At risk</th>}
             {table && <th className="mf-num">Failed</th>}
             <th className="mf-num">R(t)</th>
-            {band && <th className="mf-num">95% band</th>}
+            {band && <th className="mf-num">{levelPct(e.level ?? 0.95)} band</th>}
           </tr>
         </thead>
         <tbody>
@@ -214,15 +223,18 @@ function Parameters({ result }) {
     const parts = [...new Set(table.map((r) => r.part))];
     const ratio = result.ratio_label;
     const showRatio = ratio && table.some((r) => r.exp_value != null);
+    // A time or odds ratio reads exp(-coefficient) (see ratioSign).
+    const sign = ratioSign(result);
+    const ratioOf = (r) => (r.part === "coefficients" && sign < 0 && r.value != null ? Math.exp(-r.value) : r.exp_value);
     const showP = table.some((r) => r.p != null);
     return (
-      <ScrollCard title="Every parameter" sub="with 95% intervals">
+      <ScrollCard title="Every parameter" sub={`with ${ciPct(result)} intervals`}>
         <table className="mini-table">
           <thead>
             <tr>
               <th>Term</th><th className="mf-num">Estimate</th>
               {showRatio && <th className="mf-num">{ratio[0].toUpperCase() + ratio.slice(1)}</th>}
-              <th className="mf-num">95% interval</th>{showP && <th className="mf-num">p</th>}
+              <th className="mf-num">{ciPct(result)} interval</th>{showP && <th className="mf-num">p</th>}
             </tr>
           </thead>
           <tbody>
@@ -233,7 +245,7 @@ function Parameters({ result }) {
                 <tr key={`${r.part}-${r.name}`}>
                   <td>{parts.length > 1 && <span className="mm-part">{PART[r.part] || r.part} · </span>}{r.name}</td>
                   <td className="mf-num">{formatNumber(r.value, { sig: 4 })}</td>
-                  {showRatio && <td className="mf-num">{r.exp_value != null ? formatNumber(r.exp_value, { sig: 4 }) : "—"}</td>}
+                  {showRatio && <td className="mf-num">{ratioOf(r) != null ? formatNumber(ratioOf(r), { sig: 4 }) : "—"}</td>}
                   <td className="mf-num">{fmtCi(ci)}</td>
                   {showP && <td className="mf-num">{fmtP(r.p)}</td>}
                 </tr>
@@ -265,9 +277,10 @@ function Parameters({ result }) {
             const v = paramView(result.kind === "regression" ? base : result, p);
             return <tr key={p.name}><td>{v.label}</td><td className="mf-num">{formatNumber(p.value, { sig: 4 })}</td><td className="mf-num">{v.ci || "—"}</td></tr>;
           })}
-          {extra.map((p) => (
-            <tr key={p.name}><td>{p.name}</td><td className="mf-num">{formatNumber(p.value, { sig: 4 })}</td><td className="mf-num">—</td></tr>
-          ))}
+          {extra.map((p) => {
+            const v = extraParamView(p.name, p.value, result.unit, (x) => formatNumber(x, { sig: 4 }));
+            return <tr key={p.name}><td>{v.label}</td><td className="mf-num">{v.value}</td><td className="mf-num">—</td></tr>;
+          })}
           {coefs.map((c) => (
             <tr key={`c-${c.name}`}>
               <td>{c.name}{c.covariate_unit ? <span className="mm-part"> (per {c.covariate_unit})</span> : null}</td>
@@ -279,7 +292,7 @@ function Parameters({ result }) {
       </table>
       {lv.credible || result.method === "library"
         ? result.ci_note && <p className="param-ci-note">{result.ci_note}</p>
-        : <CiNote params={params} note={result.ci_note} />}
+        : <CiNote params={params} note={result.ci_note} level={lv.label} />}
     </ScrollCard>
   );
 }

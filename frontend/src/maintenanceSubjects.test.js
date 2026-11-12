@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  actionKinds, closeActionKind, defaultCloseKind, itemAtText, subjectApiPath, subjectBadge, subjectPath, taskUnits, whileStoredText,
+  actionKinds, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, followUps, foundFailedText, itemAtText, newItemBody, replaceReason, replaceRecordText, subjectApiPath, subjectBadge, subjectPath, taskUnits, whileStoredText,
 } from "./maintenanceSubjects.js";
 
 test("each subject has its own page and API path", () => {
@@ -76,4 +76,67 @@ test("a close form starts from what the work order's task is", () => {
 test("checked, nothing done is sent as an inspection that found it OK", () => {
   assert.deepEqual(closeActionKind("checked"), { kind: "inspect", finding: "ok" });
   assert.deepEqual(closeActionKind("replace"), { kind: "replace" });
+});
+
+test("a breakdown's replacement starts as a failure; planned work as a planned replacement", () => {
+  const fitted = { fitted: { item: { name: "Pump P1" } }, subject: { kind: "position", name: "Pump 3" } };
+  // A corrective work order closed with the defaults records a failure (c = 0 in the life data).
+  const breakdown = { ...fitted, type: "corrective" };
+  assert.equal(defaultFailed(breakdown), true);
+  assert.equal(replaceReason({ kind: "replace", failed: defaultFailed(breakdown) }), "failure");
+  assert.match(replaceRecordText({ failed: true }, breakdown), /^Records a failure: Pump P1's time at Pump 3 ends as a failure \(mode not known\)/);
+  assert.match(replaceRecordText({ failed: true }, breakdown, "Seal leaking"), /\(Seal leaking\)/);
+  // Preventive work keeps the planned replacement, and says it's a suspension.
+  for (const type of ["preventive", "inspection", "other", undefined]) {
+    assert.equal(defaultFailed({ ...fitted, type }), false);
+  }
+  assert.equal(replaceReason({ failed: false }), "planned");
+  assert.match(replaceRecordText({ failed: false }, { ...fitted, type: "preventive" }), /still running \(a suspension\)/);
+  assert.match(replaceRecordText({ failed: true }, { type: "corrective" }), /Nothing is fitted here/);
+});
+
+test("a serial typed with no name still goes as the new item", () => {
+  assert.deepEqual(newItemBody({ kind: "replace", new_serial: "MS65-0031" }), { name: "", serial: "MS65-0031" });
+  assert.deepEqual(newItemBody({ kind: "replace", new_name: "Seal", new_serial: "" }), { name: "Seal", serial: "" });
+  assert.equal(newItemBody({ kind: "replace" }), null);
+  assert.equal(newItemBody({ kind: "repair", new_serial: "X" }), null);
+});
+
+test("an action inside the work order's position uses that position's fitted item and modes", () => {
+  const wo = {
+    position: { id: "pump", name: "P-202" }, fitted: { item: { name: "Pump" } }, failure_modes: [{ id: "a", text: "Bearing" }],
+    suggested_parts: [{ part: { id: "p1" } }],
+    inside_positions: [{ id: "seal", name: "Mechanical seal", label: "Mechanical seal", fitted: { item: { name: "Seal 17" } },
+      failure_modes: [{ id: "b", text: "Leak" }], class_failure_modes: ["Worn faces"], parts_list: [{ part: { id: "p2" } }] }],
+  };
+  const own = closeTarget(wo, "");
+  assert.equal(own.fitted.item.name, "Pump");
+  assert.equal(own.failure_modes[0].text, "Bearing");
+  const seal = closeTarget(wo, "seal");
+  assert.equal(seal.id, "seal");
+  assert.equal(seal.fitted.item.name, "Seal 17");
+  assert.deepEqual(seal.failure_modes.map((m) => m.text), ["Leak"]);
+  assert.equal(seal.suggested_parts[0].part.id, "p2");
+  assert.match(foundFailedText(seal), /Seal 17 at Mechanical seal as failed some time between its last good check/);
+});
+
+test("followUps: a found-failed check with nothing fixed offers a corrective work order there", () => {
+  const wo = {
+    number: 12, status: "closed", closed: "2026-11-09", position: { id: "P", name: "Pump 3" },
+    actions: [
+      { kind: "inspect", finding: "found_failed", position: { id: "S", name: "Seal" }, failure_mode: { text: "Seal leaks" } },
+      { kind: "inspect", finding: "ok" },
+    ],
+  };
+  const out = followUps(wo);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].body.position_id, "S");
+  assert.equal(out[0].body.type, "corrective");
+  assert.equal(out[0].body.title, "Fix Seal: Seal leaks");
+  assert.match(out[0].body.notes, /#12/);
+  // Replaced on the same order: nothing to follow up.
+  assert.deepEqual(followUps({ ...wo, actions: [...wo.actions, { kind: "replace", position: { id: "S" } }] }), []);
+  // Open orders and OK findings: none.
+  assert.deepEqual(followUps({ ...wo, status: "open" }), []);
+  assert.deepEqual(followUps({ ...wo, actions: [{ kind: "inspect", finding: "ok" }] }), []);
 });

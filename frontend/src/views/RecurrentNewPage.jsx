@@ -7,11 +7,17 @@ import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
-import RecurrentColumnMapper from "../components/RecurrentColumnMapper.jsx";
+import ColumnMapper from "../components/ColumnMapper.jsx";
+import RecurrentMore from "../components/RecurrentMore.jsx";
 import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
 import { recurrentAnswer } from "../recurrentResults.js";
+import {
+  RECURRENT_KEYS, RECURRENT_NONE, RECURRENT_ROWS, RECURRENT_WORDS, guessRecurrentMapping, recurrentIssues,
+  savedRecurrentMapping,
+} from "../recurrentMapping.js";
+import { guessUnit } from "../datasetGuess.js";
 import {
   getRecurrentOptions,
   getColumns,
@@ -56,10 +62,6 @@ const STEPS = ["Source", "Data", "Model", "Result"];
 // New recurrent-event (repairable-system) model, as a 4-step wizard that mirrors
 // the life-data fit flow: (1) pick a data source, (2) preview + map columns,
 // (3) choose a growth model and fit, (4) review the fit, name it, and save.
-// A column that looks like each failure's mode (for a growth projection, #232).
-const guessModeColumn = (columns) =>
-  (columns || []).find((c) => /^(failure[ _-]?)?mode$|^cause$|^failure[ _-]?cause$/i.test(String(c).trim())) || "";
-
 export default function RecurrentNewPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState(null); // null | "data" | "params"
@@ -81,6 +83,8 @@ export default function RecurrentNewPage() {
   const [options, setOptions] = useState({});
   const [windows, setWindows] = useState("");
   const [unit, setUnit] = useState("");
+  // The repairable model whose column reading a dataset's fit started from.
+  const [keptFrom, setKeptFrom] = useState(null);
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -134,7 +138,10 @@ export default function RecurrentNewPage() {
     try {
       const cols = await getColumns(f);
       setCsv(cols);
-      setMap({ i: cols.columns[0] || "", x: cols.columns[1] || "", c: "", n: "", tl: "", tr: "", mode: guessModeColumn(cols.columns) });
+      const g = guessRecurrentMapping(cols.columns, { dtypes: cols.dtypes, preview: cols.preview });
+      setMap(g);
+      setUnit(guessUnit(g.x) || guessUnit(g.tr));
+      setKeptFrom(null);
       setWindows("");
       setStep(2);
     } catch (err) {
@@ -157,7 +164,12 @@ export default function RecurrentNewPage() {
       const columns = full.preview_columns || [];
       if (!d.name) setSourceName(full.name || "dataset");
       setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
-      setMap({ i: columns[0] || "", x: columns[1] || "", c: "", n: "", tl: "", tr: "", mode: guessModeColumn(columns) });
+      // The newest repairable model's reading of these columns, else a guess.
+      const kept = savedRecurrentMapping(full.last_recurrent_mapping, columns);
+      const g = kept?.mapping || guessRecurrentMapping(columns, { dtypes: full.dtypes, preview: full.preview });
+      setMap(g);
+      setUnit(kept?.unit || guessUnit(g.x) || guessUnit(g.tr));
+      setKeptFrom(kept ? kept.from || "the last model" : null);
       setWindows("");
       setStep(2);
     } catch (err) {
@@ -167,7 +179,7 @@ export default function RecurrentNewPage() {
     }
   };
 
-  // ?dataset=<id> (a dataset page's "Fit a recurrent model") starts on that
+  // ?dataset=<id> (a dataset page's "Fit a repairable model") starts on that
   // dataset, at the column mapping.
   const [params] = useSearchParams();
   const startDataset = params.get("dataset");
@@ -186,8 +198,10 @@ export default function RecurrentNewPage() {
     pickFile(e.dataTransfer.files?.[0]);
   };
 
-  // System id and event time are required and must be different columns.
-  const mappingValid = map.i && map.x && map.i !== map.x;
+  // Item id and failure value are required and must be different columns;
+  // each problem, and the missing end of record, sits beside its selector.
+  const mapIssues = recurrentIssues(map, windows);
+  const mappingValid = mapIssues.every((i) => i.note);
 
   const onFit = async () => {
     if (!file && !datasetId) return;
@@ -258,6 +272,12 @@ export default function RecurrentNewPage() {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+        {!mappingValid && (
+          <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
+            First settle the note{new Set(mapIssues.filter((i) => !i.note).map((i) => i.row)).size === 1 ? "" : "s"} beside{" "}
+            {[...new Set(mapIssues.filter((i) => !i.note).map((i) => i.row))].join(", ")}.
+          </span>
+        )}
         <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
       </>
     );
@@ -266,6 +286,11 @@ export default function RecurrentNewPage() {
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
         <button onClick={onFit} disabled={loading || !!modelBlock}>{loading ? "Fitting…" : `Fit ${modelEntry?.short || modelName}`}</button>
+        {loading && model !== "crow_amsaa" && (
+          <span className="hint" role="status" style={{ margin: 0 }}>
+            The fit check refits this model up to 200 times: allow 10–30 seconds.
+          </span>
+        )}
       </>
     );
   } else {
@@ -289,7 +314,7 @@ export default function RecurrentNewPage() {
           <h1>
             {mode === "data" ? "Fit to event data"
               : mode === "params" ? "From parameters"
-              : "New recurrent model"}
+              : "New repairable model"}
           </h1>
           <p>
             {mode === "data" ? "Pick a repairable fleet's event history, map columns, fit a growth model, then review and save."
@@ -329,6 +354,7 @@ export default function RecurrentNewPage() {
 
       {mode === "data" && (
       <div className="card fit-flow">
+        <div className="fit-flow-head">{stepper}</div>
         {step === 1 && (
           <>
             <DataSourceStep
@@ -358,7 +384,7 @@ export default function RecurrentNewPage() {
               ) : (
                 <span className="dz-big">Drop a CSV or Excel file here or <strong>click to browse</strong></span>
               )}
-              <span className="dz-hint">long format — one row per event: system id · event time · window</span>
+              <span className="dz-hint">one row per failure: system · its age at the failure · optional end of record</span>
               <input ref={inputRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
               {sheetModal}
@@ -374,22 +400,30 @@ export default function RecurrentNewPage() {
             <p className="muted-line">{sourceName} · {csv.n_rows} rows · {csv.columns.length} columns</p>
             <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
             <PreviewTable columns={csv.columns} rows={csv.preview} />
-            <RecurrentColumnMapper
+            {keptFrom && (
+              <p className="muted-line" role="status" style={{ margin: 0 }}>
+                Columns read as for “{keptFrom}”, the last repairable model fitted to this dataset.
+              </p>
+            )}
+            <ColumnMapper
               columns={csv.columns}
               mapping={map}
               onChange={setMap}
               unit={unit}
               onUnitChange={setUnit}
-              windows={windows}
-              onWindowsChange={setWindows}
+              rows={RECURRENT_ROWS}
+              range={false}
+              keys={RECURRENT_KEYS}
+              words={RECURRENT_WORDS}
+              none={RECURRENT_NONE}
+              meanings={false}
+              codeWords="0 = a failure, 1 = the end of the record"
+              issues={mapIssues.filter((i) => !i.note)}
+              notes={mapIssues.filter((i) => i.note)}
             />
-            <p className="muted-line" style={{ margin: 0 }}>
-              Long format — one row per failure/repair: a system id and event time, plus optional
-              counts, censoring, and each system's observation window (<code>tr</code>).
-            </p>
-            {!mappingValid && (
-              <p className="hint">Map different columns to <code>i</code> and <code>x</code>.</p>
-            )}
+            <ResultDetails summary="Covariates and gaps (optional)" open={!!(map.z || []).length || !!(map.ws || map.we) || !!windows.trim()}>
+              <RecurrentMore columns={csv.columns} mapping={map} onChange={setMap} windows={windows} onWindowsChange={setWindows} />
+            </ResultDetails>
           </div>
         )}
 
@@ -409,6 +443,13 @@ export default function RecurrentNewPage() {
               <p className="muted-line" style={{ margin: 0 }}>
                 {MODEL_DESC[model] || modelEntry.desc}
                 {MODEL_DESC[model] && <RefLink entryId={model} label="What is this growth model?" />}
+              </p>
+            )}
+            {(model === "ara" || model === "ari") && (
+              <p className="muted-line" style={{ margin: 0 }}>
+                Each repair acts on{" "}
+                <b>{(MEMORY.find((m) => m.value === String(options.m ?? (model === "ara" ? "2" : "1")))?.label || "").toLowerCase()}</b>
+                {options.m == null ? " (the default)" : ""}: change it under Advanced.
               </p>
             )}
             {(model === "pi_nhpp" || model === "ari" || model === "ara") && (
@@ -456,7 +497,6 @@ export default function RecurrentNewPage() {
         <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
-          {stepper}
           <div className="row" style={{ margin: 0 }}>{nav}</div>
         </div>
       </div>

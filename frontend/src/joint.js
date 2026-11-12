@@ -86,9 +86,23 @@ export const readingsText = (markers) => (markers || []).map(([a, v]) => `${a} $
 
 // "not reached" for a median remaining life the curve never falls to; never a
 // mean (it can be infinite).
+// Where the row carries its life bound (the Explorer's positions: `life_level`, 0.9), the
+// one-sided lower bound follows: "531 days (at least 402 days, 90%)"; one that couldn't be
+// worked out says so rather than showing nothing.
 export function medianText(row, unit = "") {
   if (!row || row.median_reached === false || row.median_remaining == null) return "not reached";
-  return `${lifeLeftNumber(row.median_remaining)}${unit ? ` ${unit.toLowerCase()}` : ""}`;
+  const u = unit ? ` ${unit.toLowerCase()}` : "";
+  const text = `${lifeLeftNumber(row.median_remaining)}${u}`;
+  if (row.life_level == null) return text;
+  const level = `${Math.round(Number(row.life_level) * 100)}%`;
+  return row.median_lower == null ? `${text} (no ${level} bound here)`
+    : `${text} (at least ${lifeLeftNumber(row.median_lower)}${u}, ${level})`;
+}
+
+// A band's name from the two-sided level it was drawn at (alpha_ci: 0.1 → "90%").
+export function bandLevel(alpha, fallback = 0.05) {
+  const a = Number(alpha);
+  return `${Math.round((1 - (Number.isFinite(a) && a > 0 && a < 1 ? a : fallback)) * 100)}%`;
 }
 
 // A remaining life with the same decimals across a column: one decimal under
@@ -110,6 +124,32 @@ export function riskText(p) {
   if (v < 0.001) return "< 0.1%";
   if (v >= 0.99) return `${(Math.floor(v * 1000) / 10).toFixed(1)}%`;
   return formatPercent(v);
+}
+
+// A chance's 90% one-sided upper bound in a cell: "≤ 80%" (blank without one).
+export function riskUpperText(p) {
+  if (p == null || !Number.isFinite(Number(p))) return "";
+  return Number(p) >= 0.999 ? "≤ 100%" : `≤ ${riskText(p)}`;
+}
+
+// A median life left's 90% lower bound in a cell: "≥ 6.6 days" (blank without one).
+export function medianLowerText(row, unit = "") {
+  if (!row || row.median_lower == null || row.median_reached === false || row.median_remaining == null) return "";
+  return `≥ ${lifeLeftNumber(row.median_lower)}${unit ? ` ${unit.toLowerCase()}` : ""}`;
+}
+
+// What the risk table says about its bounds: the level when rows carry them,
+// else why there are none. ``rows``: the table's rows with a risk.
+export function riskBoundNote(rows, level = 0.9) {
+  const scored = (rows || []).filter((r) => r.risk);
+  if (!scored.length) return "";
+  const pct = `${Math.round(level * 100)}%`;
+  if (scored.some((r) => r.risk_upper)) {
+    return `Under each chance, its ${pct} upper bound (we're ${pct} sure the chance is at most that); `
+      + `under each median life left, its ${pct} lower bound.`;
+  }
+  return `No ${pct} bounds on these chances: this model was saved before they were worked out. `
+    + "Fit a new model from the same data to see them.";
 }
 
 // The column a risk table is sorted by: the middle horizon where there is
@@ -223,4 +263,45 @@ export function paramGroups(params) {
     g.rows.push(p);
   }
   return groups;
+}
+
+// Whether a saved condition and life model scores positions on the asset tree:
+// some position links it (`links` from GET /api/maintenance/position-models).
+// Then its page adds a link to the Explorer beside its own Risk now tab.
+export function usedOnPositions(links, modelId) {
+  return !!modelId && (links || []).some((l) => l?.model_type === "model" && l?.model_id === modelId);
+}
+
+// The condition-and-life Data step: the shared selectors (ColumnMapper) for
+// each of its two tables. Lifetimes: i (the item id, sent as ``id``), x and
+// its range, c (0/1 codes, flipped with c_invert) and tl; readings: i, x
+// (when the reading was taken, sent as ``age``) and m (the measured value,
+// sent as ``value``): measurements, not covariates.
+export const JOINT_LIFE_ROWS = ["i", "x", "c", "tl"];
+export const JOINT_LIFE_KEYS = { i: "id" };
+export const JOINT_READ_ROWS = ["i", "x", "m"];
+export const JOINT_READ_KEYS = { i: "id", x: "age", m: "value" };
+
+// The lifetimes mapping sent: x, or the range (xl, xr) when x is blank, never
+// both (the fit reads one or the other); unset columns left out.
+export function jointLifeMapping(map) {
+  const m = map.x ? { id: map.id, x: map.x, c: map.c, tl: map.tl }
+    : { id: map.id, xl: map.xl, xr: map.xr, c: map.c, tl: map.tl };
+  return Object.fromEntries(Object.entries(m).filter(([, v]) => v));
+}
+
+// What stops a condition-and-life fit, beside its selector: [{ table, row, text }].
+export function jointIssues(map, rmap) {
+  const out = [];
+  const add = (table, row, text) => out.push({ table, row, text });
+  const range = !!(map.xl || map.xr);
+  if (!map.id) add("life", "i", "Pick i: the column saying which item each row is.");
+  if (map.x && range) add("life", "x", "Condition and life takes x or a range (xl to xr), not both: clear one.");
+  else if (range && !(map.xl && map.xr)) add("life", "x", "Pick both xl and xr for the range, or neither.");
+  else if (!map.x && !range) add("life", "x", "Pick x: the column with the value when each item failed or was last seen.");
+  if (!map.c) add("life", "c", "Pick c: the column saying whether each item failed or is still running.");
+  if (!rmap.id) add("reads", "i", "Pick i: the column saying which item each reading belongs to.");
+  if (!rmap.age) add("reads", "x", "Pick x: the column saying when each reading was taken.");
+  if (!rmap.value) add("reads", "m", "Pick m: the column with the measured value.");
+  return out;
 }

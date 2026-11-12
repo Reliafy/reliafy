@@ -14,7 +14,8 @@ SurPyval's input model (see ``surpyval.utils.xcnt_handler``):
 
 * ``x``    – observed values (1-D). Used for exact / right / left censored data.
 * ``xl`` + ``xr`` – left and right bounds of interval-censored data. Must be
-  supplied together and cannot be combined with ``x``.
+  supplied together. A sheet may map ``x`` beside them: rows with ``x`` are
+  exact, the rest ranges (:func:`combine_exact_and_ranges`).
 * ``c``    – censoring flag per row: 0 observed, 1 right, -1 left, 2 interval.
 * ``n``    – positive-integer count of observations per row.
 * ``tl`` / ``tr`` – left / right truncation bounds per row (``-inf``/``inf``
@@ -85,13 +86,14 @@ from surpyval import GumbelPH, LogisticPH
 from surpyval import AFT, AH, PH, PO
 from surpyval.univariate.regression import CoxPH
 
-from backend import life_bounds, np_life, param_intervals
+from backend import levels, life_bounds, np_life, param_intervals
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
 from backend import regression_bands, regression_diagnostics
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.errors import client_message
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
 # ``offsetable``: supports the 3-parameter offset (failure-free period) —
@@ -196,9 +198,103 @@ def best_candidates() -> dict:
     return {k: v for k, v in DISTRIBUTIONS.items() if not v.get("bounded")}
 
 
-# What exp(coefficient) means per regression effect (None = no natural ratio;
-# additive-hazards coefficients are additive, shown as the coefficient only).
+# What a coefficient's ratio means per regression effect (None = no natural
+# ratio; additive-hazards coefficients are additive, shown as the coefficient
+# only).
 _RATIO_LABELS = {"hazard": "hazard ratio", "aft": "time ratio", "odds": "odds ratio"}
+# SurPyval's sign: an AFT coefficient β accelerates the clock (the item ages
+# exp(β) times as fast, so its life is multiplied by exp(-β)), and a PO
+# coefficient multiplies the odds of *surviving* by exp(β). The ratio we show
+# reads the same way as a hazard ratio's words: the time ratio is what the life
+# is multiplied by, the odds ratio what the odds of having failed are
+# multiplied by. Both are exp(-β); a hazard ratio is exp(β).
+_RATIO_SIGN = {"hazard": 1.0, "aft": -1.0, "odds": -1.0}
+
+
+def coefficient_ratio(effect: str, value: float, ci=None) -> tuple[float, Optional[list]]:
+    """The ratio a coefficient shows and its interval, in the direction the
+    words read (see ``_RATIO_SIGN``): ``(ratio, [lo, hi] or None)``."""
+    sign = _RATIO_SIGN.get(effect, 1.0)
+    ratio = float(np.exp(sign * float(value)))
+    if not ci or ci[0] is None or ci[1] is None:
+        return ratio, None
+    ends = sorted(float(np.exp(sign * float(v))) for v in ci)
+    return ratio, ends
+
+
+# A text column with more levels than this isn't a category (an id, a note).
+MAX_CATEGORY_LEVELS = 30
+
+
+def covariates_as_formula(df: pd.DataFrame, covariates) -> tuple[pd.DataFrame, Optional[str]]:
+    """Ticked covariate columns, ready to fit: a text column of numbers is
+    read as numbers, and a text column of labels (a site, a supplier) as a
+    category, each level against a base level (the first in A–Z order, named
+    on the Effects tab). Returns ``(df, formula)``: ``formula`` is None when
+    every column is numeric (fit with ``Z_cols``), else the columns joined
+    with ``+``, which SurPyval expands into one term per level. Raises
+    :class:`FitError` for a column that can't be a covariate."""
+    cols = [str(c) for c in covariates or []]
+    if not cols:
+        return df, None
+    df = df.copy()
+    categorical = []
+    for col in cols:
+        if col not in df.columns:
+            raise FitError(f"The data has no column named '{col}'.")
+        series = df[col]
+        if pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
+            continue
+        text = series.dropna().astype(str).str.strip()
+        text = text[text != ""]
+        numbers = pd.to_numeric(text, errors="coerce")
+        if len(text) and numbers.notna().all():
+            df[col] = pd.to_numeric(series.astype(str).str.strip().replace("", np.nan), errors="coerce")
+            continue
+        levels = text.unique()
+        if len(levels) < 2:
+            raise FitError(f"“{col}” has the same value in every row, so it can't explain any difference "
+                           "in life: untick it.")
+        if len(levels) > MAX_CATEGORY_LEVELS:
+            raise FitError(f"“{col}” holds text with {len(levels):,} different values, too many to compare "
+                           f"as groups (up to {MAX_CATEGORY_LEVELS}). If it names each item, untick it; if "
+                           "it holds numbers, fix the rows that aren't.")
+        if series.isna().any() or (series.astype(str).str.strip() == "").any():
+            raise FitError(f"Some rows have no “{col}”. Fill them in, or untick it.")
+        df[col] = series.astype(str).str.strip()
+        categorical.append(col)
+    if not categorical:
+        return df, None
+
+    def term(c: str) -> str:
+        return c if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", c) else f"`{c}`"
+
+    return df, " + ".join(term(c) for c in cols)
+
+
+_LEVEL_TERM = re.compile(r"^(?P<var>.+)\[T\.(?P<level>.+)\]$")
+
+
+def base_levels(names, fields) -> dict:
+    """The base level each categorical covariate's effects are against: the
+    one of its levels (from the calculator ``fields``) with no coefficient of
+    its own. ``{"site": "East"}``; a variable whose base can't be told
+    (several levels without a term, or none) is left out."""
+    from backend.tvc import level_variable
+
+    seen: dict = {}
+    for n in names or []:
+        m = _LEVEL_TERM.match(str(n))
+        if m:
+            seen.setdefault(level_variable(m["var"]), set()).add(m["level"])
+    out = {}
+    for f in fields or []:
+        if f.get("type") != "category" or f["name"] not in seen:
+            continue
+        rest = [str(o) for o in f.get("options") or [] if str(o) not in seen[f["name"]]]
+        if len(rest) == 1:
+            out[f["name"]] = rest[0]
+    return out
 
 # Probabilities are clipped away from 0/1 before the y-transform, which would
 # otherwise map them to +/- infinity.
@@ -430,6 +526,14 @@ def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
 
     if df.empty or df.shape[1] == 0:
         raise FitError("The uploaded CSV is empty.")
+    # A row with every cell blank (a gap left in a sheet) is no unit: it's
+    # skipped, and ``attrs["blank_rows"]`` says how many, for the Data step.
+    blank = df.isna().all(axis=1)
+    if blank.any():
+        df = df.loc[~blank].reset_index(drop=True)
+        if df.empty:
+            raise FitError("The uploaded CSV is empty.")
+    df.attrs["blank_rows"] = int(blank.sum())
     return df
 
 
@@ -509,7 +613,9 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
         .where(pd.notna(df.head(rows)), None)
         .values.tolist()
     )
-    out = {"columns": columns, "preview": sample, "n_rows": int(df.shape[0])}
+    out = {"columns": columns, "preview": sample, "n_rows": int(df.shape[0]),
+           # Rows left wholly blank, skipped (see read_dataframe).
+           "blank_rows": int(df.attrs.get("blank_rows", 0))}
     if distinct:
         out["n_unique"] = [int(n) for n in df.nunique(dropna=True).tolist()]
         # What the Data step needs to guess the time and status columns, map a
@@ -520,6 +626,13 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
         out["values"] = [_few_values(df[c]) for c in df.columns]
         # Whole numbers only (null for text): what a count column needs (#434).
         out["whole"] = [_whole_column(df[c]) for c in df.columns]
+        # Values at or below 0 in each numeric column (null for text): a time
+        # of 0 or less can't be fitted by most distributions, so the Data step
+        # says so on the time column before the fit refuses it.
+        out["nonpositive"] = [
+            int((pd.to_numeric(df[c], errors="coerce") <= 0).sum()) if pd.api.types.is_numeric_dtype(df[c]) else None
+            for c in df.columns
+        ]
     return out
 
 
@@ -605,13 +718,18 @@ def map_censor_column(df: pd.DataFrame, column: str, codes: dict) -> pd.DataFram
             raise FitError(f"'{value}' in '{column}' must mean failed (0) or still running (1).")
         lookup[_status_key(value)] = code
     blank = df[column].isna() | (df[column].astype(str).str.strip() == "")
-    if blank.any():
+    # A blank cell can be given a meaning too ("" in ``codes``): a failure-mode
+    # column used as the status is blank for the units still running.
+    blank_code = lookup.get("")
+    if blank.any() and blank_code is None:
         n = int(blank.sum())
         raise FitError(
             f"{n} row{'s' if n != 1 else ''} {'have' if n != 1 else 'has'} no value in '{column}'. "
-            "Fill in whether each unit failed or was still running, then try again."
+            "Say what a blank means (failed or still running), or fill each one in, then try again."
         )
     mapped = df[column].map(lambda v: lookup.get(_status_key(v)))
+    if blank.any():
+        mapped = mapped.where(~blank, blank_code)
     if mapped.isna().any():
         shown = ", ".join(sorted({_status_label(v) for v in df[column][mapped.isna()]})[:5])
         raise FitError(f"Say whether these values in '{column}' mean failed or still running: {shown}.")
@@ -770,11 +888,9 @@ def outside_support_message(
     else:
         why = (f"it has no probability at or below {lower:g}, so a unit can't "
                "fail, or be censored, there")
-    return (f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} outside the "
-            f"support of {which}: {why}. Correct or remove "
-            f"{'that row' if one else 'those rows'} (SurPyval 0.23 refuses "
-            f"{'it' if one else 'them'}; older versions silently ignored a "
-            "censored one).")
+    return (f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} out of range "
+            f"for {which}: {why}. Correct or remove "
+            f"{'that row' if one else 'those rows'} in the data and fit again.")
 
 
 # ---------------------------------------------------------------------------
@@ -864,8 +980,8 @@ def no_maximum_notice(model, caught=(), coefficient_names: Optional[list] = None
 
 
 def reissue_deprecations(caught) -> None:
-    """Re-issue the deprecation warnings a ``catch_warnings(record=True)``
-    block swallowed, so a call into SurPyval through a name it has
+    """Re-issue the deprecation warnings a ``collect_warnings()`` block
+    swallowed, so a call into SurPyval through a name it has
     deprecated still reaches the warnings filter (and fails the suite run
     with ``-W error::DeprecationWarning``)."""
     for w in caught:
@@ -877,7 +993,8 @@ def without_intervals(params: list) -> list:
     """Parameters with their standard errors and intervals dropped: with no
     finite maximum they are meaningless (SurPyval says so), and a CI would
     read as an estimate's."""
-    return [{**p, "se": None, "ci": None} if "se" in p else {**p, "ci": None} for p in params]
+    out = [{**p, "se": None, "ci": None} if "se" in p else {**p, "ci": None} for p in params]
+    return [{**p, "ratio_ci": None} if "ratio_ci" in p else p for p in out]
 
 
 def no_maximum_reason(notice: dict) -> str:
@@ -897,7 +1014,8 @@ def _fit_failure_hint(exc: Exception, kwargs: dict, distribution_name: str,
     if support_msg:
         return support_msg
     failures, total = failure_count(kwargs)
-    raw = str(exc) or type(exc).__name__
+    # SurPyval prints the arrays it was given after its message: keep the message.
+    raw = re.split(r"\n\s*x:\s*\n", str(exc))[0].strip() or type(exc).__name__
     if total and failures <= 1:
         return (
             f"Only {failures} of the {total} rows is marked as a failure — too "
@@ -925,16 +1043,144 @@ def _check_counts(name: str, col: np.ndarray) -> None:
         )
 
 
-def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
+#: ``df.attrs`` key: rows left out because ``x`` and its range were both filled.
+BOTH_FILLED_KEY = "x_and_range_rows"
+
+
+def x_and_range_warning(rows: list[int], names: tuple[str, str, str]) -> str:
+    """The warning for rows with ``x`` and a range both filled (0-based ``rows``)."""
+    mask = np.zeros(max(rows) + 1, dtype=bool)
+    mask[rows] = True
+    k = len(rows)
+    x, xl, xr = names
+    return (f"{k} row{'s have' if k != 1 else ' has'} x ('{x}') and a range ('{xl}' to '{xr}') both filled, "
+            f"so {'they are' if k != 1 else 'it is'} left out of the fit: {_row_list(mask, 8)}.")
+
+
+def combine_exact_and_ranges(df: pd.DataFrame, mapping: dict) -> tuple[pd.DataFrame, dict]:
+    """Read ``x`` and an ``xl``/``xr`` range mapped together, row by row.
+
+    A sheet can hold an exact value on some rows and only a range on others:
+    a row with ``x`` filled (and its range blank) is that exact value; a row
+    with ``x`` blank is read from its range, as inspection data is (see
+    :func:`read_interval_rows`). Both become one ``xl``/``xr`` pair, the exact
+    rows with the same value twice, so every fit reads them as SurPyval's
+    ``xl``/``xr`` with ``c``. A row with ``x`` and both range cells filled
+    says two things at once: it is left out, never reconciled, and its row
+    numbers (0-based, in the sheet's order) go in ``df.attrs[BOTH_FILLED_KEY]``
+    for the warning (:func:`x_and_range_warning`). Returns ``df`` and
+    ``mapping`` unchanged unless ``x``, ``xl`` and ``xr`` are all mapped (and
+    no item column, whose rows are start and stop times). A row with no value
+    in any of the three is refused in plain words."""
+    m = {k: v for k, v in (mapping or {}).items() if v}
+    if not (m.get("x") and m.get("xl") and m.get("xr")) or m.get("i"):
+        return df, mapping
+    for name in (m["x"], m["xl"], m["xr"]):
+        if name not in df.columns:
+            raise FitError(f"The data has no column named '{name}'.")
+
+    def numbers(name):
+        return pd.to_numeric(df[name], errors="coerce").to_numpy(dtype=float)
+
+    x, xl, xr = numbers(m["x"]), numbers(m["xl"]), numbers(m["xr"])
+    exact = ~np.isnan(x)
+    empty = ~exact & np.isnan(xl) & np.isnan(xr)
+    if np.any(empty):
+        k = int(empty.sum())
+        raise FitError(f"{_row_list(empty).capitalize()} {'has' if k == 1 else 'have'} no value in "
+                       f"'{m['x']}', '{m['xl']}' or '{m['xr']}'. Fill one in, or delete "
+                       f"{'that row' if k == 1 else 'those rows'}.")
+    both = exact & ~np.isnan(xl) & ~np.isnan(xr)
+    out = df.copy()
+    out[m["xl"]] = np.where(exact, x, xl)
+    out[m["xr"]] = np.where(exact, x, xr)
+    if both.any():
+        if both.all():
+            raise FitError(f"Every row has x ('{m['x']}') and a range ('{m['xl']}' to '{m['xr']}') both "
+                           "filled, so none can be fitted. Clear x or the range on each row, or map only one.")
+        out = out.loc[~both].reset_index(drop=True)
+    out.attrs = {**df.attrs, BOTH_FILLED_KEY: [int(r) for r in np.flatnonzero(both)]}
+    return out, {k: v for k, v in mapping.items() if k != "x"}
+
+
+def x_and_range_rows(df: pd.DataFrame, mapping: dict) -> Optional[dict]:
+    """Rows with ``x`` and its range both filled, for the Data step:
+    ``{"count", "rows" (1-based, first few), "warning"}``, or None."""
+    m = {k: v for k, v in (mapping or {}).items() if v}
+    if not (m.get("x") and m.get("xl") and m.get("xr")) or m.get("i"):
+        return None
+    if any(m[k] not in df.columns for k in ("x", "xl", "xr")):
+        return None
+    filled = [pd.to_numeric(df[m[k]], errors="coerce").notna().to_numpy() for k in ("x", "xl", "xr")]
+    rows = [int(r) for r in np.flatnonzero(filled[0] & filled[1] & filled[2])]
+    if not rows:
+        return None
+    return {"count": len(rows), "rows": [r + 1 for r in rows[:8]],
+            "warning": x_and_range_warning(rows, (m["x"], m["xl"], m["xr"]))}
+
+
+def truncation_problem(df: pd.DataFrame, mapping: dict) -> Optional[dict]:
+    """Rows that can't be read with their observation window, per row: a value
+    (``x``, or ``xr`` / ``xl`` for a range) above the row's ``tr`` (observed
+    only up to it), a unit still running at its ``tr`` or beyond (it would
+    have to fail after tr), or a ``tr`` below the row's ``tl``. A blank ``tr``
+    is no limit. The censor column is read as 0 = failed, 1 = running, already
+    the right way round. ``{"count", "rows" (1-based, first few), "text"}`` or None. Read
+    after :func:`combine_exact_and_ranges`."""
+    m = {k: v for k, v in (mapping or {}).items() if v}
+    if not m.get("tr") or any(m[k] not in df.columns for k in ("x", "xl", "xr", "tl", "tr") if m.get(k)):
+        return None
+
+    def numbers(name):
+        return pd.to_numeric(df[name], errors="coerce").to_numpy(dtype=float)
+
+    tr = numbers(m["tr"])
+    if m.get("x"):
+        value = numbers(m["x"])
+    elif m.get("xr") or m.get("xl"):
+        hi = numbers(m["xr"]) if m.get("xr") else np.full(len(df), np.nan)
+        lo = numbers(m["xl"]) if m.get("xl") else np.full(len(df), np.nan)
+        value = np.where(np.isnan(hi), lo, hi)
+    else:
+        value = np.full(len(df), np.nan)
+    tl = numbers(m["tl"]) if m.get("tl") else np.full(len(df), np.nan)
+    c = pd.to_numeric(df[m["c"]], errors="coerce").to_numpy(dtype=float) if m.get("c") else np.zeros(len(df))
+    above = ~np.isnan(tr) & ~np.isnan(value) & ((value > tr) | ((c == 1) & (value >= tr)))
+    below = ~np.isnan(tr) & ~np.isnan(tl) & (tr < tl)
+    bad = above | below
+    if not bad.any():
+        return None
+    parts = []
+    if above.any():
+        k = int(above.sum())
+        parts.append(f"{k} row{'s have a value' if k != 1 else ' has a value'} above tr ('{m['tr']}'), "
+                     f"or still running at it, {_row_list(above)}")
+    if below.any():
+        k = int(below.sum())
+        parts.append(f"{k} row{'s have' if k != 1 else ' has'} tr below tl ('{m.get('tl')}'), {_row_list(below)}")
+    text = ("; ".join(parts) + ". tr is the value a unit was observed up to: its value can't be above it, a "
+            "unit still running must be below it, and tr can't be below tl. Correct those rows, or leave tr "
+            "blank on them.")
+    rows = [int(r) + 1 for r in np.flatnonzero(bad)]
+    return {"count": len(rows), "rows": rows[:8], "text": text}
+
+
+def build_fit_inputs(df: pd.DataFrame, mapping: dict, check_truncation: bool = True) -> dict:
     """Turn a column mapping into keyword arguments for ``<dist>.fit``.
 
     ``mapping`` maps any of ``x/c/n/xl/xr/tl/tr`` to a CSV column name. No
     validation is done here — SurPyval validates the combination of inputs and
     raises with a helpful message, which we surface. Columns are coerced to
     numbers (non-numeric cells become NaN, which SurPyval rejects), and blank
-    truncation cells become the "untruncated" infinities.
+    truncation cells become the "untruncated" infinities. ``x`` mapped with
+    an ``xl``/``xr`` range is read row by row (:func:`combine_exact_and_ranges`).
     """
     mapping = {k: v for k, v in mapping.items() if v}  # drop unset fields
+    df, mapping = combine_exact_and_ranges(df, mapping)
+    if check_truncation:
+        problem = truncation_problem(df, mapping)
+        if problem:
+            raise FitError(problem["text"])
 
     kwargs: dict = {}
     for field, name in mapping.items():
@@ -949,7 +1195,192 @@ def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
             _check_counts(name, col)
         kwargs[field] = col
 
+    if ("xl" in kwargs or "xr" in kwargs) and "x" not in kwargs and "i" not in kwargs:
+        if "xl" in kwargs and "xr" in kwargs:
+            kwargs.update(read_interval_rows(kwargs["xl"], kwargs["xr"], kwargs.get("c"),
+                                             mapping["xl"], mapping["xr"], mapping.get("c")))
     return kwargs
+
+
+def _row_list(mask: np.ndarray, limit: int = 5) -> str:
+    """'row 3' / 'rows 3, 7 and 9 and 4 more': data rows counted from 1 under the header."""
+    rows = [str(int(r) + 1) for r in np.flatnonzero(mask)]
+    shown, more = rows[:limit], len(rows) - limit
+    text = shown[0] if len(shown) == 1 else ", ".join(shown[:-1]) + " and " + shown[-1]
+    return f"row{'s' if len(rows) != 1 else ''} {text}" + (f" and {more} more" if more > 0 else "")
+
+
+def read_interval_rows(xl, xr, c=None, xl_name: str = "xl", xr_name: str = "xr",
+                       c_name: Optional[str] = None) -> dict:
+    """Inspection data as SurPyval takes it: ``{"xl", "xr", "c"}``.
+
+    Each row is a unit seen working at the earliest time (``xl``) and found
+    failed by the latest (``xr``). Field data also holds the units that never
+    failed, written the way a spreadsheet writes them:
+
+    - a blank latest time: the unit passed its last inspection, so it is
+      still running at the earliest time (right-censored);
+    - a blank earliest time: found failed at its first look (left-censored
+      at the latest time);
+    - a status column that says "failed" beside two different times: the
+      failure lies between them (interval-censored), and "still running"
+      beside one time, or the same time twice, is right-censored there.
+
+    Rows already coded the SurPyval way (2 with two times, 1 or 0 or -1 with
+    the same time twice) pass through as they are, and with no blank cell and
+    no status column ``c`` stays ``None`` (SurPyval reads equal times as an
+    exact failure). A row that can't be read is refused in plain words.
+    """
+    xl = np.array(xl, dtype=float)
+    xr = np.array(xr, dtype=float)
+    no_l, no_r = np.isnan(xl), np.isnan(xr)
+    if np.any(no_l & no_r):
+        raise FitError(f"{_row_list(no_l & no_r).capitalize()} {'has' if (no_l & no_r).sum() == 1 else 'have'} "
+                       f"no value in '{xl_name}' or '{xr_name}'. Fill one in, or delete "
+                       f"{'that row' if (no_l & no_r).sum() == 1 else 'those rows'}.")
+    backwards = ~no_l & ~no_r & (xl > xr)
+    if np.any(backwards):
+        raise FitError(f"In {_row_list(backwards)} the earliest value ('{xl_name}') is after the latest "
+                       f"('{xr_name}'). Check the two columns are the right way round.")
+    if c is None:
+        if not (no_l.any() or no_r.any()):
+            return {"xl": xl, "xr": xr}
+        out = np.where(no_r, 1, np.where(no_l, -1, np.where(xl == xr, 0, 2)))
+    else:
+        out = np.array(c, dtype=float)
+        label = f"'{c_name}'" if c_name else "the status column"
+        if np.any(np.isnan(out)):
+            bad = np.isnan(out)
+            raise FitError(f"{_row_list(bad).capitalize()} {'has' if bad.sum() == 1 else 'have'} no value in "
+                           f"{label}. Fill in whether each unit failed or was still running.")
+        two = ~no_l & ~no_r & (xl < xr)
+        running_window = two & (out == 1)
+        if np.any(running_window):
+            raise FitError(f"{_row_list(running_window).capitalize()} "
+                           f"{'is' if running_window.sum() == 1 else 'are'} marked still running but "
+                           f"{'has' if running_window.sum() == 1 else 'have'} two different values. A unit still "
+                           f"running has one value (when it was last seen working): leave '{xr_name}' blank, "
+                           "or repeat the same value.")
+        one_time_interval = (no_l | no_r) & (out == 2)
+        if np.any(one_time_interval):
+            raise FitError(f"{_row_list(one_time_interval).capitalize()} "
+                           f"{'is' if one_time_interval.sum() == 1 else 'are'} marked as an interval but "
+                           f"{'has' if one_time_interval.sum() == 1 else 'have'} only one value. Fill in both "
+                           f"'{xl_name}' and '{xr_name}'.")
+        # Failed between two different times: the failure lies in the interval.
+        out = np.where(two & (out == 0), 2, out)
+        # Failed with only a latest time: found failed at the first look.
+        out = np.where(no_l & (out == 0), -1, out)
+    xl, xr = np.where(no_l, xr, xl), np.where(no_r, xl, xr)
+    return {"xl": xl, "xr": xr, "c": out.astype(int)}
+
+
+#: Fit option: refuse a row whose two times differ but whose flag is 0 (see :func:`fit`).
+STRICT_INTERVALS_KEY = "strict_intervals"
+
+
+def _check_interval_flags(df: pd.DataFrame, mapping: dict) -> None:
+    names = [mapping.get(k) for k in ("xl", "xr", "c")]
+    if mapping.get("i"):  # start and stop rows of an item, not an inspection window
+        return
+    if not all(names) or any(n not in df.columns for n in names):
+        return
+    xl, xr, c = (pd.to_numeric(df[n], errors="coerce").to_numpy(dtype=float) for n in names)
+    if np.any((c == 0) & (xl < xr)):
+        raise FitError("Censor flag indicates not interval censored but has interval window.")
+
+
+def interval_frame(df: pd.DataFrame, mapping: dict) -> tuple[pd.DataFrame, dict]:
+    """``df`` and ``mapping`` with inspection rows read by
+    :func:`read_interval_rows`, for the fitters that take columns
+    (``fit_from_df``). Unchanged when the mapping holds no interval pair."""
+    df, mapping = combine_exact_and_ranges(df, mapping)
+    if not (mapping.get("xl") and mapping.get("xr")) or mapping.get("x") or mapping.get("i"):
+        return df, mapping
+    for name in (mapping["xl"], mapping["xr"], mapping.get("c")):
+        if name and name not in df.columns:
+            raise FitError(f"The data has no column named '{name}'.")
+
+    def numbers(name):
+        return pd.to_numeric(df[name], errors="coerce").to_numpy(dtype=float)
+
+    read = read_interval_rows(numbers(mapping["xl"]), numbers(mapping["xr"]),
+                              numbers(mapping["c"]) if mapping.get("c") else None,
+                              mapping["xl"], mapping["xr"], mapping.get("c"))
+    out = df.copy()
+    out[mapping["xl"]], out[mapping["xr"]] = read["xl"], read["xr"]
+    if "c" in read:
+        c_col = mapping.get("c") or next(n for n in ("status", "_status", "__status__") if n not in df.columns)
+        out[c_col] = read["c"]
+        mapping = {**mapping, "c": c_col}
+    return out, mapping
+
+
+def data_reading(df: pd.DataFrame, mapping: dict) -> dict:
+    """How a mapping reads the rows, weighted by the count column:
+    ``{failed, running, left, interval, total}``. ``failed`` are exact failure
+    times, ``interval`` failures between two times, ``left`` failures found
+    at the first look (before the latest time, with no earlier time the unit
+    was seen working), ``running`` units that hadn't failed. The censor
+    column is already the right way round (``map_censor_column`` /
+    ``invert_censor_column``). Raises :class:`FitError` as a fit would."""
+    kwargs = build_fit_inputs(df, {k: v for k, v in (mapping or {}).items()
+                                   if k in ("x", "c", "n", "xl", "xr") and v})
+    combined, plain = combine_exact_and_ranges(df, mapping or {})
+    window = truncation_problem(combined, plain)
+    first = kwargs.get("x") if kwargs.get("x") is not None else kwargs.get("xl")
+    if first is None:
+        raise FitError("Pick the column that holds the time to failure or removal.")
+    size = np.size(first)
+    n = np.asarray(kwargs["n"], dtype=float) if kwargs.get("n") is not None else np.ones(size)
+    xl, xr = kwargs.get("xl"), kwargs.get("xr")
+    if kwargs.get("c") is not None:
+        c = np.asarray(kwargs["c"], dtype=float)
+    elif xl is not None and xr is not None:
+        c = np.where(xl == xr, 0, 2).astype(float)
+    else:
+        c = np.zeros(size)
+    keep = np.isfinite(first) & np.isfinite(c) & np.isfinite(n)
+    # A window that opens at zero is a failure found at the first look.
+    from_zero = (c == 2) & (np.asarray(xl) <= 0) if xl is not None else np.zeros(size, dtype=bool)
+
+    def count(mask):
+        return int(round(float(n[keep & mask].sum())))
+
+    out = {"failed": count(c == 0), "running": count(c == 1), "left": count((c == -1) | from_zero),
+           "interval": count((c == 2) & ~from_zero), "total": count(np.ones(size, dtype=bool))}
+    both = x_and_range_rows(df, mapping)
+    if both:
+        out["x_and_range_rows"] = both
+    if window:
+        out["tr_problem"] = window
+    return out
+
+
+def reading_notes(df: pd.DataFrame, mapping: dict) -> list[str]:
+    """Where a reading of the rows rests on a guess, in plain words, so the
+    Data step can say so before the fit: today, inspection data with no status
+    column whose two times are the same on some rows (an exact failure time,
+    or a unit that was still running?)."""
+    mapping = {k: v for k, v in (mapping or {}).items() if v}
+    if not (mapping.get("xl") and mapping.get("xr")) or mapping.get("c"):
+        return []
+    if mapping.get("x"):
+        # Exact values beside ranges: a range row with the same time twice
+        # is the guess; the exact rows are exact anyway.
+        x = pd.to_numeric(df[mapping["x"]], errors="coerce").to_numpy(dtype=float)
+        df = df.loc[np.isnan(x)]
+    xl = pd.to_numeric(df[mapping["xl"]], errors="coerce").to_numpy(dtype=float)
+    xr = pd.to_numeric(df[mapping["xr"]], errors="coerce").to_numpy(dtype=float)
+    same = int(np.sum(xl == xr))
+    if not same or same == len(xl):
+        return []
+    return [
+        f"{same} row{'s have' if same != 1 else ' has'} the same earliest and latest value, so "
+        f"{'they are' if same != 1 else 'it is'} read as a failure at exactly that value. If "
+        f"{'those units were' if same != 1 else 'that unit was'} still running, pick the status column that "
+        f"says so, or leave '{mapping['xr']}' blank on {'those rows' if same != 1 else 'that row'}."
+    ]
 
 
 def _covariance_of(model):
@@ -1102,7 +1533,10 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
     scalar (Gamma reads ``params[0]`` as its shape). The paper is only a choice
     of axes, so one component's parameters define it perfectly well.
     """
-    data = model.get_plot_data(heuristic=heuristic)
+    try:  # the band at the 90% rule (a mixture's plot data takes no level and has no band)
+        data = model.get_plot_data(heuristic=heuristic, alpha_ci=levels.ALPHA)
+    except TypeError:
+        data = model.get_plot_data(heuristic=heuristic)
     params = model.params if paper_params is None else paper_params
 
     def ty(p):
@@ -1149,6 +1583,7 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
             "x": line_x.tolist(),
             "lower": lower.tolist(),
             "upper": upper.tolist(),
+            "level": levels.LEVEL,  # two-sided
         },
         "x_range": x_range,
         "y_range": y_range,
@@ -1187,6 +1622,7 @@ def options_from_form(
     c_map: Optional[str] = None,
     criterion: Optional[str] = None,
     frailty_family: Optional[str] = None,
+    u_col: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers).
     ``c_map`` is a JSON object of status words to censor codes."""
@@ -1225,6 +1661,8 @@ def options_from_form(
         opts[CRITERION_KEY] = str(criterion).strip()
     if frailty_family and str(frailty_family).strip():
         opts[more_models.FAMILY_KEY] = str(frailty_family).strip()
+    if u_col and str(u_col).strip():
+        opts["u_col"] = str(u_col).strip()  # unit_column.UNIT_COLUMN_KEY
     return opts if any(opts.values()) else None
 
 
@@ -1541,6 +1979,16 @@ def fit(
         # The failure-mode and group columns (#177) are read by competing risks only.
         mapping = competing_risks.plain_mapping(mapping)
     options = dict(options or {})
+    # A column giving each row's time unit (hrs / days): every time to ``unit`` first.
+    from backend import unit_column  # local: it imports services that import this module
+
+    u_col = options.pop(unit_column.UNIT_COLUMN_KEY, None)
+    unit_conversion = None
+    if u_col:
+        try:
+            df, unit_conversion = unit_column.convert(df, mapping, str(u_col), unit)
+        except ValueError as exc:
+            raise FitError(str(exc)) from exc
     c_invert = bool(options.pop(CENSOR_INVERT_KEY, False)) and bool(mapping.get("c"))
     c_map = options.pop(CENSOR_MAP_KEY, None) if mapping.get("c") else None
     options.pop(CENSOR_MAP_KEY, None)
@@ -1550,6 +1998,14 @@ def fit(
         c_invert = False
     if c_invert:
         df = invert_censor_column(df, mapping["c"])
+    # An exact value on some rows and only a range on others: one xl/xr pair.
+    x_and_range = x_and_range_rows(df, mapping)
+    df, mapping = combine_exact_and_ranges(df, mapping)
+    # Callers that send censor codes themselves (the API and MCP tools) keep
+    # the strict reading: a row with two different times must be flagged 2.
+    # The pages read "failed" beside two times as failed between them.
+    if options.pop(STRICT_INTERVALS_KEY, False):
+        _check_interval_flags(df, mapping)
     # Cox PH's tie method, strata and cluster columns (#61): regression only.
     cox_opts = options.pop(regression_diagnostics.COX_KEY, None)
     # #179: the Group by column is a frailty model's alone.
@@ -1599,6 +2055,8 @@ def fit(
     if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
             result.get("params")):
         result["ci_note"] = param_intervals.CI_NOTE
+    if result.get("kind") in ("distribution", "discrete", "regression"):
+        result["ci_level"] = levels.LEVEL  # every interval 90% two-sided (param_intervals.at_level)
     if result.get("mixture_summary") and result["unit"]:
         result["mixture_summary"] = (mixture_summary(result, unit_in_text(result["unit"]))
                                      or result["mixture_summary"])
@@ -1615,6 +2073,20 @@ def fit(
         result["options"] = {**(result.get("options") or {}), CENSOR_INVERT_KEY: True}
     if c_map:
         result["options"] = {**(result.get("options") or {}), CENSOR_MAP_KEY: c_map}
+    if unit_conversion:
+        result["options"] = {**(result.get("options") or {}), unit_column.UNIT_COLUMN_KEY: unit_conversion["column"]}
+        result["unit_conversion"] = unit_conversion
+        if unit_conversion["note"]:
+            result["warnings"] = [*(result.get("warnings") or []), unit_conversion["note"]]
+    else:
+        # A column says the rows are in different units, and nothing read it.
+        ignored = unit_column.ignored_warning(df, mapping, unit)
+        if ignored:
+            result["warnings"] = [*(result.get("warnings") or []), ignored]
+    if x_and_range:
+        # Rows that gave x and a range both were left out (never reconciled).
+        result["warnings"] = [*(result.get("warnings") or []), x_and_range["warning"]]
+        result["x_and_range_rows"] = x_and_range
     # The data in words, "5 failed, 7 running" (#303), kept with a saved model.
     from backend.services import model_split  # local: services import this module
 
@@ -1622,10 +2094,32 @@ def fit(
         split = model_split.data_split(df, mapping)
         if split is not None:
             result["split"] = split
+    if result.get("kind") in model_split.SPLIT_KINDS:
+        if (mapping.get("xl") or mapping.get("xr")) and "interval_censored" not in result:
+            result["interval_censored"] = True
+        late = late_entry(df, mapping)
+        if late:
+            # Said on the result: "20 units entered late (observed from ...): accounted for".
+            result["late_entry"] = late
     # Confidence bounds and probability-paper transforms can produce non-finite
     # values at the extremes (e.g. a Weibull bound that maps to ±inf/NaN). These
     # are not valid JSON, so coerce them to null — Plotly renders them as gaps.
     return _json_safe(result)
+
+
+def late_entry(df: pd.DataFrame, mapping: dict) -> Optional[dict]:
+    """Units that entered observation late (left truncation, the ``tl``
+    column): ``{"column", "units"}`` (rows entering after 0, weighted by the
+    count column), or None without a ``tl`` column."""
+    col = (mapping or {}).get("tl")
+    if not col or col not in df.columns:
+        return None
+    tl = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
+    n = np.ones_like(tl)
+    if mapping.get("n") and mapping["n"] in df.columns:
+        n = pd.to_numeric(df[mapping["n"]], errors="coerce").fillna(1).to_numpy(dtype=float)
+    late = np.isfinite(tl) & (tl > 0)
+    return {"column": str(col), "units": int(round(float(n[late].sum())))}
 
 
 def _json_safe(value):
@@ -1850,7 +2344,7 @@ def per_demand_batches_from_df(df: pd.DataFrame, demands_col: str, failures_col:
 def result_per_demand(
     demands: Optional[int] = None,
     failures: Optional[int] = None,
-    confidence: float = 0.95,
+    confidence: float = levels.LEVEL,
     batches: Optional[list] = None,
 ) -> dict:
     """Per-demand (Binomial) reliability: probability of failure per demand.
@@ -1870,7 +2364,7 @@ def result_per_demand(
     the success-run demonstration, ``R >= (1 - C)**(1/n)`` (59 clean demands
     demonstrate 95% reliability at 95% confidence) -- the same number, now
     from one method. (Before SurPyval 0.23 the interval was Wilson's, at 95%
-    whatever the confidence.)
+    whatever the confidence.) The default is the app's 90% (:mod:`backend.levels`).
     """
     if batches is None:
         batches = [{"demands": demands, "failures": failures}]
@@ -1880,7 +2374,7 @@ def result_per_demand(
     except (TypeError, ValueError):
         raise FitError("Confidence must be a number between 0 and 1.")
     if not (0.0 < confidence < 1.0):
-        raise FitError("Confidence must be between 0 and 1 (e.g. 0.95).")
+        raise FitError("Confidence must be between 0 and 1 (e.g. 0.9).")
     alpha = 1.0 - confidence
 
     n_demands = int(sum(r["demands"] for r in rows))
@@ -2025,8 +2519,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         if options.get("offset") and entry.get("offsetable"):
             kwargs["offset"] = True
         try:
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
+            with collect_warnings() as caught:
                 model = note_fit(entry["dist"].fit(**kwargs), kwargs.get("how"))
             reissue_deprecations(caught)
             scores = _criteria(_goodness_of_fit(model))
@@ -2061,8 +2554,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         label = f"{entry['name']} mixture ({BEST_MIXTURE_COMPONENTS} components)"
         try:
             check_fittable(dict(base_kwargs), f"a {entry['name']} mixture")
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with ignore_warnings():
                 raw = _fit_raw_mixture(entry["dist"], BEST_MIXTURE_COMPONENTS, dict(base_kwargs))
         except Exception as exc:  # noqa: BLE001 - skipped, and listed
             failed.append({"id": cid, "name": label, "reason": _short_reason(
@@ -2511,8 +3003,7 @@ def _fit_distribution(
         # Some fitters (MPS in particular) warn that the optimisation failed and
         # then return numbers anyway. Silently handing those to a user is worse
         # than the fit being unavailable, so capture and report it.
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(dist.fit(**kwargs), kwargs.get("how"))
         reissue_deprecations(caught)
         # No finite maximum (#230): say which parameter runs off, and why.
@@ -2753,11 +3244,21 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
     est = entry["est"]
     try:
         kwargs = build_fit_inputs(df, mapping)
+    except FitError:
+        raise
+    except Exception as exc:
+        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+    if distribution != "turnbull" and np.isin(np.asarray(kwargs.get("c", []), dtype=float), (2, -1)).any():
+        # Said in plain words, not the library's "c=2".
+        raise FitError(f"{entry['name']} needs exact failure times. Here some units were found failed between two "
+                       "inspections (or at the first one), so use Turnbull, which reads failures between two "
+                       "times, or fit a distribution such as Weibull.")
+    try:
         model = note_fit(est.fit(**kwargs))
         xs = np.asarray(model.x, dtype=float)
         R = np.asarray(model.R, dtype=float)
         try:
-            cb = np.asarray(model.cb(model.x, on="sf", alpha_ci=0.05), dtype=float)
+            cb = np.asarray(model.cb(model.x, on="sf", alpha_ci=levels.ALPHA), dtype=float)
             lower, upper = cb[:, 0], cb[:, 1]
         except Exception:  # not all estimators expose bounds for all data
             lower = upper = np.full_like(R, np.nan)
@@ -2784,8 +3285,9 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
             # The life table on the model page's Data tab: units at risk and
             # failing at each time (absent where the estimator has none).
             **_life_table(model, finite),
-            # #85: simultaneous 95% bands, for the plot's whole-curve toggle.
+            # #85: simultaneous 90% bands, for the plot's whole-curve toggle.
             "bands": np_life.bands(model),
+            "level": levels.LEVEL,  # the pointwise and whole-curve bands, two-sided
         },
         "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
         "gof": [],
@@ -2824,14 +3326,14 @@ def _life_metrics(model) -> dict:
 
 
 def _params_with_uncertainty(model, param_names, bounds: Optional[dict] = None) -> list[dict]:
-    """Parameter estimates with standard errors and 95% Wald CIs from the
+    """Parameter estimates with standard errors and 90% Wald CIs from the
     fit's covariance matrix.
 
     ``bounds`` (``{name: (lower, upper)}``, SurPyval's declared parameter
     bounds) puts a positive parameter's interval on the log scale and a
     (0, 1) one's on the logit scale, so neither leaves its support: a small
     sample's Weibull shape no longer gets a negative lower bound (#265). An
-    unbounded parameter keeps ``value ± 1.96·se``.
+    unbounded parameter keeps ``value ± 1.645·se``.
     """
     values = np.atleast_1d(np.asarray(model.params, dtype=float))
     ses = [None] * len(values)
@@ -2860,12 +3362,15 @@ def _randomness_verdict(distribution_id: str, params: list[dict]) -> dict | None
     """Whether the fitted model is consistent with random (constant-rate)
     failures — the statistical evidence behind a run-to-failure decision.
 
-    Weibull: read the shape parameter's 95% CI against 1. Exponential: random
+    Weibull: read the shape parameter's 90% CI against 1. Exponential: random
     by construction (memoryless). Other distributions can't establish this and
     return no block.
     """
     if distribution_id == "exponential":
         return {"verdict": "random", "basis": "memoryless"}
+    if distribution_id == "rayleigh":
+        # A Weibull with β fixed at 2: wear-out by assumption.
+        return {"verdict": "wear_out", "basis": "rayleigh"}
     if distribution_id != "weibull":
         return None
 
@@ -2885,16 +3390,21 @@ def _randomness_verdict(distribution_id: str, params: list[dict]) -> dict | None
     return block
 
 
-def _fit_regression(
+def regression_inputs(
     distribution: str,
     df: pd.DataFrame,
     mapping: dict,
     covariates: Optional[list],
     formula: Optional[str],
-    covariate_units: Optional[dict] = None,
     cox_opts: Optional[dict] = None,
     frailty_family: Optional[str] = None,
 ) -> dict:
+    """What a regression fit hands SurPyval: ``{"fitter", "df", "mapping",
+    "fit_kwargs", "cox_kwargs", "cox_opts", "interval"}`` — the fitter, the
+    data frame as prepared (inspection rows read, text covariates as
+    categories) and the ``fit_from_df`` keywords. Shared by the fit and by
+    Download as Python, so the script makes the very same call. Raises
+    :class:`FitError`."""
     entry = REGRESSION_MODELS[distribution]
     fitter = more_models.frailty_fitter(distribution, frailty_family) if entry.get("frailty") else entry["fitter"]
     mapping = {k: v for k, v in mapping.items() if v}
@@ -2907,7 +3417,12 @@ def _fit_regression(
     # accepts every optional column keyword. Inspection (interval-censored)
     # data maps ``xl``/``xr`` in place of ``x`` (#237): SurPyval 0.23's
     # ``fit_from_df`` takes them as ``xl_col``/``xr_col`` (#571), the same
-    # model as ``fit`` with a two-column ``x``.
+    # model as ``fit`` with a two-column ``x``. Exact values on some rows and
+    # ranges on others are read as one pair first.
+    df, mapping = combine_exact_and_ranges(df, mapping)
+    window = truncation_problem(df, mapping)
+    if window:
+        raise FitError(window["text"])
     interval = bool(mapping.get("xl") or mapping.get("xr"))
     if interval:
         if not (mapping.get("xl") and mapping.get("xr")) or mapping.get("x"):
@@ -2917,6 +3432,8 @@ def _fit_regression(
             raise FitError("Cox PH can't fit interval-censored (inspection) data: its partial likelihood "
                            "needs each failure's exact time. Choose a parametric regression model (e.g. "
                            "Weibull PH), which takes the intervals as they are.")
+        # Blank bounds and a failed / still running status, read as a plain fit reads them.
+        df, mapping = interval_frame(df, mapping)
         fit_kwargs = {"xl_col": mapping["xl"], "xr_col": mapping["xr"]}
     else:
         fit_kwargs = {"x_col": mapping.get("x")}
@@ -2929,13 +3446,36 @@ def _fit_regression(
         except FormulaRejected as exc:
             raise FitError(str(exc)) from exc
     elif covariates:
-        fit_kwargs["Z_cols"] = list(covariates)
+        # A ticked text column is a category: fit it as one.
+        df, auto = covariates_as_formula(df, covariates)
+        if auto:
+            fit_kwargs["formula"] = check_formula(auto, df.columns)
+        else:
+            fit_kwargs["Z_cols"] = list(covariates)
     cox_kwargs = regression_diagnostics.cox_fit_kwargs(cox_opts)
     fit_kwargs = more_models.regression_fit_kwargs(distribution, mapping, fit_kwargs)
 
+    return {"entry": entry, "fitter": fitter, "df": df, "mapping": mapping, "fit_kwargs": fit_kwargs,
+            "cox_kwargs": cox_kwargs, "cox_opts": cox_opts, "interval": interval}
+
+
+def _fit_regression(
+    distribution: str,
+    df: pd.DataFrame,
+    mapping: dict,
+    covariates: Optional[list],
+    formula: Optional[str],
+    covariate_units: Optional[dict] = None,
+    cox_opts: Optional[dict] = None,
+    frailty_family: Optional[str] = None,
+) -> dict:
+    inputs = regression_inputs(distribution, df, mapping, covariates, formula, cox_opts, frailty_family)
+    entry, fitter, df, mapping = inputs["entry"], inputs["fitter"], inputs["df"], inputs["mapping"]
+    fit_kwargs, cox_kwargs, cox_opts, interval = (inputs["fit_kwargs"], inputs["cox_kwargs"],
+                                                  inputs["cox_opts"], inputs["interval"])
+
     try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(fitter.fit_from_df(df, **fit_kwargs, **cox_kwargs))
         # A stratified Cox model reads its stratum from the covariate row.
         model = regression_diagnostics.stratify(model, cox_opts)
@@ -2956,7 +3496,7 @@ def _fit_regression(
     params_arr = np.asarray(model.params, dtype=float)
     k_dist = int(getattr(model, "k_dist", 0) or 0)
 
-    # Standard errors (baseline params then coefficients) for 95% Wald intervals.
+    # Standard errors (baseline params then coefficients) for 90% Wald intervals.
     # Unavailable for semi-parametric Cox / when the Hessian is singular.
     try:
         ses = np.asarray(model.standard_errors(), dtype=float).ravel()
@@ -2984,9 +3524,11 @@ def _fit_regression(
         for i, name in enumerate(base_names)
     ]
 
-    # Regression coefficients with a 95% CI. exp(coefficient) is a hazard ratio
-    # (PH), time ratio (AFT) or odds ratio (PO); additive-hazards coefficients
-    # have no natural ratio, so ``ratio``/``ratio_label`` are omitted for AH.
+    # Regression coefficients with a 90% CI. The ratio is a hazard ratio (PH,
+    # exp(β)), a time ratio (AFT: what the life is multiplied by, exp(-β)) or
+    # an odds ratio (PO: what the odds of having failed are multiplied by,
+    # exp(-β)), with ``ratio_ci``; additive-hazards coefficients have no
+    # natural ratio, so ``ratio``/``ratio_label`` are omitted for AH.
     # ``ratio_label`` in the payload tells the UI which; ``hazard_ratio`` is kept
     # for backward compatibility with saved models.
     effect = entry.get("effect", "hazard")
@@ -2999,7 +3541,7 @@ def _fit_regression(
         value = float(params_arr[k_dist + j])
         coef = {"name": name, "value": value, "ci": _ci(k_dist + j)}
         if ratio_label is not None:
-            coef["ratio"] = float(np.exp(value))
+            coef["ratio"], coef["ratio_ci"] = coefficient_ratio(effect, value, coef["ci"])
             coef["hazard_ratio"] = coef["ratio"]  # backward compat
         coefficients.append(coef)
 
@@ -3079,6 +3621,9 @@ def _fit_regression(
             extra["at_covariate_means"] = at_means
     if units:
         extra["covariate_units"] = units
+    bases = base_levels(feature_names, fields)
+    if bases:
+        extra["base_levels"] = bases
     if cox_opts:
         extra["options"] = {regression_diagnostics.COX_KEY: cox_opts}
     if frailty_family:
@@ -3158,8 +3703,7 @@ def regression_metrics_at_defaults(model, fields: list) -> Optional[dict]:
         return None
     Z = pd.DataFrame({f["name"]: [f["default"]] for f in fields}) if fields else None
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             q = np.asarray(qf(np.array([0.5, 0.1, 1e-6, 1.0 - 1e-9]), Z), dtype=float).ravel()
             median, b10, lo, hi = (float(v) for v in q[:4])
             mttf = None
@@ -3194,14 +3738,21 @@ def _covariate_fields(df: pd.DataFrame, raw_vars) -> list:
             continue
         series = df[col]
         if pd.api.types.is_numeric_dtype(series):
-            mean = pd.to_numeric(series, errors="coerce").mean()
-            fields.append(
-                {
-                    "name": str(col),
-                    "type": "number",
-                    "default": round(float(mean), 4) if pd.notna(mean) else 0.0,
-                }
-            )
+            nums = pd.to_numeric(series, errors="coerce").dropna()
+            mean = nums.mean()
+            field = {
+                "name": str(col),
+                "type": "number",
+                "default": round(float(mean), 4) if pd.notna(mean) else 0.0,
+            }
+            if len(nums):
+                # The data's range, so an effect can be read over it, not
+                # only per +1; a yes/no (0/1) column is a flag.
+                field["min"] = float(nums.min())
+                field["max"] = float(nums.max())
+                if set(nums.unique().tolist()) <= {0, 1}:
+                    field["flag"] = True
+            fields.append(field)
         else:
             values = series.dropna().astype(str)
             options = sorted(values.unique().tolist())
@@ -3270,7 +3821,7 @@ _CB_BOUNDS = {"two-sided", "lower", "upper"}
 def confidence_bounds(
     model_id: str,
     on: str = "sf",
-    alpha_ci: float = 0.05,
+    alpha_ci: float = levels.ALPHA,
     bound: str = "two-sided",
     x_min=None,
     x_max=None,
@@ -3304,8 +3855,7 @@ def confidence_bounds(
         raise FitError("This model type doesn't provide confidence bounds.")
 
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
             if regression:
                 cb = regression_bands.band(model, entry["fields"], values, grid, on, alpha_ci, bound)
             elif life_bounds.is_bayesian(model):
@@ -3393,8 +3943,7 @@ def _eval_functions(model, grid, Z=None) -> dict:
             # Buckley-James has no hazard or density (#179): those are absent.
             curves[fn] = None
             continue
-        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always", RuntimeWarning)
+        with np.errstate(all="ignore"), collect_warnings(RuntimeWarning) as caught:
             y = np.asarray(func(grid) if Z is None else func(grid, Z), dtype=float)
         outside = outside or any(_OUTSIDE_SUPPORT in str(w.message) for w in caught)
         raw[fn] = y

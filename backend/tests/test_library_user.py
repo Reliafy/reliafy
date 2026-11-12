@@ -112,7 +112,7 @@ def test_make_a_library_add_a_model_read_it_everywhere_and_remove_it(web):
     assert r.status_code == 200, r.text
     rec = r.json()["record"]
     assert rec["kind"] == "life" and rec["basis"] == "fitted" and rec["label"] == "Fitted pump: Bearing wear"
-    assert rec["distribution"]["family"] == "weibull" and rec["distribution"]["level"] == 0.95
+    assert rec["distribution"]["family"] == "weibull" and rec["distribution"]["level"] == 0.90
     assert all(len(p["ci"]) == 2 for p in rec["distribution"]["params"])
     assert rec["units"]["value"] == "Hours" and rec["model"]["id"] == model["id"]
     assert rec["evidence"] == {"n": 10, "failures": 8, "suspensions": 2, "method": "mle"}
@@ -131,7 +131,7 @@ def test_make_a_library_add_a_model_read_it_everywhere_and_remove_it(web):
     assert detail["library"]["name"] == "Site pumps" and detail["library"]["notes"] == "Internal use."
     assert detail["model_link"] == {"id": model["id"], "name": "Fitted pump", "exists": True}
     bm = detail["block_model"]
-    assert bm["model"]["distribution_id"] == "weibull" and bm["bounds_level"] == 0.95 and set(bm["bounds"]) == {"alpha", "beta"}
+    assert bm["model"]["distribution_id"] == "weibull" and bm["bounds_level"] == 0.90 and set(bm["bounds"]) == {"alpha", "beta"}
     assert "snapshot" in bm["badge"]
 
     # A later refit doesn't change the record (it's a snapshot).
@@ -193,7 +193,7 @@ def test_a_life_record_as_the_prior_of_a_dataset_fit(web):
     out = r.json()
     # The prior is in the record's own family, whatever distribution was asked for, with its bounds.
     assert out.get("refused") is None and out["distribution"] == "weibull" and out["can_save"]
-    assert "95% between the record's bounds" in out["prior_note"]
+    assert "90% between the record's bounds" in out["prior_note"]
     # A parameters-only model has no bounds: the default spread, said in the note.
     plain = _params_model(web, "Plain")
     rec2 = web.post(f"/api/library/mine/{lid}/records", json={"model_id": plain["id"]}).json()["record"]

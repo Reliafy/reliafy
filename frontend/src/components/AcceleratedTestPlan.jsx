@@ -33,6 +33,9 @@ const EXAMPLE = {
   stressUnit: "K",
 };
 
+// A carried use stress as the field shows it: 313.15, not 313.15000000000003.
+const planningUse = (v) => String(Number(Number(v).toPrecision(8)));
+
 const list = (s) => String(s || "").split(/[,\s]+/).filter(Boolean).map(Number);
 
 function AllocationChart({ result }) {
@@ -54,7 +57,8 @@ function AllocationChart({ result }) {
   );
 }
 
-export default function AcceleratedTestPlan({ modelId = null }) {
+// ``useStress``: the use stress entered on the model's page (its units), carried over.
+export default function AcceleratedTestPlan({ modelId = null, useStress: carriedUse = null }) {
   const [mode, setMode] = useState("plan");
   const [distribution, setDistribution] = useState(EXAMPLE.distribution);
   const [lifeModel, setLifeModel] = useState(EXAMPLE.lifeModel);
@@ -92,14 +96,16 @@ export default function AcceleratedTestPlan({ modelId = null }) {
         setParams(p.params);
         setShape(p.shape);
         if (p.highStress) setHighStress(p.highStress);
-        setUseStress("");
+        setUseStress(carriedUse != null && Number.isFinite(Number(carriedUse)) ? planningUse(carriedUse) : "");
+        if (p.stresses) setStresses(p.stresses);
+        if (p.unitsAt) setUnitsAt(p.unitsAt);
         setUnit(p.unit);
         setStressUnit(p.stressUnit);
         setFrom(m.name);
       })
       .catch((e) => live && setFromError(e.message));
     return () => { live = false; };
-  }, [modelId]);
+  }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const names = PLAN_LIFE_MODELS[lifeModel].params;
   const pcts = readPercents("acceleratedTest", { confidence, bLife });
@@ -131,6 +137,8 @@ export default function AcceleratedTestPlan({ modelId = null }) {
     { label: "Within a factor of", value: formatNumber(result.precision) },
   ];
   const alt = result?.alternatives?.[0];
+  // The answer on screen came from the other mode's form.
+  const otherMode = !!(result && inputs && inputs.mode !== mode);
 
   return (
     <div className="strategy-tool">
@@ -194,9 +202,17 @@ export default function AcceleratedTestPlan({ modelId = null }) {
       </div>
 
       {error && <div className="error">{error}</div>}
-      {result && (
+      {/* The answer belongs to the form it was worked out from: after a switch
+          between finding a test and checking one, Compute again. */}
+      {result && otherMode && (
+        <p className="hint" role="status">
+          The last answer was for {inputs?.mode === "check" ? "checking your own test" : "the best test"}:
+          press Compute to {mode === "check" ? "check this test" : "find the best test"}.
+        </p>
+      )}
+      {result && !otherMode && (
         <>
-          <PlanAnswer
+          <PlanAnswer kind="accelerated" inputs={inputs}
             result={result}
             stats={stats}
             tone={result.warnings?.length ? "caveat" : "neutral"}

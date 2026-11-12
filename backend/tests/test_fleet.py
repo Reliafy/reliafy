@@ -339,6 +339,24 @@ def test_item_prediction_at_confidence(client):
     # A wider confidence gives a wider crossing interval; the point is stable.
     assert width(0.95) > width(0.80)
 
+    # Stored and read at the life-bound level: a two-sided 80% interval, whose lower end is
+    # the 90% one-sided lower bound on the crossing time and the life left.
+    from backend import db as dbm
+
+    stored = dbm._db.tracked_items.find_one({"_id": item["id"]})["prediction"]
+    assert stored["alpha_ci"] == pytest.approx(0.20)
+    at90 = client.get(f"{base}?confidence=0.8").json()
+    assert stored["failure_time_interval"][0] == pytest.approx(at90["failure_time_interval"][0], rel=1e-9)
+    # One stored before (a 95% interval) is read at 90%, and the stored one is left alone.
+    old = client.get(f"{base}?confidence=0.95").json()
+    dbm._db.tracked_items.update_one({"_id": item["id"]}, {"$set": {"prediction": old}})
+    read = next(it for it in client.get(f"/api/fleet/tracked/{fleet['id']}").json()["items"] if it["id"] == item["id"])
+    assert read["prediction"]["alpha_ci"] == pytest.approx(0.20)
+    assert read["prediction"]["rul_interval"][0] > old["rul_interval"][0]  # 90% lower bound above the 97.5% one
+    assert dbm._db.tracked_items.find_one({"_id": item["id"]})["prediction"]["alpha_ci"] == pytest.approx(0.05)
+    listed = client.get(f"/api/degradation/models/{dm['id']}/items").json()["items"][0]
+    assert listed["prediction"]["alpha_ci"] == pytest.approx(0.20)
+
     # Bad inputs.
     assert client.get(f"{base}?confidence=1.5").status_code == 422
     assert client.get(

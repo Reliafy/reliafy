@@ -29,8 +29,9 @@ def fault_tree(
 ) -> JSONResponse:
     """The fault tree of an (unsaved) RBD graph, evaluated at time ``t``.
 
-    ``t`` defaults to the calculator's importance time (``t_max`` is the
-    calculator's axis limit, if set). Repairable graphs are evaluated at
+    ``t`` defaults to the calculator's importance time, the time the system
+    reliability falls to 90% (``t_max`` is the calculator's axis limit, if
+    set). Repairable graphs are evaluated at
     steady state. Exact and quick, so not plan-gated.
     """
     try:

@@ -83,7 +83,7 @@ export default function TimeToLimit({ bands, channelName, selectedId }) {
       const s = await getBandDegradationSeries(band.point_id, { since: since || undefined });
       if (!s.n_readings) throw new Error("This band has no readings yet.");
       const made = await pasteDataset(datasetName(band.name, channelName), s.csv, false);
-      navigate(`/models/degradation?dataset=${made.id}`);
+      navigate(`/models/degradation/new?dataset=${made.id}`);
     } catch (e) {
       setNote({ error: true, text: e.message });
     } finally {

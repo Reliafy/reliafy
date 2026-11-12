@@ -204,6 +204,27 @@ class PositionModelOps:
         model = node.get("model")
         return {"position_class": node.get("name") or name, **model} if model and model.get("model_id") else None
 
+    def class_models(self) -> dict:
+        """Each position class with a fitted model: {class name: {model_id, fitted_on,
+        failures (pooled when it was fitted), failures_now (pooled today), unit}}. A
+        position of the class can take it (From the class…), and failures_now above
+        failures says the class has had new failures since the fit."""
+        out: dict[str, dict] = {}
+        for node in self.s.nodes(self.org, "PositionClass"):
+            model = node.get("model") or {}
+            name = node.get("name")
+            if not name or not model.get("model_id"):
+                continue
+            try:
+                # Counted as the class fit counts them (a life above 0), so a fit made today reads 0 new.
+                rows = self.class_life_data(name)["rows"]
+                now = sum(1 for r in rows if r["c"] != 1 and (r["xr"] if r["c"] == 2 else r["x"]) > 0)
+            except _sv().NotFound:  # a class with no positions left: nothing pooled now
+                now = None
+            out[name] = {"model_id": model["model_id"], "fitted_on": model.get("fitted_on"),
+                         "failures": model.get("failures"), "failures_now": now, "unit": model.get("unit")}
+        return out
+
     def _mode_ids_on(self, position_id: str, failure_mode_ids) -> list[str]:
         sv = _sv()
         ids = []
@@ -407,7 +428,9 @@ def summary(model_type: str, doc) -> dict:
     r = dict(getattr(doc, "results", None) or {})
     unit = r.get("unit") or ""
     out = {"name": doc.name, "unit": unit, "family": "life", "kind": "", "numbers": [], "counts": {},
-           "quality": _quality(None, "life"), "path": None, "trend": None}
+           "quality": _quality(None, "life"), "path": None, "trend": None,
+           # The two-sided bounds' level: 90%; a repairable fit saved before the rule kept 95%.
+           "ci_level": float(r.get("ci_level") or (0.95 if model_type == "recurrent_model" else 0.9))}
     if model_type == "model":
         kind = getattr(doc, "kind", "distribution")
         dist = r.get("distribution_id") or getattr(doc, "distribution_id", "")
@@ -433,6 +456,11 @@ def summary(model_type: str, doc) -> dict:
             return out
         params = {str(p.get("name")): p for p in r.get("params") or []}
         label = DIST_LABELS.get(dist) or r.get("distribution") or dist or "Model"
+        spec = getattr(doc, "spec", None) or {}
+        if assumed and spec.get("params_only") and not spec.get("per_demand") and dist in DIST_LABELS:
+            # Typed in: its numbers, so the row can offer Edit parameters… (no unlink and enter again).
+            out["entered"] = {"distribution": dist, "unit": spec.get("unit") or unit,
+                              "params": {k: _num(v.get("value")) for k, v in params.items()}}
         if kind == "regression":
             # A covariate (e.g. proportional-hazards) model as fitted: its covariates, and the figures at the
             # training data's averages; the stress at a position is set where it's used (an RBD block, a calculation).
@@ -650,7 +678,7 @@ def _placeholders(graph: dict) -> list[str]:
 
 
 def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
-    """An RBD in a row: the system's MTBF, B10 and (with ``age``) reliability there, from the exact
+    """An RBD in a row: the system's mean life, B10 and (with ``age``) reliability there, from the exact
     analysis (no simulation: a repairable diagram's availability is simulated on its own page),
     and its placeholders."""
     from backend.services import rbds as rbds_service
@@ -674,9 +702,17 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
     except Exception as err:  # noqa: BLE001 - a row says why rather than failing the read
         out["analysis_error"] = str(err)[:300]
         return out
-    out["numbers"].append(_number("mtbf", "MTBF", res.get("mttf"), None, None, unit))
-    out["numbers"].append(_number("mean", "Mean life", res.get("mttf"), None, None, unit))
-    out["numbers"].append(_number("b10", "B10 life", (res.get("blife") or {}).get("b10"), None, None, unit))
+    # A non-repairable diagram has no repair, so its mean is the mean life (time to the
+    # system's first failure), never an MTBF; one that can be infinite (a cure fraction, a
+    # block that never fails) isn't shown as a number. The system curve is exact from the
+    # blocks' point models, so neither has bounds: the note says so.
+    exact = "no bounds: the system curve is exact from the blocks' point models"
+    mean = _number("mean", "Mean life", res.get("mttf"), None, None, unit) | {"note": exact}
+    if mean["value"] is None:
+        mean = {**mean, "text": "not finite (the system may never fail)", "note": ""}
+    out["numbers"].append(mean)
+    b10 = _number("b10", "B10 life", (res.get("blife") or {}).get("b10"), None, None, unit)
+    out["numbers"].append(b10 | {"note": exact if b10["value"] is not None else ""})
     at = res.get("at") or {}
     if age and at.get("sf"):
         r = _num(at["sf"][0])
@@ -697,6 +733,8 @@ def rbd_source(link: dict, model: dict | None) -> str:
     if src.get("built_from") is not None:
         n = int(src["built_from"])
         return f"Built from {n} position{'s' if n != 1 else ''} inside{tail}"
+    if src.get("new"):
+        return f"New RBD{' (one block for the position itself)' if src['new'] == 'self' else ''}{tail}"
     return f"Linked: {(model or {}).get('name') or link.get('name') or 'an RBD'}{tail}"
 
 
@@ -727,14 +765,16 @@ def stale(m, link: dict) -> str | None:
 
 
 def _curves(model_type: str, doc, db, owners) -> dict | None:
-    """The plot's lines: reliability and hazard over time, with the reliability's 95%
-    bounds where the model has them."""
+    """The plot's lines: reliability and hazard over time, with the reliability's 90%
+    two-sided bounds where the model has them (``band`` says the level)."""
     r = dict(doc.results or {})
     if model_type == "model" and doc.kind == "joint":
         s = r.get("survival_new") or {}
         if s.get("x") and s.get("sf"):
             return {"x": s["x"], "sf": s["sf"], "sf_lower": s.get("sf_lower"), "sf_upper": s.get("sf_upper"),
-                    "hf": None, "what": "Reliability of a new unit"}
+                    "hf": None, "what": "Reliability of a new unit",
+                    "band": {"kind": "confidence", "level": float(r.get("confidence") or 0.95)}
+                    if s.get("sf_lower") else None}
         return None
     if model_type == "alt_model":
         # At its lowest tested level, with the Wald band: the model as fitted (a position's stress is set
@@ -759,7 +799,7 @@ def _curves(model_type: str, doc, db, owners) -> dict | None:
             if len(x):
                 out["sf_lower"] = np.interp(x, band["x"], band["lower"]).tolist()
                 out["sf_upper"] = np.interp(x, band["x"], band["upper"]).tolist()
-                out["band"] = {"kind": "confidence", "level": 0.95}
+                out["band"] = {"kind": "confidence", "level": float((ev.get("bounds") or {}).get("confidence") or 0.9)}
         return out if out["x"] and out["sf"] else None
     if model_type == "model":
         c = (r.get("functions") or {}).get("curves") or {}
@@ -788,7 +828,7 @@ def _curves(model_type: str, doc, db, owners) -> dict | None:
                 cb = models_service.confidence(db, doc.id, {"on": "sf"}, owners)
                 if cb.get("lower") and len(cb["lower"]) == len(c["x"]):
                     out["sf_lower"], out["sf_upper"] = cb.get("lower"), cb.get("upper")
-                    out["band"] = {"kind": "confidence", "level": 0.95}
+                    out["band"] = {"kind": "confidence", "level": round(1.0 - float(cb.get("alpha_ci") or 0.1), 6)}
             except Exception:  # noqa: BLE001 - the line stands without its bounds
                 pass
         return out
@@ -1392,7 +1432,7 @@ def rbd_blocks(m, link: dict, doc) -> list[dict]:
         kid = kids.get(n.get("id"))
         out.append({"id": n.get("id"), "label": d.get("label") or n.get("id"), "type": n.get("type"),
                     "model": (f"RBD: {sub.get('name') or 'a sub-system'}" if sub else _model_words(model)) or "—",
-                    "placeholder": bool(model.get("placeholder")),
+                    "placeholder": bool(model.get("placeholder")), "source": d.get("model_source") or None,
                     "position": {"id": kid["id"], "name": kid["name"]} if kid else None})
     return out
 
@@ -1428,10 +1468,59 @@ def _factor(model_unit: str, diagram_unit: str) -> float | None:
     return None
 
 
-def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False):
+#: How deep Build from what's inside goes for a position inside with no model of its own.
+MAX_NEST = 6
+
+
+def _descendant_units(m, docs_of, position_id: str, depth: int = 0) -> list[str]:
+    """The units of the models in use at and below the positions inside ``position_id``."""
+    from backend.units import canonical_unit
+
+    out = []
+    if depth > MAX_NEST:
+        return out
+    for c in m.s.inn(m.org, position_id, "PART_OF"):
+        if c["label"] != "Position" or c.get("retired"):
+            continue
+        x = m.in_use_link(c["id"])
+        d = docs_of(x) if x else None
+        if d is not None and x["model_type"] == "model" and (d.results or {}).get("unit"):
+            out.append(canonical_unit(d.results["unit"]))
+        elif d is None:
+            out += _descendant_units(m, docs_of, c["id"], depth + 1)
+    return out
+
+
+def _open_covariates_below(m, position_id: str, depth: int = 0) -> bool:
+    """Whether a position inside ``position_id`` (any depth) has a model in use with covariates
+    left open at the position (a bound block, covariate_positions.py)."""
+    from backend.maintenance import covariate_positions
+
+    if depth > MAX_NEST:
+        return False
+    for c in m.s.inn(m.org, position_id, "PART_OF"):
+        if c["label"] != "Position" or c.get("retired"):
+            continue
+        x = m.in_use_link(c["id"])
+        if x is not None and covariate_positions.block_model(x) is not None:
+            return True
+        if _open_covariates_below(m, c["id"], depth + 1):
+            return True
+    return False
+
+
+def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False, owner_id: str | None = None,
+                unit: str | None = None, depth: int = 0):
     """What Build from what's inside works from: (position, fetch, the live positions inside, the
-    diagram's unit, block(child) -> (block data, note)). ``with_self``: block() also takes the
-    position itself (a leaf's one-block diagram)."""
+    diagram's unit, block(child) -> (block data, note), nested placeholders).
+
+    Each block is the child's life model in use; with none, its class's fitted model; with none
+    and positions inside it (a sub-assembly whose lives are its parts': Propulsion's motors and
+    propellers), its own RBD built from what's inside it (``owner_id`` given: saved, linked there,
+    reused when it has one), as a sub-system block. Only a child with none of these is a placeholder
+    (flagged, never invented). Each block says where its model came from (``data.model_source``).
+    ``with_self``: block() also takes the position itself (a leaf's one-block diagram). ``unit``:
+    the diagram's (a nested one takes its parent's); else the commonest of the models below."""
     from collections import Counter
 
     from backend.units import canonical_unit
@@ -1440,14 +1529,54 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
     fetch = fetcher(db, owners, hidden)
     children = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
     in_use = {c["id"]: m.in_use_link(c["id"]) for c in [*children, *([p] if with_self else [])]}
+    if with_self and (in_use.get(p["id"]) or {}).get("model_type") not in (None, "model"):
+        # The position's own block takes its life model (the latest), never one of its own RBDs.
+        own = [x for x in m.position_models(p["id"]) if x.get("model_type") == "model" and x.get("role") != "prediction"]
+        in_use[p["id"]] = own[-1] if own else None
     docs = {cid: fetch(x["model_type"], x["model_id"]) if x else None for cid, x in in_use.items()}
-    units = Counter(canonical_unit((d.results or {}).get("unit") or "") for cid, d in docs.items()
-                    if d is not None and in_use[cid]["model_type"] == "model" and (d.results or {}).get("unit"))
-    unit = units.most_common(1)[0][0] if units else "Hours"
+    if unit is None:
+        units = Counter(canonical_unit((d.results or {}).get("unit") or "") for cid, d in docs.items()
+                        if d is not None and in_use[cid]["model_type"] == "model" and (d.results or {}).get("unit"))
+        if not units and owner_id is not None:
+            units = Counter(_descendant_units(m, lambda x: fetch(x["model_type"], x["model_id"]), position_id))
+        unit = units.most_common(1)[0][0] if units else "Hours"
+    nested_placeholders: list[str] = []
+
+    def life(child, d, source: str):
+        r = d.results or {}
+        f = _factor(r.get("unit") or unit, unit)
+        if f == 1.0:
+            return {"model": {"saved_model_id": d.id}, "data": {"model_source": source}}, None
+        conv = _convert(r.get("distribution_id") or d.distribution_id, r.get("params") or [], f) if f and \
+            d.kind == "distribution" else None
+        if conv is None:
+            return None, f"{child['name']}'s model is in {r.get('unit')}, which can't be put in {unit}: a placeholder stands in."
+        return ({"model": {"distribution_id": r.get("distribution_id") or d.distribution_id, "params": conv,
+                           **({"extras": r["extras"]} if r.get("extras") else {})},
+                 "data": {"model_source": f"{source}, put in {unit}"}},
+                f"{child['name']}'s model ({d.name}) is in {r.get('unit')}: its numbers were put in {unit}.")
 
     def block(child):
         x, d = in_use.get(child["id"]), docs.get(child["id"])
         if x is None or d is None:
+            cm = m.class_model_of(child["id"])
+            cd = fetch("model", cm["model_id"]) if cm else None
+            if cd is not None and cd.kind in ("distribution", "regression"):
+                return life(child, cd, f"Its class's fitted model ({cm['position_class']}: {cd.name})")
+            inside = [c for c in m.s.inn(m.org, child["id"], "PART_OF") if c["label"] == "Position"
+                      and not c.get("retired")]
+            if inside and owner_id is not None and depth < MAX_NEST and child["id"] != position_id:
+                if _open_covariates_below(m, child["id"]):
+                    return None, (f"{child['name']}'s parts have models with covariates left open, which a "
+                                  "sub-system's blocks can't take from this diagram yet: a placeholder stands in.")
+                sub = build_rbd(m, db, owners, hidden, child["id"], owner_id, _unit=unit, _depth=depth + 1)
+                nested_placeholders.extend(f"{child['name']} › {ph}" for ph in sub.get("placeholders") or [])
+                if sub.get("existing"):
+                    nested_placeholders.extend(f"{child['name']} › {ph}" for ph in
+                                               _placeholders((fetch("rbd", sub["model_id"]).graph or {})))
+                return ({"data": {"rbd": {"id": sub["model_id"], "name": sub["name"]}, "model_source": f"Its own RBD, built from the {len(inside)} position"
+                                                  f"{'s' if len(inside) != 1 else ''} inside it ({sub['name']})"}},
+                        None)
             return None, None
         from backend.maintenance import covariate_positions
 
@@ -1455,23 +1584,13 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
         if bound is not None:  # covariates left open at the position: set on the block or the diagram
             return bound, None
         if x["model_type"] == "rbd":
-            return {"subsystem_rbd_id": d.id}, None
+            return {"data": {"rbd": {"id": d.id, "name": d.name}, "model_source": f"Its RBD in use ({d.name})"}}, None
         if x["model_type"] != "model" or d.kind not in ("distribution", "regression"):
             return None, (f"{child['name']}'s model in use ({d.name}) isn't a life distribution an RBD block can take: "
                           "a placeholder stands in.")
-        r = d.results or {}
-        f = _factor(r.get("unit") or unit, unit)
-        if f == 1.0:
-            return {"model": {"saved_model_id": d.id}}, None
-        conv = _convert(r.get("distribution_id") or d.distribution_id, r.get("params") or [], f) if f and \
-            d.kind == "distribution" else None
-        if conv is None:
-            return None, f"{child['name']}'s model is in {r.get('unit')}, which can't be put in {unit}: a placeholder stands in."
-        return ({"model": {"distribution_id": r.get("distribution_id") or d.distribution_id, "params": conv,
-                           **({"extras": r["extras"]} if r.get("extras") else {})}},
-                f"{child['name']}'s model ({d.name}) is in {r.get('unit')}: its numbers were put in {unit}.")
+        return life(child, d, f"Its model in use ({d.name})")
 
-    return p, fetch, children, unit, block
+    return p, fetch, children, unit, block, nested_placeholders
 
 
 def _tree_graph(m, db, owners, hidden, position_id: str):
@@ -1480,7 +1599,7 @@ def _tree_graph(m, db, owners, hidden, position_id: str):
     from backend.maintenance import rbd_derive
     from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
 
-    p, fetch, children, unit, block = _tree_parts(m, db, owners, hidden, position_id)
+    p, fetch, children, unit, block, _ = _tree_parts(m, db, owners, hidden, position_id)
     built = rbd_derive.build(m, position_id, block_model=block, unit=unit)
     try:
         graph = normalize_graph(built["graph"], resolve_saved_model=lambda mid: fetch("model", mid))
@@ -1491,7 +1610,8 @@ def _tree_graph(m, db, owners, hidden, position_id: str):
 
 
 def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = None,
-              replace_link_id: str | None = None, note: str = "") -> dict:
+              replace_link_id: str | None = None, note: str = "", _unit: str | None = None,
+              _depth: int = 0) -> dict:
     """"Build an RBD from what's inside": a new diagram whose blocks are the positions one level
     inside (each block the child's model in use: a saved model, or its own RBD as a sub-system;
     else a placeholder, flagged, never invented), wired by their connections and redundancy
@@ -1508,7 +1628,8 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
 
     sv = _sv()
-    p, fetch, children, unit, block = _tree_parts(m, db, owners, hidden, position_id)
+    p, fetch, children, unit, block, nested = _tree_parts(m, db, owners, hidden, position_id,
+                                                          owner_id=owner_id or m.org, unit=_unit, depth=_depth)
     old_link = None
     if not replace_link_id:
         had = built_rbd_link(m.position_models(position_id))
@@ -1521,6 +1642,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         if old_link is None or old_link["model_type"] != "rbd":
             raise sv.Invalid("Rebuild names this position's RBD row (replace_link_id).")
     built = rbd_derive.build(m, position_id, block_model=block, unit=unit)
+    kept_gone: list = []
     resolve = lambda mid: fetch("model", mid)  # noqa: E731
     try:
         graph = normalize_graph(built["graph"], resolve_saved_model=resolve)
@@ -1528,36 +1650,138 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         existing = None
         if old_link is not None:
             existing = fetch("rbd", old_link["model_id"])
-            if existing is not None:
+            if existing is not None and built.get("redundancy") and _unrewired(existing.graph or {}):
+                # Still in series as first built, and the tree now says which positions back each
+                # other up: wired as the tree says, each block keeping what was set on it.
+                graph = _rewired(existing.graph or {}, graph, resolve)
+                built["notes"].insert(0, "Rewired from the redundancy sets marked in the tree ("
+                                      + ", ".join(g["name"] for g in built["redundancy"]) + ").")
+            elif existing is not None:
                 graph = _add_new_blocks(existing.graph or {}, built["graph"], resolve)
+            if existing is not None:
+                # Blocks for positions deleted or moved out since: kept (every edit is), but said.
+                from backend.maintenance import rbd_tree_plan
+
+                had_ids = (old_link.get("source") or {}).get("position_ids") or []
+                gone = rbd_tree_plan.gone_blocks(m, position_id, graph, had_ids)
+                kept_gone = [g["position"]["id"] for g in gone]
+                said = rbd_tree_plan.gone_note(gone, p["name"])
+                if said:
+                    built["notes"].append(said)
         name = existing.name if existing is not None else f"{p['name']} (from the tree)"
         rbd = rbds_service.save_rbd(db, name, graph, owner_id or m.org, rbd_id=existing.id if existing else None)
     except GraphError as err:
         raise sv.Invalid(f"The diagram couldn't be made: {err}") from None
-    source = {"built_from": len(children), "position_ids": [c["id"] for c in children], "notes": built["notes"][:20]}
+    # Positions gone since but whose blocks the diagram still has stay listed, so the plan keeps naming them.
+    source = {"built_from": len(children), "position_ids": [c["id"] for c in children] + kept_gone,
+              "notes": built["notes"][:20]}
     # A rebuilt row stays the one in use if it was set to be.
     was_in_use = bool(replace_link_id and (m.s.node(m.org, replace_link_id) or {}).get("in_use"))
     link = m.link_position_model(position_id, "rbd", rbd.id, "rbd", None, rbd.name, note, source, replace_link_id)
     if was_in_use:
         m.use_position_model(position_id, link["id"])
-    return {**link, "notes": built["notes"], "placeholders": built["placeholders"]}
+    if nested:
+        built["notes"].append(f"Placeholders inside sub-systems: {', '.join(nested[:8])}"
+                              f"{' …' if len(nested) > 8 else ''}. Give each a model on the Modelling tab and rebuild.")
+    return {**link, "notes": built["notes"], "placeholders": built["placeholders"] + nested}
+
+
+def new_rbd(m, db, owners, hidden, position_id: str, owner_id: str, repairable: bool = False,
+            start: str = "blank", note: str = "") -> dict:
+    """New blank RBD: a diagram of the position's own (any position, a leaf included), saved under
+    Design › Systems and linked here as its RBD, as a built one is. ``start``: "blank" (just In and
+    Out) or "self" (one block for the position itself, its life model in use; with none, a
+    placeholder, flagged). ``repairable``: a repairable diagram (availability), else non-repairable.
+    {link..., notes, placeholders}."""
+    from backend.maintenance import rbd_derive
+    from backend.services import rbds as rbds_service
+    from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
+
+    sv = _sv()
+    if start not in ("blank", "self"):
+        raise sv.Invalid("start is blank (an empty diagram) or self (one block for the position itself).")
+    p = m._get(position_id, "Position")
+    if p.get("retired"):
+        raise sv.Invalid(f"{p['name']} has been retired: restore it first.")
+    fetch = fetcher(db, owners, hidden)
+    nodes = [{"id": "in", "type": "input"}, {"id": "out", "type": "output"}]
+    edges, notes, placeholders, unit = [], [], [], "Hours"
+    if start == "self":
+        _, _, _, unit, block, _ = _tree_parts(m, db, owners, hidden, position_id, with_self=True)
+        fields, said = block(p)
+        if said:
+            notes.append(said)
+        if fields is None:
+            fields = {"model": dict(rbd_derive.PLACEHOLDER), "data": {"model_source": "A placeholder: no model in use"}}
+            placeholders.append(p["name"])
+            notes.append(f"{p['name']} has no life model in use: a placeholder (flagged) stands in. Give it one on "
+                         "the Modelling tab, or set the block's model in the builder.")
+        bid = rbd_derive._bid(p["id"])
+        nodes.append({"id": bid, "type": "component", "label": p["name"], **fields})
+        edges = [{"source": "in", "target": bid}, {"source": bid, "target": "out"}]
+    graph = {"unit": unit, "nodes": nodes, "edges": edges, **({"repairable": True} if repairable else {})}
+    try:
+        graph = normalize_graph(graph, resolve_saved_model=lambda mid: fetch("model", mid))
+        graph["nodes"] = wrap_layout(graph["nodes"])
+        rbd = rbds_service.save_rbd(db, f"{p['name']} RBD"[:200], graph, owner_id or m.org)
+    except GraphError as err:
+        raise sv.Invalid(f"The diagram couldn't be made: {err}") from None
+    source = {"new": start, "repairable": bool(repairable)}
+    link = m.link_position_model(position_id, "rbd", rbd.id, "rbd", None, rbd.name, note, source, None)
+    return {**link, "notes": notes, "placeholders": placeholders}
 
 
 def built_rbd_link(links: list) -> dict | None:
-    """Of a position's model rows, its RBD built from what's inside (the one in use first), or None."""
-    built = [x for x in links or [] if x.get("model_type") == "rbd" and (x.get("source") or {}).get("built_from") is not None]
+    """Of a position's model rows, its own RBD: built from what's inside, or started there (New blank
+    RBD); the one in use first; or None."""
+    built = [x for x in links or [] if x.get("model_type") == "rbd" and ((x.get("source") or {}).get("built_from") is not None
+                                                                     or (x.get("source") or {}).get("new"))]
     return next((x for x in built if x.get("in_use")), built[0] if built else None)
 
 
 #: Keys of a position's diagram a mission's copy of it leaves behind (its missions and links).
 _NOT_COPIED = ("phases", "missions", "mission_name", "mission_of")
+#: What a repairable diagram has that a mission (non-repairable, phased) doesn't use: the diagram's
+#: crews, groups and costs, and each block's repair, planned work and costs.
+_REPAIR_DIAGRAM_KEYS = ("repairable", "repair_crews", "maintenance_groups", "costs")
+_REPAIR_BLOCK_KEYS = ("repair", "instant_repair", "preventive", "inspection", "duty", "crew_priority",
+                      "maintenance_group", "tree_settings", "tree_plan", "costs", "spares")
+
+
+def _mission_source_rbd(m, fetch, position_id: str):
+    """The position's own RBD a mission starts from: the one in use, else the one built there, else
+    the first linked; never a network (a mission isn't flown on one). None where it has none."""
+    links = [x for x in m.position_models(position_id) if x.get("model_type") == "rbd"]
+    built = built_rbd_link(links)
+    links.sort(key=lambda x: (not x.get("in_use"), x is not built))
+    for x in links:
+        doc = fetch("rbd", x["model_id"])
+        if doc is not None and not (doc.graph or {}).get("network"):
+            return doc
+    return None
+
+
+def _mission_copy(graph: dict) -> tuple[dict, bool]:
+    """A copy of a position's diagram for a mission, wired as it is (redundancy stays redundancy):
+    its missions left behind and, from a repairable diagram, its repairs and planned work (a phased
+    mission is non-repairable). (graph, was repairable)."""
+    repairable = bool((graph or {}).get("repairable"))
+    drop = _NOT_COPIED + (_REPAIR_DIAGRAM_KEYS if repairable else ())
+    out = {k: v for k, v in (graph or {}).items() if k not in drop}
+    if repairable:
+        out["nodes"] = [{**n, "data": {k: v for k, v in (n.get("data") or {}).items() if k not in _REPAIR_BLOCK_KEYS}}
+                        if isinstance(n, dict) else n for n in out.get("nodes") or []]
+    return out, repairable
 
 
 def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None) -> dict:
-    """A new mission on a position, with an RBD of its own (one RBD per mission): built from what's
-    inside the position as Build from what's inside builds (placeholders flagged, never a made-up
-    figure); a position with nothing inside starts from a copy of its own non-repairable RBD, else
-    is one block, its own model in use (``built_from``: tree, copy or model).
+    """A new mission on a position, with an RBD of its own (one RBD per mission). It starts from a
+    copy of the position's own RBD where it has one (wired as drawn there: parallel trains, standby
+    and k-of-n stay as they are; a repairable one loses only its repairs and planned work), else is
+    built from what's inside the position as Build from what's inside builds (placeholders flagged,
+    never a made-up figure; blocks with no connections or redundancy groups go in series, and the
+    mission then says so until its RBD is rewired), else is one block, its own model in use
+    (``built_from``: copy, tree or model).
     Saved once as "<position> — <mission>", marked ``mission_of`` the position (not linked as one
     of its models). {rbd: {id, name}, mission: summary, notes, placeholders}."""
     from backend.services import rbd_missions
@@ -1583,24 +1807,24 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
         name = f"Mission {k}"
     kids = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
     notes, placeholders, source = [], [], "tree"
-    if kids:
+    owner = {"position_id": position_id}
+    src = _mission_source_rbd(m, fetcher(db, owners, hidden), position_id)
+    if src is not None:
+        graph, was_repairable = _mission_copy(src.graph or {})
+        notes = [f"Started from a copy of {src.name}, wired as it is there"
+                 + (" (its repairs and planned work aren't part of a mission)." if was_repairable else ".")]
+        source = "copy"
+    elif kids:
         graph, built, _, _, _ = _tree_graph(m, db, owners, hidden, position_id)
         notes, placeholders = built["notes"], built["placeholders"]
+        if rbd_missions.all_in_series(graph) and not built.get("redundancy"):
+            # The tree doesn't say which positions are redundant: said on the mission until it's rewired.
+            owner["built_in_series"] = True
     else:
-        fetch = fetcher(db, owners, hidden)
-        own = [fetch("rbd", x["model_id"]) for x in m.position_models(position_id) if x.get("model_type") == "rbd"]
-        own = [d for d in own if d is not None and not (d.graph or {}).get("repairable")
-               and not (d.graph or {}).get("network")]
-        if own:
-            src = own[0]
-            graph = {k: v for k, v in (src.graph or {}).items() if k not in _NOT_COPIED}
-            notes = [f"Started from a copy of {src.name}: {p['name']} has no positions inside."]
-            source = "copy"
-        else:
-            source = "model"
-            graph, note = _one_block_graph(m, db, owners, hidden, p)
-            notes = [note] if note else []
-    graph = {**graph, "mission_of": {"position_id": position_id}, "mission_name": name}
+        source = "model"
+        graph, note = _one_block_graph(m, db, owners, hidden, p)
+        notes = [note] if note else []
+    graph = {**graph, "mission_of": owner, "mission_name": name}
     try:
         graph = normalize_graph(graph, resolve_saved_model=lambda mid: fetcher(db, owners, hidden)("model", mid))
         rbd = rbds_service.save_rbd(db, f"{p['name']} — {name}"[:200], graph, owner_id)
@@ -1609,7 +1833,8 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     mission = rbd_missions.find(rbd.graph or graph, rbd_missions.LEGACY_ID)
     return {"rbd": {"id": rbd.id, "name": rbd.name, "updated_at": rbd.updated_at.isoformat() if rbd.updated_at else None},
             "mission": rbd_missions.summary(rbd.graph or graph, mission), "position_id": position_id,
-            "notes": notes[:20], "placeholders": placeholders, "built_from": source}
+            "notes": notes[:20], "placeholders": placeholders, "built_from": source,
+            "series_warning": rbd_missions.series_warning(rbd.graph or graph)}
 
 
 def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:
@@ -1620,9 +1845,9 @@ def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:
     from backend.services.rbd_graph import wrap_layout
 
     sv = _sv()
-    _, _, _, unit, block = _tree_parts(m, db, owners, hidden, p["id"], with_self=True)
+    _, _, _, unit, block, _ = _tree_parts(m, db, owners, hidden, p["id"], with_self=True)
     fields, note = block(p)
-    if fields is not None and "subsystem_rbd_id" in fields:
+    if fields is not None and ("subsystem_rbd_id" in fields or (fields.get("data") or {}).get("rbd")):
         raise sv.Invalid(f"{p['name']}'s RBD is repairable or a network, which a mission isn't flown on. Make it "
                          "non-repairable, or give the position a life model.")
     if fields is None:
@@ -1664,6 +1889,36 @@ def blockable_positions(m, db, owners, hidden, links: list) -> list[str]:
     return sorted(set(out))
 
 
+def _unrewired(graph: dict) -> bool:
+    """A diagram still wired as a first build with nothing redundant: every block in series."""
+    from backend.services import rbd_missions
+
+    return rbd_missions.all_in_series(graph) and not any(
+        n.get("type") in ("knode", "standby", "parallel") for n in graph.get("nodes") or [])
+
+
+def _rewired(old: dict, fresh: dict, resolve) -> dict:
+    """``fresh`` (the tree's wiring, normalised) with each block's settings from ``old`` where it
+    was there (its model, repair, costs, planned work, Runs share), the diagram's own settings
+    (repairable, crews, costs) kept."""
+    from backend.services.rbd_graph import normalize_graph, wrap_layout
+
+    had = {n.get("id"): n for n in old.get("nodes") or [] if isinstance(n, dict)}
+    nodes = []
+    for n in fresh.get("nodes") or []:
+        before = had.get(n.get("id"))
+        if before is not None and before.get("type") == n.get("type") == "component":
+            data = {**(n.get("data") or {}), **(before.get("data") or {})}
+            if (n.get("data") or {}).get("duty") and not (before.get("data") or {}).get("duty"):
+                data["duty"] = n["data"]["duty"]
+            n = {**n, "data": data}
+        nodes.append({k: v for k, v in n.items() if k != "position"})
+    keep = {k: v for k, v in old.items() if k not in ("nodes", "edges")}
+    out = normalize_graph({**keep, "nodes": nodes, "edges": fresh.get("edges") or []}, resolve_saved_model=resolve)
+    out["nodes"] = wrap_layout(out["nodes"])
+    return out
+
+
 def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
     """The diagram as it was, with the positions inside that aren't blocks yet added in series
     before the output (their models as built); every edit to the rest is kept."""
@@ -1671,9 +1926,25 @@ def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
 
     have = {n.get("id") for n in old.get("nodes") or []}
     new = [n for n in fresh.get("nodes") or [] if n.get("type") == "component" and n["id"] not in have]
-    if not new:
+    # A block still standing on a placeholder takes the model its position has now (nothing else
+    # about it changes); a block given a model by hand is left as it is.
+    found = {n["id"]: n for n in fresh.get("nodes") or [] if n.get("type") == "component"
+             and not (n.get("model") or {}).get("placeholder")}
+    filled = []
+    for n in old.get("nodes") or []:
+        d = n.get("data") or {}
+        f = found.get(n.get("id"))
+        if f is None or not (d.get("model") or {}).get("placeholder"):
+            filled.append(n)
+            continue
+        d = {k: v for k, v in d.items() if k not in ("model", "rbd")}
+        if f.get("model") is not None:
+            d["model"] = f["model"]
+        d.update((f.get("data") or {}))
+        filled.append({**n, "type": f.get("type") or n.get("type"), "data": d})
+    if not new and filled == list(old.get("nodes") or []):
         return old
-    nodes = [{k: v for k, v in n.items() if k != "position"} for n in old.get("nodes") or []] + new
+    nodes = [{k: v for k, v in n.items() if k != "position"} for n in filled] + new
     edges = [{"source": e.get("source"), "target": e.get("target")} for e in old.get("edges") or []]
     for b in new:
         into_out = [e for e in edges if e["target"] == "out"]

@@ -282,7 +282,7 @@ def test_front_respects_weight_limits():
         (None, None, {"budget": None}, "budget, or a target"),
         (None, None, {"target": 1.0, "budget": None}, "below 1"),
         (None, None, {"t": 0}, "mission time"),
-        (None, None, {"budget": {"cost": 1}}, "at least 2"),
+        (None, None, {"budget": {"cost": 1}}, "already costs 2. Enter a total above that"),
         (None, None, {"target": 0.999999, "budget": None}, "unreachable"),
     ],
 )

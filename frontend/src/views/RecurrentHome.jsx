@@ -51,7 +51,7 @@ export default function RecurrentHome() {
         onDelete={onDelete}
         help={HELP}
         empty={{
-          title: "No recurrent models yet",
+          title: "No repairable models yet",
           body: "Fit one from each system's repair or failure times and save it to see it here.",
           action: newModel,
         }}

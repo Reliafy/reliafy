@@ -6,6 +6,9 @@ import pytest
 
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore
+from backend.services import time_zones
+from backend.tests.test_maintenance_rcm_api import api  # noqa: F401
+from backend.tests.test_maintenance_time_zones import server_in_utc  # noqa: F401
 
 
 @pytest.fixture()
@@ -84,3 +87,81 @@ def test_old_readings_replay_the_same(m):
     before = m.s.snapshot()
     m.s.rebuild()
     assert m.s.snapshot() == before
+
+
+# ---- whose clock: a device in another zone, or a few minutes fast ------------------------------
+
+def _at(monkeypatch, iso: str) -> None:
+    """Pretend it's this UTC moment."""
+    moment = datetime.fromisoformat(iso).replace(tzinfo=timezone.utc)
+    monkeypatch.setattr(time_zones, "_now", lambda: moment)
+
+
+def _point(m):
+    return m.add_point(m.create_position("Gearbox")["id"], "Vibration", kind="condition", unit="mm/s")["id"]
+
+
+def test_a_devices_own_clock_time_is_refused_with_what_to_do(m, monkeypatch, server_in_utc):  # noqa: F811
+    """A phone in Brisbane (20:01) on a UTC workspace (10:01): its clock time, read as the
+    workspace's, is ten hours ahead."""
+    _at(monkeypatch, "2026-11-11T10:01:00")
+    pt = _point(m)
+    with pytest.raises(Invalid) as err:
+        m.record_reading(pt, 7.4, "2026-11-11", at="2026-11-11T20:01")
+    text = str(err.value)
+    assert "can't be in the future" in text
+    assert "20:01 is later than the time in this workspace, 10:01 on 11 Nov 2026 (UTC)" in text
+    assert "workspace's clock" in text and "leave the time out" in text and "Settings" in text
+    # Each of the things it says to do works: the workspace's time, the day alone, the device's offset.
+    m.record_reading(pt, 7.4, at="2026-11-11T10:01")
+    m.record_reading(pt, 7.5, "2026-11-11")
+    p = m.record_reading(pt, 7.6, at="2026-11-11T20:01+10:00")
+    assert p["readings"][0]["at"] == "2026-11-11T10:01:00Z"
+    with pytest.raises(Invalid, match=r"it's 11 Nov 2026 in this workspace \(UTC\)"):
+        m.record_reading(pt, 7.7, "2026-11-12")
+
+
+def test_the_same_clock_time_is_fine_where_the_workspace_is(monkeypatch):
+    _at(monkeypatch, "2026-11-11T10:01:00")
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), "user-u", "tester", time_zone="Australia/Brisbane")
+    pt = _point(m)
+    p = m.record_reading(pt, 7.4, "2026-11-11", at="2026-11-11T20:01")
+    assert p["readings"][0]["at"] == "2026-11-11T10:01:00Z" and p["readings"][0]["when"] == "2026-11-11 20:01"
+    with pytest.raises(Invalid, match=r"23:30 is later than the time in this workspace, 20:01 on 11 Nov 2026 "
+                                      r"\(Australia/Brisbane\)"):
+        m.record_reading(pt, 7.4, at="2026-11-11T23:30")
+
+
+def test_a_clock_a_few_minutes_fast_still_records_as_now(m, monkeypatch, server_in_utc):  # noqa: F811
+    _at(monkeypatch, "2026-11-11T10:01:30")
+    pt = _point(m)
+    p = m.record_reading(pt, 7.4, at="2026-11-11T10:09")     # eight minutes fast
+    r = p["readings"][0]
+    assert r["at"] == "2026-11-11T10:01:00Z" and r["on"] == "2026-11-11" and r["precision"] == "minute"
+    with pytest.raises(Invalid, match="later than the time in this workspace"):
+        m.record_reading(pt, 7.4, at="2026-11-11T10:20")     # past the tolerance
+    # Just before midnight a fast clock says tomorrow: still today's reading.
+    _at(monkeypatch, "2026-11-11T23:57:10")
+    p = m.record_reading(pt, 7.5, at="2026-11-12T00:02:00Z")
+    assert p["readings"][0]["on"] == "2026-11-11" and p["readings"][0]["at"] == "2026-11-11T23:57:10Z"
+    with pytest.raises(Invalid, match="00:30 on 12 Nov 2026 is later"):
+        m.record_reading(pt, 7.5, at="2026-11-12T00:30")
+    before = m.s.snapshot()
+    m.s.rebuild()
+    assert m.s.snapshot() == before
+
+
+def test_the_reading_route_says_what_to_do(api, monkeypatch, server_in_utc):  # noqa: F811
+    M = "/api/maintenance"
+    _at(monkeypatch, "2026-11-11T10:01:00")
+    pos = api.post(f"{M}/positions", json={"name": "Gearbox"}).json()
+    made = api.post(f"{M}/positions/{pos['id']}/points", json={"name": "Vibration", "kind": "condition", "unit": "mm/s"})
+    assert made.status_code == 200, made.text
+    pt = made.json()["id"]
+    refused = api.post(f"{M}/points/{pt}/readings", json={"value": 7.4, "at": "2026-11-11T20:01"})
+    assert refused.status_code == 422
+    assert "10:01 on 11 Nov 2026 (UTC)" in refused.json()["detail"]
+    # What the form sends on a workspace with no time zone: the workspace's (UTC) clock, marked Z.
+    ok = api.post(f"{M}/points/{pt}/readings", json={"value": 7.4, "at": "2026-11-11T10:01Z"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["reading"] == 7.4

@@ -296,7 +296,7 @@ def test_api_band_from_a_saved_model(client):
         [_node("a", block), _node("b", block)],
         _edges(("input", "a"), ("input", "b"), ("a", "output"), ("b", "output")),
     )
-    r = client.post("/api/rbds/analyze", json={"graph": graph, "band": {"level": 0.95}})
+    r = client.post("/api/rbds/analyze", json={"graph": graph, "band": {"level": 0.9}})
     assert r.status_code == 200, r.text
     band = r.json()["band"]
     assert {b["id"] for b in band["uncertain"]} == {"a", "b"}

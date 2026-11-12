@@ -336,7 +336,9 @@ def test_investigation_and_corrective_actions(m):
     [action] = r["actions"]
     assert action == {"id": action["id"], "what": "Fit a new seal", "owner": "Sam", "due": "2026-11-20",
                       "status": "open", "done_on": None, "work_order_id": wo["id"], "work_order_ref": "WO-77",
-                      "added": {"on": m.today(), "by": "Ana"}}
+                      "added": {"on": m.today(), "by": "Ana"},
+                      # The linked work order, read for the page (Nov 2026).
+                      "work_order": {"id": wo["id"], "number": wo["number"], "title": wo["title"], "status": "open"}}
     assert r["open_actions"] == 1 and r["history"][-1]["change"] == "Action added: Fit a new seal"
     done = m.update_corrective_action(rid, action["id"], status="done", by="Sam")
     assert done["actions"][0]["status"] == "done" and done["actions"][0]["done_on"] == m.today()

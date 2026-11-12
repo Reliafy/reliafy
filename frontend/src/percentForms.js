@@ -25,7 +25,7 @@ export const PERCENT_FORMS = {
   calculator: { reliability: P, level: P },
   perDemand: { confidence: P },
   degradation: { confidence: P, reliability: P },
-  tvc: { level: P },
+  tvc: { reliability: P, level: P },
   ccf: { beta: SMALL_OK },
 };
 

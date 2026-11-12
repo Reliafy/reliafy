@@ -117,8 +117,9 @@ move_photo fixes one added to the wrong place.
 5. Spares: maintenance parts.create, stock (receive at a store location), add_to_position (the position's parts \
 list; critical spares with min_on_hand).
 6. Topology, as you build: maintenance topology.connect for what feeds what (supply, power, signal), and \
-create_group for positions that back each other up (duty and standby, 'either one is enough': k = 1). \
-generate_rbd and impact rely on it.
+create_group for positions that back each other up (duty and standby, 'either one is enough': k = 1; \
+mode standby with standby cold/warm/hot, start_probability, dormancy for warm). One set per position. \
+generate_rbd, build_rbd, missions and impact rely on it.
 7. Meters and condition: maintenance measurements.add_point (counter: run hours, cycles; condition: vibration, \
 temperature, with alarm limits; setting: a value someone sets, such as a chlorinator's output % or a pump \
 timer's hours a day, held until the next change, never alarmed or due, range_min / range_max as a sanity check), \
@@ -227,6 +228,7 @@ other) with reference; trade (who may do it); last_done.
 - When it first falls due: start (a date) on tasks.create / tasks.update / failure_modes.add_task; then every interval (a 12-monthly summer task made in November, start next October). Left out: one interval from today or last done; tasks.update start '' clears it. Calendar tasks only.
 - Raised by an event instead of (or as well as) the interval: trigger on tasks.create / tasks.update. A reading past a limit: {kind: 'reading', point_id: a condition point, above: 120} (after 120 mm of rain in 24 h, test and re-dose the pool: the rain gauge POOL-RAIN's reading of 128 raises the work order, dated the reading's day). A named event: {kind: 'event', event_type: 'Lightning strike'}, raised when someone logs it with maintenance positions.log_event (position_id, event_type, note, on) on the task's position or one above it. with_interval true keeps the interval running too; otherwise the task waits for the event (status 'Waiting for the event', never overdue). One work order per event: another reading or event while it's open raises nothing. clear_trigger true: the interval alone again.
 - How each task is done (LSA, the logistic support analysis: the RCM says what and why, the LSA says how): maintenance tasks.set_resources (task_id, resources). E.g. {labour: [{trade: 'Pool technician', people: 1, hours: 0.5}], tools: [{name: 'Photometer', point_id: '<the free-chlorine point>'}], spares: [{part_id: '<id>', qty: 1}], consumables: [{name: 'DPD tablets', qty: 2, unit: 'each'}], access: {downtime_hours: 0, permits: []}, method: 'Home kit'}. Each section sent replaces that one, null clears it. Which measuring point or channel an instrument reads goes on its tool line (point_id), not on the RCM decision. Task reads carry resources with labour_hours; list.packages gives each package's rollup (labour by trade, tools, spares, consumables): what a visit brings.
+- What a fixed-interval task leaves the item as (an RBD on the position reads it): tasks.update restoration {kind: 'kijima2', restores: 70, replace_every: 3, replacement_cost: 5000}: an overhaul that takes away 70% of its age, every 3rd a full replacement (kijima1: 70% of the age gained since the last task; as_new, the default, renews it). On a decision: decision.restoration (or a member's). basis 'operating' counts a calendar interval in running hours. A shutdown: packages.update shutdown {duration_hours: 72, cost?, scope?: [position ids]}; its tasks are done at each shut, tasks.update older_than {value: 18, unit: 'months'} only on an older item.
 - Several performance standards on one function: a function is one job (one verb, one object); how well it must \
 do it can be several numbers (pH, alkalinity and hardness; flow and pressure). Each is one performance standard, as a list: \
 maintenance failure_modes.add_standard (text: one parameter and one limit, 'pH 7.2-7.8'; parameter, comparator, \
@@ -386,7 +388,9 @@ Its checklist is one flat list: each task's line (lines[].index) then its steps 
 task line ticked is done; each line not ticked must be listed in not_done [{task_id, reason}] (it isn't renewed, \
 stays due and goes on the next work order). A line ticked that found a problem: an action with position_id \
 (one of line_positions on maintenance get.work_order) records the replacement or failure at that position, so \
-the life data stays right. The result's packages, lines_added and packages_skipped say what happened.
+the life data stays right. The result's packages, lines_added and packages_skipped say what happened. \
+work_orders.generate with package_id raises that package's next visit now and nothing else. A task overdue when it went \
+into a package stays overdue from its own due date until it's done (overdue_before_package).
 - A paused package's open work order shows paused and isn't late (list.packages counts it out); out of season \
 the same. A task on equipment out of service shows out_of_service and isn't overdue.
 - During a visit, save each line as it's done: work_orders.mark (work_order_id, task_id, state done, not_done \
@@ -400,8 +404,13 @@ append_note for a finding, check to tick a checklist line.
 - What it took: labour (hours, who, rate), part_used (pick part_id from maintenance get.work_order's \
 suggested_parts; from_location_id issues it from stock there), cost (a contractor, hire, call-out).
 - close, with the actions in order: replace (it failed: name failure_mode_id, or failure_mode_text when none \
-fits; none named = a planned replacement; new_item, item_id or part_id is what went in), repair, inspect (finding \
-ok, degraded or found_failed), other; plus readings taken (readings [{point_id, value}]: get.work_order's \
+fits; reason 'failure' when it failed and the mode isn't known; none named and no reason = a planned \
+replacement; new_item, item_id or part_id is what went in), repair, inspect (finding \
+ok, degraded or found_failed: found_failed records the fitted item as failed between its last good check and \
+now, interval censored in its life data), other. When the failed thing is inside the work order's position \
+(the seal in the pump), give the action position_id from get.work_order's inside_positions, for the finding and \
+the replacement alike. A failure report that isn't rejected already counts the item as failed on the day it \
+occurred; a replacement for the same failure ends the same life, never a second one. Plus readings taken (readings [{point_id, value}]: get.work_order's \
 reading_points lists what it asks for: its tasks' tools' points, a trigger's point, a counter, the settings \
 there). Example: the seasonal change-over work order records the new chlorinator output, {action: \
 'work_orders.close', work_order_id, actions: [{kind: 'other'}], readings: [{point_id: <CHL-SET>, value: 60}]}: \
@@ -441,7 +450,7 @@ means every failure there. replace_link_id swaps one model for another (a refit,
 or attach unasked: say what the data supports first (failures, suspensions, the shape).
 - Fitting from history: models.link with fit true, data (position: its own history; class: the class's pooled \
 history; both: its own history with the class's other positions' history as the prior) and method (mle: a plain \
-fit, 95% confidence bounds; bayes: with a prior, 90% credible intervals). The prior: {kind: class} (the class's \
+fit, 90% confidence bounds; bayes: with a prior, 90% credible intervals). The prior: {kind: class} (the class's \
 history as a power prior, SurPyval's prior.from_data: trust close counts all of its evidence, guide half, start a \
 fifth), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind: around, distribution, unit, \
 params: {alpha: {about: 4, between: [3, 6]}, beta: {between: [1.5, 3]}}} (90% between the bounds; a parameter left \
@@ -478,7 +487,9 @@ the app. It compares designs early; it never says how the item will fail in serv
 - An RBD: every position can have a life model, an RBD or a prediction. models.link with build_rbd true makes \
 a new RBD whose blocks are the positions one level inside, each taking its model in use (a saved model, or its \
 own RBD as a sub-system); one with none gets a placeholder flagged placeholder=true (never invented data: say \
-which and ask for their models). Wired by connections and redundancy groups, in series where there are none. \
+which and ask for their models). Wired by connections and redundancy groups (active: k of n; standby: one \
+standby block when its members are identical single positions, else k of n with each running k/n of the time), \
+in series where there are none. A rebuild of a diagram still all in series rewires it from the groups. \
 A position has one built RBD: build_rbd where it has one makes nothing and returns that row (existing=true). \
 build_rbd with replace_link_id (its RBD row) rebuilds into the same diagram, adding new positions and keeping \
 edits. rbd_id links an existing RBD as it is. The row reports the system MTBF and B10 (exact analysis; analyse \
@@ -512,7 +523,7 @@ Deciding with the numbers.
 horizon_years, discount_rate): what the class's replacement plan costs a year, now, at the best interval and \
 running to failure, each with its net present cost. Needs the class's fitted model and costs (learn topic).
 - maintenance get.class_forecast, id = the position class (period month / quarter / year, periods, default \
-12 months): failures expected from the positions' fitted items with P10–P90, per period too, counting \
+12 months): failures expected from the positions' fitted items with a 90% range (P5–P95), per period too, counting \
 replacements that fail again (headline: say it as given); at_risk, positions by chance of failing next period; \
 not_forecast, positions with nothing fitted or no usage rate (a model by use needs counter readings); spares, each \
 replacement or critical part's demand per period and cumulative against usable stock (prob_covered); budget, from \
@@ -525,7 +536,8 @@ answer "what if we hold 4?". Read off the simulated demand; one site. Set a part
 (or repairable with turnaround_days: the pool covers the repair turnaround) with maintenance parts.update; without \
 a lead time 30 days is assumed and said.
 - maintenance topology.generate_rbd, position_id = a system position: a reliability block diagram from the \
-positions inside it (connections wire the blocks, redundancy groups become k of n, each block takes its class's \
+positions inside it (connections wire the blocks, redundancy groups become k of n or a standby block, each \
+block takes its class's \
 fitted model or a placeholder, listed in notes). It's saved as a normal RBD: analyse rbd analyses it.
 - maintenance get.impact, id = a position: what loses its supply downstream if it fails, and whether \
 redundancy covers it.

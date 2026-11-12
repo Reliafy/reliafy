@@ -32,13 +32,14 @@ from its column in the covariate row.
 from __future__ import annotations
 
 import json
+import re
 import logging
-import warnings
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 from backend.errors import client_reason
+from backend.warn_capture import ignore_warnings
 
 logger = logging.getLogger(__name__)
 
@@ -324,7 +325,11 @@ def robust(cox, cluster: Optional[np.ndarray] = None, cluster_name: Optional[str
     (SurPyval's ``summary(robust=True, cluster=)``), with a verdict on how
     far apart they are."""
     plain = cox.summary()
-    rob = cox.summary(robust=True, cluster=cluster) if cluster is not None else cox.summary(robust=True)
+    # The robust interval at 90% two-sided, the app's rule (backend.levels).
+    rob = (cox.summary(alpha_ci=0.10, robust=True, cluster=cluster) if cluster is not None
+           else cox.summary(alpha_ci=0.10, robust=True))
+    lo_col = next(c for c in rob.columns if str(c).startswith("exp(coef) lower"))
+    hi_col = next(c for c in rob.columns if str(c).startswith("exp(coef) upper"))
     rows, worst = [], (0.0, None)
     for name in rob.index:
         se, rse = _num(plain.loc[name, "se(coef)"]), _num(rob.loc[name, "se(coef)"])
@@ -334,11 +339,11 @@ def robust(cox, cluster: Optional[np.ndarray] = None, cluster_name: Optional[str
         rows.append({
             "covariate": str(name), "coef": _num(rob.loc[name, "coef"]), "ratio": _num(rob.loc[name, "exp(coef)"]),
             "se": se, "robust_se": rse, "change": change,
-            "ratio_lower": _num(rob.loc[name, "exp(coef) lower 95%"]),
-            "ratio_upper": _num(rob.loc[name, "exp(coef) upper 95%"]),
+            "ratio_lower": _num(rob.loc[name, lo_col]),
+            "ratio_upper": _num(rob.loc[name, hi_col]),
             "p": _num(rob.loc[name, "p"]),
         })
-    out = {"available": True, "rows": rows, "cluster": cluster_name, "max_change": worst[0]}
+    out = {"available": True, "rows": rows, "cluster": cluster_name, "max_change": worst[0], "ci_level": 0.90}
     by = f", clustered by {cluster_name}" if cluster_name else ""
     pct = abs(worst[0]) * 100
     if cluster is not None:
@@ -393,8 +398,7 @@ def _aux_cox(df: pd.DataFrame, mapping: dict, fit_kwargs: dict):
     if len(df) > MAX_AUX_ROWS:
         return None, f"Not run on more than {MAX_AUX_ROWS:,} rows."
     keep = {k: v for k, v in fit_kwargs.items() if k in ("x_col", "Z_cols", "formula", "c_col", "n_col", "tl_col")}
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with ignore_warnings():
         return CoxPH.fit_from_df(df, **keep), None
 
 
@@ -404,8 +408,7 @@ def diagnose(model, df: pd.DataFrame, mapping: dict, fit_kwargs: dict, distribut
     the Cox model they ran on, kept for :func:`residuals` (None when there is
     none). Never raises."""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             out, kept = _diagnose(model, df, mapping, fit_kwargs, distribution, effect, cox_opts or {})
     except Exception as exc:  # noqa: BLE001 - a check is never worth a failed fit
         logger.info("Regression diagnostics failed: %s", exc)
@@ -456,6 +459,47 @@ CHECK_TITLES = {
 MAX_CHECK_ROWS = 40
 
 
+_SCI_RE = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?e[+-]?\d+(?![\w.])", re.IGNORECASE)
+_PLAIN_NUMBER_RE = re.compile(r"(?<![\w.])-?\d{4,}(?:\.\d+)?(?![\w.])")
+
+
+def _plain_number(text: str) -> str:
+    """"6.76e+03" → "6,760"; "3.83e-09" → "3.83 × 10⁻⁹"; "12000" → "12,000"."""
+    v = float(text)
+    if v != 0 and (abs(v) < 1e-3 or abs(v) >= 1e9):
+        mant, exp = f"{v:.3g}".split("e") if "e" in f"{v:.3g}" else (f"{v:.3g}", "0")
+        sup = str(int(exp)).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
+        return f"{mant} × 10{sup}"
+    shown = float(f"{v:.3g}")
+    return f"{shown:,.0f}" if abs(shown) >= 100 else f"{shown:g}"
+
+
+def _pct(text: str) -> str:
+    return f"{float(text) * 100:.2g}%"
+
+
+def plain_check_text(text: str) -> str:
+    """A SurPyval diagnose() test or detail in the app's words: no ``t =``,
+    no scientific notation, no ``model.data`` (its rows count from 0; the
+    user's data rows count from 1), and calibration's ICI / E50 / E90 said
+    as the gap between the predicted and the observed chance of failing."""
+    out = str(text or "")
+    out = re.sub(r"row (\d+) of model\.data", lambda m: f"row {int(m.group(1)) + 1} of the rows fitted", out)
+    out = re.sub(r"^ICI at t = ", "At age ", out)
+    out = re.sub(r"\((\d+%) of failures\)", r"(when \1 of the failures had happened)", out)
+    m = re.match(r"E50 ([\d.e+-]+), E90 ([\d.e+-]+); predicted risk ([\d.e+-]+) to ([\d.e+-]+)(.*)$", out)
+    if m:
+        out = (f"predicted and observed chance of failing differ by {_pct(m.group(1))} for a typical unit "
+               f"and by at most {_pct(m.group(2))} for 9 units in 10; predicted chances run from "
+               f"{_pct(m.group(3))} to {_pct(m.group(4))}{m.group(5)}")
+    out = re.sub(r"\bat t = ", "at age ", out)
+    out = re.sub(r"\bt = ", "age ", out)
+    out = _SCI_RE.sub(lambda m: _plain_number(m.group(0)), out)
+    out = _PLAIN_NUMBER_RE.sub(lambda m: _plain_number(m.group(0)), out)
+    out = out.replace("|deviance residual|", "deviance residual (either sign)")
+    return out
+
+
 def _check_row(row: dict) -> dict:
     def num(v):
         try:
@@ -466,13 +510,13 @@ def _check_row(row: dict) -> dict:
 
     return {
         "check": str(row.get("check", "")),
-        "test": str(row.get("test", "")),
+        "test": plain_check_text(row.get("test", "")),
         "covariates": [str(c) for c in (row.get("covariates") or ())],
         "statistic": num(row.get("statistic")),
         "df": num(row.get("df")),
         "p": num(row.get("p")),
         "verdict": str(row.get("verdict", "")),
-        "detail": str(row.get("detail", "")),
+        "detail": plain_check_text(row.get("detail", "")),
     }
 
 
@@ -484,8 +528,7 @@ def model_checks(model, distribution: str) -> dict:
     variance. Never raises: a family SurPyval has no checks for (Buckley-James)
     says so."""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             report = model.diagnose()
             data = report.to_dict()
     except NotImplementedError:
@@ -625,8 +668,7 @@ def residuals(cox, source: str = "model") -> dict:
 
 
 def _residuals(cox, source: str) -> dict:
-    with warnings.catch_warnings(), np.errstate(all="ignore"):
-        warnings.simplefilter("ignore")
+    with ignore_warnings(), np.errstate(all="ignore"):
         data = cox._fit_data
         x = np.asarray(data["x"], dtype=float)
         c = np.asarray(data["c"], dtype=float)

@@ -128,8 +128,9 @@ partner:
    pair merged through a junction: either valve closing is enough, a 1oo2.
 2. Double-click the new block. Name it *Shutdown valve B*, choose
    **Parameters**, Exponential, failure rate **1e-6**, and under **Proof test**
-   choose **Hidden failures, proof-tested**, every **8,760** hours. **Save
-   block**.
+   press **Edit in the plan**. That saves the block and opens the diagram's
+   **Maintenance plan** on it: set its **Task** to **Proof test**, every
+   **8,760** hours.
 3. **Validate** and calculate: the PFDavg falls to **1.37e-4, SIL 3**.
 
 That figure treats the two valves as independent, which two valves of one type

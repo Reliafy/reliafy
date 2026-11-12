@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import DemoTestResult from "./DemoTestResult.jsx";
 import DemoShapeSource, { fmtBeta } from "./DemoShapeSource.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
+import { TestPlanPythonButton } from "./TestPlanShared.jsx";
 import { demonstrationTest, getModel } from "../api.js";
 import { betaSource, bLabel } from "../requirement.js";
 import { formatNumber } from "../format.js";
@@ -24,7 +25,7 @@ export default function DemonstrationTest({ initial = null }) {
   const [target, setTarget] = useState(initial?.target || "reliability");
   const [bLife, setBLife] = useState(initial?.bLife || "10");
   const [reliability, setReliability] = useState("95");
-  const [confidence, setConfidence] = useState(initial?.confidence || "95");
+  const [confidence, setConfidence] = useState(initial?.confidence || "90");
   const [missionTime, setMissionTime] = useState(initial?.missionTime || "1000");
   const [unit, setUnit] = useState(initial?.unit || "hours");
   // β from a saved model (or the fit the requirement came from), and which
@@ -276,7 +277,10 @@ export default function DemonstrationTest({ initial = null }) {
         <DemoTestResult
           result={result}
           actions={inputs && (
-            <SaveAnalysisButton kind="demonstration_test" inputs={inputs} defaultName={defaultName} />
+            <>
+              <SaveAnalysisButton kind="demonstration_test" inputs={inputs} defaultName={defaultName} />
+              <TestPlanPythonButton kind="demonstration" inputs={inputs} />
+            </>
           )}
         />
       )}

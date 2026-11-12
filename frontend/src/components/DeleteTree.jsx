@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { deleteRcm, deleteRcmPreview, deleteTree, deleteTreePreview, restoreTree } from "../api.js";
-import { DELETE_NOTE, deleteButton, deleteLines, deleteTitle, deletedText, isUndoKey, undoneText } from "../treeDelete.js";
+import { DELETE_NOTE, deleteButton, deleteLines, deleteTitle, deletedText, isUndoKey, rbdsNote, undoneText } from "../treeDelete.js";
 import {
   RCM_DELETE_NOTE, rcmDeleteButton, rcmDeleteCounts, rcmDeleteLines, rcmDeleteTitle, rcmDeletedText,
 } from "../rcmDelete.js";
@@ -42,6 +42,7 @@ export function DeleteTreeModal({ kind, id, name, onClose, onDone }) {
               <ul className="td-list">{lines.map((l) => <li key={l}>{l}</li>)}</ul>
             </>
           ) : <p>Nothing else is inside it.</p>}
+          {rbdsNote(counts.rbds) && <p className="field-warning" role="note">{rbdsNote(counts.rbds)}</p>}
           <p className="lib-date">{DELETE_NOTE}</p>
         </div>
       )}

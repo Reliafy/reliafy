@@ -896,3 +896,83 @@ def test_auto_axis_is_sized_to_the_system_not_the_longest_lived_block():
     assert 0.8 < sf[min(range(len(t)), key=lambda k: abs(t[k] - r["importance"]["time"]))] < 0.99
     # An explicit t_max is still honoured exactly.
     assert analyze(g, resolve_subsystem=lambda _: None, t_max=5_000_000)["time"][-1] == 5_000_000
+
+
+# ---------------------------------------------------------------------------
+# The time the importance measures and the common-cause comparison are at
+# ---------------------------------------------------------------------------
+def _series_weibull_graph(n=3):
+    ids = [f"b{i}" for i in range(n)]
+    nodes = _io_nodes() + [
+        _component(nid, f"Block {i + 1}", "weibull", [("alpha", 1000.0 * (i + 1)), ("beta", 1.5 + 0.5 * i)])
+        for i, nid in enumerate(ids)
+    ]
+    chain = ["input", *ids, "output"]
+    return {"nodes": nodes, "edges": [_edge(a, b) for a, b in zip(chain, chain[1:])], "unit": "hours"}
+
+
+def test_default_importance_time_is_where_reliability_falls_to_90_percent():
+    graph = _series_weibull_graph()
+    res = ra.analyze(graph)
+    imp = res["importance"]
+    assert imp["time_basis"] == "reliability_90"
+    assert imp["reliability"] == pytest.approx(0.9, abs=1e-9)
+    # Solved for, so it doesn't move with the time axis asked for.
+    wider = ra.analyze(graph, t_max=3 * res["time"][-1])
+    assert wider["importance"]["time"] == pytest.approx(imp["time"], rel=1e-9)
+    assert wider["importance"]["birnbaum"] == pytest.approx(imp["birnbaum"], rel=1e-6)
+    # The design life at 90% is the same time.
+    life = ra.analyze(graph, target_reliability=0.9)["design_life"]["time"]
+    assert life == pytest.approx(imp["time"], rel=1e-6)
+
+
+def test_default_importance_time_falls_back_when_90_percent_is_off_the_axis():
+    graph = _series_weibull_graph()
+    full = ra.analyze(graph)
+    short = ra.analyze(graph, t_max=full["importance"]["time"] / 2)
+    imp = short["importance"]
+    # The axis ends before the reliability reaches 90%: its closest point.
+    assert imp["time_basis"] == "closest_to_90"
+    assert imp["time"] == pytest.approx(short["time"][-1])
+    assert imp["reliability"] == pytest.approx(short["system"]["sf"][-1], abs=1e-12)
+
+
+def test_evaluate_at_sets_the_importance_time():
+    graph = _series_weibull_graph()
+    t = 321.0
+    res = ra.analyze(graph, evaluate_at=t)
+    imp = res["importance"]
+    assert imp["time"] == t and imp["time_basis"] == "given"
+    rbd, *_ = ra._build_rbd(graph)
+    assert imp["reliability"] == pytest.approx(float(rbd.sf(t)), abs=1e-12)
+    birnbaum = rbd.birnbaum_importance(t)
+    for node, value in imp["birnbaum"].items():
+        assert value == pytest.approx(float(np.atleast_1d(birnbaum[node])[0]), abs=1e-12)
+    # A different time gives different measures; nothing else moves.
+    default = ra.analyze(graph)
+    assert default["importance"]["birnbaum"] != imp["birnbaum"]
+    assert default["mttf"] == res["mttf"] and default["system"]["sf"] == res["system"]["sf"]
+
+
+@pytest.mark.parametrize("bad", [0, -5, float("nan"), float("inf"), "soon", True])
+def test_evaluate_at_must_be_a_positive_number(bad):
+    with pytest.raises(AnalysisError, match="positive number"):
+        ra.analyze(_series_weibull_graph(), evaluate_at=bad)
+
+
+def test_common_cause_comparison_is_at_the_importance_time():
+    from backend.services import samples
+
+    graph = samples._instrument_air_design_graph()
+    default = ra.analyze(graph)
+    assert default["ccf"]["time"] == default["importance"]["time"]
+    assert default["ccf"]["time_basis"] == "reliability_90"
+    assert default["ccf"]["reliability_with"] == pytest.approx(0.9, abs=1e-9)
+    t = 5000.0
+    res = ra.analyze(graph, evaluate_at=t)
+    ccf = res["ccf"]
+    assert ccf["time"] == t and ccf["time_basis"] == "given"
+    rbd, *_rest, baseline = ra._build_rbd(graph)
+    assert ccf["reliability_with"] == pytest.approx(float(rbd.sf(t)), abs=1e-12)
+    assert ccf["reliability_without"] == pytest.approx(float(baseline.sf(t)), abs=1e-12)
+    assert ccf["reliability_without"] > ccf["reliability_with"]

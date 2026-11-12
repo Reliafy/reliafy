@@ -9,6 +9,7 @@ persistent model id.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -97,6 +98,9 @@ def save_model(
         status="ready",
     )
     db.models.insert_one(to_doc(model))
+    # The fit just made is the saved model's live one: the calculator answers
+    # from it at once, rather than each of its first requests fitting again.
+    keep_live(model.id, fcache)
     return model
 
 
@@ -184,14 +188,43 @@ def import_model(
     return model
 
 
-def create_per_demand(db, uid: str, name: str, demands=None, failures=None, confidence: float = 0.95,
+def update_params(db, model_id: str, owner_id: str, distribution: str, params: list, unit: str | None = None) -> Model:
+    """Change a parameters-only model's numbers in place (same id: everything using it sees them):
+    a figure typed in wrong (an MTBF typed as a rate) is put right without unlinking and entering it
+    again. Only for a distribution saved from parameters alone; its notes and references stay.
+    Raises ModelNotFound, or FitError for one fitted to data or bad parameters."""
+    model = get_model(db, model_id, owner_id)
+    if model is None or model.owner_id != owner_id:
+        raise ModelNotFound(model_id)
+    spec = dict(model.spec or {})
+    if not spec.get("params_only") or model.kind != "distribution" or spec.get("per_demand"):
+        raise fitting.FitError("Only a model saved from parameters can have its parameters changed: refit one "
+                               "fitted to data.")
+    distribution_id = fitting.resolve_distribution_id(distribution)
+    extras = {k: v for k, v in ((model.results or {}).get("extras") or {}).items() if k in ("gamma", "p", "f0")}
+    result = fitting.result_from_params(distribution_id, params, extras or None, unit)
+    before = model.results
+    spec.update(distribution_id=distribution_id, unit=canonical_unit(unit), options=result.get("options") or None)
+    now = datetime.now(timezone.utc)
+    db.models.update_one({"_id": model_id, "owner_id": owner_id}, {"$set": {
+        "results": result, "distribution_id": distribution_id, "spec": spec, "updated_at": now,
+        "surpyval_version": getattr(surpyval, "__version__", None)}})
+    _LIVE.pop(model_id, None)
+    from backend.services import workspace_changes
+
+    workspace_changes.record_refit(db, model_id, owner_id, before, result)
+    model.results, model.spec, model.distribution_id, model.updated_at = result, spec, distribution_id, now
+    return model
+
+
+def create_per_demand(db, uid: str, name: str, demands=None, failures=None, confidence: float = 0.90,
                       batches=None, source_dataset_id: str | None = None) -> Model:
     """Create a per-demand (Binomial) model from a demands/failures count, or
     from several batches (``[{label, demands, failures}]``) pooled with exact
     bounds (#233).
 
     ``confidence`` sets the level of the exact bounds; with zero failures the
-    one-sided bound is the success-run demonstration (default 95%)."""
+    one-sided bound is the success-run demonstration (default 90%, the app's rule)."""
     result = fitting.result_per_demand(demands, failures, confidence, batches=batches)
     pd_ = result["per_demand"]
     stored = {"demands": int(pd_["demands"]), "failures": int(pd_["failures"]),
@@ -315,8 +348,9 @@ def update_fit(
             "updated_at": model.updated_at,
         }},
     )
-    # The cached live model (refit-on-demand) is stale now.
+    # The cached live model is stale now: this refit's takes its place.
     _LIVE.pop(model_id, None)
+    keep_live(model_id, fcache)
     # Its answer before and after, for "what changed" (#41).
     from backend.services import workspace_changes
 
@@ -423,6 +457,18 @@ def rate_uncertainty_of(model: Model) -> dict | None:
     return library_models.reattach_rate_uncertainty(results, model.spec)
 
 
+_RESTORE_LOCKS: dict[str, threading.Lock] = {}
+_RESTORE_GUARD = threading.Lock()
+
+
+def _restore_lock(model_id: str) -> threading.Lock:
+    with _RESTORE_GUARD:
+        if len(_RESTORE_LOCKS) > 4 * _LIVE_MAX:
+            for key in [k for k, lock in _RESTORE_LOCKS.items() if not lock.locked()]:
+                del _RESTORE_LOCKS[key]
+        return _RESTORE_LOCKS.setdefault(model_id, threading.Lock())
+
+
 def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
     """Resolve a saved model to its live fitting-cache id, re-fitting on demand.
 
@@ -432,21 +478,30 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
     if model is None:
         raise ModelNotFound(model_id)
 
-    cache_id = _LIVE.get(model_id)
-    if cache_id is None or cache_id not in fitting._MODEL_STORE:
-        # Prefer rehydrating the persisted fit; only re-fit from the dataset if
-        # there's no serialised model (older docs / per-demand) or it won't load.
-        cache_id = None
-        if model.serialized:
-            try:
-                cache_id = fitting.restore_live(model.serialized)
-            except Exception:  # noqa: BLE001 - fall back to a fresh fit
-                cache_id = None
+    def cached():
+        cache_id = _LIVE.get(model_id)
+        return cache_id if cache_id is not None and cache_id in fitting._MODEL_STORE else None
+
+    cache_id = cached()
+    if cache_id is not None:
+        return cache_id
+    # One request at a time brings a model back: the calculator's first
+    # requests arrive together, and each would otherwise fit it again.
+    with _restore_lock(model_id):
+        cache_id = cached()
         if cache_id is None:
-            cache_id = _refit(model)
-        _LIVE[model_id] = cache_id
-        while len(_LIVE) > _LIVE_MAX:
-            _LIVE.popitem(last=False)
+            # Prefer rehydrating the persisted fit; only re-fit from the dataset if
+            # there's no serialised model (older docs / per-demand) or it won't load.
+            if model.serialized:
+                try:
+                    cache_id = fitting.restore_live(model.serialized)
+                except Exception:  # noqa: BLE001 - fall back to a fresh fit
+                    cache_id = None
+            if cache_id is None:
+                cache_id = _refit(model)
+            _LIVE[model_id] = cache_id
+            while len(_LIVE) > _LIVE_MAX:
+                _LIVE.popitem(last=False)
     return cache_id
 
 
@@ -574,7 +629,7 @@ def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max
     return fitting.confidence_bounds(
         _live_cache_id(db, model_id, owner_id),
         on=params.get("on", "sf"),
-        alpha_ci=float(params.get("alpha_ci", 0.05)),
+        alpha_ci=float(params.get("alpha_ci", 0.10)),  # 90% two-sided by default
         bound=params.get("bound", "two-sided"),
         x_min=x_min,
         x_max=x_max,
@@ -609,9 +664,11 @@ def compare(db, model: Model) -> dict:
     if dataset is None:
         raise ModelNotFound(model.id)
     spec = _spec(model)
-    # Only the options Best fit applies to every candidate (and the censor flip).
+    # Only the options Best fit applies to every candidate, and how the fit read
+    # the censor column (the flip, or a status column's words: "F"/"S" mapped to
+    # 0/1). Without the mapping a status column isn't numbers and nothing fits.
     options = {k: v for k, v in (spec.get("options") or {}).items()
-               if k in ("offset", "zi", "lfp", fitting.CENSOR_INVERT_KEY)}
+               if k in ("offset", "zi", "lfp", fitting.CENSOR_INVERT_KEY, fitting.CENSOR_MAP_KEY)}
     result = fitting.fit(fitting.BEST_ID, datasets_service.load_dataframe(dataset),
                          spec.get("mapping", {}), unit=spec.get("unit"), options=options)
     selection = result.get("selection") or {}

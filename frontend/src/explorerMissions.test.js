@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import {
-  BLOCK_STATES, MAX_PHASES, answerText, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
+  BLOCK_STATES, MAX_PHASES, answerText, leaveOut, placeholderTitle, placeholderWarning, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
   isPhaseRow, latestOnly, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
   phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
   withBlockValue, withNewPhase, withoutPhase, withValue,
@@ -36,9 +36,9 @@ test("missions hang under their own position, never a parent's", () => {
   assert.equal(d.rows.get(missionKey("r1", "m1")).ref.position_id, "drone");
   assert.equal(rollupText(drone, true), "2 missions");
   assert.equal(rollupText(d.rows.get("gimbal"), true), "No missions yet · Add a mission");
-  assert.equal(rollupText(d.rows.get("battery"), true), "No missions yet");
+  assert.equal(rollupText(d.rows.get("battery"), true), "No missions yet · needs a life model or positions inside");
   assert.equal(rollupText(d.rows.get("arm"), true), "No missions yet · Add a mission");
-  assert.equal(rollupText(d.rows.get("battery"), false), "No missions yet");
+  assert.equal(rollupText(d.rows.get("battery"), false), "No missions yet · needs a life model or positions inside");
   // Closed, a parent with no RBD still says a mission can be added (it's built from what's inside).
   assert.equal(rollupText(d.rows.get("arm"), false), "No missions yet · Add a mission");
   // A leaf with a model in use can have one too (one block).
@@ -68,10 +68,10 @@ test("a mission row's cells in words", () => {
 
 test("a position's actions: Add a mission (an RBD of its own), wherever one can be built", () => {
   const d = graftMissions(buildDisplay(DATA, "positions"), LINKS);
-  assert.deepEqual(positionMissionActions(d.rows.get("drone")).map((a) => a.id), ["mission-new", "mission-open-rbd:r1"]);
+  assert.deepEqual(positionMissionActions(d.rows.get("drone")).map((a) => a.id), ["mission-new", "mission-open-rbd:r1", "mission-redundancy"]);
   // No RBD yet, but positions inside: Add a mission builds its RBD from them.
   const arm = positionMissionActions(d.rows.get("arm"));
-  assert.deepEqual(arm.map((a) => a.id), ["mission-new", "mission-build-rbd"]);
+  assert.deepEqual(arm.map((a) => a.id), ["mission-new", "mission-build-rbd", "mission-redundancy"]);
   assert.equal(arm[0].disabled, undefined);
   // A leaf with no RBD: nothing to build from, so it says what to do.
   const [leaf] = positionMissionActions(d.rows.get("battery"));
@@ -99,7 +99,7 @@ test("a mission's own RBD hangs its one mission under the position, and isn't of
   const arm = d.rows.get("arm");
   assert.equal(arm.kids[0], missionKey("r9", "mission"));
   assert.equal(rollupText(arm, true), "1 mission");
-  assert.deepEqual(positionMissionActions(arm).map((a) => a.id), ["mission-new", "mission-build-rbd"]);
+  assert.deepEqual(positionMissionActions(arm).map((a) => a.id), ["mission-new", "mission-build-rbd", "mission-redundancy"]);
   const acts = missionRowActions(d.rows.get(missionKey("r9", "mission")));
   assert.equal(acts.find((a) => a.id === "mission-rbd").label, "Open its RBD");
 });
@@ -181,6 +181,37 @@ test("a phase's line and the answer in words", () => {
   assert.equal(phaseCompletes({ waiting: true }), null);
 });
 
+test("a result resting on placeholders says so first, with the figure without them", () => {
+  const result = { reliability: 0.7366, blocks: 5, riskiest: { name: "Run" }, phases: [{}, {}],
+    placeholders: [{ id: "b", label: "Battery" }, { id: "c", label: "Control panel" }, { id: "f", label: "Fuel system" }],
+    without_placeholders: { reliability: 0.99431 } };
+  const ph = placeholderWarning(result);
+  assert.equal(ph.count, "3 of 5 blocks have no model");
+  assert.equal(ph.list, "Battery, Control panel and Fuel system");
+  assert.equal(ph.without, 0.99431);
+  assert.equal(answerText(result),
+    "Not a real figure yet: 3 of 5 blocks have no model. With a placeholder standing in for each, the mission completes with probability 73.7%.");
+  // A list row's kept result: labels and the number.
+  const kept = { reliability: 0.7366, placeholders: ["Battery"], without_placeholders: 0.99431 };
+  assert.equal(placeholderWarning(kept).count, "1 block has no model");
+  assert.equal(placeholderTitle(kept), "Not a real figure: Battery has no model, so a placeholder stands in. Without it: 99.43%.");
+  // Nothing to say with a model on every block, or once they're all left out.
+  assert.equal(placeholderWarning({ reliability: 0.95, placeholders: [], blocks: 2 }), null);
+  assert.equal(placeholderTitle({ reliability: 0.95 }), "");
+  // No block with a model: no figure without them.
+  const none = placeholderWarning({ reliability: 0.8, blocks: 2, placeholders: [{ id: "a", label: "A" }, { id: "b", label: "B" }], without_placeholders: null });
+  assert.equal(none.count, "none of the 2 blocks has a model");
+  assert.equal(none.without, null);
+});
+
+test("leaving placeholders out marks them Not needed in every phase, whatever they were", () => {
+  const rows = [{ key: "1", name: "Start", standby: ["b"], not_needed: [] }, { key: "2", name: "Run", standby: [], not_needed: ["c"] }];
+  const out = leaveOut(rows, ["b", "c"]);
+  assert.deepEqual(out.map((r) => [r.standby, r.not_needed]), [[[], ["b", "c"]], [[], ["b", "c"]]]);
+  assert.equal(out[0].name, "Start");
+  assert.deepEqual(rows[0].standby, ["b"]); // the rows given are left as they were
+});
+
 test("a mission's phases hang under it in the tree, in order", () => {
   const d = graftMissions(buildDisplay(DATA, "positions"), LINKS);
   const m1 = d.rows.get(missionKey("r1", "m1"));
@@ -258,4 +289,17 @@ test("of two reads out at once, only the one asked for last is used", () => {
   // Each table has its own count.
   assert.equal(latestOnly()()(), true);
   assert.equal(second(), true);
+});
+
+test("a leaf whose model can't be a block says so; a chance past 99.99% isn't a string of nines", async () => {
+  const { graftMissions: graft, rollupText: roll, pct: p, phaseLine: line, positionMissionActions: acts } = await import("./explorerMissions.js");
+  const display = { rows: new Map([["a", { key: "a", type: "pos", parent: null, kids: [], depth: 0, ref: { name: "Pump 1" } }]]) };
+  const d = graft(display, [], [], ["a"]);
+  assert.equal(roll(d.rows.get("a"), true), "No missions yet · its model can't be a block");
+  assert.match(acts(d.rows.get("a"))[0].reason, /can't be a block/);
+  assert.equal(p(0.99999985), "> 99.99%");
+  assert.equal(p(1.5e-7), "< 0.01%");
+  assert.equal(p(1), "100%");
+  assert.equal(p(0.9), "90.0%");
+  assert.equal(line({}, { blocks: [] }), "Every block in use, wired as in the RBD");
 });

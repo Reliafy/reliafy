@@ -81,30 +81,90 @@ over time (vibration, wear), one row per reading. They sit beside the life data
 on the dataset's page, on its **Measurements** tab, and feed a
 [condition and life model](/guides/condition-based-risk).
 
+### One sheet, several datasets
+
+A sheet often holds more than one kind of thing: transformers, coal mills and
+boiler feed pumps, each row naming its class in a column. Upload it under
+[Data](/data) → **New dataset**, and once the file is chosen, pick that column
+in **Split into datasets by**. Each value becomes its own dataset, named by the
+value (*Transformer*, *Coal mill*). If you already have a dataset with that
+name, the file's name is added (*Transformer – plant*).
+
+- Before anything is saved, the box lists what it will make, with each
+  dataset's rows: *Transformer · 24 rows*.
+- Rows with no value in that column are left out, and the box says how many.
+- The column itself isn't kept: every row of a dataset holds the same value.
+- On the Free plan every saved dataset counts towards the limit; if they won't
+  all fit, the box says how many more you can save, and nothing is saved.
+- **Save 3 datasets** saves them all at once, then lists them with a link to
+  each. You choose how the columns are read when you fit each one, as for any
+  dataset.
+
+Leave **Split into datasets by** on *no split* and the upload works as before:
+one dataset. Over the API and MCP, `change dataset_upload` takes `dataset_col`.
+
 ## Mapping the columns
 
-The **Data** step shows the first rows and asks what each column means, in plain
-words. You only need the ones your data has:
+The **Data** step shows your file's first rows, then one selector for each
+thing a fit can use. Each is labelled with SurPyval's name for it (**x**, **c**,
+**n**, **xl**, **xr**, **tl**, **tr**) and a few plain words. Reliafy fills them in from
+the column names and values, so for most files you only check them, then press
+**Next**.
 
-- **Time to failure or removal** — the failure or censoring time. Required.
-- **Failed or still running?** — the censoring column. Reliafy lists the values
-  it finds, with how many rows have each, and you mark each one **Failed** or
-  **Still running**. For the sample *Pump field returns*, `0` is 18 failures and
-  `1` is 7 pumps still running. If most units come out as still running, the
-  step says so and offers **Swap the flags**: many spreadsheets use `1` for
-  failed.
-- **Count** — if one row represents several identical units.
-- **Failure mode** — when units fail in more than one way: each mode is treated as a competing risk (see [competing risks](/guides/competing-risks)).
-- Under **Advanced: interval and truncated data**, the earliest and latest
-  possible failure time (for failures found at an inspection, used *instead of*
-  a single time) and when each unit was observed from and until (truncation).
-- Under **Advanced (regression): covariates**, the columns a failure depends on,
-  such as load or temperature.
+![The Data step: the first rows, then x, c, n, tl, tr and failure mode](/guides/img/fit-04-data-step.png)
 
-Set the **Unit** here too. It's guessed from the column name where it can be,
-and it flows through to every chart and result afterwards, so it stops you
-comparing a model in hours against one in cycles later on. A unit is optional:
-leave it blank, or tick **No unit (just numbers)** if the times really have none.
+- **x** — *the value when it failed or was removed*. Required, unless every row
+  is a range (below). It needn't be time: days, operating hours, cycles,
+  kilometres, volts or a load all work. Beside it, the **unit** (pick one or
+  type your own; guessed from the column name where it can be), or **no unit**
+  if the values really have none. The unit flows through to every chart and
+  result, so it stops you comparing a model in hours against one in cycles
+  later on.
+- **where x is blank, a range: xl to xr** — for failures found at an
+  inspection: **xl** is the last value the unit was seen working, **xr** the
+  value it was found failed (blank **xr**: still running). Map only the range
+  when every row is one; map **x** as well when some rows have an exact value
+  and others only a range, and each row is read on its own. A row with **x**
+  *and* both range cells filled is left out of the fit, with a warning on the
+  **x** row saying how many and which.
+- **c** — *failed or still running*: `0` = failed, `1` = still running. If your
+  column uses `1` for a failure, tick **my column uses 1 = failed**. A header
+  that says which way round it is, such as *Failed (1=yes)*, is read that way;
+  when it doesn't say, the step asks, with the failures and still-running
+  counts both ways. A column of words (*Failed*, *Running*) is read for you,
+  and the line under **c** shows how, for example *Failed → 0, Running → 1*,
+  with a switch to flip any one. For the sample *Pump field returns*, `0` is 18
+  failures and `1` is 7 pumps still running; if most units come out as still
+  running, the step offers **Swap the flags**.
+- **n** — *how many units the row stands for*, if one row represents several
+  identical units.
+- **tl** — *late entry: observed only from this value*, for units already in
+  service when records began. A column named like *Entered at (h)* is read
+  this way from the start.
+- **tr** — *observed only up to this value*, when records stop (the end of a
+  warranty, say). Same unit as **x**; a blank cell is no limit on that row.
+- **failure mode** — *optional, competing risks*: when units fail in more than
+  one way, each mode is treated as a competing risk (see
+  [competing risks](/guides/competing-risks)). A blank mode on a unit still
+  running is normal.
+
+Anything that needs settling is said beside the selector it concerns, and when
+**Next** is greyed the reason is beside it. A column that says each row's unit,
+such as *hrs* on most rows and *days* on a few, is offered under the unit:
+every value is converted to the unit before the fit.
+
+Under **Advanced (regression): covariates**, tick the columns a failure depends
+on, such as load or temperature (see
+[covariates](/guides/covariates-and-regression)).
+
+A few things the step does for you:
+
+- **Blank rows** (a gap left in a sheet) are skipped.
+- A **value of 0 or less** is noted beside **x**: Kaplan–Meier takes it, but a
+  distribution such as Weibull can't, so correct or remove those rows.
+- Load a **corrected copy** of the same file (go **Back** and upload it again)
+  and the columns are read as you set them on the first, as long as every
+  column you used is still there.
 
 ## Choosing a distribution
 
@@ -171,7 +231,7 @@ there.
 
 The panel beside the probability plot has:
 
-- **Parameters** — each fitted parameter with its 95% interval, the number of
+- **Parameters** — each fitted parameter with its 90% interval, the number of
   observations, and **Fit statistics** (the AIC, which opens the Diagnostics
   tab).
 - **Failure pattern** — what the fit means in a word: for a Weibull, wear-out,
@@ -197,7 +257,7 @@ real — often that you have two failure modes mixed together and would be bette
 off splitting the data.
 
 For the sample bearing model, 30 failures fit a Weibull with shape **β = 2.50**
-(95% 1.88–3.32) and scale **α = 1,440 hours**. For a Weibull fit, **β is the
+(90% 1.96–3.17) and scale **α = 1,440 hours**. For a Weibull fit, **β is the
 number worth understanding**:
 
 - **β < 1** — failures are *decreasing* over time. Infant mortality: bad
@@ -211,7 +271,7 @@ number worth understanding**:
 That single parameter often changes the maintenance decision more than anything
 else on the page, which is why the panel spells it out. The bearings' whole
 interval sits above 1, so the **Failure pattern** row reads *Wear-out*, and
-clicking it says *β is above 1 at 95% confidence*.
+clicking it says *β is above 1 at 90% confidence*.
 
 The **Calculator** tab lets you ask the model direct questions: reliability (or
 any other function) at a given time, or, with **Time at reliability**, the time
@@ -285,6 +345,15 @@ the record's family with each parameter about the record's value, between
 its bounds (within about 30% when the record has none, and the result says
 so). One library counts as one saved item on the Free plan, however many
 records it holds.
+
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits the model with
+SurPyval on your own computer. It holds the data the model was fitted to, makes the same fit the app made
+(the same method, censoring, options and units) and prints the numbers on the page: the parameters with
+their 90% intervals, and the B-lives and mean life with their 90% lower bounds. The first lines of the script
+say which SurPyval version to install. It's free for everyone who can open the model, including from a
+public link.
 
 ## Where to go next
 

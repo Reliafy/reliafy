@@ -127,16 +127,17 @@ def test_design_reliability_reports_the_chance_of_passing():
 def test_mtbf_test_matches_the_chi_squared_bound():
     from repyability import mtbf_test_time
 
+    # The confidence defaults to the app's 90% (it was 95%).
     out = demonstration_test(method="mtbf", mtbf=1000, units=4, unit="hours")
-    assert out["total_test_time"] == pytest.approx(mtbf_test_time(1000.0))
-    assert out["total_test_time"] == pytest.approx(1000 * stats.chi2.ppf(0.95, 2) / 2)
+    assert out["total_test_time"] == pytest.approx(mtbf_test_time(1000.0, confidence=0.9))
+    assert out["total_test_time"] == pytest.approx(1000 * stats.chi2.ppf(0.90, 2) / 2)
     assert out["test_time_per_unit"] == pytest.approx(out["total_test_time"] / 4)
     assert out["summary"] == (
-        "Run 2,996 hours of total test time with no failures to show MTBF ≥ 1,000 hours at 95% confidence "
-        "— about 749 hours on each of 4 units."
+        "Run 2,303 hours of total test time with no failures to show MTBF ≥ 1,000 hours at 90% confidence "
+        "— about 576 hours on each of 4 units."
     )
     totals = out["tradeoff"]["rows"][0]["values"]
-    assert totals[2] == pytest.approx(mtbf_test_time(1000.0, failures=2))
+    assert totals[2] == pytest.approx(mtbf_test_time(1000.0, confidence=0.9, failures=2))
 
 
 # ---- service: validation --------------------------------------------------------------

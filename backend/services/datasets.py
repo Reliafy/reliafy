@@ -9,10 +9,13 @@ docs/datasets.md for the shape, the limits and why."""
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 import uuid
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 from backend import storage
@@ -162,6 +165,100 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
     )
     db.datasets.insert_one(to_doc(dataset))
     return dataset, False
+
+
+# ---- One sheet, several datasets: split by a column ---------------------------
+# A sheet holding several kinds of thing (transformers, coal mills, pumps) is
+# saved as one dataset per value of its dataset column, each named by the
+# value. Each stands alone (datasets are atomic): no link between them, and
+# the dataset column itself is left out, as every row of a dataset holds the
+# same value. Rows with a blank value are left out and counted.
+
+
+def _csv_text(file_bytes: bytes) -> str:
+    try:
+        return bytes(file_bytes).decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return bytes(file_bytes).decode("latin-1")
+
+
+def split_by_column(file_bytes: bytes, column: str) -> tuple[list[tuple[str, bytes]], int]:
+    """A CSV's rows grouped by ``column``: ``([(value, csv_bytes), ...], blank)``,
+    in the order each value first appears, each part a CSV of the rows with
+    that value (cells exactly as they were, ``column`` dropped). ``blank``:
+    rows with no value in ``column`` (left out). Wholly blank rows are skipped.
+    Raises FitError when the column isn't in the sheet or holds no value."""
+    rows = list(csv.reader(io.StringIO(_csv_text(file_bytes))))
+    header = rows[0] if rows else []
+    names = [h.strip() for h in header]
+    want = str(column or "").strip()
+    if want not in names:
+        raise FitError(f"The sheet has no column “{want}”. Its columns: {', '.join(names)}.")
+    at = names.index(want)
+    groups: dict[str, list[list[str]]] = {}
+    blank = 0
+    for row in rows[1:]:
+        if not any(cell.strip() for cell in row):
+            continue
+        value = row[at].strip() if at < len(row) else ""
+        if not value:
+            blank += 1
+            continue
+        groups.setdefault(value, []).append(row[:at] + row[at + 1:])
+    if not groups:
+        raise FitError(f"Column “{want}” has no values to split the sheet by.")
+    out = []
+    kept = header[:at] + header[at + 1:]
+    for value, part in groups.items():
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow(kept)
+        writer.writerows(part)
+        out.append((value, buf.getvalue().encode("utf-8")))
+    return out, blank
+
+
+def split_names(values: list[str], taken: set[str], source: str) -> list[str]:
+    """Each value's dataset name: the value itself, or "<value> – <source>"
+    when the workspace already has a dataset of that name (case-insensitive).
+    A name still taken gets " (2)", " (3)"…"""
+    used = {t.strip().lower() for t in taken}
+    out = []
+    for value in values:
+        name = value[:200]
+        if name.lower() in used and source:
+            name = f"{value} – {source}"[:200]
+        base, k = name, 2
+        while name.lower() in used:
+            name = f"{base} ({k})"
+            k += 1
+        used.add(name.lower())
+        out.append(name)
+    return out
+
+
+def create_split(db, file_bytes: bytes, column: str, owner_id: str,
+                 source: str) -> tuple[list[tuple[Dataset, bool]], int]:
+    """Save one dataset per value of ``column`` (``split_by_column``), named by
+    ``split_names`` against the owner's datasets: ``([(dataset, reused), ...],
+    blank_rows)``. Only the rows are kept: the columns are read when fitting.
+    Identical data already saved comes back as it is (``reused``)."""
+    parts, blank = split_by_column(file_bytes, column)
+    taken = {d.get("name") or "" for d in db.datasets.find({"owner_id": owner_id}, {"name": 1})}
+    names = split_names([v for v, _ in parts], taken, source)
+    out = []
+    for (_, data), name in zip(parts, names):
+        ds, reused = create_or_reuse(db, name, data, owner_id)
+        out.append((ds, reused))
+    return out, blank
+
+
+def count_new_parts(db, file_bytes: bytes, column: str, owner_id: str) -> int:
+    """How many of a split's parts would be new datasets (identical data the
+    owner already has is reused and doesn't count against a cap)."""
+    parts, _ = split_by_column(file_bytes, column)
+    return sum(1 for _, data in parts
+               if db.datasets.find_one({"checksum": storage.checksum(data), "owner_id": owner_id}) is None)
 
 
 def preview_frame(db, owner_id, dataset_id: str | None, file_bytes: bytes | None) -> tuple[pd.DataFrame, str | None]:
@@ -646,6 +743,62 @@ _FAILED_NAME_RE = re.compile(
     r"(is_?)?(fail|failed|failure|failures|event|status|dead|death|broken)(_?flag)?",
     re.IGNORECASE,
 )
+# A header that says what 1 means ("Failed (1=yes)", "status (1 = failed)",
+# "Running (1=yes)", "yes=1"): the same reading as the fit's Data step
+# (``flagHeaderMeaning`` in frontend/src/datasetGuess.js), so the Data list
+# counts failures the way the fit reads them.
+_SUBJECT_FAILED = re.compile(r"\b(fail|failed|fails|failure|failures|event|events|dead|death|died|broken|broke|tripped)\b")
+_SUBJECT_RUNNING = re.compile(r"\b(c|cens|censor|censored|censoring|suspend|suspended|suspension|running|survived"
+                              r"|survives|alive|working|ok|in service)\b")
+_WORD_FAILED = re.compile(r"^(failed|fail|failure|f|broken|dead|event|down)$")
+_WORD_RUNNING = re.compile(r"^(running|run|r|censored|cens|suspended|s|survived|alive|ok|working|in service"
+                           r"|still running)$")
+
+
+def flag_header_meaning(name) -> str | None:
+    """What a 0/1 column's 1 means by its header: ``"failed"``,
+    ``"running"`` or None when the header doesn't say."""
+    raw = re.sub(r"([a-z])([A-Z])", r"\1 \2", str(name or "")).lower()
+    core = re.sub(r"-?\d+\s*=\s*[a-z ]+?(?=[),;/]|$)|[a-z]+\s*=\s*-?\d+", " ", raw)
+    core = re.sub(r"\s+", " ", re.sub(r"[_\-.()\[\]#:?/,;]+", " ", core)).strip()
+    failed, running = bool(_SUBJECT_FAILED.search(core)), bool(_SUBJECT_RUNNING.search(core))
+    subject = "failed" if failed and not running else "running" if running and not failed else None
+
+    def flip(m):
+        return {"failed": "running", "running": "failed"}.get(m)
+
+    def meaning(word):
+        v = re.sub(r"\s+", " ", word.strip())
+        if _WORD_FAILED.match(v):
+            return "failed"
+        if _WORD_RUNNING.match(v):
+            return "running"
+        if re.match(r"^(yes|y|true|t)$", v):
+            return subject
+        if re.match(r"^(no|n|false)$", v):
+            return flip(subject)
+        return None
+
+    for m in re.finditer(r"(?:^|[^\d-])([01])\s*=\s*([a-z][a-z ]*?)(?=\s*(?:[),;/]|$|\d))", raw):
+        w = meaning(m.group(2))
+        if w:
+            return w if m.group(1) == "1" else flip(w)
+    for m in re.finditer(r"([a-z][a-z ]*?)\s*=\s*([01])\b", raw):
+        w = meaning(re.split(r"[(,;/]", m.group(1))[-1])
+        if w:
+            return w if m.group(2) == "1" else flip(w)
+    return subject
+
+
+def one_means_failed(column) -> bool:
+    """Whether a 0/1 flag column reads 1 as failed: its header says so, or
+    (saying nothing) it is named like "failed" / "status" / "event"."""
+    said = flag_header_meaning(column)
+    if said is not None:
+        return said == "failed"
+    return bool(_FAILED_NAME_RE.fullmatch(str(column).strip()))
+
+
 # Interval-censored data has two time columns (the failure lies between them): SurPyval's xl / xr,
 # the shortest / longest a saved Bayesian update writes, or a plain left / right, lower / upper.
 _TIME_NAME_RE = re.compile(
@@ -657,8 +810,18 @@ _STOP_RE = re.compile(r"(stop|end|exit|^tr$|until)", re.IGNORECASE)
 
 
 def _unit_column(df: pd.DataFrame) -> str | None:
-    """A unit-like text column whose values repeat (several rows per unit)."""
+    """A unit-like text column whose values repeat (several rows per unit).
+    A column of time units ("hrs", "days") is never one; nor is a coded
+    group ("CV-07") when another column already names every row (an idler
+    number, a serial): then each row is a unit and the group is a covariate."""
+    from backend.unit_column import _unit_counts  # local: unit_column reads services
+
     numeric = {c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])}
+    rows = df.dropna(how="all")
+    row_ids = len(rows) > 1 and any(
+        g not in numeric and rows[g].notna().all() and rows[g].nunique() == len(rows)
+        and rows[g].astype(str).str.contains(r"\d").mean() >= 0.8
+        for g in df.columns)
     for g in df.columns:
         if g in numeric:
             continue
@@ -668,8 +831,10 @@ def _unit_column(df: pd.DataFrame) -> str | None:
         sizes = col.groupby(col).size()
         if len(sizes) == len(col) or (sizes >= 2).mean() < 0.5:
             continue
+        if _unit_counts(df[g]) is not None:
+            continue
         digits = sizes.index.to_series().str.contains(r"\d").mean()
-        if _UNIT_NAME_RE.search(str(g)) or digits >= 0.8:
+        if _UNIT_NAME_RE.search(str(g)) or (digits >= 0.8 and not row_ids):
             return str(g)
     return None
 
@@ -686,6 +851,7 @@ def _censor_column(df: pd.DataFrame) -> str | None:
 
 def detect_tags(df: pd.DataFrame) -> dict:
     """``{"tags": [...], "use_for": [...]}`` for a dataset's columns."""
+    df = df.dropna(how="all")  # a blank row in a sheet is no unit (the fit skips it too)
     tags: set[str] = set()
     unit = _unit_column(df)
     censor = _censor_column(df)
@@ -701,7 +867,9 @@ def detect_tags(df: pd.DataFrame) -> dict:
     start_stop = (any(_START_RE.search(t) for t in times) and any(_STOP_RE.search(t) for t in times)) or bool(
         ru and ru["kind"] == "time_varying")
     # A text column unique on every row names the rows (a serial, a tag): not a covariate.
-    extra = [str(c) for c in df.columns if str(c) not in (unit, censor, *times)
+    # A column of words that says failed or still running is the status, not a covariate.
+    said = None if censor else _word_status(df, {unit} if unit else set())
+    extra = [str(c) for c in df.columns if str(c) not in (unit, censor, *times) and not (said and str(c) == said[0])
              and not (not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique(dropna=True) == len(df))]
     repeat = bool(ru and ru["kind"] == "recurrent" and not start_stop
                   and (censor or not any(pd.api.types.is_numeric_dtype(df[c]) for c in extra
@@ -748,7 +916,7 @@ def detect_tags(df: pd.DataFrame) -> dict:
         use_for.append("Non-repairable model" + (" with covariates" if covs else ""))
         use_for.append("Condition and life model (once measurements are added)")
     out_tags = [t for t in TAGS if t in tags]
-    return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags),
+    return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags, times),
             "time_unit": _time_unit(times)}
 
 
@@ -809,7 +977,7 @@ def _noun(col: str | None) -> str:
     """What a row's unit is called, from its ID column ("pump" → pumps)."""
     if not col:
         return "unit"
-    word = re.sub(r"[_\s-]*(id|no|number|serial|sn|tag)$", "", str(col).strip(), flags=re.IGNORECASE)
+    word = re.sub(r"[_\s-]*(id|no|number|serial|sn|tag)\.?$", "", str(col).strip(), flags=re.IGNORECASE)
     word = re.sub(r"[_-]+", " ", word).strip().lower()
     if not word or _GENERIC_ID_RE.match(word) or len(word) > 20:
         return "unit"
@@ -825,23 +993,232 @@ def _id_column(df: pd.DataFrame, unit: str | None) -> str | None:
     return None
 
 
-def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[str]) -> str:
+# A status column of words, read as the fit wizard reads it
+# (frontend/src/datasetGuess.js): what each value means, by the value and,
+# for yes / no, by the column's name.
+_STATUS_NAME_RE = re.compile(
+    r"\b(status|state|fail|failed|failure|failures|censor|censored|censoring|cens|event|events|suspend|suspended"
+    r"|suspension|suspensions|running|outcome|survived|alive|dead)\b", re.IGNORECASE)
+_NOT_STATUS_RE = re.compile(
+    r"\b(mode|modes|cause|causes|type|code|description|desc|reason|date|time|hours?|comment|comments|notes?)\b",
+    re.IGNORECASE)
+_FAILED_VALUE_RE = re.compile(
+    r"(f|fail|failed|failure|failures|fault|faulty|broken|broke|dead|died|event|down|u ?/ ?s|unserviceable|defect"
+    r"|defective|tripped|failed in service)", re.IGNORECASE)
+_RUNNING_VALUE_RE = re.compile(
+    r"(s|r|run|running|still running|suspended|suspension|susp|censored|survived|survivor|alive|ok|okay|working"
+    r"|operating|operational|in service|in-service|active|serviceable|good|healthy|removed|retired|planned"
+    r"|preventive)", re.IGNORECASE)
+_YES_RE = re.compile(r"(y|yes|true|t)", re.IGNORECASE)
+_NO_RE = re.compile(r"(n|no|false)", re.IGNORECASE)
+_RUNNING_NAME_RE = re.compile(r"\b(censor|censored|censoring|cens|suspend|suspended|suspension|running|survived|alive)\b",
+                              re.IGNORECASE)
+# A failure-mode column: a blank mode is a unit that hasn't failed.
+_MODE_NAME_RE = re.compile(r"\b(mode|modes|cause|causes)\b", re.IGNORECASE)
+_COUNT_NAME_RE = re.compile(r"(n|count|counts|qty|quantity|units|number of units)", re.IGNORECASE)
+# The two times of inspection data: when the unit last worked and when it was found failed.
+_EARLIEST_RE = re.compile(r"(^xl$|last[_ ]?ok|passed|earliest|shortest|lower|^left$|from)", re.IGNORECASE)
+_LATEST_RE = re.compile(r"(^xr$|found|failed|latest|longest|upper|^right$|until)", re.IGNORECASE)
+
+
+def _name_words(name) -> str:
+    return re.sub(r"[_\-./()\[\]#:]+", " ", re.sub(r"([a-z])([A-Z])", r"\1 \2", str(name or ""))).strip()
+
+
+# A phrase of status words ("Removed, OK", "Found failed", "OK at last
+# check"): read by its words when they all point one way and nothing negates
+# them ("not failed" is left for the person to say). The same rule as the fit
+# wizard's ``guessStatusMeaning`` (frontend/src/datasetGuess.js).
+_PHRASE_FAILED = frozenset({"fail", "failed", "failure", "fault", "faulty", "broken", "broke", "dead", "died",
+                            "unserviceable", "defect", "defective", "tripped", "seized", "burst", "leaking",
+                            "leaked", "cracked", "worn"})
+_PHRASE_RUNNING = frozenset({"ok", "okay", "running", "suspended", "suspension", "censored", "survived", "alive",
+                             "working", "operating", "operational", "serviceable", "good", "healthy", "removed",
+                             "retired", "planned", "preventive", "still", "active", "unfailed"})
+_PHRASE_NEGATION = frozenset({"not", "no", "non", "never", "without", "un", "nil"})
+
+
+def status_code(value, column: str = "") -> int | None:
+    """What one status value means: 0 failed, 1 still running, None when it
+    can't be told. Words by their meaning ("Failed", "Running", "F" / "S"),
+    yes / no by the column's name (a "running" column's yes is still
+    running), and phrases of status words ("Removed, OK", "Found failed")."""
+    v = str(value).strip() if value is not None else ""
+    if not v:
+        return None
+    if _FAILED_VALUE_RE.fullmatch(v):
+        return 0
+    if _RUNNING_VALUE_RE.fullmatch(v):
+        return 1
+    words = _name_words(column)
+    running_name = bool(_RUNNING_NAME_RE.search(words)) and not _FAILED_NAME_RE.fullmatch(str(column).strip())
+    if _YES_RE.fullmatch(v):
+        return 1 if running_name else 0
+    if _NO_RE.fullmatch(v):
+        return 0 if running_name else 1
+    tokens = set(re.findall(r"[a-z]+", v.lower()))
+    if not tokens or tokens & _PHRASE_NEGATION:
+        return None
+    failed, running = bool(tokens & _PHRASE_FAILED), bool(tokens & _PHRASE_RUNNING)
+    if failed != running:
+        return 0 if failed else 1
+    return None
+
+
+def status_column(df: pd.DataFrame, skip: set | None = None) -> str | None:
+    """The column that most likely says which units failed: a 0/1 flag named
+    like a status (``_censor_column``), else a column of a few words named like
+    one ("Status": Failed / Removed, OK). None when nothing looks like it.
+    Compare groups preselects it, so still-running units are never counted as
+    failures by default."""
+    skip = skip or set()
+    flag = _censor_column(df)
+    if flag and flag not in skip and _CENSOR_NAME_RE.search(flag):
+        return flag
+    for col in df.columns:
+        if str(col) in skip or pd.api.types.is_numeric_dtype(df[col]):
+            continue
+        words = _name_words(col)
+        if not _STATUS_NAME_RE.search(words) or _NOT_STATUS_RE.search(words):
+            continue
+        values = df[col].dropna().astype(str).str.strip()
+        if values.empty or values.nunique() > 12:
+            continue
+        known = sum(1 for v in values.unique() if status_code(v, str(col)) is not None)
+        if known * 2 >= values.nunique():
+            return str(col)
+    return None
+
+
+def _word_status(df: pd.DataFrame, skip: set) -> tuple[str, pd.Series] | None:
+    """A text column that says failed or still running on every row, and its
+    values as censor codes (0 failed, 1 running); None when no column does."""
+    for col in df.columns:
+        if str(col) in skip or pd.api.types.is_numeric_dtype(df[col]):
+            continue
+        words = _name_words(col)
+        if not _STATUS_NAME_RE.search(words) or _NOT_STATUS_RE.search(words):
+            continue
+        values = df[col].dropna().astype(str).str.strip()
+        if values.empty or len(values) != len(df) or values.nunique() > 12:
+            continue
+
+        def code(v, col=str(col)):
+            return status_code(v, col)
+
+        codes = values.map(code)
+        if codes.notna().all():
+            return str(col), codes.astype(int)
+    return None
+
+
+def _interval_pair(df: pd.DataFrame, times: list[str]) -> tuple[str, str] | None:
+    """The earliest and latest possible failure time of inspection data: two
+    time columns named like "last ok" and "found failed" (or xl / xr, lower /
+    upper), the first never after the second."""
+    for a in times:
+        for b in times:
+            if a == b or not (_EARLIEST_RE.search(a) and _LATEST_RE.search(b)):
+                continue
+            both = df[a].notna() & df[b].notna()
+            if both.any() and bool((df[a][both] <= df[b][both]).all()) and not (df[a].isna() & df[b].isna()).any():
+                return a, b
+    return None
+
+
+def life_counts(df: pd.DataFrame, censor: str | None = None, times: list[str] | None = None) -> dict | None:
+    """How many units a table of life data holds and what happened to them:
+    ``{units, failed, ranged, running}``. ``failed`` failed at a known time,
+    ``ranged`` were found failed (between two inspections, or at the first
+    one), ``running`` hadn't failed. Read from the status column (0 / 1 codes
+    by the column's name, words by their meaning), the two times of
+    inspection data, a failure-mode column whose blanks are units still
+    running, and a count column. None when the table doesn't say which units
+    failed: better no count than a guess."""
+    from backend import fitting  # local: only the summary needs it
+
+    n_rows = len(df)
+    codes = None
+    skip = {censor} if censor else set()
+    if censor:
+        raw = pd.to_numeric(df[censor], errors="coerce")
+        if raw.isna().any():
+            return None
+        # A flag named "failed" / "status" is 1 = failed; left (-1) and interval (2) stay.
+        flip = one_means_failed(censor)
+        codes = raw.where(~raw.isin((0, 1)), 1 - raw) if flip else raw
+    else:
+        words = _word_status(df, skip)
+        if words:
+            skip.add(words[0])
+            codes = words[1]
+    pair = _interval_pair(df, [t for t in (times or []) if t not in skip])
+    if pair:
+        try:
+            read = fitting.read_interval_rows(
+                df[pair[0]].to_numpy(dtype=float), df[pair[1]].to_numpy(dtype=float),
+                None if codes is None else codes.to_numpy(dtype=float))
+        except FitError:
+            return None
+        lo, hi = read["xl"], read["xr"]
+        codes = pd.Series(read["c"] if "c" in read else [0 if a == b else 2 for a, b in zip(lo, hi)], index=df.index)
+    if codes is None:
+        modes = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])
+                 and _MODE_NAME_RE.search(_name_words(c)) and 0 < df[c].isna().sum() < n_rows]
+        if not modes:
+            return None
+        codes = df[modes[0]].isna().astype(int)
+    weights = pd.Series(1.0, index=df.index)
+    for col in df.columns:
+        if str(col) in skip or not _COUNT_NAME_RE.fullmatch(str(col).strip()):
+            continue
+        values = pd.to_numeric(df[col], errors="coerce")
+        if pd.api.types.is_numeric_dtype(df[col]) and values.notna().all() and (values == values.round()).all() \
+                and (values >= 0).all():
+            weights = values.astype(float)
+            break
+
+    def count(mask) -> int:
+        return int(round(float(weights[mask].sum())))
+
+    return {"units": count(codes.notna()), "failed": count(codes == 0), "ranged": count(codes.isin((-1, 2))),
+            "running": count(codes == 1)}
+
+
+def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[str],
+             times: list[str] | None = None) -> str:
     """The list's count: units of the dataset's own noun, and what happened to them,
-    e.g. "40 pumps · 19 failed", "10 trucks · 71 failures", "30 bearings · 193 readings"."""
+    e.g. "40 pumps · 19 failed", "10 trucks · 71 failures", "30 bearings · 193 readings".
+    Life data that doesn't say which units failed gets the units alone, unless
+    it is plain times with nothing else that could say ("all failed")."""
     idc = _id_column(df, unit)
     noun = _noun(idc)
     n_units = int(df[unit].nunique(dropna=True)) if unit else len(df)
     units = f"{n_units:,} {_plural(noun, n_units)}"
-    failed_flag = 1 if censor and _FAILED_NAME_RE.fullmatch(censor.strip()) else 0
-    failed = int((df[censor] == failed_flag).sum()) if censor else None
     if "Measurements" in tags:
         return f"{units} · {len(df):,} readings"
     if "Repairable" in tags:
-        n = failed if failed is not None else len(df)
+        failed_flag = 1 if censor and one_means_failed(censor) else 0
+        n = int((df[censor] == failed_flag).sum()) if censor else len(df)
         return f"{units} · {n:,} {_plural('failure', n)}"
-    if failed is None:
-        return f"{units} · all failed" if "Non-repairable" in tags else units
-    return f"{units} · {failed:,} failed"
+    counts = None if unit else life_counts(df, censor, times)
+    if counts is None:
+        if censor:  # several rows per unit with a flag (start and stop rows)
+            failed_flag = 1 if one_means_failed(censor) else 0
+            return f"{units} · {int((df[censor] == failed_flag).sum()):,} failed"
+        # No status, and nothing that looks like one left unread (a column
+        # named like a status, a second time): every row is a failure.
+        unsure = len(times or []) > 1 or any(
+            _STATUS_NAME_RE.search(_name_words(c)) and not _NOT_STATUS_RE.search(_name_words(c))
+            for c in df.columns if str(c) not in (times or []))
+        return f"{units} · all failed" if "Non-repairable" in tags and not unsure else units
+    units = f"{counts['units']:,} {_plural(noun, counts['units'])}"
+    parts = [units]
+    if counts["failed"] or not counts["ranged"]:
+        parts.append(f"{counts['failed']:,} failed")
+    if counts["ranged"]:
+        parts.append(f"{counts['ranged']:,} failed between inspections")
+    return " · ".join(parts)
 
 
 _TAG_CACHE: dict[str, dict] = {}
@@ -878,11 +1255,24 @@ def profile(dataset: Dataset) -> dict:
     unit histories (``repeated_units``), and — for a dataset whose one table
     holds life data and readings together — how it would ``split``."""
     df = load_dataframe(dataset)
+    distinct = {str(c): int(df[c].nunique(dropna=True)) for c in df.columns}
     return {
-        "distinct": {str(c): int(df[c].nunique(dropna=True)) for c in df.columns},
+        "distinct": distinct,
+        # A few-valued column's values and their rows ({"Failed": 35, ...}), so
+        # Compare groups can say what each status value means, as the fit does.
+        "values": {str(c): {_value_label(v): int(k) for v, k in df[c].value_counts(dropna=True).items()}
+                   for c in df.columns if 0 < distinct[str(c)] <= 12},
+        "status_column": status_column(df),
         "repeated_units": repeated_units(df),
         "split": None if dataset.measurements is not None else split_plan(df),
     }
+
+
+def _value_label(v) -> str:
+    """A cell as the status maps match it: 1.0 reads "1"."""
+    if isinstance(v, (float, np.floating)) and float(v).is_integer():
+        return str(int(v))
+    return str(v)
 
 
 def dependents_message(dependents: list[dict]) -> str:
