@@ -2,8 +2,8 @@
 // value means, the failures-and-running count before a fit, and what is wrong
 // with a mapping, in plain words. Pure, so `node --test src/` covers it.
 import {
-  CONVERTIBLE_UNITS, flagHeaderMeaning, guessIntervalPair, guessLifeColumns, guessStatusMeaning, guessUnit,
-  guessUnitColumn, isNumeric, likelyStatusColumns, timeUnitOf,
+  CONVERTIBLE_UNITS, flagHeaderMeaning, guessIdColumn, guessIntervalPair, guessLateEntry, guessLifeColumns,
+  guessStatusMeaning, guessUnit, guessUnitColumn, isNumeric, likelyStatusColumns, timeUnitOf, unitNoun,
 } from "./datasetGuess.js";
 
 // ``e`` names each failure's mode and ``g`` the groups to compare (#177):
@@ -12,6 +12,21 @@ import {
 export const EMPTY_MAPPING = {
   x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", e: "", g: "", u: "", c_invert: false, c_map: null,
 };
+
+// The form fields a mapping is sent as, in order: [[field, value]] (api.js's
+// fit and save requests). ``u``, a column of per-row units, goes as the
+// ``u_col`` fit option; the status meanings with the status column only.
+export function mappingFields(mapping) {
+  const { c_invert, c_map, u, ...columns } = mapping || {};
+  const out = [];
+  if (u) out.push(["u_col", u]);
+  for (const [field, column] of Object.entries(columns)) {
+    if (column) out.push([field, column]);
+  }
+  if (columns.c) out.push(["c_invert", c_invert ? "1" : "0"]);
+  if (columns.c && c_map && Object.keys(c_map).length) out.push(["c_map", JSON.stringify(c_map)]);
+  return out;
+}
 
 // Column facts from /api/columns or a dataset's detail: name → { dtype,
 // blanks, values ({value: rows} when there are few, else null), nUnique }.
@@ -117,6 +132,57 @@ export function roleSummary(roles) {
     used: entries.filter(([, r]) => r).map(([col, role]) => ({ col, role })),
     ignored: entries.filter(([, r]) => !r).map(([col]) => col),
   };
+}
+
+// The Data step's role list (DataMapper), the usual ones first. ``id`` is
+// the column naming each unit (for the words only: never sent); ``cov`` a
+// covariate; "" ignored.
+const HEAD_LABELS = {
+  "": "Ignore this column",
+  id: "Unit name or id",
+  x: "Time to failure or removal",
+  c: "Failed or still running",
+  e: "Failure mode",
+  cov: "Covariate",
+  i: "Item",
+  n: "Count (units on the row)",
+  xl: "Earliest failure time (inspection)",
+  xr: "Latest failure time (inspection)",
+  tl: "Observed from (late entry)",
+  tr: "Observed until",
+  u: "Time unit of each row",
+};
+
+export function roleGroups({ timeVarying = null, covariates = false, failureMode = false } = {}) {
+  if (timeVarying) {
+    const fields = timeVarying === "intervals" ? ["i", "xl", "xr", "c"] : ["i", "x", "c"];
+    return { common: ["", ...fields, ...(covariates ? ["cov"] : [])], more: [] };
+  }
+  return {
+    common: ["", "id", "x", "c", ...(failureMode ? ["e"] : []), ...(covariates ? ["cov"] : [])],
+    more: ["n", "xl", "xr", "tl", "tr", "u"],
+  };
+}
+
+export function roleName(role, timeVarying = null) {
+  if (timeVarying === "intervals" && role === "c") return "Did the row end in a failure?";
+  if (timeVarying && ["x", "xl", "xr"].includes(role)) return roleLabel(role, timeVarying);
+  return HEAD_LABELS[role] ?? roleLabel(role, timeVarying);
+}
+
+// Every column's role: its mapping field, "cov", "id" or "" (ignored).
+export function rolesOf(columns, mapping, covariates = [], idColumn = "") {
+  const roles = columnRoles(columns, mapping, covariates);
+  if (idColumn && roles[idColumn] === "") roles[idColumn] = "id";
+  return roles;
+}
+
+// The state after ``col`` is given ``role``: the role leaves the column that
+// had it, and the column leaves what it did before.
+export function setRole({ mapping, covariates, idColumn }, col, role, facts = {}) {
+  const next = assignRole(mapping, covariates, col, role === "id" ? "" : role, facts);
+  const id = role === "id" ? col : idColumn === col ? "" : idColumn;
+  return { mapping: next.mapping, covariates: next.covariates, idColumn: id };
 }
 
 // How a status value is matched (as the server does): trimmed and
@@ -227,11 +293,98 @@ export function guessMapping(columns, facts) {
   // per unit only). Without a status column its blanks are asked about
   // first (dataQuestions: were those units still running?).
   const mode = !pair && g.c ? likelyStatusColumns(cols).mode.find((c) => ![g.c, g.n, g.x].includes(c.name)) : null;
+  // Units already in service when records began ("Entered at (h)"): late
+  // entry, so their time before it isn't counted as survived. Not with a
+  // failure mode, which takes one time per unit.
+  const tl = mode ? "" : guessLateEntry(cols, [g.c, g.n, times.x, pair?.xl, pair?.xr].filter(Boolean));
   return {
-    mapping: { ...EMPTY_MAPPING, ...times, c: g.c, n: g.n, e: mode?.name || "", u: mixed?.column || "",
+    mapping: { ...EMPTY_MAPPING, ...times, c: g.c, n: g.n, e: mode?.name || "", u: mixed?.column || "", tl,
                ...guessStatus(g.c, facts) },
     unit: mixed ? mixed.common : pair ? guessUnit(pair.xl) || guessUnit(pair.xr) : g.unit,
   };
+}
+
+// Where the Data step starts: how the dataset was last fitted (its saved
+// mapping), unless that reading leaves something unsettled (a value with no
+// meaning, a blank status) where a fresh guess reads the sheet cleanly. A
+// saved mapping can carry an old choice, a failure-mode column read as the
+// status, say, without the meanings that went with it. Returns
+// { mapping, unit, from } (``from``: the model it was kept from, or null).
+export function startingMapping(saved, columns, facts, nRows) {
+  const guess = guessMapping(columns, facts);
+  const kept = savedMapping(saved, columns);
+  if (!kept) return { ...guess, from: null };
+  const unsettled = (m, unit) => dataStepIssues(m, facts, nRows, unit).length
+    + dataQuestions(m, facts, columns, nRows).length;
+  if (unsettled(kept.mapping, kept.unit) > 0 && unsettled(guess.mapping, guess.unit) === 0) {
+    return { ...guess, from: null };
+  }
+  return { ...kept, from: kept.from || "the last model" };
+}
+
+// The column naming each unit, for the words only (see guessIdColumn).
+export function guessUnitNames(columns, facts, nRows, mapping, covariates = []) {
+  const used = [...Object.values(mapping || {}).filter((v) => typeof v === "string" && v), ...covariates];
+  return guessIdColumn(columns.map((name) => ({ name, ...facts[name] })), nRows, used);
+}
+
+// Failures by mode from a failure-mode column's value counts, most first:
+// [[mode, rows]]. Only when they add up to the failures (the blanks are the
+// units still running), so the split is what the fit will see.
+export function modeCounts(mapping, facts, failed) {
+  const values = mapping.e && facts[mapping.e]?.values;
+  if (!values || mapping.n) return null;
+  const list = Object.entries(values).filter(([v]) => String(v).trim() !== "").sort((a, b) => b[1] - a[1]);
+  const total = list.reduce((a, [, n]) => a + n, 0);
+  return list.length && total === failed ? list : null;
+}
+
+// Units that entered late, counted from a late-entry column's few values.
+function lateCount(column, facts) {
+  const values = facts?.[column]?.values;
+  if (!values) return null;
+  return Object.entries(values).filter(([v]) => Number(v) > 0).reduce((a, [, n]) => a + n, 0);
+}
+
+// What the Data step will fit, in one line, the answer first: "80 seals",
+// "37 failed (22 Wear, 15 Installation)", "43 still running", "times in
+// hours", then conversions and late entry. Each part leads with its number
+// where it has one (shown bold). ``summary``: the failed / running split
+// (statusSummary, or the server's reading for inspection data), null when it
+// can't be told yet; ``idColumn``: the column naming each unit.
+export function readAsParts({ mapping, facts, nRows, unit, summary, idColumn = "", inspection = false }) {
+  const parts = [];
+  const total = summary ? summary.failed + summary.running + summary.left + summary.interval
+    : nRows - (facts[mapping.x]?.blanks || 0);
+  const noun = unitNoun(idColumn, total);
+  parts.push(summary && !mapping.n ? `${total.toLocaleString()} ${noun}`
+    : summary ? `${total.toLocaleString()} units` : plural(nRows, "row", "rows"));
+  if (summary && inspection) {
+    parts.push(...summaryParts(summary, { inspection: true }));
+  } else if (summary) {
+    const modes = modeCounts(mapping, facts, summary.failed);
+    parts.push(`${summary.failed.toLocaleString()} failed`
+      + (modes ? ` (${modes.map(([m, n]) => `${n.toLocaleString()} ${m}`).join(", ")})` : ""));
+    if (summary.running) parts.push(`${summary.running.toLocaleString()} still running`);
+    if (summary.left) parts.push(`${summary.left.toLocaleString()} found failed (left-censored)`);
+    if (summary.interval) parts.push(plural(summary.interval, "interval", "intervals"));
+    if (!mapping.c && !mapping.e && !summary.running) parts.push("no status column, so every row is a failure");
+  }
+  if (isUnitless(unit)) parts.push("times have no unit");
+  else if (String(unit || "").trim()) parts.push(`times in ${String(unit).trim().toLowerCase()}`);
+  else parts.push("no time unit yet");
+  const perRow = unitColumnWords(mapping, facts, unit);
+  if (perRow?.converted) {
+    const from = Object.keys(perRow.counts).filter((u) => u !== perRow.to).map((u) => u.toLowerCase());
+    parts.push(`${plural(perRow.converted, "row", "rows")} converted from ${from.join(" and ")}`);
+  }
+  if (mapping.tl) {
+    const late = lateCount(mapping.tl, facts);
+    parts.push(late ? `${late.toLocaleString()} entered late` : late === 0 ? "none entered late" : "late entry accounted for");
+  }
+  const flags = flagWords(mapping, facts);
+  if (flags) parts.push(flags);
+  return parts;
 }
 
 // A unit column's rows by unit, from its few values: { Hours: 22, Days: 4 }
@@ -449,54 +602,62 @@ export function summaryParts(s, { inspection = false } = {}) {
 // What stops this mapping fitting, in plain words. Empty when it is ready.
 // ``unit``: the fit's unit, which a column of per-row units converts to.
 export function dataStepProblems(mapping, facts, nRows, unit = undefined) {
+  return dataStepIssues(mapping, facts, nRows, unit).map((i) => i.text);
+}
+
+// The same, each with the column it comes from (``col``; null when it is
+// about no one column, such as a missing time), so the Data step can show it
+// in that column's heading: [{ col, text }].
+export function dataStepIssues(mapping, facts, nRows, unit = undefined) {
   const out = [];
+  const add = (col, text) => out.push({ col: col || null, text });
   const perRow = unit === undefined ? null : unitColumnWords(mapping, facts, unit);
-  if (perRow?.problem) out.push(perRow.problem);
+  if (perRow?.problem) add(mapping.u, perRow.problem);
   const f = (col) => facts[col] || {};
   const rows = (n) => plural(n, "row has", "rows have");
   const sample = (col) => (f(col).sample != null ? ` (e.g. “${f(col).sample}”)` : "");
   const numericCol = (col, what) => {
-    if (col && !isNumeric(f(col).dtype)) out.push(`“${col}” holds text${sample(col)}, not ${what}. Pick another column.`);
+    if (col && !isNumeric(f(col).dtype)) add(col, `“${col}” holds text${sample(col)}, not ${what}. Pick another column.`);
   };
   if (mapping.xl || mapping.xr) {
-    if (!mapping.xl || !mapping.xr) out.push("Pick both the earliest and the latest possible failure time, or use a single time column.");
+    if (!mapping.xl || !mapping.xr) add(null, "Pick both the earliest and the latest possible failure time, or use a single time column.");
     numericCol(mapping.xl, "times");
     numericCol(mapping.xr, "times");
   } else if (!mapping.x) {
-    out.push("Pick the column that holds the time to failure or removal.");
+    add(null, "Pick the column that holds the time to failure or removal.");
   } else if (!isNumeric(f(mapping.x).dtype)) {
-    out.push(`“${mapping.x}” holds text${sample(mapping.x)}, not times. Pick the column with the hours, cycles or days.`);
+    add(mapping.x, `“${mapping.x}” holds text${sample(mapping.x)}, not times. Pick the column with the hours, cycles or days.`);
   } else if (f(mapping.x).blanks) {
-    out.push(`${rows(f(mapping.x).blanks)} no time in “${mapping.x}”. Fill them in or delete those rows, then load the file again.`);
+    add(mapping.x, `${rows(f(mapping.x).blanks)} no time in “${mapping.x}”. Fill them in or delete those rows, then load the file again.`);
   }
   if (mapping.c) {
     const values = f(mapping.c).values;
     if (!values) {
-      out.push(`“${mapping.c}” has ${f(mapping.c).nUnique ?? "too many"} different values, so it can't say failed or still running. Pick the status column, or none.`);
+      add(mapping.c, `“${mapping.c}” has ${f(mapping.c).nUnique ?? "too many"} different values, so it can't say failed or still running. Pick the status column, or none.`);
     } else {
       if (f(mapping.c).blanks && statusMeaning("", mapping) === null) {
-        out.push(`${rows(f(mapping.c).blanks)} no value in “${mapping.c}”. Say what a blank means (failed or still running) beside the column, or fill them in.`);
+        add(mapping.c, `${rows(f(mapping.c).blanks)} no value in “${mapping.c}”. Say what a blank means (failed or still running) beside the column, or fill them in.`);
       }
       const unknown = statusValues(values).filter((v) => statusMeaning(v.label, mapping) === null);
       if (unknown.length) {
         const names = unknown.slice(0, 3).map((v) => `“${v.label}”`).join(", ");
-        out.push(`Say whether ${names}${unknown.length > 3 ? " and the rest" : ""} ${unknown.length === 1 ? "means" : "mean"} failed or still running.`);
+        add(mapping.c, `Say whether ${names}${unknown.length > 3 ? " and the rest" : ""} ${unknown.length === 1 ? "means" : "mean"} failed or still running.`);
       }
     }
   }
   if (mapping.e && (mapping.xl || mapping.xr || mapping.tl || mapping.tr)) {
-    out.push("Failure modes take one time per unit: clear the interval and truncation columns, or the failure mode.");
+    add(mapping.e, "Failure modes take one time per unit: clear the interval and truncation columns, or the failure mode.");
   }
   numericCol(mapping.n, "counts");
   if (mapping.n && countProblem(f(mapping.n)) === "decimals") {
     const eg = f(mapping.n).decimal != null ? ` (e.g. “${f(mapping.n).decimal}”)` : "";
-    out.push(`“${mapping.n}” holds decimals${eg}, so it can't be a count: a count says how many units share each row, in whole numbers. Set Count to none, or pick a column of whole numbers.`);
+    add(mapping.n, `“${mapping.n}” holds decimals${eg}, so it can't be a count: a count says how many units share each row, in whole numbers. Set Count to none, or pick a column of whole numbers.`);
   }
   numericCol(mapping.tl, "times");
   numericCol(mapping.tr, "times");
   const s = statusSummary(mapping, facts, nRows);
   if (!out.length && s && s.failed + s.left + s.interval === 0 && s.running > 0) {
-    out.push("No row is marked failed, so there is nothing to fit. Check what each status means.");
+    add(mapping.c || null, "No row is marked failed, so there is nothing to fit. Check what each status means.");
   }
   return out;
 }

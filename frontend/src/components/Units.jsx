@@ -2,7 +2,7 @@ import { UNITLESS, isUnitless } from "../lifeData.js";
 
 // Unit selector for the time column: a combobox of common units that also
 // accepts a custom value (free text via the datalist).
-const COMMON_UNITS = [
+export const COMMON_UNITS = [
   "Hours",
   "Days",
   "Weeks",

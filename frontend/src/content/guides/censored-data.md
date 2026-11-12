@@ -41,9 +41,9 @@ hours,censored
 2000,1
 ```
 
-When you fit, choose that column as **Failed or still running?** in the Data
-step. Reliafy lists each value it finds with its number of rows, and you mark
-each one **Failed** or **Still running** — so a file that uses `1` for a failure,
+When you fit, set that column's heading to **Failed or still running** in the
+Data step. The heading lists each value it finds with its number of rows, and
+you mark each one **Failed** or **Still running** — so a file that uses `1` for a failure,
 or words like `failed` and `running`, works as it is. That's the whole change,
 and it will often move your fitted life substantially.
 
@@ -64,9 +64,9 @@ something already broken. You know it failed *between* the last two inspections,
 but not when.
 
 Recording the inspection date as the failure time systematically overstates
-life. Instead, give both bounds. Open **Advanced: interval and truncated data**
-in the Data step and choose the columns for the **Earliest possible failure
-time** and the **Latest possible failure time**; they're used *instead of* a
+life. Instead, give both bounds. In the Data step, set one column's heading to
+**Earliest failure time (inspection)** and the other's to **Latest failure time
+(inspection)** (under **Less common** in the list); they're used *instead of* a
 single time:
 
 ```
@@ -121,8 +121,8 @@ warranty expired never appear. Or you started recording in 2020, so anything tha
 failed before then is absent. Your sample isn't representative, and a model that
 doesn't know this will be biased.
 
-Under the same **Advanced** section, choose the columns for **Observed from
-(left truncation)** and **Observed until (right truncation)** and the fit
+In the same **Less common** part of a column's list, choose **Observed from
+(late entry)** and **Observed until** for those columns, and the fit
 corrects for the observation window.
 
 ## Counts

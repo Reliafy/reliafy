@@ -1,6 +1,7 @@
 // Thin wrappers around the backend endpoints.
 import { loadAuth } from "./firebase.js";
 import { trackEvent } from "./telemetry.js";
+import { mappingFields } from "./lifeData.js";
 
 // SSE streaming (the metered assistant) is served straight from Cloud Run to
 // bypass Firebase Hosting's CDN, which buffers Server-Sent Events. Cross-origin
@@ -223,14 +224,7 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
 // ``c_map`` ({"Failed": 0, "Running": 1}: a status column of words), sent as
 // JSON when it has entries (#291).
 function appendMapping(form, mapping) {
-  // ``u``: a column of per-row units, sent as the ``u_col`` fit option.
-  const { c_invert, c_map, u, ...columns } = mapping || {};
-  if (u) form.append("u_col", u);
-  for (const [field, column] of Object.entries(columns)) {
-    if (column) form.append(field, column);
-  }
-  if (columns.c) form.append("c_invert", c_invert ? "1" : "0");
-  if (columns.c && c_map && Object.keys(c_map).length) form.append("c_map", JSON.stringify(c_map));
+  for (const [field, value] of mappingFields(mapping)) form.append(field, value);
 }
 
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
