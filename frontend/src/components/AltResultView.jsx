@@ -8,7 +8,7 @@ import { PlotCard, PlotPanel } from "./model/ModelLayouts.jsx";
 import AltLifeStress from "./alt/AltLifeStress.jsx";
 import AltDiagnostics from "./alt/AltDiagnostics.jsx";
 import AltData from "./alt/AltData.jsx";
-import { altTabs, defaultUse, parseUse, resolveAltTab, shapeParam } from "../altFrame.js";
+import { altTabs, defaultUse, resolveAltTab, shapeParam, useForModel } from "../altFrame.js";
 import { formatNumber } from "../format.js";
 import "./alt/AltFrame.css";
 
@@ -24,8 +24,10 @@ import "./alt/AltFrame.css";
 // The page around it gives the header (ModelFrame). The use stress is one
 // for the whole page: Life-stress, the Calculator and Diagnostics share it.
 // ``tab`` / ``onTab``: the open tab (a page keeps it in its address).
+// ``onUseStress``: told the use stress (in the model's units) once the user
+// enters one, so the page's "Plan the next test" carries it.
 export default function AltResultView({ results, modelId = null, name = null, datasetId = null,
-                                        tab: wanted = undefined, onTab = null }) {
+                                        tab: wanted = undefined, onTab = null, onUseStress = null }) {
   const r = results || {};
   const tabs = altTabs(r, { saved: !!modelId });
   const [own, setOwn] = useState(() => resolveAltTab(tabs, wanted));
@@ -35,7 +37,7 @@ export default function AltResultView({ results, modelId = null, name = null, da
   // The use stress (as typed), and whether it is still the default.
   const [use, setUseRaw] = useState(() => defaultUse(r).map(String));
   const [edited, setEdited] = useState(false);
-  const setUse = (next) => { setUseRaw(next); setEdited(true); };
+  const setUse = (next) => { setUseRaw(next); setEdited(true); onUseStress?.(useForModel(r, next)); };
   const [calc, setCalc] = useState(() => initAltCalc(r));
   const [prev, setPrev] = useState(r);
   if (r !== prev) {
@@ -54,13 +56,13 @@ export default function AltResultView({ results, modelId = null, name = null, da
   } else if (tab === "calc") {
     body = <AltCalculator modelId={modelId} results={r} use={use} onUse={setUse} state={calc} setState={setCalc} />;
   } else if (tab === "diag") {
-    body = <AltDiagnostics results={r} modelId={modelId} name={name} use={edited ? parseUse(use) : null} />;
+    body = <AltDiagnostics results={r} modelId={modelId} name={name} use={edited ? useForModel(r, use) : null} />;
   } else if (tab === "data") {
     body = <AltData results={r} datasetId={datasetId} />;
   }
 
   const notices = [
-    ...(r.unit_warnings || []).map((w) => <div className="detail-note warn" key={w}>⚠ {w}</div>),
+    ...[...(r.unit_warnings || []), ...(r.fit_warnings || [])].map((w) => <div className="detail-note warn" key={w}>⚠ {w}</div>),
     r.no_finite_maximum && <NoMaximumNotice key="nfm" notice={r.no_finite_maximum} style={{ margin: 0 }} />,
   ].filter(Boolean);
   return (

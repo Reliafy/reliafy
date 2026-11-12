@@ -246,7 +246,7 @@ def get_model(
     return JSONResponse(content={
         **_model_summary(doc, ctx, len(items)),
         "spec": doc.spec,
-        "results": doc.results,
+        "results": degradation_service.current_results(session, doc, owners),
         "items": [_item_summary(it, ctx, session, owners) for it in items],
     })
 

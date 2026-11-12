@@ -13,6 +13,13 @@ import {
 } from "../api.js";
 import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import { ErrorNotice } from "../components/StorageCap.jsx";
+import { guessAltColumns, isThermal, stressLevelsWarning } from "../altGuess.js";
+
+// A thermal model's temperature must be absolute: the unit is asked, and °C or
+// °F are converted to kelvin before the fit.
+const TEMPERATURE_OPTIONS = [
+  { value: "°C", label: "°C" }, { value: "K", label: "K (kelvin)" }, { value: "°F", label: "°F" },
+];
 
 const STEPS = ["Source", "Model", "Data", "Result"];
 
@@ -42,6 +49,8 @@ export default function AltNewPage() {
   // inspections, mapped as xl (last passed) and xr (found failed) in place of x.
   const [inspection, setInspection] = useState(false);
   const [stress, setStress] = useState([{ col: "", label: "" }]);
+  // Until the user picks a stress column, it follows the life-stress model.
+  const [stressTouched, setStressTouched] = useState(false);
   const [unit, setUnit] = useState("");
 
   const [error, setError] = useState(null);
@@ -61,21 +70,33 @@ export default function AltNewPage() {
   const lm = useMemo(() => lifeModels.find((m) => m.id === lifeModel), [lifeModels, lifeModel]);
   const nStress = lm?.n_stress || 1;
 
-  // Keep the stress-column slots in sync with the chosen non-repairable model's arity.
+  // Keep the stress-column slots in sync with the chosen life-stress model:
+  // re-guessed from the columns' names until the user picks one.
   useEffect(() => {
+    if (csv && !stressTouched) {
+      setStress(guessAltColumns(csv, { nStress, lifeModel }).stress);
+      return;
+    }
     setStress((cur) => {
       const next = cur.slice(0, nStress);
       while (next.length < nStress) next.push({ col: "", label: "" });
       return next;
     });
-  }, [nStress]);
+  }, [nStress, lifeModel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadColumns = (columns, preview, nRows) => {
-    setCsv({ columns, preview: preview || [], n_rows: nRows });
-    setMap({ x: columns[0] || "", xl: "", xr: "", c: "", n: "" });
+  // ``facts``: the columns preview (names, dtypes, few values, distinct counts).
+  const loadColumns = (facts) => {
+    const columns = facts.columns || [];
+    const src = { ...facts, columns, preview: facts.preview || [] };
+    setCsv(src);
+    // First guesses by the headers' meaning: never a text id as the time,
+    // never a time column as the stress.
+    const g = guessAltColumns(src, { nStress, lifeModel });
+    setMap({ x: g.x, xl: "", xr: "", c: g.c, n: "" });
+    setUnit(g.unit || "");
     setInspection(false);
-    // Default the stress columns to the ones after the failure time.
-    setStress(Array.from({ length: nStress }, (_, j) => ({ col: columns[j + 1] || "", label: "" })));
+    setStressTouched(false);
+    setStress(g.stress);
   };
 
   const pickFile = async (picked, { keepHeader = false } = {}) => {
@@ -91,7 +112,7 @@ export default function AltNewPage() {
     setFile(f); setDatasetId(null); setSourceName(f.name); setResult(null); setError(null); setLoading(true);
     try {
       const cols = await getColumns(f);
-      loadColumns(cols.columns, cols.preview, cols.n_rows);
+      loadColumns(cols);
       setStep(2);
     } catch (err) { setError(err); } finally { setLoading(false); }
   };
@@ -100,7 +121,7 @@ export default function AltNewPage() {
     setFile(null); setHeaderNote(null); setDatasetId(d.id); setSourceName(d.name); setResult(null); setError(null); setLoading(true);
     try {
       const full = await getDataset(d.id);
-      loadColumns(full.preview_columns || [], full.preview || [], full.n_rows);
+      loadColumns({ ...full, columns: full.preview_columns || [] });
       setStep(2);
     } catch (err) { setError(err); } finally { setLoading(false); }
   };
@@ -115,7 +136,9 @@ export default function AltNewPage() {
   const mapping = inspection
     ? { xl: map.xl, xr: map.xr, c: map.c, n: map.n }
     : { x: map.x, c: map.c, n: map.n };
-  const mappingValid = allMapped && distinct;
+  // A thermal model's temperature needs its unit (°C, K or °F).
+  const tempUnitMissing = isThermal(lifeModel) && !String(stress[0]?.unit || "").trim();
+  const mappingValid = allMapped && distinct && !tempUnitMissing;
 
   const setStressAt = (j, patch) =>
     setStress((cur) => cur.map((s, k) => (k === j ? { ...s, ...patch } : s)));
@@ -270,38 +293,59 @@ export default function AltNewPage() {
                 <>
                   <div className="alt-map-row">
                     <span className="alt-map-k">Last inspection passed (xl)</span>
-                    <Select value={map.xl} onChange={(v) => setMap((m) => ({ ...m, xl: v }))} options={colOpts} placeholder="column…" />
+                    <Select value={map.xl} onChange={(v) => setMap((m) => ({ ...m, xl: v }))} options={colOpts} placeholder="column…" ariaLabel="Last inspection passed (xl)" />
                   </div>
                   <div className="alt-map-row">
                     <span className="alt-map-k">Found failed at (xr)</span>
-                    <Select value={map.xr} onChange={(v) => setMap((m) => ({ ...m, xr: v }))} options={colOpts} placeholder="column…" />
+                    <Select value={map.xr} onChange={(v) => setMap((m) => ({ ...m, xr: v }))} options={colOpts} placeholder="column…" ariaLabel="Found failed at (xr)" />
                   </div>
                 </>
               ) : (
                 <div className="alt-map-row">
                   <span className="alt-map-k">Failure time (x)</span>
-                  <Select value={map.x} onChange={(v) => setMap((m) => ({ ...m, x: v }))} options={colOpts} placeholder="column…" />
+                  <Select value={map.x} onChange={(v) => setMap((m) => ({ ...m, x: v }))} options={colOpts} placeholder="column…" ariaLabel="Failure time (x)" />
                 </div>
               )}
-              {stress.slice(0, nStress).map((s, j) => (
-                <div className="alt-map-row" key={j}>
-                  <span className="alt-map-k">Stress {nStress > 1 ? j + 1 : ""}</span>
-                  <Select value={s.col} onChange={(v) => setStressAt(j, { col: v })} options={colOpts} placeholder="column…" />
-                  <input className="alt-map-label" type="text" placeholder="label (optional)"
-                         value={s.label} onChange={(e) => setStressAt(j, { label: e.target.value })} />
-                  <input className="alt-map-label alt-map-unit" type="text" placeholder="unit, e.g. K"
-                         aria-label={`Stress ${j + 1} unit (optional)`} maxLength={24}
-                         value={s.unit || ""} onChange={(e) => setStressAt(j, { unit: e.target.value })} />
-                </div>
-              ))}
+              {stress.slice(0, nStress).map((s, j) => {
+                const temperature = j === 0 && isThermal(lifeModel);
+                const many = s.col ? stressLevelsWarning(csv, s.col) : null;
+                return (
+                  <div key={j}>
+                    <div className="alt-map-row">
+                      <span className="alt-map-k">{temperature ? "Temperature" : `Stress ${nStress > 1 ? j + 1 : ""}`}</span>
+                      <Select value={s.col} onChange={(v) => { setStressTouched(true); setStressAt(j, { col: v }); }}
+                              options={colOpts} placeholder="column…" ariaLabel={`Stress ${j + 1} column`} />
+                      <input className="alt-map-label" type="text" placeholder="label (optional)"
+                             aria-label={`Stress ${j + 1} label (optional)`}
+                             value={s.label} onChange={(e) => setStressAt(j, { label: e.target.value })} />
+                      {temperature ? (
+                        <Select value={TEMPERATURE_OPTIONS.some((o) => o.value === s.unit) ? s.unit : ""}
+                                onChange={(v) => setStressAt(j, { unit: v })} options={TEMPERATURE_OPTIONS}
+                                placeholder="unit…" ariaLabel="Temperature unit (required)" />
+                      ) : (
+                        <input className="alt-map-label alt-map-unit" type="text" placeholder="unit, e.g. V"
+                               aria-label={`Stress ${j + 1} unit (optional)`} maxLength={24}
+                               value={s.unit || ""} onChange={(e) => setStressAt(j, { unit: e.target.value })} />
+                      )}
+                    </div>
+                    {many && <p className="hint" style={{ margin: "0 0 6px" }}>{many}</p>}
+                  </div>
+                );
+              })}
+              {tempUnitMissing && (
+                <p className="hint" style={{ margin: 0 }}>
+                  Pick the temperature&apos;s unit. The {lm?.name || "thermal"} model needs absolute temperature, so
+                  °C and °F are converted to kelvin before the fit; you enter the use temperature in the same unit.
+                </p>
+              )}
               <div className="alt-map-row">
                 <span className="alt-map-k">Censor flag (c) <span className="muted">optional</span></span>
-                <Select value={map.c} onChange={(v) => setMap((m) => ({ ...m, c: v }))}
+                <Select value={map.c} onChange={(v) => setMap((m) => ({ ...m, c: v }))} ariaLabel="Censor flag (c)"
                         options={[{ value: "", label: "— none —" }, ...colOpts]} />
               </div>
               <div className="alt-map-row">
                 <span className="alt-map-k">Count (n) <span className="muted">optional</span></span>
-                <Select value={map.n} onChange={(v) => setMap((m) => ({ ...m, n: v }))}
+                <Select value={map.n} onChange={(v) => setMap((m) => ({ ...m, n: v }))} ariaLabel="Count (n)"
                         options={[{ value: "", label: "— none —" }, ...colOpts]} />
               </div>
               <label className="alt-map-row">
@@ -320,7 +364,7 @@ export default function AltNewPage() {
             {!mappingValid && (
               <p className="hint">
                 Map {inspection ? "both inspection columns" : "a failure-time column"} and {nStress} distinct stress
-                column{nStress > 1 ? "s" : ""}.
+                column{nStress > 1 ? "s" : ""}{tempUnitMissing ? ", and pick the temperature's unit" : ""}.
               </p>
             )}
           </div>

@@ -61,8 +61,10 @@ You pick two things:
 
 Match the relationship to the physics:
 
-- **Arrhenius** for thermal ageing. Use **absolute temperature (kelvin)** — this
-  trips people up constantly, and using Celsius will give you a nonsense fit.
+- **Arrhenius** for thermal ageing. The model needs **absolute temperature
+  (kelvin)**, so the Data step asks which unit the temperature column is in:
+  **°C**, **K** or **°F**. Reliafy converts °C and °F to kelvin before fitting,
+  and you enter the use temperature in the same unit you chose.
 - **Inverse power law** for voltage, load, or pressure.
 - **Eyring** as a physically-derived thermal alternative to Arrhenius.
 - **Linear** for a simple straight-line trend of life with stress.

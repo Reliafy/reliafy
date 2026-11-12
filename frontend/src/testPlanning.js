@@ -36,7 +36,11 @@ export const PLAN_LIFE_MODELS = {
 };
 export const PLAN_DISTRIBUTIONS = { weibull: "Weibull", lognormal: "Lognormal" };
 
-export const altPlanLink = (modelId) => `${TEST_PLANNING_PATH}/accelerated?model=${encodeURIComponent(modelId)}`;
+// ``use``: the use stress entered on the model's page (the model's units), carried over.
+export const altPlanLink = (modelId, use = null) => {
+  const u = Array.isArray(use) && use.length === 1 && Number.isFinite(Number(use[0])) ? Number(use[0]) : null;
+  return `${TEST_PLANNING_PATH}/accelerated?model=${encodeURIComponent(modelId)}${u != null ? `&use=${encodeURIComponent(String(u))}` : ""}`;
+};
 
 // A saved ALT model's planning values for the next test, or null when the
 // plan can't use it (two stresses, or a distribution other than Weibull or
@@ -71,6 +75,11 @@ export function altPrefill(results) {
     // The highest stress tested is a safe highest stress for the next test.
     const top = [...tested].sort((a, b) => b - a)[0];
     out.highStress = planningValue(top);
+    // "Check a test of my own" starts from the test as it was run.
+    const levels = (r.levels || []).filter((l) => Number.isFinite((l.stress || [])[0]))
+      .sort((a, b) => a.stress[0] - b.stress[0]);
+    out.stresses = levels.map((l) => planningValue(l.stress[0])).join(", ");
+    if (levels.every((l) => Number.isFinite(l.n))) out.unitsAt = levels.map((l) => String(l.n)).join(", ");
   }
   return out;
 }

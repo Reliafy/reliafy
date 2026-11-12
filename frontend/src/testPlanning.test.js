@@ -37,8 +37,14 @@ test("an ALT model's planning values for the next test", () => {
     unit: "hours",
     stressUnit: "K",
     highStress: "393",
+    // "Check a test of my own" starts from the test as run, mildest first.
+    stresses: "353, 373, 393",
+    unitsAt: "10, 10, 10",
   });
   assert.equal(altPlanLink("m 1"), "/strategy/test-planning/accelerated?model=m%201");
+  // The use stress entered on the model's page rides along.
+  assert.equal(altPlanLink("m1", [313.15]), "/strategy/test-planning/accelerated?model=m1&use=313.15");
+  assert.equal(altPlanLink("m1", null), "/strategy/test-planning/accelerated?model=m1");
 });
 
 test("a fit's raw values start the form at 4 significant figures", () => {

@@ -29,7 +29,12 @@ def _strict(out: dict) -> None:
 
 def test_sequential_mtbf_matches_surpyval():
     out = T.sequential_test(mtbf=1000, good_mtbf=2000, confidence=0.9, producer_risk=0.1, unit="hours")
-    ref = tp.sequential_mtbf_test(1000, 2000, alpha_ci=0.1, producer_risk=0.1)
+    # Truncated, the lines drawn for 10% / 10% run at 12% / 10%: the plan
+    # draws them tighter until the test as run keeps both risks.
+    ref = _seq_mtbf()
+    assert ref.consumer_risk <= 0.1 and ref.producer_risk <= 0.1
+    assert tp.sequential_mtbf_test(1000, 2000, alpha_ci=0.1, producer_risk=0.1).consumer_risk > 0.1
+    assert out["summary"].startswith("As run, this test shows the target with 90.4% confidence (90% asked)")
     _strict(out)
     assert out["max_time"] == pytest.approx(ref.max_time) and out["max_failures"] == ref.max_failures
     assert out["consumer_risk"] == pytest.approx(ref.consumer_risk)
@@ -44,22 +49,29 @@ def test_sequential_mtbf_matches_surpyval():
     assert len(oc["x"]) == len(oc["pass_probability"]) == len(oc["expected"])
     assert oc["pass_probability"][0] < 0.01 and oc["pass_probability"][-1] > 0.99
     assert np.all(np.diff(oc["pass_probability"]) >= -1e-9)
-    assert "10,819 hours on average" in out["summary"]
+    assert "12,834 hours on average" in out["summary"]
+
+
+def _seq_mtbf(producer_risk=0.1):
+    return T._keeping_risks(lambda a, b: tp.sequential_mtbf_test(1000, 2000, alpha_ci=a, producer_risk=b),
+                            0.1, producer_risk)
 
 
 def test_sequential_decision():
-    ref = tp.sequential_mtbf_test(1000, 2000, alpha_ci=0.1, producer_risk=0.1)
-    for r, t in ((0, 100.0), (0, 5000.0), (6, 1000.0)):
+    ref = _seq_mtbf(0.1)
+    for r, t in ((0, 100.0), (0, 5100.0), (6, 1000.0)):
         out = T.sequential_test(mtbf=1000, good_mtbf=2000, confidence=0.9, failures_seen=r, time_seen=t)
         assert out["decision"]["verdict"] == ref.decide(r, t)
     assert T.sequential_test(mtbf=1000, good_mtbf=2000, confidence=0.9, failures_seen=0,
-                             time_seen=5000)["decision"]["text"].startswith("Accept")
+                             time_seen=5100)["decision"]["text"].startswith("Accept")
 
 
 def test_sequential_attribute_matches_surpyval():
     out = T.sequential_test(method="attribute", reliability=0.9, good_reliability=0.97, confidence=0.9,
                             producer_risk=0.1, failures_seen=1, units_seen=40)
-    ref = tp.sequential_demonstration_test(0.9, 0.97, alpha_ci=0.1, producer_risk=0.1)
+    ref = T._keeping_risks(
+        lambda a, b: tp.sequential_demonstration_test(0.9, 0.97, alpha_ci=a, producer_risk=b), 0.1, 0.1)
+    assert ref.consumer_risk <= 0.1 and ref.producer_risk <= 0.1
     _strict(out)
     assert out["max_units"] == ref.max_units
     assert out["boundaries"]["reject"][10] == ref.reject_failures(10)
@@ -178,7 +190,8 @@ def test_logrank_matches_surpyval():
     assert out["events"] == tp.logrank_events(0.6, 0.8) == 121
     assert (out["units_new"], out["units_old"]) == tp.logrank_sample_size(0.6, 0.5, 0.8)
     out = T.comparison(solve_for="power", hazard_ratio=0.6, event_probability=0.5, units_per_group=80)
-    assert out["power"] == pytest.approx(tp.logrank_power(0.6, (80, 80), 0.5))
+    # 90% confidence by default, as every plan in the app.
+    assert out["power"] == pytest.approx(tp.logrank_power(0.6, (80, 80), 0.5, alpha_ci=0.1))
     assert "below the usual 80%" in out["summary"]
     _strict(out)
 
@@ -187,13 +200,15 @@ def test_rate_ratio_matches_surpyval():
     rate = 40 / 100_000
     out = T.comparison(kind="rate_ratio", solve_for="exposure", failures_before=40, exposure_before=100_000,
                        rate_ratio=0.5, unit="hours")
-    assert out["exposure_after"] == pytest.approx(tp.rate_ratio_exposure(0.5, rate, 100_000, 0.8))
+    assert out["exposure_after"] == pytest.approx(tp.rate_ratio_exposure(0.5, rate, 100_000, 0.8, alpha_ci=0.1))
     out = T.comparison(kind="rate_ratio", solve_for="detectable", failures_before=40, exposure_before=100_000,
                        exposure_after=50_000)
-    assert out["detectable_ratio"] == pytest.approx(tp.rate_ratio_detectable(rate, 100_000, 50_000, 0.8))
+    assert out["detectable_ratio"] == pytest.approx(tp.rate_ratio_detectable(rate, 100_000, 50_000, 0.8,
+                                                                              alpha_ci=0.1))
     out = T.comparison(kind="rate_ratio", solve_for="power", failures_before=40, exposure_before=100_000,
                        exposure_after=50_000, rate_ratio=0.5, one_sided=True)
-    assert out["power"] == pytest.approx(tp.rate_ratio_power(0.5, rate, 100_000, 50_000, alternative="one-sided"))
+    assert out["power"] == pytest.approx(tp.rate_ratio_power(0.5, rate, 100_000, 50_000, alpha_ci=0.1,
+                                                             alternative="one-sided"))
     _strict(out)
 
 
@@ -305,7 +320,7 @@ def test_mcp_actions(env):  # noqa: F811
     tok = env.token[A]
     seq = _ok(_call(tok, "analyse", {"action": "plan_sequential_test", "mtbf": 1000,
                                                 "design_mtbf": 2000, "unit": "hours", "failures_seen": 0,
-                                                "time_seen": 5000}))
+                                                "time_seen": 5100}))
     assert seq["decision"]["verdict"] == "accept" and seq["boundaries"][0]["failures"] == 0
     assert "oc_curve" not in seq
     att = _ok(_call(tok, "analyse", {"action": "plan_sequential_test", "method": "attribute",
@@ -321,8 +336,36 @@ def test_mcp_actions(env):  # noqa: F811
     cmp_ = _ok(_call(tok, "analyse", {"action": "plan_comparison", "kind": "logrank",
                                                  "solve_for": "sample_size", "hazard_ratio": 0.6,
                                                  "event_probability": 0.5}))
-    assert cmp_["events"] == 121
+    assert cmp_["events"] == tp.logrank_events(0.6, 0.8, alpha_ci=0.1) == 95
     assert "must be above" in _err(_call(tok, "analyse", {"action": "plan_sequential_test",
                                                                      "mtbf": 1000, "design_mtbf": 500}))
     guide = _ok(_call(tok, "guide", {"topic": "test_planning"}))
     assert "plan_sequential_test" in guide["guide"]
+
+
+def test_simulation_calls_a_plan_weak_when_many_tests_cannot_be_fitted():
+    """22 units for 1,000 h with B10 at 1,000 h: about 2.2 failures each, so
+    about a third of real tests end with 0 or 1 failure and no estimate. The
+    survivors' spread looks fine; the plan isn't."""
+    from scipy.stats import binom
+
+    alpha = 1000 / (-np.log(0.9)) ** 0.5  # B10 = 1,000 h with beta 2
+    request = T.simulation_request("life", {"params": [alpha, 2], "units": 22, "censor_time": 1000}, n_sim=200)
+    out = compute_core.run("test_precision", request)
+    assert out["verdict"] == "weak"
+    assert out["summary"].startswith("The plan is weak")
+    # The share unfit is about P(<= 1 failure in 22 at 10% each) = 34%.
+    assert out["unusable_share"] == pytest.approx(binom.cdf(1, 22, 0.1), abs=0.08)
+    assert "1 in 3" in out["summary"]
+
+
+def test_sequential_truncated_plan_keeps_the_confidence_asked():
+    """90% vs 97%, 90% confidence, 20% producer's risk: Wald's lines cut at
+    the fixed-length test ran at 87.7% confidence. The plan now keeps 90%
+    and says so first."""
+    out = T.sequential_test(method="attribute", reliability=0.9, good_reliability=0.97, confidence=0.9,
+                            producer_risk=0.2)
+    assert out["consumer_risk"] <= 0.1 + 1e-9 and out["producer_risk"] <= 0.2 + 1e-9
+    assert out["summary"].startswith("As run, this test shows the target with 90.2% confidence (90% asked)")
+    # Exact: the chance a design at the target passes, by the library's own OC.
+    assert out["oc_curve"]["points"][0]["pass_probability"] == pytest.approx(out["consumer_risk"])

@@ -173,14 +173,16 @@ def _time_column(df: pd.DataFrame, col: str) -> np.ndarray:
     return pd.to_numeric(df[col], errors="coerce").to_numpy(float)
 
 
-def build_inputs(df: pd.DataFrame, mapping: dict, stress_cols: list) -> dict:
+def build_inputs(df: pd.DataFrame, mapping: dict, stress_cols: list, kelvin_from: Optional[list] = None) -> dict:
     """Extract SurPyval ALT inputs from a DataFrame.
 
     ``mapping`` carries the life-data columns: the failure time ``x``, or, for
     inspection data (#237), the interval ``xl`` (the last inspection the unit
     passed) and ``xr`` (the one that found it failed; blank = still running);
     ``c``/``n`` and the truncation ``tl``/``tr`` are optional. ``stress_cols``
-    is the ordered list of one or two stress columns. Returns a kwargs dict:
+    is the ordered list of one or two stress columns; ``kelvin_from`` (one
+    entry per stress: "°C", "°F" or "") converts a temperature typed in °C
+    or °F to kelvin (:func:`with_kelvin`). Returns a kwargs dict:
     ``x`` (times, or an n×2 array of interval bounds), ``Z`` (n×k stresses),
     and optional ``c``/``n``/``t`` (an n×2 truncation window).
     """
@@ -198,6 +200,9 @@ def build_inputs(df: pd.DataFrame, mapping: dict, stress_cols: list) -> dict:
             raise FitError(f"Stress column '{s}' is not in the dataset.")
 
     Z = np.column_stack([pd.to_numeric(df[s], errors="coerce").to_numpy(float) for s in stress_cols])
+    for j, src in enumerate((kelvin_from or [])[: Z.shape[1]]):
+        if src:
+            Z[:, j] = to_kelvin(Z[:, j], src)
     if interval:
         lo = _time_column(df, mapping["xl"])
         hi = _time_column(df, mapping["xr"])
@@ -283,11 +288,16 @@ def fit(
     unit: str = "",
     stress_labels: Optional[list] = None,
     stress_units: Optional[list] = None,
+    kelvin_from: Optional[list] = None,
 ) -> tuple[dict, str]:
     """Fit an ALT model and build the JSON-safe results payload.
 
     ``stress_units`` (optional, one per stress column: "K", "kV", "°C", or
     blank) label the stresses wherever they are shown (#265).
+    ``kelvin_from`` (from :func:`with_kelvin`): the temperatures typed in °C
+    or °F, fitted in kelvin; the stress then reads "K" everywhere, with the
+    unit the user chose kept as its ``entered_unit``. A spec without it (a
+    model saved before 12 Nov 2026) fits its numbers as they are.
 
     Returns ``(payload, cache_id)`` addressing the live model.
     """
@@ -309,8 +319,15 @@ def fit(
             f"{'' if need == 1 else 's'}, but {len(stress_cols)} were mapped."
         )
     units = clean_stress_units(stress_units, len(stress_cols))
+    kelvin_from = (list(kelvin_from or []) + [""] * len(stress_cols))[: len(stress_cols)]
+    labels = list(stress_labels or stress_cols)
+    for j, src in enumerate(kelvin_from):
+        if src:
+            units[j] = "K"
+            if labels[j] == stress_cols[j]:
+                labels[j] = "Temperature"  # "temp_C (K)" would read as Celsius
 
-    inputs = build_inputs(df, mapping, stress_cols)
+    inputs = build_inputs(df, mapping, stress_cols, kelvin_from)
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
         with warnings.catch_warnings(record=True) as caught:
@@ -331,9 +348,12 @@ def fit(
         raise FitError(msg or str(exc) or f"{type(exc).__name__}") from exc
 
     payload = _build_payload(
-        model, inputs, distribution_id, life_model_id, unit, stress_cols, stress_labels,
+        model, inputs, distribution_id, life_model_id, unit, stress_cols, labels,
         stress_units=units,
     )
+    for j, src in enumerate(kelvin_from):
+        if src:
+            payload["stresses"][j]["entered_unit"] = src
     if any(units):
         warned = stress_unit_warnings(life_model_id, payload["stresses"])
         if warned:
@@ -348,7 +368,26 @@ def fit(
         payload["no_finite_maximum"] = notice
         payload["params"] = without_intervals(payload["params"])
         payload["coefficients"] = without_intervals(payload["coefficients"])
+    else:
+        # What SurPyval warned about the fit ("every stress is below 200 K…
+        # did you pass degrees Celsius?"), in the app's words, on the result.
+        said = fit_warnings(caught)
+        if said:
+            payload["fit_warnings"] = said
     return payload, store_live(model)
+
+
+def fit_warnings(caught) -> list:
+    """The fit's own warnings worth showing, plainly worded and once each:
+    not deprecations (reissued for the test suite) nor numerical noise."""
+    out: list = []
+    for w in caught or []:
+        if issubclass(w.category, (DeprecationWarning, FutureWarning, RuntimeWarning)):
+            continue
+        text = _plain_warning(str(w.message).strip())
+        if text and text not in out:
+            out.append(text)
+    return out
 
 
 def clean_stress_units(stress_units, n: int) -> list:
@@ -398,6 +437,74 @@ def stress_unit_warnings(life_model_id: str, stresses: list) -> list:
     return [f"“{first.get('label') or first.get('column')}” is in {unit}, but the {name} model's exp(a / T) "
             f"needs absolute temperature: convert it to kelvin (K = °C + 273.15) and refit, or the "
             f"coefficients and any use-level extrapolation are wrong."]
+
+
+# A thermal model's temperature must be absolute: these are the units the app
+# takes for it, and converts (to kelvin) before fitting.
+TEMPERATURE_UNITS = ("°C", "K", "°F")
+_CELSIUS = {"°c", "c", "degc", "deg c", "celsius", "℃", "degrees c", "degrees celsius"}
+_FAHRENHEIT = {"°f", "f", "degf", "deg f", "fahrenheit", "℉", "degrees f", "degrees fahrenheit"}
+_KELVIN = {"k", "kelvin", "°k", "degk", "deg k", "degrees k"}
+#: Below this a "kelvin" temperature is colder than -73 °C: almost surely °C.
+_KELVIN_FLOOR = 200.0
+
+
+def temperature_unit(unit) -> str:
+    """"°C", "°F" or "K" for a temperature unit however it's spelt; "" for
+    anything else (blank, "V", "kV")."""
+    u = str(unit or "").strip().lower()
+    if u in _CELSIUS:
+        return "°C"
+    if u in _FAHRENHEIT:
+        return "°F"
+    if u in _KELVIN:
+        return "K"
+    return ""
+
+
+def to_kelvin(values, unit: str):
+    """Temperatures in ``unit`` ("°C", "°F" or "K") in kelvin."""
+    v = np.asarray(values, dtype=float)
+    if unit == "°C":
+        return v + 273.15
+    if unit == "°F":
+        return (v - 32.0) * 5.0 / 9.0 + 273.15
+    return v
+
+
+def is_thermal(life_model_id: str) -> bool:
+    """Whether the model's first stress enters as exp(a / T), a temperature."""
+    return life_model_id in _THERMAL_FIRST_STRESS
+
+
+def with_kelvin(spec: dict, df: pd.DataFrame) -> dict:
+    """A new fit's spec, ready to fit: a thermal model's temperature (its
+    first stress) in °C or °F gets ``kelvin_from`` so it is fitted in kelvin.
+    A temperature whose unit isn't given (or isn't one) is refused when any
+    value is below 200, as kelvin that cold is almost surely a Celsius column
+    (105 °C read as 105 K extrapolates to lives a thousand times too long);
+    at 200 or above it is taken as kelvin, as before."""
+    spec = {k: v for k, v in (spec or {}).items() if k != "kelvin_from"}
+    life_model_id = spec.get("life_model_id", "arrhenius")
+    cols = list(spec.get("stress_cols") or [])
+    if not is_thermal(life_model_id) or not cols or cols[0] not in df.columns:
+        return spec
+    units = list(spec.get("stress_units") or []) + [""] * len(cols)
+    unit = temperature_unit(units[0])
+    if unit in ("°C", "°F"):
+        return {**spec, "kelvin_from": [unit] + [""] * (len(cols) - 1)}
+    if unit == "K":
+        return spec
+    values = pd.to_numeric(df[cols[0]], errors="coerce").to_numpy(float)
+    values = values[np.isfinite(values)]
+    if values.size and float(values.min()) < _KELVIN_FLOOR:
+        name = LIFE_MODELS[life_model_id]["name"]
+        given = f" (“{units[0]}” isn't a temperature unit)" if str(units[0]).strip() else ""
+        raise FitError(
+            f"Say which unit “{cols[0]}” is in: °C, K or °F{given}. The {name} model needs absolute "
+            f"temperature, and {_num(float(values.min()))}–{_num(float(values.max()))} read as kelvin is "
+            f"colder than −73 °C, so it is probably °C. The app converts °C and °F to kelvin for you.")
+    return spec
 
 
 def refit(inputs: dict, distribution_id: str, life_model_id: str):
