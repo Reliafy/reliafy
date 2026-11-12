@@ -46,9 +46,9 @@ for (const [w, h, label] of [[1440, 900, "desktop"], [400, 860, "phone"]]) {
     await expect(rowA.getByText("Replace at age")).toBeVisible();
     await expect(rowA.getByText("“Replace the seal”")).toBeVisible();
     await expect(rowA.getByRole("link", { name: "Edit in the tree" })).toHaveAttribute("href", new RegExp(`sel=${a.id}.*tab=maintenance`));
-    // Read only: no task picker on a tree row; duty is still the diagram's.
+    // Read only: no task picker on a tree row; Runs (the API's duty, renamed in #829) is still the diagram's.
     await expect(rowA.getByRole("combobox", { name: /task/ })).toHaveCount(0);
-    await expect(rowA.getByRole("textbox", { name: /duty/ })).toBeVisible();
+    await expect(rowA.getByRole("textbox", { name: /runs, % of the time/ })).toBeVisible();
     const rowB = plan.locator("tbody.is-tree", { hasText: `Pump B ${tag}` });
     await expect(rowB.getByText(`no maintenance tasks on Pump B ${tag}`)).toBeVisible();
     await expect(rowB.getByRole("link", { name: "Add a task in the tree" })).toHaveAttribute("href", new RegExp(`addtask=${b.id}`));

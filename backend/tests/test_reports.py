@@ -169,7 +169,8 @@ def test_items_picker_lists_own_items_first_then_samples(client):
     client.db.users.update_one({"_id": A}, {"$set": {"hidden_samples": [SAMPLES["fleets"]]}})
     items = client.get("/api/reports/items").json()["items"]
     own = [i for i in items if not i["is_sample"]]
-    assert {(i["collection"], i["name"]) for i in own} == {("models", "Pump bearings"), ("datasets", "data.csv")}
+    # The dataset saved with the fit is named after its file without the extension (#834).
+    assert {(i["collection"], i["name"]) for i in own} == {("models", "Pump bearings"), ("datasets", "data")}
     assert model_id in {i["artifact_id"] for i in own}
     assert items[:len(own)] == own  # own items first, then the samples
     assert "Bob's model" not in {i["name"] for i in items}

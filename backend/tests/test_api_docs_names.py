@@ -30,14 +30,17 @@ def _builtins() -> set:
 def registry(monkeypatch):
     from backend import config, mcp_server
     from backend.maintenance import mcp_tools
-    from backend.routers import api_tools, public_api, support
+    from backend.routers import api_tools, field_reports, maintenance_sync, public_api, support
 
     monkeypatch.setattr(config, "MAINTENANCE_ENABLED", True)
     mcp_tools.register()
     actions = {(tool, a) for tool, (_, table) in mcp_server._all_tables().items() for a in table}
     plain = {t.name for t in mcp_server.mcp._tool_manager.list_tools()} - {t for t, _ in actions}
+    # Fixed /api/v1 routes outside the tool registry: the offline sync (#802,
+    # #804) and field reports (v1_router) are mounted before the generic ones.
+    routers = [m.router for m in (public_api, support, api_tools, maintenance_sync)] + [field_reports.v1_router]
     fixed = [re.compile("^" + re.sub(r"\{[^/]+\}", "[^/]+", r.path) + "$")
-             for m in (public_api, support, api_tools) for r in m.router.routes
+             for rt in routers for r in rt.routes
              if r.path.startswith("/api/v1") and not r.path.startswith("/api/v1/{")]
     yield actions, plain, fixed
     mcp_tools.unregister()

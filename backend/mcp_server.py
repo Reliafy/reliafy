@@ -3274,13 +3274,18 @@ def upload_dataset(
         "lists them)."))] = None,
     no_header: Annotated[Optional[bool], Field(description=(
         "True if the first row is data, not column names; omit to guess."))] = None,
+    dataset_col: Annotated[Optional[str], Field(description=(
+        "Split the sheet by this column: one dataset per value, named by the value (\"<value> – <name>\" if "
+        "taken), the column itself left out; rows with no value are left out. Returns datasets, a list."))] = None,
 ) -> dict[str, Any]:
     """Save a dataset from CSV text (csv) or a file sent with change upload_create (upload_id; an .xlsx
     needs sheet); returns its id, columns and a preview. Censoring columns: 0 = failed, 1 = still running."""
     user, db = _caller(ctx), _db()
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
-    _cap(db, user, "datasets", "datasets")
+    split = (dataset_col or "").strip()
+    if not split:
+        _cap(db, user, "datasets", "datasets")
     upload, sheet_header = None, None
     if upload_id is not None:
         upload, text, sheet_header = _upload_table(db, user["uid"], upload_id, sheet, 0 if no_header else None)
@@ -3298,6 +3303,9 @@ def upload_dataset(
         apply = guess == 0 if no_header is None else bool(no_header)
         if apply and no_header is None:
             hint = fitting.HEADER_HINT
+    if split:
+        return _split_upload(db, user, name.strip(), datasets_service.normalize_pasted(text, apply), split,
+                             upload, guess, hint)
     ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text, apply),
                                          user["uid"])
     if upload is not None:
@@ -3305,6 +3313,27 @@ def upload_dataset(
     out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
            "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/{ds.id}"),
            "header_guess": guess}
+    if hint:
+        out["hint"] = hint
+    return out
+
+
+def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, hint) -> dict[str, Any]:
+    """upload_dataset with dataset_col: one dataset per value of the column, all or nothing against the cap."""
+    try:
+        wanted = datasets_service.count_new_parts(db, data, column, user["uid"])
+        if wanted:
+            _cap(db, user, "datasets", "datasets", n=wanted)
+        made, blank = datasets_service.create_split(db, data, column, user["uid"], name)
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
+    out = {"datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, "url": _url(f"/data/{d.id}"),
+                         **({"reused": True} if reused else {})} for d, reused in made],
+           "columns": [c["name"] for c in made[0][0].columns], "header_guess": guess}
+    if blank:
+        out["left_out"] = f"{blank} row{'' if blank == 1 else 's'} with no {column} left out."
     if hint:
         out["hint"] = hint
     return out
@@ -3514,6 +3543,16 @@ class BlockCosts(BaseModel):
         "Purchase price, once. analyse rbd_cheapest_design copies the blocks that have one."))
 
 
+class PreventiveRestoration(BaseModel):
+    """What a fixed-interval task leaves the unit as (Kijima virtual age)."""
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["as_new", "kijima1", "kijima2"] = Field(description=(
+        "as_new = renewed; kijima1 = each task removes part of the age gained since the last one; kijima2 = "
+        "part of the whole age."))
+    q: Optional[float] = Field(None, ge=0, le=1, description=(
+        "kijima1/kijima2: the share of the age left after a task (0 = as new, 1 = as before)."))
+
+
 class Preventive(BaseModel):
     model_config = ConfigDict(extra="forbid")
     policy: Literal["age", "block", "condition"] = Field("age", description=(
@@ -3534,6 +3573,12 @@ class Preventive(BaseModel):
     opportunity: Optional[float] = Field(None, ge=0, description=(
         "age only, with maintenance_group: renewed early at a stop of its group once at least this old "
         "(0 to interval)."))
+    restoration: Optional[PreventiveRestoration] = Field(None, description=(
+        "age or block: what each task leaves the unit as when it isn't renewed; omit = as good as new."))
+    replace_every: Optional[int] = Field(None, ge=1, description=(
+        "With restoration: every this many tasks is a full replacement (as new) instead."))
+    replacement_cost: Optional[float] = Field(None, ge=0, description=(
+        "With replace_every: the cost of each full replacement; omit = 0."))
 
 
 class ProofTest(BaseModel):

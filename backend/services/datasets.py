@@ -9,6 +9,8 @@ docs/datasets.md for the shape, the limits and why."""
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 import uuid
 from datetime import datetime, timezone
@@ -163,6 +165,100 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
     )
     db.datasets.insert_one(to_doc(dataset))
     return dataset, False
+
+
+# ---- One sheet, several datasets: split by a column ---------------------------
+# A sheet holding several kinds of thing (transformers, coal mills, pumps) is
+# saved as one dataset per value of its dataset column, each named by the
+# value. Each stands alone (datasets are atomic): no link between them, and
+# the dataset column itself is left out, as every row of a dataset holds the
+# same value. Rows with a blank value are left out and counted.
+
+
+def _csv_text(file_bytes: bytes) -> str:
+    try:
+        return bytes(file_bytes).decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return bytes(file_bytes).decode("latin-1")
+
+
+def split_by_column(file_bytes: bytes, column: str) -> tuple[list[tuple[str, bytes]], int]:
+    """A CSV's rows grouped by ``column``: ``([(value, csv_bytes), ...], blank)``,
+    in the order each value first appears, each part a CSV of the rows with
+    that value (cells exactly as they were, ``column`` dropped). ``blank``:
+    rows with no value in ``column`` (left out). Wholly blank rows are skipped.
+    Raises FitError when the column isn't in the sheet or holds no value."""
+    rows = list(csv.reader(io.StringIO(_csv_text(file_bytes))))
+    header = rows[0] if rows else []
+    names = [h.strip() for h in header]
+    want = str(column or "").strip()
+    if want not in names:
+        raise FitError(f"The sheet has no column “{want}”. Its columns: {', '.join(names)}.")
+    at = names.index(want)
+    groups: dict[str, list[list[str]]] = {}
+    blank = 0
+    for row in rows[1:]:
+        if not any(cell.strip() for cell in row):
+            continue
+        value = row[at].strip() if at < len(row) else ""
+        if not value:
+            blank += 1
+            continue
+        groups.setdefault(value, []).append(row[:at] + row[at + 1:])
+    if not groups:
+        raise FitError(f"Column “{want}” has no values to split the sheet by.")
+    out = []
+    kept = header[:at] + header[at + 1:]
+    for value, part in groups.items():
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow(kept)
+        writer.writerows(part)
+        out.append((value, buf.getvalue().encode("utf-8")))
+    return out, blank
+
+
+def split_names(values: list[str], taken: set[str], source: str) -> list[str]:
+    """Each value's dataset name: the value itself, or "<value> – <source>"
+    when the workspace already has a dataset of that name (case-insensitive).
+    A name still taken gets " (2)", " (3)"…"""
+    used = {t.strip().lower() for t in taken}
+    out = []
+    for value in values:
+        name = value[:200]
+        if name.lower() in used and source:
+            name = f"{value} – {source}"[:200]
+        base, k = name, 2
+        while name.lower() in used:
+            name = f"{base} ({k})"
+            k += 1
+        used.add(name.lower())
+        out.append(name)
+    return out
+
+
+def create_split(db, file_bytes: bytes, column: str, owner_id: str,
+                 source: str) -> tuple[list[tuple[Dataset, bool]], int]:
+    """Save one dataset per value of ``column`` (``split_by_column``), named by
+    ``split_names`` against the owner's datasets: ``([(dataset, reused), ...],
+    blank_rows)``. Only the rows are kept: the columns are read when fitting.
+    Identical data already saved comes back as it is (``reused``)."""
+    parts, blank = split_by_column(file_bytes, column)
+    taken = {d.get("name") or "" for d in db.datasets.find({"owner_id": owner_id}, {"name": 1})}
+    names = split_names([v for v, _ in parts], taken, source)
+    out = []
+    for (_, data), name in zip(parts, names):
+        ds, reused = create_or_reuse(db, name, data, owner_id)
+        out.append((ds, reused))
+    return out, blank
+
+
+def count_new_parts(db, file_bytes: bytes, column: str, owner_id: str) -> int:
+    """How many of a split's parts would be new datasets (identical data the
+    owner already has is reused and doesn't count against a cap)."""
+    parts, _ = split_by_column(file_bytes, column)
+    return sum(1 for _, data in parts
+               if db.datasets.find_one({"checksum": storage.checksum(data), "owner_id": owner_id}) is None)
 
 
 def preview_frame(db, owner_id, dataset_id: str | None, file_bytes: bytes | None) -> tuple[pd.DataFrame, str | None]:

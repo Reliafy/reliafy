@@ -542,6 +542,20 @@ export function uploadDataset(file, name, noHeader = null, excel = null) {
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
 }
 
+// One sheet saved as several datasets, split by ``datasetCol`` (one per
+// value, named by it; "<value> – <source>" when the name is taken): the Data
+// section's upload. ``noHeader`` as for uploadDataset; an Excel sheet comes
+// already converted to CSV. Answers { datasets: [{ id, name, n_rows, reused? }],
+// left_out }.
+export function uploadSplitDatasets(file, source, datasetCol, noHeader = false) {
+  const form = new FormData();
+  form.append("file", file);
+  if (source) form.append("name", source);
+  form.append("no_header", noHeader ? "true" : "false");
+  form.append("dataset_col", datasetCol);
+  return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
+}
+
 // ---- Excel workbooks (.xlsx) -------------------------------------------------
 // Parsed server-side; the frontend picks a sheet + header row, then either
 // maps columns (RCM, RBD) or converts the sheet to CSV (life data).
