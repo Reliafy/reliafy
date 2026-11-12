@@ -30,13 +30,13 @@ from __future__ import annotations
 
 import math
 import re
-import warnings
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
 from backend import param_intervals
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 LAYOUTS = ("intervals", "timeline")
 # Functions along a schedule: SurPyval gives survival and cumulative hazard
@@ -289,8 +289,7 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates=None, for
             raise fitting.FitError(str(exc)) from exc
         covariates = None
     try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(fit_model(entry["fitter"], df, mapping, covariates, formula, layout))
         fitting.reissue_deprecations(caught)
         gof = fitting._goodness_of_fit(model)
@@ -467,8 +466,7 @@ def evaluate(model, fields: list, schedule, grid, *, on: str = "sf", alpha_ci: O
     grid = np.asarray(grid, dtype=float)
     try:
         sched = step_schedule(model, times, rows)
-        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with np.errstate(all="ignore"), collect_warnings() as caught:
             sf = np.asarray(model.sf_tvc(grid, sched), dtype=float)
             Hf = np.asarray(model.Hf_tvc(grid, sched), dtype=float)
         # SurPyval 0.25: an additive-hazards model's points outside its
@@ -494,8 +492,7 @@ def _bounds(model, grid, sched, on, alpha_ci, bound):
     if not hasattr(model, "cb_tvc"):
         return None, "Cox models have no confidence bounds along a schedule; a parametric model does."
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             cb = np.asarray(model.cb_tvc(grid, sched, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
     except Exception as exc:  # noqa: BLE001 - e.g. no covariance from a singular fit
         return None, f"No confidence bounds for this fit ({str(exc).strip() or type(exc).__name__})."
@@ -515,8 +512,7 @@ def _mean(model, sched) -> Optional[float]:
     if not callable(fn):
         return None
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             v = float(fn(sched))
     except Exception:  # noqa: BLE001 - a convenience: absent rather than wrong
         return None
@@ -536,8 +532,7 @@ def evaluate_points(model, fields: list, schedule, times, *, conditional_age: Op
     stimes, rows, normalised = parse_schedule(schedule, fields)
     try:
         sched = step_schedule(model, stimes, rows)
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             sf = np.asarray(model.sf_tvc(t, sched), dtype=float)
             Hf = np.asarray(model.Hf_tvc(t, sched), dtype=float)
             cond = None

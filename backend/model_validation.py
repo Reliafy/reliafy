@@ -25,10 +25,10 @@ as ``{"available": False, "reason": ...}``.
 from __future__ import annotations
 
 import logging
-import warnings
 
 import numpy as np
 import pandas as pd
+from backend.warn_capture import ignore_warnings
 
 logger = logging.getLogger(__name__)
 
@@ -119,10 +119,9 @@ def validate_regression(model, df: pd.DataFrame, mapping: dict, covariates: list
     Reliafy's convention). ``covariates`` are the raw covariate columns the
     model reads. Never raises."""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
+        with ignore_warnings(), np.errstate(all="ignore"):
             # Additive-hazards models warn when their hazard dips below 0;
             # those values are the model's own and are clipped below.
-            warnings.simplefilter("ignore")
             return _validate(model, df, mapping, list(covariates or []))
     except Exception as exc:  # noqa: BLE001 - a score is never worth a failed fit
         logger.info("Regression validation failed: %s", exc)
@@ -136,8 +135,7 @@ def _survival(model, Z, times) -> np.ndarray:
     model's support and come back nan, which counts the same."""
     from surpyval.metrics import survival_probability
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message=".*outside the model's support", category=RuntimeWarning)
+    with ignore_warnings(RuntimeWarning, message=".*outside the model's support"):
         S = np.asarray(survival_probability(model, Z, times), dtype=float)
     return np.clip(np.nan_to_num(S, nan=1.0), 0.0, 1.0)
 

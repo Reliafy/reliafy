@@ -21,7 +21,6 @@ a bounded in-memory store and re-fitted on demand from the dataset + spec.
 from __future__ import annotations
 
 import uuid
-import warnings
 from collections import OrderedDict
 
 import numpy as np
@@ -32,6 +31,7 @@ from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval.recurrent import CoxLewis, CrowAMSAA, Duane, HPP, NonParametricCounting
 from backend.errors import client_message
+from backend.warn_capture import ignore_warnings
 
 # Parametric recurrence models offered: the power-law (Crow-AMSAA, Duane) and
 # constant (HPP) intensities, and the Cox-Lewis log-linear intensity
@@ -259,8 +259,8 @@ def _fit_nhpp(model_id: str, inputs: dict):
     inputs = observed(inputs)[0]
     if model_id != "crow_amsaa":
         return fitter.fit(**inputs)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)  # an unverified maximum is retried below
+    with ignore_warnings(UserWarning):
+        # an unverified maximum is retried below
         para = fitter.fit(**inputs)
     if getattr(para, "maximum", "verified") == "verified":
         return para
@@ -273,8 +273,7 @@ def _fit_nhpp(model_id: str, inputs: dict):
     if inputs.get("windows"):
         scaled["windows"] = {k: [(a / scale, b / scale) for a, b in v] for k, v in inputs["windows"].items()}
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             unit_fit = fitter.fit(**scaled)
         alpha, beta = (float(v) for v in np.asarray(unit_fit.params, dtype=float))
         if not (np.isfinite(alpha) and np.isfinite(beta)):
@@ -488,8 +487,7 @@ def rate_bounds(model_id: str, model, t_end: float) -> dict:
     methods = ("crow", "wald") if model_id == "crow_amsaa" else ("wald",)
     for method in methods:
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
+            with ignore_warnings(), np.errstate(all="ignore"):
                 mtbf_ci = np.asarray(model.mtbf_cb(t, alpha_ci=1 - CI_LEVEL, method=method), dtype=float).ravel()
                 rocof_ci = np.asarray(model.iif_cb(t, alpha_ci=1 - CI_LEVEL, method=method), dtype=float).ravel()
                 lower = _first(model.mtbf_cb(t, alpha_ci=1 - DEMONSTRATED_LEVEL, bound="lower", method=method))
@@ -518,8 +516,7 @@ def trend_tests(model) -> list:
     out = []
     for test_id, label in _TREND_TESTS:
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
+            with ignore_warnings(), np.errstate(all="ignore"):
                 tt = model.trend_test(test_id)
         except Exception:  # noqa: BLE001 - no data (built from parameters) or too few events
             continue
@@ -551,8 +548,7 @@ def cramer_von_mises(model, n_events: int) -> dict | None:
         return {**base, "statistic": None, "p_value": None, "n_boot": 0, "adequate": None,
                 "reason": f"Skipped: with {n_events:,} events the bootstrap p-value would take too long."}
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             g = model.cramer_von_mises(n_boot=n_boot, random_state=0)
     except Exception:  # noqa: BLE001 - no data or likelihood (built from parameters, restored)
         return None
@@ -567,8 +563,7 @@ def system_residuals(model) -> list | None:
     expected) — most excess failures first, capped at the top 50: the
     systems failing more (or less) than the fleet model explains."""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             res = np.asarray(model.residuals("martingale"), dtype=float)
         data = model.data
         items = list(data.ids)
@@ -597,8 +592,7 @@ def param_intervals(model_id: str, model) -> dict:
     out = {}
     for name in getattr(model, "parameter_names", None) or []:
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
+            with ignore_warnings(), np.errstate(all="ignore"):
                 lo, hi = (float(v) for v in np.asarray(model.param_cb(name, alpha_ci=1 - CI_LEVEL), dtype=float))
         except Exception:  # noqa: BLE001 - no likelihood (from params / restored): no interval
             return {}
@@ -885,8 +879,7 @@ def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=
         raise FitError(f"No failures of {', '.join(map(repr, unknown))} in the data: only modes seen in the test "
                        "can be classified.")
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with ignore_warnings(RuntimeWarning), np.errstate(all="ignore"):
             gp = CrowAMSAA.projection(ins["x"], np.asarray(ins["modes"], dtype=object), fef,
                                       i=ins["i"], c=ins["c"], bc=bc or None)
     except ValueError as exc:
@@ -990,8 +983,7 @@ def next_failure(model, age, within=None, quantiles=None) -> dict:
         times = np.asarray(model.inv_cif(targets), dtype=float) - age
         for q, t in zip(quantiles, times):
             qs.append({"q": q, "time_ahead": float(t), "age_at": float(t + age)})
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             mean, _ = quad(lambda t: np.exp(-ahead(t)), 0.0, np.inf, limit=200)
     return _json_safe({
         "age": age,

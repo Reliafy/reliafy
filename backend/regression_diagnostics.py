@@ -33,12 +33,12 @@ from __future__ import annotations
 
 import json
 import logging
-import warnings
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 from backend.errors import client_reason
+from backend.warn_capture import ignore_warnings
 
 logger = logging.getLogger(__name__)
 
@@ -397,8 +397,7 @@ def _aux_cox(df: pd.DataFrame, mapping: dict, fit_kwargs: dict):
     if len(df) > MAX_AUX_ROWS:
         return None, f"Not run on more than {MAX_AUX_ROWS:,} rows."
     keep = {k: v for k, v in fit_kwargs.items() if k in ("x_col", "Z_cols", "formula", "c_col", "n_col", "tl_col")}
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with ignore_warnings():
         return CoxPH.fit_from_df(df, **keep), None
 
 
@@ -408,8 +407,7 @@ def diagnose(model, df: pd.DataFrame, mapping: dict, fit_kwargs: dict, distribut
     the Cox model they ran on, kept for :func:`residuals` (None when there is
     none). Never raises."""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             out, kept = _diagnose(model, df, mapping, fit_kwargs, distribution, effect, cox_opts or {})
     except Exception as exc:  # noqa: BLE001 - a check is never worth a failed fit
         logger.info("Regression diagnostics failed: %s", exc)
@@ -488,8 +486,7 @@ def model_checks(model, distribution: str) -> dict:
     variance. Never raises: a family SurPyval has no checks for (Buckley-James)
     says so."""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             report = model.diagnose()
             data = report.to_dict()
     except NotImplementedError:
@@ -629,8 +626,7 @@ def residuals(cox, source: str = "model") -> dict:
 
 
 def _residuals(cox, source: str) -> dict:
-    with warnings.catch_warnings(), np.errstate(all="ignore"):
-        warnings.simplefilter("ignore")
+    with ignore_warnings(), np.errstate(all="ignore"):
         data = cox._fit_data
         x = np.asarray(data["x"], dtype=float)
         c = np.asarray(data["c"], dtype=float)

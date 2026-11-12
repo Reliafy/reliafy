@@ -23,7 +23,6 @@ from __future__ import annotations
 import math
 import re
 import uuid
-import warnings
 from collections import OrderedDict
 from typing import Optional
 
@@ -47,6 +46,7 @@ from backend import levels as rule
 from surpyval import AcceleratedLife
 from surpyval.univariate.regression import accelerated_life as _al
 from backend.errors import client_message
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 _LM = _al.LIFE_MODELS
 
@@ -313,8 +313,7 @@ def fit(
     inputs = build_inputs(df, mapping, stress_cols)
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(AcceleratedLife(dist, entry["model"]).fit(**inputs))
         reissue_deprecations(caught)
     except FitError:
@@ -408,8 +407,7 @@ def refit(inputs: dict, distribution_id: str, life_model_id: str):
         raise FitError("Unknown ALT distribution or life-stress model.")
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             return note_fit(AcceleratedLife(dist, LIFE_MODELS[life_model_id]["model"]).fit(**inputs))
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
         raise FitError(str(exc) or type(exc).__name__) from exc
@@ -589,8 +587,7 @@ def _own_fits(dist, inputs: dict, uniq: np.ndarray, failed: np.ndarray) -> list:
             if inputs.get(key) is not None:
                 kwargs[key] = np.asarray(inputs[key])[mask]
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
+            with ignore_warnings(), np.errstate(all="ignore"):
                 fit = dist.fit(**kwargs)
         except Exception:  # noqa: BLE001 - a level too small or all censored
             continue
@@ -603,8 +600,7 @@ def _own_fits(dist, inputs: dict, uniq: np.ndarray, failed: np.ndarray) -> list:
 
         def interval(name):
             try:
-                with warnings.catch_warnings(), np.errstate(all="ignore"):
-                    warnings.simplefilter("ignore")
+                with ignore_warnings(), np.errstate(all="ignore"):
                     ci = np.asarray(fit.param_cb(name, alpha_ci=rule.ALPHA, bound="two-sided"), dtype=float).ravel()
             except Exception:  # noqa: BLE001 - no covariance
                 return None
@@ -1079,8 +1075,7 @@ def _quantiles(model, Zuse: np.ndarray, probs: list) -> list:
     """B-lives from SurPyval's quantile function (``qf``, 0.23), None where it
     gives none."""
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             q = np.asarray(model.qf(np.asarray(probs, dtype=float), Zuse), dtype=float).ravel()
     except Exception:  # noqa: BLE001 - fall back to the grid
         return [None] * len(probs)
@@ -1151,8 +1146,7 @@ def _bounded_wald(model, name: str, confidence: float):
     names = list(model.parameter_names)
     idx = names.index(name)
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             var = float(np.asarray(model.covariance(), dtype=float)[idx, idx])
     except Exception:  # noqa: BLE001 - no covariance
         return None
@@ -1273,8 +1267,7 @@ def param_interval(model, name: str, confidence: float, method: str = "wald", **
         if bounded != "unbounded":
             return bounded
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             ci = np.asarray(model.param_cb(name, alpha_ci=1.0 - confidence, bound="two-sided",
                                            method=method, **boot), dtype=float).ravel()
     except Exception:  # noqa: BLE001 - e.g. no covariance
@@ -1337,8 +1330,7 @@ def _log_life_se(model, Zuse: np.ndarray, life_use: float) -> Optional[float]:
         return None
     k_dist = int(getattr(model, "k_dist", 1) or 1)
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             coeffs = np.asarray(model.params, dtype=float)[k_dist:]
             cov = np.asarray(model.covariance(), dtype=float)[k_dist:, k_dist:]
 
@@ -1465,8 +1457,7 @@ def use_level_bounds(
 
     caught_all = []
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with np.errstate(all="ignore"), collect_warnings() as caught:
             band = np.asarray(model.cb(grid, Zuse, on="sf", alpha_ci=alpha, bound="two-sided",
                                        method=method, **boot), dtype=float).reshape(-1, 2)
             probs = np.array([0.1, 0.01])
@@ -1489,8 +1480,7 @@ def use_level_bounds(
 
     names = list(getattr(model, "parameter_names", []) or [])
     k_dist = int(getattr(model, "k_dist", 1) or 1)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         coefficients = []
         for i, name in enumerate(names):
             if i == 0:
@@ -1653,8 +1643,7 @@ def diagnose(model, life_model_id: str, stresses: list, use_stress: Optional[lis
     if use_stress is not None:
         use = _use_row(use_stress, life_model_id).ravel()
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             d = model.diagnose(**({"use_stress": use.tolist() if use.size > 1 else float(use[0])}
                                   if use is not None else {}))
     except ValueError as exc:

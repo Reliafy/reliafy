@@ -17,11 +17,11 @@ end of the two-sided ``1 − 2α`` interval is the one-sided ``1 − α`` bound.
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Optional
 
 import numpy as np
 from backend.errors import client_reason
+from backend.warn_capture import ignore_warnings
 
 # The B-lives the life card shows: the fraction failed, and its label.
 B_LIVES = ((0.01, "B1"), (0.05, "B5"), (0.10, "B10"), (0.50, "B50"))
@@ -90,9 +90,8 @@ def _no_bounds_reason(model) -> Optional[str]:
 def _quantile_bounds(model, probs: np.ndarray, alpha: float, bound: str):
     """``(lower, upper)`` arrays (None for a side not asked for) of the
     quantiles at ``probs``, by SurPyval's ``quantile_cb``."""
-    with np.errstate(all="ignore"), warnings.catch_warnings():
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         # An undefined bound comes back nan, and is shown as none.
-        warnings.simplefilter("ignore", RuntimeWarning)
         if is_bayesian(model):
             # Credible intervals of the quantiles, from the posterior draws.
             cri = np.asarray(model.quantile_cri(probs, alpha_ci=alpha, bound=bound), dtype=float)
@@ -204,8 +203,7 @@ def _mttf(model, alpha: float, with_bounds: bool, tau=None) -> dict:
     if out["value"] is None or not with_bounds or _is_nonparametric(model) or _no_bounds_reason(model):
         return out
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
             # A Bayesian update's mean has a credible bound, not a confidence bound.
             bound = model.mean_cri(alpha_ci=alpha, bound="lower") if is_bayesian(model) \
                 else model.mean_cb(alpha_ci=alpha, bound="lower")
