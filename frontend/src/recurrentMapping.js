@@ -9,6 +9,10 @@
 //   - the time is a numeric column named like hours, time, age, failure, and
 //     not like an end; else the first numeric column that isn't the end.
 
+import { guessUnit } from "./datasetGuess.js";
+import { ROLES, missingFor, withZ } from "./datasetReading.js";
+import { codedStatus, unitColumnProblem } from "./readingCodes.js";
+
 const words = (name) => String(name ?? "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-.()/#:]+/g, " ")
   .replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -107,5 +111,58 @@ export function recurrentFields(mapping) {
   const out = [["i", mapping.i], ["x", mapping.x]];
   ["c", "n", "tl", "tr", "t", "mode", "ws", "we"].forEach((k) => { if (mapping[k]) out.push([k, mapping[k]]); });
   (mapping.z || []).forEach((col) => out.push(["z", col]));
+  return out;
+}
+
+// A saved dataset's reading (datasetReading.js) as the repairable fit's
+// mapping, so a fit from a saved dataset asks no column questions:
+// { mapping, unit, status, missing }.
+//   - i, x, c, n, tl, tr and the failure mode e (sent as ``mode``); the
+//     covariates (the reading's Z) only for the covariate models
+//     (recurrentWithCovariates), so the other models' requests are as before;
+//   - ``status``: readingCodes.codedStatus (this fit reads c as 0/1 codes);
+//   - ``missing``: what the reading lacks for this model, in words (no i: a
+//     repairable model follows each system), or a status or unit column this
+//     fit can't read; null when it can be fitted.
+export function recurrentMappingFromReading(r, facts = {}, nRows = 0) {
+  if (!r) return null;
+  const status = codedStatus(r, facts, nRows, "0 = a failure, 1 = the end of the record");
+  const mapping = {
+    i: r.i || "", x: r.x || "", c: status.c, n: r.n || "", tl: r.tl || "", tr: r.tr || "", mode: r.e || "",
+  };
+  const unit = r.unit || guessUnit(mapping.x) || guessUnit(mapping.tr);
+  const missing = missingFor("repairable", r) || unitColumnProblem(r) || status.problem;
+  return { mapping, unit, status, missing };
+}
+
+// The mapping with the reading's covariates, for the covariate models.
+export function recurrentWithCovariates(mapping, r) {
+  const z = (r?.z || []).filter(Boolean);
+  return z.length ? { ...mapping, z } : mapping;
+}
+
+// A dataset saved before readings, whose newest repairable model read its
+// columns (savedRecurrentMapping): the guessed reading with that model's
+// roles laid over it, so a refit starts where the last one did. The kept c
+// was read as 0/1 codes, so it carries no word meanings or flip.
+export function readingWithRecurrentMapping(r, kept, facts = {}, nRows = 0) {
+  if (!r || !kept?.mapping) return r;
+  const m = kept.mapping;
+  const roles = { i: m.i, x: m.x, c: m.c, n: m.n, tl: m.tl, tr: m.tr, e: m.mode };
+  const cols = new Set(Object.values(roles).filter(Boolean));
+  const next = { ...r };
+  for (const k of ROLES) if (next[k] && cols.has(next[k])) next[k] = "";
+  Object.assign(next, Object.fromEntries(Object.entries(roles).map(([k, v]) => [k, v || ""])));
+  next.c_invert = false;
+  next.c_map = null;
+  next.unit = kept.unit || r.unit || "";
+  const out = withZ(next, r, facts, nRows);
+  if (m.z?.length) {
+    // That model's covariates are the Z; the reading's others are left out.
+    const z = m.z.filter((c) => !cols.has(c));
+    const dropped = out.z.filter((c) => !z.includes(c));
+    out.not_used = [...(out.not_used || []).filter((c) => !z.includes(c)), ...dropped];
+    out.z = z;
+  }
   return out;
 }
