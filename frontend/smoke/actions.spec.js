@@ -680,7 +680,7 @@ test("the empty tree offers only the Survey quadcopter; it opens on the RCM tab,
   }
   await expect(card).toContainText("New here? Open the Survey quadcopter to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.");
   await expect(card.getByRole("button")).toHaveText(["Open the Survey quadcopter"]); // no truck, no asset-tree UAV
-  await expect(page.locator(".section-empty").first()).toContainText("Add the first position, or import a worksheet.");
+  await expect(page.locator(".section-empty").first()).toContainText("Add the first position, or bring your hierarchy in from Excel.");
   await expectHealthy(page, problems, { label: "the empty tree" });
   // The card opens the product on its structure's RCM tab (smoke/seed.js added it, so
   // nothing more is added and nothing is asked).
