@@ -2,7 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  MAX_SECTIONS, addSection, applyDraft, moveSection, pickerGroups, removeSection, reportBody, setNote,
+  MAX_SECTIONS, addSection, applyDraft, duplicateNames, isDuplicate, moveSection, pickerGroups, pickerKinds,
+  pickerRows, removeSection, renameItem, reportBody, setNote,
 } from "./reportComposer.js";
 import { printZoom } from "./printFit.js";
 
@@ -53,4 +54,29 @@ test("print zoom shrinks a drawing to its room and never enlarges it", () => {
   assert.equal(printZoom(0, 640), 1);
   assert.equal(printZoom(1000, 0), 1);
   assert.ok(printZoom(683, 655) * 683 <= 655);
+});
+
+test("the picker finds items by words in their name or kind, of one kind, own first", () => {
+  const items = [
+    item("a", { name: "Weibull — pasted values" }),
+    item("b", { name: "Weibull — pasted values" }),
+    item("c", { name: "Bellbird Creek seals", collection: "fleets", kind: "Fleet forecast" }),
+    item("s", { name: "Bearings (sample)", is_sample: true }),
+    item("t", { name: "Quadcopter UAV (sample)", collection: "fault_trees", kind: "Fault tree", is_sample: true }),
+  ];
+  assert.deepEqual(pickerKinds(items), ["Non-repairable model", "Fleet forecast", "Fault tree"]);
+  const ids = (rows) => rows.map((r) => r.artifact_id);
+  assert.deepEqual(ids(pickerRows(items, [])), ["a", "b", "c", "s", "t"]);
+  assert.deepEqual(ids(pickerRows(items, [], { query: "weibull PASTED" })), ["a", "b"]);
+  assert.deepEqual(ids(pickerRows(items, [], { query: "fault" })), ["t"]); // by kind too
+  assert.deepEqual(ids(pickerRows(items, [], { kind: "Non-repairable model" })), ["a", "b", "s"]);
+  // Already in the report: not offered again.
+  assert.deepEqual(ids(pickerRows(items, [items[0]], { query: "weibull" })), ["b"]);
+  // Two items with one name are flagged, so their dates are shown.
+  const dupes = duplicateNames(items);
+  assert.equal(isDuplicate(dupes, items[0]), true);
+  assert.equal(isDuplicate(dupes, items[2]), false);
+  // A rename shows wherever the item is listed.
+  assert.equal(renameItem(items, items[1], "Pump seals, site A")[1].name, "Pump seals, site A");
+  assert.equal(renameItem(items, items[1], "x")[0].name, "Weibull — pasted values");
 });

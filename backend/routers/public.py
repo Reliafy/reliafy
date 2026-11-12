@@ -19,6 +19,7 @@ from backend.db import get_session
 from backend.request_ip import client_ip as _client_ip
 from backend.services import public_links as links_service
 from backend.services import rbds as rbds_service
+from backend.services.access import AccessCtx, get_access
 from backend.services.method_labels import generic_engine_fields
 from backend.services.rbd_analysis import AnalysisError
 from backend.errors import client_message
@@ -55,12 +56,18 @@ def list_links(
     collection: str | None = None,
     artifact_id: str | None = None,
     session=Depends(get_session),
-    user: dict = Depends(get_current_user),
+    ctx: AccessCtx = Depends(get_access),
 ) -> dict:
     """The caller's live links (optionally for one artifact), newest first.
-    ``link`` is the newest one, for clients written when there was only one."""
-    links = [links_service.public(link)
-             for link in links_service.list_links(session, user["uid"], collection, artifact_id)]
+    ``link`` is the newest one, for clients written when there was only one.
+
+    Without ``artifact_id`` (Reports' list of shared links) only links to the
+    active workspace's own items are listed: a link follows what it shares,
+    so a team workspace never lists the Personal workspace's links."""
+    found = links_service.list_links(session, ctx.uid, collection, artifact_id)
+    if not artifact_id:
+        found = links_service.in_workspace(session, found, ctx.write_owner)
+    links = [links_service.public(link) for link in found]
     return {"links": links, "link": links[0] if links else None}
 
 
@@ -101,7 +108,7 @@ def revoke_link(
 # Detail handlers per collection, replayed under the guest ctx. Imported
 # lazily inside the endpoint to avoid circular imports at module load.
 def _detail_handler(collection: str):
-    from backend.routers import degradation, fleet, models, rbds, recurrent, strategy
+    from backend.routers import alt, degradation, fault_trees, fleet, models, predictions, rbds, recurrent, strategy
 
     return {
         "models": models.get_model,
@@ -111,6 +118,10 @@ def _detail_handler(collection: str):
         "fleets": fleet.get_fleet,
         "rbds": rbds.get_rbd,
         "recurrent_models": recurrent.get_model,
+        # Report sections only (no link of their own yet: not in PUBLIC_COLLECTIONS).
+        "alt_models": alt.get_model,
+        "fault_trees": fault_trees.get_fault_tree,
+        "reliability_predictions": predictions.get_prediction,
     }[collection]
 
 

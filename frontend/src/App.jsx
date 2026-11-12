@@ -96,8 +96,6 @@ export default function App() {
                 own /learn/:slug URLs (those are the indexed pages). */}
             {!AUTH_DISABLED && <Route path="/learn" element={<Navigate to="/blog" replace />} />}
             {!AUTH_DISABLED && <Route path="/learn/:slug" element={<LearnArticle />} />}
-            {!AUTH_DISABLED && <Route path="/guides" element={<GuidesIndex />} />}
-            {!AUTH_DISABLED && <Route path="/guides/:slug" element={<GuidePage />} />}
             {!AUTH_DISABLED && <Route path="/reference" element={<ReferenceIndex />} />}
             {!AUTH_DISABLED && <Route path="/reference/:family" element={<ReferenceFamily />} />}
             {!AUTH_DISABLED && <Route path="/api-docs" element={<ApiDocsPublicPage page="" />} />}
@@ -113,22 +111,26 @@ export default function App() {
               PRODUCT_PAGES.map((p) => (
                 <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />
               ))}
-            {!AUTH_DISABLED && (
-              <Route
-                path="/p/:token"
-                element={
-                  <Suspense fallback={<div className="auth-loading">Loading…</div>}>
-                    <PublicArtifact />
-                  </Suspense>
-                }
-              />
-            )}
             {!AUTH_DISABLED && <Route path="/terms" element={<TermsPage />} />}
             {!AUTH_DISABLED && <Route path="/privacy" element={<PrivacyPage />} />}
             {/* Signed-token unsubscribe from product-update emails: public,
                 client-rendered only (not prerendered, not in the sitemap). */}
             {!AUTH_DISABLED && <Route path="/unsubscribe" element={<Unsubscribe />} />}
             {!AUTH_DISABLED && <Route path="/login" element={<Login />} />}
+            {/* In both modes: the how-to guides and share pages (/p/:token).
+                With sign-in off (tst, the self-hosted single-user app) a
+                share link must still open the shared page, never the
+                workspace behind it, and "Show me how" must open its guide. */}
+            <Route path="/guides" element={<GuidesIndex />} />
+            <Route path="/guides/:slug" element={<GuidePage />} />
+            <Route
+              path="/p/:token"
+              element={
+                <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+                  <PublicArtifact />
+                </Suspense>
+              }
+            />
             {/* OAuth consent for Claude connectors / MCP clients. Public so a
                 signed-out user can sign in and come straight back; noindex,
                 not prerendered, not in the sitemap. Lazy: rarely visited. */}

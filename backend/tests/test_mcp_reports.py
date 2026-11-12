@@ -80,7 +80,7 @@ def test_create_report_refuses_another_user_s_items(env):
     rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "A's skid", "unit": "Hours", **GRAPH}))["id"]
     msg = _err(_call(env.token[B], "change", {"action": "share_report", "title": "Nope", "items": [{"kind": "rbd",
         "id": rid}]}))
-    assert "wasn't found among your own" in msg
+    assert "wasn't found in this workspace" in msg
     assert env.db.reports.count_documents({}) == 0 and env.db.public_links.count_documents({}) == 0
 
 

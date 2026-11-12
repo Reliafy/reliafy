@@ -448,6 +448,24 @@ export function createModelFromParams(name, distribution, params, { unit, extras
 }
 
 // Change a model saved from parameters in place (same id): a typed-in figure put right.
+// Rename a saved non-repairable model: { name } (the fit is untouched).
+export function renameModel(id, name) {
+  return request(`/api/models/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+// Rename a saved repairable model.
+export function renameRecurrentModel(id, name) {
+  return request(`/api/recurrent/models/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function updateModelParams(id, { distribution, params, unit } = {}) {
   return request(`/api/models/${encodeURIComponent(id)}/params`, {
     method: "PUT",

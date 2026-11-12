@@ -3,6 +3,12 @@
 // server render — effects don't run — so the auth SDK is never loaded.
 export const AUTH_DISABLED = false;
 
+export const LOCAL_PUBLIC_PREFIXES = ["/guides", "/p"];
+
+export function isLocalPublicPath() {
+  return true;
+}
+
 export function publicUrl(path = "/") {
   return path.startsWith("/") ? path : `/${path}`;
 }

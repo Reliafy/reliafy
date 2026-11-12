@@ -1,8 +1,23 @@
 import { Link } from "react-router-dom";
+import { AUTH_DISABLED } from "../firebase.js";
 
 // Shared footer for all public pages. The software links double as sitewide
-// internal links to the SEO product pages.
+// internal links to the SEO product pages. With sign-in off only the guides
+// are routed here, so the footer keeps to them.
 export default function PublicFooter() {
+  if (AUTH_DISABLED) {
+    return (
+      <footer className="landing-foot foot-stack">
+        <div className="foot-row">
+          <span>© Reliafy</span>
+          <span className="foot-links">
+            <Link to="/guides">Guides</Link>
+            <a href="https://github.com/Reliafy/reliafy" target="_blank" rel="noreferrer">GitHub</a>
+          </span>
+        </div>
+      </footer>
+    );
+  }
   return (
     <footer className="landing-foot foot-stack">
       <nav className="foot-products" aria-label="Software">
