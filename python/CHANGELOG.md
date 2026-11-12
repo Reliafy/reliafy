@@ -1,7 +1,21 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 (13 Nov 2026)
 
+Needs a server on this release.
+
+- **Every interval is 90%** (server change): life bounds (B-lives, mean or
+  median life, remaining life) are 90% one-sided lower bounds, and every other
+  interval is 90% two-sided. Results carry `ci_level`; result keys that named
+  a level are now level-free: `beta_ci_95` → `beta_ci`, `ci_95` → `ci`,
+  `rocof_ci_95`, `mtbf_ci_95`, `rate_ratio_ci_95`, `effectiveness_ci_95`
+  (now without `_95`) and `survival_95ci` → `survival_ci`. Forecast ranges are
+  90% (P5–P95); demonstration tests and per-demand bounds default to 90%.
+- **Split one sheet into several datasets**: dataset uploads take
+  `dataset_col`; each value of that column becomes its own dataset.
+- **Data mapping**: fits read `x` with an optional range (`xl`, `xr`) row by
+  row; rows with `x` and a range both filled are left out with a warning.
+  `tr` (observed only up to this value) is mapped like `tl`.
 - **Download as Python for every model**: `reliafy analyse model_export_python
   --model-id ID` (or `POST /api/v1/analyse/model_export_python`) gives any
   saved model (non-repairable, regression, time-varying covariates,
