@@ -346,7 +346,7 @@ def recently_used(db, owners, limit: int = 5) -> list[dict]:
 
 def fit_dataset(db, owners, dataset_id: str | None, time_column: str, censor_column: str | None, unit: str,
                 prior: dict, distribution: str = "exponential", trust: str = "guide", c_invert: bool = False,
-                hidden=(), content: bytes | None = None, c_map: dict | None = None, age=None):
+                hidden=(), content: bytes | None = None, c_map: dict | None = None, age=None, need=None):
     """Life data fitted with a prior: a saved dataset (``dataset_id``) or a table given as CSV
     (``content``: values pasted or a file, on New model), its ``time_column`` and ``censor_column``
     (0 failed, 1 still running; ``c_invert`` flips 0/1, ``c_map`` maps other values to 0 or 1).
@@ -405,7 +405,8 @@ def fit_dataset(db, owners, dataset_id: str | None, time_column: str, censor_col
         extra = f"{extra} {base['unit_note']}".strip()
     try:
         model, result, _ = bl.update(base, trust if base["source"] != "update" else "guide", rows,
-                                     float(age) * per if age else None, priors, subject="the best B10")
+                                     float(age) * per if age else None, priors, subject="the best B10",
+                                     need=float(need) * per if need else None)
     except Exception as err:  # noqa: BLE001 - SurPyval's refusals in words
         raise sv.Invalid(f"The fit with that prior didn't work: {err}") from None
     result.update(method="bayes", interval_label=f"{bl.LEVEL:.0%} credible interval", prior_kind=prior.get("kind"),

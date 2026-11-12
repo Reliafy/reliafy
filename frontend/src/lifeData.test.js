@@ -54,7 +54,7 @@ test("a text time column is refused before the fit, not with 'cannot contain NaN
   const { mapping } = guessMapping(PUMPS.columns, blank);
   assert.deepEqual(dataStepProblems(mapping, blank, 21), [
     "2 rows have no time in “Operating Hours”. Fill them in or delete those rows, then load the file again.",
-    "1 row has no value in “Status”. Fill in whether each unit failed or was still running.",
+    "1 row has no value in “Status”. Say what a blank means (failed or still running) beside the column, or fill them in.",
   ]);
 });
 

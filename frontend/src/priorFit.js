@@ -40,6 +40,8 @@ export function priorRequest(state, mapping, unit, source, extra = {}) {
     prior: body.prior,
     trust: body.trust,
     ...(body.age ? { age: body.age } : {}),
+    // A required B10: the answer then gives the chance it is met.
+    ...(Number(state.need) > 0 ? { need: Number(state.need) } : {}),
     ...extra,
   };
 }

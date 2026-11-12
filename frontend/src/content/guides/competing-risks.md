@@ -74,8 +74,10 @@ Switch **Show** to **Each mode** to see each mode on its own, with its own band.
 ![Each mode's cumulative incidence, stacked, with the share of units failing from each by 5,000 hours](/guides/img/crisk-02-incidence.png)
 
 The **Failure modes** panel beside it reads the curves at that round time: each
-mode's share of the failures, the share of units that failed from it (with its
-90% interval) and its count. For the sample at 5,000 hours:
+mode's share of the failures by then (its chance over the chance from any
+mode, the same share on every tab), the share of units that failed from it
+(with its 90% interval) and how many failed from it by then. For the sample at
+5,000 hours:
 
 | Mode | Units failed from it by 5,000 hours | 90% interval |
 |---|---|---|
@@ -95,8 +97,17 @@ The **Calculator** tab reads the same curves at any time you choose. **Chance
 by a time** gives each mode's chance of failing by then, with its 90% band, and
 the chance from any mode. **Time to a chance** turns it round: pick a mode (or
 **Any mode**) and a share of units, and it gives the time by which that share
-has failed, with its 90% range. If the curve never gets that high within the
+has failed, with the time we're 90% sure it's at least (a life, so the bound
+is one-sided, as for a B-life). If the curve never gets that high within the
 data, it says how far it gets by the last time in the data instead.
+
+### Life if a mode were eliminated
+
+Under the reading, **If a mode were eliminated** answers "what does fixing one
+mode buy?". For each mode it fits a Weibull to the other modes' failures, with
+the eliminated mode's failures counted as still running when they failed, and
+gives that life's B10 with its 90% one-sided lower bound. It assumes the modes
+act independently: fixing one doesn't change how the others wear.
 
 ### Can you trust it?
 

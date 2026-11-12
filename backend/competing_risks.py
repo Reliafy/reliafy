@@ -57,6 +57,12 @@ CR_MODELS = {
 RATIO_LABELS = {"Cox": "hazard ratio", "Fine-Gray": "subdistribution hazard ratio"}
 
 ALPHA = 0.10  # 90% two-sided bounds on the incidence curves (backend.levels)
+# What a result holds: 2 adds the failures counted by the horizon, the
+# one-sided bounds a time to a share reads, and life with a mode eliminated.
+# A model saved before is refitted from its data when read (:func:`refreshed`).
+VERSION = 2
+# Life with one mode eliminated: the B-life it quotes, with its 90% one-sided lower bound.
+ELIMINATED_B = 0.10
 SIGNIFICANCE = 0.05  # Gray's test and the coefficients' p-values: a test, not a bound
 MAX_CAUSES = 12
 MAX_GROUPS = 12
@@ -213,6 +219,68 @@ def _cif_bounds(model, cause, t) -> Optional[np.ndarray]:
         return None
     with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         return np.asarray(cb(t, cause, on="cif", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
+
+
+def _cif_upper_one(model, cause, t) -> Optional[np.ndarray]:
+    """A mode's 90% one-sided upper bound on its chance of failing by each
+    time: the time by which a share has failed then has a 90% one-sided
+    lower bound where this crosses the share (the B-life rule)."""
+    cb = getattr(model, "cb", None)
+    if not callable(cb):
+        return None
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        try:
+            return np.asarray(cb(t, cause, on="cif", alpha_ci=ALPHA, bound="upper"), dtype=float).ravel()
+        except Exception:  # noqa: BLE001 - the time then goes without its bound
+            return None
+
+
+def _all_cause_upper_one(prep: dict, grid: np.ndarray, everything: np.ndarray) -> np.ndarray:
+    """The all-cause failure probability's 90% one-sided upper bound (the
+    Kaplan-Meier one): the upper end of its 80% two-sided interval."""
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        km = KaplanMeier.fit(prep["x"], c=prep["c"], n=prep["n"])
+        cb = np.asarray(km.cb(grid, on="ff", alpha_ci=2 * ALPHA), dtype=float).reshape(-1, 2)[:, 1]
+    cb[(everything == 0) & ~np.isfinite(cb)] = 0.0
+    return cb
+
+
+def eliminated(prep: dict, cause: str) -> dict:
+    """Life if ``cause`` were eliminated: a Weibull fitted to the other
+    modes' failures, with this mode's failures treated as still running at
+    the time they failed (the standard approach; it assumes the modes act
+    independently). Its shape, scale and B10 with the 90% one-sided lower
+    bound; a plain reason when it can't be fitted."""
+    from surpyval import Weibull
+
+    from backend import life_bounds
+
+    x, e, c, n = prep["x"], prep["e"], prep["c"], prep["n"]
+    keep = (c == 0) & (e != cause)
+    others = [k for k in prep["causes"] if k != cause]
+    out = {"cause": cause, "remaining": others, "failures": float(n[keep].sum()), "distribution": "Weibull",
+           "b": ELIMINATED_B}
+    if out["failures"] < 2:
+        out["reason"] = ("Fewer than two failures from the other modes: nothing to fit a life to." if others
+                         else "With this mode gone no failures remain: no other mode has been seen.")
+        return out
+    cc = np.where(keep, 0, 1)
+    try:
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            m = Weibull.fit(x, c=cc, n=n)
+            life = life_bounds.time_at_reliability(m, [1.0 - ELIMINATED_B], 1.0 - ALPHA, "lower")
+    except Exception as exc:  # noqa: BLE001 - the rest of the result stands
+        out["reason"] = f"The Weibull fit didn't converge ({str(exc) or type(exc).__name__})."
+        return out
+    point = life["points"][0]
+    out.update({
+        "alpha": _num(m.params[0]), "beta": _num(m.params[1]),
+        "b_life": point["time"], "lower": point["lower"], "confidence": 1.0 - ALPHA,
+    })
+    return out
 
 
 def _all_cause_bounds(prep: dict, grid: np.ndarray, everything: np.ndarray) -> np.ndarray:
@@ -488,6 +556,12 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional
         lo, hi = at[0] if at is not None else (None, None)
         rows.append({
             "name": k, "failures": prep["failures"][k],
+            # Failures from this mode up to the horizon the panel reads at
+            # ("by 7,000 hours"), as well as in all.
+            "failures_by": float(n[(c == 0) & (e == k) & (x <= horizon)].sum()),
+            # The mode's part of the failures by the horizon: its chance by
+            # then over any mode's (the estimate, which allows for the units
+            # still running), the one share every tab quotes.
             "share": _num(v / total) if total > 0 else None,
             "at": {"cif": _num(v), "lower": _num(lo), "upper": _num(hi)},
         })
@@ -517,6 +591,16 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional
         },
         "mode_bounds": mode_bounds,
         "ci_level": round(1.0 - ALPHA, 6),  # every band and interval here, two-sided
+        # A time to a share failed is a life: its bound is 90% one-sided lower,
+        # read where these one-sided upper bounds on the chance cross the share.
+        "one_sided": {
+            "level": round(1.0 - ALPHA, 6),
+            "upper": {k: _nums(u) for k in causes if (u := _cif_upper_one(model, k, grid)) is not None},
+            "all_upper": _nums(_all_cause_upper_one(prep, grid, everything)),
+        },
+        # Life if each mode were eliminated (the others' failures fitted, this one's as still running).
+        "eliminated": [eliminated(prep, k) for k in causes] if len(causes) > 1 else [],
+        "version": VERSION,
         "reading": _reading(rows, horizon, leads, us),
         "cause_column": mapping.get(CAUSE_KEY),
     }
@@ -525,3 +609,41 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional
     if entry["regression"]:
         result["regression"] = _regression(entry["regression"], prep, df, list(covariates or []))
     return result
+
+
+def refreshed(db, model):
+    """A saved competing-risks model's results as a fit today gives them:
+    one saved before :data:`VERSION` (95% bands, all-time failure counts, no
+    life with a mode eliminated) is refitted from its dataset and served with
+    the new numbers; nothing is written back. Any other model, or one whose
+    data has gone, comes back as saved."""
+    results = model.results or {}
+    if results.get("kind") != "competing_risks" or (results.get("version") or 0) >= VERSION \
+            or not model.dataset_id:
+        return results
+    key = (model.id, str(model.updated_at))
+    if key in _REFRESHED:
+        return _REFRESHED[key]
+    from backend import fitting
+    from backend.services import datasets as datasets_service
+
+    out = results
+    try:
+        spec = model.spec or {}
+        dataset = datasets_service.get_dataset(db, model.dataset_id, owner_id=model.owner_id)
+        if dataset is not None:
+            df = datasets_service.load_dataframe(dataset)
+            fresh = fitting.fit(model.distribution_id or results.get("distribution_id"), df,
+                                spec.get("mapping") or {}, covariates=spec.get("covariates") or [],
+                                unit=results.get("unit") or spec.get("unit"),
+                                options=spec.get("options") or None)
+            out = {**results, **{k: v for k, v in fresh.items() if k not in ("functions",)}}
+    except Exception:  # noqa: BLE001 - serve the saved results rather than fail the page
+        out = results
+    _REFRESHED[key] = out
+    if len(_REFRESHED) > 500:
+        _REFRESHED.pop(next(iter(_REFRESHED)))
+    return out
+
+
+_REFRESHED: dict = {}

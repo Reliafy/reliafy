@@ -116,5 +116,17 @@ def check_requirement(model, b, life, confidence: float = life_bounds.DEFAULT_CO
         "estimate_meets": None if est is None else est >= life,
         "bounds_note": at["bounds_note"],
     }
+    if life_bounds.is_bayesian(model):
+        # A Bayesian fit can say how likely the requirement is met, not only
+        # whether its credible bound clears it.
+        from backend.services.bayes_life import chance_at_least
+
+        try:
+            out["chance"] = chance_at_least(model, b / 100.0, life)
+        except Exception:  # noqa: BLE001 - the verdict stands without it
+            out["chance"] = None
     out["summary"] = summary(out, unit)
+    if out.get("chance") is not None:
+        out["summary"] += (f" The chance that {out['label']} is at least {_with_unit(life, unit)}, given the prior "
+                           f"and the data, is {out['chance'] * 100:.0f}%.")
     return out

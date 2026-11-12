@@ -134,7 +134,26 @@ export function guessStatusMeaning(value, columnName = "") {
   const runningName = RUNNING_NAME.test(words(columnName)) && !censorInverted(columnName);
   if (YES.test(v)) return runningName ? 1 : 0;
   if (NO.test(v)) return runningName ? 0 : 1;
-  return null;
+  return phraseMeaning(v);
+}
+
+// A phrase of status words ("Removed, OK", "Found failed", "OK at last
+// check"): read by its words when they all point one way and nothing negates
+// them ("not failed" is left for the person). backend/services/datasets.py's
+// ``status_code`` reads them the same way.
+const PHRASE_FAILED = new Set(["fail", "failed", "failure", "fault", "faulty", "broken", "broke", "dead", "died",
+  "unserviceable", "defect", "defective", "tripped", "seized", "burst", "leaking", "leaked", "cracked", "worn"]);
+const PHRASE_RUNNING = new Set(["ok", "okay", "running", "suspended", "suspension", "censored", "survived", "alive",
+  "working", "operating", "operational", "serviceable", "good", "healthy", "removed", "retired", "planned",
+  "preventive", "still", "active", "unfailed"]);
+const PHRASE_NEGATION = new Set(["not", "no", "non", "never", "without", "un", "nil"]);
+function phraseMeaning(v) {
+  const tokens = String(v).toLowerCase().match(/[a-z]+/g) || [];
+  if (!tokens.length || tokens.some((t) => PHRASE_NEGATION.has(t))) return null;
+  const failed = tokens.some((t) => PHRASE_FAILED.has(t));
+  const running = tokens.some((t) => PHRASE_RUNNING.has(t));
+  if (failed === running) return null;
+  return failed ? 0 : 1;
 }
 
 // A time unit from a column name: "Operating Hours" → "Hours", "km" →

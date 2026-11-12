@@ -56,6 +56,10 @@ function howWords(result) {
     out.push("A mixture has no covariance matrix, so it reports no confidence bounds: judge it on the AIC against a single fit (Diagnostics).");
   }
   if (result.interval_censored) out.push("Inspection data: each failure lies between two inspections.");
+  if (result.late_entry?.units) {
+    const n = result.late_entry.units;
+    out.push(`${n.toLocaleString()} ${n === 1 ? "unit" : "units"} entered late (observed from “${result.late_entry.column}”): accounted for, so ${n === 1 ? "it counts" : "they count"} only from when ${n === 1 ? "it was" : "they were"} first seen.`);
+  }
   switch (result.kind) {
     case "nonparametric":
       out.push(`${result.distribution} estimate: no distribution assumed, so no fitted parameters to check.`);

@@ -115,6 +115,9 @@ export function PriorFields({ state, set, kind, kinds = null, onKind, trust = tr
           {unitField}
           <TextInput inputMode="decimal" aria-label="Surprised under" placeholder="Surprised under" value={state.b10.low || ""} onChange={(e) => set("b10", { ...state.b10, low: e.target.value })} />
           <TextInput inputMode="decimal" aria-label="Surprised over" placeholder="Surprised over" value={state.b10.high || ""} onChange={(e) => set("b10", { ...state.b10, high: e.target.value })} />
+          {/* A datasheet's shape range goes with its B10; left empty, a wide 1.2 to 4 is assumed and said. */}
+          <TextInput inputMode="decimal" aria-label="Shape from (optional)" placeholder="Shape from (optional)" value={state.shape?.low || ""} onChange={(e) => set("shape", { ...(state.shape || {}), low: e.target.value })} />
+          <TextInput inputMode="decimal" aria-label="Shape to (optional)" placeholder="Shape to (optional)" value={state.shape?.high || ""} onChange={(e) => set("shape", { ...(state.shape || {}), high: e.target.value })} />
         </div>
       )}
     </>
@@ -135,7 +138,9 @@ export function fitCharts(d, bayes) {
 //   download   the charts' download name
 //   age        the age typed; onAge (text) => void
 //   dataWords  where the data came from, for "How it was computed" ("this position's history")
-export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, download, age, onAge, dataWords }) {
+//   need       a required B10 typed; onNeed (text) => void (a fit with a prior: the chance it is met)
+export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, download, age, onAge, dataWords,
+                             need = "", onNeed = null }) {
   const bayes = d.method === "bayes";
   const charts = fitCharts(d, bayes);
   const shownChart = charts.some((c) => c.value === chart) ? chart : "sf";
@@ -198,8 +203,21 @@ export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, downloa
           </span>
         )}
       </div>
+      {bayes && onNeed && (
+        <div className="fit2-age">
+          <label htmlFor="fit2-need">Chance B10 is at least</label>
+          <TextInput id="fit2-need" inputMode="decimal" value={need} onChange={(e) => onNeed(e.target.value)} placeholder="a required life" aria-label="Required B10 life" />
+          <span>{u}</span>
+          {d.need?.chance != null && (
+            <span className="fit2-age-r">
+              <b>{Math.round(d.need.chance * 100)}%</b>, given the prior and the data
+              {d.b10?.lower != null && d.need.life > d.b10.lower ? " (not yet shown at 90%)" : ""}
+            </span>
+          )}
+        </div>
+      )}
       <p className="rim-tquiet fit2-how">
-        How it was computed: {bayes ? `Bayesian (SurPyval fit_bayes), prior: ${d.baseline?.name || "—"}` : "maximum likelihood (SurPyval)"};
+        How it was computed: {bayes ? `Bayesian (the prior updated by the data), prior: ${d.baseline?.name || "—"}` : "maximum likelihood"};
         {" "}{countsWords(d.counts)} in {dataWords}.
         {d.prior_note ? ` ${d.prior_note}` : ""}
       </p>

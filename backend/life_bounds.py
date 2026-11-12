@@ -31,7 +31,9 @@ BOUNDS = ("lower", "upper", "two-sided")
 NO_COVARIANCE = ("No confidence bounds: they come from the fit's covariance, which a maximum-likelihood "
                  "fit to data has and this model doesn't.")
 MIXTURE_NOTE = "No confidence bounds: a mixture has no covariance matrix."
-NOT_MLE_NOTE = "No confidence bounds: only a maximum-likelihood fit has them."
+NOT_MLE_NOTE = ("No confidence bounds: only a maximum-likelihood fit has them. B-life bounds come from that fit's "
+                "covariance, which a probability-plot (MPP), spacings (MPS) or least-squares (MSE) fit doesn't give. "
+                "For the bound, fit the same data by maximum likelihood (the default method).")
 NO_MAXIMUM_NOTE = "No confidence bounds: the fit has no finite maximum, so its covariance means nothing."
 # A model that bounds its curve but not its quantiles (Royston-Parmar, #179).
 CURVE_ONLY_NOTE = ("No bounds on the B-lives: this model's confidence bounds are on its curve (the calculator's "
@@ -132,6 +134,71 @@ def _quantile_bounds(model, probs: np.ndarray, alpha: float, bound: str):
     return lo, hi
 
 
+# Inspection (interval) data: a non-parametric estimate knows how much fails
+# between two inspection times, not when within them.
+INTERVAL_NOTE = ("Inspection data: the non-parametric estimate knows how many units failed between two "
+                 "inspection times, not when within them, so each B-life is given as the interval it falls in. "
+                 "The lower bound is the start of the interval its bound falls in.")
+NO_INTERVAL_BOUND = ("No lower bound: no failure is known to have happened before {start}, so the data can't say how "
+                     "early the first failures come. Use a parametric fit (Weibull, say) for this B-life's bound.")
+
+
+def _has_intervals(model) -> bool:
+    """A non-parametric estimate fitted to interval or left-censored data
+    (inspection times): its steps sit at the inspection times."""
+    if not _is_nonparametric(model):
+        return False
+    data = getattr(model, "data", None)
+    c = data.get("c") if isinstance(data, dict) else None
+    if c is None:
+        return False
+    c = np.asarray(c, dtype=float).ravel()
+    return bool(np.isin(c, (2, -1)).any())
+
+
+def _interval_points(model, probs: np.ndarray, alpha: float, bound: str) -> list[dict]:
+    """Each quantile of a non-parametric estimate of inspection data as the
+    interval it falls in, ``{"between": [a, b], "lower", "upper", "lower_note"}``.
+
+    The estimate (Turnbull's) puts a mass of failures between two inspection
+    times without saying where: the B-life is "between 1,000 and 1,500 h",
+    never the interval's end. Its lower bound is the start of the interval in
+    which the curve's upper bound first reaches the share (Brookmeyer-Crowley,
+    read conservatively); where that interval starts at a time with no failure
+    known before it (the band has no width there), no bound can be given."""
+    xs = np.asarray(model.x, dtype=float)
+    F = 1.0 - np.asarray(model.R, dtype=float)
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        # One-sided 1 − α bounds are the ends of the two-sided 1 − 2α band.
+        a2 = alpha if bound == "two-sided" else 2 * alpha
+        sf_cb = np.asarray(model.cb(xs, on="sf", alpha_ci=a2), dtype=float).reshape(-1, 2)
+    ff_upper = 1.0 - sf_cb[:, 0]  # the failure probability's upper bound
+    ff_lower = 1.0 - sf_cb[:, 1]
+    out = []
+    for p in probs:
+        k = int(np.argmax(F >= p - 1e-12)) if (F >= p - 1e-12).any() else None
+        point: dict = {"between": None, "lower": None, "upper": None, "lower_note": None}
+        if k is None:
+            out.append(point)
+            continue
+        start = float(xs[k - 1]) if k > 0 else 0.0
+        point["between"] = [start, float(xs[k])]
+        if bound in ("lower", "two-sided"):
+            hit = np.nonzero(ff_upper >= p - 1e-12)[0]
+            if hit.size:
+                j = int(hit[0])
+                if j == 0 or not (np.isfinite(ff_upper[j - 1]) and ff_upper[j - 1] > 0):
+                    point["lower_note"] = NO_INTERVAL_BOUND.format(start=f"{float(xs[max(j - 1, 0)]):,.4g}")
+                else:
+                    point["lower"] = float(xs[j - 1])
+        if bound in ("upper", "two-sided"):
+            hit = np.nonzero(ff_lower >= p - 1e-12)[0]
+            point["upper"] = float(xs[int(hit[0])]) if hit.size else None
+        out.append(point)
+    return out
+
+
 def _quantiles(model, probs: np.ndarray) -> list[Optional[float]]:
     with np.errstate(all="ignore"):
         try:
@@ -184,6 +251,21 @@ def time_at_reliability(model, reliability, confidence: float = DEFAULT_CONFIDEN
             "lower": _num(lo[i]) if lo is not None and times[i] is not None else None,
             "upper": _num(hi[i]) if hi is not None and times[i] is not None else None,
         })
+    if _has_intervals(model):
+        # Inspection data: each B-life is the interval it falls in, never the
+        # interval's end given as both the value and its bound.
+        try:
+            spans = _interval_points(model, probs, 1.0 - confidence, bound)
+        except Exception:  # noqa: BLE001 - the values stand, without bounds
+            spans = [{"between": None, "lower": None, "upper": None, "lower_note": None}] * len(points)
+        for pt, span in zip(points, spans):
+            if span["between"] and span["between"][0] < span["between"][1]:
+                pt["time"] = None
+                pt["between"] = span["between"]
+            pt["lower"], pt["upper"] = span["lower"], span["upper"]
+            if span["lower_note"]:
+                pt["lower_note"] = span["lower_note"]
+        note = INTERVAL_NOTE
     return {"confidence": confidence, "bound": bound, "points": points, "bounds_note": note}
 
 
@@ -226,7 +308,9 @@ def life_summary(model, confidence: float = DEFAULT_CONFIDENCE, with_bounds: boo
     confidence = check_confidence(confidence)
     probs = np.array([p for p, _ in B_LIVES])
     at = time_at_reliability(model, 1.0 - probs, confidence, "lower", with_bounds=with_bounds)
-    b_lives = [{"p": p, "label": label, "value": pt["time"], "lower": pt["lower"]}
+    b_lives = [{"p": p, "label": label, "value": pt["time"], "lower": pt["lower"],
+                **({"between": pt["between"]} if pt.get("between") else {}),
+                **({"lower_note": pt["lower_note"]} if pt.get("lower_note") else {})}
                for (p, label), pt in zip(B_LIVES, at["points"])]
     return {
         "confidence": confidence,

@@ -22,7 +22,7 @@ import {
   ANY_MODE, anyAt, causesAt, effectsByMode, incidenceRows, leadSentence, modeSupport, pct, readingAt,
   timeToChance, widestBand,
 } from "../competingRisks.js";
-import { ciPct } from "../levels.js";
+import { ciPct, levelPct } from "../levels.js";
 import "./NonParametric.css";
 import "./CompetingRisks.css";
 
@@ -64,7 +64,8 @@ function ModesAside({ result, onGroups }) {
           </span>
         </div>
         <div className="gofr cr-mode-head" aria-hidden="true">
-          <span className="gk">Mode</span><span className="gk">Share of failures</span>
+          <span className="gk">Mode</span>
+          <span className="gk" title="Its chance by then over any mode's: the estimate, allowing for units still running">Share of failures</span>
         </div>
         {causes.map((k, i) => (
           <div className="gofr cr-mode-row" key={k.name}>
@@ -73,7 +74,10 @@ function ModesAside({ result, onGroups }) {
               <span className="cr-mode-sub">
                 {pct(k.at?.cif)} of units{k.at?.lower != null && k.at?.upper != null ? ` (${band(k.at.lower, k.at.upper)})` : ""}
               </span>
-              <span className="cr-mode-sub">{formatNumber(k.failures)} failure{k.failures === 1 ? "" : "s"}</span>
+              <span className="cr-mode-sub">
+                {formatNumber(k.failures_by ?? k.failures)} failure{(k.failures_by ?? k.failures) === 1 ? "" : "s"} by then
+                {k.failures_by != null && k.failures_by !== k.failures ? ` (${formatNumber(k.failures)} in all)` : ""}
+              </span>
             </span>
             <span className="gv"><span className="sr-only">Share of failures: </span>{pct(k.share)}</span>
           </div>
@@ -97,7 +101,49 @@ function ModesAside({ result, onGroups }) {
         <div className="life-reading-title">{causes.length > 1 && top ? `${cap(top.name)} leads` : "Reading"}</div>
         <div>{readingAt(result, result.horizon, unit)}{lead ? ` ${lead}` : ""}</div>
       </div>
+      <EliminatedCard result={result} />
     </>
+  );
+}
+
+// Life if one mode were eliminated (training out installation errors, say):
+// a Weibull fitted to the other modes' failures, with that mode's failures
+// counted as still running. B10 with its 90% one-sided lower bound.
+function EliminatedCard({ result }) {
+  const rows = result.eliminated || [];
+  if (!rows.length) return null;
+  const unit = unitOf(result);
+  const level = levelPct(rows.find((r) => r.confidence)?.confidence ?? 0.9);
+  return (
+    <section className="gof-card cr-eliminated" aria-labelledby="cr-elim-title">
+      <div className="gofh mf-card-head">
+        <span>
+          <h3 className="mf-card-title" id="cr-elim-title">If a mode were eliminated</h3>
+          <span className="gof-sub">B10, at least at {level} one-sided</span>
+        </span>
+      </div>
+      {rows.map((r) => (
+        <div className="gofr" key={r.cause}>
+          <span className="gk">
+            No {r.cause.toLowerCase()}
+            <span className="cr-mode-sub">
+              {r.remaining.length === 1 ? `${cap(r.remaining[0])} alone` : `${r.remaining.map(cap).join(", ")} left`}
+              {r.beta != null ? ` · Weibull shape ${formatNumber(r.beta, { sig: 3 })}` : ""}
+            </span>
+          </span>
+          <span className="gv">
+            {r.b_life != null ? at(r.b_life, unit) : "—"}
+            {r.lower != null && <span className="life-lo"> ≥ {at(r.lower, unit)}</span>}
+            {r.reason && <span className="cr-mode-sub">{r.reason}</span>}
+          </span>
+        </div>
+      ))}
+      <p className="mf-note">
+        Each is a Weibull fitted to the other modes&apos; failures, with the eliminated mode&apos;s failures counted
+        as still running at the time they failed. It assumes the modes act independently: fixing one doesn&apos;t
+        change how the others wear.
+      </p>
+    </section>
   );
 }
 
@@ -255,7 +301,10 @@ function CrCalculator({ result, name, state, setState }) {
     }
     let range = null;
     if (r?.time != null) {
-      if (r.lower != null && r.upper != null) range = `we're ${ciPct(result)} sure it's between ${at(r.lower, unit)} and ${at(r.upper, unit)}`;
+      if (r.bound === "lower") {
+        // A life: 90% one-sided lower bound (the B-life rule).
+        range = r.lower != null ? `we're ${levelPct(r.level)} sure it's at least ${at(r.lower, unit)} (one-sided)` : null;
+      } else if (r.lower != null && r.upper != null) range = `we're ${ciPct(result)} sure it's between ${at(r.lower, unit)} and ${at(r.upper, unit)}`;
       else if (r.lower != null) range = `we're ${ciPct(result)} sure it's after ${at(r.lower, unit)}; the data can't bound it from above`;
     }
     answer = (
@@ -476,13 +525,13 @@ function CrDiagnostics({ result, name }) {
       <CheckCard question="Is there enough data for each mode?" term="failures per mode" tone={support.tone}
                  verdict={support.words}>
         <table className="mini-table cr-table">
-          <thead><tr><th>Failure mode</th><th>Failures</th><th>Of all failures</th></tr></thead>
+          <thead><tr><th>Failure mode</th><th>Failures</th><th>Share of failures by {at(result.horizon, unit)}</th></tr></thead>
           <tbody>
             {support.rows.map((r, i) => (
               <tr key={r.name}>
                 <td><ModeName name={r.name} i={i} />{r.few && <span className="cr-few"> · few</span>}</td>
                 <td>{formatNumber(r.failures, { sig: 6 })}</td>
-                <td>{total ? pct(r.failures / total) : "—"}</td>
+                <td>{r.share != null ? pct(r.share) : total ? pct(r.failures / total) : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -576,12 +625,12 @@ function CrDataTab({ result, datasetId }) {
             </div>
             <div className="cr-table-wrap">
               <table className="mini-table cr-table">
-                <thead><tr><th>Mode</th><th>Failures</th><th>Share</th><th>Chance</th><th>{ciPct(result)} band</th></tr></thead>
+                <thead><tr><th>Mode</th><th>Failures by then</th><th>Share of failures</th><th>Chance</th><th>{ciPct(result)} band</th></tr></thead>
                 <tbody>
                   {(result.causes || []).map((k, i) => (
                     <tr key={k.name}>
                       <td><ModeName name={k.name} i={i} /></td>
-                      <td>{formatNumber(k.failures, { sig: 6 })}</td>
+                      <td>{formatNumber(k.failures_by ?? k.failures, { sig: 6 })}</td>
                       <td>{pct(k.share)}</td>
                       <td>{pct(k.at?.cif)}</td>
                       <td>{band(k.at?.lower, k.at?.upper)}</td>

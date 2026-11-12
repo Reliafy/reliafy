@@ -1334,7 +1334,9 @@ def _cr_summary(result: dict) -> dict:
         "still_running": result.get("running"),
         "horizon": result.get("horizon"),
         "failure_modes": [{
-            "mode": k["name"], "failures": k["failures"], "share_of_failures_by_horizon": k.get("share"),
+            "mode": k["name"], "failures": k["failures"],
+            **({"failures_by_horizon": k["failures_by"]} if k.get("failures_by") is not None else {}),
+            "share_of_failures_by_horizon": k.get("share"),
             "units_failed_from_it_by_horizon": (k.get("at") or {}).get("cif"),
             **({"ci": [(k.get("at") or {}).get("lower"), (k.get("at") or {}).get("upper")]} if bounded else {}),
         } for k in result.get("causes") or []],
@@ -1347,6 +1349,12 @@ def _cr_summary(result: dict) -> dict:
                 + ("." if bounded else f", which has Kaplan-Meier {pct} bounds; a single mode's incidence comes "
                    "without an interval.")),
     }
+    if result.get("eliminated"):
+        # Life if each mode were eliminated: a Weibull on the other modes' failures, this one's as running.
+        out["if_mode_eliminated"] = [
+            {k: e.get(k) for k in ("cause", "remaining", "failures", "alpha", "beta", "b_life", "lower", "reason")
+             if e.get(k) is not None} | {"quantity": "B10", "bound": "90% one-sided lower"}
+            for e in result["eliminated"]]
     for key in ("gray", "regression"):
         if result.get(key):
             out[key] = result[key]
@@ -1452,7 +1460,7 @@ def get_model(
     `life` (B1–B50 and MTTF with one-sided 90% lower bounds); regression models add `validation` (Harrell's C,
     Brier score, time-dependent AUC) and `diagnostics` (the proportional-hazards test with a plain reading;
     Cox PH: robust errors, ties, strata); by failure mode (competing_risks): each mode's share with 90%
-    intervals and Gray's test. Recurrent: the growth verdict on β's 90% interval, ROCOF and MTBF with bounds,
+    intervals, Gray's test and the life if each mode were eliminated. Recurrent: the growth verdict on β's 90% interval, ROCOF and MTBF with bounds,
     the demonstrated MTBF's lower bound, trend and goodness-of-fit tests, systems_vs_model, and where they
     apply covariate_effects, repair_effectiveness, repair_test, next_failure_by_system and by_cause."""
     user, db = _caller(ctx), _db()
@@ -1461,7 +1469,8 @@ def get_model(
     if m is not None and m.kind == joint_service.KIND:
         return {**_joint_brief(m), **_joint_report(m.results or {})}
     if m is not None and m.kind == "competing_risks":
-        out = {**_life_brief(m), **_cr_summary(m.results or {})}
+        # One saved before the 90% rule and the counts by the horizon is refitted from its data.
+        out = {**_life_brief(m), **_cr_summary(competing_risks.refreshed(db, m))}
         out.pop("params", None)
         if (m.spec or {}).get("notes"):
             out["notes"] = m.spec["notes"]
@@ -7085,6 +7094,12 @@ def compare_groups(
     c_invert: Annotated[bool, Field(description=(
         "True when the censoring flags use the opposite convention (1 = failed, 0 = running); Reliafy flips "
         "them before the tests."))] = False,
+    c_map: Annotated[Optional[dict[str, int]], Field(description=(
+        "A status column of words: what each means, 0 = failed, 1 = still running ({\"Failed\": 0, "
+        "\"Removed, OK\": 1}). Without it, words are read by their meaning where they can be."))] = None,
+    all_failed: Annotated[bool, Field(description=(
+        "With dataset_id and no censor_column: every row really failed. Otherwise a status column the "
+        "dataset has is read, so units still running aren't counted as failures."))] = False,
     groups: Annotated[Optional[list[str]], Field(description="Only these groups, in this order (default: "
                                                              "all, at most 12).")] = None,
     reference: Annotated[Optional[str], Field(description="Group the RMST differences are measured from "
@@ -7141,11 +7156,18 @@ def compare_groups(
         df = datasets_service.load_dataframe(dataset)
         label = group_column
         url = _url(f"/data/{dataset.id}?compare={quote(group_column)}")
+    hint = None
+    if data is None:
+        censor_column, hint, flip = compare_groups_service.auto_status(
+            df, time_column=time_column, group_column=group_column, censor_column=censor_column,
+            cause_column=cause_column, all_failed=all_failed)
+        c_invert = c_invert or flip
     prepared = compare_groups_service.prepare(
         df, time_column=time_column, group_column=group_column, censor_column=censor_column,
-        count_column=count_column, cause_column=cause_column, c_invert=c_invert,
+        count_column=count_column, cause_column=cause_column, c_invert=c_invert, c_map=c_map,
         # Inline data: errors name the arguments, not the frame's columns (#211).
         names={"c": "`censored`", "n": "`counts`", "e": "`cause`"} if data is not None else None)
+    prepared["status_hint"] = hint
     result = compare_groups_service.compare_groups(
         prepared, groups=groups, reference=reference, tau=tau, unit=unit, group_column=label)
     verdict = result["verdict"]

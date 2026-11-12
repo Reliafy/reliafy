@@ -1,18 +1,16 @@
 import Plot from "./Plot.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { COLORWAY, referenceShape } from "../plotTheme.js";
-import { formatWithUnit } from "../format.js";
+import { formatNumber, formatWithUnit } from "../format.js";
 import { unitInText } from "./unitText.js";
 
 // Item A and B take the theme's first two series colours (the form uses them too).
 export const COLORS = { a: COLORWAY[0], b: COLORWAY[1] };
 
-const fmt = (v) =>
-  v == null
-    ? "—"
-    : Math.abs(v) >= 1e-4 || v === 0
-    ? Number(v).toPrecision(5)
-    : Number(v).toExponential(3);
+// Lives to 4 significant figures (1,479, not 1479.4).
+const fmt = (v) => (v == null ? "—" : formatNumber(v, { sig: 4 }));
+// A life with its 90% one-sided lower bound, where the saved model gives one.
+const withLower = (v, lo) => (lo != null && v != null ? `${fmt(v)} (≥ ${fmt(lo)})` : fmt(v));
 
 const METRICS = [
   { id: "b10", label: "B10 life" },
@@ -88,6 +86,7 @@ export default function CompareResult({ result, name = null, actions = null }) {
         sentence={verdictSentence(result, unit)}
         stats={stats}
       >
+        {result.b10_reading && <>{result.b10_reading} </>}
         {tested &&
           (tests.significant
             ? `The difference is statistically significant (p < ${tests.alpha}): unlikely to be chance.`
@@ -113,13 +112,16 @@ export default function CompareResult({ result, name = null, actions = null }) {
               return (
                 <tr key={m.id}>
                   <td className="calc-row-label">{m.label}{m.id === "mttf" && restricted ? " *" : ""}</td>
-                  <td className={va != null && vb != null && va >= vb ? "strategy-best" : ""}>{fmt(va)}</td>
-                  <td className={va != null && vb != null && vb > va ? "strategy-best" : ""}>{fmt(vb)}</td>
+                  <td className={va != null && vb != null && va >= vb ? "strategy-best" : ""}>{withLower(va, result.a.lower?.[m.id])}</td>
+                  <td className={va != null && vb != null && vb > va ? "strategy-best" : ""}>{withLower(vb, result.b.lower?.[m.id])}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+        {(result.a.lower || result.b.lower) && (
+          <p className="rs-note">≥: the 90% one-sided lower bound, from the saved model&apos;s own fit.</p>
+        )}
         {restricted && (
           <p className="rs-note">
             * MTTF from non-parametric data is a restricted mean (area under the

@@ -160,6 +160,8 @@ async function buildSpec(side, fallback) {
     kind: "parametric",
     distribution_id: m.distribution_id,
     params: m.params,
+    // A saved model: its own fit gives the B10's lower bound.
+    ...(m.source === "saved" && m.modelId ? { model_id: m.modelId } : {}),
   };
 }
 

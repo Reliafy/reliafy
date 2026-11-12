@@ -139,6 +139,14 @@ export function statusValues(values) {
   return [...out.values()];
 }
 
+// A status column's values with its blank cells as one more value ("", shown
+// as "(blank)"): a failure-mode column picked as the status is blank for the
+// units still running, and a blank can be given a meaning like any word.
+export const BLANK_LABEL = "(blank)";
+export function statusValuesWithBlank(values, blanks = 0) {
+  return blanks > 0 ? { ...(values || {}), "": blanks } : values;
+}
+
 const CODES = ["0", "1", "-1", "2"];
 
 // What a status value means under a mapping: 0 failed, 1 still running, -1
@@ -186,6 +194,24 @@ export function guessStatus(column, facts) {
   return encodeStatus(values.map((v) => [v.label, guessStatusMeaning(v.label, column)]));
 }
 
+// The mapping a dataset was last fitted with (its detail's ``last_mapping``:
+// the newest model's columns and status meanings), when every column it names
+// is still there: a refit starts from it, keeping the late-entry column and
+// what each status word means. Null otherwise.
+export function savedMapping(saved, columns) {
+  const m = saved?.mapping;
+  if (!m || !(m.x || m.xl)) return null;
+  const have = new Set(columns || []);
+  const fields = Object.entries(m).filter(([k, v]) => k in EMPTY_MAPPING && typeof v === "string" && v);
+  if (!fields.length || fields.some(([, v]) => !have.has(v))) return null;
+  const opts = saved.options || {};
+  return {
+    mapping: { ...EMPTY_MAPPING, ...Object.fromEntries(fields), c_invert: !!opts.c_invert, c_map: opts.c_map || null },
+    unit: saved.unit || "",
+    from: saved.model_name || "",
+  };
+}
+
 // A first mapping from the column facts, and its unit.
 // Two inspection times ("last ok", "found failed") are read as the interval
 // the failure lies in, in place of a single time.
@@ -196,8 +222,14 @@ export function guessMapping(columns, facts) {
   const times = pair ? { x: "", ...pair } : { x: g.x };
   // A column of per-row units ("hrs" / "days"): converted to the most common.
   const mixed = guessUnitColumn(cols, [g.c, g.n, g.x, pair?.xl, pair?.xr].filter(Boolean));
+  // A text column named for the failure mode or cause ("Failure mode") beside
+  // a status column is the failure mode: fitted as competing risks (one time
+  // per unit only). Without a status column its blanks are asked about
+  // first (dataQuestions: were those units still running?).
+  const mode = !pair && g.c ? likelyStatusColumns(cols).mode.find((c) => ![g.c, g.n, g.x].includes(c.name)) : null;
   return {
-    mapping: { ...EMPTY_MAPPING, ...times, c: g.c, n: g.n, u: mixed?.column || "", ...guessStatus(g.c, facts) },
+    mapping: { ...EMPTY_MAPPING, ...times, c: g.c, n: g.n, e: mode?.name || "", u: mixed?.column || "",
+               ...guessStatus(g.c, facts) },
     unit: mixed ? mixed.common : pair ? guessUnit(pair.xl) || guessUnit(pair.xr) : g.unit,
   };
 }
@@ -366,7 +398,7 @@ export function statusSummary(mapping, facts, nRows) {
     return { failed: rows - running, running, left: 0, interval: 0 };
   }
   if (!mapping.c) return { failed: rows, running: 0, left: 0, interval: 0 };
-  const values = statusValues(facts[mapping.c]?.values);
+  const values = statusValues(statusValuesWithBlank(facts[mapping.c]?.values, facts[mapping.c]?.blanks));
   if (!facts[mapping.c]?.values) return null;
   const out = { failed: 0, running: 0, left: 0, interval: 0 };
   for (const v of values) {
@@ -442,8 +474,8 @@ export function dataStepProblems(mapping, facts, nRows, unit = undefined) {
     if (!values) {
       out.push(`“${mapping.c}” has ${f(mapping.c).nUnique ?? "too many"} different values, so it can't say failed or still running. Pick the status column, or none.`);
     } else {
-      if (f(mapping.c).blanks) {
-        out.push(`${rows(f(mapping.c).blanks)} no value in “${mapping.c}”. Fill in whether each unit failed or was still running.`);
+      if (f(mapping.c).blanks && statusMeaning("", mapping) === null) {
+        out.push(`${rows(f(mapping.c).blanks)} no value in “${mapping.c}”. Say what a blank means (failed or still running) beside the column, or fill them in.`);
       }
       const unknown = statusValues(values).filter((v) => statusMeaning(v.label, mapping) === null);
       if (unknown.length) {
@@ -656,4 +688,17 @@ export function mappingWords(mapping, facts = {}, unit = "") {
   const perRow = unitColumnWords(mapping, facts, unit);
   if (perRow) out.push({ label: "Unit of each row", value: perRow.note || perRow.problem });
   return out;
+}
+
+// Late entry in words for the Data step: "20 entered late (observed from
+// “Entered at (h)”): accounted for". Counted from the column's values when
+// it has few (a row entering at 0 isn't late); otherwise named only.
+export function lateEntryWords(column, facts) {
+  const values = facts?.[column]?.values;
+  if (values) {
+    const late = Object.entries(values).filter(([v]) => Number(v) > 0).reduce((a, [, n]) => a + n, 0);
+    if (late) return `${plural(late, "unit", "units")} entered late (observed from “${column}”): accounted for`;
+    return `no unit entered late in “${column}”`;
+  }
+  return `late entry from “${column}”: accounted for`;
 }
