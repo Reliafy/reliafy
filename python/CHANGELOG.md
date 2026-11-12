@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (14 Nov 2026)
 
-Needs a server on the release that has it.
+Needs a server on this release.
 
 - **Datasets keep their reading** (which column is x, c, n, xl/xr, tl, tr,
   i, m, e, s and the covariates Z): `change dataset_upload` (and `reliafy
