@@ -72,7 +72,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   const problems = issues.map((i) => i.text);
   // A range (xl to xr) is read row by row on the server, as the refit will read it.
   const [reading, setReading] = useState(null);
-  const range = !!(columns && !tvc && mapping.xl && mapping.xr);
+  const range = !!(columns && !tvc && ((mapping.xl && mapping.xr) || mapping.tr));
   useEffect(() => {
     setReading(null);
     if (!range || problems.length > 0) return undefined;
@@ -83,7 +83,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
     );
     return () => { live = false; };
   }, [range, problems.length, mapping, model.dataset_id]);
-  const mappingValid = problems.length === 0 && !reading?.error;
+  const mappingValid = problems.length === 0 && !reading?.error && !reading?.tr_problem;
   const toggleCovariate = (col) =>
     setCovariates((prev) => (prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]));
 
@@ -161,7 +161,10 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
             timeVarying={tvc}
             issues={issues}
             notes={tvc ? [] : dataStepNotes(mapping, facts)}
-            asides={{ x: reading?.error ? [<p className="xcn-issue" role="status" key="r">{reading.error}</p>] : [] }}
+            asides={{
+              x: reading?.error ? [<p className="xcn-issue" role="status" key="r">{reading.error}</p>] : [],
+              tr: reading?.tr_problem ? [<p className="xcn-issue" role="status" key="t">{reading.tr_problem.text}</p>] : [],
+            }}
             warning={<XRangeWarning reading={reading} />}
           />
           {!mappingValid && (

@@ -669,7 +669,7 @@ async function main() {
         await page.getByRole("radio", { name: /Bearing fatigue test/ }).click();
         await page.locator(".dsp-reads").waitFor({ timeout: 15000 }); await wait(600);
       } },
-    // The Data step: the first rows, then x (with its range), c, n, tl and failure mode.
+    // The Data step: the first rows, then x (with its range), c, n, tl, tr and failure mode.
     { file: "fit-04-data-step.png", url: "/models/new?dataset=sample-ds-pumps", settle: 1500 },
     { file: "fit-02-result.png", url: `/models/m/${S.bearings}`, settle: 2500 },
     { file: "fit-03-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000, act: modelCalculator },

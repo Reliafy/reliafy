@@ -1119,7 +1119,53 @@ def x_and_range_rows(df: pd.DataFrame, mapping: dict) -> Optional[dict]:
             "warning": x_and_range_warning(rows, (m["x"], m["xl"], m["xr"]))}
 
 
-def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
+def truncation_problem(df: pd.DataFrame, mapping: dict) -> Optional[dict]:
+    """Rows that can't be read with their observation window, per row: a value
+    (``x``, or ``xr`` / ``xl`` for a range) above the row's ``tr`` (observed
+    only up to it), a unit still running at its ``tr`` or beyond (it would
+    have to fail after tr), or a ``tr`` below the row's ``tl``. A blank ``tr``
+    is no limit. The censor column is read as 0 = failed, 1 = running, already
+    the right way round. ``{"count", "rows" (1-based, first few), "text"}`` or None. Read
+    after :func:`combine_exact_and_ranges`."""
+    m = {k: v for k, v in (mapping or {}).items() if v}
+    if not m.get("tr") or any(m[k] not in df.columns for k in ("x", "xl", "xr", "tl", "tr") if m.get(k)):
+        return None
+
+    def numbers(name):
+        return pd.to_numeric(df[name], errors="coerce").to_numpy(dtype=float)
+
+    tr = numbers(m["tr"])
+    if m.get("x"):
+        value = numbers(m["x"])
+    elif m.get("xr") or m.get("xl"):
+        hi = numbers(m["xr"]) if m.get("xr") else np.full(len(df), np.nan)
+        lo = numbers(m["xl"]) if m.get("xl") else np.full(len(df), np.nan)
+        value = np.where(np.isnan(hi), lo, hi)
+    else:
+        value = np.full(len(df), np.nan)
+    tl = numbers(m["tl"]) if m.get("tl") else np.full(len(df), np.nan)
+    c = pd.to_numeric(df[m["c"]], errors="coerce").to_numpy(dtype=float) if m.get("c") else np.zeros(len(df))
+    above = ~np.isnan(tr) & ~np.isnan(value) & ((value > tr) | ((c == 1) & (value >= tr)))
+    below = ~np.isnan(tr) & ~np.isnan(tl) & (tr < tl)
+    bad = above | below
+    if not bad.any():
+        return None
+    parts = []
+    if above.any():
+        k = int(above.sum())
+        parts.append(f"{k} row{'s have a value' if k != 1 else ' has a value'} above tr ('{m['tr']}'), "
+                     f"or still running at it, {_row_list(above)}")
+    if below.any():
+        k = int(below.sum())
+        parts.append(f"{k} row{'s have' if k != 1 else ' has'} tr below tl ('{m.get('tl')}'), {_row_list(below)}")
+    text = ("; ".join(parts) + ". tr is the value a unit was observed up to: its value can't be above it, a "
+            "unit still running must be below it, and tr can't be below tl. Correct those rows, or leave tr "
+            "blank on them.")
+    rows = [int(r) + 1 for r in np.flatnonzero(bad)]
+    return {"count": len(rows), "rows": rows[:8], "text": text}
+
+
+def build_fit_inputs(df: pd.DataFrame, mapping: dict, check_truncation: bool = True) -> dict:
     """Turn a column mapping into keyword arguments for ``<dist>.fit``.
 
     ``mapping`` maps any of ``x/c/n/xl/xr/tl/tr`` to a CSV column name. No
@@ -1131,6 +1177,10 @@ def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
     """
     mapping = {k: v for k, v in mapping.items() if v}  # drop unset fields
     df, mapping = combine_exact_and_ranges(df, mapping)
+    if check_truncation:
+        problem = truncation_problem(df, mapping)
+        if problem:
+            raise FitError(problem["text"])
 
     kwargs: dict = {}
     for field, name in mapping.items():
@@ -1276,6 +1326,8 @@ def data_reading(df: pd.DataFrame, mapping: dict) -> dict:
     ``invert_censor_column``). Raises :class:`FitError` as a fit would."""
     kwargs = build_fit_inputs(df, {k: v for k, v in (mapping or {}).items()
                                    if k in ("x", "c", "n", "xl", "xr") and v})
+    combined, plain = combine_exact_and_ranges(df, mapping or {})
+    window = truncation_problem(combined, plain)
     first = kwargs.get("x") if kwargs.get("x") is not None else kwargs.get("xl")
     if first is None:
         raise FitError("Pick the column that holds the time to failure or removal.")
@@ -1300,6 +1352,8 @@ def data_reading(df: pd.DataFrame, mapping: dict) -> dict:
     both = x_and_range_rows(df, mapping)
     if both:
         out["x_and_range_rows"] = both
+    if window:
+        out["tr_problem"] = window
     return out
 
 
@@ -3366,6 +3420,9 @@ def regression_inputs(
     # model as ``fit`` with a two-column ``x``. Exact values on some rows and
     # ranges on others are read as one pair first.
     df, mapping = combine_exact_and_ranges(df, mapping)
+    window = truncation_problem(df, mapping)
+    if window:
+        raise FitError(window["text"])
     interval = bool(mapping.get("xl") or mapping.get("xr"))
     if interval:
         if not (mapping.get("xl") and mapping.get("xr")) or mapping.get("x"):

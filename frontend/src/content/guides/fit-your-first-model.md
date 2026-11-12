@@ -85,11 +85,11 @@ on the dataset's page, on its **Measurements** tab, and feed a
 
 The **Data** step shows your file's first rows, then one selector for each
 thing a fit can use. Each is labelled with SurPyval's name for it (**x**, **c**,
-**n**, **xl**, **xr**, **tl**) and a few plain words. Reliafy fills them in from
+**n**, **xl**, **xr**, **tl**, **tr**) and a few plain words. Reliafy fills them in from
 the column names and values, so for most files you only check them, then press
 **Next**.
 
-![The Data step: the first rows, then x, c, n, tl and failure mode](/guides/img/fit-04-data-step.png)
+![The Data step: the first rows, then x, c, n, tl, tr and failure mode](/guides/img/fit-04-data-step.png)
 
 - **x** — *the value when it failed or was removed*. Required, unless every row
   is a range (below). It needn't be time: days, operating hours, cycles,
@@ -116,9 +116,11 @@ the column names and values, so for most files you only check them, then press
   running, the step offers **Swap the flags**.
 - **n** — *how many units the row stands for*, if one row represents several
   identical units.
-- **tl** — *late entry*: the value each unit was first observed at, for units
-  already in service when records began. A column named like *Entered at (h)*
-  is read this way from the start.
+- **tl** — *late entry: observed only from this value*, for units already in
+  service when records began. A column named like *Entered at (h)* is read
+  this way from the start.
+- **tr** — *observed only up to this value*, when records stop (the end of a
+  warranty, say). Same unit as **x**; a blank cell is no limit on that row.
 - **failure mode** — *optional, competing risks*: when units fail in more than
   one way, each mode is treated as a competing risk (see
   [competing risks](/guides/competing-risks)). A blank mode on a unit still

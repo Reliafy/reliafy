@@ -15,7 +15,8 @@ import { TVC_STATUS } from "./TvcColumns.jsx";
 //       where x is blank, a range: xl [column] to xr [column]
 //   c   [column]  0 = failed, 1 = running   [ ] my column uses 1 = failed
 //   n   [column]
-//   tl  [column]  (late entry)
+//   tl  [column]  late entry: observed only from this value
+//   tr  [column]  observed only up to this value
 //   failure mode [column]
 //
 // x and the range are read per row: x filled is an exact value, x blank its
@@ -200,12 +201,21 @@ export default function ColumnMapper({
       </div>
 
       <div className="xcn-row">
-        {key("tl", "late entry: the value it was first seen at")}
+        {key("tl", "late entry: observed only from this value")}
         <div className="xcn-fields">
           {pick("tl", "— none —", "tl")}
           {mapping.tl && <span className="xcn-words">{lateEntryWords(mapping.tl, facts)}</span>}
         </div>
         {below("tl")}
+      </div>
+
+      <div className="xcn-row">
+        {key("tr", "observed only up to this value")}
+        <div className="xcn-fields">
+          {pick("tr", "— none —", "tr")}
+          {mapping.tr && <span className="xcn-words">same unit as x; a blank is no limit on that row</span>}
+        </div>
+        {below("tr")}
       </div>
 
       {failureMode && (

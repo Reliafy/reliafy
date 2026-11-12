@@ -529,8 +529,8 @@ export function dataStepIssues(mapping, facts, nRows, unit = undefined) {
 }
 
 // Which Data step selector an issue sits beside: "x" (x, the range, the
-// per-row unit, or no one column), "c", "n", "tl" or "e".
-const ISSUE_ROWS = { x: "x", xl: "x", xr: "x", u: "x", i: "x", c: "c", n: "n", tl: "tl", tr: "tl", e: "e" };
+// per-row unit, or no one column), "c", "n", "tl", "tr" or "e".
+const ISSUE_ROWS = { x: "x", xl: "x", xr: "x", u: "x", i: "x", c: "c", n: "n", tl: "tl", tr: "tr", e: "e" };
 export function issueRow(issue, mapping) {
   if (!issue?.col) return "x";
   const field = Object.keys(ISSUE_ROWS).find((f) => mapping[f] === issue.col);

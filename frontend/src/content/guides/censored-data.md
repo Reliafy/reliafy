@@ -127,10 +127,14 @@ warranty expired never appear. Or you started recording in 2020, so anything tha
 failed before then is absent. Your sample isn't representative, and a model that
 doesn't know this will be biased.
 
-Choose the column for **tl** (*late entry*: the value each unit was first
-observed at) in the Data step and the fit corrects for it. A column named like
-*Entered at (h)* is read as late entry from the start. Right truncation (observed
-until) is taken through the [API](/api-docs) as `tr`.
+In the Data step, choose the column for **tl** (*late entry: observed only from
+this value*) and, when records also stop, the column for **tr** (*observed only
+up to this value*), and the fit corrects for the observation window. Both are in
+the same unit as **x**, and each row has its own: a blank cell is no limit on
+that row. A column named like *Entered at (h)* is read as late entry from the
+start. A row whose value is above its **tr**, a unit still running at its
+**tr**, or a **tr** below its **tl** is shown beside **tr** with the rows, to
+correct before the fit.
 
 ## Counts
 

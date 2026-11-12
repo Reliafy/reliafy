@@ -223,3 +223,20 @@ test("a saved reading of rows whose covariates change over time keeps its item c
   assert.equal(kept.mapping.i, "pump");
   assert.ok(kept.from);
 });
+
+test("tl and tr: the observation window is sent as the earlier screens sent it, beside its own selector", () => {
+  const s = start("window");
+  assert.equal(s.mapping.tl, "Entered at (h)");
+  // tr is picked by hand; a blank tr on a row is no limit, so its blanks are fine.
+  const m = setMappingField(s.mapping, "tr", "Observed until (h)", s.facts);
+  assert.deepEqual(dataStepIssues(m, s.facts, s.csv.n_rows, "Hours"), []);
+  assert.deepEqual(mappingFields(m), [
+    ["x", "Hours"], ["c", "Status"], ["tl", "Entered at (h)"], ["tr", "Observed until (h)"],
+    ["c_invert", "0"], ["c_map", '{"Failed":0,"Running":1}'],
+  ]);
+  // A text column as tr is a problem beside tr.
+  const bad = { ...m, tr: "Pump" };
+  const issues = dataStepIssues(bad, s.facts, s.csv.n_rows, "Hours");
+  assert.equal(issues.length, 1);
+  assert.equal(issueRow(issues[0], bad), "tr");
+});

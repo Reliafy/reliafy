@@ -192,8 +192,8 @@ export function getDataReading(file, mapping, datasetId = null) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  const { x, c, n, xl, xr, c_invert, c_map } = mapping || {};
-  appendMapping(form, { x, c, n, xl, xr, c_invert, c_map });
+  const { x, c, n, xl, xr, tl, tr, c_invert, c_map } = mapping || {};
+  appendMapping(form, { x, c, n, xl, xr, tl, tr, c_invert, c_map });
   return request("/api/data-reading", { method: "POST", body: form });
 }
 

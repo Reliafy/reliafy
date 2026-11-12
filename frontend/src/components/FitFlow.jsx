@@ -454,17 +454,19 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // interval, notes, x_and_range_rows } or { error }.
   const [reading, setReading] = useState(null);
   const inspection = !!(csv && !tvc && mapping.xl && mapping.xr);
+  // A tr column is checked row by row on the server too (a value above it).
+  const readRows = inspection || !!(csv && !tvc && mapping.tr);
   useEffect(() => {
     setReading(null);
-    if (!inspection || problems.length > 0 || (!file && !datasetId)) return undefined;
+    if (!readRows || problems.length > 0 || (!file && !datasetId)) return undefined;
     let live = true;
     getDataReading(file, mapping, datasetId).then(
       (r) => live && setReading(r),
       (err) => live && setReading({ error: err.message }),
     );
     return () => { live = false; };
-  }, [inspection, problems.length, file, datasetId, mapping]);
-  const mappingValid = problems.length === 0 && questions.length === 0 && !reading?.error;
+  }, [readRows, problems.length, file, datasetId, mapping]);
+  const mappingValid = problems.length === 0 && questions.length === 0 && !reading?.error && !reading?.tr_problem;
   // With a count column the value counts aren't units: read the file instead.
   const [fileSplit, setFileSplit] = useState(null);
   useEffect(() => {
@@ -498,7 +500,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   );
 
   // Questions, and the flags notice, sit beside the selector they concern.
-  const asides = { x: [], c: [], e: [] };
+  const asides = { x: [], c: [], e: [], tr: [] };
   if (problems.length === 0) {
     for (const q of questions) {
       const row = q.field === "u" ? "x" : q.field === "e" ? "e" : "c";
@@ -512,13 +514,15 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
     if (swapped && mapping.c) asides.c.push(<div key="swapped">{swappedNotice}</div>);
     if (reading?.error) asides.x.push(<p className="xcn-issue" role="status" key="reading">{reading.error}</p>);
+    if (reading?.tr_problem) asides.tr.push(<p className="xcn-issue" role="status" key="tr">{reading.tr_problem.text}</p>);
     for (const note of reading?.notes || []) {
       asides.x.push(<p className="ds-flag-notice" role="status" key={note}><span>{note}</span></p>);
     }
   }
   // Next is never greyed without the reason beside it.
-  const rowNames = { x: "x", c: "c", n: "n", tl: "tl", e: "failure mode" };
+  const rowNames = { x: "x", c: "c", n: "n", tl: "tl", tr: "tr", e: "failure mode" };
   const flaggedRows = [...new Set([...issues.map((i) => issueRow(i, mapping)),
+    ...(problems.length === 0 && reading?.tr_problem ? ["tr"] : []),
     ...(problems.length === 0 ? questions.map((q) => (q.field === "u" ? "x" : q.field === "e" ? "e" : "c")) : [])])];
   const waitingFor = mappingValid ? null
     : simple && problems.length ? problems[0]
