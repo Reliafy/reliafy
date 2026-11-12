@@ -223,6 +223,58 @@ def ensure_diagnostics(db, doc: RecurrentModelDoc) -> RecurrentModelDoc:
     return doc
 
 
+# ---- Results at today's rules, on read -------------------------------------------
+
+_CURRENT: "OrderedDict[tuple, dict]" = OrderedDict()
+_CURRENT_MAX = 64
+
+
+def _stale_results(doc: RecurrentModelDoc) -> bool:
+    """A data-fitted model whose stored results predate today's rules: its
+    intervals at 95% (saved before the 90% rule: no ``ci_level``), or an
+    imperfect-repair verdict from before it followed the restoration
+    interval."""
+    spec = doc.spec or {}
+    results = doc.results or {}
+    if spec.get("params_only") or not doc.dataset_id:
+        return False
+    if results.get("ci_level") != recurrent_fit.CI_LEVEL:
+        return True
+    return results.get("family") == "renewal" and "ci_method" not in (results.get("restoration") or {})
+
+
+def current_results(db, doc: RecurrentModelDoc) -> RecurrentModelDoc:
+    """The model with its results at today's rules. A model saved before
+    them is re-fitted from its saved data on read (no goodness-of-fit
+    bootstrap: its stored test is kept, a p-value doesn't depend on the
+    interval level) and the fresh numbers shown; nothing is written back, so
+    the saved document is unchanged, and the result is kept in memory only
+    (per process, by the model's last update). A model whose data is gone
+    keeps its stored numbers."""
+    if not _stale_results(doc):
+        return doc
+    key = (doc.id, str(doc.updated_at))
+    fresh = _CURRENT.get(key)
+    if fresh is None:
+        try:
+            dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
+            if dataset is None:
+                return doc
+            payload, cache_id = recurrent_fit.fit_spec(datasets_service.load_dataframe(dataset), doc.spec or {},
+                                                       gof_test=False)
+        except Exception:  # noqa: BLE001 - the data no longer fits: the stored numbers stand
+            return doc
+        stored = doc.results or {}
+        fresh = {**stored, **payload, "gof_test": stored.get("gof_test", payload.get("gof_test")),
+                 "recomputed_on_read": True}
+        _CURRENT[key] = fresh
+        while len(_CURRENT) > _CURRENT_MAX:
+            _CURRENT.popitem(last=False)
+        _remember_live(doc.id, cache_id)
+    doc.results = fresh
+    return doc
+
+
 # ---- Reliability growth projection (#232) ---------------------------------------
 
 def _dataset_frame(db, doc: RecurrentModelDoc):

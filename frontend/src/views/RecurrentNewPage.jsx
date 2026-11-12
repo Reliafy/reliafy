@@ -12,6 +12,7 @@ import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
 import { recurrentAnswer } from "../recurrentResults.js";
+import { NO_RECORD_END, guessRecurrentMapping } from "../recurrentMapping.js";
 import {
   getRecurrentOptions,
   getColumns,
@@ -56,10 +57,6 @@ const STEPS = ["Source", "Data", "Model", "Result"];
 // New recurrent-event (repairable-system) model, as a 4-step wizard that mirrors
 // the life-data fit flow: (1) pick a data source, (2) preview + map columns,
 // (3) choose a growth model and fit, (4) review the fit, name it, and save.
-// A column that looks like each failure's mode (for a growth projection, #232).
-const guessModeColumn = (columns) =>
-  (columns || []).find((c) => /^(failure[ _-]?)?mode$|^cause$|^failure[ _-]?cause$/i.test(String(c).trim())) || "";
-
 export default function RecurrentNewPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState(null); // null | "data" | "params"
@@ -134,7 +131,7 @@ export default function RecurrentNewPage() {
     try {
       const cols = await getColumns(f);
       setCsv(cols);
-      setMap({ i: cols.columns[0] || "", x: cols.columns[1] || "", c: "", n: "", tl: "", tr: "", mode: guessModeColumn(cols.columns) });
+      setMap(guessRecurrentMapping(cols.columns, { dtypes: cols.dtypes, preview: cols.preview }));
       setWindows("");
       setStep(2);
     } catch (err) {
@@ -157,7 +154,7 @@ export default function RecurrentNewPage() {
       const columns = full.preview_columns || [];
       if (!d.name) setSourceName(full.name || "dataset");
       setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
-      setMap({ i: columns[0] || "", x: columns[1] || "", c: "", n: "", tl: "", tr: "", mode: guessModeColumn(columns) });
+      setMap(guessRecurrentMapping(columns, { dtypes: full.dtypes, preview: full.preview }));
       setWindows("");
       setStep(2);
     } catch (err) {
@@ -389,6 +386,9 @@ export default function RecurrentNewPage() {
             </p>
             {!mappingValid && (
               <p className="hint">Map different columns to <code>i</code> and <code>x</code>.</p>
+            )}
+            {mappingValid && !map.tr && !map.c && !(map.ws && map.we) && !windows.trim() && (
+              <p className="hint fleet-alert-warn" role="note">{NO_RECORD_END}</p>
             )}
           </div>
         )}

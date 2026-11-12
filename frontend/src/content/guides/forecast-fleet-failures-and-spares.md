@@ -126,7 +126,12 @@ Under **Advanced**:
   so the forecast follows how the fleet is actually being used.
 
 For **Repairable** equipment each failure is repaired and the item runs on, so
-every repeat failure is counted from the item's age.
+every repeat failure is counted from the item's age. Name an item as one of the
+model's systems (the same id as in its data) and it uses that system's own
+history: a bad actor that fails twice as often is forecast that way, and an
+imperfect-repair model starts it from where its repairs left it. The likely range
+allows for chance and for the model's own uncertainty. Covariate repairable
+models can't drive a forecast yet.
 
 ## Get told when it changes
 
