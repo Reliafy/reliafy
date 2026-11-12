@@ -4,7 +4,7 @@ import { boundWords } from "../lifeResults.js";
 import { COLORWAY } from "../plotTheme.js";
 import { ciPct } from "../levels.js";
 import {
-  ciText, dataText, familyOf, growthReading, paramLabel, pct, perUnit, ratioText, repairTitle,
+  ciText, dataText, familyOf, growthReading, pct, perUnit, ratioText, repairTitle, scaledParam,
 } from "../recurrentResults.js";
 
 const sig = (v, n = 3) => formatNumber(v, { sig: n });
@@ -58,15 +58,18 @@ export default function RecurrentAside({ r, onStats = null, onData = null, onNex
           <span className="gk">Model</span>
           <span className="gv">{fam === "regression" && r.baseline ? `${r.baseline.name} baseline` : r.model?.name || "—"}</span>
         </div>
-        {shape && fam !== "renewal" && (
-          <div className="gofr">
-            <span className="gk">{paramLabel(r, shape.name)}</span>
-            <span className="gv-col">
-              <span className="gv">{sig(shape.value)}</span>
-              {ciText(shape.ci) && <span className="param-ci">{ciPct(r)} {ciText(shape.ci)}</span>}
-            </span>
-          </div>
-        )}
+        {shape && fam !== "renewal" && (() => {
+          const d = scaledParam(r, shape);
+          return (
+            <div className="gofr">
+              <span className="gk">{d.label}</span>
+              <span className="gv-col">
+                <span className="gv">{sig(d.value)}</span>
+                {ciText(d.ci) && <span className="param-ci">{ciPct(r)} {ciText(d.ci)}</span>}
+              </span>
+            </div>
+          );
+        })()}
         {data && (
           <div className="gofr"><span className="gk">Data</span><span className="gv">{data}</span></div>
         )}
@@ -130,6 +133,14 @@ function NowCard({ r, unit }) {
   );
 }
 
+// A repair's effectiveness as shown: a little below 0% reads 0% (a minimal
+// repair) unless its whole interval is below 0%, as the words say.
+const shownEffectiveness = (rest) => {
+  const e = rest.effectiveness;
+  const ci = rest.effectiveness_ci;
+  return e < 0 && !(ci && ci[1] < 0) ? 0 : e;
+};
+
 // Imperfect repair: how much of the age a repair takes away (or, for G1, the
 // gap ratio), with its interval.
 function RepairCard({ rest, level }) {
@@ -139,7 +150,7 @@ function RepairCard({ rest, level }) {
       <div className="gofr life-row" title={`${rest.sentence} ${rest.scale || ""}`}>
         <span className="gk">{rest.ratio != null ? "Gap ratio" : rest.parameter === "q"
           ? <>Restores <span className="gof-sub">q = {formatNumber(rest.value, { sig: 3 })}</span></> : "Restores"}</span>
-        <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(rest.effectiveness)}</span>
+        <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(shownEffectiveness(rest))}</span>
         <span className="life-lo">
           {rest.ratio != null
             ? rest.ratio_ci && ciText(rest.ratio_ci, 3)

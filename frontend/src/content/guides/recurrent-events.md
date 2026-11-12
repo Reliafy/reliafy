@@ -32,16 +32,17 @@ CMP-1,2050,5000
 CMP-2,1400,5000
 ```
 
-The key columns are **i** (the system identifier — this is what groups events
-into per-machine histories) and **x** (the event time, measured from that
+The key columns are **System or unit** (this is what groups events into
+per-machine histories) and **Time of each failure** (measured from that
 system's start, not a calendar date).
 
-You should also give each system's **observation window** — how long you watched
-it, whether or not it failed again — mapped to `tr`. Without it the analysis
+You should also give each system's **End of record** — how long you watched
+it, whether or not it failed again. Without it the analysis
 can't tell the difference between a machine that stopped failing and a machine
 you stopped watching, and it will quietly conclude your fleet is improving.
 The Data step guesses it from names like "observed to", "records end" or "end
-of record", and warns you while it's empty.
+of record", and warns you while it's empty. Fitting again from a saved dataset
+starts from the columns and unit its last repairable model used.
 
 Three optional columns add more:
 

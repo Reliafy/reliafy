@@ -4,8 +4,16 @@ import { openReference } from "./HelpButton.jsx";
 // A small "?" that opens the model reference for `entryId` in the Help drawer.
 // Renders nothing when there's no entry (e.g. the "best fit" pseudo-option), so
 // callers can drop it in beside any picker without guarding.
-export default function RefLink({ entryId, label = "What is this model?" }) {
+// ``text``: show the label as a link in words instead of the "?".
+export default function RefLink({ entryId, label = "What is this model?", text = false }) {
   if (!entryId || !getEntry(entryId)) return null;
+  if (text) {
+    return (
+      <button type="button" className="link sm ref-link-text" onClick={() => openReference(entryId)}>
+        {label}
+      </button>
+    );
+  }
   return (
     <button
       type="button"

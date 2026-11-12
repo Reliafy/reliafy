@@ -1122,6 +1122,14 @@ def set_trade_rate(body: dict = Body(...), m: Maintenance = Depends(maintenance_
     return _run(m.set_trade_rate, body.get("trade"), body.get("rate"))
 
 
+@router.get("/tasks/{task_id}/twins")
+def task_twins(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The same task (by name) on identical positions: the same position class, or with no class
+    the same parent and a name that differs only in its last letter or number. Each with its
+    interval and unit and whether they match this task's (same)."""
+    return _run(m.task_twins, task_id)
+
+
 @router.get("/tasks/{task_id}/lsa")
 def task_lsa(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """One task's LSA page: the task with its resources, the failure modes it serves,
@@ -1159,11 +1167,20 @@ def retire_task(task_id: str, body: dict = Body(default={}), m: Maintenance = De
 
 
 @router.post("/positions/{position_id}/retire")
-def retire_position(position_id: str, body: dict = Body(default={}),
+def retire_position(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                    ctx: AccessCtx = Depends(get_access),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go.
-    return _run(m.retire_position, position_id, body.get("reason", ""), bool(body.get("cascade")),
-                bool(body.get("dry_run")))
+    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go,
+    # and name the RBDs built from the tree that have blocks for it (rbds: they keep them).
+    from backend.maintenance import rbd_tree_plan as tp
+
+    def run():
+        out = m.retire_position(position_id, body.get("reason", ""), bool(body.get("cascade")), bool(body.get("dry_run")))
+        if body.get("dry_run") and isinstance(out, dict):
+            out = {**out, "rbds": tp.rbds_holding(m, session, ctx.read_owners, ctx.hidden, position_id)}
+        return out
+
+    return _run(run)
 
 
 @router.post("/fitments/{fitment_id}/void")
@@ -1258,7 +1275,10 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
-    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids))})
+    # class_models: the classes with a fitted model, so a position of one with no model of its own
+    # can say so (From the class…), and whether the class has failed again since its fit.
+    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids)),
+                         "class_models": m.class_models()})
 
 
 @router.get("/position-missions")
@@ -1273,10 +1293,18 @@ def position_missions(position_ids: str | None = None, session=Depends(get_sessi
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
+
+    def read():
+        rows = m.all_position_models(ids)
+        has = pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden, rows)
+        # other_model: positions with a model in use that can't be a block (a condition-and-life
+        # model, say), so the tab can say why there's no Add a mission there.
+        other = sorted({x["position_id"] for x in rows if x.get("in_use") and x.get("model_type") != "rbd"} - set(has))
+        return {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
+                "has_model": has, "other_model": other}
+
     # has_model: positions whose model in use a mission's one-block RBD can take (a leaf's Add a mission).
-    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
-                         "has_model": pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden,
-                                                             m.all_position_models(ids))})
+    return _run(read)
 
 
 @router.post("/positions/{position_id}/missions")
@@ -2064,9 +2092,10 @@ def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance
 
 
 @router.post("/work-orders/generate")
-def generate_work_orders(horizon_days: int = Body(30, embed=True),
+def generate_work_orders(horizon_days: int = Body(30, embed=True), location_id: str | None = Body(None, embed=True),
                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.generate, max(0, min(horizon_days, 366)))
+    """Work orders for what's due in the window; location_id: only the work in that area."""
+    return _run(m.generate, max(0, min(horizon_days, 366)), location_id)
 
 
 @router.patch("/work-orders/{work_order_id}")

@@ -5057,8 +5057,8 @@ def save_rbd_mission(
     except (rbd_missions.MissionError, rbd_graph.GraphError) as exc:
         raise ToolError(f"Nothing was saved — {exc}") from None
     try:
-        saved = rbds_service.save_rbd(db, rbd.name, graph, uid, rbd_id=rbd.id,
-                                      expected_updated_at=rbd.updated_at.isoformat())
+        saved = rbds_service.save_rbd(db, rbd_missions.rbd_name_after(rbd.name, rbd.graph or {}, graph), graph, uid,
+                                      rbd_id=rbd.id, expected_updated_at=rbd.updated_at.isoformat())
     except access_service.EditConflict:
         raise ToolError(f"“{rbd.name}” was saved by someone else meanwhile. Nothing was saved: retry.") from None
     out = {**_rbd_brief(saved), "missions": [rbd_missions.summary(graph, m) for m in rbd_missions.missions_of(graph)]}

@@ -12,7 +12,7 @@ import {
 import { OPEN_SAMPLE_UNITS_LABEL, sampleUnitsPath } from "../sampleProduct.js";
 import "./Maintenance.css";
 
-const HELP = { guide: "rcm-on-your-asset-tree" };
+const HELP = { guide: "build-your-asset-tree" };
 
 // Assets (the menu entry's landing page): the assets themselves, the top-level
 // places (a house, a site, a plant), each with what it holds anywhere inside

@@ -2511,8 +2511,10 @@ export function listDueTasks(horizonDays = 30) {
   return request(`/api/maintenance/due?horizon_days=${encodeURIComponent(horizonDays)}`);
 }
 
-export function generateWorkOrders(horizonDays = 30) {
-  return postJson("/api/maintenance/work-orders/generate", { horizon_days: horizonDays });
+export function generateWorkOrders(horizonDays = 30, locationId = null) {
+  return postJson("/api/maintenance/work-orders/generate", {
+    horizon_days: horizonDays, ...(locationId ? { location_id: locationId } : {}),
+  });
 }
 
 export function getWorkOrder(id) {
@@ -2684,6 +2686,10 @@ export function cancelWorkOrder(id, reason) {
 }
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
+}
+// The same task (by name) on identical positions, with their intervals ({task, twins}).
+export function getTaskTwins(id) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(id)}/twins`);
 }
 // The condition points a task's trigger can watch ({points: [{id, name, unit,
 // alarm_above, alarm_below, on: {id, name}}]}), nearest first.

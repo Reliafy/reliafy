@@ -3,7 +3,7 @@
 // and every parameter with its interval.
 import { Link } from "react-router-dom";
 import { ScrollCard, TablePanel } from "../model/ModelLayouts.jsx";
-import { formatNumber } from "../../format.js";
+import { formatNumber, formatReadable } from "../../format.js";
 import { shapeParam, stressName } from "../../altFrame.js";
 import { unitInText } from "../unitText.js";
 import { ciPct } from "../../levels.js";
@@ -12,8 +12,8 @@ import { ciPct } from "../../levels.js";
 const ci = (pair) => {
   if (!Array.isArray(pair) || pair.length !== 2) return "—";
   const [lo, hi] = pair;
-  const b = hi == null ? "∞" : formatNumber(hi, { sig: 4 });
-  return lo < 0 || (hi != null && hi < 0) ? `${formatNumber(lo, { sig: 4 })} to ${b}` : `${formatNumber(lo, { sig: 4 })}–${b}`;
+  const b = hi == null ? "∞" : formatReadable(hi, { sig: 4 });
+  return lo < 0 || (hi != null && hi < 0) ? `${formatReadable(lo, { sig: 4 })} to ${b}` : `${formatReadable(lo, { sig: 4 })}–${b}`;
 };
 
 export default function AltData({ results, datasetId }) {
@@ -63,14 +63,14 @@ export default function AltData({ results, datasetId }) {
                 {(r.params || []).map((p, i) => (
                   <tr key={p.name}>
                     <td>{i === 0 && shape ? shape.label : p.name}</td>
-                    <td className="mf-num">{formatNumber(p.value, { sig: 4 })}</td>
+                    <td className="mf-num">{formatReadable(p.value, { sig: 4 })}</td>
                     <td className="mf-num">{ci(p.ci)}</td>
                   </tr>
                 ))}
                 {(r.coefficients || []).map((c) => (
                   <tr key={`c-${c.name}`}>
                     <td>{c.name} <span className="gof-sub">(life-stress)</span></td>
-                    <td className="mf-num">{formatNumber(c.value, { sig: 4 })}</td>
+                    <td className="mf-num">{formatReadable(c.value, { sig: 4 })}</td>
                     <td className="mf-num">{ci(c.ci)}</td>
                   </tr>
                 ))}

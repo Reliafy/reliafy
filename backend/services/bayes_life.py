@@ -548,9 +548,11 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
         at_age=None, curves=curves(model, base, dist_id, float(np.max(x)) if len(x) else None), can_save=True,
     )
     if age is not None and _f(age) and float(age) > 0:
-        lo_hi = np.ravel(model.cri(float(age), alpha_ci=ALPHA))
+        # Reliability is a chance of surviving: its 90% one-sided lower credible
+        # bound, as for a B-life.
+        lo_hi = np.ravel(model.cri(float(age), alpha_ci=ALPHA, bound="lower"))
         result["at_age"] = {"age": float(age), "reliability": _f(np.ravel(model.sf(float(age)))[0]),
-                            "lower": _f(lo_hi[0]), "upper": _f(lo_hi[1])}
+                            "lower": _f(lo_hi[0]), "upper": None, "bound": "lower", "level": LEVEL}
     if need is not None and _f(need) and float(need) > 0:
         # The requirement question in one number: how likely B10 is at least the need.
         result["need"] = {"b": 10, "life": float(need), "chance": chance_at_least(model, 0.1, float(need))}
@@ -673,7 +675,7 @@ def save(db, owner_id: str, model, result: dict, priors, name: str | None = None
     if dataset is None or not mapping:
         buf = io.StringIO()
         pd.DataFrame({"shortest": xs[:, 0], "longest": xs[:, 1], "censored": cs}).to_csv(buf, index=False)
-        dataset = datasets_service.create_dataset(db, f"{label[:150]}: data.csv", buf.getvalue().encode(),
+        dataset = datasets_service.create_dataset(db, f"{label[:150]}: data", buf.getvalue().encode(),
                                                   owner_id)
         mapping, options = {"xl": "shortest", "xr": "longest", "c": "censored"}, None
     unit = result.get("unit") or ""

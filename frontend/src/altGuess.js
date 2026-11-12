@@ -114,3 +114,17 @@ export function stressLevelsWarning(source, col) {
   if (!fact || !Number.isFinite(fact.distinct) || fact.distinct <= MANY_LEVELS) return null;
   return `“${col}” has ${fact.distinct} different values: a test usually has a few stress levels. Is this the right column?`;
 }
+
+// The life-stress relationship to start from, by what the columns' names
+// say: a temperature column suggests Arrhenius; a voltage, load, pressure or
+// other non-temperature stress (and no temperature) the inverse power law.
+// "" when the names don't say.
+export function suggestLifeModel(source) {
+  const facts = columnFacts(source);
+  const numeric = numericColumns(facts, source?.preview);
+  const named = (re) => (c) => re.test(words(c.name));
+  const pool = numeric.filter((c) => !named(TIME)(c) && !isFlagValues(c) && !(named(ID)(c)));
+  if (pool.some(named(TEMPERATURE))) return "arrhenius";
+  if (pool.some(named(OTHER_STRESS))) return "inverse_power";
+  return "";
+}

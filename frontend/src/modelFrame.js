@@ -389,6 +389,7 @@ export function forestRows(result) {
   const table = Object.fromEntries((r.coef_table || []).filter((t) => t.part === "coefficients").map((t) => [t.name, t]));
   const bases = baseLevels(r);
   const sign = ratioSign(r);
+  const fields = Object.fromEntries((r.functions?.covariates || []).map((f) => [f.name, f]));
   return (r.coefficients || []).map((c) => {
     const ci = c.ci || table[c.name]?.ci || null;
     const p = table[c.name]?.p ?? null;
@@ -402,7 +403,10 @@ export function forestRows(result) {
     const exp = (v) => (v == null ? null : Math.exp(sign * v));
     const ends = ci && ci[0] != null && ci[1] != null ? [exp(ci[0]), exp(ci[1])].sort((a, b) => a - b) : [null, null];
     const ratio = c.value != null ? exp(c.value) : c.ratio;
-    return { name: c.name, label, ratio, lo: ends[0], hi: ends[1], unit, p, level, base };
+    const f = fields[c.name];
+    const range = f && f.type === "number" && !f.flag && f.min != null && f.max != null && f.max > f.min
+      ? [f.min, f.max] : null;
+    return { name: c.name, label, ratio, lo: ends[0], hi: ends[1], unit, p, level, base, range };
   });
 }
 
@@ -430,7 +434,15 @@ export function effectText(row, ratioLabel = "hazard ratio") {
   if (ratioLabel === "time ratio" && r > 0 && r !== 1) {
     text += r < 1 ? `: it ages ${formatNumber(1 / r)}× as fast` : `: it ages ${formatNumber(r)}× more slowly`;
   }
-  if (!name.categorical && r > 0.95 && r < 1.05 && r !== 1) {
+  const span = !name.categorical && row.range ? row.range[1] - row.range[0] : null;
+  if (span != null && (span < 1 || span > 20) && r > 0) {
+    // Per +1 misleads when the data spans 0.5 to 0.9 (or 0 to 5,000):
+    // say what the whole range of the data does.
+    const ends = row.lo != null && row.hi != null && row.lo > 0
+      ? ` (${lv} ${formatNumber(row.lo ** span)} to ${formatNumber(row.hi ** span)})` : "";
+    text += `; across the data's range, ${formatNumber(row.range[0])} to ${formatNumber(row.range[1])}${unit}, `
+      + `it multiplies it by ${formatNumber(r ** span)}${ends}`;
+  } else if (!name.categorical && r > 0.95 && r < 1.05 && r !== 1) {
     text += `; +10${unit} multiplies it by ${formatNumber(r ** 10)}`;
   }
   if (row.lo != null && row.hi != null && row.lo <= 1 && row.hi >= 1) {

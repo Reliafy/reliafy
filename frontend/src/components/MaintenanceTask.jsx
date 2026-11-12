@@ -11,6 +11,7 @@ import { taskUnits } from "../maintenanceSubjects.js";
 import { AGE_NOTE, tooLong } from "../maintenanceText.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
+import TaskTwins from "./TaskTwins.jsx";
 import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
 
 // A task on the Explorer's Maintenance tab, in the panel beside the tree (never a dialog):
@@ -130,8 +131,14 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
       for (const id of ids) if (!had.has(id)) await linkTaskFailureMode(task.id, id);
       for (const id of had) if (!f.modes.has(id)) await unlinkTaskFailureMode(task.id, id);
     }
+    // A new interval: the same task on identical positions may be brought in line (offered first).
+    if (Number(f.interval) !== Number(task.interval) || f.unit !== task.unit) {
+      setTwinCheck({ taskId: task.id, name: f.name.trim(), interval: Number(f.interval), unit: f.unit });
+      return;
+    }
     onDone(`Saved ${f.name.trim()}.`, task.id);
   }, can);
+  const [twinCheck, setTwinCheck] = useState(null);
 
   const retire = async () => {
     const ok = await confirm({
@@ -143,6 +150,16 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
   };
 
   const back = <button type="button" className="link pk-back" onClick={onBack} disabled={send.busy}>← All tasks here</button>;
+  if (twinCheck) {
+    return (
+      <div className="pk-view mt-pane">
+        {back}
+        <p className="lib-date" role="status">Saved {twinCheck.name}.</p>
+        <TaskTwins {...twinCheck}
+                   onDone={(said) => onDone(said ? `Saved ${twinCheck.name}. ${said}` : `Saved ${twinCheck.name}.`, twinCheck.taskId)} />
+      </div>
+    );
+  }
   if (loaded.key === key && loaded.error) return <div>{back}<div className="card error">Couldn&apos;t load the task: {loaded.error}</div></div>;
   if (!ready) return <div>{back}<p className="lib-date">Loading…</p></div>;
   const units = taskUnits(subject.kind);

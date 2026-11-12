@@ -147,6 +147,7 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
                   <input
                     type="number"
                     step="any"
+                    aria-label={withUnit(c.name, c.unit)}
                     value={s.values[c.name]}
                     onChange={(e) => onUpdate(s.id, c.name, e.target.value)}
                   />
@@ -199,7 +200,7 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
           {c.type === "category" ? (
             <Select value={first.values[c.name]} onChange={(v) => onUpdate(first.id, c.name, v)} options={c.options} />
           ) : (
-            <input type="number" step="any" value={first.values[c.name]}
+            <input type="number" step="any" aria-label={withUnit(c.name, c.unit)} value={first.values[c.name]}
                    onChange={(e) => onUpdate(first.id, c.name, e.target.value)} />
           )}
         </label>
@@ -756,6 +757,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   <span>{cond > 0 ? "For a further" : "At"}{unit ? ` (${unitInText(unit)})` : ""}</span>
                   <input
                     type="number" inputMode="decimal"
+                    aria-label={`${cond > 0 ? "For a further" : "At"} time${unit ? ` (${unitInText(unit)})` : ""}`}
                     value={t}
                     min={0}
                     max={xMaxView}
@@ -769,6 +771,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   <span>Given survived to{unit ? ` (${unitInText(unit)})` : ""}</span>
                   <input
                     type="number" inputMode="decimal"
+                    aria-label={`Given survived to${unit ? ` (${unitInText(unit)})` : ""}`}
                     value={condAge}
                     min={0}
                     max={x[x.length - 1]}

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clearSent, mergeValues, progressText, readingRows, readingsToSend, rowDetail, startValues, takenText, whyText } from "./workOrderReadings.js";
+import { boxProblem, clearSent, mergeValues, progressText, readingRows, readingsToSend, rowDetail, startValues, takenText, whyText } from "./workOrderReadings.js";
 
 const WO = {
   reading_points: [
@@ -45,4 +45,27 @@ test("a reload keeps a box being typed in; a Record clears only what it sent", (
   const after = mergeValues(rows, clearSent(typed, [{ point_id: "temp" }]));
   assert.deepEqual(after.temp, { value: "", dirty: false });
   assert.deepEqual(after.chl, { value: "60", dirty: true });
+});
+
+test("a point the task names (a vibration check, the Vibration point) is asked for first", () => {
+  const wo = {
+    task: { id: "t", name: "Vibration check on the pump" },
+    reading_points: [{ id: "s", name: "Speed setting", kind: "setting", why: ["setting"] }],
+    measurements: [
+      { id: "v", name: "Vibration (DE bearing)", kind: "condition", unit: "mm/s" },
+      { id: "h", name: "Pump hours", kind: "counter", unit: "hours" },
+    ],
+  };
+  const rows = readingRows(wo);
+  assert.deepEqual(rows.map((r) => [r.id, r.group]), [["s", "asked"], ["v", "asked"], ["h", "other"]]);
+  // "pump" alone ties nothing: it says what, not what's read.
+  assert.equal(readingRows({ ...wo, task: { name: "Pump check" } }).find((r) => r.id === "v").group, "other");
+});
+
+test("boxProblem: a counter below its last reading is flagged as typed", () => {
+  const r = { kind: "counter", last: 1200, unit: "hours", range: [null, null] };
+  assert.match(boxProblem(r, "1100"), /only goes up/);
+  assert.equal(boxProblem(r, "1300"), "");
+  assert.equal(boxProblem(r, ""), "");
+  assert.equal(boxProblem({ kind: "condition", range: [0, 50] }, "60"), "Above its range (at most 50).");
 });

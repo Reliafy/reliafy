@@ -137,6 +137,8 @@ export default function AcceleratedTestPlan({ modelId = null, useStress: carried
     { label: "Within a factor of", value: formatNumber(result.precision) },
   ];
   const alt = result?.alternatives?.[0];
+  // The answer on screen came from the other mode's form.
+  const otherMode = !!(result && inputs && inputs.mode !== mode);
 
   return (
     <div className="strategy-tool">
@@ -200,7 +202,15 @@ export default function AcceleratedTestPlan({ modelId = null, useStress: carried
       </div>
 
       {error && <div className="error">{error}</div>}
-      {result && (
+      {/* The answer belongs to the form it was worked out from: after a switch
+          between finding a test and checking one, Compute again. */}
+      {result && otherMode && (
+        <p className="hint" role="status">
+          The last answer was for {inputs?.mode === "check" ? "checking your own test" : "the best test"}:
+          press Compute to {mode === "check" ? "check this test" : "find the best test"}.
+        </p>
+      )}
+      {result && !otherMode && (
         <>
           <PlanAnswer kind="accelerated" inputs={inputs}
             result={result}

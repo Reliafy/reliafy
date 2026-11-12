@@ -42,6 +42,7 @@ export function viewOnlyReason(team) {
 // workspace can't be changed (every change greyed), else null. Pin this
 // branch is added by the page.
 const DELETE = { id: "tree-delete", label: "Delete…", danger: true };
+export const POS_HERE = { id: "pos-here", label: "New position here" };
 export function summaryActions(r, { mode, viewOnly = null } = {}) {
   if (!r) return [];
   const out = [];
@@ -59,6 +60,10 @@ export function summaryActions(r, { mode, viewOnly = null } = {}) {
     }
     out.push(write(DELETE, viewOnly));
   } else if (r.type === "loc") {
+    // A place you look after holds positions (Derryn, 12 Nov 2026: "New asset" makes a place that
+    // can hold equipment): New position here, the position at this place. Not on a product's
+    // layout or a place an item carries (products.js designActions takes it off a design's).
+    if (!r.ref?.design_of && !r.ref?.carried_by) out.push(write(POS_HERE, viewOnly));
     out.push(write({ id: "tree-new", label: "New location inside" }, viewOnly));
     out.push(write({ id: "tree-rename", label: "Rename…" }, viewOnly));
     out.push(write({ id: "tree-move", label: "Move to…" }, viewOnly));
@@ -117,7 +122,7 @@ export const showsAddRow = (tab) => !tab || tab === "summary";
 //   A tab with nothing of its own for it: New … inside, Rename…, Move to… and
 //   Delete… go last, after Focus and Pin (they change the tree, not what the
 //   tab shows), so the tab never opens on New position inside.
-const TREE_CHANGES = ["tree-new", "tree-rename", "tree-move", "tree-delete"];
+const TREE_CHANGES = ["pos-here", "tree-new", "tree-rename", "tree-move", "tree-delete"];
 export function tabMenu(tab, items, { lead = [], pin = [] } = {}) {
   if (!tab || tab === "summary") return withPin(items, pin);
   const ids = TAB_LEADS[tab] || [];

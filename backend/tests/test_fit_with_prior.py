@@ -50,7 +50,7 @@ def test_pasted_values_fit_with_a_prior_and_save_with_its_provenance(web):
     before = web.db.datasets.count_documents({})
     out = web.post("/api/models/fit-with-prior", json=_body(content=CSV, age=500)).json()
     assert out.get("refused") is None and out["dataset"] is None
-    assert 0 < out["at_age"]["reliability"] < 1 and out["at_age"]["lower"] < out["at_age"]["upper"]
+    assert 0 < out["at_age"]["lower"] < out["at_age"]["reliability"] < 1 and out["at_age"]["upper"] is None
     assert web.db.datasets.count_documents({}) == before
     r = web.post("/api/models/fit-with-prior", json=_body(content=CSV, save=True, name="Pump with a prior"))
     assert r.status_code == 200, r.text

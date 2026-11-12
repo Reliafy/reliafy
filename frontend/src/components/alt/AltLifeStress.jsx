@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import Plot from "../Plot.jsx";
 import ChartPair from "../model/ChartPair.jsx";
 import { PlotCard, PlotPanel, ScrollCard } from "../model/ModelLayouts.jsx";
-import { COLORWAY, DATA_INK, INK, SURFACE, fitLine } from "../../plotTheme.js";
+import { COLORWAY, DATA_INK, INK, SURFACE, bandPair, fitLine } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { evaluateAlt } from "../../api.js";
 import { accelerationRows, inputStressName, kelvinWords, levelWords, shapeParam, useForModel } from "../../altFrame.js";
@@ -42,6 +42,11 @@ export function LifeStressChart({ plot, unit, along = null, usePoint = null, oth
   // use value is a tested level (its line is already drawn).
   const onTested = two && otherUse != null && secLevels.some((v) => Math.abs(v - otherUse) <= 1e-9 * Math.max(1, Math.abs(v)));
   if (along?.stress?.length && !onTested) {
+    // The band on the life along the line: how soft the extrapolated end is.
+    if (Array.isArray(along.lower) && Array.isArray(along.upper)) {
+      const level = Number.isFinite(along.level) ? `${Math.round(along.level * 100)}% band` : "Band";
+      traces.push(...bandPair(along.stress, along.lower, along.upper, { name: level }));
+    }
     traces.push(fitLine({
       x: along.stress, y: along.life,
       line: two ? { color: USE_MARK, dash: "dash" } : { color: SERIES[0] },

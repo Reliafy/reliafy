@@ -47,7 +47,7 @@ function Facts({ r, display, fittedFrom, design = false }) {
   const p = r.ref;
   const rows = [];
   if (r.type === "pos" && design) {
-    rows.push(["Class", p.position_class || quiet("None")]);
+    rows.push(["Position class", p.position_class || quiet("None")]);
     // Where it sits in the product's layout (its design locations), set here or from what it's inside.
     rows.push(["Placed at", p.location ? (
       <>{p.location.name}{p.location.inherited && <span className="td-quiet td-sub">From what it's inside</span>}</>
@@ -57,7 +57,7 @@ function Facts({ r, display, fittedFrom, design = false }) {
     rows.push(["What", "Part of the product's physical layout: where its positions sit. Items built from it carry a copy."]);
   }
   if (r.type === "pos" && !design) {
-    rows.push(["Class", p.position_class || quiet("None")]);
+    rows.push(["Position class", p.position_class || quiet("None")]);
     rows.push(["Fitted", p.item ? (
       <>
         <Link to={`/asset-register/items/${p.item.id}`}>{p.item.name}</Link>
@@ -81,7 +81,7 @@ function Facts({ r, display, fittedFrom, design = false }) {
     const atRow = p.location_id && display.rows.get(p.location_id);
     const at = p.place || (atRow && { id: atRow.key, name: atRow.ref.name });
     rows.push(["Serial", p.serial || quiet("None")]);
-    if (p.item_class) rows.push(["Class", p.item_class.name]);
+    if (p.item_class) rows.push(["Item class", p.item_class.name]);
     const make = [p.manufacturer, p.model].filter(Boolean).join(" ");
     if (make) rows.push(["Make and model", make]);
     if (p.fitted_to) {
@@ -239,7 +239,7 @@ function insideChips(k) {
   );
 }
 
-function Inside({ r, display, onSelect, add, design = false }) {
+function Inside({ r, display, onSelect, add, here = null, design = false }) {
   const [sort, setSort] = useState("tree");
   const ofItems = r.kids.length > 0 && r.kids.every((k) => display.rows.get(k).type === "item");
   const sorts = SORTS.filter((s) => !(ofItems && s.positionsOnly) && !(design && s.get && !s.positionsOnly));
@@ -251,7 +251,7 @@ function Inside({ r, display, onSelect, add, design = false }) {
     const cmp = s.desc ? (a, b) => s.get(b) - s.get(a) : (a, b) => String(s.get(a)).localeCompare(String(s.get(b)));
     return [...rows].sort((a, b) => cmp(a, b) || byName(a, b));
   }, [r, display, sort]);
-  if (!r.kids.length && !add) return null;
+  if (!r.kids.length && !add && !here) return null;
   const metaOf = (k) => {
     if (ofItems) return [k.ref.serial && `Serial ${k.ref.serial}`, where(k) || "No home yet"].filter(Boolean).join(" · ");
     const s = k.sum;
@@ -289,6 +289,11 @@ function Inside({ r, display, onSelect, add, design = false }) {
       )}
       {kids.length > SHOWN_INSIDE && (
         <p className="td-quiet">Showing the first {SHOWN_INSIDE} of {kids.length.toLocaleString("en-AU")}. Filter the tree to find the rest.</p>
+      )}
+      {here && (
+        <AddRow onClick={here.onSelect} disabled={here.disabled}>
+          {here.label}{here.disabled && here.reason ? <span className="sr-only">: {here.reason}</span> : null}
+        </AddRow>
       )}
       {add && (
         <AddRow onClick={add.onSelect} disabled={add.disabled}>
@@ -380,7 +385,9 @@ export default function TreeSummary({
 }) {
   const add = actions.find((a) => a.id === "tree-new") || null;
   const logEvent = actions.find((a) => a.id === "event-log") || null;
-  const rest = actions.filter((a) => a.id !== "tree-new" && a.id !== "event-log");
+  // A place: New position here, an add row of its own above New location inside.
+  const here = actions.find((a) => a.id === "pos-here") || null;
+  const rest = actions.filter((a) => a.id !== "tree-new" && a.id !== "event-log" && a.id !== "pos-here");
   return (
     <div className="td-sum">
       {!design && <StatusChips r={row} />}
@@ -393,7 +400,7 @@ export default function TreeSummary({
       {row.type === "pos" && (
         <OperatingContextCard positionId={row.key} state={position} onSaved={onContextSaved} />
       )}
-      <Inside r={row} display={display} onSelect={onSelect} add={add} design={design} />
+      <Inside r={row} display={display} onSelect={onSelect} add={add} here={here} design={design} />
       {row.type === "pos" && !design && <Measurements data={position.data} fullPage={fullPage} />}
       {row.type === "pos" && <Documents data={position.data} fullPage={fullPage} />}
       <Footer actions={rest} />

@@ -3,6 +3,7 @@ import { DataSourceStep } from "../components/DatasetPicker.jsx";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select.jsx";
 import RefLink from "../components/RefLink.jsx";
+import { getEntry } from "../reference.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 import AltResultView from "../components/AltResultView.jsx";
@@ -13,7 +14,7 @@ import {
 } from "../api.js";
 import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import { ErrorNotice } from "../components/StorageCap.jsx";
-import { guessAltColumns, isThermal, stressLevelsWarning } from "../altGuess.js";
+import { guessAltColumns, isThermal, stressLevelsWarning, suggestLifeModel } from "../altGuess.js";
 
 // A thermal model's temperature must be absolute: the unit is asked, and °C or
 // °F are converted to kelvin before the fit.
@@ -89,9 +90,16 @@ export default function AltNewPage() {
     const columns = facts.columns || [];
     const src = { ...facts, columns, preview: facts.preview || [] };
     setCsv(src);
+    // A non-temperature stress (kV, load) starts on the inverse power law, a
+    // temperature on Arrhenius; the user can change it on the Model step.
+    const suggested = suggestLifeModel(src);
+    const model = suggested && suggested !== lifeModel && !(isThermal(suggested) && isThermal(lifeModel))
+      ? suggested : lifeModel;
+    if (model !== lifeModel) setLifeModel(model);
+    const n = lifeModels.find((m) => m.id === model)?.n_stress || 1;
     // First guesses by the headers' meaning: never a text id as the time,
     // never a time column as the stress.
-    const g = guessAltColumns(src, { nStress, lifeModel });
+    const g = guessAltColumns(src, { nStress: n, lifeModel: model });
     setMap({ x: g.x, xl: "", xr: "", c: g.c, n: "" });
     setUnit(g.unit || "");
     setInspection(false);
@@ -269,9 +277,10 @@ export default function AltNewPage() {
             </div>
             {lm?.desc && (
               <p className="muted-line" style={{ margin: 0 }}>
-                {lm.desc}
-                <RefLink entryId={lifeModel} label="What is this life-stress relationship?" />
-                <RefLink entryId={distribution} label="What is this distribution?" />
+                {lm.desc}{" "}
+                <RefLink text entryId={lifeModel} label={`About ${lm.name}`} />
+                {getEntry(lifeModel) && getEntry(distribution) ? " · " : ""}
+                <RefLink text entryId={distribution} label={`About the ${dists.find((d) => d.id === distribution)?.name || "distribution"}`} />
               </p>
             )}
             <p className="muted-line" style={{ margin: 0 }}>

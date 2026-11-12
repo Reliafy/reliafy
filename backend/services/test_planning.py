@@ -497,14 +497,14 @@ def life_test(
     out.pop("result", None)
     out.pop("non_finite", None)
     lower, upper = plan.estimate / plan.precision, plan.estimate * plan.precision
-    within = plan.precision - 1
     stops = (f"stops at {_time_phrase(plan.censor_time, unit_s)}" if plan.censor_time is not None else
              f"stops at failure {plan.failures}" if plan.failures is not None else "runs until every unit fails")
     summary = (
         f"Test {_plural(plan.n, 'unit')}; the test {stops} and expects about {plan.expected_failures:.1f} "
         f"failures. It estimates {what} ({_time_phrase(plan.estimate, unit_s)} on these planning values) to "
         f"within a factor of {plan.precision:.3g} at {_pct(1 - alpha)} confidence: the interval will be about "
-        f"{_time_phrase(lower, unit_s)} to {_time_phrase(upper, unit_s)}, roughly ±{within:.0%}."
+        f"{_time_phrase(lower, unit_s)} to {_time_phrase(upper, unit_s)} (÷{plan.precision:.3g} to "
+        f"×{plan.precision:.3g})."
     )
     assumptions = [
         f"The planning values ({_PARAM_NAMES[d][0]} = {fmt_num(pv[0])}, {_PARAM_NAMES[d][1]} = {fmt_num(pv[1])}) "

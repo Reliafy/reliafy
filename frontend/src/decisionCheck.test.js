@@ -157,3 +157,14 @@ test("a further task goes back with its own evidence when it fits the task, or w
   assert.equal(analysisKindOf("failure_finding"), "failure_finding");
   assert.equal(analysisKindOf("on_condition"), null);
 });
+
+test("the Explorer's decision asks for the existing task picked and a valid cost", async () => {
+  const { decisionExtrasCheck } = await import("./decisionCheck.js");
+  const ok = { blockers: [], intervalError: null, notice: null };
+  assert.deepEqual(decisionExtrasCheck(ok, { existingTask: true, picked: "" }).blockers, ["Choose the existing task."]);
+  assert.deepEqual(decisionExtrasCheck(ok, { existingTask: true, picked: "t1" }).blockers, []);
+  const bad = decisionExtrasCheck(ok, { cost: "-3" });
+  assert.deepEqual(bad.blockers, ["Fix the cost."]);
+  assert.match(bad.costError, /0 or more/);
+  assert.equal(decisionExtrasCheck(ok, { cost: "180" }).costError, null);
+});

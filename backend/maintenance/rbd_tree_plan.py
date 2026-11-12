@@ -331,9 +331,79 @@ def positions_of_rbd(m: Maintenance, rbd_id: str) -> list[dict]:
             continue
         seen.add(x["position_id"])
         p = m.s.node(m.org, x["position_id"], "Position") or {}
+        source = x.get("source") or {}
         out.append({"id": x["position_id"], "name": p.get("name") or "",
-                    "built": (x.get("source") or {}).get("built_from") is not None})
+                    "built": source.get("built_from") is not None,
+                    "built_ids": [str(i) for i in source.get("position_ids") or []]})
     return out
+
+
+def rbds_holding(m: Maintenance, db, owners, hidden, position_id: str) -> list[dict]:
+    """The RBDs with a block standing for ``position_id`` or a position inside it (built from the
+    tree, on a position above it): [{id, name, blocks}]. Deleting the position leaves those blocks
+    in place (a diagram is never changed behind its owner's back), so the delete says so."""
+    from backend.maintenance import rbd_derive
+    from backend.maintenance.position_models import fetcher
+
+    if m.s.node(m.org, position_id, "Position") is None:
+        return []
+    gone = [position_id] + [c["id"] for c in _children(m, position_id)] + [c["id"] for c in _below(m, position_id, 12)]
+    bids = {rbd_derive._bid(pid) for pid in gone}
+    above, here = [], position_id
+    for _ in range(12):
+        up = [x for x in m.s.out(m.org, here, "PART_OF") if x["label"] == "Position"]
+        if not up:
+            break
+        here = up[0]["id"]
+        above.append(here)
+    fetch = fetcher(db, owners, hidden)
+    out, seen = [], set()
+    for pid in above:
+        for link in m.position_models(pid):
+            if link.get("model_type") != "rbd" or link["model_id"] in seen:
+                continue
+            seen.add(link["model_id"])
+            doc = fetch("rbd", link["model_id"])
+            if doc is None:
+                continue
+            n = sum(1 for b in _component_blocks(doc.graph or {}) if b["id"] in bids)
+            if n:
+                out.append({"id": doc.id, "name": doc.name, "blocks": n})
+    out.sort(key=lambda r: r["name"].lower())
+    return out
+
+
+def gone_blocks(m: Maintenance, top_id: str, graph: dict, built_ids) -> list[dict]:
+    """The diagram's blocks built from a position that has since been deleted, or moved out of
+    ``top_id``: [{id, label, position: {id, name}, why: "deleted" | "moved"}]. A rebuild keeps them
+    (every edit to a diagram is kept), so they're named rather than silently left standing."""
+    from backend.maintenance import rbd_derive
+
+    live = {c["id"] for c in _children(m, top_id)} | {c["id"] for c in _below(m, top_id)}
+    by_bid = {rbd_derive._bid(pid): pid for pid in built_ids or [] if pid not in live}
+    if not by_bid:
+        return []
+    out = []
+    for b in _component_blocks(graph):
+        pid = by_bid.get(b["id"])
+        if pid is None:
+            continue
+        node = m.s.node(m.org, pid, "Position") or {}
+        out.append({"id": b["id"], "label": b["label"] or node.get("name") or "",
+                    "position": {"id": pid, "name": node.get("name") or ""},
+                    "why": "deleted" if not node or node.get("retired") else "moved"})
+    return out
+
+
+def gone_note(gone: list[dict], top_name: str) -> str | None:
+    """One sentence naming blocks whose positions have gone (gone_blocks), or None."""
+    if not gone:
+        return None
+    names = ", ".join(f"“{g['label']}”" for g in gone[:8]) + (" …" if len(gone) > 8 else "")
+    one = len(gone) == 1
+    return (f"{names} {'stands' if one else 'stand'} for {'a position' if one else 'positions'} no longer inside "
+            f"{top_name} (deleted or moved): {'it was' if one else 'they were'} kept in the diagram. Delete "
+            f"{'the block' if one else 'those blocks'} from the RBD if {'it has' if one else 'they have'} gone.")
 
 
 def _component_blocks(graph: dict) -> list[dict]:
@@ -350,7 +420,7 @@ def plans_for_graph(m: Maintenance, rbd_id: str, graph: dict) -> dict:
     positions = positions_of_rbd(m, rbd_id)
     if not positions:
         return {"position": None, "positions": [], "unit": (graph or {}).get("unit") or "", "blocks": {},
-                "shutdowns": [], "supports": can}
+                "shutdowns": [], "supports": can, "gone": []}
     top = positions[0]
     unit = (graph or {}).get("unit") or ""
     blocks = _component_blocks(graph)
@@ -366,8 +436,9 @@ def plans_for_graph(m: Maintenance, rbd_id: str, graph: dict) -> dict:
                                      "the block's repair time; nothing is assumed.")
         out[b["id"]] = row
     shuts = _shutdowns(m, top, unit, blocks, mapped, out, can)
+    gone = gone_blocks(m, top["id"], graph, top.get("built_ids"))
     return {"position": {"id": top["id"], "name": top["name"]}, "positions": positions, "unit": unit, "blocks": out,
-            "shutdowns": shuts, "supports": can}
+            "shutdowns": shuts, "supports": can, "gone": gone}
 
 
 def _shutdowns(m: Maintenance, top: dict, unit: str, blocks: list[dict], mapped: dict, rows: dict,

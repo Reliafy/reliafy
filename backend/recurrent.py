@@ -249,7 +249,7 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
 
 RECORD_END_NOTE = ("No end of record is mapped, so each system's record is taken to end at its last failure. That "
                    "makes failures look closer together at the end than they were: map the column that says how "
-                   "far each system's records go (tr) for a fair trend and MTBF.")
+                   "far each system's records go (End of record) for a fair trend and MTBF.")
 
 
 def _record_end_note(payload: dict, df: pd.DataFrame, mapping: dict, windows=None) -> None:
@@ -1040,7 +1040,7 @@ def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=
         msg = str(exc)
         if "time-terminated" in msg:
             msg = ("A growth projection needs a time-terminated test: every system run from 0 to an end of test. "
-                   "Map each system's end of record (tr) or type the end of the test.")
+                   "Map each system's End of record column or type the end of the test.")
         raise FitError(msg) from exc
 
     total = gp.systems * gp.T
