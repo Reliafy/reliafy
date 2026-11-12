@@ -1136,6 +1136,12 @@ async function main() {
         await scrollTo(page.locator(".rbd-production"), 40);
       } },
     // --- Costs, intervals and what to improve ---
+    { file: "costs-00-plan.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
+      async act(page) {
+        await page.locator('[data-wt="rbd-plan-chip"]').click();
+        await page.locator(".rbd-plan-table").waitFor({ timeout: 20000 }); await wait(1000);
+        await scrollTo(page.locator(".rbd-plan"), 300);
+      } },
     { file: "costs-01-block.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-comp", { hasText: "Pump A" }).dblclick(); await wait(1000);

@@ -151,7 +151,8 @@ model (saved_model_id; same time unit).
 - Repairable diagrams (repairable=true, analysed for availability): every block needs a repair model. Blocks \
 may carry costs, preventive (age / block / condition replacement), inspection (hidden failures found by proof \
 tests: offset staggers, coverage + full_test for partial tests), maintenance_group, crew_priority, \
-repair_quality (Kijima: simulated figures); the diagram repair_crews, safety_function + target_sil (needs proof \
+repair_quality (Kijima: simulated figures), duty (0-1, the share of the time it runs: its model is then a life \
+in operating time; intervals stay on the clock); the diagram repair_crews, safety_function + target_sil (needs proof \
 tests), costs (downtime_rate, horizon, discount_rate) and production (capacity demand). Common cause: \
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
 - Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \

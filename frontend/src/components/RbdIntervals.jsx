@@ -57,7 +57,14 @@ export function applyIntervals(graph, rows) {
     const data = { ...n.data };
     if (data.preventive) {
       if (r.never) delete data.preventive;
-      else data.preventive = { ...data.preventive, interval: r.interval };
+      else {
+        data.preventive = { ...data.preventive, interval: r.interval };
+        // Given in running time: kept so, through the block's duty (the backend's apply_plan too).
+        if (data.preventive.operating_interval != null) {
+          if (data.duty > 0 && data.duty <= 1) data.preventive.operating_interval = r.interval * data.duty;
+          else delete data.preventive.operating_interval;
+        }
+      }
     } else if (data.inspection) {
       const test = { ...data.inspection, interval: r.interval };
       if (r.offset) test.offset = r.offset;

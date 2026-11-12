@@ -74,37 +74,128 @@ function HorizonTable({ table, unit, disc }) {
   );
 }
 
-// Downtime from failures vs from planned outages (maintenance and test time).
+// Planned vs unplanned (the Maintenance plan's results): the system's downtime from failures vs
+// from planned outages (maintenance and test time), and the running cost the same way. The split is
+// Reliafy's own: the failures' downtime is a copy of the diagram whose planned work takes no time,
+// and lost production is shared out as the downtime is. It says so.
 export function DowntimeSplit({ result, unit }) {
   const d = result.downtime;
   if (!d) return null;
   const total = d.total || 0;
   const share = (v) => (total > 0 ? v / total : 0);
   const u = unit ? ` ${unitInText(unit)}` : "";
+  const cost = result.planned_unplanned?.cost;
+  const costTotal = cost ? (cost.planned || 0) + (cost.unplanned || 0) + (cost.not_split || 0) : 0;
+  const bar = (label, v, of, help, planned, text) => (
+    <div className="rbd-avail-bar" key={label} title={help}>
+      <span className="rbd-avail-bar-label">{label}</span>
+      <span className="rbd-avail-bar-track">
+        <span className={"rbd-avail-bar-fill" + (planned ? " planned" : "")} style={{ width: `${Math.round((of > 0 ? v / of : 0) * 100)}%` }} />
+      </span>
+      <span className="rbd-avail-bar-pct">{text}</span>
+    </div>
+  );
   return (
     <div className="rbd-avail-nodes rbd-downtime-split">
       <div className="ds-section-h">
-        Downtime: failures vs maintenance
+        Planned vs unplanned {basisTag(d.basis)}
       </div>
-      {[
-        ["Failures", d.failures, "Unplanned: failures, including the time a hidden failure lies undetected until a proof test."],
-        ["Maintenance & tests", d.maintenance, "Planned outages: the time scheduled replacements and proof tests take the block off-line."],
-      ].map(([label, v, help]) => (
-        <div className="rbd-avail-bar" key={label} title={help}>
-          <span className="rbd-avail-bar-label">{label}</span>
-          <span className="rbd-avail-bar-track">
-            <span className={"rbd-avail-bar-fill" + (label === "Failures" ? "" : " planned")} style={{ width: `${Math.round(share(v) * 100)}%` }} />
-          </span>
-          <span className="rbd-avail-bar-pct">{fmtPct(v, 3)}</span>
-        </div>
-      ))}
+      <div className="rbd-split-sub">Downtime</div>
+      {bar("Unplanned", d.failures, total, "Failures, including the time a hidden failure lies undetected until a proof test.", false, fmtPct(d.failures, 3))}
+      {bar("Planned", d.maintenance, total, "The time scheduled replacements and proof tests take blocks off-line, where that takes the system down.", true, fmtPct(d.maintenance, 3))}
+      {cost && costTotal > 0 && (
+        <>
+          <div className="rbd-split-sub">Running cost{per(unit)} {basisTag(cost.basis)}</div>
+          {bar("Unplanned", cost.unplanned, costTotal, "Repairs and parts at failures, and the lost production failures cause.", false, fmtMoney(cost.unplanned))}
+          {bar("Planned", cost.planned, costTotal, "Scheduled replacements, proof tests and condition inspections, and the lost production planned outages cause.", true, fmtMoney(cost.planned))}
+          {cost.not_split > 0 && bar("Not split", cost.not_split, costTotal, "Maintenance-group set-up costs (charged at failures and planned work alike) and blocks' own downtime costs.", false, fmtMoney(cost.not_split))}
+        </>
+      )}
       <p className="muted-line" style={{ margin: 0 }}>
         Of the {fmtPct(total, 3)} unavailability, {fmtPct(share(d.failures))} comes from failures and{" "}
         {fmtPct(share(d.maintenance))} from maintenance and test time
         {d.planned_outages_per_window != null && ` (${fmtT(d.planned_outages_per_window)} planned outages of the system per ${fmtT(result.t_simulation)}${u} window)`}.
+        {" "}Split by Reliafy:{" "}
         {d.basis === "simulation" && d.paired_simulations
-          ? ` Estimated by re-running the first ${d.paired_simulations.toLocaleString()} histories with instant maintenance.`
-          : " The failures' share is the same diagram with maintenance taking no time."}
+          ? `the first ${d.paired_simulations.toLocaleString()} histories re-run with planned work taking no time`
+          : "the failures' share is the same diagram with planned work taking no time"}
+        {cost?.lost_production ? "; lost production is shared out in the same proportions" : ""}.
+      </p>
+    </div>
+  );
+}
+
+// What the scheduled replacements buy against running to failure (exact long-run values): failures
+// avoided, by block and for the system, and the downtime and running cost with and without them.
+export function PlanEffect({ result, unit }) {
+  const e = result.plan_effect;
+  if (!e) return null;
+  if (!e.available) {
+    return (
+      <div className="rbd-avail-nodes rbd-plan-effect">
+        <div className="ds-section-h">What the plan buys</div>
+        <p className="muted-line" style={{ margin: 0 }}>{e.reason}</p>
+      </div>
+    );
+  }
+  // Per year where the diagram's unit is a calendar one, else per unit time.
+  const yearly = e.units_per_year != null;
+  const scale = yearly ? e.units_per_year : 1;
+  const perTxt = yearly ? " a year" : unit ? ` per ${unitInText(unit).replace(/s$/, "")}` : " per unit time";
+  const n = (v) => (v == null || !Number.isFinite(v) ? "—" : Number((v * scale).toPrecision(3)).toLocaleString());
+  const sys = e.system_failures;
+  const una = e.unavailability;
+  const c = e.cost_rate;
+  return (
+    <div className="rbd-avail-nodes rbd-plan-effect">
+      <div className="ds-section-h">What the plan buys {basisTag(e.basis)}</div>
+      <div className="rbd-avail-metrics">
+        <div className="alt-metric" title={`Block failures${perTxt} with the scheduled replacements, against running every block to failure`}>
+          <span className="k">Failures avoided{perTxt}</span>
+          <span className="v">{n(e.block_failures_avoided)}</span>
+        </div>
+        <div className="alt-metric" title="The system's failures with the plan, and running to failure">
+          <span className="k">System failures{perTxt}</span>
+          <span className="v">{n(sys.with_plan)} <small className="muted">vs {n(sys.run_to_failure)}</small></span>
+        </div>
+        <div className="alt-metric" title="Long-run unavailability with the plan, and running to failure">
+          <span className="k">Unavailability</span>
+          <span className="v">{fmtPct(una.with_plan, 3)} <small className="muted">vs {fmtPct(una.run_to_failure, 3)}</small></span>
+        </div>
+        {c && (
+          <div className="alt-metric" title="Long-run running cost with the plan, and running to failure">
+            <span className="k">Running cost{per(unit)}</span>
+            <span className="v">{fmtMoney(c.with_plan)} <small className="muted">vs {fmtMoney(c.run_to_failure)}</small></span>
+          </div>
+        )}
+      </div>
+      {e.blocks.length > 0 && (
+        <ScrollCue className="rbd-avail-imp-scroll">
+          <table className="calc-table rbd-costs-table">
+            <thead>
+              <tr>
+                <th>Block</th>
+                <th title="Its failures with the scheduled replacement">Failures{perTxt}</th>
+                <th title="Its failures if it ran to failure">Run to failure</th>
+                <th>Avoided</th>
+              </tr>
+            </thead>
+            <tbody>
+              {e.blocks.map((b) => (
+                <tr key={b.id}>
+                  <td className="calc-row-label">{b.label}</td>
+                  <td>{n(b.failures_with_plan)}</td>
+                  <td>{n(b.failures_run_to_failure)}</td>
+                  <td>{n(b.failures_avoided)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollCue>
+      )}
+      <p className="muted-line" style={{ margin: 0 }}>
+        Against the same diagram with no scheduled replacements (proof tests kept), in the long run.
+        {una.with_plan > una.run_to_failure ? " Here the plan costs more downtime than it saves: its work takes longer than the failures it avoids." : ""}
       </p>
     </div>
   );

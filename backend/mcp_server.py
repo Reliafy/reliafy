@@ -3619,6 +3619,8 @@ class RbdNode(BaseModel):
     repair_one_at_a_time: Optional[bool] = Field(None, description=(
         "Repairable standby group: one repairer of its own, so its failed units are repaired one at a time "
         "(otherwise each failed unit is a job for the diagram's repair crews). No costs on such a group."))
+    duty: Optional[float] = Field(None, gt=0, le=1, description=(
+        "Repairable component: the share of the time it runs; its model is then a life in operating time."))
     repair_quality: Optional[RepairQuality] = Field(None, description=(
         "Repairable component: how good each repair is — imperfect repair (Kijima I/II with q) and replacement "
         "at the N-th failure. Such a block has no exact long-run figures: analyse rbd simulates them (and "
@@ -3960,13 +3962,14 @@ class UpdateNodeOp(_Op):
     maintenance_group: Optional[str] = None
     crew_priority: Optional[float] = None
     repair_one_at_a_time: Optional[bool] = None
+    duty: Optional[float] = Field(None, gt=0, le=1)
     repair_quality: Optional[RepairQuality] = Field(None, description="Replaces the block's repair quality.")
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description="Replaces the capacity.")
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Replaces the block's covariate schedules (#52; see change rbd_create's node)."))
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
                                  "instant_repair", "repair_one_at_a_time", "repair_quality", "capacity",
-                                 "covariate_schedules"]]] = Field(
+                                 "covariate_schedules", "duty"]]] = Field(
         None, description="Remove these block settings.")
 
 
@@ -5073,7 +5076,8 @@ _COSTS_HOW = {
 #: The app's pointers in a refusal, which an agent can't follow (#265): it
 #: gets the change rbd_edit ops instead.
 _APP_POINTERS = re.compile(r"\s*\((?:in its Cost & maintenance section|double-click (?:it|a block) → Cost & "
-                           r"maintenance)\)")
+                           r"maintenance|set it in the builder's Maintenance plan|the builder's Maintenance plan, "
+                           r"or double-click a block for its costs)\)")
 
 
 def _without_app_pointers(message: str) -> str:

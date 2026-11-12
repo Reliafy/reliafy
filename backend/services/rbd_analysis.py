@@ -3476,6 +3476,15 @@ def analyze_availability(
                                                float(t_simulation))
         if split is not None:
             extras["downtime"] = split
+        # The Maintenance plan's results: planned vs unplanned (from the split
+        # above) and what the scheduled replacements buy against running to failure.
+        if split is not None:
+            planned = rbd_maintenance.planned_unplanned(costs, split)
+            if planned is not None:
+                extras["planned_unplanned"] = planned
+        effect = rbd_maintenance.plan_effect(graph, rbd, resolve_model, labels, overrides)
+        if effect is not None:
+            extras["plan_effect"] = effect
     except Exception:  # noqa: BLE001 - never lose the availability result
         import logging
 

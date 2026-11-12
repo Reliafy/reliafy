@@ -21,26 +21,53 @@ This guide uses a cooling-water train: a controller, two pumps in parallel
 and a heat exchanger. The pumps wear out and are replaced every 1,500 hours.
 Lost production costs 2,000 an hour. Costs are in whatever currency you use.
 
-## 1. Put the costs and maintenance on the blocks
+## 1. Plan the maintenance and put the costs on the blocks
 
-Double-click a block. A repairable block has these sections:
+On a repairable diagram, press **Maintenance plan** in the toolbar (on a phone,
+**⋯ → Maintenance plan**). A table opens under the diagram, the diagram still in
+view, with a row for every block. This is the one place a block's planned work
+is set. Select blocks on the canvas to show just their rows; **Show all** brings
+the rest back. Changes apply as you type; save the diagram to keep them.
 
-- **Maintenance**: **None**, **Scheduled replacement** or **Hidden failures,
-  proof-tested**. Scheduled replacement can be by **Age replacement** (the
-  clock restarts at a failure), **Block replacement** (at every multiple of the
-  interval, whatever its age)
-  or **Condition-based** (inspected, and replaced when the chance of failing
-  before the next inspection is too high). Give how often (**Replace
-  every**), how long it takes (**Takes**; blank is instant) and the **Cost
-  per replacement**.
-- **Costs**: **Repair cost** and **Parts cost** per failure, **Block
-  downtime** (a cost while this block is down, even if the system is up) and
-  the **Purchase price**. A per-failure cost can be a **range**.
+![The maintenance plan: each block's duty, task, interval, time off-line, cost and group](/guides/img/costs-00-plan.png)
 
-![A pump with age replacement every 1,500 hours and its costs](/guides/img/costs-01-block.png)
+Each row has:
 
-Blocks in the same **Maintenance group** share a set-up cost (scaffolding, a
-crane, a shutdown) each time the group stops.
+- **Duty**: the share of the time the block runs, as a percentage. Blank means
+  it runs all the time. Set it when the block's life was measured in running
+  hours: a pump that runs 25% of the time lasts four times as long in calendar
+  time, and the diagram takes that into account. Leave it blank when the life
+  came from calendar dates.
+- **Task**: **Run to failure**, **Replace on age** (the clock restarts at a
+  failure), **Replace at fixed times** (at every multiple of the interval,
+  whatever its age), **Inspect on condition** (inspected, and replaced when the
+  chance of failing before the next inspection is too high) or **Proof test**
+  (its failures stay hidden until a test finds them).
+- **Every**: how often. A replacement can be given in **running** time, such
+  as every 500 running hours. It's turned into calendar time through the duty,
+  and the row shows the result. With no duty, the row asks for one rather than
+  guess.
+- **Takes**: how long the task takes the block off-line. Blank means no
+  downtime.
+- **Cost**: per task. A range such as **300–700** is drawn afresh each time.
+- **Restores**: what the task leaves the block as. Today every replacement
+  leaves it **As new**.
+- **Group**: blocks in the same maintenance group share a set-up cost
+  (scaffolding, a crane, a shutdown) each time the group stops.
+- **Crew priority**, when the repair crews are limited: higher is served first.
+- **More**: the task's own settings, such as the threshold for replacement on
+  condition, early renewal at a group stop, or a proof test's first test and
+  coverage.
+
+A row with something missing says what to set.
+
+Double-click a block for its **Costs**: **Repair cost** and **Parts cost** per
+failure, **Block downtime** (a cost while this block is down, even if the
+system is up) and the **Purchase price**. A per-failure cost can be a
+**range**. The dialog's **Maintenance** section sums up the block's plan, and
+**Edit in the plan** saves the block and opens the plan on it.
+
+![A pump's costs, with its maintenance summed up](/guides/img/costs-01-block.png)
 
 ## 2. Price the downtime
 
@@ -77,8 +104,19 @@ For the train:
   9% of the cost. The block that stops the plant isn't the one that costs
   the money.
 
-**Downtime: failures vs maintenance** above it splits the unavailability
-into failures and planned work: here 98.9% comes from failures.
+**Planned vs unplanned** above it splits the unavailability and the running
+cost. Here 98.9% of the downtime comes from failures. Of the 7.99 an hour,
+1.89 is planned (the pumps' replacements and the lost production while they
+happen) and 6.10 is unplanned (repairs, parts and the lost production from
+failures). Reliafy works the split out from a copy of the diagram whose
+planned work takes no time, and shares out lost production in the same
+proportions.
+
+**What the plan buys** compares the diagram with the same one run to
+failure. The pumps' replacements avoid about **4.7 failures a year**. System
+failures drop from 0.73 to 0.69 a year, and the running cost from 8.22 to
+7.99 an hour. These are exact long-run figures. Where a diagram has none
+(limited crews with planned work, imperfect repair), it says so instead.
 
 ## 4. Choose the intervals
 

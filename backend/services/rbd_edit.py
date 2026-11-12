@@ -60,6 +60,8 @@ _FIELD_TYPES = {
     "maintenance_group": ("component",),
     "crew_priority": ("component", "standby"),
     "repair_one_at_a_time": ("standby",),
+    # The share of the time it runs (its life in operating time).
+    "duty": ("component",),
     # Imperfect repair and replacement at the N-th failure (#68).
     "repair_quality": ("component",),
     # Throughput while it works (#122).
@@ -70,7 +72,7 @@ _FIELD_TYPES = {
 UPDATE_FIELDS = ("label", *_FIELD_TYPES)
 #: Block settings ``update_node``'s ``clear`` can remove.
 CLEARABLE = ("costs", "preventive", "inspection", "maintenance_group", "crew_priority", "instant_repair",
-             "repair_one_at_a_time", "repair_quality", "capacity", "covariate_schedules")
+             "repair_one_at_a_time", "repair_quality", "capacity", "covariate_schedules", "duty")
 
 
 class EditError(ValueError):

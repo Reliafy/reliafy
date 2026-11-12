@@ -15,7 +15,7 @@ import { boundNodes } from "../covariate.js";
 import { getBoundBlocks } from "../api.js";
 import { BandControls, BandInterval, BandNote, BandTargets, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
-import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
+import AvailabilityCosts, { DowntimeSplit, PlanEffect } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies, { SafetyNotes } from "./AvailabilityPolicies.jsx";
 import RbdSafetyShares from "./RbdSafetyShares.jsx";
 import RbdPfdChart from "./RbdPfdChart.jsx";
@@ -1192,6 +1192,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         {pfdChart && sameWindow && <SimulatedChart curve={curve} unit={unit} />}
 
         <DowntimeSplit result={result} unit={unit} />
+        <PlanEffect result={result} unit={unit} />
         <AvailabilityCosts result={result} unit={unit} />
         {/* Before the simulation runs, the answer card says why it's needed. */}
         <AvailabilityPolicies result={result} showReason={!needsSim} />
