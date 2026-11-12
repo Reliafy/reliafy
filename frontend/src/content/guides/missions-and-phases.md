@@ -45,9 +45,10 @@ planned work are left out: a mission doesn't repair). Without one, Reliafy
 builds the mission's RBD from what's inside the position, the same way
 **Build an RBD from what's inside…** does: each block takes the model in use
 at its position, and a position with none gets a placeholder block, flagged,
-never a made-up figure. The tree doesn't say which positions are redundant, so
-blocks with no connections go in series, and the mission says so (**Check the
-wiring**) until you wire its RBD otherwise. It's saved once, named after the
+never a made-up figure. Positions marked as backing each other up (the position's
+**Redundancy inside…**) are wired as redundancy. Where nothing says how the blocks are wired (no
+connections and no redundancy sets), they go in series, and the mission says so
+(**Check the wiring**) until you mark the sets or wire its RBD otherwise. It's saved once, named after the
 position and the mission ("Pump station — Mission 1"). A position with nothing
 inside and no RBD is a single block: the position's own model in use. A
 position with nothing inside and no model can't have a mission yet: give it a

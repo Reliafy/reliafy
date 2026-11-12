@@ -8,7 +8,9 @@ inside never reached the plan. Expanding puts each sub-system's blocks into the 
 place, wired exactly as they were inside it: every path through the sub-system block becomes a
 path from the blocks before it, through its inner blocks, to the blocks after it. Series stays
 series, parallel stays parallel, and a vote stays a vote (where the sub-system fed a k-of-n gate
-through several branches, a 1-of-n junction keeps it one input, as it was).
+through several branches, a 1-of-n junction keeps it one input, as it was). A sub-system that
+runs part of the time (its Runs share: a standby set's member taking turns) passes that share to
+each block inside it.
 
 The result is a new layout to look over and save; nothing is saved here.
 """
@@ -45,6 +47,25 @@ def _junction(nid: str, label: str, count: int) -> dict:
     return {"id": nid, "type": "knode", "data": {"label": label, "n": 1, "k": count}}
 
 
+def _share(value) -> float | None:
+    """A block's Runs share (its duty), in (0, 1); None for all the time."""
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    return x if 0 < x < 1 else None
+
+
+def _runs_share(node: dict, share: float | None) -> dict:
+    """An inner block of a sub-system that runs part of the time (a standby set's member taking
+    turns): it runs that share of its own share. Only blocks that run (component and standby)."""
+    if share is None or node.get("type") not in ("component", "standby"):
+        return node
+    data = dict(node.get("data") or {})
+    data["duty"] = float(f"{share * (_share(data.get('duty')) or 1.0):.6g}")
+    return {**node, "data": data}
+
+
 def expand(graph: dict, resolve_subsystem: Callable[[str], Optional[dict]], _depth: int = 0,
            _seen: frozenset = frozenset()) -> tuple[dict, list[str]]:
     """``(graph, expanded labels)``: ``graph`` with every sub-system block replaced by its own
@@ -78,12 +99,14 @@ def expand(graph: dict, resolve_subsystem: Callable[[str], Optional[dict]], _dep
         taken = {n["id"] for n in nodes}
         rename = {}
         inner = []
+        share = _share((node.get("data") or {}).get("duty"))
         for n in sub.get("nodes") or []:
             if n.get("id") in s_in or n.get("id") in s_out:
                 continue
             new = n["id"] if n["id"] not in taken else f"{node['id']}-{n['id']}"
             rename[n["id"]] = new
             taken.add(new)
+            n = _runs_share(n, share)
             inner.append({k: v for k, v in n.items() if k not in ("position", "positionAbsolute", "selected")}
                          | {"id": new})
         preds = [e["source"] for e in edges if e["target"] == node["id"]]

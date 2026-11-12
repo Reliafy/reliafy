@@ -68,10 +68,10 @@ test("a mission row's cells in words", () => {
 
 test("a position's actions: Add a mission (an RBD of its own), wherever one can be built", () => {
   const d = graftMissions(buildDisplay(DATA, "positions"), LINKS);
-  assert.deepEqual(positionMissionActions(d.rows.get("drone")).map((a) => a.id), ["mission-new", "mission-open-rbd:r1"]);
+  assert.deepEqual(positionMissionActions(d.rows.get("drone")).map((a) => a.id), ["mission-new", "mission-open-rbd:r1", "mission-redundancy"]);
   // No RBD yet, but positions inside: Add a mission builds its RBD from them.
   const arm = positionMissionActions(d.rows.get("arm"));
-  assert.deepEqual(arm.map((a) => a.id), ["mission-new", "mission-build-rbd"]);
+  assert.deepEqual(arm.map((a) => a.id), ["mission-new", "mission-build-rbd", "mission-redundancy"]);
   assert.equal(arm[0].disabled, undefined);
   // A leaf with no RBD: nothing to build from, so it says what to do.
   const [leaf] = positionMissionActions(d.rows.get("battery"));
@@ -99,7 +99,7 @@ test("a mission's own RBD hangs its one mission under the position, and isn't of
   const arm = d.rows.get("arm");
   assert.equal(arm.kids[0], missionKey("r9", "mission"));
   assert.equal(rollupText(arm, true), "1 mission");
-  assert.deepEqual(positionMissionActions(arm).map((a) => a.id), ["mission-new", "mission-build-rbd"]);
+  assert.deepEqual(positionMissionActions(arm).map((a) => a.id), ["mission-new", "mission-build-rbd", "mission-redundancy"]);
   const acts = missionRowActions(d.rows.get(missionKey("r9", "mission")));
   assert.equal(acts.find((a) => a.id === "mission-rbd").label, "Open its RBD");
 });

@@ -1662,7 +1662,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         )}
         {repairable && (
           <Chip tone={planOpen ? "accent" : "neutral"} onClick={() => togglePlan()} aria-pressed={planOpen}
-                title="Every block's planned work and duty in one table, under the diagram" data-wt="rbd-plan-chip">
+                title="Every block's planned work and running share in one table, under the diagram" data-wt="rbd-plan-chip">
             Maintenance plan
           </Chip>
         )}
@@ -1785,7 +1785,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           )}
           {repairable && (
             <button className="ovm-item" role="menuitemcheckbox" aria-checked={planOpen} onClick={() => togglePlan()}
-                    title="Every block's planned work and duty in one table, under the diagram">
+                    title="Every block's planned work and running share in one table, under the diagram">
               Maintenance plan{planOpen ? " ✓" : ""}
             </button>
           )}

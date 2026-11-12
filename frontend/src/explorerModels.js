@@ -390,6 +390,9 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
            { id: "model-attach-rbd-rebuild", label: "Rebuild from what's inside…", ...off }]
         : [{ id: "model-attach-rbd-build", label: "Build from what's inside…", ...off,
              ...(hasInside || viewOnly ? {} : { disabled: true, reason: "Nothing inside to build from: start a new blank RBD" }) }]),
+      // Which positions inside back each other up (Derryn, 12 Nov 2026): what Build wires as redundancy.
+      { id: "model-attach-redundancy", label: "Redundancy inside…", ...off,
+        ...(hasInside || viewOnly ? {} : { disabled: true, reason: "Nothing inside: redundancy is between the positions inside one" }) },
       { id: "model-attach-rbd-new", label: "New blank RBD…", ...off },
       { id: "model-attach-rbd-link", label: "Link an existing RBD…", ...off },
     ] },
