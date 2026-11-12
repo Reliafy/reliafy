@@ -361,6 +361,12 @@ function modelOf(ref) {
   return { model_id: ref.modelId, name: ref.name, distribution_id: ref.distribution_id, params: ref.params, extras: ref.extras || null, unit: ref.unit || "" };
 }
 
+// "an hour", "a day": a cost rate per one of the unit.
+const perOne = (unit) => {
+  const one = String(unit || "").replace(/s$/, "") || "unit";
+  return `${/^(hour|h$)/i.test(one) ? "an" : "a"} ${one}`;
+};
+
 // The interval "Use" writes: the calculator's rounded one, or (fixed) the optimal age rounded down in the model's unit.
 const sameUse = (a, b) => !!a && !!b && Number(a.value) === Number(b.value) && a.unit === b.unit;
 
@@ -450,7 +456,7 @@ function Result({ k, out, task, use }) {
       {out.beneficial && (
         <dl className="ivc-facts">
           <dt>Best age</dt><dd>{withUnit(out.optimal_time, unit)} (rounded down to {withUnit(use.value, use.unit)})</dd>
-          <dt>Cost rate</dt><dd>{money(out.optimal_cost_rate)} a {unit.replace(/s$/, "") || "unit"}, against {money(out.run_to_failure_cost_rate)} running to failure</dd>
+          <dt>Cost rate</dt><dd>{money(out.optimal_cost_rate)} {perOne(unit)}, against {money(out.run_to_failure_cost_rate)} running to failure</dd>
           {yours && <><dt>Yours now</dt><dd>{yours}</dd></>}
         </dl>
       )}

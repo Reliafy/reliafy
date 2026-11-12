@@ -24,6 +24,11 @@ test("units and numbers read as people write them", () => {
   assert.equal(pct(0.00833), "0.83%");
   assert.equal(pct(0.25), "25%");
   assert.equal(roundDown(493.4), 493);
+  // What the button says is what's saved: 14,885 shows as 14,900, so it's taken down to 14,800.
+  assert.equal(roundDown(14885.2), 14800);
+  assert.equal(withUnit(roundDown(14885.2), "hours"), "14,800 hours");
+  assert.equal(roundDown(1234.9), 1230);
+  assert.equal(roundDown(250000), 250000);
   assert.equal(roundDown(2.39), 2.3);
   assert.equal(roundDown(0), null);
 });

@@ -459,3 +459,22 @@ def test_expanded_into_a_repairable_diagram_the_tasks_inside_reach_the_plan(api)
     uses = api.get(f"{M}/rbd-plan-uses", params={"task_ids": task["id"]}).json()["uses"]
     assert [(u["rbd"]["id"], u["block"]["label"]) for u in uses] == [(rbd["id"], "Pump A")]
     assert api.post("/api/rbds/validate", json={"graph": flat}).json()["valid"] is True
+
+
+def test_an_rcm_task_named_as_one_on_the_position_is_that_task_with_its_cost(m):
+    """Decided with the name of a task already on the position, the decision takes that task (its
+    cost, LSA and package with it) rather than adding a second one with no cost."""
+    pump = m.create_position("Pump A")["id"]
+    overhaul = m.create_task(pump, "Overhaul pump", 10000, "hours")
+    m.set_task_cost(overhaul["id"], 6500)
+    fn = m.add_function(pump, "Deliver 120 L/s")["id"]
+    ff = m.add_functional_failure(fn, "Delivers less")["id"]
+    mode = m.add_failure_mode(pump, "Impeller wears", functional_failure_id=ff)["id"]
+    m.decide_failure_mode(mode, "operational", {"outcome": "fixed_interval", "task": "overhaul  Pump",
+                                                "interval": 14800, "interval_unit": "hours"})
+    tasks = m._tasks_on(pump)
+    assert [t["id"] for t in tasks] == [overhaul["id"]]
+    view = m._task_view(tasks[0])
+    assert view["cost"]["amount"] == 6500 and view["interval"] == 14800
+    assert tp.task_kind(m, tasks[0]) == "fixed_interval"
+    _same_after_rebuild(m)

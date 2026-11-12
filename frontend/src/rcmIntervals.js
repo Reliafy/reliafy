@@ -66,10 +66,15 @@ export function withUnit(value, unit) {
   return `${num(value)} ${one ? u.slice(0, -1) : u}`.trim();
 }
 
-// An interval in a model's own unit, rounded down for the task: whole from 10, else to 0.1.
+// An interval in a model's own unit, rounded down for the task to three significant figures (as
+// withUnit shows it, so "Use 14,800 hours" saves 14,800, not 14,885): whole from 10, else to 0.1.
 export function roundDown(value) {
   const v = Number(value);
   if (!Number.isFinite(v) || v <= 0) return null;
+  if (v >= 1000) {
+    const step = 10 ** (Math.floor(Math.log10(v + 1e-9)) - 2);
+    return Math.floor(v / step + 1e-9) * step;
+  }
   if (v >= 10) return Math.floor(v + 1e-9);
   return Math.max(0.1, Math.floor(v * 10 + 1e-9) / 10);
 }
