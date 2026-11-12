@@ -26,13 +26,13 @@ network and are refused in plain words, as is a repairable diagram.
 
 from __future__ import annotations
 
-import warnings
 from typing import Any, Callable, Optional
 
 import numpy as np
 
 from backend.services.rbd_analysis import AnalysisError
 from backend.errors import client_message
+from backend.warn_capture import ignore_warnings
 
 #: Simulated networks when the exact decision diagram is too large, and the
 #: seed (the same figures every time for the same diagram).
@@ -286,8 +286,7 @@ def analyze_network(
             return np.asarray(network.sf(x), dtype=float)
         return np.asarray(network.sf(x, method="simulate", mc_samples=SIM_NETWORKS, seed=SIM_SEED), dtype=float)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with ignore_warnings():
         grid = ra._time_grid(models, t_max)
         try:
             if not (t_max is not None and np.isfinite(t_max) and t_max > 0) and models:

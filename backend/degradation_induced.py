@@ -51,6 +51,24 @@ def _points(values, name: str, lo: float, hi: float) -> list[float]:
     return out
 
 
+def _axis_end(live, dist, hi: float) -> float:
+    """Where the chart's time axis ends: a little past the later of the
+    induced life's 95th percentile and the crossing-time fit's 99th, and
+    never past the induced 99th (``hi``). A path model whose drawn rates come
+    near zero has a 99th percentile a hundred times the typical life (brake
+    pads: 6,000,000 km against a 50,000 km median), which squashed both
+    curves against the axis's left edge."""
+    ends = [_f(np.asarray(dist.qf(np.array([0.95])), dtype=float).ravel()[0])]
+    try:
+        ends.append(_f(np.asarray(live.life_model.qf(np.array([0.99])), dtype=float).ravel()[0]))
+    except Exception:  # noqa: BLE001 - the induced percentile alone will do
+        pass
+    ends = [e for e in ends if e and e > 0]
+    if not ends:
+        return hi * 1.05
+    return min(hi * 1.05, max(ends) * 1.2)
+
+
 def induced_life(live, times=None, reliability=None) -> dict:
     """The induced life distribution of a fitted degradation model ``live``:
     ``{"available", "n_samples", "mean", "median", "b10", "prob_never_fails",
@@ -91,8 +109,14 @@ def induced_life(live, times=None, reliability=None) -> dict:
     except Exception:  # noqa: BLE001 - the comparison is a convenience
         pass
     if hi:
-        grid = np.linspace(0.0, hi * 1.05, GRID_POINTS)
+        end = _axis_end(live, dist, hi)
+        grid = np.linspace(0.0, end, GRID_POINTS)
         curve = {"x": grid.tolist(), "sf": _col(dist.sf(grid))}
+        # The share of drawn paths that cross after the axis ends (those that
+        # never cross included), for the chart's note.
+        beyond = _f(np.asarray(dist.sf(np.array([end])), dtype=float)[0])
+        if beyond is not None and beyond > 0.001:
+            curve["beyond"] = beyond
         try:
             curve["life_sf"] = _col(live.sf(grid))
         except Exception:  # noqa: BLE001 - the comparison is a convenience

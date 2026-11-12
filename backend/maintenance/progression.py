@@ -34,12 +34,12 @@ counted in days from the last reading used.
 from __future__ import annotations
 
 import io
-import warnings
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
 from backend.maintenance.series import parse_time
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 MIN_READINGS = 6  # fewer and no crossing time is given
 ROUGH_BELOW = 12  # fewer than this and the answer carries a caution
@@ -171,8 +171,7 @@ def _fit(process: str, days, level, threshold: float):
     from surpyval.degradation import GammaProcess, WienerProcess
 
     fitter = WienerProcess if process == "wiener" else GammaProcess
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         try:
             model = fitter.fit(days, level, np.zeros(len(days)), threshold=threshold)
         except ValueError as err:
@@ -276,8 +275,7 @@ def time_to_limit(m, point_id, process="wiener", limit=None, since=None, confide
     ff = np.asarray(model.ff(grid, y0=current), dtype=float)
     bounds = None
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             bounds = np.asarray(model.cb(grid, on="ff", alpha_ci=0.1, y0=current), dtype=float)
     except Exception:  # noqa: BLE001 - the bounds are an extra; the answer stands without them
         out["warnings"].append("The uncertainty in the rate could not be worked out, so only the spread of the "

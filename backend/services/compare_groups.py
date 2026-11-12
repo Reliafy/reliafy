@@ -18,7 +18,6 @@ Nothing here is fitted: every figure is a non-parametric estimate or a test.
 
 from __future__ import annotations
 
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -29,6 +28,7 @@ from backend.services.strategy import fmt_num
 from backend.units import unit_in_text
 from surpyval import KaplanMeier, gray_test, logrank, rmst_diff
 from backend.errors import client_message
+from backend.warn_capture import ignore_warnings
 
 ALPHA = 0.05  # the tests' significance level (a test, not a bound)
 CI_ALPHA = 0.10  # the average lives' and their differences' intervals: 90% two-sided (backend.levels)
@@ -337,8 +337,7 @@ def compare_groups(
 
     # The k-sample log-rank test and its weighted variants.
     tests = []
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with ignore_warnings():
         for wid, label in _WEIGHTINGS:
             r = logrank(x, lab, c=c, n=n, weighting=wid)
             tests.append({"id": wid, "label": label, "statistic": float(r.statistic), "dof": int(r.dof),

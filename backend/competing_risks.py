@@ -32,7 +32,6 @@ words them; it computes nothing itself.
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -42,6 +41,7 @@ from surpyval import CompetingRisks, CompetingRisksProportionalHazards, CoxPH, F
 from backend.services.compare_groups import FailureModeError, _label, _named, _p_text, statuses_from_modes
 from backend.services.strategy import fmt_num
 from backend.units import unit_in_text
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 # The mapping keys this model reads beyond x / c / n.
 CAUSE_KEY = "e"
@@ -211,8 +211,7 @@ def _cif_bounds(model, cause, t) -> Optional[np.ndarray]:
     cb = getattr(model, "cb", None)
     if not callable(cb):
         return None
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         return np.asarray(cb(t, cause, on="cif", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
 
 
@@ -221,8 +220,7 @@ def _all_cause_bounds(prep: dict, grid: np.ndarray, everything: np.ndarray) -> n
     Kaplan-Meier ``cb`` on the same data (the all-cause curve *is* the
     Kaplan-Meier one). Before the first failure the curve is 0 for certain,
     so the bound there is 0."""
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         km = KaplanMeier.fit(prep["x"], c=prep["c"], n=prep["n"])
         cb = np.asarray(km.cb(grid, on="ff", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
     certain = (everything == 0) & ~np.isfinite(cb).all(axis=1)
@@ -330,8 +328,7 @@ def _gray(prep: dict, horizon: float, group_column: str, us: str) -> dict:
             by_group.append({"group": g, "cif": v})
         row = {"cause": cause, "by_group": by_group}
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
+            with ignore_warnings(RuntimeWarning):
                 r = gray_test(x, e, group, event=cause, c=c, n=n)
             p = _num(r.p_value)
             row.update({"statistic": _num(r.statistic), "df": int(r.df), "p_value": p,
@@ -410,8 +407,7 @@ def _regression(kind: str, prep: dict, df: pd.DataFrame, covariates: list) -> di
             raise CompetingRisksError(
                 f"“{col}” holds text; a regression by failure mode takes numeric covariates only.")
         frame[col] = values.to_numpy(dtype=float)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         try:
             model = CompetingRisksProportionalHazards.fit_from_df(
                 frame, x_col="x", e_col="e", Z_cols=list(covariates), c_col="c", n_col="n", model=kind)
@@ -478,8 +474,7 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional
     cifs = {k: _incidence(model, k, grid) for k in causes}
     bounds = {k: _cif_bounds(model, k, grid) for k in causes}
     mode_bounds = all(b is not None for b in bounds.values())
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         everything = np.asarray(model.ff(grid), dtype=float).ravel()
     all_cb = _all_cause_bounds(prep, grid, everything)
 

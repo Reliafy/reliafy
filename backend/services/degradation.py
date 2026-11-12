@@ -150,6 +150,26 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]):
     return live
 
 
+def current_results(db, doc: DegradationModelDoc, owner_id) -> dict:
+    """The saved results with the reliability curve worked out afresh from
+    the fitted model, so the header and the B-lives read today's rule (the
+    90% one-sided life bound) and today's band, not the ones stored when the
+    model was saved (a model saved before 12 Nov 2026 said "≥ 25,600 at 95%").
+    The stored results when the model can't be had."""
+    results = doc.results or {}
+    life = results.get("life_model")
+    if not isinstance(life, dict) or not life.get("curves"):
+        return results
+    try:
+        live = get_live_model(db, doc.id, owner_id)
+        curves = degradation_fit.reliability_curves(live) if live is not None else None
+    except Exception:  # noqa: BLE001 - the stored curve still reads
+        curves = None
+    if not curves:
+        return results
+    return {**results, "life_model": {**life, "curves": degradation_fit._json_safe(curves)}}
+
+
 def _refit(db, doc: DegradationModelDoc):
     dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
     if dataset is None:

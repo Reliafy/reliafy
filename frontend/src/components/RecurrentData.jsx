@@ -20,7 +20,7 @@ export function howWords(r) {
   }
   if (fam === "nhpp") out.push("Minimal repair: each repair puts a system back as it was just before the failure (as bad as old).");
   if (fam === "regression") {
-    out.push(`Covariates scale one ${r.baseline?.name || "Crow-AMSAA"} failure rate up or down for each system. Rates "now" are for the fleet's average system.`);
+    out.push(`Covariates scale one ${r.baseline?.name || "Crow-AMSAA"} failure rate up or down for each system. Rates "now" are for each level of the first category, and for a system at the fleet's average covariates (no real system).`);
   }
   if (fam === "renewal") {
     out.push(`Imperfect repair${r.lifetime ? ` with a ${r.lifetime} time between failures` : ""}: each repair restores a system somewhere between as good as new and as bad as old.`);

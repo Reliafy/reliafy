@@ -110,10 +110,15 @@ export const ratioCiText = (ci) =>
 export const effectTone = (effect) => (effect === "lower" ? "success" : effect === "higher" ? "warning" : "neutral");
 
 // The repair-test verdict as a short title.
+// The verdict follows the restoration interval (an end is named only when the
+// interval includes it): "maybe_minimal" is an estimate well inside with the
+// interval reaching as bad as old.
 const REPAIR = {
   partial: "Partial repair",
   perfect: "As good as new",
   minimal: "As bad as old",
+  maybe_minimal: "Partial repair, can't rule out as bad as old",
+  maybe_perfect: "Partial repair, can't rule out as good as new",
   maximal: "Strongest repair ARI allows",
   unclear: "Repair quality unclear",
   renewal: "As good as new",
@@ -159,11 +164,14 @@ export const fittedToData = (r) => !r?.from_params && !!r?.mcf?.observed?.x?.len
 // The Plan ahead views that apply: each system's next failure (imperfect
 // repair), and on a saved model (``modelId``) the growth projection (data
 // models) and the overhaul interval (minimal repair). [{ value, label }].
+// A deteriorating fleet's question is when to overhaul, so that comes first;
+// a growth test's is the projection.
 export function planViews(r, { modelId = null, paramsOnly = false } = {}) {
+  const projection = modelId && !paramsOnly && !r?.from_params && "projection";
+  const overhaul = modelId && familyOf(r) === "nhpp" && "overhaul";
   const ids = [
     familyOf(r) === "renewal" && (r?.next_failure?.units || []).length > 0 && "next",
-    modelId && !paramsOnly && !r?.from_params && "projection",
-    modelId && familyOf(r) === "nhpp" && "overhaul",
+    ...(r?.growth === "deteriorating" ? [overhaul, projection] : [projection, overhaul]),
   ].filter(Boolean);
   return ids.map((value) => ({ value, label: PLAN_LABELS[value] }));
 }
@@ -213,7 +221,12 @@ export function mtbfWords(r) {
   const bound = dm?.lower != null
     ? ` (≥ ${sig3(dm.lower)} at ${Math.round((dm.confidence || 0.9) * 100)}%)`
     : ciText(r.mtbf_ci) ? ` (${ciPct(r)} ${ciText(r.mtbf_ci)})` : "";
-  const who = r.rates_at ? ", average system" : "";
+  // A covariate model: each level's MTBF, not a made-up average system.
+  const groups = (r.rates_by_group || []).filter((g) => g.mtbf != null);
+  if (groups.length) {
+    return `MTBF now ${groups.map((g) => `${g.label} ${withUnitR(g.mtbf, r)}`).join(", ")}`;
+  }
+  const who = r.rates_at ? ", at the fleet's average covariates" : "";
   return `MTBF ${r.from_params ? "at the horizon" : "now"} ${withUnitR(r.mtbf, r)}${bound}${who}`;
 }
 
@@ -243,7 +256,9 @@ export function recurrentAnswer(r, { saved = null } = {}) {
     add(r.repair_test ? repairTitle(r.repair_test.verdict) : r.model?.name);
     const rest = r.restoration;
     if (rest?.effectiveness != null) {
-      add(`repairs remove ${pct(rest.effectiveness)} of the age${rest.effectiveness_ci ? ` (${ciPct(r)} ${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])})` : ""}`);
+      const verb = r.model?.id === "ari" ? "remove" : "restore";
+      const what = r.model?.id === "ari" ? "of the rise in failure rate" : r.model?.id === "grp_ii" ? "of the age" : "of the age gained";
+      add(`repairs ${verb} ${pct(Math.max(rest.effectiveness, 0))} ${what}${rest.effectiveness_ci ? ` (${ciPct(r)} range ${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])})` : ""}`);
     } else if (rest?.ratio != null) {
       add(`gap ratio ${ratioText(rest.ratio)}${rest.ratio_ci ? ` (${ciPct(r)} ${ciText(rest.ratio_ci)})` : ""}`);
     }

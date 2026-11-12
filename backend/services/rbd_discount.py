@@ -27,7 +27,6 @@ either: its present values are left out, with the reason
 from __future__ import annotations
 
 import time
-import warnings
 from typing import Any, Optional
 
 import numpy as np
@@ -35,6 +34,7 @@ import numpy as np
 from backend.services import rbd_analysis as ra
 from backend.services import rbd_maintenance as rm
 from backend.services.rbd_analysis import AnalysisError
+from backend.warn_capture import ignore_warnings
 
 #: Ownership horizons compared by default, in years (a calendar time unit).
 DEFAULT_YEARS = (5, 10, 20)
@@ -112,8 +112,7 @@ def _quiet(fn, *args, **kwargs):
     """``fn(...)`` with RePyability's warning that a rate discounts the costs
     away silenced: a rate is at most 100% a year in a calendar unit, and the
     figures say what they are."""
-    with warnings.catch_warnings(), np.errstate(all="ignore"):
-        warnings.simplefilter("ignore")
+    with ignore_warnings(), np.errstate(all="ignore"):
         return fn(*args, **kwargs)
 
 

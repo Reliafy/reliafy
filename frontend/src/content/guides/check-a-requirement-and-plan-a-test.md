@@ -135,8 +135,10 @@ own numbers. Every plan is free.
 - **[Sequential test](/strategy/test-planning/sequential)**: the same question, but you check after every failure and
   stop as soon as the answer is clear. Use it when test time is dear. The
   example (show an MTBF of 1,000 hours, where a good design has 2,000) decides a
-  good design after about 10,800 hours of testing on average, against 20,100
-  for a fixed-length test with the same risks. The accept and reject lines tell
+  good design after about 12,800 hours of testing on average, against 20,100
+  for a fixed-length test with the same risks. The headline says the confidence
+  the test gives as run: the lines are drawn so that stopping at the longest
+  test still keeps the confidence you asked for. The accept and reject lines tell
   you, failure by failure, whether to stop.
 - **[Life test](/strategy/test-planning/life)**: how precisely a test will *estimate* a B-life or the mean life,
   rather than pass or fail it. Use it to size a test before you fit a model to
@@ -157,7 +159,9 @@ own numbers. Every plan is free.
 The precision a life or accelerated plan quotes is an approximation that holds
 for large tests. **Simulate this test** (Pro) checks it: Reliafy runs your exact
 test hundreds of times, fits each result, and shows how far the estimates
-spread.
+spread. It also counts the simulated tests that ended with too few failures to
+fit at all: when more than one in ten do, it calls the plan weak, however
+tight the others look.
 
 Old links to the demonstration test page still work: they open the
 **Demonstration** tab.

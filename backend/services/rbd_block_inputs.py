@@ -23,13 +23,13 @@ significant figures, past the solver's last reliable digits.
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Optional
 
 import numpy as np
 from scipy.optimize import brentq
 
 from backend.fitting import DISTRIBUTIONS
+from backend.warn_capture import ignore_warnings
 
 #: The distributions a mean can be entered for: the parameter solved for,
 #: the ones the user gives with the mean (in SurPyval's names), and whether
@@ -79,8 +79,7 @@ def _entry(distribution_id: str) -> dict:
 
 def _build(distribution_id: str, values: list):
     dist = _entry(distribution_id)["dist"]
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with np.errstate(all="ignore"), ignore_warnings():
         return dist.from_params([float(v) for v in values])
 
 
@@ -104,8 +103,7 @@ def summary(distribution_id: str, params: list) -> dict:
         raise BlockInputError(f"Missing parameter: {', '.join(missing)}.")
     try:
         model = _build(distribution_id, [by_name[n] for n in names])
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             mean = _finite(model.mean())
             median = _finite(model.qf(0.5))
     except BlockInputError:
@@ -154,8 +152,7 @@ def from_mean(distribution_id: str, mean: float, given: Optional[dict] = None) -
         values = {**fixed, solve: math.exp(x) if form["positive"] else x}
         try:
             model = _build(distribution_id, [values[n] for n in names])
-            with np.errstate(all="ignore"), warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with np.errstate(all="ignore"), ignore_warnings():
                 return _finite(model.mean())
         except Exception:  # noqa: BLE001 - outside the parameter's range
             return None

@@ -1514,6 +1514,7 @@ def get_model(
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
         doc = recurrent_service.ensure_diagnostics(db, doc)  # #81: bounds and tests for older saves
+        doc = recurrent_service.current_results(db, doc)  # 90% intervals and today's verdicts, on read
         r = doc.results or {}
         out = {**_recurrent_brief(doc), "params": r.get("params"), **_recurrent_evidence(r)}
         if r.get("projection"):
@@ -2609,6 +2610,12 @@ def _alt_stress_units(results: dict) -> dict:
         out["stress_units"] = units
     if results.get("unit_warnings"):
         out["unit_warnings"] = results["unit_warnings"]
+    entered = [s.get("entered_unit") or "" for s in results.get("stresses") or []]
+    if any(entered):
+        # A temperature given in °C or °F, fitted (and to be given back) in kelvin.
+        out["entered_units"] = entered
+    if results.get("fit_warnings"):
+        out["fit_warnings"] = results["fit_warnings"]
     return out
 
 
@@ -2644,13 +2651,14 @@ def fit_alt_model(
     trunc_right_column: _FitTruncRightCol = None,
     unit: _FitUnit = None,
     stress_units: Annotated[Optional[list[str]], Field(
-        max_length=2, description="Optional: the unit of each stress, in order — e.g. ['K'] or ['K', 'V'] "
-                                  "(blank for none). Shown with the stresses and use levels; a thermal model "
-                                  "given °C or °F is warned about (it needs kelvin).")] = None,
+        max_length=2, description="The unit of each stress, in order — e.g. ['°C'] or ['K', 'V'] (blank for "
+                                  "none). A thermal model's temperature (arrhenius, eyring and the dual "
+                                  "models' first stress) in °C or °F is converted to kelvin and fitted in K; "
+                                  "with no unit, temperatures below 200 are refused as probably °C.")] = None,
 ) -> dict[str, Any]:
     """Fit and save an accelerated life test model: failure times at several stress levels and
     a life-stress relationship, inline (data + stresses) or from a dataset (time_column + stress_columns), with the
-    usual censoring flags (inspection data: flag 2 with data_right) and delayed entry. Thermal models need kelvin.
+    usual censoring flags (inspection data: flag 2 with data_right) and delayed entry. Thermal models fit in kelvin.
     Reports the coefficients with 90% CIs, the life at each tested level and which bound methods
     analyse alt_use_level offers for it."""
     user, db = _caller(ctx), _db()
@@ -2783,8 +2791,8 @@ def alt_use_level(
     model_id: Annotated[str, Field(description="A saved ALT model id (change model_fit_alt, or the app's Accelerated "
                                                "life page).")],
     use_stress: Annotated[list[float], Field(min_length=1, max_length=2, description=(
-        "The use (field) stress level(s), in the same units and order as the fit — e.g. [313.15] for 40 °C "
-        "with an Arrhenius model fitted in kelvin."))],
+        "The use (field) stress level(s), in the model's units and order — a thermal model's temperature "
+        "in kelvin, even when it was given in °C: e.g. [313.15] for 40 °C."))],
     ref_stress: Annotated[Optional[list[float]], Field(max_length=2, description=(
         "Optional test stress to report the acceleration factor against (life at use / life at this "
         "stress)."))] = None,
@@ -6474,7 +6482,8 @@ def plan_demonstration_test(
         "Optional: a B-life requirement instead of `reliability` — the percent failed, e.g. 10 for "
         "'B10 >= mission_time' (= reliability 0.9 over mission_time, which is then required)."))] = None,
     shape_model_id: Annotated[Optional[str], Field(description=(
-        "Optional: a saved Weibull model (list kind models) to take the shape β from, instead of `shape`. The "
+        "Optional: a saved Weibull model (list kind models, or an accelerated life one) to take the shape β from, "
+        "instead of `shape`. The "
         "plan then reports shape_sensitivity across β's 90% interval, with a warning when β is too poorly "
         "known for the plan."))] = None,
     shape_bound: Annotated[Literal["estimate", "lower"], Field(description=(
@@ -6638,7 +6647,7 @@ def plan_comparison(
     rate_ratio: Annotated[Optional[float], Field(gt=0, description="The change to detect: rate after over "
                                                                    "before, e.g. 0.5.")] = None,
     power: _PCT = 0.8,
-    confidence: _DEMO_ARG["confidence"] = 0.95,
+    confidence: _DEMO_ARG["confidence"] = 0.90,
     one_sided: Optional[bool] = False,
     unit: _UNIT = None,
 ) -> dict[str, Any]:
@@ -6659,7 +6668,11 @@ def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
     (its name) and its ``unit``."""
     m = models_service.get_model(db, model_id, _owners(uid))
     if m is None:
-        raise ToolError("Model not found.")
+        # An accelerated life fit's Weibull shape is the same at every stress, use included.
+        alt_doc = alt_service.get_model(db, model_id, _owners(uid))
+        if alt_doc is None:
+            raise ToolError("Model not found.")
+        return _demo_shape_from_alt(alt_doc, bound)
     r = m.results or {}
     if m.kind != "distribution" or (r.get("distribution_id") or m.distribution_id) != "weibull":
         raise ToolError(f"“{m.name}” isn't a Weibull non-repairable model, so it has no shape β to plan with.")
@@ -6673,6 +6686,25 @@ def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
     est, lo, hi = found
     return {"shape": lo if bound == "lower" else est, "shape_interval": [lo, hi], "shape_model": m.name,
             "unit": r.get("unit") or ""}
+
+
+def _demo_shape_from_alt(doc, bound: str) -> dict:
+    """An accelerated life model's Weibull β (and its 90% interval) for a
+    demonstration plan, as :func:`_demo_shape_from_model` gives a life model's."""
+    r = alt_fit.at_level(doc.results or {})
+    if r.get("distribution_id") != "weibull":
+        raise ToolError(f"“{doc.name}” isn't a Weibull accelerated life model, so it has no shape β to plan with.")
+    beta = next((p for p in r.get("params") or [] if p.get("name") == "beta"), None)
+    if beta is None or beta.get("value") is None:
+        raise ToolError(f"“{doc.name}” has no shape β.")
+    ci = beta.get("ci")
+    if not (isinstance(ci, (list, tuple)) and len(ci) == 2 and all(v is not None for v in ci)):
+        if bound == "lower":
+            raise ToolError(f"“{doc.name}” has no interval on β, so it has no lower bound: use shape_bound='estimate'.")
+        return {"shape": float(beta["value"]), "shape_model": doc.name, "unit": r.get("unit") or ""}
+    lo, hi = float(ci[0]), float(ci[1])
+    return {"shape": lo if bound == "lower" else float(beta["value"]), "shape_interval": [lo, hi],
+            "shape_model": doc.name, "unit": r.get("unit") or ""}
 
 
 def optimal_overhaul(
@@ -7188,6 +7220,9 @@ def fleet_forecast(
         raise ToolError("Fleet not found.")
     try:
         opts = fleet_service._clean_spares({**((fleet.settings or {}).get("spares") or {}), **(spares or {})})
+        if strategy and fleet.model_kind != "life":
+            raise ToolError("A maintenance strategy is for a fleet of replaceable items on a plain life model; this "
+                            "fleet's items are repaired, or each runs at its own conditions (first failures).")
         if strategy:
             fleet = fleet.model_copy(update={"settings": fleet_service._clean_settings(
                 {**(fleet.settings or {}), **strategy})})

@@ -36,7 +36,6 @@ import json
 import math
 import re
 import threading
-import warnings
 from collections import OrderedDict
 from datetime import date, timedelta
 from typing import Any, Optional
@@ -46,6 +45,7 @@ import numpy as np
 from backend.services.strategy import StrategyError, _model_from_params, fmt_num
 from backend.units import canonical_unit, normalize_unit, unit_in_text
 from backend.fitting import surpyval_extras
+from backend.warn_capture import collect_warnings, ignore_warnings
 from repyability import Calendar, NonRepairable, Opportunity
 
 #: Model units a date converts to, per day.
@@ -279,8 +279,7 @@ def _max_age(extras: Optional[dict], max_age: Optional[float]) -> Optional[float
 
 
 def _solve(part: NonRepairable, cal: Calendar, *, method: str, max_age, mc_samples: int, seed: int):
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         try:
             policy = part.optimal_calendar_policy(cal, max_age=max_age, method=method,
                                                   mc_samples=mc_samples, seed=seed)
@@ -457,8 +456,7 @@ def _comparisons(inp: _Inputs, policy) -> list[dict]:
 
 def _rule_cost(part, cal, rule: dict, max_age) -> Optional[float]:
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             return _finite(part.calendar_policy_cost(cal, rule, max_age=max_age))
     except (ValueError, TypeError, NotImplementedError):
         return None
@@ -761,8 +759,7 @@ def calendar_next(distribution_id: str, params: list, *, age, now_cost=None, **k
         planned = min(planned, inp.failure_cost * (1 - 1e-9))
     part = NonRepairable(inp.model, planned_cost=planned, unplanned_cost=inp.failure_cost)
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             found = part.optimal_next_replacement(a, now_cost=now, scheduled_outages=outages, policy=policy)
     except (ValueError, TypeError, NotImplementedError) as exc:
         raise StrategyError(str(exc)) from None

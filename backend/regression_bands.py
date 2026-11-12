@@ -18,11 +18,11 @@ words rather than showing nothing.
 
 from __future__ import annotations
 
-import warnings
 from typing import Optional
 
 import numpy as np
 import pandas as pd
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 SEMI_PARAMETRIC_NOTE = (
     "No confidence band: Cox PH is semi-parametric, so its baseline is a step curve with no parameters "
@@ -156,8 +156,7 @@ def band(model, fields: list, values: Optional[dict], grid: np.ndarray, on: str,
         raise ValueError(band_note(model))
     Z = covariate_row(fields, values)
     grid = np.asarray(grid, dtype=float)
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with np.errstate(all="ignore"), ignore_warnings():
         sf = np.asarray(model.sf(grid, Z), dtype=float).ravel()
         free = np.isfinite(sf) & (sf > 0) & (sf < 1)
         if free.all() or not free.any():
@@ -205,8 +204,7 @@ class AtCovariates:
                                        alpha_ci=alpha_ci, bound=bound)
 
     def mean(self):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             value = float(np.ravel(np.asarray(mean_at(self._model, self._Z), dtype=float))[0])
         # An additive-hazards row whose reliability never reaches 0 has no
         # finite mean, whatever number the integral stopped at.
