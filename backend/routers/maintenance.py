@@ -1587,6 +1587,48 @@ async def import_sheet(file: UploadFile = File(...), dry_run: bool = Form(False)
     return await run_in_threadpool(_run, importer.run, m, rows, dry_run)
 
 
+@router.get("/hierarchy/export")
+def export_hierarchy(position_id: str | None = None, format: str = "xlsx",
+                     m: Maintenance = Depends(maintenance)) -> Response:
+    """The asset tree (or the branch at position_id) as the Excel workbook (Hierarchy,
+    Locations, Classes, Read me) or a CSV of the Hierarchy sheet (see hierarchy.py)."""
+    from backend.maintenance import hierarchy
+
+    if format not in ("xlsx", "csv"):
+        return JSONResponse(status_code=422, content={"detail": "format is xlsx or csv."})
+    try:
+        data = hierarchy.export(m, position_id or None)
+    except NotFound:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    except Invalid as err:
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
+    body = hierarchy.to_xlsx(data) if format == "xlsx" else hierarchy.to_csv(data)
+    media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if format == "xlsx"
+             else "text/csv; charset=utf-8")
+    name = hierarchy.filename(data, format, m.today())
+    return Response(content=body, media_type=media, headers={
+        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
+@router.post("/hierarchy/import")
+async def import_hierarchy(file: UploadFile = File(...), dry_run: bool = Form(True),
+                           m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The asset tree from the export's workbook or CSV (or a sheet made by hand with
+    its columns): every row checked, then all of it or nothing (see hierarchy.py)."""
+    from backend.maintenance import hierarchy
+
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        return JSONResponse(status_code=413, content={"detail": "The file is over 10 MB."})
+    try:
+        sheets = await run_in_threadpool(hierarchy.read_file, data, file.filename or "")
+    except Invalid as err:
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
+    except Exception:  # noqa: BLE001 - an unreadable file
+        return JSONResponse(status_code=422, content={"detail": "That file couldn't be read as Excel or CSV."})
+    return await run_in_threadpool(_run, hierarchy.run, m, sheets, dry_run)
+
+
 @router.get("/classes")
 def position_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {"classes": m.position_classes()})

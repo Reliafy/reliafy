@@ -22,6 +22,7 @@ import {
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import RedundancyPane from "../components/RedundancyPane.jsx";
+import TreeSheetPane from "../components/TreeSheetPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
 import { PANE_PARAMS, TABLE_PANES, keepPaneFor, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { fitPreset, priorFrom } from "../fitDialog.js";
@@ -289,6 +290,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [fopen, setFopen] = useState(null);
   const [scrollTo, setScrollTo] = useState(null);
   const [modal, setModal] = useState(null);
+  // Excel import and export (TreeSheetPane): {start: "import" | "export", branch: {id, name} | null, n}, in the
+  // panel's place beside the tree (no modal), or null. Not a row's: it stays open while rows are picked.
+  const [sheet, setSheet] = useState(null);
+  const sheetHeading = useRef(null);
   // The Summary tab's row menu: the row a new position or location goes
   // inside, and the row being renamed, moved or retired ({kind, row}).
   const [newParent, setNewParent] = useState(null);
@@ -864,6 +869,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setTimeout(() => paneHeading.current?.focus({ preventScroll: true }), 0);
   };
   const openFit = (position, opts) => openPane("fit", position, opts);
+  // Excel import and export beside the tree, on the Summary tab (the plain tree).
+  const openSheet = (start, branch = null) => {
+    if (tableOn) setTab("summary");
+    setSheet((x) => ({ start, branch, n: (x?.n || 0) + 1 }));
+    setTimeout(() => sheetHeading.current?.focus({ preventScroll: true }), 0);
+  };
   const openPredict = (position, link = null) => openPane("predict", position, { link });
   // Redundancy inside… (Modelling and Missions): which positions inside back each other up.
   const openRedundancy = async (position) => {
@@ -1591,6 +1602,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       } else if (id === "tree-rename" || id === "tree-move" || id === "tree-delete") setRowModal({ kind: id.slice(5), row: r });
       else if (id === "report-new") setReportFor({ id: r.key, name: r.ref.name, select: r.key });
       else if (id === "event-log") setEventFor({ id: r.key, name: r.ref.name });
+      else if (id === "tree-export") openSheet("export", { id: r.key, name: r.ref.name || "(no name)" });
       else if (id === "build-item") buildFrom(r.key);
       else if (id === "make-own") makeOwn(r);
       else if (id === "pin") pinTo(r.key, { select: true });
@@ -1761,6 +1773,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [paneOpen]);
+  // Esc with Excel import and export open: back to the row's details (a dialog or menu over it first).
+  const sheetOpen = !!sheet;
+  useEffect(() => {
+    if (!sheetOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented || hasOpenLayer(document)) return;
+      setSheet(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sheetOpen]);
   // The dialog stays open (Apply saying "Saving…") until the server has it;
   // a refusal shows in the dialog, with everything as it was typed.
   // A cost typed for a new task goes on the task the decision made (where the Maintenance
@@ -2018,14 +2041,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="card empty section-empty">
       <h2>{EMPTY[mode]?.[0] || "No positions yet"}</h2>
       <p>{EMPTY[mode]?.[1]
-        || "Add the first position, or import a worksheet."}</p>
+        || "Add the first position, or bring your hierarchy in from Excel."}</p>
       <div className="section-empty-action">
         {mode === "locations" ? (
           <button type="button" onClick={() => setModal("location")}><PlusIcon /> New location</button>
         ) : (
           <>
             <button type="button" onClick={() => setModal("position")}><PlusIcon /> New position</button>
-            <button type="button" className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
+            <button type="button" className="secondary" onClick={() => openSheet("import")}>Import from Excel</button>
           </>
         )}
       </div>
@@ -2542,7 +2565,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <FitPane key={`${panePosition.id}:${seed?.n || 0}`} {...fitAt} {...paneProps} />
     </div>
   ) : null;
-  const side = rcmOn ? rcmSide : measOn ? measSide : modelsOn ? paneSide || modelSide : missionsOn ? paneSide : phone ? null : summary;
+  // Excel import and export: in the panel's place (Summary tab), its own screen on a phone.
+  const sheetSide = sheet && !tableOn ? (
+    <TreeSheetPane key={sheet.n} start={sheet.start} branch={sheet.branch} phone={phone} headingRef={sheetHeading}
+                   readOnly={viewOnly || null} onClose={() => setSheet(null)}
+                   onChanged={(text) => { say(text, "ok", { fade: true }); load(); }} />
+  ) : null;
+  const side = sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? measSide : modelsOn ? paneSide || modelSide : missionsOn ? paneSide : phone ? null : summary;
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an
@@ -2572,7 +2601,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   })();
 
   return (
-    <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && detailKey && !tableOn ? " show-detail" : "")
+    <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && (detailKey || sheetSide) && !tableOn ? " show-detail" : "")
       + (full ? " is-full" : "") + (tableOn ? " tx-table" : "")}>
       <TreePane
         title={title}
@@ -2613,7 +2642,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         changed={changed}
         onReset={resetView}
         menuActions={[...(data && !root && mode !== "locations" ? [
-          { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
+          { id: "tree-import", label: "Import from Excel…", onSelect: () => openSheet("import") },
+          { id: "tree-export", label: "Export to Excel…", onSelect: () => openSheet("export") },
+          { id: "import", label: "Import a fitment history…", onSelect: () => setModal("import") },
           { id: "sample-product", label: OPEN_SAMPLE_PRODUCT_LABEL, onSelect: openSample },
         ] : []), ]}
         notice={notice}
@@ -2654,7 +2685,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           : missionsOn ? "Missions belong to positions, so the Missions tab shows the positions tree"
           : rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
-      {phone && summary}
+      {phone && (sheetSide || summary)}
       <div className="sr-only" role="status" aria-live="polite">{spoken}</div>
       {drag && (
         <div className={"rcm-ghost" + (drag.verdict ? ` is-${drag.verdict.state}` : "")} aria-hidden="true"

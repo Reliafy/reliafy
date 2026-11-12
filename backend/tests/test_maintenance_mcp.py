@@ -375,6 +375,32 @@ def test_calls_are_keyed_by_action_for_gating_heavy_slots_and_usage(env, monkeyp
     assert ("maintenance_get.position", "ok") in features
 
 
+def test_the_asset_tree_sheet_over_mcp(env):
+    """list.tree reads the tree as the Explorer's export; import_history with sheet 'tree'
+    previews, writes, and a second run changes nothing."""
+    rows = [{"Path": "Plant"}, {"Path": "Plant > Pump A", "Tag": "P-1", "Fitted item": "Pump", "Installed on": "2024"}]
+
+    async def flow(client):
+        dry = _ok(await _do(client, "maintenance", "workspace.import_history", rows=rows, sheet="tree"))
+        done = _ok(await _do(client, "maintenance", "workspace.import_history", rows=rows, sheet="tree",
+                             dry_run=False))
+        sheet = _ok(await _list(client, "tree"))
+        flat = _ok(await _list(client, "tree", format="csv"))
+        again = _ok(await _do(client, "maintenance", "workspace.import_history", rows=sheet["hierarchy"],
+                              sheet="tree", dry_run=False))
+        bad = await _do(client, "maintenance", "workspace.import_history", rows=[{"Path": "Nowhere > X"}],
+                        sheet="tree", dry_run=False)
+        return dry, done, sheet, flat, again, bad
+
+    dry, done, sheet, flat, again, bad = _session(env["token"], flow)
+    assert dry["dry_run"] and dry["positions_created"] == 2 and dry["items_created"] == 1
+    assert done["positions_created"] == 2
+    assert [r["path"] for r in sheet["hierarchy"]] == ["Plant", "Plant > Pump A"] and "data_notice" in sheet
+    assert "Plant > Pump A" in flat["csv"]
+    assert again["positions_unchanged"] == 2 and again["positions_created"] == 0
+    assert bad.is_error and "Nothing imported" in bad.content[0].text
+
+
 @pytest.fixture()
 def free_env(env, monkeypatch, mcp_on):
     """The maintenance user on the Free plan, signed in through OAuth as Claude's connector."""

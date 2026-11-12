@@ -1,7 +1,7 @@
 // The Explorer's row menu on the Summary tab (right-click a row, its ⋯
 // button, or Shift+F10): changing the tree itself. New position (or location)
 // inside, Add failure report… (a position: a report sits at a position),
-// Rename, Move to… and Delete…, beside Focus › and Pin this branch. The RCM
+// Rename, Move to…, Export this branch… (to Excel) and Delete…, beside Focus › and Pin this branch. The RCM
 // tab's rows keep their own menu (explorerRcm.js rowActions).
 //
 // On every other tab a row's menu starts with what that tab keeps under it
@@ -43,6 +43,7 @@ export function viewOnlyReason(team) {
 // branch is added by the page.
 const DELETE = { id: "tree-delete", label: "Delete…", danger: true };
 export const POS_HERE = { id: "pos-here", label: "New position here" };
+export const TREE_EXPORT = { id: "tree-export", label: "Export this branch…" };
 export function summaryActions(r, { mode, viewOnly = null } = {}) {
   if (!r) return [];
   const out = [];
@@ -58,6 +59,9 @@ export function summaryActions(r, { mode, viewOnly = null } = {}) {
       out.push(write({ id: "tree-move", label: "Move to…" },
         viewOnly || (r.ref.carried_by ? "It sits on an item and moves with it: fit the item elsewhere to move it." : null)));
     }
+    // To Excel (TreeSheetPane): reading, so never greyed for a view-only team. Not a position
+    // an item carries (it goes with its item's tree).
+    if (!r.ref.carried_by) out.push(TREE_EXPORT);
     out.push(write(DELETE, viewOnly));
   } else if (r.type === "loc") {
     // A place you look after holds positions (Derryn, 12 Nov 2026: "New asset" makes a place that
