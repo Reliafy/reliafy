@@ -1353,6 +1353,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       // The fit pane with this row's model as the prior: a Bayesian row takes its new failures (its own prior kept).
       openFit(withClass, { ...priorFrom(link), from: link.id });
     }
+    else if (id === "model-params-edit") setModelModal({ kind: "params", position, link });
     else if (id === "model-replace") setModelModal({ kind: "assign", position, link });
     else if (id === "model-unlink") unlinkModel(confirm, link, (text) => { say(text); setPanel(false); setRcmFocus(null); pmodels.load(); });
   };
@@ -2641,7 +2642,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                             onClose={() => setModelModal(null)} />
       )}
       {modelModal?.kind === "params" && (
-        <ParamsModal position={modelModal.position} onClose={() => setModelModal(null)}
+        <ParamsModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
                      onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
       {modelModal?.kind === "rbd-link" && (

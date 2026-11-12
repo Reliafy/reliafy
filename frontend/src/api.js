@@ -444,6 +444,15 @@ export function createModelFromParams(name, distribution, params, { unit, extras
   );
 }
 
+// Change a model saved from parameters in place (same id): a typed-in figure put right.
+export function updateModelParams(id, { distribution, params, unit } = {}) {
+  return request(`/api/models/${encodeURIComponent(id)}/params`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ distribution, params, unit: unit || null }),
+  });
+}
+
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, covariateUnits, formula, unit, fitOptions } = {}) {

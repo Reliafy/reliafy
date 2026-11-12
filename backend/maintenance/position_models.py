@@ -433,6 +433,11 @@ def summary(model_type: str, doc) -> dict:
             return out
         params = {str(p.get("name")): p for p in r.get("params") or []}
         label = DIST_LABELS.get(dist) or r.get("distribution") or dist or "Model"
+        spec = getattr(doc, "spec", None) or {}
+        if assumed and spec.get("params_only") and not spec.get("per_demand") and dist in DIST_LABELS:
+            # Typed in: its numbers, so the row can offer Edit parameters… (no unlink and enter again).
+            out["entered"] = {"distribution": dist, "unit": spec.get("unit") or unit,
+                              "params": {k: _num(v.get("value")) for k, v in params.items()}}
         if kind == "regression":
             # A covariate (e.g. proportional-hazards) model as fitted: its covariates, and the figures at the
             # training data's averages; the stress at a position is set where it's used (an RBD block, a calculation).
