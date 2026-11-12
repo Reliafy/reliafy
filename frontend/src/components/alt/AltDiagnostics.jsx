@@ -238,7 +238,7 @@ export default function AltDiagnostics({ results, modelId, name, use }) {
                  tone={distance?.tone} verdict={distance?.words || pending}
                  footer={plan && (
                    <p className="muted-line">
-                     Testing again? <Link to={altPlanLink(modelId)}>Plan the next test from this fit</Link>.
+                     Testing again? <Link to={altPlanLink(modelId, use)}>Plan the next test from this fit</Link>.
                    </p>
                  )}>
         {diag && <DistanceTable diag={diag} />}

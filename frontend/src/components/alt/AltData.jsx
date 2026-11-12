@@ -109,7 +109,7 @@ export default function AltData({ results, datasetId }) {
               maximum likelihood.
               {r.interval_censored ? " Inspection data: each failure lies between two inspections." : ""}
             </p>
-            {(r.unit_warnings || []).map((w) => <p className="mf-note" key={w}>{w}</p>)}
+            {[...(r.unit_warnings || []), ...(r.fit_warnings || [])].map((w) => <p className="mf-note" key={w}>{w}</p>)}
           </section>
         </>
       }

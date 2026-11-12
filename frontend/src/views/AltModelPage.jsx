@@ -27,6 +27,8 @@ export default function AltModelPage() {
   // Not on this list (404): ModelNotFound looks in the others.
   const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
+  // The use stress entered on the page (the model's units), for "Plan the next test".
+  const [useStress, setUseStress] = useState(null);
 
   useEffect(() => {
     setModel(null);
@@ -67,7 +69,7 @@ export default function AltModelPage() {
       menu={model && (
         <>
           {altPrefill(r) && (
-            <Link className="ovm-item" to={altPlanLink(model.id)}
+            <Link className="ovm-item" to={altPlanLink(model.id, useStress)}
                   title="The stresses, the units at each and the failures to expect, from this fit">
               Plan the next test
             </Link>
@@ -84,7 +86,7 @@ export default function AltModelPage() {
         // A model this page can't draw shows a card here, not the whole-app error page.
         <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
           <AltResultView results={model.results} modelId={model.id} name={model.name} datasetId={model.dataset_id}
-                         tab={tab} onTab={(t) => setTab(t, "life")} />
+                         tab={tab} onTab={(t) => setTab(t, "life")} onUseStress={setUseStress} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="alt" />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}

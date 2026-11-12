@@ -33,6 +33,9 @@ const EXAMPLE = {
   stressUnit: "K",
 };
 
+// A carried use stress as the field shows it: 313.15, not 313.15000000000003.
+const planningUse = (v) => String(Number(Number(v).toPrecision(8)));
+
 const list = (s) => String(s || "").split(/[,\s]+/).filter(Boolean).map(Number);
 
 function AllocationChart({ result }) {
@@ -54,7 +57,8 @@ function AllocationChart({ result }) {
   );
 }
 
-export default function AcceleratedTestPlan({ modelId = null }) {
+// ``useStress``: the use stress entered on the model's page (its units), carried over.
+export default function AcceleratedTestPlan({ modelId = null, useStress: carriedUse = null }) {
   const [mode, setMode] = useState("plan");
   const [distribution, setDistribution] = useState(EXAMPLE.distribution);
   const [lifeModel, setLifeModel] = useState(EXAMPLE.lifeModel);
@@ -92,14 +96,16 @@ export default function AcceleratedTestPlan({ modelId = null }) {
         setParams(p.params);
         setShape(p.shape);
         if (p.highStress) setHighStress(p.highStress);
-        setUseStress("");
+        setUseStress(carriedUse != null && Number.isFinite(Number(carriedUse)) ? planningUse(carriedUse) : "");
+        if (p.stresses) setStresses(p.stresses);
+        if (p.unitsAt) setUnitsAt(p.unitsAt);
         setUnit(p.unit);
         setStressUnit(p.stressUnit);
         setFrom(m.name);
       })
       .catch((e) => live && setFromError(e.message));
     return () => { live = false; };
-  }, [modelId]);
+  }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const names = PLAN_LIFE_MODELS[lifeModel].params;
   const pcts = readPercents("acceleratedTest", { confidence, bLife });

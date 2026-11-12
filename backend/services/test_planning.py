@@ -129,11 +129,9 @@ def sequential_test(
         if hi / lo < 1.25:
             raise StrategyError("The good design's MTBF must be at least 1.25 times the target: closer than "
                                 "that, no practical test tells them apart.")
-        try:
-            test = tp.sequential_mtbf_test(lo, hi, alpha_ci=alpha, producer_risk=beta)
-        except ValueError as exc:
-            raise _library_error(exc) from None
+        test = _keeping_risks(lambda a, b: tp.sequential_mtbf_test(lo, hi, alpha_ci=a, producer_risk=b), alpha, beta)
         out = _sequential_mtbf(tp, test, lo, hi, alpha, beta, unit_s)
+        out["summary"] = _as_run_words(test, alpha, beta) + out["summary"]
         if not _blank(failures_seen) or not _blank(time_seen):
             r = _demo_count(0 if _blank(failures_seen) else failures_seen, "Failures so far", 0, 10_000)
             if _blank(time_seen):
@@ -152,11 +150,10 @@ def sequential_test(
     hi = _demo_prob(good_reliability, "Good design's reliability")
     if hi <= lo:
         raise StrategyError(f"The good design's reliability ({_pct(hi)}) must be above the target ({_pct(lo)}).")
-    try:
-        test = tp.sequential_demonstration_test(lo, hi, alpha_ci=alpha, producer_risk=beta)
-    except ValueError as exc:
-        raise _library_error(exc) from None
+    test = _keeping_risks(
+        lambda a, b: tp.sequential_demonstration_test(lo, hi, alpha_ci=a, producer_risk=b), alpha, beta)
     out = _sequential_attribute(tp, test, lo, hi, alpha, beta)
+    out["summary"] = _as_run_words(test, alpha, beta) + out["summary"]
     if not _blank(failures_seen) or not _blank(units_seen):
         r = _demo_count(0 if _blank(failures_seen) else failures_seen, "Failures so far", 0, 100_000)
         n = _demo_count(0 if _blank(units_seen) else units_seen, "Units tested so far", 0, _MAX_UNITS)
@@ -165,6 +162,48 @@ def sequential_test(
         out["decision"] = _decision(test.decide(n, r), f"{_plural(r, 'failure')} in {_plural(n, 'unit')} tested")
         out["decision"].update({"failures": r, "units": n})
     return out
+
+
+_RISK_TOL = 1e-9
+
+
+def _keeping_risks(build, alpha: float, beta: float):
+    """The sequential test, truncated at the fixed-length test, that keeps
+    the risks asked for. Truncating moves the risks off what Wald's lines
+    were drawn for (a 90% plan for 90% vs 97% ran at 87.7%), so the lines are
+    drawn tighter, a step at a time, until the test as run keeps both: a
+    design at the target passes at most ``alpha`` of the time and a good one
+    fails at most ``beta``. The closest it gets when it can't."""
+    a, b = alpha, beta
+    try:
+        test = build(a, b)
+    except ValueError as exc:
+        raise _library_error(exc) from None
+    for _ in range(60):
+        over_c = float(test.consumer_risk) > alpha + _RISK_TOL
+        over_p = float(test.producer_risk) > beta + _RISK_TOL
+        if not (over_c or over_p):
+            break
+        a = a * 0.95 if over_c else a
+        b = b * 0.95 if over_p else b
+        try:
+            test = build(a, b)
+        except ValueError:
+            break
+    return test
+
+
+def _as_run_words(test, alpha: float, beta: float) -> str:
+    """The headline's first words: the confidence the test shows as run, and
+    the good design's risk, against what was asked."""
+    c, p = float(test.consumer_risk), float(test.producer_risk)
+    shown = f"{1 - c:.1%}"
+    if c > alpha + _RISK_TOL:
+        return (f"As run, this test shows the target with only {shown} confidence, not the {_pct(1 - alpha)} "
+                f"asked: a design at the target passes {c:.1%} of the time. ")
+    risk = (f"a good design fails {p:.1%} of the time ({_pct(beta)} asked)" if p <= beta + _RISK_TOL
+            else f"but a good design fails {p:.1%} of the time, more than the {_pct(beta)} asked")
+    return f"As run, this test shows the target with {shown} confidence ({_pct(1 - alpha)} asked); {risk}. "
 
 
 def _decision(word: str, seen: str) -> dict:
@@ -713,7 +752,7 @@ def comparison(
     units_per_group=None,
     allocation_ratio=1.0,
     power=0.8,
-    confidence=0.95,
+    confidence=0.90,
     one_sided=False,
     failures_before=None,
     exposure_before=None,
@@ -977,20 +1016,52 @@ def simulate_precision(request: dict) -> dict:
     planned = float(plan.precision)
     got = sim.precision
     usable = sim.n_sim - sim.unusable
+    share = sim.unusable / sim.n_sim if sim.n_sim else 0.0
     if got is None or not np.isfinite(got):
+        verdict = "weak"
         text = (f"Too few of the {sim.n_sim:,} simulated tests had enough failures to fit "
                 f"({usable:,} did): the test is too small or too short to estimate anything reliably.")
     else:
-        verdict = ("The plan holds up" if got <= planned * 1.1 else
-                   "The plan is optimistic: the real precision is worse than the approximation says")
-        text = (f"{verdict}. Across {usable:,} simulated tests the estimates spread by a factor of {got:.3g} "
-                f"(the plan says {planned:.3g}), and {sim.within:.0%} landed within the planned factor of the "
-                f"true value (about {out['confidence']:.0%} if the plan holds).")
-        if sim.unusable:
-            text += f" {_plural(sim.unusable, 'simulated test')} had too few failures to fit."
+        spread = (f"Across the {usable:,} simulated tests that could be fitted, the estimates spread by a factor "
+                  f"of {got:.3g} (the plan says {planned:.3g}), and {sim.within:.0%} landed within the planned "
+                  f"factor of the true value (about {out['confidence']:.0%} if the plan holds).")
+        if share > UNUSABLE_LIMIT:
+            # A test that often gives no estimate at all isn't one to run, however
+            # tight the estimates of the lucky ones that did.
+            verdict = "weak"
+            text = (f"The plan is weak: {_share_words(sim.unusable, sim.n_sim)} of the simulated tests had too few "
+                    f"failures to fit, so about {_one_in(share)} real tests of this plan would end with no estimate "
+                    f"at all. Test more units or for longer. {spread}")
+        elif got <= planned * 1.1:
+            verdict = "holds"
+            text = f"The plan holds up. {spread}"
+            if sim.unusable:
+                text += f" {_share_words(sim.unusable, sim.n_sim)} of the simulated tests had too few failures to fit."
+        else:
+            verdict = "optimistic"
+            text = f"The plan is optimistic: the real precision is worse than the approximation says. {spread}"
+            if sim.unusable:
+                text += f" {_share_words(sim.unusable, sim.n_sim)} of the simulated tests had too few failures to fit."
     return {
         "kind": kind,
         "simulated": sim.to_dict(),
         "planned_precision": planned,
+        "unusable_share": share,
+        "verdict": verdict,
         "summary": text,
     }
+
+
+#: The share of simulated tests with too few failures to fit above which a
+#: plan is called weak, whatever the spread of the others.
+UNUSABLE_LIMIT = 0.10
+
+
+def _share_words(k: int, n: int) -> str:
+    """"177 of 500 (35%)"."""
+    return f"{k:,} of {n:,} ({k / n:.0%})" if n else f"{k:,}"
+
+
+def _one_in(share: float) -> str:
+    """"1 in 3" for a share of 0.35."""
+    return f"1 in {max(2, round(1 / share))}" if share > 0 else "none of the"

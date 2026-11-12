@@ -146,8 +146,8 @@ time before**, and the **Drop in failure rate to detect** (a percentage). Then c
 to solve for:
 
 - **Operating time needed**: how long to run after the change. With 40 failures
-  in 100,000 hours before, seeing a 50% drop with 80% power at 95% confidence
-  takes about **159,300 hours** of operation after it.
+  in 100,000 hours before, seeing a 50% drop with 80% power at 90% confidence
+  (the default) takes about **99,800 hours** of operation after it.
 - **Smallest detectable change**: the smallest drop a given running time would
   reliably show.
 - **Chance of detecting**: the power of a plan you already have.
@@ -157,8 +157,8 @@ Operating time is the fleet's total: ten units for 100 hours is 1,000 hours.
 **Old and new side by side (two groups).** Old and new units running over the
 same period, judged by the log-rank test. Enter the **Drop in failure rate to
 detect** and the **Share of units failing during the study**, both as percentages. To see a
-failure rate 40% lower with 80% power at 95% confidence, you need about **121
-failures**: 121 new and 121 old units if half of them fail during the study.
+failure rate 40% lower with 80% power at 90% confidence, you need about **95
+failures**: 95 new and 95 old units if half of them fail during the study.
 
 ![Planning a side-by-side comparison: failures and units needed, and power against test size](/guides/img/cmp-02-plan.png)
 

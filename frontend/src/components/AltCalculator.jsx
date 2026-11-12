@@ -4,11 +4,10 @@ import Plot from "./Plot.jsx";
 import { bandPair, fitLine } from "../plotTheme.js";
 import { altBounds, cancelRbdJob, evaluateAlt, getRbdJob } from "../api.js";
 import { CANCELLED_TEXT } from "../jobCancel.js";
-import { stressName } from "./stressName.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { PlotCard } from "./model/ModelLayouts.jsx";
-import { parseUse } from "../altFrame.js";
+import { enteredUnit, fromKelvin, inputStressName, kelvinWords, toKelvin, useForModel } from "../altFrame.js";
 import ProTag from "./ProTag.jsx";
 
 const fmt = (v) =>
@@ -45,7 +44,11 @@ export function initAltCalc(results) {
   const stresses = r.stresses || [];
   const perDim = (j) => (r.levels || []).map((l) => l.stress?.[j]).filter((v) => v != null);
   // Reference: the harshest tested level of each stress.
-  const ref = stresses.map((_, j) => { const a = perDim(j); return a.length ? String(Math.max(...a)) : "0"; });
+  // In the user's units (a temperature given in °C reads in °C).
+  const ref = stresses.map((s, j) => {
+    const a = perDim(j);
+    return a.length ? String(fromKelvin(Math.max(...a), enteredUnit(s))) : "0";
+  });
   return {
     ref, refOn: true, mission: "", confidence: 0.9, method: "wald", active: "sf",
     res: null, bounds: null, job: null, inputs: null,
@@ -103,9 +106,9 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
   const run = async () => {
     setBusy(true); setError(null);
     try {
-      const u = parseUse(use);
+      const u = useForModel(results, use);
       if (!u) throw new Error("Enter a number for each use-level stress.");
-      const rf = st.refOn ? st.ref.map(Number) : undefined;
+      const rf = st.refOn ? st.ref.map((v, j) => toKelvin(Number(v), enteredUnit(stresses[j]))) : undefined;
       if (rf && rf.some((v) => !Number.isFinite(v))) throw new Error("Enter a number for each reference stress.");
       const mt = missionTime();
       const out = await evaluateAlt(modelId, u, rf, { missionTime: mt, confidence: st.confidence });
@@ -208,7 +211,8 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
   const u = unit ? ` ${unitInText(unit)}` : "";
   const lower = (b) => (b && b.lower != null ? <small className="alt-lower">≥ {fmt(b.lower)} at {levelText}</small> : null);
   // The answer on screen is for another use stress than the one entered now.
-  const stale = res && JSON.stringify(parseUse(use)) !== JSON.stringify(res.use_stress);
+  const stale = res && JSON.stringify(useForModel(results, use)) !== JSON.stringify(res.use_stress);
+  const inKelvin = kelvinWords(results, use);
 
   return (
     <div className="alt-calc mf-alt-calc">
@@ -289,18 +293,19 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
         <div className="alt-calc-inputs">
           {stresses.map((s, j) => (
             <label key={s.key} className="alt-use-field">
-              <span>Use {stressName(s)}</span>
+              <span>Use {inputStressName(s)}</span>
               <input type="number" value={use[j] ?? ""} inputMode="decimal" step="any"
                      onChange={(e) => onUse(use.map((v, k) => (k === j ? e.target.value : v)))} />
             </label>
           ))}
+          {inKelvin && <p className="muted alt-use-kelvin">{inKelvin}: the model is fitted in kelvin.</p>}
           <label className="alt-ref-toggle">
             <input type="checkbox" checked={st.refOn} onChange={(e) => set({ refOn: e.target.checked })} />
             <span>Acceleration factor against a reference</span>
           </label>
           {st.refOn && stresses.map((s, j) => (
             <label key={s.key} className="alt-use-field">
-              <span>Reference {stressName(s)}</span>
+              <span>Reference {inputStressName(s)}</span>
               <input type="number" value={st.ref[j] ?? ""} inputMode="decimal" step="any"
                      onChange={(e) => set((cur) => ({ ref: cur.ref.map((v, k) => (k === j ? e.target.value : v)) }))} />
             </label>

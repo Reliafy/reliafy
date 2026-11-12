@@ -159,6 +159,27 @@ def _col(a) -> list:
     return [None if not np.isfinite(v) else float(v) for v in np.asarray(a, dtype=float)]
 
 
+# Where the reliability is this close to 1 its bounds are rounding noise: the
+# delta method's link (log(-log R) and the like) of 1 - 1e-15 swings wildly,
+# and a lognormal life's far left tail once read "90% band 6,000-41,900 km"
+# off one such grid point.
+_SF_NOISE = 1e-9
+
+
+def _steady_bound(sf, bound, *, lower: bool) -> np.ndarray:
+    """A reliability bound with its rounding noise taken out: equal to the
+    reliability where that is within ``_SF_NOISE`` of 1, and never rising
+    with time (a lower bound takes the largest value at any later time, an
+    upper bound the smallest at any earlier one), as the true bound can't."""
+    b = np.asarray(bound, dtype=float).copy()
+    s = np.asarray(sf, dtype=float)
+    flat = np.isfinite(s) & (1.0 - s < _SF_NOISE)
+    b[flat] = s[flat]
+    if lower:
+        return np.fmax.accumulate(b[::-1])[::-1]
+    return np.fmin.accumulate(b)
+
+
 def reliability_curves(model, alpha_ci: float = _DEFAULT_ALPHA) -> dict | None:
     """Population reliability curve (sf) with SurPyval's two-stage confidence
     bounds. Returns ``{x, sf, lower, upper, alpha_ci}`` or ``None``; plus
@@ -176,14 +197,14 @@ def reliability_curves(model, alpha_ci: float = _DEFAULT_ALPHA) -> dict | None:
         try:
             cb = np.asarray(model.cb(grid, on="sf", alpha_ci=float(alpha_ci), bound="two-sided"), dtype=float)
             if cb.ndim == 2 and cb.shape[1] == 2:
-                out["lower"] = _col(cb[:, 0])
-                out["upper"] = _col(cb[:, 1])
+                out["lower"] = _col(_steady_bound(sf, cb[:, 0], lower=True))
+                out["upper"] = _col(_steady_bound(sf, cb[:, 1], lower=False))
         except Exception:  # pragma: no cover - bounds are optional
             pass
         try:
             lo = np.asarray(model.cb(grid, on="sf", alpha_ci=LIFE_LEVEL_ALPHA, bound="lower"), dtype=float).ravel()
             if lo.size == grid.size:
-                out["life_lower"] = _col(lo)
+                out["life_lower"] = _col(_steady_bound(sf, lo, lower=True))
                 out["life_level"] = 1.0 - LIFE_LEVEL_ALPHA
         except Exception:  # pragma: no cover - bounds are optional
             pass

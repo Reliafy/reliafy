@@ -118,3 +118,23 @@ test("the shape's interval says its level: 90% by the rule, a fit's own level wh
   assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.9 })[1], "β 0.777 (90% 0.63–0.959)");
   assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.95 })[1], "β 0.777 (95% 0.63–0.959)");
 });
+
+test("a temperature given in °C is shown and entered in °C, asked in kelvin", async () => {
+  const { defaultUse, useForModel, levelWords, kelvinWords, inputStressName } = await import("./altFrame.js");
+  const r = {
+    stresses: [{ key: "s1", column: "temp_C", label: "Temperature", unit: "K", entered_unit: "°C" }],
+    levels: [{ stress: [378.15] }, { stress: [398.15] }, { stress: [418.15] }],
+  };
+  assert.deepEqual(defaultUse(r), [105]);
+  assert.deepEqual(useForModel(r, ["40"]), [313.15]);
+  assert.equal(levelWords([378.15], r.stresses), "105 °C");
+  assert.equal(kelvinWords(r, ["40"]), "40 °C is 313.15 K");
+  assert.equal(inputStressName(r.stresses[0]), "Temperature (°C)");
+  // A model fitted in kelvin is as before.
+  const k = { stresses: [{ key: "s1", label: "Temperature", unit: "K" }], levels: [{ stress: [378.15] }] };
+  assert.deepEqual(useForModel(k, ["313.15"]), [313.15]);
+  assert.equal(kelvinWords(k, ["313.15"]), null);
+  const f = { stresses: [{ unit: "K", entered_unit: "°F", label: "T" }], levels: [{ stress: [313.15] }] };
+  assert.deepEqual(defaultUse(f), [104]);
+  assert.deepEqual(useForModel(f, ["104"]), [313.15]);
+});
