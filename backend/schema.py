@@ -51,10 +51,6 @@ class Dataset(BaseModel):
     data: bytes = b""  # raw CSV bytes (excluded from API responses)
     notes: Optional[str] = None  # free-text annotation (set over MCP: change dataset_update)
     measurements: Optional[DatasetPart] = None
-    # How the columns were read when this dataset was split from a sheet with
-    # others ({kind: "life" | "recurrent" | …, mapping, unit, options}): a fit
-    # from it starts there until a model of its own is saved. None otherwise.
-    reading: Optional[dict] = None
 
 
 class Model(BaseModel):

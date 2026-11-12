@@ -38,8 +38,7 @@ import { TVC_STATUS } from "./TvcColumns.jsx";
 // false where it can't flip a 1 = failed column). ``lifeRules``: false for a
 // flow whose mapping isn't a life mapping (lifeData's rules don't apply).
 // ``timeVarying`` ("intervals" | "timeline", #60): an item column and each
-// row's times take x's place, with no count or late entry. ``top``: a row
-// shown first, the "dataset" selector that splits a sheet (DatasetSplit.jsx).
+// row's times take x's place, with no count or late entry.
 export const LIFE_ROWS = ["x", "c", "n", "tl", "tr", "e"];
 
 const WORDS = {
@@ -58,7 +57,7 @@ export default function ColumnMapper({
   columns, mapping, onChange, unit, onUnitChange, facts = {}, timeVarying = null, failureMode = false,
   issues = [], notes = [], asides = {}, warning = null,
   rows = null, range = true, keys = {}, words = {}, none = {}, meanings: showMeanings = true,
-  mUnit, onMUnitChange, codeWords = "0 = failed, 1 = running", invertible = true, lifeRules = null, top = null,
+  mUnit, onMUnitChange, codeWords = "0 = failed, 1 = running", invertible = true, lifeRules = null,
 }) {
   const shown = rows || (failureMode ? LIFE_ROWS : LIFE_ROWS.filter((r) => r !== "e"));
   const k = (role) => keys[role] || role;
@@ -297,5 +296,5 @@ export default function ColumnMapper({
     ),
   };
 
-  return <div className="xcn">{top}{shown.map((r) => ROW[r]())}</div>;
+  return <div className="xcn">{shown.map((r) => ROW[r]())}</div>;
 }

@@ -237,23 +237,18 @@ def split_names(values: list[str], taken: set[str], source: str) -> list[str]:
     return out
 
 
-def create_split(db, file_bytes: bytes, column: str, owner_id: str, source: str,
-                 reading: dict | None = None) -> tuple[list[tuple[Dataset, bool]], int]:
+def create_split(db, file_bytes: bytes, column: str, owner_id: str,
+                 source: str) -> tuple[list[tuple[Dataset, bool]], int]:
     """Save one dataset per value of ``column`` (``split_by_column``), named by
     ``split_names`` against the owner's datasets: ``([(dataset, reused), ...],
-    blank_rows)``. ``reading``: how the columns were read when the sheet was
-    split ({kind, mapping, unit, options}), kept on each new dataset so a fit
-    from it starts from the same reading. Identical data already saved comes
-    back as it is (``reused``)."""
+    blank_rows)``. Only the rows are kept: the columns are read when fitting.
+    Identical data already saved comes back as it is (``reused``)."""
     parts, blank = split_by_column(file_bytes, column)
     taken = {d.get("name") or "" for d in db.datasets.find({"owner_id": owner_id}, {"name": 1})}
     names = split_names([v for v, _ in parts], taken, source)
     out = []
     for (_, data), name in zip(parts, names):
         ds, reused = create_or_reuse(db, name, data, owner_id)
-        if not reused and reading:
-            db.datasets.update_one({"_id": ds.id}, {"$set": {"reading": reading}})
-            ds.reading = reading
         out.append((ds, reused))
     return out, blank
 

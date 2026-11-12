@@ -87,9 +87,7 @@ def test_split_names_add_the_file_when_taken():
 def test_upload_with_dataset_col_makes_one_dataset_per_value(web):
     client, db = web
     db.datasets.insert_one({"_id": "old", "name": "Transformer", "owner_id": U, "checksum": "x"})
-    reading = '{"kind": "life", "mapping": {"x": "Hours", "c": "Status", "c_map": null}, "unit": "hours", ' \
-              '"options": {"c_map": {"Failed": 0, "Running": 1}}}'
-    r = _upload(client, {"name": "plant", "dataset_col": "Equipment", "reading": reading})
+    r = _upload(client, {"name": "plant", "dataset_col": "Equipment"})
     assert r.status_code == 200, r.text
     out = r.json()
     assert [d["name"] for d in out["datasets"]] == ["Transformer – plant", "Coal mill", "Boiler feed pump"]
@@ -99,14 +97,12 @@ def test_upload_with_dataset_col_makes_one_dataset_per_value(web):
     assert list(coal.columns) == ["Unit", "Hours", "Status"]  # the dataset column is left out
     assert list(coal["Unit"]) == ["M-1", "M-2", "M-3"]
     assert list(coal["Hours"]) == [300, 450, 610]
-    # Each stands alone; the one mapping comes back as where a fit from it starts.
+    # Each stands alone, stored as its rows: no column reading is kept (that's
+    # chosen when fitting), so a fit from it starts from a fresh guess.
     detail = client.get(f"/api/datasets/{out['datasets'][1]['id']}").json()
-    assert detail["last_mapping"]["mapping"] == {"x": "Hours", "c": "Status"}
-    assert detail["last_mapping"]["options"] == {"c_map": {"Failed": 0, "Running": 1}}
-    assert detail["last_mapping"]["unit"] == "hours"
-    assert detail["last_mapping"]["split_from"] == "plant"
-    assert detail["last_recurrent_mapping"] is None
-    assert "reading" not in detail and "dataset" not in str(db.datasets.find_one({"name": "Coal mill"}).keys())
+    assert detail["last_mapping"] is None and detail["last_recurrent_mapping"] is None
+    doc = db.datasets.find_one({"name": "Coal mill"})
+    assert "reading" not in doc and "dataset" not in str(doc.keys())
 
 
 def test_without_dataset_col_nothing_changes(web):

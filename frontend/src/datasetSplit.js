@@ -1,8 +1,9 @@
-// One sheet, several datasets: the Data step's "dataset" selector splits the
-// sheet by a column, each value its own dataset named by the value (the
+// One sheet, several datasets: the Data section's upload (New dataset) can
+// split a file by a column, each value its own dataset named by the value (the
 // server does the same on save: backend/services/datasets.py, split_by_column).
-// One mapping for all: the same column roles and c meanings read every
-// dataset. Rows with no value in the column are left out, with a warning.
+// Datasets are stored as their rows; the columns are read when fitting, so the
+// split only counts rows. Rows with no value in the column are left out, with
+// a warning.
 
 // RFC 4180 CSV text → { header, rows } (cells as text, exactly as written).
 export function parseCsv(text) {
@@ -29,6 +30,24 @@ export function parseCsv(text) {
   return { header: header.map((h) => h.trim()), rows: body.filter((r) => r.some((c) => c.trim())) };
 }
 
+// A file's text as a sheet: ``parseCsv``, or with ``noHeader`` every row is
+// data and the columns are named "col 1", "col 2", … (as the server names them).
+export function readSheet(text, noHeader = false) {
+  if (!noHeader) return parseCsv(text);
+  const { header, rows } = parseCsv(text);
+  const all = header.length && header.some((h) => h) ? [header, ...rows] : rows;
+  const width = Math.max(0, ...all.map((r) => r.length));
+  return { header: Array.from({ length: width }, (_, i) => `col ${i + 1}`), rows: all };
+}
+
+// Each dataset the split makes, for the list before saving:
+// [{ value, name, rows }] plus ``blank`` (rows with no value, left out).
+export function splitPlan(sheet, column, taken, source) {
+  const { groups, blank } = splitSheet(sheet, column);
+  const names = splitNames(groups.map((g) => g.value), taken, source);
+  return { blank, parts: groups.map((g, i) => ({ value: g.value, name: names[i], rows: g.rows.length })) };
+}
+
 // The sheet's rows grouped by ``column``: { groups: [{ value, rows }], blank }
 // in the order each value first appears; ``blank``: rows with no value.
 export function splitSheet(sheet, column) {
@@ -45,66 +64,6 @@ export function splitSheet(sheet, column) {
   return { groups: [...byValue.entries()].map(([value, rows]) => ({ value, rows })), blank };
 }
 
-const filled = (v) => v != null && String(v).trim() !== "";
-const isNum = (v) => filled(v) && Number.isFinite(Number(String(v).trim()));
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-// What a flow's mapping asks of every row, for the split's counts and checks:
-//   needs:  [{ row, col, label?, range?: [xl, xr] }]: a value in col (a
-//           number), or, with ``range``, a value in either end instead;
-//   status: (cell) => code (0 failed, 1 running, -1 / 2 failed before / between)
-//           or null where there is no c column (every row with a value failed);
-//   n:      the count column, if any; failed: false where nothing fails (degradation);
-//   items:  the item column, counted as "N items" where there's no failed count.
-// Counts a group: { rows, failed, items }.
-export function groupCounts(header, rows, spec) {
-  const col = (name) => (name ? header.indexOf(name) : -1);
-  const ni = col(spec.n);
-  const out = { rows: rows.length, failed: 0, items: null };
-  if (spec.items) out.items = new Set(rows.map((r) => (r[col(spec.items)] || "").trim()).filter(Boolean)).size;
-  if (spec.failed === false) return out;
-  const x = spec.needs?.find((n) => n.row === "x");
-  const [xl, xr] = (x?.range || []).map(col);
-  for (const r of rows) {
-    const weight = ni >= 0 && isNum(r[ni]) ? Number(r[ni]) : 1;
-    let code;
-    if (spec.status) code = spec.status(r[col(spec.c)] ?? "");
-    else if (x && !filled(r[col(x.col)]) && xl >= 0) code = filled(r[xr]) ? 2 : 1;
-    else code = 0;
-    if (code === 0 || code === -1 || code === 2) out.failed += weight;
-  }
-  return out;
-}
-
-// Each dataset's problems, beside the selector they concern: [{ row, text }],
-// e.g. "Boiler feed pump: 1 row has no x". A dataset with nothing failed is
-// a note (it saves, but has nothing to fit yet): { row, text, note: true }.
-export function splitProblems(header, groups, spec) {
-  const out = [];
-  const col = (name) => (name ? header.indexOf(name) : -1);
-  for (const g of groups) {
-    for (const need of spec.needs || []) {
-      const at = col(need.col);
-      const ends = (need.range || []).map(col).filter((i) => i >= 0);
-      if (at < 0 && !ends.length) continue;
-      const label = need.label || need.row;
-      let missing = 0;
-      let text = 0;
-      for (const r of g.rows) {
-        const v = at >= 0 ? r[at] : "";
-        if (filled(v)) { if (need.number !== false && !isNum(v)) text += 1; }
-        else if (!ends.some((i) => filled(r[i]))) missing += 1;
-      }
-      if (missing) out.push({ row: need.row, text: `${g.value}: ${plural(missing, "row")} ${missing === 1 ? "has" : "have"} no ${label}` });
-      if (text) out.push({ row: need.row, text: `${g.value}: ${plural(text, "row")} ${text === 1 ? "has" : "have"} ${label} that isn't a number` });
-    }
-    if (spec.failed !== false && groupCounts(header, g.rows, spec).failed === 0) {
-      out.push({ row: spec.c ? "c" : "x", text: `${g.value}: nothing failed, so there's nothing to fit yet`, note: true });
-    }
-  }
-  return out;
-}
-
 // Each value's dataset name: the value, or "<value> – <source>" when the
 // workspace already has a dataset of that name (as the server names them).
 export function splitNames(values, taken, source) {
@@ -119,10 +78,10 @@ export function splitNames(values, taken, source) {
   });
 }
 
-// The words beside the selector for rows left out.
-export function blankWarning(blank) {
+// The warning for rows left out: "Rows with no Equipment are left out: 4".
+export function blankWarning(blank, column = "") {
   if (!blank) return null;
-  return `${plural(blank, "row")} ${blank === 1 ? "has" : "have"} no dataset name and ${blank === 1 ? "is" : "are"} left out`;
+  return `Rows with no ${column || "value"} are left out: ${blank}`;
 }
 
 // The Free plan's room for ``n`` new datasets (billing from GET /api/billing):
@@ -136,16 +95,8 @@ export function splitRoom(billing, n) {
   if (n <= room) return null;
   const text = room === 0
     ? `You've reached the free-plan limit of ${cap} saved datasets, so none of these ${n} fit.`
-    : `This sheet makes ${n} datasets, but your free plan allows ${cap} saved datasets and only ${room} more ${room === 1 ? "fits" : "fit"}.`;
+    : `This file makes ${n} datasets, but your free plan allows ${cap} saved datasets: you can save ${room} more.`;
   return { cap, room, text };
-}
-
-// The summary line for one dataset: "24 rows · 3 failed" (or "· 5 items").
-export function countWords(c) {
-  const parts = [plural(c.rows, "row")];
-  if (c.failed != null && c.items == null) parts.push(`${Number.isInteger(c.failed) ? c.failed : c.failed.toFixed(1)} failed`);
-  else if (c.items != null) parts.push(plural(c.items, "item"));
-  return parts.join(" · ");
 }
 
 // The file name a split's names add when a value's name is taken: its stem.

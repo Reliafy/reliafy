@@ -10052,7 +10052,10 @@ main.content:focus { outline: none; }
 .xl-picker .xl-inline .select-wrap, .xl-picker .xl-inline > div { min-width: 0; max-width: 100%; flex: 1 1 12rem; }
 .xl-picker .xl-inline button { max-width: 100%; }
 
-/* The Data step's split: "This sheet makes 3 datasets", then what was saved. */
+/* The Data section upload's split: "This file makes 3 datasets", then what was saved. */
+.ds-split { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.ds-split-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-weight: 600; font-size: var(--fs-13); }
+.ds-split-pick > .sel-trigger { flex: 1 1 12rem; min-width: 0; max-width: 22rem; font-weight: 400; }
 .split-summary { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); min-width: 0; }
 .split-summary h3 { margin: 0; font-size: var(--fs-14); }
 .split-table { border-collapse: collapse; font-size: var(--fs-13); }
