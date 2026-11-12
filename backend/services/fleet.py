@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import math
 import uuid
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -44,6 +43,7 @@ from backend.services import spares
 from backend.services.strategy import _model_from_params, StrategyError
 from backend.units import unit_in_text
 from backend.errors import client_message, client_reason
+from backend.warn_capture import ignore_warnings
 
 
 class FleetNotFound(KeyError):
@@ -723,8 +723,7 @@ def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
     # An item the model gives no chance of still running at its age (past a
     # bounded support, or a survival of exactly 0) can't be conditioned on:
     # it's counted as certain to fail in the first period, if covered.
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with np.errstate(all="ignore"), ignore_warnings():
         check = np.asarray(clock.cs(np.ones(k), np.zeros(k)), dtype=float)
     running = rates > 0
     doomed = running & ~np.isfinite(check) & (limits > 0)
@@ -740,8 +739,7 @@ def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
     period_lower, period_upper = period_expected.copy(), period_expected.copy()
     if active.any():
         sub = _ItemClock(model, ages[active], rates[active], _rows(Z, active))
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             fc = surpyval.forecast(sub, age=np.zeros(int(active.sum())), horizon=horizon,
                                    limit=limits[active], alpha_ci=1.0 - INTERVAL_LEVEL)
         if not np.all(np.isfinite(fc.expected)):
@@ -992,8 +990,7 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
             if x <= 0:
                 surv[x] = np.ones(len(ages))
                 continue
-            with np.errstate(all="ignore"), warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with np.errstate(all="ignore"), ignore_warnings():
                 s = np.asarray(clock.cs(np.full(len(ages), x), np.zeros(len(ages))), dtype=float)
             surv[x] = np.where(running, np.clip(np.nan_to_num(s, nan=0.0, posinf=0.0), 0.0, 1.0), 1.0)
         probs = np.array([np.clip(surv[a] - surv[b], 0.0, 1.0) for a, b in bounds])

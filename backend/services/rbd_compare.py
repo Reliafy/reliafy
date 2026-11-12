@@ -37,7 +37,6 @@ which is what ``compare`` works out without them.
 from __future__ import annotations
 
 import time
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -45,6 +44,7 @@ import numpy as np
 from backend.services import rbd_analysis as ra
 from backend.services import repy_compat
 from backend.services.rbd_analysis import AnalysisError
+from backend.warn_capture import ignore_warnings
 
 # Pilot replications timing one paired simulation, drawn from streams of their
 # own (a batch index no real run reaches) and then discarded.
@@ -348,8 +348,7 @@ def _exact_window(a: dict, b: dict, t_sim: float, quantities) -> dict:
         if any(need and r[key] not in ra._OVER_TIME_OK for need, r in zip(needs, routes)):
             continue
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore", RuntimeWarning)
+            with ignore_warnings(RuntimeWarning), np.errstate(all="ignore"):
                 values = tuple(_window_value(d, t_sim, q) for d in (a, b))
                 difference = None
                 if not (_held(a) or _held(b)):

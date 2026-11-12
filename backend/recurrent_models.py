@@ -22,7 +22,6 @@ and puts the results in words.
 
 from __future__ import annotations
 
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -44,6 +43,7 @@ from surpyval.recurrent import (
     ProportionalIntensityNHPP,
 )
 from backend.errors import client_message
+from backend.warn_capture import ignore_warnings
 
 # The models this module fits, by family. ``regression``: a Poisson process
 # whose intensity is scaled by covariates; ``renewal``: imperfect repair.
@@ -401,8 +401,7 @@ def _param_cb_rows(model) -> dict:
     for name, value in zip(model.parameter_names, _estimates(model)):
         lo = hi = None
         try:
-            with warnings.catch_warnings(), np.errstate(all="ignore"):
-                warnings.simplefilter("ignore")
+            with ignore_warnings(), np.errstate(all="ignore"):
                 cb = np.asarray(model.param_cb(name, alpha_ci=1 - CI_LEVEL), dtype=float).ravel()
             if cb.size == 2 and np.all(np.isfinite(cb)):
                 lo, hi = float(cb[0]), float(cb[1])
@@ -418,8 +417,7 @@ def _summary_rows(model) -> dict:
     if not callable(getattr(model, "summary", None)):
         return _param_cb_rows(model)
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             table = model.summary(alpha_ci=1 - CI_LEVEL)
     except Exception:  # noqa: BLE001 - no likelihood: estimates only
         return {n: (float(v), None, None) for n, v in zip(model.parameter_names, _estimates(model))}
@@ -486,8 +484,7 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
     if len(counts) < 2:
         return {"causes": [], "reason": "Only one cause in the data: the MCF by cause is the MCF."}
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             mcf = CauseSpecificMCF.fit(x, i=i, c=c, e=e, **kw)
             para = CauseSpecificNHPP.fit(x, i=i, c=c, e=e, dist=CrowAMSAA, **kw)
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's reason, keep the rest of the fit
@@ -511,8 +508,7 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
             cis = {}
             for name in ("alpha", "beta"):
                 try:
-                    with warnings.catch_warnings(), np.errstate(all="ignore"):
-                        warnings.simplefilter("ignore")
+                    with ignore_warnings(), np.errstate(all="ignore"):
                         lo, hi = (float(v) for v in np.asarray(model.param_cb(name, alpha_ci=1 - CI_LEVEL)))
                     if np.isfinite(lo) and np.isfinite(hi):
                         cis[name] = [lo, hi]
@@ -553,10 +549,9 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str, unit: str = "", gof_test
     keep = keep_mask(df, mapping)
     np_inputs = {k: v for k, v in inputs.items() if k != "tr"}
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore", RuntimeWarning)
+        # An unverified maximum (UserWarning) is reported in the payload.
+        with ignore_warnings(RuntimeWarning, UserWarning), np.errstate(all="ignore"):
             np_model = note_fit(NonParametricCounting.fit(**np_inputs))
-            warnings.simplefilter("ignore", UserWarning)  # an unverified maximum is reported in the payload
             if family(model_id) == "regression":
                 Z, names, meta = covariates(df, mapping, keep)
                 live = note_fit(_fit_regression(inputs, Z, names, opts))
@@ -636,8 +631,7 @@ def _diagnostics(live, n_events: int, n_systems: int, gof_test: bool, slow: bool
 def _cvm_fixed(live) -> dict | None:
     base = {"test": "Cramér-von Mises", "null": "the events follow the fitted intensity"}
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             g = live.cramer_von_mises(n_boot=_SLOW_CVM_BOOT, random_state=0)
     except Exception:  # noqa: BLE001
         return None
@@ -756,8 +750,7 @@ def regression_payload(np_model, live, inputs: dict, Z: np.ndarray, meta: list, 
     rocof = mtbf = rocof_ci = mtbf_ci = None
     if t_end and t_end > 0:
         t = np.array([float(t_end)])
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             rocof = _first(live.iif(t, avg))
             try:
                 cb = np.asarray(live.iif_cb(t, avg, alpha_ci=1 - CI_LEVEL), dtype=float).ravel()
@@ -853,8 +846,7 @@ def repair_verdict(model, model_id: str) -> dict | None:
     """``repair_test()`` as a verdict: are the repairs perfect (as good as
     new), minimal (as bad as old), or in between?"""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             rt = model.repair_test(alpha_ci=0.05)
     except Exception:  # noqa: BLE001 - no likelihood
         return None
@@ -911,8 +903,7 @@ def next_failures(model, inputs: dict) -> dict | None:
     median time to its next failure and the time by which there's a 10%
     chance of it, soonest first; and the survival curves of the soonest."""
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             states = model.unit_states()
             h = _gap_scale(model, inputs)
             for _ in range(14):
@@ -960,8 +951,7 @@ def renewal_payload(np_model, live, inputs: dict, model_id: str, opts: dict, uni
     est, lo, hi = rows.get(rest_name, (None, None, None))
     rest = restoration(model_id, opts, float(est), [lo, hi] if lo is not None else None) if est is not None else None
     grid = np.linspace(0.0, float(out["end_of_observation"]) or 1.0, _GRID)
-    with warnings.catch_warnings(), np.errstate(all="ignore"):
-        warnings.simplefilter("ignore")
+    with ignore_warnings(), np.errstate(all="ignore"):
         fitted = np.asarray(live.mcf(grid, items=1000, random_state=0), dtype=float)
     shape = next((p for p in params if p["name"] == "beta"), None)
     out.update({
@@ -996,8 +986,7 @@ def renewal_next_failure(model, age, within=None, quantiles=None) -> dict:
     quantiles = [0.1, 0.5, 0.9] if quantiles is None else [float(q) for q in quantiles]
     if any(not 0 < q < 1 for q in quantiles):
         raise FitError("Quantiles must be between 0 and 1 (e.g. 0.5 for the median).")
-    with warnings.catch_warnings(), np.errstate(all="ignore"):
-        warnings.simplefilter("ignore")
+    with ignore_warnings(), np.errstate(all="ignore"):
         h = max(age, 1.0)
         try:
             for _ in range(40):

@@ -23,7 +23,6 @@ that need fitting's helpers import it when called.
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -47,6 +46,7 @@ from surpyval import (
     Uniform,
     WeibullFrailty,
 )
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 # ``more``: listed under "More models" in the picker, out of the way of the
 # everyday ones. ``bounded``: a support with a finite end, so not a Best-fit
@@ -264,8 +264,7 @@ def summary_rows(model, ratio: bool = False) -> list[dict]:
     from its own attributes (:func:`_rows_from_attributes`, with exp(estimate)
     when ``ratio``)."""
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             try:
                 table = model.summary(alpha_ci=0.10)  # 90% two-sided (backend.levels)
             except TypeError:  # a summary that takes no level (its columns then say 95%)
@@ -303,8 +302,7 @@ def _frailty_block(model, mapping: dict) -> dict:
     method = "lr" if type(model).__name__ == "FrailtyModel" else "wald"
     ci = None
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             # Wald is the default, and the only interval a Cox frailty's
             # param_cb gives in SurPyval 0.23 (it takes no ``method``).
             kw = {"method": "lr"} if method == "lr" else {}
@@ -360,8 +358,7 @@ def enrich_regression(distribution: str, model, result: dict, mapping: dict) -> 
                     for c in out.get("coefficients") or []]
     if distribution == "buckley_james" and coefficients and not out.get("no_finite_maximum"):
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with ignore_warnings():
                 boot = np.asarray(model.bootstrap_ci(alpha_ci=0.10, n_boot=200, random_state=0), dtype=float)
             if boot.shape == (len(coefficients), 2):
                 coefficients = [dict(c, ci=[_f(lo), _f(hi)]) for c, (lo, hi) in zip(coefficients, boot)]
@@ -405,8 +402,7 @@ def _km_estimate(kwargs: dict) -> Optional[dict]:
     c = np.asarray(kwargs.get("c", []), dtype=float)
     hard = "xl" in kwargs or "tl" in kwargs or "tr" in kwargs or bool(np.any((c == -1) | (c == 2)))
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             est = (Turnbull if hard else KaplanMeier).fit(**kwargs)
         xs = np.asarray(est.x, dtype=float)
         R = np.asarray(est.R, dtype=float)
@@ -433,8 +429,7 @@ def fit_flexible(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
     try:
         kwargs = fitting.build_fit_inputs(df, mapping)
         fitting.check_fittable(kwargs, entry["name"])
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(entry["fitter"].fit(**kwargs))
         fitting.reissue_deprecations(caught)
         curves = fitting._function_curves(model)

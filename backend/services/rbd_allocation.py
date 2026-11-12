@@ -34,13 +34,13 @@ from __future__ import annotations
 import copy
 import math
 import re
-import warnings
 from typing import Any, Callable, Optional
 
 import numpy as np
 
 from backend.services import rbd_analysis, repy_compat
 from backend.services.rbd_analysis import AnalysisError
+from backend.warn_capture import collect_warnings
 
 NONREPAIRABLE_METHODS = ("equal", "simple", "minimum_effort", "improvement", "cost_based")
 REPAIRABLE_METHODS = ("availability", "mttf_mttr")
@@ -233,8 +233,7 @@ def _nonrepairable(graph, target, method, t, options, resolve_model, resolve_sub
     weights = _per_block(options.get("weights"), "The weights", blocks, 0.0, 1e6)
     fixed = _fixed(options.get("fixed"), blocks)
     notes: list[str] = []
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         try:
             if method == "equal":
                 allocated = rbd.equal_allocation(target)
@@ -300,8 +299,7 @@ def _repairable(graph, target, method, options, resolve_model) -> dict:
         if imperfect:
             raise AllocationError(imperfect) from None
         raise _engine_error(exc, labels, "availability", target) from None
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         try:
             if method == "availability":
                 how = options.get("availability_method") or "cost_based"

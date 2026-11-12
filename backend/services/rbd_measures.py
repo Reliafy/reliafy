@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import math
 import time
-import warnings
 from typing import Any, Optional
 
 import numpy as np
@@ -52,6 +51,7 @@ from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError
 from backend.units import unit_in_text
 from backend.errors import client_message
+from backend.warn_capture import ignore_warnings
 
 MEASURES = ("over_time", "shares", "joint", "rate", "uncertainty")
 #: The plain question each measure answers (its tab's title).
@@ -283,8 +283,7 @@ def analyze_measure(graph: dict, resolve_model=None, *, measure: str, window: Op
         notes.append(ra.common_cause_left_out(common["groups"], common["reason"]))
     ctx = dict(rbd=rbd, labels=labels, gates=gates, working=working, broken=broken, unit=unit, graph=graph)
     runner = {"over_time": _over_time, "shares": _shares, "joint": _joint, "rate": _rate}.get(measure)
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         try:
             if runner is not None:
                 out = runner(head, opts, **ctx)

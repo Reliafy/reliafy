@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import heapq
 import logging
-import warnings
 from itertools import combinations
 from math import comb
 from typing import Any, Callable, Optional
@@ -47,6 +46,7 @@ import numpy as np
 from backend.services import rbd_analysis as ra
 from backend.services import repy_compat
 from backend.services.rbd_analysis import AnalysisError
+from backend.warn_capture import ignore_warnings
 from repyability import FaultTree
 from repyability.rbd.ccf import VALIDITY as CCF_VALIDITY
 from repyability.rbd.helper_classes import PerfectReliability
@@ -778,10 +778,9 @@ def fault_tree(
             raise AnalysisError("The time must be a positive number.")
     b = _Builder(resolve_subsystem, resolve_model, covariates)
     top = _develop(b, graph, "", [], set(), top_level=True)
-    with warnings.catch_warnings():
+    with ignore_warnings(message=r"Common-cause group \["):
         # A probability-basis group past its range is noted below at the
         # tree's own time, not over the calculator's whole time axis.
-        warnings.filterwarnings("ignore", message=r"Common-cause group \[")
         t_default, t_default_basis = _default_time(graph, resolve_subsystem, resolve_model, covariates, t_max)
     b.gate_info[top] = {"label": None, "role": "top"}
     tree = FaultTree(b.gates, b.events, top=top)
