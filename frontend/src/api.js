@@ -2994,6 +2994,15 @@ export function setGroupDuty(groupId, positionId) {
 export function retireRedundancyGroup(groupId) {
   return postJson(`/api/maintenance/groups/${groupId}/retire`, {});
 }
+// Rename a redundancy set, change k, mode or standby, add / remove members, or how a standby one
+// takes over ({start_probability, dormancy}: "" clears one).
+export function updateRedundancyGroup(groupId, body) {
+  return patchJson(`/api/maintenance/groups/${groupId}`, body);
+}
+// The positions inside one and the redundancy sets among them (the Explorer's Redundancy pane).
+export function getRedundancyInside(positionId) {
+  return request(`/api/maintenance/positions/${positionId}/redundancy`);
+}
 export function getPositionImpact(id) {
   return request(`/api/maintenance/positions/${id}/impact`);
 }

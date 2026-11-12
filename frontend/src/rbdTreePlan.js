@@ -76,7 +76,7 @@ export function treeRowProblems(data = {}, row) {
     }
   }
   if (plan.operating_interval != null && plan.interval == null && !(Number(data.duty) > 0 && Number(data.duty) <= 1)) {
-    out.push("The task counts running hours: set the block's duty to turn them into calendar time.");
+    out.push("The task counts running hours: set how much of the time the block runs (Runs %) to turn them into calendar time.");
   }
   if (plan.task === "age" && !blank(s.opportunity) && !plan.group && blank(data.maintenance_group)) {
     out.push("Early renewal at a group stop needs a maintenance group.");

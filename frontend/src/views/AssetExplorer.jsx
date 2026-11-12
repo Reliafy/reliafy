@@ -20,6 +20,7 @@ import {
   parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
+import RedundancyPane from "../components/RedundancyPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
 import { PANE_PARAMS, TABLE_PANES, keepPaneFor, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { fitPreset, priorFrom } from "../fitDialog.js";
@@ -862,6 +863,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
   const openFit = (position, opts) => openPane("fit", position, opts);
   const openPredict = (position, link = null) => openPane("predict", position, { link });
+  // Redundancy inside… (Modelling and Missions): which positions inside back each other up.
+  const openRedundancy = async (position) => {
+    if (!(await leavePane())) return;
+    openPane("redundancy", position);
+  };
   // A covariate model with covariates fixed at the position (?bind=<source>:<ref>&on=<position>).
   const openBind = (position, binding, { link = null, name = "" } = {}) =>
     openPane("bind", position, { link, start: { name }, rbd: bindingParam(binding.source, binding.ref) });
@@ -1306,6 +1312,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "model-attach-predict") return openPredict(position);
     if (id === "model-refresh-predict") return openPredict(position, predictionOf(pid));
     if (id === "model-attach-rbd-build") return buildRbd(position);
+    if (id === "model-attach-redundancy") return openRedundancy(position);
     if (id === "model-attach-rbd-new") {
       return setModelModal({ kind: "rbd-new", position, hasInside: insideOf(pid).length > 0, hasModel: !!lifeModelOf(pmodels.links, pid) });
     }
@@ -1471,6 +1478,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "mission-new") return addMission(pid, position.name);
     if (id.startsWith("mission-open-rbd:")) return openRbd(position, id.slice(17));
     if (id === "mission-build-rbd") return buildRbd(position);
+    if (id === "mission-redundancy") return openRedundancy(position);
     return undefined;
   };
   // The LSA tab's Package the tasks here…: the row picked, and its drafts open in the panel beside
@@ -2464,6 +2472,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                      const m = ref?.mission || { id: missionId, name: "this mission" };
                      removeMission(panePosition.id, rbdId, m, !!ref?.rbd?.mission_rbd).then((gone) => gone && closePane());
                    }} />
+    </div>
+  ) : paneKind === "redundancy" ? (
+    <div className="rw tt-side">
+      <RedundancyPane key={`${panePosition.id}:${seed?.n || 0}`} position={panePosition} phone={phone} headingRef={paneHeading}
+                      readOnly={viewOnly || null} onClose={() => leavePane().then((ok) => ok && closePane())}
+                      onDirty={(d) => { paneDirty.current = d; }}
+                      onChanged={(text) => { say(text); load(); }}
+                      onRebuild={builtRbdLink(pmodels.links, panePosition.id) && !viewOnly
+                        ? () => askRebuild(panePosition, builtRbdLink(pmodels.links, panePosition.id)) : null} />
     </div>
   ) : paneKind === "bind" && bindingFromParam(paneAt.bind) ? (
     <div className="rw tt-side">

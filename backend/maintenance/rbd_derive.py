@@ -6,7 +6,10 @@ k of n is enough.
   (in days); with none, a placeholder, named in the notes.
 * A connection from A to B is an edge A -> B.
 * A redundancy group (k of its n members needed) becomes a vote node: each
-  member feeds it, and it feeds whatever the members fed.
+  member feeds it, and it feeds whatever the members fed. A standby group of
+  identical single blocks becomes one standby block instead (cold, warm or hot,
+  with its switch-start chance); any other standby group is a vote whose members
+  each run k/n of the time (redundancy_units).
 * Blocks with nothing upstream start from the input; blocks with nothing
   downstream end at the output. With no connections at all, the blocks are
   taken to be in series (every one needed), and the notes say so; a block not
@@ -70,33 +73,55 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -
         for i in m._interfaces(c["id"], "FROM"):
             if i["to"]["id"] in ids:
                 edges.add((_bid(c["id"]), _bid(i["to"]["id"])))
+    connected_by_tree = bool(edges)
 
-    # Redundancy groups among the children: members -> vote node -> their targets.
-    for g in {g["id"]: g for c in children for g in m.groups_of(c["id"])}.values():
-        members = [mm["id"] for mm in g["members"] if mm["id"] in ids]
-        if len(members) < 2:
+    # Redundancy sets among the children (the Explorer's, or topology groups): a standby block,
+    # or the members wired into a k-of-n vote (redundancy, never series).
+    units, used = redundancy_units(m, children, nodes, notes)
+    by_member = {b: u for u in units for b in u["members"]}
+    for u in units:
+        bids = set(u["members"])
+        if u["kind"] == "standby":
+            # One standby block stands for the members: edges to or from any of them are its own.
+            sb = u["id"]
+            edges = {(sb if s in bids else s, sb if t in bids else t) for (s, t) in edges}
+            edges = {(s, t) for (s, t) in edges if s != t}
             continue
-        vote = "g" + g["id"][:10]
-        bids = {_bid(mid) for mid in members}
+        vote = u["id"]
         targets = {t for (s, t) in edges if s in bids and t not in bids}
         edges = {(s, t) for (s, t) in edges if not (s in bids and t not in bids)}
-        need = min(g["k"], len(members) - 1) if len(members) > 1 else 1
-        nodes.append({"id": vote, "type": "knode", "label": f"{g['name']} ({need} of {len(members)})",
-                      "n": need, "k": len(members)})
         edges |= {(b, vote) for b in bids} | {(vote, t) for t in targets}
-        if g["mode"] == "standby":
-            notes.append(f"{g['name']} is a {g['standby']} standby group; it's drawn as {need} of "
-                         f"{len(members)} with every member running.")
 
     blocks = [n["id"] for n in nodes if n["type"] not in ("input", "output")]
-    connected = {x for e in edges for x in e}
-    if not edges:
-        chain = [_bid(c["id"]) for c in children]
-        edges = {("in", chain[0]), (chain[-1], "out")} | set(zip(chain, chain[1:]))
-        if len(chain) > 1:
+    if not connected_by_tree:
+        # Nothing inside is connected: the sets and the other blocks one after another, by name
+        # (a set where its first member comes), each set its members side by side.
+        chain, done = [], set()
+        for c in children:
+            b = _bid(c["id"])
+            u = by_member.get(b)
+            if u is None:
+                chain.append(([b], b))
+            elif u["id"] not in done:
+                done.add(u["id"])
+                chain.append(([u["id"]], u["id"]) if u["kind"] == "standby" else (sorted(u["members"]), u["id"]))
+        edges = set(edges)
+        tail = ["in"]
+        for heads, end in chain:
+            edges |= {(t, h) for t in tail for h in heads}
+            tail = [end]
+        edges |= {(t, "out") for t in tail}
+        unit_ids = {u["id"] for u in units}
+        singles = sum(1 for _, end in chain if end not in unit_ids)
+        if len(chain) > 1 and not units:
             notes.append("Nothing inside is connected yet, so every block is taken to be needed "
-                         "(in series). Add connections to say how they're wired.")
+                         "(in series). Add connections, or mark the positions that back each other up "
+                         "(Redundancy…), to say how they're wired.")
+        elif len(chain) > 1 and singles:
+            notes.append("Nothing inside is connected yet, so the blocks outside a redundancy set are taken to "
+                         "be needed (in series with the sets).")
     else:
+        connected = {x for e in edges for x in e}
         loose = [b for b in blocks if b not in connected]
         if loose:
             names = [n["label"] for n in nodes if n["id"] in loose]
@@ -117,7 +142,93 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -
                      "each a model on the Modelling tab and rebuild, or set one in the RBD builder.")
     graph = {"nodes": nodes, "unit": unit,
              "edges": [{"source": s, "target": t} for (s, t) in sorted(edges)]}
-    return {"graph": graph, "notes": notes, "placeholders": placeholders, "scope": scope}
+    return {"graph": graph, "notes": notes, "placeholders": placeholders, "scope": scope, "redundancy": used}
+
+
+_WAIT = {"cold": 0.0, "hot": 1.0}
+
+
+def _same_model(a: dict, b: dict) -> bool:
+    """Whether two blocks have the same life model (a standby block's units are identical)."""
+    return bool(a.get("model")) and a.get("model") == b.get("model") and not (a.get("data") or {}).get("rbd") \
+        and not (b.get("data") or {}).get("rbd")
+
+
+def _pct(x: float) -> str:
+    return f"{x * 100:.3g}%"
+
+
+def redundancy_units(m: Maintenance, children: list[dict], nodes: list[dict], notes: list[str]) -> tuple[list, list]:
+    """The redundancy sets among ``children`` as the diagram draws them, adding their nodes to
+    ``nodes``: ([{id, kind: vote | standby, members: [block ids]}], [the groups used, in brief]).
+
+    * Active (k of n needed): the members, each its own block, into a k-of-n vote.
+    * Standby whose members are identical single blocks (one life model, none a sub-system): one
+      standby block, k running and the rest waiting: cold, warm (ageing at its dormancy) or hot,
+      with the chance a waiting one starts when switched in. The members' own blocks go.
+    * Any other standby set (sub-systems, or different models): the members into a k-of-n vote,
+      each running k/n of the time (they take turns; a repairable diagram's "Runs" share).
+      Nothing about switching or ageing while waiting can be drawn on separate blocks, so the
+      notes say what's counted."""
+    ids = {c["id"] for c in children}
+    by_bid = {n["id"]: n for n in nodes}
+    units, used, taken = [], [], set()
+    for g in {g["id"]: g for c in children for g in m.groups_of(c["id"])}.values():
+        members = [mm for mm in g["members"] if mm["id"] in ids and mm["id"] not in taken]
+        if len(members) < 2:
+            continue
+        taken |= {mm["id"] for mm in members}
+        bids = [_bid(mm["id"]) for mm in members]
+        n = len(members)
+        need = min(g["k"], n - 1)
+        if len(g["members"]) > n:
+            notes.append(f"{g['name']} has members outside this position: only the {n} inside it are drawn.")
+        brief = {"id": g["id"], "name": g["name"], "mode": g["mode"], "k": need, "n": n,
+                 "members": [mm["name"] for mm in members]}
+        blocks = [by_bid[b] for b in bids]
+        if g["mode"] == "standby":
+            first = blocks[0]
+            identical = all(b.get("type") == "component" for b in blocks) and all(
+                _same_model(first, b) for b in blocks[1:])
+            dormancy = _WAIT.get(g["standby"], g.get("dormancy"))
+            if identical and dormancy is not None:
+                sid = "s" + g["id"][:10]
+                spb = g.get("start_probability")
+                node = {"id": sid, "type": "standby", "label": f"{g['name']} ({need} running, {n - need} standby)",
+                        "model": first["model"], "k": need, "spares": n - need, "dormancy": dormancy,
+                        "cold": dormancy == 0.0,
+                        "data": {"redundancy_group": g["id"], "positions": [mm["id"] for mm in members],
+                                 **({"model_source": (first.get("data") or {}).get("model_source")}
+                                    if (first.get("data") or {}).get("model_source") else {})}}
+                if spb is not None and dormancy == 0.0:
+                    node["startProb"] = spb
+                nodes[:] = [x for x in nodes if x["id"] not in set(bids)] + [node]
+                units.append({"id": sid, "kind": "standby", "members": bids})
+                words = {0.0: "cold"}.get(dormancy, "hot" if dormancy == 1.0 else f"warm, ageing at {_pct(dormancy)}")
+                start = (f", each starting when switched in with a {_pct(spb)} chance" if spb is not None and
+                         dormancy == 0.0 else "")
+                notes.append(f"{g['name']} is one standby block ({words}): {need} of {', '.join(brief['members'])} "
+                             f"running, the other{'s' if n - need > 1 else ''} waiting{start}.")
+                used.append({**brief, "drawn": "standby"})
+                continue
+            why = ("its members are sub-systems" if any(b.get("type") != "component" for b in blocks) else
+                   "its members have different models" if not identical else
+                   "a warm standby needs how fast a waiting one ages (set it on the set)")
+            share = need / n
+            for b in blocks:
+                b.setdefault("data", {})
+                if not (b["data"].get("duty")):
+                    b["data"]["duty"] = share
+            notes.append(f"{g['name']} is a {g['standby']} standby set; {why}, so it's drawn as {need} of {n} with "
+                         f"each running {_pct(share)} of the time (they take turns: change it under Runs in the "
+                         "Maintenance plan). A non-repairable result counts every member as running.")
+            used.append({**brief, "drawn": "vote", "runs": share})
+        else:
+            used.append({**brief, "drawn": "vote"})
+        vote = "g" + g["id"][:10]
+        nodes.append({"id": vote, "type": "knode", "label": f"{g['name']} ({need} of {n})", "n": need, "k": n})
+        units.append({"id": vote, "kind": "vote", "members": bids})
+    return units, used
 
 
 def save(m: Maintenance, db, scope_id: str) -> dict:

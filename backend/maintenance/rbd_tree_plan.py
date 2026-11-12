@@ -10,10 +10,10 @@ the RBD as before.
 
 What a task gives the block (an RCM decision says *what* a task does; its LSA says *how*):
 
-* what it does, from its RCM kind: ``fixed_interval`` -> replace on age (at fixed times when its
-  package visits on fixed dates); ``on_condition`` -> inspect on condition; ``failure_finding`` ->
-  proof test. Routine work with no kind isn't modelled (what it does to the block's life isn't
-  known), and the plan says so;
+* what it does, from its RCM kind: ``fixed_interval`` -> replace at age, counted from the last
+  replacement as the work orders count it (at fixed times when its package visits on fixed dates);
+  ``on_condition`` -> inspect on condition; ``failure_finding`` -> proof test. Routine work with no
+  kind isn't modelled (what it does to the block's life isn't known), and the plan says so;
 * how often: its interval on the calendar, or in running hours (turned into calendar time by the
   block's duty), in the diagram's unit;
 * how long it takes the block off-line: its LSA's downtime, else its elapsed time;
@@ -46,7 +46,7 @@ from backend.maintenance.service import Maintenance
 
 _ORDER = {"fixed_interval": 0, "on_condition": 1, "failure_finding": 2}
 _PLAN_TASK = {"on_condition": "condition", "failure_finding": "test"}
-_KIND_WORDS = {"fixed_interval": "Fixed interval", "on_condition": "On condition", "failure_finding": "Failure finding"}
+_KIND_WORDS = {"fixed_interval": "Replace at age", "on_condition": "On condition", "failure_finding": "Failure finding"}
 _HOURS_IN = {"hour": 1.0, "day": 24.0, "week": 168.0, "month": 730.5, "year": 8766.0, "minute": 1 / 60}
 RESTORATION_NOTE = "As new: restoring it only partly (Kijima) comes with a later library release."
 
@@ -127,6 +127,7 @@ def task_plan(m: Maintenance, view: dict, unit: str) -> dict:
         root = entry["root"]
         if kind == "fixed_interval" and root.get("timing") == "fixed":
             plan_task = "block"
+            out["kind_words"] = "Replace at fixed times (its package's dates)"
         if plan_task == "test":
             out["notes"].append(f"It's in the package “{entry['package'].get('name')}”, but a proof-tested block "
                                 "can't be in a maintenance group (nobody knows it has failed when the group stops).")

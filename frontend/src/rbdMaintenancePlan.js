@@ -21,8 +21,8 @@ export const RESTORATIONS = { as_new: "As new", kijima1: "Kijima I", kijima2: "K
 
 export const TASKS = [
   { id: "none", label: "Run to failure", help: "No planned work: it's repaired when it fails." },
-  { id: "age", label: "Replace on age", help: "Replaced as new when it reaches the interval's age; a failure restarts the clock." },
-  { id: "block", label: "Replace at fixed times", help: "Replaced at every multiple of the interval, whatever its age (skipped while it's down)." },
+  { id: "age", label: "Replace at age", help: "Replaced as new when it reaches this age (the time since it was last replaced); a failure restarts the clock. The work orders count the same way." },
+  { id: "block", label: "Replace at fixed times", help: "Replaced at every multiple of the interval, whatever its age (skipped while it's down): a package on fixed dates." },
   { id: "condition", label: "Inspect on condition", help: "Inspected every interval while running (in no time); replaced when its chance of failing before the next inspection is above the threshold." },
   { id: "test", label: "Proof test", help: "Its failures are hidden until a proof test finds them; the repair starts then." },
 ];
@@ -59,7 +59,8 @@ export function planColumns({ crews = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Duty: the share of the time a block runs
+// Runs: the share of the time a block runs ("Runs 25% of the time"; data.duty, the API's name.
+// "Duty" is kept for duty / standby pairs.)
 // ---------------------------------------------------------------------------------------------
 // Typed as a percentage ("25", "25%"); blank = it runs all the time.
 export function parseDuty(text) {
@@ -67,7 +68,7 @@ export function parseDuty(text) {
   if (!t) return { value: null, error: null };
   const x = Number(t);
   if (!Number.isFinite(x) || x <= 0 || x > 100) {
-    return { value: null, error: "Duty is the share of the time it runs: more than 0% and at most 100%." };
+    return { value: null, error: "Runs is the share of the time it runs: more than 0% and at most 100%." };
   }
   return { value: Number((x / 100).toPrecision(12)), error: null };
 }
@@ -218,7 +219,7 @@ export function setCrewPriority(data, value) {
 export function rowProblems(data = {}, unit = "") {
   const out = [];
   const task = taskOf(data);
-  if (!isBlank(data.duty) && !hasDuty(data)) out.push("Duty is the share of the time it runs: more than 0% and at most 100%.");
+  if (!isBlank(data.duty) && !hasDuty(data)) out.push("Runs is the share of the time it runs: more than 0% and at most 100%.");
   if (task === "none") return out;
   const s = schedule(data) || {};
   const operating = intervalBasis(data) === "operating";
@@ -226,7 +227,7 @@ export function rowProblems(data = {}, unit = "") {
     if (!finite(s.operating_interval) || Number(s.operating_interval) <= 0) out.push("Set how often, in running time.");
     else if (!hasDuty(data)) {
       out.push(operatingAllowed(unit)
-        ? "Set its duty to turn running time into calendar time, or give the interval on the calendar."
+        ? "Set how much of the time it runs (Runs %) to turn running time into calendar time, or give the interval on the calendar."
         : "Running time needs the diagram in a time unit (hours, days, …).");
     }
   } else if (!finite(s.interval) || Number(s.interval) <= 0) {
@@ -267,7 +268,7 @@ function durationWords(d, unit) {
   return `takes ${fmt(d)}${unitSuffix(unit)}`;
 }
 
-// "Replace on age every 4,380 h (2,190 running h), takes 8 h, as new". The block dialog's summary,
+// "Replace at age every 4,380 h (2,190 running h), takes 8 h, as new". The block dialog's summary,
 // and the canvas chip's title.
 export function taskSummary(data = {}, unit = "") {
   const task = taskOf(data);

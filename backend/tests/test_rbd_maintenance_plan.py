@@ -50,10 +50,10 @@ def test_an_operating_time_interval_goes_through_the_duty():
 
 def test_an_operating_time_interval_without_a_duty_is_refused_in_plain_words():
     data = {"preventive": {"policy": "age", "operating_interval": 500}}
-    with pytest.raises(AnalysisError, match="has no duty"):
+    with pytest.raises(AnalysisError, match="has no Runs share"):
         rbd_maintenance.preventive_spec(data, "Pump")
     errors = rbd_maintenance.validation_errors(_pump(**data))
-    assert any("Set its duty" in e for e in errors)
+    assert any("Runs %" in e for e in errors)
 
 
 @pytest.mark.parametrize("duty", [0, -0.2, 1.5, "lots"])

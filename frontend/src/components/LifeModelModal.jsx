@@ -158,7 +158,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
       </p>
       {onEditPlan ? (
         <button type="button" className="secondary sm" onClick={editPlan} disabled={!valid}
-                title={valid ? "Save this block and edit its planned work and duty in the Maintenance plan, under the diagram"
+                title={valid ? "Save this block and edit its planned work and how much of the time it runs in the Maintenance plan, under the diagram"
                   : "Finish the block first (it needs a failure model and a repair time)"}>
           Edit in the plan
         </button>

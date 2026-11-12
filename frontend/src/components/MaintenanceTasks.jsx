@@ -6,7 +6,7 @@ import {
 import { PlusIcon, RowLink, rowOpen } from "./LibRows.jsx";
 import { DueChip, Field, FormModal, TASK_SOURCES, everyText, fmtDate, today } from "./MaintenanceParts.jsx";
 import { subjectPath, taskUnits, whileStoredText } from "../maintenanceSubjects.js";
-import { TASK_HINT, tooLong } from "../maintenanceText.js";
+import { AGE_NOTE, TASK_HINT, tooLong } from "../maintenanceText.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 
 // What a task on each kind of subject is for, under the Add task form.
@@ -145,11 +145,12 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
       <Field label="What kind of task">
         <select value={f.outcome} onChange={set("outcome")}>
           <option value="">Routine work (lubricate, clean, adjust, inspect)</option>
-          <option value="fixed_interval">Replace or restore at the interval</option>
+          <option value="fixed_interval">Replace at age (every … since it was last done)</option>
           <option value="failure_finding">Check a hidden function (failure-finding)</option>
           <option value="on_condition">Check condition</option>
         </select>
       </Field>
+      {f.outcome === "fixed_interval" && <p className="lib-date">{AGE_NOTE}</p>}
       <Field label="Where it comes from">
         <select value={f.source} onChange={set("source")}>
           {["manual", "oem", "statutory", "other"].map((k) => <option key={k} value={k}>{TASK_SOURCES[k]}</option>)}

@@ -240,6 +240,8 @@ export function positionMissionActions(r, { viewOnly = null } = {}) {
     out.push({ id: `mission-open-rbd:${l.rbd.id}`, label: (linked.length > 1 ? `Open ${l.rbd.name}` : "Open the RBD") });
   }
   if (!linked.length) out.push({ id: "mission-build-rbd", label: "Build an RBD from what's inside…", ...off });
+  // Which positions inside back each other up: a mission built from the tree wires them so.
+  if (hasInside(r)) out.push({ id: "mission-redundancy", label: "Redundancy inside…", ...off });
   return out;
 }
 

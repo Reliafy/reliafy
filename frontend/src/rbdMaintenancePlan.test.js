@@ -73,7 +73,7 @@ test("an interval in running time follows the duty", () => {
 test("running time with no duty is refused in plain words, never guessed", () => {
   let d = setInterval(setTask({}, "age"), 500, "operating");
   assert.equal(d.preventive.interval, undefined);
-  assert.match(rowProblems(d, "Hours")[0], /Set its duty/);
+  assert.match(rowProblems(d, "Hours")[0], /Runs %/);
   assert.match(rowProblems(d, "Cycles")[0], /time unit/);
   // Taking the duty away again leaves the calendar interval unset, not stale.
   d = setDuty(setDuty(d, 0.5), null);
@@ -133,9 +133,9 @@ test("a row says what's missing", () => {
 test("the summary reads as a sentence", () => {
   let d = setInterval(setTask({}, "age"), 4380);
   d = setScheduleField(d, "duration", 8);
-  assert.equal(taskSummary(d, "Hours"), "Replace on age every 4,380 h, takes 8 h, as new");
+  assert.equal(taskSummary(d, "Hours"), "Replace at age every 4,380 h, takes 8 h, as new");
   d = setInterval(setDuty(d, 0.5), 2190, "operating");
-  assert.equal(taskSummary(d, "Hours"), "Replace on age every 4,380 h (2,190 running h), takes 8 h, as new");
+  assert.equal(taskSummary(d, "Hours"), "Replace at age every 4,380 h (2,190 running h), takes 8 h, as new");
   assert.equal(taskSummary(setInterval(setTask({}, "test"), 8760), "Hours"), "Proof test every 8,760 h, no downtime");
   assert.equal(taskSummary({}, "Hours"), "Run to failure");
 });
