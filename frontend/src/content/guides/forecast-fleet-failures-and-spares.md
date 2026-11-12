@@ -105,9 +105,24 @@ its range, and each month's expectation and range.
    choose the **Equipment** — **Replaceable** (a life, regression or ALT model)
    or **Repairable** (a repairable model) — and the **Model**. With a regression
    or ALT model each item is forecast at its own conditions or stress.
-2. **Add item** for each unit in service, with its **Current use** (its age in
-   the model's time unit). An item can have its **Own rate** if it runs harder
-   or lighter than the rest.
+2. Add the units in service, each with its **Current use** (its age in the
+   model's time unit). An item can have its **Own rate** if it runs harder or
+   lighter than the rest. Three ways save typing them one by one:
+   - **Use the … still-running units from this model's data** — the units the
+     model's data records as still running, each at the age it had reached (for a
+     repairable model, each system at the end of its record). One click.
+   - **Paste from Excel** — copy the rows (a name and an age; a header row is
+     optional) and paste them in. Columns are matched by their headers, and you
+     can change each one: name, current use, the date it was last replaced
+     (turned into an age at the usage rate), its own rate, and for a regression
+     model its covariates. Ages in hours, days, weeks or years are converted
+     to the model's unit when that is a time too. A preview says how many items
+     were read and why any row was skipped, before you **Add** them or
+     **Replace** the list.
+   - **Upload file** — the same from a CSV or Excel file.
+
+   To change many items at once, tick them (or tick the header to select all)
+   and set their current use or own rate, or remove them.
 3. Set the **Usage per month** for the fleet, the **Horizon** (12) and the
    **Period** (months, weeks, years…).
 4. Press **Save & forecast**.
@@ -149,11 +164,17 @@ cost, for the whole horizon and **year by year**, each with its likely range. Th
 spares answer then counts planned replacements too, so it says how many parts the
 strategy needs over the lead time, catch-up included.
 
-To compare the two strategies for a budget, run the forecast once each way (or
-make a copy of the forecast) and set the yearly costs side by side. **Export
+To compare the two strategies for a budget, **Duplicate** the forecast (in its
+**⋯** menu), change the copy, then on **Forecasts** tick both and press
+**Compare**: failures, the spares to hold and the cost sit side by side, for up
+to four forecasts. Lead times and service levels compare the same way. **Export
 CSV** includes every period and every year with their ranges. The replacement
 age itself comes from
 [find the optimal replacement interval](/guides/optimal-replacement-interval).
+
+Forecasts that count first failures only, or every failure of repairable
+items, show their years too, and take a **Cost of a failure** under **Change
+settings** for what failures cost each year.
 
 ## Get told when it changes
 

@@ -7242,6 +7242,9 @@ def fleet_forecast(
         "model units; items already past it are replaced in period 1), failure_cost?, planned_cost?}. Adds "
         "forecast.strategy: failures, planned replacements, parts and cost per period and per year with 90% "
         "ranges. Default: the fleet's saved strategy."))] = None,
+    use_model_data: Annotated[bool, Field(description=(
+        "Forecast the units still running in the model's own data (its suspensions, at their ages; a repairable "
+        "model: each system at the end of its record) instead of the fleet's saved items. Nothing is saved."))] = False,
 ) -> dict[str, Any]:
     """A fleet's live failure forecast: expected failures over the horizon with a P5-P95 (90%)
     range, per period and per item (the top 20 unless include_items; item_probabilities adds each item's chance by
@@ -7262,6 +7265,18 @@ def fleet_forecast(
                 {**(fleet.settings or {}), **strategy})})
     except fleet_service.FleetValidationError as exc:
         raise ToolError(str(exc)) from None
+    source = None
+    if use_model_data:
+        from backend.services import fleet_items
+
+        try:
+            units = fleet_items.running_units(db, fleet, [*owners, fleet.owner_id])
+            fleet = fleet.model_copy(update={"items": fleet_service._clean_items(units["items"])})
+        except (fleet_items.NoModelData, fleet_service.FleetValidationError) as exc:
+            raise ToolError(str(exc)) from None
+        source = {"items": "model_data", "n_items": len(fleet.items),
+                  **({"note": units["reason"]} if units.get("reason") else {}),
+                  **({"skipped": units["skipped"][:10]} if units.get("skipped") else {})}
     forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id], item_periods=item_probabilities,
                                      spares_opts=opts)
     names = {it.get("id"): it.get("name") for it in fleet.items or []}
@@ -7272,9 +7287,12 @@ def fleet_forecast(
         forecast = {**forecast, "per_item": top,
                     "per_item_note": f"Top {_TOP_ITEMS} of {len(items)} items by expected failures; pass "
                                      "include_items=true for all of them."}
-    return {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
-                      "model_kind": fleet.model_kind, "url": _url(f"/forecasts/{fleet.id}")},
-            "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
+    out = {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
+                     "model_kind": fleet.model_kind, "url": _url(f"/forecasts/{fleet.id}")},
+           "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
+    if source is not None:
+        out["items_source"] = source
+    return out
 
 
 def _alertable_fleet(db, uid: str, fleet_id: str):

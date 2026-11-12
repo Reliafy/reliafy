@@ -2183,6 +2183,21 @@ export function putFleetItems(id, settings, items, expectedUpdatedAt) {
   });
 }
 
+// The units still running in the fleet's model's data (a repairable model's
+// systems), as items to add; nothing is saved.
+export function getFleetRunningUnits(id) {
+  return request(`/api/fleet/fleets/${id}/running-units`);
+}
+
+// A copy of a forecast (items and settings) for another scenario.
+export function duplicateFleet(id, name) {
+  return request(`/api/fleet/fleets/${id}/duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name || null }),
+  });
+}
+
 // Alerts on a fleet's expected failures (evaluated when usage arrives via the API).
 export function listFleetAlerts(id) {
   return request(`/api/fleet/fleets/${id}/alerts`);

@@ -26,11 +26,13 @@ export function fleetForecastCsv({ items = [], perItem = {}, fields = [], defaul
     (forecast.per_period || []).forEach((v, i) =>
       rows.push([i + 1, n(v), n(forecast.per_period_interval[i]?.[0]) ?? "", n(forecast.per_period_interval[i]?.[1]) ?? ""]));
   }
-  // The strategy (renewals forecasts): failures, planned replacements, parts and
-  // cost per period and per year, each with its 90% range, for a budget sheet.
+  // The strategy: failures (renewals forecasts: also planned replacements and
+  // parts) and cost, per period and per year, each with its 90% range, for a
+  // budget sheet. First-failures and repairable forecasts count failures only.
   const st = forecast.strategy;
   if (st && Array.isArray(st.per_period)) {
-    const keys = ["failures", "planned", "parts", ...(st.total?.cost ? ["cost"] : [])];
+    const counts = st.kind === "first_failures" || st.kind === "repairable";
+    const keys = [...(counts ? ["failures"] : ["failures", "planned", "parts"]), ...(st.total?.cost ? ["cost"] : [])];
     const head = keys.flatMap((k) => [k, `${k}_p5`, `${k}_p95`]);
     const cells = (r) => keys.flatMap((k) => [n(r[k]?.expected) ?? "", n(r[k]?.interval?.[0]) ?? "",
                                                n(r[k]?.interval?.[1]) ?? ""]);
