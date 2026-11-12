@@ -299,3 +299,21 @@ test("a share page's plain answer: one in ten, its bound in words, then the patt
   for (const kind of ["regression", "competing_risks", "joint"]) assert.equal(plainAnswer({ ...weibull, kind }), null);
   assert.equal(plainAnswer({}), null);
 });
+
+test("effects over the data's range when +1 misleads (load spans 0.5 to 0.9)", () => {
+  const r = {
+    kind: "regression", effect: "ph", ratio_label: "hazard ratio",
+    coefficients: [{ name: "load", value: Math.log(205), ci: [Math.log(20), Math.log(2000)] },
+                   { name: "dusty", value: Math.log(1.5), ci: [Math.log(1.1), Math.log(2)] }],
+    functions: { covariates: [{ name: "load", type: "number", default: 0.7, min: 0.5, max: 0.9 },
+                              { name: "dusty", type: "number", default: 0, min: 0, max: 1, flag: true }] },
+  };
+  const [load, dusty] = forestRows(r);
+  assert.deepEqual(load.range, [0.5, 0.9]);
+  assert.equal(dusty.range, null);
+  const text = effectText(load, "hazard ratio");
+  assert.match(text, /^Each \+1 in load multiplies the failure rate by 205/);
+  // 205 ** 0.4 = 8.41: across the data's range, not per +1.
+  assert.match(text, /across the data's range, 0\.5 to 0\.9, it multiplies it by 8\.41 \(\d+% 3\.31 to 20\.9\)/);
+  assert.doesNotMatch(effectText(dusty, "hazard ratio"), /across/);
+});

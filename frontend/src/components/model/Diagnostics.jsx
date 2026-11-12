@@ -14,7 +14,8 @@ import { getModelValidation, getResiduals } from "../../api.js";
 import { formatNumber } from "../../format.js";
 import { bestFitSentence, compareRows, criterionLabel } from "../../lifeResults.js";
 import { COLORWAY, DATA_INK, dataPoints, fitLine, referenceShape } from "../../plotTheme.js";
-import { checkRows, checksTone } from "../../modelChecks.js";
+import { checkRows, checksTone, phDisagreement } from "../../modelChecks.js";
+import { termName } from "../../modelFrame.js";
 import { countsSummary, curveSummary, hazardShape, oddUnits, ppSummary } from "../../modelFrame.js";
 import { unitInText } from "../unitText.js";
 import { levelPct } from "../../levels.js";
@@ -306,6 +307,9 @@ function useFetched(stored, fetcher, key) {
   return { value: stored || got?.v || null, loading: !stored && !!key && !got, error: got?.error || null };
 }
 
+// "site[T.North]" in a sentence → "site = North".
+const plainTerms = (text) => String(text || "").replace(/(?:C\(\s*)?`?([\w.]+)`?\)?\[T\.([^\]]+)\]/g, "$1 = $2");
+
 function ResidualChecks({ result, name }) {
   const path = result.functions?.residuals_path;
   const ph = result.diagnostics?.ph_test;
@@ -326,21 +330,22 @@ function ResidualChecks({ result, name }) {
     <>
       <CheckCard chart question="Does each effect stay constant over time?" term="Schoenfeld residuals, PH test"
                  tone={ph?.available ? ph.tone : undefined}
-                 verdict={ph?.available ? ph.reading : ph?.reason ? ph.reason.replace(/^Not available:\s*/, "") : null}
+                 verdict={ph?.available ? [plainTerms(ph.reading), phDisagreement(ph, result.diagnostics?.model_checks)].filter(Boolean).join(" ")
+                   : ph?.reason ? ph.reason.replace(/^Not available:\s*/, "") : null}
                  footer={sch.length > 1 && (
                    <Select value={String(Math.min(which, sch.length - 1))} onChange={(v) => setWhich(Number(v))}
-                           ariaLabel="Covariate" options={sch.map((x, i) => ({ value: String(i), label: x.covariate }))} />
+                           ariaLabel="Covariate" options={sch.map((x, i) => ({ value: String(i), label: termName(x.covariate).label }))} />
                  )}>
         {body(() => (s ? (
-          <Plot fill download={`Scaled Schoenfeld residuals — ${s.covariate}`}
+          <Plot fill download={`Scaled Schoenfeld residuals — ${termName(s.covariate).label}`}
                 data={[
-                  { ...dots(COLORWAY[0]), x: s.x, y: s.y, name: s.covariate },
+                  { ...dots(COLORWAY[0]), x: s.x, y: s.y, name: termName(s.covariate).label },
                   { type: "scatter", mode: "lines", x: s.trend.x, y: s.trend.y, line: { color: COLORWAY[0], width: 2 },
                     name: "Trend", hoverinfo: "skip" },
                 ]}
                 layout={{ ...SMALL, showlegend: false, shapes: [referenceShape({ y: s.coef, line: { dash: "dot" } })],
                           xaxis: { title: { text: `Failure time${u}` } },
-                          yaxis: { title: { text: `Effect of ${s.covariate}, β(t)` } } }} />
+                          yaxis: { title: { text: `Effect of ${termName(s.covariate).label}, β(t)` } } }} />
         ) : empty("No covariates to check.")))}
       </CheckCard>
       <CheckCard chart question="Is each effect a straight line?" term="martingale residuals"

@@ -703,7 +703,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
         {bayes ? (
           <button data-wt="fit-run" onClick={onFit} disabled={loading || !!priorWanting} title={priorWanting || undefined}>
-            {loading ? "Fitting…" : "Fit with the prior"}
+            {loading ? "Fitting: about 10 seconds…" : "Fit with the prior"}
           </button>
         ) : (
           <button data-wt="fit-run" onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}

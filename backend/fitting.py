@@ -870,11 +870,9 @@ def outside_support_message(
     else:
         why = (f"it has no probability at or below {lower:g}, so a unit can't "
                "fail, or be censored, there")
-    return (f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} outside the "
-            f"support of {which}: {why}. Correct or remove "
-            f"{'that row' if one else 'those rows'} (SurPyval 0.23 refuses "
-            f"{'it' if one else 'them'}; older versions silently ignored a "
-            "censored one).")
+    return (f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} out of range "
+            f"for {which}: {why}. Correct or remove "
+            f"{'that row' if one else 'those rows'} in the data and fit again.")
 
 
 # ---------------------------------------------------------------------------
@@ -3203,6 +3201,9 @@ def _randomness_verdict(distribution_id: str, params: list[dict]) -> dict | None
     """
     if distribution_id == "exponential":
         return {"verdict": "random", "basis": "memoryless"}
+    if distribution_id == "rayleigh":
+        # A Weibull with β fixed at 2: wear-out by assumption.
+        return {"verdict": "wear_out", "basis": "rayleigh"}
     if distribution_id != "weibull":
         return None
 
@@ -3565,14 +3566,21 @@ def _covariate_fields(df: pd.DataFrame, raw_vars) -> list:
             continue
         series = df[col]
         if pd.api.types.is_numeric_dtype(series):
-            mean = pd.to_numeric(series, errors="coerce").mean()
-            fields.append(
-                {
-                    "name": str(col),
-                    "type": "number",
-                    "default": round(float(mean), 4) if pd.notna(mean) else 0.0,
-                }
-            )
+            nums = pd.to_numeric(series, errors="coerce").dropna()
+            mean = nums.mean()
+            field = {
+                "name": str(col),
+                "type": "number",
+                "default": round(float(mean), 4) if pd.notna(mean) else 0.0,
+            }
+            if len(nums):
+                # The data's range, so an effect can be read over it, not
+                # only per +1; a yes/no (0/1) column is a flag.
+                field["min"] = float(nums.min())
+                field["max"] = float(nums.max())
+                if set(nums.unique().tolist()) <= {0, 1}:
+                    field["flag"] = True
+            fields.append(field)
         else:
             values = series.dropna().astype(str)
             options = sorted(values.unique().tolist())

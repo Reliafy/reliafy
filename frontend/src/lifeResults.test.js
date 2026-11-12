@@ -34,7 +34,8 @@ test("bestFitSentence: best with its gloss, the ties named, the rest counted or 
   assert.equal(
     bestFitSentence(compareRows(CANDIDATES)),
     "Rayleigh (a Weibull with β = 2) fits best; Lognormal, Weibull and Gamma are about as good; " +
-      "Normal and Exponential are worse."
+      "Normal and Exponential are worse. Rayleigh assumes the Weibull shape is exactly 2; the Weibull " +
+      "estimates it, so its bounds also carry that uncertainty."
   );
   const clear = compareRows([
     { id: "weibull", name: "Weibull", aic: 10 },
@@ -158,4 +159,10 @@ test("stretchTo: the next 1-2-5 value comfortably past the time asked for", () =
   assert.equal(stretchTo(-4), null);
   // Always past the time itself.
   for (const r of [0.07, 1, 9.2, 99, 12345]) assert.ok(stretchTo(r) > r);
+});
+
+test("precisePercent: a tiny chance in plain decimals, never e-notation", () => {
+  assert.equal(precisePercent(9.64e-6), "0.000964%");
+  assert.equal(precisePercent(1e-12), "under 0.0000001%");
+  assert.equal(precisePercent(0.00177), "0.177%");
 });

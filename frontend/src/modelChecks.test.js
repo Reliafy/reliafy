@@ -32,3 +32,21 @@ test("p-values", () => {
   assert.equal(pText(0.004), "p = 0.0040");
   assert.equal(pText(undefined), "");
 });
+
+test("checkRows: category terms in plain words", () => {
+  const rows = checkRows({ available: true, rows: [{ check: "influence", covariates: ["site[T.North]"], verdict: "ok" }] });
+  assert.equal(rows[0].covariates, "site = North");
+});
+
+test("phDisagreement: the drift test flags a covariate the model's own step check passes", async () => {
+  const { phDisagreement } = await import("./modelChecks.js");
+  const ph = { available: true, alpha: 0.05, rows: [{ covariate: "load_kN", p: 0.0428 }, { covariate: "dusty", p: 0.76 }] };
+  const mc = { available: true, rows: [
+    { check: "proportional_hazards", covariates: ["load_kN"], verdict: "ok", p: 0.501 },
+    { check: "proportional_hazards", covariates: ["dusty"], verdict: "ok", p: 0.8 },
+  ] };
+  const text = phDisagreement(ph, mc);
+  assert.match(text, /For load_kN, this test sees a slow drift over time \(p = 0\.043\)/);
+  assert.match(text, /no jump at the median failure time \(p = 0\.501\)/);
+  assert.equal(phDisagreement({ ...ph, rows: [{ covariate: "load_kN", p: 0.3 }] }, mc), null);
+});

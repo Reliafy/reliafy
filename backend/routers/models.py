@@ -643,7 +643,7 @@ def save_model(
                 )
         elif file is not None:
             dataset = datasets_service.create_dataset(
-                session, file.filename or "dataset.csv", read_upload(file), ctx.write_owner
+                session, datasets_service.default_name(file.filename), read_upload(file), ctx.write_owner
             )
         else:
             return JSONResponse(
@@ -753,7 +753,7 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
         dataset = datasets_service.get_dataset(session, str(body["dataset_id"]), ctx.read_owners)
     elif content is not None:
         label = str(body.get("name") or result.get("label") or "Life data").strip()[:150]
-        dataset = datasets_service.create_dataset(session, f"{label}: data.csv", content, ctx.write_owner)
+        dataset = datasets_service.create_dataset(session, f"{label}: data", content, ctx.write_owner)
     mapping = {"x": str(body.get("time_column") or ""), "c": body.get("censor_column") or ""}
     options = {"c_invert": bool(body.get("c_invert")) or None,
                "c_map": body.get("c_map") if isinstance(body.get("c_map"), dict) else None}

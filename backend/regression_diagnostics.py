@@ -32,6 +32,7 @@ from its column in the covariate row.
 from __future__ import annotations
 
 import json
+import re
 import logging
 from typing import Optional
 
@@ -458,6 +459,47 @@ CHECK_TITLES = {
 MAX_CHECK_ROWS = 40
 
 
+_SCI_RE = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?e[+-]?\d+(?![\w.])", re.IGNORECASE)
+_PLAIN_NUMBER_RE = re.compile(r"(?<![\w.])-?\d{4,}(?:\.\d+)?(?![\w.])")
+
+
+def _plain_number(text: str) -> str:
+    """"6.76e+03" → "6,760"; "3.83e-09" → "3.83 × 10⁻⁹"; "12000" → "12,000"."""
+    v = float(text)
+    if v != 0 and (abs(v) < 1e-3 or abs(v) >= 1e9):
+        mant, exp = f"{v:.3g}".split("e") if "e" in f"{v:.3g}" else (f"{v:.3g}", "0")
+        sup = str(int(exp)).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
+        return f"{mant} × 10{sup}"
+    shown = float(f"{v:.3g}")
+    return f"{shown:,.0f}" if abs(shown) >= 100 else f"{shown:g}"
+
+
+def _pct(text: str) -> str:
+    return f"{float(text) * 100:.2g}%"
+
+
+def plain_check_text(text: str) -> str:
+    """A SurPyval diagnose() test or detail in the app's words: no ``t =``,
+    no scientific notation, no ``model.data`` (its rows count from 0; the
+    user's data rows count from 1), and calibration's ICI / E50 / E90 said
+    as the gap between the predicted and the observed chance of failing."""
+    out = str(text or "")
+    out = re.sub(r"row (\d+) of model\.data", lambda m: f"row {int(m.group(1)) + 1} of the rows fitted", out)
+    out = re.sub(r"^ICI at t = ", "At age ", out)
+    out = re.sub(r"\((\d+%) of failures\)", r"(when \1 of the failures had happened)", out)
+    m = re.match(r"E50 ([\d.e+-]+), E90 ([\d.e+-]+); predicted risk ([\d.e+-]+) to ([\d.e+-]+)(.*)$", out)
+    if m:
+        out = (f"predicted and observed chance of failing differ by {_pct(m.group(1))} for a typical unit "
+               f"and by at most {_pct(m.group(2))} for 9 units in 10; predicted chances run from "
+               f"{_pct(m.group(3))} to {_pct(m.group(4))}{m.group(5)}")
+    out = re.sub(r"\bat t = ", "at age ", out)
+    out = re.sub(r"\bt = ", "age ", out)
+    out = _SCI_RE.sub(lambda m: _plain_number(m.group(0)), out)
+    out = _PLAIN_NUMBER_RE.sub(lambda m: _plain_number(m.group(0)), out)
+    out = out.replace("|deviance residual|", "deviance residual (either sign)")
+    return out
+
+
 def _check_row(row: dict) -> dict:
     def num(v):
         try:
@@ -468,13 +510,13 @@ def _check_row(row: dict) -> dict:
 
     return {
         "check": str(row.get("check", "")),
-        "test": str(row.get("test", "")),
+        "test": plain_check_text(row.get("test", "")),
         "covariates": [str(c) for c in (row.get("covariates") or ())],
         "statistic": num(row.get("statistic")),
         "df": num(row.get("df")),
         "p": num(row.get("p")),
         "verdict": str(row.get("verdict", "")),
-        "detail": str(row.get("detail", "")),
+        "detail": plain_check_text(row.get("detail", "")),
     }
 
 

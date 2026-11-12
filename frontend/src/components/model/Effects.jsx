@@ -145,6 +145,13 @@ function EffectsPanel({ result, split }) {
           : "Additive effects: each coefficient adds to the failure rate."}
         {" "}Every coefficient, with its standard error, is in the Data tab.
       </p>
+      {params.length > 1 && !result.tvc && (
+        <p className="life-method">
+          One shape for every unit: the covariates stretch or shrink the life, but the way failures spread out
+          with age is the same for every group. If groups may wear out differently, fit each group on its own and
+          compare them.
+        </p>
+      )}
     </>
   );
 }
