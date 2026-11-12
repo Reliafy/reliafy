@@ -8,7 +8,7 @@ import { costLabel, prefixCurrency, workspaceCurrency } from "../money.js";
 import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import SparesWhatIf from "./SparesWhatIf.jsx";
-import { SERVICE_LEVELS, fleetSparesCsv, leadTimeHint, levelText, overText, riskText, saveText, useText } from "../sparesPlan.js";
+import { SERVICE_LEVELS, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskText, risingText, saveText, useText } from "../sparesPlan.js";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const fileName = (name) => `${String(name).replace(/[^\w\- ]+/g, "").trim() || "fleet"} — spares plan.csv`;
@@ -71,8 +71,9 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
             sentence={<span data-testid="fleet-spares-summary">{answer.summary}</span>}
             tone={answer.below_reorder ? "caveat" : "neutral"}
             stats={[
-              { label: answer.repairable ? "Pool" : "Hold", value: formatNumber(answer.hold),
-                hint: answer.hold_cost != null ? prefixCurrency(money(answer.hold_cost)) : undefined },
+              { label: answer.repairable ? "Pool" : "Hold", value: holdText(answer),
+                hint: [risingText(answer, label), answer.hold_cost != null ? prefixCurrency(money(answer.hold_cost)) : null]
+                  .filter(Boolean).join(" · ") || undefined },
               { label: "Reorder at",
                 value: answer.reorder_at == null ? "repair each"
                   : !answer.review && answer.hold > 0 && answer.reorder_at >= answer.hold ? "one for one"

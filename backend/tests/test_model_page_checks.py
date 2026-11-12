@@ -130,3 +130,27 @@ def test_a_royston_parmar_spline_is_compared_with_the_plain_distributions(client
 def test_a_non_parametric_estimate_still_cannot_be_compared(client):
     model = _save(client, "kaplan_meier")
     assert client.post(f"/api/models/{model['id']}/compare").status_code == 422
+
+
+STATUS = "unit,hours,status\n" + "".join(
+    f"P{i:02d},{h},{s}\n" for i, (h, s) in enumerate(
+        [(1200, "F"), (1850, "F"), (2100, "S"), (2400, "F"), (3000, "F"), (3300, "S"), (3900, "F"),
+         (4400, "F"), (5000, "S"), (5200, "F"), (6100, "F"), (7000, "S")], start=1))
+
+
+def test_a_fit_on_a_status_column_is_compared_with_the_same_censor_mapping(client):
+    """12 Nov review: "Would another distribution fit better?" answered 422 ("None of
+    the distributions could be fit") on a plain right-censored file whose status column
+    reads F / S: the comparison dropped the fit's censor mapping. It keeps it now."""
+    res = client.post(
+        "/api/models",
+        data={"name": "Pumps F/S", "distribution": "weibull", "x": "hours", "c": "status", "unit": "hours",
+              "c_map": '{"F": 0, "S": 1}'},
+        files={"file": ("pumps.csv", STATUS.encode(), "text/csv")},
+    )
+    assert res.status_code == 200, res.text
+    out = client.post(f"/api/models/{res.json()['id']}/compare")
+    assert out.status_code == 200, out.text
+    ranked = out.json()["candidates"]
+    assert {c["id"] for c in ranked} >= {"weibull", "lognormal", "exponential"}
+    assert [c["aic"] for c in ranked] == sorted(c["aic"] for c in ranked)

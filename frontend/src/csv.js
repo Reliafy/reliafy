@@ -14,3 +14,12 @@ export function csvCell(v) {
 export function toCsv(rows) {
   return rows.map((r) => r.map(csvCell).join(",")).join("\n");
 }
+
+// A number for an export: 4 significant figures, like the screen, so a
+// spreadsheet gets 1 rather than 0.9999999999999997 (floating-point noise
+// read as precision). Kept a plain number (no thousands separators) so it
+// stays a number in the spreadsheet; anything else is passed through.
+export function csvNumber(v, sig = 4) {
+  if (typeof v !== "number" || !Number.isFinite(v)) return v;
+  return Number(v.toPrecision(sig));
+}

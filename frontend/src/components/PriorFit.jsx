@@ -8,7 +8,7 @@ import { RecordCovariatesField } from "./LibraryParts.jsx";
 import { ACCENT, BAND_FILL, MUTED } from "../plotTheme.js";
 import { TRUST_CHOICES } from "../bayesUpdate.js";
 import { AROUND_PARAMS, countsWords, libraryPriorWords } from "../fitDialog.js";
-import { fmt } from "../explorerModels.js";
+import { fmt, rangeBound } from "../explorerModels.js";
 import "./RcmWorksheet.css";
 import "./FitLifeModel.css";
 
@@ -25,7 +25,7 @@ const UNITS = ["hours", "days", "weeks", "months", "years"];
 
 export function Range({ p }) {
   if (!p) return "—";
-  const b = p.lower != null && p.upper != null ? `${fmt(p.lower)}–${fmt(p.upper)}` : p.lower != null ? `≥ ${fmt(p.lower)}` : null;
+  const b = rangeBound(p);
   return <>{fmt(p.median ?? p.point)}{b ? <span className="rw-sum"> ({b})</span> : null}</>;
 }
 

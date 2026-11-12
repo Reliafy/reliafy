@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, markersOf, rowText } from "./assetTree.js";
 import { positionOf } from "./explorerRcm.js";
 import {
-  MODEL_CHIPS, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
+  MODEL_CHIPS, rangeBound, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
   isLifeModelLink, lifeModelOf, builtRbdLink,
   opensInPane,
@@ -232,4 +232,13 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   assert.equal(bare[2].items.length, 1);
   assert.ok(attachGroups({ viewOnly: "View only" }).every((grp) => grp.items.every((x) => x.disabled)));
   assert.deepEqual(MODEL_POSITION_ITEMS, ["tree-rename"]);
+});
+
+// 12 Nov review: a fit with a prior gave the B10 as "3,506–6,994" (90% two-sided)
+// while the saved page said "≥ 3,810 at 90% credible". B-lives are one-sided now.
+test("a fitted B-life with a prior reads as a one-sided credible bound", () => {
+  assert.equal(rangeBound({ point: 5029.8, lower: 3813.5, upper: null, bound: "lower", level: 0.9 }), "≥ 3,814 at 90% credible");
+  assert.equal(rangeBound({ point: 582.37, lower: 467.25, upper: null, bound: "lower" }), "≥ 467");
+  assert.equal(rangeBound({ median: 13140, lower: 9239, upper: 24970 }), "9,239–24,970");
+  assert.equal(rangeBound({ median: 1 }), null);
 });

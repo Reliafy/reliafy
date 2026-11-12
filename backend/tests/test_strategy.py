@@ -260,3 +260,17 @@ def test_optimal_replacement_reason_is_none_when_it_pays():
 def test_optimal_replacement_cost_messages_say_what_to_do(cp, cu, words):
     with pytest.raises(StrategyError, match=words):
         st.optimal_replacement("weibull", _PUMP, cp, cu)
+
+
+def test_optimal_replacement_answers_in_the_models_own_unit():
+    """12 Nov review: a bearing model fitted in days (Weibull α 581, β 5.94)
+    with costs 1,050 / 9,000 replaces at about 316 days, and says days, not
+    hours. With no unit the sentence carries no unit word (never a default)."""
+    params = [{"name": "alpha", "value": 581.0}, {"name": "beta", "value": 5.94}]
+    res = st.optimal_replacement("weibull", params, 1050, 9000, unit="Days")
+    assert res["optimal_time"] == pytest.approx(316, abs=1)
+    assert res["unit"] == "Days"
+    assert "about 316 days" in res["recommendation"]
+    assert "hours" not in res["recommendation"]
+    bare = st.optimal_replacement("weibull", params, 1050, 9000)
+    assert "about 316." in bare["recommendation"] and "hour" not in bare["recommendation"]

@@ -4,7 +4,7 @@ import ModelPicker from "./ModelPicker.jsx";
 import FfiResult from "./FfiResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { ComputeReason } from "./StrategyTool.jsx";
-import { failureFindingMissing } from "../strategyTools.js";
+import { failureFindingMissing, strategyUnit } from "../strategyTools.js";
 import { failureFinding } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
 import PercentField from "./PercentField.jsx";
@@ -25,11 +25,9 @@ export default function FailureFinding() {
   const [ranWith, setRanWith] = useState(null); // the model the result is for
   // Opened from a model's "Use this model" (#294): that model, chosen.
   const wanted = modelFromSearch(useLocation().search);
-  // A saved model brings its unit.
-  const pickModel = (m) => {
-    setModel(m);
-    if (m?.unit) setUnit(m.unit);
-  };
+  // A saved model brings its unit (shown, not copied: a unit carried over
+  // from the saved model picked first must not label typed parameters).
+  const pickModel = (m) => setModel(m);
 
   const isRegression = model?.kind === "regression";
   // Typed as a percentage (99), sent as a fraction (0.99); 0.99 is asked
@@ -37,7 +35,7 @@ export default function FailureFinding() {
   const pcts = readPercents("failureFinding", { availability });
   const availCheck = pcts.checks.availability;
   // Why Compute is greyed out, said beside it (null when ready).
-  const missing = failureFindingMissing({ model, availability, availCheck });
+  const missing = failureFindingMissing({ model, availability, availCheck, unit });
   const canRun = !missing && !isRegression && pcts.ready;
 
   const run = async () => {
@@ -48,7 +46,7 @@ export default function FailureFinding() {
         distribution_id: model.distribution_id,
         params: model.params,
         target_availability: pcts.fractions.availability,
-        unit: model.unit || unit.trim() || null,
+        unit: strategyUnit(model, unit),
         extras: model.extras || null,
       };
       const res = await failureFinding(

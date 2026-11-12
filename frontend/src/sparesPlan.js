@@ -2,7 +2,7 @@
 // the risk at a stock the user types (from the answer's risk curve), and the
 // stocking plan as CSV, for a position class's spares and a fleet's part.
 import { formatNumber, formatPercent } from "./format.js";
-import { toCsv } from "./csv.js";
+import { csvNumber, toCsv } from "./csv.js";
 
 export const SERVICE_LEVELS = [0.8, 0.9, 0.95, 0.98, 0.99, 0.995, 0.999];
 
@@ -102,14 +102,32 @@ export function stockingCsv(spares = [], { positionClass = "", period = "month" 
     if (!st) continue;
     (st.per_period || []).forEach((p, i) => {
       const use = s.per_period?.[i] || {};
-      rows.push([positionClass, s.part.part_number, s.part.name, s.unit || "each", p.start, use.mean ?? "",
-        use.p90 ?? "", p.hold, p.reorder_at ?? "", st.service_level, st.repairable ? "" : st.lead_time_days,
+      rows.push([positionClass, s.part.part_number, s.part.name, s.unit || "each", p.start, csvNumber(use.mean) ?? "",
+        csvNumber(use.p90) ?? "", p.hold, p.reorder_at ?? "", st.service_level, st.repairable ? "" : st.lead_time_days,
         st.repairable ? "" : st.review_days, st.repairable ? "yes" : "no", st.turnaround_days ?? "",
-        i === 0 ? s.usable_on_hand : "", i === 0 ? st.risk_at_stock : "", st.unit_cost ?? "",
-        st.unit_cost != null ? p.hold * st.unit_cost : ""]);
+        i === 0 ? s.usable_on_hand : "", i === 0 ? csvNumber(st.risk_at_stock) : "", st.unit_cost ?? "",
+        st.unit_cost != null ? csvNumber(p.hold * st.unit_cost) : ""]);
     });
   }
   return toCsv(rows);
+}
+
+// The fleet's headline hold: "2", or "2 → 3" when a later period needs more
+// (the server's hold_rising), so the card agrees with the table by period.
+export function holdText(sp) {
+  if (!sp || sp.hold == null) return "—";
+  const now = formatNumber(sp.hold);
+  return sp.hold_rising ? `${now} → ${formatNumber(sp.hold_rising.hold)}` : now;
+}
+
+// Under the hold: "3 from quarter 2" (one step up) or "3 by quarter 5" (more
+// than one; the table by period has each). Empty when the need doesn't rise.
+export function risingText(sp, periodLabel = "periods") {
+  const r = sp?.hold_rising;
+  if (!r) return "";
+  const word = String(periodLabel || "periods").replace(/s$/i, "");
+  const how = r.peak_period === r.from_period ? "from" : "by";
+  return `${formatNumber(r.hold)} ${how} ${word} ${r.peak_period}`;
 }
 
 // A fleet's replacement-part plan: one row per period.
@@ -119,9 +137,9 @@ export function fleetSparesCsv(sp, { fleet = "", periodLabel = "periods" } = {})
     `lead_time_${periodLabel}`, `review_${periodLabel}`, "per_failure", "repairable", `turnaround_${periodLabel}`,
     "unit_cost", "hold_cost"]];
   for (const p of sp.per_period || []) {
-    rows.push([fleet, p.period, p.hold, p.reorder_at ?? "", p.expected_demand, sp.service_level,
+    rows.push([fleet, p.period, p.hold, p.reorder_at ?? "", csvNumber(p.expected_demand), sp.service_level,
       sp.lead_time ?? "", sp.review ?? "", sp.per_failure, sp.repairable ? "yes" : "no", sp.turnaround ?? "",
-      sp.unit_cost ?? "", sp.unit_cost != null ? p.hold * sp.unit_cost : ""]);
+      sp.unit_cost ?? "", sp.unit_cost != null ? csvNumber(p.hold * sp.unit_cost) : ""]);
   }
   return toCsv(rows);
 }

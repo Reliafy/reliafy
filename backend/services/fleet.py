@@ -1019,8 +1019,29 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     plan = [{"period": k + 1, "hold": protects[k].quantile(level),
              "reorder_at": leads[k].quantile(level) if leads[k] is not None else None,
              "expected_demand": protects[k].mean} for k in range(periods)]
+    # The headline is for a window starting now; when a later one needs more
+    # (items wearing out), it says so, so it agrees with the table by period.
+    rising = None
+    peak = max((p["hold"] for p in plan), default=now["hold"])
+    if peak > now["hold"]:
+        first = next(p["period"] for p in plan if p["hold"] > now["hold"])
+        rising = {"hold": peak, "from_period": first,
+                  "peak_period": next(p["period"] for p in plan if p["hold"] == peak)}
+    words = None
+    if rising is not None:
+        # One step up: "from quarter 2"; more than one: "by quarter 4" (the table has each).
+        one_step = rising["peak_period"] == rising["from_period"]
+        words = (peak, f"{'from' if one_step else 'by'} {_period_word(label)} {rising['peak_period']}")
     return {**base, "status": "ok", "window": protect, **now, "per_period": plan, "basis": basis,
-            "summary": spares.sentence(now, level, window, repairable=repairable, review=review > 0)}
+            **({"hold_rising": rising} if rising else {}),
+            "summary": spares.sentence(now, level, window, repairable=repairable, review=review > 0,
+                                       rising=words)}
+
+
+def _period_word(label: str) -> str:
+    """'quarters' -> 'quarter': one period, in running text."""
+    text = str(label or "periods").strip()
+    return text[:-1] if text.endswith("s") and len(text) > 1 else text
 
 
 # ---- Repairable fleets: a recurrent-event model (#235) ----------------------------
