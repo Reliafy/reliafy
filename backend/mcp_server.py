@@ -8491,11 +8491,18 @@ def revoke_share_link(
 # "report") and change share_revoke manage it like any other.
 
 _ReportItemKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis",
-                          "fleet", "recurrent_model"]
+                          "fleet", "recurrent_model", "alt_model", "fault_tree", "prediction"]
+# Kinds a report can hold besides those with a link of their own (_SHARE_KINDS).
+_REPORT_ONLY_KINDS = {"alt_model": "alt_models", "fault_tree": "fault_trees",
+                      "prediction": "reliability_predictions"}
+_REPORT_KINDS = {**{k: v for k, v in _SHARE_KINDS.items() if k != "report"}, **_REPORT_ONLY_KINDS}
+_KIND_OF_REPORT_ITEM = {collection: kind for kind, collection in _REPORT_KINDS.items()}
 
 
 class ReportItem(BaseModel):
-    kind: _ReportItemKind = Field(description="The item's kind, as for change share_link.")
+    kind: _ReportItemKind = Field(description="The item's kind, as for change share_link; also alt_model (an "
+                                              "accelerated life model), fault_tree and prediction (a "
+                                              "reliability prediction), which go in a report only.")
     id: str = Field(description="The id of one of the user's own items of that kind, or of a shared sample.")
     note: Optional[str] = Field(default=None, max_length=reports_service.MAX_NOTE,
                                 description="A short note shown above this item's section (plain text).")
@@ -8526,7 +8533,7 @@ def create_report(
     introduction and a note per item, each item as its share page shows it. Same password, expiry and revoke as
     create_link. Write notes from the items' results, quoting their figures as returned. Confirm first."""
     user, db = _caller(ctx), _db()
-    sections = [{"collection": _SHARE_KINDS[it.kind], "artifact_id": it.id, "note": it.note or ""}
+    sections = [{"collection": _REPORT_KINDS[it.kind], "artifact_id": it.id, "note": it.note or ""}
                 for it in items]
     try:
         report = reports_service.create(db, user["uid"], {
@@ -8542,7 +8549,7 @@ def create_report(
     out = {
         **_share_brief(db, link),
         "report_id": report["_id"],
-        "sections": [{"kind": _KIND_OF.get(s["collection"]), "id": s["artifact_id"], "name": s["name"]}
+        "sections": [{"kind": _KIND_OF_REPORT_ITEM.get(s["collection"]), "id": s["artifact_id"], "name": s["name"]}
                      for s in reports_service.public(db, report)["sections"]],
     }
     if link.get("passphrase"):

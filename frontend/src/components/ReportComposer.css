@@ -92,3 +92,44 @@
 @media (max-width: 700px) {
   .rc-section-acts button { min-width: 40px; min-height: 40px; }
 }
+
+/* The item picker: search and a kind filter over one short list; each row
+   says its kind and when it was saved, with Add (and Rename for your own). */
+.rc-add-label { display: block; margin-top: var(--sp-2); }
+.rc-picker { display: flex; flex-direction: column; gap: var(--sp-2); }
+.rc-picker-tools { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.rc-picker-search { flex: 3 1 220px; min-width: 0; }
+.rc-picker-kind { flex: 1 1 160px; min-width: 0; }
+.rc-picker-tools input,
+.rc-picker-tools select { width: 100%; box-sizing: border-box; }
+.rc-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.rc-pick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+.rc-pick:first-child { border-top: 0; }
+.rc-pick-text { display: flex; flex-direction: column; min-width: 0; }
+.rc-pick-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--sp-2);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.rc-pick-meta { font-size: var(--fs-12); color: var(--muted); }
+.rc-pick-acts { display: flex; flex: none; gap: 4px; }
+.rc-pick-acts button { min-height: 32px; }

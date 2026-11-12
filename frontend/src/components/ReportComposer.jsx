@@ -1,15 +1,108 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Modal from "./Modal.jsx";
+import Chip from "./ui/Chip.jsx";
 import { PublicLinks } from "./ShareDialog.jsx";
+import { useAskText } from "./ConfirmProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
+import { useWorkspace } from "../WorkspaceProvider.jsx";
 import {
-  createReport, deleteReport, draftReportNotes, listReportItems, listReports, updateReport,
+  createReport, deleteReport, draftReportNotes, listReportItems, listReports, renameAltModel, renameDataset,
+  renameDegradationModel, renameFaultTree, renameFleet, renameModel, renameRbd, renameRecurrentModel,
+  renameStrategyAnalysis, updatePrediction, updateReport,
 } from "../api.js";
+import { changedText, renamePrompt } from "../confirm.js";
+import { formatDate, formatDateTime } from "../dates.js";
+import { relativeTime } from "../instrument.js";
 import {
-  MAX_SECTIONS, addSection, applyDraft, moveSection, pickerGroups, removeSection, reportBody, setNote,
+  MAX_SECTIONS, RENAMABLE, addSection, applyDraft, duplicateNames, isDuplicate, moveSection, pickerKinds,
+  pickerRows, removeSection, renameItem, reportBody, setNote,
 } from "../reportComposer.js";
 import "./ReportComposer.css";
+
+// How each kind of item is renamed (the picker's Rename).
+const RENAME = {
+  models: renameModel,
+  recurrent_models: renameRecurrentModel,
+  alt_models: renameAltModel,
+  degradation_models: renameDegradationModel,
+  rbds: renameRbd,
+  fault_trees: renameFaultTree,
+  reliability_predictions: (id, name) => updatePrediction(id, { name }),
+  strategy_analyses: renameStrategyAnalysis,
+  fleets: renameFleet,
+  datasets: renameDataset,
+};
+
+// When an item was saved: "3 days ago", with the date itself on hover; to
+// the minute ("12 Nov 2026, 14:05") when another item has the same name.
+function Saved({ iso, exact = false }) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (exact) return <span>saved {formatDateTime(d)}</span>;
+  return <span title={formatDate(d, { long: true })}>saved {relativeTime(iso)}</span>;
+}
+
+// The items to add: a search box and a kind filter over one short list, each
+// row with its kind and when it was saved (so two items with one name can be
+// told apart), Add, and Rename for the workspace's own items.
+function ItemPicker({ items, sections, full, onAdd, onRename, disabled }) {
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("");
+  const kinds = useMemo(() => pickerKinds(items), [items]);
+  const rows = useMemo(() => pickerRows(items, sections, { query, kind }), [items, sections, query, kind]);
+  const dupes = useMemo(() => duplicateNames(items), [items]);
+  if (!items) return <p className="muted-line rc-empty">Loading items…</p>;
+  if (full) return <p className="muted-line rc-empty">A report holds up to {MAX_SECTIONS} items.</p>;
+  return (
+    <div className="rc-picker">
+      <div className="rc-picker-tools">
+        <label className="rc-picker-search">
+          <span className="sr-only">Find an item</span>
+          <input type="search" value={query} placeholder="Find an item by name or kind"
+            onChange={(e) => setQuery(e.target.value)} />
+        </label>
+        <label className="rc-picker-kind">
+          <span className="sr-only">Kind</span>
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="">All kinds</option>
+            {kinds.map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </label>
+      </div>
+      {rows.length === 0 ? (
+        <p className="muted-line rc-empty">{query || kind ? "Nothing matches. Try other words or All kinds." : "Nothing left to add."}</p>
+      ) : (
+        <ul className="rc-picker-list" aria-label="Items you can add">
+          {rows.map((it) => (
+            <li key={`${it.collection}:${it.artifact_id}`} className="rc-pick">
+              <div className="rc-pick-text">
+                <span className="rc-pick-name">
+                  {it.name}
+                  {it.is_sample && <Chip>Sample</Chip>}
+                </span>
+                <span className="rc-pick-meta">
+                  {it.kind}
+                  {(isDuplicate(dupes, it) || !it.is_sample) && (
+                    <> · <Saved iso={it.created_at || it.updated_at} exact={isDuplicate(dupes, it)} /></>
+                  )}
+                </span>
+              </div>
+              <span className="rc-pick-acts">
+                {!it.is_sample && RENAMABLE.has(it.collection) && (
+                  <button type="button" className="ghost sm" disabled={disabled}
+                    aria-label={`Rename ${it.name}`} onClick={() => onRename(it)}>Rename</button>
+                )}
+                <button type="button" className="secondary sm" disabled={disabled}
+                  aria-label={`Add ${it.name}`} onClick={() => onAdd(it)}>Add</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // The report composer (#30), opened from an item's Share dialog ("Add to a
 // report…"): pick saved items, give the report a title, an author line and
@@ -46,6 +139,9 @@ function fromReport(r) {
 // report of the user's to open (Reports' Edit).
 export default function ReportComposer({ initial = null, openId = "", onClose }) {
   const { ai } = useAppConfig();
+  const { workspace, activeTeam } = useWorkspace() || {};
+  const inTeam = Boolean(workspace && workspace !== "personal");
+  const askText = useAskText();
   const [reports, setReports] = useState(null);
   const [items, setItems] = useState(null);
   const [reportId, setReportId] = useState(""); // "" = a new report
@@ -88,7 +184,6 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openId, reports === null]);
 
-  const groups = useMemo(() => pickerGroups(items, form.sections), [items, form.sections]);
   const byKey = useMemo(
     () => new Map((items || []).map((it) => [`${it.collection}:${it.artifact_id}`, it])),
     [items]
@@ -142,7 +237,24 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
     }
   };
 
-  const canSave = form.title.trim() && form.sections.length > 0 && dirty && !busy;
+  // Rename an item of the workspace's own, from the picker or a section.
+  const onRename = async (it) => {
+    const name = changedText(await askText(renamePrompt({ kind: "item", name: it.name })), it.name);
+    if (!name) return;
+    setError(null);
+    try {
+      await RENAME[it.collection](it.artifact_id, name);
+      setItems((list) => renameItem(list, it, name));
+      setForm((f) => ({ ...f, sections: renameItem(f.sections, it, name) }));
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  // A team member without edit rights (or a frozen team) reads the team's reports.
+  const current = reportId ? (reports || []).find((r) => r.id === reportId) : null;
+  const readOnly = Boolean(current?.read_only);
+  const canSave = form.title.trim() && form.sections.length > 0 && dirty && !busy && !readOnly;
   const saved = reportId && !dirty;
 
   return (
@@ -154,7 +266,7 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
       footer={
         <>
           <div>
-            {reportId && !confirmDelete && (
+            {reportId && !readOnly && !confirmDelete && (
               <button type="button" className="secondary danger sm" onClick={() => setConfirmDelete(true)}
                 disabled={!!busy}>
                 Delete report
@@ -182,9 +294,16 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
       }
     >
       <p className="muted-line rc-lede">
-        Put several items on one page with a title and notes, ready to print. Nothing is
-        public until you create a link.
+        Put several items on one page with a title and notes, ready to print.{" "}
+        {inTeam
+          ? <>This report belongs to {activeTeam?.name ? <b>{activeTeam.name}</b> : "this team"}: every member sees it.</>
+          : "Nothing is public until you create a link."}
       </p>
+      {readOnly && (
+        <p className="rc-draft rc-draft-warn" role="status">
+          You can read this team's reports; editing them needs a Pro plan (or the team owner's plan to be active).
+        </p>
+      )}
 
       {reports?.length > 0 && (
         <label className="login-field">
@@ -276,27 +395,13 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
             );
           })}
         </ol>
-        <label className="login-field">
-          <span className="sr-only">Add an item</span>
-          <select value="" disabled={!items || full}
-            onChange={(e) => {
-              const it = byKey.get(e.target.value);
-              if (it) setSections((x) => addSection(x, it));
-            }}>
-            <option value="">
-              {full ? `A report holds up to ${MAX_SECTIONS} items` : items ? "Add an item…" : "Loading items…"}
-            </option>
-            {groups.map(([label, list]) => (
-              <optgroup key={label} label={label}>
-                {list.map((it) => (
-                  <option key={`${it.collection}:${it.artifact_id}`} value={`${it.collection}:${it.artifact_id}`}>
-                    {it.is_sample ? `${it.name} · ${it.kind}` : it.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
+        {!readOnly && (
+          <>
+            <span className="field-label rc-add-label">Add an item</span>
+            <ItemPicker items={items} sections={form.sections} full={full} disabled={!!busy}
+              onAdd={(it) => setSections((x) => addSection(x, it))} onRename={onRename} />
+          </>
+        )}
       </div>
 
       {error && (
@@ -307,11 +412,17 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
         </div>
       )}
 
-      {reportId && (
+      {reportId && !inTeam && (
         <div className="rc-publish">
           {dirty && <p className="muted-line rc-hint">Save your changes to update the published page.</p>}
           <PublicLinks collection="reports" artifactId={reportId} onError={setError} openable />
         </div>
+      )}
+      {reportId && inTeam && (
+        <p className="muted-line rc-hint">
+          Public links are for Personal-workspace items for now, so a team report is read here in
+          Reliafy by the team's members.
+        </p>
       )}
     </Modal>
   );

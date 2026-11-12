@@ -1,10 +1,27 @@
 import { Link } from "react-router-dom";
 import Logo from "./Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
+import { AUTH_DISABLED } from "../firebase.js";
 
-// Shared top bar for the public (marketing + blog) pages.
+// Shared top bar for the public (marketing + blog) pages. With sign-in off
+// (the self-hosted single-user app) only the guides are public pages here:
+// the bar is the guides and the way back into the app.
 export default function PublicNav() {
   const { user } = useAuth();
+  if (AUTH_DISABLED) {
+    return (
+      <header className="landing-nav">
+        <Link className="brand" to="/home">
+          <Logo size={30} />
+          <span className="brand-name">Reliafy</span>
+        </Link>
+        <nav className="landing-nav-actions">
+          <Link className="landing-nav-link" to="/guides">Guides</Link>
+          <Link className="cta cta-solid" to="/home">Open the app</Link>
+        </nav>
+      </header>
+    );
+  }
   return (
     <header className="landing-nav">
       <Link className="brand" to="/">

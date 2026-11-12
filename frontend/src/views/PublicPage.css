@@ -63,6 +63,19 @@ html.print-layout .public-artifact { min-height: 0; padding: var(--sp-4) 0 0; }
 html.print-layout .public-app { max-width: none; margin: 0; padding: 0; }
 html.print-layout .public-page .card { box-shadow: none; }
 
+/* A model's answer in one plain sentence, for a manager: above the
+   figures and bounds (the answer line) and the tabs. */
+.share-plain {
+  margin: 6px 0 2px;
+  max-width: 62rem;
+  font-size: var(--fs-16, 16px);
+  line-height: 1.5;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.report-section .share-plain { margin: 0 0 10px; }
+
 @media print {
   @page { margin: 14mm 12mm; }
 

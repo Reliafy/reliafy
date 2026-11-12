@@ -46,15 +46,20 @@ export function appRoutes() {
   // App.jsx's ungated routes besides the shell itself (/oauth/consent): these
   // draw outside the shell's <main>.
   const top = routesIn("App.jsx")
-    .filter((r) => !r.gate && r.path !== "/*")
+    .filter((r) => !r.gate && r.path !== "/*" && !BOTH_MODES.has(r.path))
     .map((r) => ({ ...r, flag: null, root: "#root" }));
   const moved = MOVED.map((m) => ({ path: m.path, target: m.to, gate: null, flag: null, redirect: true }));
   return [...shell, ...top, ...moved].filter((r) => r.path !== "*");
 }
 
-// The public pages (cloud builds only: App.jsx gates them on !AUTH_DISABLED).
+// Public pages App.jsx routes with sign-in on and off: the guides and share
+// pages. The deployed run opens them with the other public pages; the local
+// (sign-in off) run has its own test (sharepage.spec.js).
+export const BOTH_MODES = new Set(["/guides", "/guides/:slug", "/p/:token"]);
+
+// The public pages (cloud builds: App.jsx gates most on !AUTH_DISABLED).
 export function publicRoutes() {
-  return routesIn("App.jsx").filter((r) => r.gate === "!AUTH_DISABLED");
+  return routesIn("App.jsx").filter((r) => r.gate === "!AUTH_DISABLED" || BOTH_MODES.has(r.path));
 }
 
 export const hasParam = (path) => path.includes("/:");

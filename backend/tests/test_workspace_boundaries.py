@@ -487,6 +487,7 @@ def test_deleting_a_team_removes_all_its_data(client):
     db.fleet_forecasts.insert_one({"_id": "ff1", "fleet_id": "f1"})
     db.fleet_alert_events.insert_one({"_id": "fe1", "fleet_id": "f1"})
     db.model_refits.insert_one({"_id": "mr1", "owner_id": principal, "model_id": "m1"})
+    db.reports.insert_one({"_id": "rep1", "owner_id": principal, "name": "Team report", "sections": []})
     # Someone else's records stay.
     db.alt_models.insert_one({"_id": "alt2", "owner_id": OWNER, "name": "Mine"})
     db.rbd_jobs.insert_one({"_id": "job2", "rbd_id": "rbd-mine", "uid": OWNER, "kind": "availability"})
@@ -494,9 +495,101 @@ def test_deleting_a_team_removes_all_its_data(client):
     client.act_as(OWNER)
     assert client.delete(f"/api/teams/{tid}").status_code == 200
     for coll in ("alt_models", "rbds", "rbd_jobs", "fleets", "fleet_alerts", "fleet_forecasts",
-                 "fleet_alert_events", "model_refits"):
+                 "fleet_alert_events", "model_refits", "reports"):
         assert db[coll].count_documents({"_id": {"$nin": ["alt2", "job2"]}}) == 0, coll
     assert db.alt_models.count_documents({"_id": "alt2"}) == 1 and db.rbd_jobs.count_documents({"_id": "job2"}) == 1
+
+
+# ---- Reports belong to the workspace -----------------------------------------------------
+
+def _weibull_csv() -> bytes:
+    rng = np.random.default_rng(3)
+    return _csv(pd.DataFrame({"hours": rng.weibull(2.0, 30) * 1000}))
+
+
+def _save_model(client, name, workspace=None):
+    headers = {"X-Workspace-Id": workspace} if workspace else {}
+    r = client.post("/api/models", data={"name": name, "distribution": "weibull", "x": "hours", "unit": "hours"},
+                    files={"file": ("d.csv", _weibull_csv(), "text/csv")}, headers=headers)
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def test_reports_and_their_links_belong_to_the_workspace(client):
+    """A team's reports are the team's: every member lists them, the Personal
+    workspace never does, and the team never lists Personal reports or the
+    links to Personal items. A report holds only its own workspace's items."""
+    tid = _team_with_member(client)
+    team = {"X-Workspace-Id": tid}
+    client.act_as(OWNER)
+    mine = _save_model(client, "Owner's own model")
+    shared = _save_model(client, "Crew model", workspace=tid)
+
+    personal = client.post("/api/reports", json={
+        "title": "Personal review", "sections": [{"collection": "models", "artifact_id": mine}]}).json()
+    assert client.post("/api/public-links", json={"collection": "reports", "artifact_id": personal["id"]}).status_code == 200
+    assert client.post("/api/public-links", json={"collection": "models", "artifact_id": mine}).status_code == 200
+
+    r = client.post("/api/reports", headers=team, json={
+        "title": "Crew review", "sections": [{"collection": "models", "artifact_id": shared}]})
+    assert r.status_code == 200, r.text
+    crew = r.json()
+    assert client.db.reports.find_one({"_id": crew["id"]})["owner_id"] == f"team:{tid}"
+    # A Personal item can't go in the team's report, nor a team item in a Personal one.
+    assert client.post("/api/reports", headers=team, json={
+        "title": "x", "sections": [{"collection": "models", "artifact_id": mine}]}).status_code == 404
+    assert client.post("/api/reports", json={
+        "title": "x", "sections": [{"collection": "models", "artifact_id": shared}]}).status_code == 400
+
+    # Each workspace lists its own reports, picker items and links.
+    assert [x["id"] for x in client.get("/api/reports").json()["reports"]] == [personal["id"]]
+    assert [x["id"] for x in client.get("/api/reports", headers=team).json()["reports"]] == [crew["id"]]
+    team_items = {i["artifact_id"] for i in client.get("/api/reports/items", headers=team).json()["items"]
+                  if not i["is_sample"]}
+    assert shared in team_items and mine not in team_items
+    assert len(client.get("/api/public-links").json()["links"]) == 2
+    assert client.get("/api/public-links", headers=team).json()["links"] == []
+    # A Personal report isn't opened, changed or deleted from the team workspace.
+    assert client.get(f"/api/reports/{personal['id']}", headers=team).status_code == 404
+    assert client.delete(f"/api/reports/{personal['id']}", headers=team).status_code == 404
+    # Team items can't be linked publicly yet: a team report neither.
+    r = client.post("/api/public-links", json={"collection": "reports", "artifact_id": crew["id"]})
+    assert r.status_code == 400 and "Team" in r.json()["detail"]
+
+    # The member sees the team's report (read-only without Pro) and none of the owner's.
+    client.act_as(MEMBER)
+    listed = client.get("/api/reports", headers=team).json()["reports"]
+    assert [x["id"] for x in listed] == [crew["id"]] and listed[0]["read_only"] is True
+    assert client.get(f"/api/reports/{crew['id']}", headers=team).json()["title"] == "Crew review"
+    assert client.get("/api/reports").json()["reports"] == []
+    assert client.get(f"/api/reports/{personal['id']}").status_code == 404
+    r = client.put(f"/api/reports/{crew['id']}", headers=team, json={
+        "title": "Changed", "sections": [{"collection": "models", "artifact_id": shared}]})
+    assert r.status_code == 402
+    assert client.delete(f"/api/reports/{crew['id']}", headers=team).status_code == 402
+
+    # With Pro the member edits it like any other team item.
+    client.db.users.update_one({"_id": MEMBER}, {"$set": {"plan": "pro"}})
+    r = client.put(f"/api/reports/{crew['id']}", headers=team, json={
+        "title": "Changed", "sections": [{"collection": "models", "artifact_id": shared}]})
+    assert r.status_code == 200 and r.json()["title"] == "Changed" and r.json()["read_only"] is False
+
+    # An outsider sees nothing of it.
+    client.act_as(OTHER)
+    assert client.get("/api/reports", headers=team).status_code == 403
+    assert client.get(f"/api/reports/{crew['id']}").status_code == 404
+
+
+def test_reports_made_before_workspaces_stay_personal(client):
+    """A report saved before reports followed the workspace has its maker's
+    uid as owner: it stays in their Personal workspace, unchanged."""
+    tid = _team_with_member(client)
+    client.db.reports.insert_one({"_id": "old", "owner_id": OWNER, "name": "Old report", "sections": [],
+                                  "created_at": datetime(2026, 10, 1, tzinfo=timezone.utc),
+                                  "updated_at": datetime(2026, 10, 1, tzinfo=timezone.utc)})
+    client.act_as(OWNER)
+    assert [x["id"] for x in client.get("/api/reports").json()["reports"]] == ["old"]
+    assert client.get("/api/reports", headers={"X-Workspace-Id": tid}).json()["reports"] == []
 
 
 # ---- Ids from request bodies are strings ------------------------------------------------

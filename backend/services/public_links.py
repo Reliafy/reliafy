@@ -267,6 +267,19 @@ def list_links(db, uid: str, collection: str | None = None, artifact_id: str | N
     return [link for link in db.public_links.find(query).sort("created_at", -1) if not _expired(link, now)]
 
 
+def in_workspace(db, links: list[dict], owner: str) -> list[dict]:
+    """The links whose item belongs to the workspace ``owner`` (a uid or
+    ``team:<id>``), in the order given: one query per collection."""
+    by_coll: dict[str, list[str]] = {}
+    for link in links:
+        by_coll.setdefault(link["collection"], []).append(link["artifact_id"])
+    keep = set()
+    for coll, ids in by_coll.items():
+        for doc in db[coll].find({"_id": {"$in": ids}, "owner_id": owner}, {"_id": 1}):
+            keep.add((coll, doc["_id"]))
+    return [link for link in links if (link["collection"], link["artifact_id"]) in keep]
+
+
 def get_for_artifact(db, collection: str, artifact_id: str, uid: str) -> dict | None:
     """The newest live link for an artifact."""
     links = list_links(db, uid, collection, artifact_id)
