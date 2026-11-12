@@ -330,16 +330,22 @@ def ownership_by_horizon(horizon, rate, basis, overrides):
     total_cost at the long-run rate (a present value at DISCOUNT_RATE), and
     expected_cost from new, each cost discounted from when it falls (exact or
     numerical, where RePyability has it; not above
-    EXACT_WINDOW_MEAN_MAX_BLOCKS blocks, as in Reliafy). A simulated rate has
-    no present value: RePyability discounts only its own exact costs."""
+    EXACT_WINDOW_MEAN_MAX_BLOCKS blocks, as in Reliafy). A simulated rate is
+    discounted as total_cost discounts an exact one: spent steadily, its
+    horizon counting (1 - exp(-r t)) / r."""
     finite = sorted({float(horizon), *COMPARE_HORIZONS})
     times = np.array(finite + ([np.inf] if DISCOUNT_RATE else []))
     if basis == "exact":
         with np.errstate(all="ignore"):
             totals = list(np.atleast_1d(rbd.total_cost(times, discount_rate=DISCOUNT_RATE, **overrides)))
     else:
-        plain = [rbd.acquisition_cost + rate * t for t in finite]
-        totals = [None] * len(times) if DISCOUNT_RATE else plain
+        if DISCOUNT_RATE:
+            with np.errstate(over="ignore"):
+                present = [-np.expm1(-DISCOUNT_RATE * t) / DISCOUNT_RATE if np.isfinite(t) else 1.0 / DISCOUNT_RATE
+                           for t in times]
+            totals = [rbd.acquisition_cost + rate * p for p in present]
+        else:
+            totals = [rbd.acquisition_cost + rate * t for t in finite]
     new = [None] * len(finite)
     if not rbd.has_costs:
         new = [rbd.acquisition_cost] * len(finite)
@@ -394,13 +400,13 @@ def report_costs(sim, overrides):
     total = next(r for r in rows if r["horizon"] == horizon)["total_cost"]
     plain = rbd.acquisition_cost + rate * horizon
     if total is None:
-        print(f"Total cost of ownership over {horizon:,.6g}: {plain:,.6g} undiscounted (no present value:"
-              " RePyability discounts only its own exact long-run rate)")
+        print(f"Total cost of ownership over {horizon:,.6g}: {plain:,.6g} undiscounted")
     else:
         print(f"Total cost of ownership over {horizon:,.6g}"
               + (f" (present value at {DISCOUNT_PERCENT:g}% a year)" if DISCOUNT_RATE else "")
               + f": {total:,.6g} (purchase {rbd.acquisition_cost:,.6g}"
-              + f" + running {total - rbd.acquisition_cost:,.6g})")
+              + f" + running {total - rbd.acquisition_cost:,.6g})"
+              + (" at the simulated running cost" if basis != "exact" and DISCOUNT_RATE else ""))
     for row in rows:
         what = f"over {row['horizon']:,.6g}" if not row["endless"] else "for ever (net present cost)"
         print(f"  owned {what}: "

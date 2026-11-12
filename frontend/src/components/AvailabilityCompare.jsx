@@ -49,7 +49,7 @@ const QUANTITIES = [
     label: "Cost",
     more: "costs more to own",
     less: "costs less to own",
-    unit: " over the window, purchases included",
+    unit: ", purchases included",
     longRun: "Running cost per unit time",
     window: "Owning it for the window",
     diffLabel: "Difference (B − A)",
@@ -70,11 +70,11 @@ const QUANTITIES = [
 const THIS = "This diagram";
 
 // The plain-language verdict for one quantity's difference (B − A).
-function verdict(q, diff, nameA, nameB) {
+function verdict(q, diff, nameA, nameB, over = "the window") {
   const exact = diff.method === "exact";
   if (diff.estimate === 0 && diff.standard_error === 0) {
     return exact
-      ? <>No difference: {nameA} and <b>{nameB}</b> have the same expected {q.label.toLowerCase()} over the window.</>
+      ? <>No difference: {nameA} and <b>{nameB}</b> have the same expected {q.label.toLowerCase()} over {over}.</>
       : <>No difference: {nameA} and <b>{nameB}</b> behaved identically in every simulated history.</>;
   }
   const conf = Math.round((diff.confidence || 0.95) * 100);
@@ -82,15 +82,17 @@ function verdict(q, diff, nameA, nameB) {
   const ci = (lo, hi) => (exact ? "exact" : `${conf}% CI ${q.diff(lo, d)} to ${q.diff(hi, d)}`);
   const is = q.key === "availability" ? "is " : "";
   if (diff.verdict === "b_higher") {
-    return <><b>{nameB}</b> {is}{q.more} than {nameA} by <b>{q.amount(diff.estimate, d)}</b>{q.unit} ({ci(diff.lower, diff.upper)}).</>;
+    return <><b>{nameB}</b> {is}{q.more} than {nameA} by <b>{q.amount(diff.estimate, d)}</b>{q.key === "cost" ? ` over ${over}` : ""}{q.unit} ({ci(diff.lower, diff.upper)}).</>;
   }
   if (diff.verdict === "a_higher") {
-    return <><b>{nameB}</b> {is}{q.less} than {nameA} by <b>{q.amount(diff.estimate, d)}</b>{q.unit} ({ci(diff.lower, diff.upper)}).</>;
+    return <><b>{nameB}</b> {is}{q.less} than {nameA} by <b>{q.amount(diff.estimate, d)}</b>{q.key === "cost" ? ` over ${over}` : ""}{q.unit} ({ci(diff.lower, diff.upper)}).</>;
   }
   return <>No detectable difference in {q.label.toLowerCase()} between {nameA} and <b>{nameB}</b> ({ci(diff.lower, diff.upper)}).</>;
 }
 
-export default function AvailabilityCompare({ graph, rbdId, result: availability }) {
+// ``tMax`` is the window the Calculator used (null: the long run, when the
+// comparison picks its own simulated window); ``windowLabel`` names it ("1 year").
+export default function AvailabilityCompare({ graph, rbdId, result: availability, tMax = null, windowLabel = null }) {
   const [rbds, setRbds] = useState(null); // saved repairable diagrams
   // A copy made by "Duplicate and change one thing" (#290) opens with the
   // diagram it was copied from ready to compare.
@@ -111,11 +113,11 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
     return () => { live = false; };
   }, []);
 
-  // A new availability run (the diagram changed) makes an old comparison stale.
+  // A new availability run (the diagram or the window changed) makes an old comparison stale.
   useEffect(() => {
     setComparison(null);
     setError(null);
-  }, [availability]);
+  }, [availability, tMax]);
 
   const options = (rbds || []).map((d) => ({
     value: d.id,
@@ -131,7 +133,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
     setNeedsPro(false);
     try {
       const nameB = other?.id === rbdId ? `${other.name} (saved version)` : other?.name;
-      setComparison(await compareRbds(graph, otherId, { name: THIS, otherName: nameB }));
+      setComparison(await compareRbds(graph, otherId, { name: THIS, otherName: nameB, tMax }));
     } catch (err) {
       setComparison(null);
       if (err.status === 402 && err.code === "pro_required") setNeedsPro(true);
@@ -160,6 +162,10 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
   const c = comparison;
   const nameA = c?.designs?.a?.name || THIS;
   const nameB = c?.designs?.b?.name || "the other diagram";
+  // The window in words: the Calculator's ("the first 1 year") when it was
+  // compared over it, else the length simulated.
+  const sameAsCalc = c && tMax != null && Math.abs(c.t_simulation - tMax) <= 1e-9 * tMax;
+  const windowText = c ? (sameAsCalc && windowLabel ? `the first ${windowLabel}` : `the first ${fmtT(c.t_simulation)}${u}`) : "";
 
   return (
     <div className="rbd-compare">
@@ -207,34 +213,43 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
         const d = q.digits(diff.half_width || diff.tolerance);
         const a = c.designs.a;
         const b = c.designs.b;
+        // Long-run values only where they were worked out: a diagram with no
+        // exact route (a cold standby with a crew limit, say) has none, and
+        // the column then goes rather than showing "—".
+        const longRunA = q.designValue(a);
+        const longRunB = q.designValue(b);
+        const longRun = longRunA != null || longRunB != null;
+        const longRunBoth = longRunA != null && longRunB != null;
         return (
           <div className="rbd-compare-result" key={q.key}>
             <p className={`rbd-compare-verdict ${q.tone(diff.verdict)}`}>
-              {verdict(q, diff, nameA === THIS ? "this diagram" : nameA, nameB)}
+              {verdict(q, diff, nameA === THIS ? "this diagram" : nameA, nameB, windowText)}
             </p>
             <ScrollCue className="rbd-avail-imp-scroll">
               <table className="calc-table rbd-compare-table">
                 <thead>
                   <tr>
                     <th>Design</th>
-                    <th title="Exact long-run (steady-state) value">{q.longRun}</th>
-                    <th title={`${diff.method === "exact" ? "Exact" : "Simulated"} mean over the ${fmtT(c.t_simulation)}${u} window from new`}>{q.window}</th>
+                    {longRun && <th title="Exact long-run (steady-state) value">{q.longRun}</th>}
+                    <th title={`${diff.method === "exact" ? "Exact" : "Simulated"} mean over ${windowText} from new`}>
+                      {q.key === "cost" ? `Owning it for ${windowText}` : `Over ${windowText}`}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td className="calc-row-label"><span className="rbd-compare-tag">A</span>{nameA}</td>
-                    <td>{q.exactValue(q.designValue(a), d)}</td>
+                    {longRun && <td>{q.exactValue(longRunA, d)}</td>}
                     <td>{q.value(q.windowValue(a), d)}</td>
                   </tr>
                   <tr>
                     <td className="calc-row-label"><span className="rbd-compare-tag">B</span>{nameB}</td>
-                    <td>{q.exactValue(q.designValue(b), d)}</td>
+                    {longRun && <td>{q.exactValue(longRunB, d)}</td>}
                     <td>{q.value(q.windowValue(b), d)}</td>
                   </tr>
                   <tr className="rbd-compare-diff">
                     <td className="calc-row-label">{q.diffLabel}</td>
-                    <td>{q.exactDiff(diff.exact, d)}</td>
+                    {longRun && <td>{q.exactDiff(diff.exact, d)}</td>}
                     <td>
                       {q.diff(diff.estimate, d)}
                       {diff.method !== "exact" && (
@@ -247,23 +262,25 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
             </ScrollCue>
             {q.key === "cost" ? (
               <p className="muted-line" style={{ margin: 0 }}>
-                Owning each design for {fmtT(c.t_simulation)}{u} from new: its purchase prices
+                Owning each design for {windowText} from new: its purchase prices
                 {diff.acquisition ? ` (${signed(diff.acquisition, fmtMoney)} for ${nameB})` : ""} plus its running
                 costs{diff.method === "exact"
                   ? ", exact"
                   : `, from the same paired simulations as the availability${c.common_random_numbers ? " (common random numbers)" : ""}`}.
-                The running cost per unit time is the long-run rate, exact where RePyability has it. Costs aren&rsquo;t
-                discounted.
+                {longRun
+                  ? "The running cost per unit time is the long-run rate, exact where RePyability has it. "
+                  : ""}
+                Costs aren&rsquo;t discounted.
               </p>
             ) : diff.method === "exact" ? (
               <p className="muted-line" style={{ margin: 0 }}>
-                Exact: RePyability works out both designs&rsquo; expected availability over a window of{" "}
-                {fmtT(c.t_simulation)}{u} from new, so the difference has no simulation noise and nothing is simulated.
-                The long-run values are exact too.
+                Exact: RePyability works out both designs&rsquo; expected availability over {windowText} from new,
+                so the difference has no simulation noise and nothing is simulated.
+                {longRunBoth ? " The long-run values are exact too." : ` ${longRun ? "One design has" : "Neither design has"} an exact long-run value.`}
               </p>
             ) : (
             <p className="muted-line" style={{ margin: 0 }}>
-              {c.n_simulations?.toLocaleString()} simulations of each design over {fmtT(c.t_simulation)}{u}
+              {c.n_simulations?.toLocaleString()} simulations of each design over {windowText}
               {c.common_random_numbers
                 ? `, with common random numbers (${c.shared_blocks} block${c.shared_blocks === 1 ? "" : "s"} paired by id)`
                 : ", run independently (a block's model can't be replayed for common random numbers)"}
@@ -272,7 +289,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
                 ? `The difference is pinned to within ±${Math.abs(diff.tolerance * 100).toFixed(pctDigits(diff.tolerance))} points.`
                 : "The precision target wasn't reached within the time budget; the interval shows the precision achieved."}
               {c.horizon_shortened && " The window was shortened to keep the simulation quick."}
-              {" "}The long-run values are exact and don't depend on the simulation.
+              {longRunBoth ? " The long-run values are exact and don't depend on the simulation." : longRunWords(longRun)}
             </p>
             )}
           </div>
@@ -281,5 +298,10 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
     </div>
   );
 }
+
+// Why a long-run column is missing or part-filled: no exact long-run value.
+const longRunWords = (some) => (some
+  ? " A design with no exact long-run value (a cold standby with limited crews, say) shows “—” there; its figures are the simulated ones over the window."
+  : " There are no long-run values: neither design has an exact route to them (a cold standby with limited crews, say), so every figure here is simulated over the window.");
 
 const fmtT = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(5)).toLocaleString());

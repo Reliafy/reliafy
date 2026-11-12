@@ -90,3 +90,34 @@ test("rename and the one-line summaries", () => {
   assert.equal(eventSummary({ model: { source: "saved", modelId: "m1", name: "Pump fit" } }), "Saved model: Pump fit");
   assert.equal(eventSummary({}), "No failure data");
 });
+
+test("switching a gate to Vote starts at a majority, never 1 (an OR)", async () => {
+  const { setGate, defaultVoteK, voteWarnings } = await import("./faultTree.js");
+  const empty = { top: "top", nodes: [{ id: "top", type: "gate", gate: "or", label: "Top", inputs: ["g"] },
+    { id: "g", type: "gate", gate: "or", label: "Pumping lost", inputs: [] }] };
+  // No inputs yet: 2, not 1 (the walkthrough's "1 of 0" became "1 of 3", an OR).
+  assert.equal(setGate(empty, "g", "vote").nodes[1].k, 2);
+  const three = { ...empty, nodes: [empty.nodes[0], { ...empty.nodes[1], inputs: ["a", "b", "c"] }] };
+  assert.equal(setGate(three, "g", "vote").nodes[1].k, 2);
+  assert.equal(defaultVoteK({ inputs: ["a", "b", "c", "d"] }), 3);
+  assert.equal(defaultVoteK({ inputs: ["a", "b", "c", "d", "e"] }), 3);
+  // The name says which: "3 of 4" → 3.
+  assert.equal(defaultVoteK({ label: "Loss (3 of 4 down)", inputs: ["a", "b", "c", "d"] }), 3);
+  // A vote of 1 of n is flagged as an OR.
+  const one = { ...three, nodes: [three.nodes[0], { ...three.nodes[1], gate: "vote", k: 1 }] };
+  assert.match(voteWarnings(one)[0].text, /is an OR gate/);
+});
+
+test("a vote gate's name follows its k when the name stated it", async () => {
+  const { setGate, syncVoteName, voteInName, voteWarnings } = await import("./faultTree.js");
+  const tree = { top: "top", nodes: [{ id: "top", type: "gate", gate: "or", label: "Top", inputs: ["g"] },
+    { id: "g", type: "gate", gate: "vote", k: 2, label: "Pumping lost (2 of 3 pumps down)", inputs: ["a", "b", "c"] }] };
+  assert.equal(setGate(tree, "g", "vote", 3).nodes[1].label, "Pumping lost (3 of 3 pumps down)");
+  assert.equal(syncVoteName("Arm 2oo3", 2, 1, 3), "Arm 1oo3");
+  assert.equal(syncVoteName("Pumps", 2, 3, 3), "Pumps");
+  assert.deepEqual([voteInName("2-out-of-3 lost").k, voteInName("2-out-of-3 lost").n], [2, 3]);
+  // A name stating another vote than the gate's is flagged.
+  const off = { ...tree, nodes: [tree.nodes[0], { ...tree.nodes[1], k: 1 }] };
+  assert.match(voteWarnings(off)[0].text, /the name says 2 of 3, but the gate is 1 of 3/);
+  assert.deepEqual(voteWarnings(tree), []);
+});

@@ -204,7 +204,9 @@ def _route(rbd, name: str) -> tuple[str, str]:
 
 
 def _refused(head: dict, name: str, reason: str, labels: dict) -> dict:
-    return {**head, "status": "refused", "basis": "refused",
+    # ``needs_exact``: refused for want of an exact route (not, say, a pin),
+    # so the app can point at the ranked steps, which simulate.
+    return {**head, "status": "refused", "basis": "refused", "needs_exact": True,
             "message": ra._with_labels(reason or f"RePyability has no {name} for this diagram.", labels)}
 
 

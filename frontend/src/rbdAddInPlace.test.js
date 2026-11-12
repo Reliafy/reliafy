@@ -254,3 +254,26 @@ test("the analysed diagrams match the backend's fixture", () => {
   if (process.env.UPDATE_FIXTURES) writeFileSync(path, JSON.stringify(built, null, 2) + "\n");
   assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), built);
 });
+
+test("adding alongside one block copies it: model and settings, a new name, no pin or repeat link", async () => {
+  const { copyForAlongside } = await import("./rbdBuilderOps.js");
+  const model = { source: "saved", modelId: "m1", name: "Pump" };
+  const nodes = [
+    { id: "c1", type: "component", data: { label: "Raw water pump", model, repair: { mean: 72 }, state: "working" }, position: { x: 0, y: 0 } },
+    { id: "c2", type: "component", data: { label: "Raw water pump", repeat_of: "c1" }, position: { x: 0, y: 0 } },
+    { id: "c3", type: "component", data: { label: "Raw water pump 2" }, position: { x: 0, y: 0 } },
+  ];
+  const copy = copyForAlongside(nodes, "c1", "c9");
+  assert.equal(copy.id, "c9");
+  assert.equal(copy.type, "component");
+  assert.deepEqual(copy.data.model, model);
+  assert.notEqual(copy.data.model, model); // a copy, not shared
+  assert.deepEqual(copy.data.repair, { mean: 72 });
+  assert.equal(copy.data.state, undefined);
+  assert.equal(copy.data.label, "Raw water pump 3"); // "2" is taken
+  // A repeated block's copy is a copy of its original, not another repeat.
+  const fromRepeat = copyForAlongside(nodes, "c2", "c10");
+  assert.equal(fromRepeat.data.repeat_of, undefined);
+  assert.deepEqual(fromRepeat.data.model, model);
+  assert.equal(copyForAlongside(nodes, "nope", "x"), null);
+});

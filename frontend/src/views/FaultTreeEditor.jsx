@@ -23,7 +23,7 @@ import { itemName } from "../components/LibRows.jsx";
 import { FAULT_TREES_PATH, FAULT_TREES_TITLE, RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import {
   GATE_LABELS, GATE_WORDS, addChild, emptyTree, eventSummary, gateSummary, indentRow, moveRow, nodeOf,
-  outdentRow, outlineRows, plainUnit, removeRow, rename, setEventData, setGate, treeIssues,
+  outdentRow, outlineRows, plainUnit, removeRow, rename, setEventData, setGate, treeIssues, voteWarnings,
 } from "../faultTree.js";
 import { ErrorNotice } from "../components/StorageCap.jsx";
 import "../components/RbdFaultTree.css";
@@ -34,6 +34,8 @@ const DotsIcon = () => (
     <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
   </svg>
 );
+
+const UNTITLED = "Untitled fault tree";
 
 // The row's own menu (its ⋯ button, or a right-click on the row).
 function RowMenu({ open, onOpen, onClose, label, children }) {
@@ -104,6 +106,28 @@ function OutlineRow({ row, selected, issue, menuOpen, onSelect, onMenu, onCloseM
   );
 }
 
+// A vote gate's k: typed freely, kept when it's a whole number from 1 (more
+// than the inputs it has is flagged as a problem until they're added).
+function VoteK({ node, n, readOnly, onK }) {
+  const [text, setText] = useState(node.k != null ? String(node.k) : "");
+  useEffect(() => setText(node.k != null ? String(node.k) : ""), [node.k]);
+  const v = Number(text);
+  const bad = text !== "" && !(Number.isInteger(v) && v >= 1);
+  return (
+    <label className="ft-field ft-k">
+      <span>Occurs when at least</span>
+      <input type="number" min="1" max={Math.max(n, 1)} step="1" inputMode="numeric" disabled={readOnly}
+             aria-invalid={bad || undefined} value={text}
+             onChange={(e) => {
+               setText(e.target.value);
+               const k = Number(e.target.value);
+               if (e.target.value !== "" && Number.isInteger(k) && k >= 1) onK(k);
+             }} />
+      <span>of its {n} input{n === 1 ? "" : "s"} occur</span>
+    </label>
+  );
+}
+
 // The selected gate's or basic event's own fields (isTop: the top event, which
 // gets a hint on what to call it).
 function NodePanel({ tree, node, unit, onChange, onAdd, readOnly, isTop = false }) {
@@ -132,17 +156,16 @@ function NodePanel({ tree, node, unit, onChange, onAdd, readOnly, isTop = false 
           <span>Gate</span>
           <SegmentedControl label="Gate type" size="sm" value={node.gate}
             options={["or", "and", "vote"].map((g) => ({ value: g, label: GATE_LABELS[g], title: GATE_WORDS[g], disabled: readOnly }))}
-            onChange={(g) => onChange(setGate(tree, node.id, g, node.k ?? Math.min(2, Math.max(n, 1))))} />
+            onChange={(g) => onChange(setGate(tree, node.id, g))} />
           <p className="hint">{GATE_WORDS[node.gate].replace("k", node.k ?? "k")}.</p>
         </div>
         {node.gate === "vote" && (
-          <label className="ft-field ft-k">
-            <span>Occurs when at least</span>
-            <input type="number" min="1" max={Math.max(n, 1)} step="1" inputMode="numeric" disabled={readOnly}
-                   value={node.k ?? ""} onChange={(e) => onChange(setGate(tree, node.id, "vote", e.target.value))} />
-            <span>of its {n} input{n === 1 ? "" : "s"} occur</span>
-          </label>
+          <VoteK key={node.id} node={node} n={n} readOnly={readOnly}
+                 onK={(k) => onChange(setGate(tree, node.id, "vote", k))} />
         )}
+        {node.gate === "vote" && voteWarnings({ nodes: [node] }).map((w) => (
+          <p key={w.id} className="hint ft-warn" role="status">{w.msg.charAt(0).toUpperCase() + w.msg.slice(1)}.</p>
+        ))}
         {!readOnly && (
           <div className="ft-panel-actions">
             <button type="button" className="secondary sm" onClick={() => onAdd(node.id, "gate")}>Add gate</button>
@@ -272,7 +295,7 @@ export default function FaultTreeEditor() {
   const askText = useAskText();
 
   const [doc, setDoc] = useState(null); // the saved summary: {id, name, updated_at, read_only, is_sample, rbd_id}
-  const [name, setName] = useState(imported?.name || "Untitled fault tree");
+  const [name, setName] = useState(imported?.name || UNTITLED);
   const [tree, setTree] = useState(() => imported?.tree || emptyTree());
   const [notes, setNotes] = useState(imported?.notes || []);
   const [dirty, setDirty] = useState(!!imported);
@@ -304,7 +327,11 @@ export default function FaultTreeEditor() {
   const readOnly = !!doc?.read_only; // a sample: edits are kept by "Save a copy"
   const rows = useMemo(() => outlineRows(tree), [tree]);
   const issues = useMemo(() => treeIssues(tree), [tree]);
-  const issueOf = useMemo(() => Object.fromEntries(issues.map((i) => [i.id, i.text])), [issues]);
+  // Vote gates that are likely set wrong (1 of n is an OR; a name stating
+  // another vote): flagged, but they don't stop the analysis.
+  const warnings = useMemo(() => voteWarnings(tree), [tree]);
+  const issueOf = useMemo(() => Object.fromEntries([...warnings, ...issues].map((i) => [i.id, i.text])),
+    [issues, warnings]);
   const selRow = rows.find((r) => r.key === selected) || rows[0];
   const selNode = selRow ? nodeOf(tree, selRow.id) : null;
   const sig = useMemo(() => JSON.stringify(tree), [tree]);
@@ -341,7 +368,7 @@ export default function FaultTreeEditor() {
       edit(next);
       setSelected(`${row.key}/${id}`);
     },
-    gate: (row, g) => edit(setGate(tree, row.id, g, row.node.k ?? 2)),
+    gate: (row, g) => edit(setGate(tree, row.id, g)),
     rename: async (row) => {
       const label = changedText(await askText({ title: "Rename", label: "Name", value: row.node.label, confirmLabel: "Rename" }), row.node.label);
       if (label) edit(rename(tree, row.id, label));
@@ -376,11 +403,22 @@ export default function FaultTreeEditor() {
   };
 
   const save = async () => {
+    const copy = readOnly || !doc;
+    let saveName = name;
+    if (!doc) {
+      // The first save asks for the tree's name, starting from the top event's.
+      const top = nodeOf(tree, tree.top)?.label?.trim();
+      const answer = await askText({
+        title: "Save this fault tree", label: "Fault tree name", confirmLabel: "Save",
+        value: name === UNTITLED && top && top !== "Top event" ? top : name,
+      });
+      if (answer == null || !String(answer).trim()) return;
+      saveName = String(answer).trim().slice(0, 200);
+    }
     setSaving(true);
     setError(null);
     try {
-      const copy = readOnly || !doc;
-      const saved = await saveFaultTree(copy && readOnly ? `${itemName(doc)} (copy)` : name, tree,
+      const saved = await saveFaultTree(copy && readOnly ? `${itemName(doc)} (copy)` : saveName, tree,
         copy ? null : doc.id, copy ? null : doc.updated_at);
       setDoc(saved);
       setName(saved.name);
@@ -537,6 +575,12 @@ export default function FaultTreeEditor() {
           </div>
         ) : (
           <>
+            {warnings.length > 0 && (
+              <div className="card note ft-todo" role="status">
+                <b>Check {warnings.length === 1 ? "this vote gate" : "these vote gates"}:</b>
+                <ul>{warnings.map((w) => <li key={w.id}>{w.text}</li>)}</ul>
+              </div>
+            )}
             {analysis.error && <div className="card error" role="alert">{analysis.error}</div>}
             {analysis.phase === "loading" && !result && <p className="muted-line">Working out the top event…</p>}
             {result && (
@@ -561,7 +605,8 @@ export default function FaultTreeEditor() {
                   Exact; a basic event that sits under several gates is counted once.
                   {stale && " Updating…"}
                 </ResultSummary>
-                {result.notes?.map((n, i) => <p key={i} className="muted-line warn">{n}</p>)}
+                {/* A vote gate's note is the "Check this vote gate" card's, said once there. */}
+                {result.notes?.filter((n) => !n.startsWith("Vote gate ")).map((n, i) => <p key={i} className="muted-line warn">{n}</p>)}
                 <TopCurve result={result} />
                 <div className="ft-section">
                   <div className="rbd-section-head">The tree, drawn</div>

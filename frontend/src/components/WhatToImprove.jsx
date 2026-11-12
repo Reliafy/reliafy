@@ -230,7 +230,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
       <h3 className="rbd-improve-q">{question}</h3>
       {tab !== "levers" ? (
         <RbdMeasure graph={graph} rbdId={rbdId} measure={tab} windowLen={windowLen} over={over}
-                    trigger={availability} />
+                    trigger={availability} onUseSteps={() => setTab("levers")} />
       ) : (
       <>
       {/* Labelled controls; what a step and a lever are is said once, in the

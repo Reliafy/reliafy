@@ -67,8 +67,10 @@ function jobText(job) {
   return ahead == null || ahead <= 0 ? "Queued — you're next…" : `Queued — ${ahead} ahead of you…`;
 }
 
+// ``onUseSteps`` opens the Ranked steps tab: where a measure has no exact
+// route, that is the view that answers by simulation.
 export default function RbdMeasure({ graph, rbdId = null, measure, windowLen = null, over = "long_run",
-                                     trigger = null }) {
+                                     trigger = null, onUseSteps = null }) {
   const [groupBy, setGroupBy] = useState("block");
   const [method, setMethod] = useState("delta");
   const [timesText, setTimesText] = useState("");
@@ -166,7 +168,7 @@ export default function RbdMeasure({ graph, rbdId = null, measure, windowLen = n
       {error && <div className="card error">{error}</div>}
       {job && <p className="rbd-job-status" role="status" aria-live="polite">{jobText(job)}</p>}
       {busy && !job && <p className="hint" role="status" style={{ margin: 0 }}>Working it out…</p>}
-      {shown && !busy && <MeasureBody data={shown} unit={unit} colorOf={colorOf} />}
+      {shown && !busy && <MeasureBody data={shown} unit={unit} colorOf={colorOf} onUseSteps={onUseSteps} />}
     </div>
   );
 }
@@ -199,12 +201,36 @@ function UncertaintyControls({ method, setMethod, timesText, setTimesText, sentT
   );
 }
 
-function MeasureBody({ data, unit, colorOf }) {
+function MeasureBody({ data, unit, colorOf, onUseSteps = null }) {
   if (data.status === "pro_required") {
     return (
       <div className="card note" role="status">
         <p style={{ margin: 0 }}>{data.message}</p>
         <div className="rbd-upgrade-actions"><Link className="cta cta-solid" to="/billing">Upgrade to Pro</Link></div>
+      </div>
+    );
+  }
+  if (data.status === "refused" && data.needs_exact) {
+    // No exact route (cold standby units with limited crews, say): say so
+    // plainly and point at the view that works, the backend's reason folded.
+    return (
+      <div className="card note rbd-measure-empty" role="status">
+        <p style={{ margin: 0 }}>
+          <b>This view needs exact figures, and this diagram has none.</b> The ranked steps simulate
+          each change instead, so they still answer what to improve.
+        </p>
+        {onUseSteps && (
+          <div className="rbd-upgrade-actions">
+            <button type="button" onClick={onUseSteps}>Show the ranked steps</button>
+          </div>
+        )}
+        {data.message && (
+          <details className="rbd-measure-why">
+            <summary>Why</summary>
+            <p className="muted-line" style={{ margin: 0 }}>{data.message}</p>
+          </details>
+        )}
+        {data.fixed?.length > 0 && <FixedNote fixed={data.fixed} />}
       </div>
     );
   }

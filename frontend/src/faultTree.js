@@ -94,12 +94,47 @@ export function rename(tree, id, label) {
   return replaceNode(tree, id, (n) => ({ ...n, label }));
 }
 
-// Change a gate's type; a vote keeps (or gets) its k, within its inputs.
+// "2 of 3", "2-out-of-3", "2oo3" in a gate's name: the vote it describes,
+// {k, n, text} (the first one), or null.
+const VOTE_IN_NAME = /\b(\d+)\s*(?:-?\s*out\s*-?\s*of\s*-?|of|oo)\s*(\d+)\b/i;
+export function voteInName(label) {
+  const m = VOTE_IN_NAME.exec(String(label || ""));
+  return m ? { k: Number(m[1]), n: Number(m[2]), text: m[0], index: m.index } : null;
+}
+
+// The k a gate switched to Vote starts at: what its name says ("2 of 3
+// pumps down" → 2), else a majority of its inputs (2 of 3, 3 of 4, 3 of 5),
+// and never 1 — a vote of 1 is an OR.
+export function defaultVoteK(node) {
+  const n = (node?.inputs || []).length;
+  const named = voteInName(node?.label);
+  if (named && named.k >= 2 && (n === 0 || named.k <= n)) return named.k;
+  return Math.max(2, Math.floor(n / 2) + 1);
+}
+
+// The name with its "k of n" moved to the new k (and its inputs' count),
+// when the name said the vote it had: "(2 of 3 pumps down)" follows k.
+// Any other name is left as typed.
+export function syncVoteName(label, oldK, newK, n) {
+  const named = voteInName(label);
+  if (!named || named.k !== oldK || !(newK >= 1)) return label;
+  const text = named.text.replace(/^\d+/, String(newK)).replace(/\d+$/, String(n > 0 ? n : named.n));
+  return label.slice(0, named.index) + text + label.slice(named.index + named.text.length);
+}
+
+// Change a gate's type; a vote keeps (or gets) its k. Switching to Vote
+// starts at defaultVoteK (never 1, which would be an OR). A changed k keeps a
+// name that states the vote ("2 of 3") in step with it.
 export function setGate(tree, id, gate, k) {
   return replaceNode(tree, id, (n) => {
     const out = { ...n, gate };
-    if (gate === "vote") out.k = Math.max(1, Math.round(Number(k ?? n.k ?? 2)) || 1);
-    else delete out.k;
+    if (gate === "vote") {
+      const start = n.gate === "vote" ? n.k : defaultVoteK(n);
+      out.k = Math.max(1, Math.round(Number(k ?? start ?? 2)) || 1);
+      if (n.gate === "vote" && n.k != null && out.k !== n.k) {
+        out.label = syncVoteName(n.label, n.k, out.k, (n.inputs || []).length);
+      }
+    } else delete out.k;
     return out;
   });
 }
@@ -178,6 +213,28 @@ export function outdentRow(tree, rows, row) {
     return { ...g, inputs };
   });
   return next;
+}
+
+// What a vote gate's settings might get wrong, in words — not blocking: a
+// vote of 1 is an OR, a vote of all its inputs an AND, and a name that states
+// another vote ("2 of 3") than the gate has. [{id, text}].
+export function voteWarnings(tree) {
+  const out = [];
+  const flag = (n, msg) => out.push({ id: n.id, msg, text: `${n.label}: ${msg}` });
+  for (const n of tree.nodes) {
+    if (n.type !== "gate" || n.gate !== "vote") continue;
+    const size = (n.inputs || []).length;
+    if (size < 2) continue;
+    const named = voteInName(n.label);
+    if (named && (named.k !== n.k || named.n !== size)) {
+      flag(n, `the name says ${named.k} of ${named.n}, but the gate is ${n.k} of ${size}`);
+    } else if (n.k === 1) {
+      flag(n, `a vote of 1 of ${size} is an OR gate (any one input sets it off) — set how many must occur`);
+    } else if (n.k === size) {
+      flag(n, `a vote of ${size} of ${size} is an AND gate (all must occur)`);
+    }
+  }
+  return out;
 }
 
 // What still stops the tree being analysed, in words (the server says the same).

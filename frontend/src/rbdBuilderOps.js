@@ -329,3 +329,31 @@ export function insertAlongside({ nodes, edges }, order, block, { junctionId, ju
   }
   return { nodes: selectOnly(nextNodes, block.id), edges: unselectEdges(nextEdges) };
 }
+
+// "Add alongside (in parallel)" on one block: another of the same — its model,
+// repair, costs and settings — as redundancy usually is ("two more of these
+// pumps"), named "<name> 2", "<name> 3"… A repeated block's copy is a copy of
+// its original's data, not one more drawing of the same physical unit; a
+// what-if pin (``state``) isn't copied. ``id`` is the new block's id.
+export function copyForAlongside(nodes, sourceId, id) {
+  const source = nodes.find((n) => n.id === sourceId);
+  if (!source) return null;
+  const original = source.data?.repeat_of ? nodes.find((n) => n.id === source.data.repeat_of) || source : source;
+  const data = JSON.parse(JSON.stringify(original.data || {}));
+  delete data.repeat_of;
+  delete data.state;
+  delete data.tree_plan;
+  const base = String(original.data?.label || "Block").replace(/\s+\d+$/, "") || "Block";
+  const taken = new Set(nodes.map((n) => n.data?.label));
+  let i = 2;
+  while (taken.has(`${base} ${i}`)) i += 1;
+  data.label = `${base} ${i}`;
+  return {
+    id,
+    type: original.type,
+    data,
+    position: { x: 0, y: 0 },
+    sourcePosition: "right",
+    targetPosition: "left",
+  };
+}
