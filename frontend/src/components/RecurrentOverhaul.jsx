@@ -1,3 +1,4 @@
+import { LEVEL_TEXT } from "../levels.js";
 import { useState } from "react";
 import Plot from "./Plot.jsx";
 import { fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
@@ -102,11 +103,19 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
                     Overhaul about every <b>{formatWithUnit(opt.interval, ut)}</b>
                     {result.saving_pct != null && (
                       <>. That lowers the long-run cost rate by <b>{result.saving_pct.toFixed(0)}%</b> against
-                        repairs only</>
+                        repairs only over {formatWithUnit(none?.horizon, ut)}</>
                     )}.
                   </>
                 }
                 stats={[
+                  {
+                    label: `Interval, ${LEVEL_TEXT} range`,
+                    value: result.interval_range?.ci
+                      ? `${formatWithUnit(result.interval_range.ci[0], ut)} to ${result.interval_range.ci[1] != null
+                        ? formatWithUnit(result.interval_range.ci[1], ut) : "no upper limit"}`
+                      : "—",
+                    hint: result.interval_range?.reason || "From the fit's uncertainty",
+                  },
                   { label: "Repairs between overhauls", value: `≈ ${formatNumber(opt.expected_failures_per_cycle)}` },
                 ]}
               />
@@ -119,7 +128,7 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
                   },
                 ]}
               >
-                <p className="rs-note">Cost rates are long-run costs per unit time.</p>
+                <p className="rs-note">Cost rates are long-run costs per {ut ? ut.replace(/s$/, "") : "unit time"}.</p>
               </ResultDetails>
             </>
           )}

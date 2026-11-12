@@ -47,6 +47,7 @@ export default function FleetForecasts() {
   // every failure counted (#235).
   const [modelKind, setModelKind] = useState("life");
   const [recurrentModels, setRecurrentModels] = useState([]);
+  const [hiddenCovariate, setHiddenCovariate] = useState(0);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
 
@@ -86,7 +87,10 @@ export default function FleetForecasts() {
       ...(alt.length ? [{ heading: "ALT models — each item at its own stress" }] : []),
       ...alt.map((m) => asOpt(m, `alt:${m.id}`, [m.distribution, m.life_model].filter(Boolean).join(" · "))),
     ]);
-    setRecurrentModels(rec.map((m) => asOpt(m, m.id, m.model)));
+    // Covariate (proportional intensity) models can't drive a forecast yet: the
+    // items carry no covariate values. They're left out, and the dialog says why.
+    setRecurrentModels(rec.filter((m) => m.family !== "regression").map((m) => asOpt(m, m.id, m.model)));
+    setHiddenCovariate(rec.filter((m) => m.family === "regression").length);
     const chosen = preset && [...plain, ...regression].find((m) => m.id === preset);
     if (chosen) {
       setModelId(chosen.id);
@@ -250,7 +254,7 @@ export default function FleetForecasts() {
             </label>
             <p className="muted-line">
               {modelKind === "recurrent"
-                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Models › Repairable first if you don't have one yet."
+                ? `The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Models › Repairable first if you don't have one yet.${hiddenCovariate ? ` ${hiddenCovariate} covariate model${hiddenCovariate === 1 ? " isn't" : "s aren't"} listed: a forecast can't use one yet, as items carry no covariate values.` : ""} Name items as the model's systems to use each one's own history.`
                 : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Models first if you don't have one yet."}
             </p>
           </div>

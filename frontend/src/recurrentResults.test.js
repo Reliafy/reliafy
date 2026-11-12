@@ -93,7 +93,10 @@ test("recurrentTabs: only the tabs that apply, in order", () => {
 });
 
 test("planViews: next failure, growth projection, overhaul where each applies", () => {
-  assert.deepEqual(planViews(crow, { modelId: "m1" }).map((v) => v.value), ["projection", "overhaul"]);
+  // Deteriorating: the overhaul first; a growth test: the projection first.
+  assert.deepEqual(planViews(crow, { modelId: "m1" }).map((v) => v.value), ["overhaul", "projection"]);
+  assert.deepEqual(planViews({ ...crow, growth: "improving" }, { modelId: "m1" }).map((v) => v.value),
+    ["projection", "overhaul"]);
   const grp = { ...crow, family: "renewal", next_failure: { units: [{ system: "A" }] } };
   assert.deepEqual(planViews(grp, { modelId: "m1" }).map((v) => v.value), ["next", "projection"]);
   assert.deepEqual(planViews(grp).map((v) => v.value), ["next"]);
@@ -117,7 +120,11 @@ test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
     "Deteriorating", "β 2.06 (95% 1.44–2.95)", "MTBF now 323 hours (≥ 230 at 90%)", "4 systems, 30 failures", "saved now",
   ]);
   assert.equal(mtbfWords({ ...crow, demonstrated_mtbf: null, mtbf_ci: [195, 577], rates_at: "x" }),
-    "MTBF now 323 hours (95% 195–577), average system");
+    "MTBF now 323 hours (95% 195–577), at the fleet's average covariates");
+  // A covariate model with levels: each level's MTBF, not an average system.
+  assert.equal(mtbfWords({ ...crow, rates_at: "x", rates_by_group: [
+    { label: "site Coastal", mtbf: 627.2 }, { label: "site Inland", mtbf: 263.2 }] }),
+  "MTBF now site Coastal 627 hours, site Inland 263 hours");
   // No bounds from the fit (Duane): the value alone, never "—–—".
   assert.equal(mtbfWords({ ...crow, demonstrated_mtbf: { lower: null }, mtbf_ci: [null, null] }), "MTBF now 323 hours");
   const grp = {
@@ -126,9 +133,16 @@ test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
     next_failure: { units: [{ system: "CMP-4", median: 91.3 }] },
   };
   assert.deepEqual(recurrentAnswer(grp), [
-    "Partial repair", "repairs remove 79% of the age (95% 78%–81%)", "next failure: CMP-4 in about 91.3 hours (median)",
-    "4 systems, 30 failures",
+    "Partial repair", "repairs restore 79% of the age gained (95% range 78%–81%)",
+    "next failure: CMP-4 in about 91.3 hours (median)", "4 systems, 30 failures",
   ]);
+  // The headline follows the interval: never "As bad as old" for an estimate
+  // well inside it.
+  const maybe = { ...grp, ci_level: 0.9, repair_test: { verdict: "maybe_minimal" },
+    restoration: { effectiveness: 0.52, effectiveness_ci: [-0.14, 0.7] } };
+  const words = recurrentAnswer(maybe);
+  assert.equal(words[0], "Partial repair, can't rule out as bad as old");
+  assert.equal(words[1], "repairs restore 52% of the age gained (90% range -14%–70%)");
   const hpp = { model: { id: "hpp" }, from_params: true, mtbf: 500, unit: "hours" };
   assert.deepEqual(recurrentAnswer(hpp), ["Constant failure rate", "MTBF at the horizon 500 hours", "made from parameters"]);
 });

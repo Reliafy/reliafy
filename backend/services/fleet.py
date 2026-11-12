@@ -277,8 +277,8 @@ def create_fleet(db, name: str, model_id: str, owner_id: str, model_kind: str | 
         doc = recurrent_service.get_model(db, model_id, owner_id)
         if doc is None:
             raise FleetValidationError("Recurrent model not found.")
-        if (doc.results or {}).get("family", "nhpp") != "nhpp":
-            # #65: covariate and imperfect-repair models have no fleet forecast yet.
+        if (doc.results or {}).get("family", "nhpp") == "regression":
+            # Covariate models have no fleet forecast yet: items carry no covariates here.
             raise FleetValidationError(REPAIRABLE_FAMILIES)
     elif model_kind == "alt":
         if alt_service.get_model(db, model_id, owner_id) is None:
@@ -933,10 +933,10 @@ def _clean_spares(value) -> dict | None:
     return out or None
 
 
-def _spares_or_reason(opts, method, model, ages, rates, periods, label, *, Z=None) -> dict:
+def _spares_or_reason(opts, method, model, ages, rates, periods, label, *, Z=None, weights=None) -> dict:
     """``spares_answer``, or why it can't be worked out (the forecast still stands)."""
     try:
-        return spares_answer(opts, method, model, ages, rates, periods, label, Z=Z)
+        return spares_answer(opts, method, model, ages, rates, periods, label, Z=Z, weights=weights)
     except StrategyError as exc:
         return {"status": "error", "reason": client_message(exc)}
     except Exception as exc:  # noqa: BLE001 - a model refusing these values
@@ -949,11 +949,13 @@ def _amount(v: float, label: str) -> str:
     return f"{v:g} {word}"
 
 
-def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, label: str, *, Z=None) -> dict:
+def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, label: str, *, Z=None,
+                  weights=None) -> dict:
     """How many of the replacement part to hold: now, and for a window starting at
     each period. ``method``: renewals (``model`` a distribution), single (first
     failures, ``model`` a distribution or a covariate model with ``Z``) or
-    repairable (a recurrent model)."""
+    repairable (a recurrent model; ``weights`` each item's rate factor from
+    its own history, as the forecast uses)."""
     level = opts.get("service_level") or spares.DEFAULT_SERVICE_LEVEL
     per = float(opts.get("per_failure") or 1.0)
     review = float(opts.get("review") or 0.0)
@@ -1000,7 +1002,8 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
         def cum(x):
             with np.errstate(all="ignore"):
                 lam = np.asarray(model.cif(ages + rates * x), dtype=float) - np.asarray(model.cif(ages), dtype=float)
-            return np.nan_to_num(lam, nan=0.0, posinf=0.0)
+            w = np.ones(len(ages)) if weights is None else np.asarray(weights, dtype=float)
+            return np.nan_to_num(lam, nan=0.0, posinf=0.0) * w
 
         cache: dict = {}
         means = []
@@ -1051,8 +1054,13 @@ REPAIRABLE_NOTE = (
 
 
 REPAIRABLE_FAMILIES = (
-    "A fleet forecast needs a minimal-repair recurrent model (Crow-AMSAA, Duane, HPP or Cox-Lewis); "
-    "covariate and imperfect-repair models aren't supported yet.")
+    "A fleet forecast can't use a covariate (proportional intensity) model yet: each item would need its "
+    "covariate values. Use a minimal-repair or imperfect-repair model of the same data.")
+
+RENEWAL_NOTE = (
+    "Every failure is counted: each item is a repairable system whose repairs restore part of its age, as the "
+    "imperfect-repair model estimates, so its future depends on its own history; each item is simulated from "
+    "its state.")
 
 
 def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
@@ -1067,7 +1075,8 @@ def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
                 "reason": "The linked recurrent model can't be evaluated (its dataset may have been deleted)."}
     if live is None:
         return {"status": "stale", "reason": "The linked recurrent model can't be evaluated."}
-    if (doc.results or {}).get("family", "nhpp") != "nhpp":
+    family = (doc.results or {}).get("family", "nhpp")
+    if family == "regression":
         return {"status": "stale", "reason": REPAIRABLE_FAMILIES}
 
     settings = fleet.settings or {}
@@ -1087,7 +1096,8 @@ def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
         "n_items": len(items),
         "rate_source": settings.get("rate_source", "manual"),
         "interval_level": INTERVAL_LEVEL,
-        "note": REPAIRABLE_NOTE,
+        "family": family,
+        "note": RENEWAL_NOTE if family == "renewal" else REPAIRABLE_NOTE,
     }
     if not items:
         return {**base, "expected": 0.0, "interval": [0.0, 0.0], "per_item": [],
@@ -1100,9 +1110,13 @@ def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
     for row, (rate, basis) in zip(out["per_item"], chosen):
         row["rate_used"] = rate
         row["rate_basis"] = basis
-    if spares_opts:
+    if spares_opts and family == "renewal":
+        out["spares"] = {"status": "error", "reason": "Spares from an imperfect-repair model aren't available yet: "
+                                                      "use the forecast's range, or a minimal-repair model."}
+    elif spares_opts:
         out["spares"] = _spares_or_reason(spares_opts, "repairable", live, ages, rates, periods,
-                                          base["period_label"])
+                                          base["period_label"],
+                                          weights=[r.get("rate_factor", 1.0) for r in out["per_item"]])
     return out
 
 
@@ -1115,52 +1129,32 @@ def _poisson_interval(mean) -> np.ndarray:
     return np.column_stack(ends)
 
 
-_FORECAST_GROUPS = 16  # distinct usage rates run through surpyval.forecast; more are vectorised
+_FORECAST_GROUPS = 16  # kept for callers and tests; every rate is now one vectorised pass
 
 
-def forecast_repairable(model, ages, rates, periods: int, items, services=None) -> dict:
-    """Expected failures of repairable items under a Poisson-process model.
+def forecast_repairable(model, ages, rates, periods: int, items, services=None, names=None) -> dict:
+    """Expected failures of repairable items under a recurrent-event fit.
 
-    Item ``i`` at age ``a_i`` using ``r_i`` per period expects
-    ``Λ(a_i + k·r_i) − Λ(a_i)`` failures within ``k`` periods — SurPyval's
-    ``forecast`` for a recurrent-event model, run once per distinct rate (its
-    horizons are times ahead, the same for every unit). The fleet's count, and
-    each period's, is Poisson with the summed mean. ``services[i]`` (the age
-    the item is next serviced at, or None) adds its chance of at least one
-    failure before then, ``1 − exp(−(Λ(s) − Λ(a)))``."""
-    import surpyval
+    A minimal-repair (Poisson-process) model: item ``i`` at age ``a_i`` using
+    ``r_i`` per period expects ``w_i·(Λ(a_i + k·r_i) − Λ(a_i))`` failures
+    within ``k`` periods, ``w_i`` its rate factor from its own history when
+    its name is a system in the model's data (else 1). An imperfect-repair
+    model: simulated from each item's state. The ranges carry the fit's own
+    uncertainty as well as chance (:mod:`backend.recurrent_forecast`); a
+    model built from parameters has only chance (Poisson). ``services[i]``
+    (the age the item is next serviced at, or None) adds its chance of at
+    least one failure before then, ``1 − exp(−w·(Λ(s) − Λ(a)))``."""
+    from backend import recurrent_forecast as rf
 
     ages = np.asarray(ages, dtype=float)
     rates = np.asarray(rates, dtype=float)
     k = ages.size
-    cum = np.zeros((k, periods))
-    steps = np.arange(1, periods + 1, dtype=float)
-    distinct = np.unique(rates[rates > 0])  # an idle item adds no use, so no failures
-    if distinct.size <= _FORECAST_GROUPS:
-        for rate in distinct:
-            idx = np.flatnonzero(rates == rate)
-            with np.errstate(all="ignore"):
-                fc = surpyval.forecast(model, age=ages[idx], horizon=rate * steps, alpha_ci=1.0 - INTERVAL_LEVEL)
-            cum[idx] = np.asarray(fc.per_unit, dtype=float)
-    else:
-        # Many different rates: the same means, Λ(a + k·r) − Λ(a), in one
-        # vectorised pass instead of one forecast per rate.
-        busy = np.flatnonzero(rates > 0)
-        ahead = ages[busy, None] + rates[busy, None] * steps[None, :]
-        with np.errstate(all="ignore"):
-            start = np.asarray(model.cif(ages[busy]), dtype=float)
-            end = np.asarray(model.cif(ahead.ravel()), dtype=float).reshape(ahead.shape)
-        cum[busy] = end - start[:, None]
-    cum = np.nan_to_num(cum, nan=0.0, posinf=0.0)
-    unit_period = np.diff(np.column_stack([np.zeros(k), cum]), axis=1)
-    per_period = unit_period.sum(axis=0)
-    expected = float(cum[:, -1].sum())
-    interval = _poisson_interval(expected)[0]
-
+    names = list(names) if names is not None else [it.get("name") for it in items]
+    renewal = type(model).__name__ == "RenewalModel"
+    core = (rf.renewal_forecast if renewal else rf.nhpp_forecast)(model, ages, rates, periods, names=names)
     per_item = []
     for i, it in enumerate(items):
-        mu = float(cum[i, -1])
-        row = {"id": it["id"], "expected": mu, "prob_any": float(-np.expm1(-mu))}
+        row = {"id": it["id"], **core["per_item"][i]}
         s = (services or [None] * k)[i]
         if s is not None:
             s = float(s)
@@ -1168,20 +1162,23 @@ def forecast_repairable(model, ages, rates, periods: int, items, services=None) 
             if s <= ages[i]:
                 row["service_overdue"] = True
                 row["expected_before_service"] = row["prob_before_service"] = None
+            elif renewal:
+                row["expected_before_service"] = row["prob_before_service"] = None
             else:
                 with np.errstate(all="ignore"):
                     lam = np.asarray(model.cif(np.array([ages[i], s])), dtype=float)
-                m_s = float(lam[1] - lam[0]) if np.all(np.isfinite(lam)) else None
+                m_s = float(lam[1] - lam[0]) * row.get("rate_factor", 1.0) if np.all(np.isfinite(lam)) else None
                 row["expected_before_service"] = m_s
                 row["prob_before_service"] = float(-np.expm1(-m_s)) if m_s is not None else None
         per_item.append(row)
-
     return {
-        "expected": expected,
-        "interval": [float(interval[0]), float(interval[1])],
+        "expected": core["expected"],
+        "interval": core["interval"],
         "per_item": per_item,
-        "per_period": [float(v) for v in per_period],
-        "per_period_interval": [[float(lo), float(hi)] for lo, hi in _poisson_interval(per_period)],
+        "per_period": core["per_period"],
+        "per_period_interval": core["per_period_interval"],
+        "interval_method": core["interval_method"],
+        "units": core["units"],
     }
 
 

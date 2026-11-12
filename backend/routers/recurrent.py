@@ -62,6 +62,7 @@ def _model_summary(doc, ctx: AccessCtx) -> dict:
         "name": doc.name,
         "kind": "recurrent",
         "model": (r.get("model") or {}).get("name"),
+        "family": r.get("family", "nhpp"),
         "n_systems": r.get("n_systems"),
         "n_events": r.get("n_events"),
         "beta": r.get("beta"),
@@ -241,6 +242,7 @@ def get_model(model_id: str, session=Depends(get_session), ctx: AccessCtx = Depe
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     doc = recurrent_service.ensure_diagnostics(session, doc)  # #81: bounds and tests for older saves
+    doc = recurrent_service.current_results(session, doc)  # 90% intervals and today's verdicts, on read
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 
 
@@ -358,6 +360,54 @@ def overhaul(
         live = recurrent_service.get_live_model(session, model_id, [*ctx.read_owners, doc.owner_id])
         return JSONResponse(content=recurrent_fit.optimal_overhaul(
             live, body["cost_repair"], body["cost_overhaul"], t_max=body.get("t_max")))
+    except recurrent_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
+@router.post("/recurrent/models/{model_id}/calculate")
+def calculate(
+    model_id: str, body: dict = Body(...),
+    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The Calculator's values with their 90% bounds, from the saved model.
+    JSON ``{t, start?, profile?}``: expected failures per system from new at
+    ``t``, the failure rate and MTBF there, and over ``[start, t]`` the
+    expected failures; ``profile`` the covariate values for a covariate model
+    (``{column: level or number}``). An imperfect-repair model is simulated,
+    beyond the data too. Read-only, not metered."""
+    from backend import recurrent_forecast
+
+    doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        live = recurrent_service.get_live_model(session, model_id, [*ctx.read_owners, doc.owner_id])
+        return JSONResponse(content=recurrent_forecast.calculate(
+            live, doc.results or {}, body.get("t"), start=body.get("start"), profile=body.get("profile")))
+    except recurrent_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
+@router.post("/recurrent/models/{model_id}/from-now")
+def from_now(
+    model_id: str, horizon: float = Body(..., embed=True),
+    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The fleet's failures over the next ``horizon`` from where each of the
+    model's systems is now (the end of its record), with a 90% range that
+    carries the fit's uncertainty; imperfect repair by simulation."""
+    from backend import recurrent_forecast
+
+    doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        live = recurrent_service.get_live_model(session, model_id, [*ctx.read_owners, doc.owner_id])
+        return JSONResponse(content=recurrent_forecast.from_now(live, horizon))
     except recurrent_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:

@@ -103,8 +103,16 @@ function NowCard({ r, unit }) {
     <div className="gof-card life-card">
       <div className="gofh life-card-head">
         <span>{r.from_params ? "At the horizon" : "Now"}</span>
-        {at != null && <span className="gof-sub">at {formatNumber(at)}{unit ? ` ${unit}` : ""}{r.rates_at ? ", average system" : ""}</span>}
+        {at != null && <span className="gof-sub">at {formatNumber(at)}{unit ? ` ${unit}` : ""}{r.rates_at ? ", at the fleet's average covariates" : ""}</span>}
       </div>
+      {(r.rates_by_group || []).filter((g) => g.mtbf != null).map((g) => (
+        <div className="gofr life-row" key={g.label}
+             title={g.mtbf_lower != null ? `At least ${sig(g.mtbf_lower)} (90% one-sided)` : undefined}>
+          <span className="gk">MTBF, {g.label}</span>
+          <span className="gv">{sig(g.mtbf)}</span>
+          <span className="life-lo">{g.mtbf_lower != null ? `≥ ${sig(g.mtbf_lower)} (90%)` : ""}</span>
+        </div>
+      ))}
       <div className="gofr life-row" title={`${mtbfTitle}.`}>
         <span className="gk">MTBF{unit ? ` (${unit})` : ""}</span>
         <span className="gv">{sig(r.mtbf)}</span>
@@ -129,7 +137,8 @@ function RepairCard({ rest, level }) {
     <div className="gof-card life-card">
       <div className="gofh life-card-head"><span>Each repair</span><span className="gof-sub">{level} interval</span></div>
       <div className="gofr life-row" title={`${rest.sentence} ${rest.scale || ""}`}>
-        <span className="gk">{rest.ratio != null ? "Gap ratio" : "Restores"}</span>
+        <span className="gk">{rest.ratio != null ? "Gap ratio" : rest.parameter === "q"
+          ? <>Restores <span className="gof-sub">q = {formatNumber(rest.value, { sig: 3 })}</span></> : "Restores"}</span>
         <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(rest.effectiveness)}</span>
         <span className="life-lo">
           {rest.ratio != null
@@ -149,7 +158,7 @@ function NextCard({ nf, unit, onNext }) {
     <div className="gof-card life-card">
       <div className="gofh life-card-head" title={unit ? `In ${unit} from now` : undefined}>
         <span>Next failure</span>
-        <span className="gof-sub">{unit ? `${unit}: ` : ""}median · 10%</span>
+        <span className="gof-sub">{unit ? `${unit} ahead: ` : ""}median · 1-in-10 by</span>
       </div>
       {rows.map((u) => (
         <div className="gofr life-row" key={u.system}
@@ -174,7 +183,11 @@ export function CausesSide({ r, chosen, onChoose }) {
   const bc = r.by_cause || {};
   const causes = bc.causes || [];
   const current = causes.find((c) => c.label === chosen) || causes[0];
-  const reading = current?.fit ? growthReading(current.fit) : null;
+  // Each cause's interval is at the level its fit was worked out at: its own
+  // ci_level, else the model's (a fit saved before either carries none: 95%).
+  const reading = current?.fit
+    ? growthReading({ ...current.fit, ci_level: current.fit.ci_level ?? bc.ci_level ?? r.ci_level })
+    : null;
   return (
     <>
       <div className="gof-card">
@@ -201,7 +214,7 @@ export function CausesSide({ r, chosen, onChoose }) {
         </div>
       )}
       <p className="life-method">
-        {bc.model || "Crow-AMSAA per cause"}{bc.aic != null ? ` · AIC ${formatNumber(bc.aic, { sig: 5 })}` : ""}.
+        {bc.model || "Crow-AMSAA per cause"}{bc.aic != null ? ` · AIC ${formatNumber(bc.aic, { sig: 5 })} (not comparable with the all-failures AIC)` : ""}.
         {bc.note ? ` ${bc.note}` : ""} Choose a cause to see its {ciPct(r)} band.
       </p>
     </>

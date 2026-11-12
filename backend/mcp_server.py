@@ -1514,6 +1514,7 @@ def get_model(
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
         doc = recurrent_service.ensure_diagnostics(db, doc)  # #81: bounds and tests for older saves
+        doc = recurrent_service.current_results(db, doc)  # 90% intervals and today's verdicts, on read
         r = doc.results or {}
         out = {**_recurrent_brief(doc), "params": r.get("params"), **_recurrent_evidence(r)}
         if r.get("projection"):

@@ -40,6 +40,8 @@ You should also give each system's **observation window** — how long you watch
 it, whether or not it failed again — mapped to `tr`. Without it the analysis
 can't tell the difference between a machine that stopped failing and a machine
 you stopped watching, and it will quietly conclude your fleet is improving.
+The Data step guesses it from names like "observed to", "records end" or "end
+of record", and warns you while it's empty.
 
 Three optional columns add more:
 
@@ -130,9 +132,13 @@ level most systems have; an interval that includes 1 means the data can't rule
 out no effect.
 
 **Imperfect repair** leads with the repair effectiveness in words — "each repair
-takes away about 79% of the age gained since the last repair", with 100% as good
-as new and 0% as bad as old — and the repair test's verdict: perfect repair,
-minimal repair, or in between.
+restores about 79% of the age gained since the last repair", with 100% as good
+as new and 0% as bad as old — and its 90% range. The verdict follows that range:
+"as bad as old" or "as good as new" only when the range reaches it, "partial
+repair" when it rules both out, and "can't rule out as bad as old" when the range
+reaches it but the estimate is well inside. The restoration factor q is shown too
+(restores 52% means q = 0.48), the number a repairable block's repair quality
+takes.
 
 ## Can I trust it?
 
@@ -162,8 +168,13 @@ every parameter with its interval.
 The **Calculator** answers the planning questions directly: expected failures
 by a future time, the failure rate or the MTBF at a given point, and — with a
 start time under **Over a window** — the failures to expect in that window, with
-the average rate and MTBF across it. That's the number that sizes a spares order
-or a maintenance budget.
+the average rate and MTBF across it. Each figure on a saved model has its 90%
+range (the MTBF also its 90% lower bound). An imperfect-repair model is simulated,
+beyond the data too; a covariate model is read at the values you choose (a site,
+a duty). **From now on** gives the fleet's failures over the next stretch from
+where each system is now, with a range that allows for chance and for the fit's
+own uncertainty. That's the number that sizes a spares order or a maintenance
+budget.
 
 ## Plan ahead
 
@@ -174,10 +185,12 @@ or a maintenance budget.
 - **Growth projection**: for a growth test, the MTBF the system reaches once the
   fixes for each failure mode are in (AMSAA-Crow, MIL-HDBK-189C). It needs a
   column naming each failure's mode, and you mark each mode as not fixed (A),
-  fixed after the test (BD) or fixed during it (BC).
+  fixed after the test (BD) or fixed during it (BC). A field trial whose units
+  ended at different times is cut to a common end of test (the earliest, or the
+  one you type), and it says what was left out.
 - **Overhaul interval** (minimal repair): if you're deciding whether to keep
   repairing or overhaul, the cost-optimal overhaul interval from the cost of a
-  repair and of an overhaul.
+  repair and of an overhaul, with its 90% range.
 
 ## Where to go next
 

@@ -172,7 +172,7 @@ export default function RecurrentProjection({ modelId, unit: rawUnit }) {
                     options={(view.columns || []).map((c) => ({ value: c, label: c }))}
                   />
                 </label>
-                <label className="calc-t" title="Every system is tested from 0 to the same time T. Leave it blank when the data has each system's end of test (its observation window, or a c = 1 row).">
+                <label className="calc-t" title="Every system is counted from 0 to the same time T. Blank: each system's own end of record when they all match, else the earliest one. Systems whose record stops before T are left out; failures after it too.">
                   <span>End of test, T{u ? ` (${unit})` : ""}</span>
                   <input type="number" inputMode="decimal" min="0" step="any" value={testEnd} placeholder="from the data"
                          onChange={(e) => setTestEnd(e.target.value)} />
@@ -222,7 +222,7 @@ export default function RecurrentProjection({ modelId, unit: rawUnit }) {
                   { label: `Growth potential${u && ` (${unit})`}`, value: fmt(result.growth_potential?.mtbf) },
                 ]}
               >
-                {result.basis_note || view.basis_note}
+                {[result.basis_note || view.basis_note, result.common_end?.text].filter(Boolean).join(" ") || null}
               </ResultSummary>
               <ResultDetails>
                 <p className="rs-note">

@@ -215,6 +215,7 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
         payload, live = extra.fit(df, mapping, model_id, unit, gof_test=gof_test, options=options,
                                   windows=windows)
         _add_marks(payload, df, mapping)
+        _record_end_note(payload, df, mapping, windows)
         return payload, store_live(live)
     if model_id not in MODELS:
         choices = MODEL_CHOICES + list(extra.EXTRA_MODELS)
@@ -242,7 +243,27 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     if gaps:
         payload["windows"] = gaps
     _add_marks(payload, df, mapping, inputs=None if gaps else inputs)
+    _record_end_note(payload, df, mapping, windows)
     return payload, store_live(para)
+
+
+RECORD_END_NOTE = ("No end of record is mapped, so each system's record is taken to end at its last failure. That "
+                   "makes failures look closer together at the end than they were: map the column that says how "
+                   "far each system's records go (tr) for a fair trend and MTBF.")
+
+
+def _record_end_note(payload: dict, df: pd.DataFrame, mapping: dict, windows=None) -> None:
+    """Warn when nothing says where each system's record ends: no window
+    (``tr``), no window columns or typed windows, and no end-of-record row
+    (``c = 1``). The fit then ends each system at its last failure."""
+    if mapping.get("tr") or mapping.get("t") or mapping.get("ws") or mapping.get("we") or windows:
+        return
+    col = mapping.get("c")
+    if col and col in df.columns:
+        flags = pd.to_numeric(df[col], errors="coerce")
+        if (flags == 1).any():
+            return
+    payload.setdefault("warnings", []).append({"id": "no_record_end", "text": RECORD_END_NOTE})
 
 
 def _fit_nhpp(model_id: str, inputs: dict):
@@ -257,6 +278,11 @@ def _fit_nhpp(model_id: str, inputs: dict):
 
     fitter = MODELS[model_id]["fitter"]
     inputs = observed(inputs)[0]
+    if model_id == "duane":
+        para = fitter.fit(**inputs)
+        if duane_needs_twin():
+            _attach_crow_twin(para, inputs)
+        return para
     if model_id != "crow_amsaa":
         return fitter.fit(**inputs)
     with ignore_warnings(UserWarning):
@@ -282,6 +308,89 @@ def _fit_nhpp(model_id: str, inputs: dict):
     except Exception:  # noqa: BLE001 - keep the first fit
         return para
     return retry if -retry.neg_ll() >= -para.neg_ll() or not np.all(np.isfinite(para.params)) else para
+
+
+# ---- Duane intervals on SurPyval 0.26 and earlier ---------------------------
+#
+# WORKAROUND, remove when the app adopts the next SurPyval release. SurPyval
+# 0.26's Duane fit takes its numerical Hessian with a step far larger than
+# its rate constant b (about 5e-6 in hours), so its standard errors come out
+# about 5x too small: on a 12-truck fleet its 90% interval on the growth
+# shape read 1.51-1.59 where the likelihood gives 1.34-1.79. Duane is the
+# same power-law process as Crow-AMSAA (Duane's alpha is Crow-AMSAA's beta,
+# and b = scale^-beta), with the same likelihood, so the Crow-AMSAA fit to
+# the same data gives Duane's covariance exactly. SurPyval's dev branch
+# fixes the step; the gate below turns this off for any later release.
+
+_DUANE_FIXED_IN = (0, 27)
+
+
+def duane_needs_twin() -> bool:
+    """Whether the installed SurPyval still has the Duane Hessian fault."""
+    from importlib.metadata import version
+
+    try:
+        parts = tuple(int(p) for p in version("surpyval").split(".")[:2])
+    except Exception:  # noqa: BLE001 - an unreadable version: keep the workaround
+        return True
+    return parts < _DUANE_FIXED_IN
+
+
+def _attach_crow_twin(para, inputs: dict) -> None:
+    """Keep the Crow-AMSAA fit to the same data on a Duane fit, for its
+    intervals (see above). Nothing is attached if that fit fails."""
+    try:
+        with ignore_warnings(), np.errstate(all="ignore"):
+            twin = CrowAMSAA.fit(**inputs)
+        if np.all(np.isfinite(np.asarray(twin.params, dtype=float))):
+            para._reliafy_crow_twin = twin
+    except Exception:  # noqa: BLE001 - keep SurPyval's own intervals
+        pass
+
+
+def crow_twin(model):
+    """The Crow-AMSAA twin of a Duane fit on SurPyval 0.26, else None."""
+    return getattr(model, "_reliafy_crow_twin", None)
+
+
+def duane_cov_from_twin(twin) -> np.ndarray:
+    """Duane's ``[alpha, b]`` covariance from the Crow-AMSAA twin's
+    ``[scale, beta]`` one, by the delta method: alpha = beta and
+    b = scale^-beta."""
+    scale, beta = (float(v) for v in np.asarray(twin.params, dtype=float))
+    b = scale ** (-beta)
+    J = np.array([[0.0, 1.0], [-beta * b / scale, -b * np.log(scale)]])
+    return J @ np.asarray(twin.covariance(), dtype=float) @ J.T
+
+
+def model_covariance(model) -> np.ndarray | None:
+    """A fit's parameter covariance (in ``parameter_names`` order), with the
+    Duane workaround; None when the model has none (built from parameters,
+    restored without its data)."""
+    twin = crow_twin(model)
+    try:
+        with ignore_warnings(), np.errstate(all="ignore"):
+            cov = duane_cov_from_twin(twin) if twin is not None else np.asarray(model.covariance(), dtype=float)
+    except Exception:  # noqa: BLE001 - no likelihood
+        return None
+    return cov if cov.ndim == 2 and cov.size else None
+
+
+def _duane_intervals(twin) -> dict:
+    """Duane's 90% intervals from its Crow-AMSAA twin: alpha is the twin's
+    beta; b's interval is Wald on the log scale from the mapped covariance."""
+    from backend.levels import Z
+
+    out = {}
+    lo, hi = (float(v) for v in np.asarray(twin.param_cb("beta", alpha_ci=1 - CI_LEVEL), dtype=float))
+    out["alpha"] = [lo, hi]
+    scale, beta = (float(v) for v in np.asarray(twin.params, dtype=float))
+    b = scale ** (-beta)
+    var = float(duane_cov_from_twin(twin)[1, 1])
+    if b > 0 and np.isfinite(var) and var >= 0:
+        se_log = np.sqrt(var) / b
+        out["b"] = [float(b * np.exp(-Z * se_log)), float(b * np.exp(Z * se_log))]
+    return out
 
 
 def _add_marks(payload: dict, df: pd.DataFrame, mapping: dict, inputs: dict | None = None) -> None:
@@ -485,6 +594,9 @@ def rate_bounds(model_id: str, model, t_end: float) -> dict:
         return out
     t = np.array([float(t_end)])
     methods = ("crow", "wald") if model_id == "crow_amsaa" else ("wald",)
+    # A Duane fit on SurPyval 0.26 takes its bounds from its Crow-AMSAA twin:
+    # the same curve, with the right covariance (see duane_needs_twin).
+    model = crow_twin(model) or model
     for method in methods:
         try:
             with ignore_warnings(), np.errstate(all="ignore"):
@@ -589,6 +701,13 @@ def param_intervals(model_id: str, model) -> dict:
     without its data."""
     if model_id not in MODELS:
         return {}
+    twin = crow_twin(model)
+    if twin is not None:  # SurPyval 0.26's Duane intervals (see duane_needs_twin)
+        try:
+            with ignore_warnings(), np.errstate(all="ignore"):
+                return _duane_intervals(twin)
+        except Exception:  # noqa: BLE001 - fall back to SurPyval's own
+            pass
     out = {}
     for name in getattr(model, "parameter_names", None) or []:
         try:
@@ -777,22 +896,57 @@ def projection_inputs(df: pd.DataFrame, mapping: dict, test_end=None) -> dict:
                 ends[sys_id] = max(ends.get(sys_id, 0.0), float(t))
     if test_end is not None:
         test_end = _positive(test_end, "The end of the test")
-    closed = set(i[c == 1].tolist())
-    extra = []
-    for sys_id in dict.fromkeys(i.tolist()):
-        if sys_id in closed:
-            continue
-        end = ends.get(sys_id, test_end)
-        if end is not None:
-            extra.append((end, sys_id))
-    if extra:
-        x = np.concatenate([x, [e for e, _ in extra]])
-        i = np.concatenate([i, [s for _, s in extra]])
-        c = np.concatenate([c, np.ones(len(extra), dtype=int)])
-        modes = modes + [None] * len(extra)
+    # Each system's own end: its c = 1 row, else its window, else the test end.
+    for sys_id, t in zip(i[c == 1], x[c == 1]):
+        ends[sys_id] = max(ends.get(sys_id, 0.0), float(t))
+    systems = list(dict.fromkeys(i.tolist()))
+    for sys_id in systems:
+        if sys_id not in ends and test_end is not None:
+            ends[sys_id] = test_end
+    cut = None
+    known = [ends[s] for s in systems if s in ends]
+    if len(known) == len(systems) and known and (len(set(known)) > 1 or (test_end is not None
+                                                                          and set(known) != {test_end})):
+        # Staggered ends (a field trial): a growth projection needs every
+        # system on test over the same (0, T]. Cut each at a common T — the
+        # one typed, else the earliest end — leaving out later failures and
+        # any system whose record stops before T, and say so.
+        T = test_end if test_end is not None else min(known)
+        keep_sys = {s for s in systems if ends[s] >= T}
+        if not keep_sys:
+            raise FitError(f"No system's record reaches {T:g}: choose an end of test no later than "
+                           f"{max(known):g}.")
+        events = (c == 0) & np.isin(i, list(keep_sys))
+        dropped = int(((c == 0) & np.isin(i, list(keep_sys)) & (x > T)).sum())
+        events &= x <= T
+        excluded = sorted(set(systems) - keep_sys)
+        lost = int(((c == 0) & np.isin(i, excluded)).sum())
+        x, i = x[events], i[events]
+        modes = [m for m, e in zip(modes, events) if e]
+        order = [s for s in systems if s in keep_sys]
+        x = np.concatenate([x, np.full(len(order), T)])
+        i = np.concatenate([i, np.asarray(order, dtype=i.dtype if i.size else object)])
+        c = np.concatenate([np.zeros(int(events.sum()), dtype=int), np.ones(len(order), dtype=int)])
+        modes = modes + [None] * len(order)
+        cut = {"T": float(T), "chosen": test_end is not None, "dropped_failures": dropped,
+               "excluded_systems": excluded, "excluded_failures": lost, "systems": len(order)}
+    else:
+        closed = set(i[c == 1].tolist())
+        extra = []
+        for sys_id in systems:
+            if sys_id in closed:
+                continue
+            end = ends.get(sys_id, test_end)
+            if end is not None:
+                extra.append((end, sys_id))
+        if extra:
+            x = np.concatenate([x, [e for e, _ in extra]])
+            i = np.concatenate([i, [s for _, s in extra]])
+            c = np.concatenate([c, np.ones(len(extra), dtype=int)])
+            modes = modes + [None] * len(extra)
     if len(set(m for m, cc in zip(modes, c) if cc == 0 and m is not None)) > _MAX_MODES:
         raise FitError(f"More than {_MAX_MODES} distinct failure modes; group them first.")
-    return {"x": x, "i": i, "c": c, "modes": modes}
+    return {"x": x, "i": i, "c": c, "modes": modes, "cut": cut}
 
 
 def failure_modes(df: pd.DataFrame, mapping: dict) -> list[dict]:
@@ -885,9 +1039,8 @@ def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=
     except ValueError as exc:
         msg = str(exc)
         if "time-terminated" in msg:
-            msg = ("A growth projection needs a time-terminated test: every system run from 0 to the same end "
-                   "of test T. Give that time (the end of the test), or map each system's observation window "
-                   "(tr) or its end-of-test row (c = 1) — all at the same time.")
+            msg = ("A growth projection needs a time-terminated test: every system run from 0 to an end of test. "
+                   "Map each system's end of record (tr) or type the end of the test.")
         raise FitError(msg) from exc
 
     total = gp.systems * gp.T
@@ -937,8 +1090,30 @@ def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=
         "fef": fef,
         "bc": bc,
         "test_end": float(test_end) if test_end is not None else None,
+        "common_end": _cut_words(ins.get("cut"), unit),
         "model": {"alpha": float(gp.model.params[0]), "beta": float(gp.model.params[1])},
     })
+
+
+def _cut_words(cut: dict | None, unit: str = "") -> dict | None:
+    """The common end of test a staggered trial was cut to, in words."""
+    if not cut:
+        return None
+    u = f" {canonical_unit(unit).lower()}" if unit else ""
+    how = "the end of test you gave" if cut["chosen"] else "the earliest end of record"
+    text = f"Every system is taken to {cut['T']:,.6g}{u}, {how}, so all were on test for the same time"
+    parts = []
+    if cut["dropped_failures"]:
+        k = cut["dropped_failures"]
+        parts.append(f"{k} later failure{'s' if k != 1 else ''} left out")
+    if cut["excluded_systems"]:
+        k = len(cut["excluded_systems"])
+        parts.append(f"{k} system{'s' if k != 1 else ''} whose record stops earlier left out "
+                     f"({cut['excluded_failures']} failures)")
+    text += (": " + "; ".join(parts) + "." if parts else ".")
+    if not cut["chosen"]:
+        text += " Type an end of test to choose another."
+    return {**cut, "text": text}
 
 
 # ---------------------------------------------------------------------------
@@ -1155,8 +1330,16 @@ def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, ho
         none_rate = cr * _cif_at(model, h) / h
     saving = (none_rate - g_star) / none_rate * 100.0 if none_rate > 0 else None
 
+    try:  # the optimum's 90% range from the fit's uncertainty (a fit to data only)
+        from backend.recurrent_forecast import overhaul_range
+
+        spread = (overhaul_range(model_or_params, cr, co) if not isinstance(model_or_params, dict)
+                  else {"ci": None, "reason": "No range: built from parameters, so there's no fit uncertainty."})
+    except Exception:  # noqa: BLE001 - the optimum stands without its range
+        spread = {"ci": None, "reason": "No range could be worked out for this fit."}
     return _json_safe({
         **base,
+        "interval_range": spread,
         "optimal": {
             "interval": t_star,
             "cost_rate": g_star,

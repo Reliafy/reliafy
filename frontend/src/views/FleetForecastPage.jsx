@@ -228,6 +228,7 @@ export default function FleetForecastPage() {
     : forecast.method === "renewals" ? ", including replacements failing again" : "";
   const rangeHint = forecast.interval_method === "exact"
     ? "Exact, given the model"
+    : repairable && forecast.interval_method === "simulated" ? "Chance and the fit's uncertainty"
     : repairable ? "Poisson, given the model" : "From simulation";
   // P(failure) says nothing when every item is near-certain to fail.
   const hideProb = showAnswer && !dirty && (forecast.per_item || []).length > 0
@@ -395,7 +396,8 @@ export default function FleetForecastPage() {
             {repairable && (
               <p className="rs-note">
                 Repairable items: each failure is repaired and the item runs on, so every repeat failure is counted
-                from the item’s age (time since new) under the repairable model. Ranges are Poisson.
+                from the item’s age (time since new) under the repairable model. An item named as one of the model’s
+                systems uses that system’s own history.
               </p>
             )}
             {single && !repairable && (
@@ -461,7 +463,7 @@ export default function FleetForecastPage() {
               },
             ]}
           >
-            {dirty && "Unsaved changes — Save & forecast to update."}
+            {dirty ? "Unsaved changes — Save & forecast to update." : repairable ? forecast.units?.text : null}
           </ResultSummary>
           {(forecast.per_period || []).some((v) => v > 0) && (
             <>
@@ -555,7 +557,15 @@ export default function FleetForecastPage() {
                                  onChange={(e) => setItem(idx, "name", e.target.value)} />
                         )}
                       </td>
-                      <td className="num fleet-expected">{r.expected === undefined || itemFiguresStale ? "—" : formatNumber(r.expected, { sig: 2 })}</td>
+                      <td className="num fleet-expected"
+                          title={r.history && r.rate_factor != null && !itemFiguresStale
+                            ? `${r.history.system}: ${formatNumber(r.history.failures)} failures where the fleet model expects ${formatNumber(r.history.expected, { sig: 3 })}, so ×${formatNumber(r.rate_factor, { sig: 2 })} the fleet rate`
+                            : r.from_new && !itemFiguresStale ? "Not in the model's data: taken as run since new with no failure yet" : undefined}>
+                        {r.expected === undefined || itemFiguresStale ? "—" : formatNumber(r.expected, { sig: 2 })}
+                        {!itemFiguresStale && r.rate_factor != null && Math.abs(r.rate_factor - 1) >= 0.1 && (
+                          <div className="hint">×{formatNumber(r.rate_factor, { sig: 2 })} fleet rate</div>
+                        )}
+                      </td>
                       {!hideProb && (
                         <td className="num">{r.prob_any === undefined || itemFiguresStale ? "—" : formatPercent(r.prob_any)}</td>
                       )}

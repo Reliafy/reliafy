@@ -516,7 +516,8 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
                     pass
             growth, basis = growth_verdict("crow_amsaa", params, cis)
             row["fit"] = {"alpha": float(params[0]), "beta": float(params[1]), "alpha_ci": cis.get("alpha"),
-                          "beta_ci": cis.get("beta"), "growth": growth, "growth_basis": basis}
+                          "beta_ci": cis.get("beta"), "growth": growth, "growth_basis": basis,
+                          "ci_level": CI_LEVEL}
         rows.append(row)
     try:
         # The causes' likelihoods are separate, so the joint AIC is the sum
@@ -525,7 +526,7 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
             sum(m.aic() for m in para.models.values()))
     except Exception:  # noqa: BLE001
         aic = None
-    return {"causes": rows, "n_causes": int(len(counts)), "failures": total, "aic": aic,
+    return {"causes": rows, "n_causes": int(len(counts)), "failures": total, "aic": aic, "ci_level": CI_LEVEL,
             "model": "Crow-AMSAA per cause", "unit": canonical_unit(unit),
             "note": None if len(counts) <= _MAX_CAUSES else
             f"The {_MAX_CAUSES} most frequent of {len(counts)} causes are shown."}
@@ -759,6 +760,22 @@ def regression_payload(np_model, live, inputs: dict, Z: np.ndarray, meta: list, 
             except Exception:  # noqa: BLE001 - no likelihood
                 pass
         mtbf = 1.0 / rocof if rocof and rocof > 0 else None
+    # Each level's MTBF now (the first categorical covariate, the others at the
+    # fleet's average): the average-covariate system above is no real system.
+    by_group = []
+    if t_end and t_end > 0:
+        t = np.array([float(t_end)])
+        for label, z in groups:
+            with ignore_warnings(), np.errstate(all="ignore"):
+                r = _first(live.iif(t, z))
+                try:
+                    cb = np.asarray(live.iif_cb(t, z, alpha_ci=1 - CI_LEVEL), dtype=float).ravel()
+                    up = _first(live.iif_cb(t, z, alpha_ci=1 - CI_LEVEL, bound="upper"))
+                except Exception:  # noqa: BLE001
+                    cb, up = None, None
+            by_group.append({"label": label, "rocof": r, "mtbf": 1.0 / r if r and r > 0 else None,
+                             "mtbf_ci": [1.0 / cb[1], 1.0 / cb[0]] if cb is not None and cb[0] > 0 else None,
+                             "mtbf_lower": 1.0 / up if up and up > 0 else None})
     shape_name = "alpha" if baseline == "duane" else "beta"
     out.update({
         "params": params,
@@ -769,7 +786,8 @@ def regression_payload(np_model, live, inputs: dict, Z: np.ndarray, meta: list, 
         "rocof": rocof, "mtbf": mtbf, "rocof_ci": rocof_ci, "mtbf_ci": mtbf_ci,
         "demonstrated_mtbf": None,
         "bounds_method": "wald" if rocof_ci else None,
-        "rates_at": "the fleet's average system",
+        "rates_at": "a system at the fleet's average covariates",
+        "rates_by_group": by_group,
         "baseline": {"id": baseline, "name": BASELINE_NAMES[baseline]},
         "covariates": meta,
         "coefficients": coefs,
@@ -792,11 +810,15 @@ _RESTORATION = {
 }
 
 
-def restoration(model_id: str, opts: dict, value: float, ci) -> dict:
+def restoration(model_id: str, opts: dict, value: float, ci, method: str = "wald") -> dict:
     """The repair-effectiveness parameter in words: how much of a system's
-    age (or failure rate) each repair takes away, with its 90% interval."""
+    age (or failure rate) each repair restores, with its 90% interval. One
+    convention everywhere: "restores X% of the age gained" is 1 − q for the
+    Kijima models (q = 0 as good as new, q = 1 as bad as old, as an RBD
+    block's repair quality takes it) and ρ for ARA and ARI. ``method`` says
+    how the interval was worked out (``lr``: profile likelihood)."""
     param, label, kind = _RESTORATION[model_id]
-    out = {"parameter": param, "label": label, "value": value, "ci": ci}
+    out = {"parameter": param, "label": label, "value": value, "ci": ci, "ci_method": method}
     if kind == "g1":
         ratio = 1.0 + value
         rci = [1.0 + ci[0], 1.0 + ci[1]] if ci else None
@@ -804,7 +826,7 @@ def restoration(model_id: str, opts: dict, value: float, ci) -> dict:
         text = f"Each time between failures is about {ratio:.2f}× the one before"
         short = f"{text}: the gap {trend} with every repair."
         if rci:
-            text += f" (we're 90% sure: {rci[0]:.2f}× to {rci[1]:.2f}×)"
+            text += f" (90% range {rci[0]:.2f}× to {rci[1]:.2f}×)"
         text += f": the gap {trend} with every repair"
         text += " (deterioration)." if ratio < 1 else " (improvement)." if ratio > 1 else "."
         out.update({"effectiveness": None, "ratio": ratio, "ratio_ci": rci, "sentence": text, "short": short,
@@ -830,61 +852,105 @@ def restoration(model_id: str, opts: dict, value: float, ci) -> dict:
         text = (f"Each repair leaves the system older than before it failed: {_pct(-eff)} more than {what} "
                 "is added (worse than a minimal repair)")
     else:
-        text = f"Each repair takes away about {_pct(max(eff, 0.0))} of {what}"
+        verb = "removes" if model_id == "ari" else "restores"
+        text = f"Each repair {verb} about {_pct(max(eff, 0.0))} of {what}"
     short = text + "."
     if eci:
         lo, hi = max(eci[0], -9.99), min(eci[1], 9.99)
-        text += f" (we're 90% sure: {_pct(lo)} to {_pct(hi)})"
+        text += f" (90% range {_pct(lo)} to {_pct(hi)})"
+    if kind == "kijima":
+        text += f"; q = {value:.3g} in an RBD block's repair quality"
     text += "."
     scale = ("0% is a minimal repair (as bad as old)." if model_id == "ari"
              else "100% is as good as new, 0% as bad as old.")
-    out.update({"effectiveness": eff, "effectiveness_ci": eci, "sentence": text, "short": short, "scale": scale})
+    out.update({"effectiveness": eff, "effectiveness_ci": eci, "what": what, "sentence": text, "short": short,
+                "scale": scale})
     return out
 
 
-def repair_verdict(model, model_id: str) -> dict | None:
-    """``repair_test()`` as a verdict: are the repairs perfect (as good as
-    new), minimal (as bad as old), or in between?"""
+def restoration_interval(model, name: str, fallback):
+    """``(ci, method)``: the restoration parameter's 90% profile-likelihood
+    interval (SurPyval's ``param_cb(method="lr")``), which agrees with the
+    likelihood-ratio repair test and covers better than the Wald one at the
+    usual sample sizes; the Wald ``fallback`` when it can't be had."""
     try:
         with ignore_warnings(), np.errstate(all="ignore"):
-            rt = model.repair_test(alpha_ci=0.05)
+            cb = np.asarray(model.param_cb(name, alpha_ci=1 - CI_LEVEL, method="lr"), dtype=float).ravel()
+        if cb.size == 2 and np.all(np.isfinite(cb)) and cb[0] <= cb[1]:
+            return [float(cb[0]), float(cb[1])], "lr"
+    except Exception:  # noqa: BLE001 - no likelihood, or a family without it
+        pass
+    return fallback, "wald"
+
+
+_NEAR_END = 0.10  # an estimate this close to an end, with the end inside the interval, is called that end
+
+
+def repair_verdict(model, model_id: str, rest: dict | None = None) -> dict | None:
+    """Are the repairs as good as new, as bad as old, or in between? The
+    verdict follows the restoration parameter's 90% interval (``rest``): an
+    end is named only when the interval includes it, and a headline never
+    says what the interval rules out. The likelihood-ratio repair tests
+    (SurPyval's ``repair_test``) are kept beside it as the diagnostics."""
+    try:
+        with ignore_warnings(), np.errstate(all="ignore"):
+            rt = model.repair_test(alpha_ci=1 - CI_LEVEL)
     except Exception:  # noqa: BLE001 - no likelihood
-        return None
+        rt = None
 
     def part(fit):
         if fit is None:
             return None
         return {"hypothesis": fit.hypothesis, "value": float(fit.value), "p_value": float(fit.p_value),
-                "statistic": float(fit.statistic), "rejected": bool(fit.p_value < 0.05)}
+                "statistic": float(fit.statistic), "rejected": bool(fit.p_value < 1 - CI_LEVEL)}
 
-    best, worst = part(rt.perfect), part(rt.minimal)
-    top = "maximal repair" if best and best["hypothesis"].startswith("maximal") else "perfect repair"
+    best, worst = (part(rt.perfect), part(rt.minimal)) if rt is not None else (None, None)
+    base = {"conclusion": str(rt.conclusion) if rt is not None else None, "level": 1 - CI_LEVEL,
+            "perfect": best, "minimal": worst}
     if model_id == "g1":
+        if rt is None:
+            return None
         verdict = "renewal" if best and not best["rejected"] else "not_renewal"
         sentence = ("The gaps between failures don't change from repair to repair: an ordinary renewal "
                     "process (as good as new) fits." if verdict == "renewal" else
                     "The gaps between failures change from repair to repair: not as good as new.")
-    elif best and worst:
-        if best["rejected"] and worst["rejected"]:
-            verdict = "partial"
-            sentence = ("Repairs are partial: better than as bad as old, short of "
-                        + ("the most an ARI repair can do." if top == "maximal repair" else "as good as new."))
-        elif worst["rejected"]:
-            verdict = "maximal" if top == "maximal repair" else "perfect"
-            sentence = ("Consistent with the most an ARI repair can do; minimal repair is ruled out."
-                        if verdict == "maximal" else
-                        "Consistent with perfect repair: each repair leaves the system as good as new.")
-        elif best["rejected"]:
-            verdict = "minimal"
-            sentence = ("Consistent with minimal repair: each repair leaves the system as it was just before "
-                        "the failure, so a Crow-AMSAA-style model is enough.")
-        else:
-            verdict = "unclear"
-            sentence = "The data can't tell perfect repair from minimal repair: more failures per system would."
+        return {"verdict": verdict, "sentence": sentence, **base}
+    eff = (rest or {}).get("effectiveness")
+    eci = (rest or {}).get("effectiveness_ci")
+    if eff is None:
+        return None if rt is None else {"verdict": "unclear", "sentence": str(rt.conclusion), **base}
+    top = "the most an ARI repair can do" if model_id == "ari" else "as good as new"
+    what = rest.get("what") or "the age gained"
+    amount = f"Repairs {'remove' if model_id == 'ari' else 'restore'} about {_pct(max(eff, 0.0))} of {what}"
+    if eci:
+        amount += f" (90% range {_pct(max(eci[0], -9.99))} to {_pct(min(eci[1], 9.99))})"
+    if not eci:
+        verdict, tail = "unclear", ": this fit gives no interval to judge it by."
     else:
-        verdict, sentence = "unclear", str(rt.conclusion)
-    return {"verdict": verdict, "sentence": sentence, "conclusion": str(rt.conclusion), "level": 0.05,
-            "perfect": best, "minimal": worst}
+        has_old, has_new = eci[0] <= 0.0, eci[1] >= 1.0
+        if has_old and has_new:
+            verdict, tail = "unclear", (": the data can't tell as bad as old from " + top
+                                        + ". More failures per system would.")
+        elif has_old:
+            if eff <= _NEAR_END:
+                verdict = "minimal"
+                tail = (": consistent with minimal repair (as bad as old), each repair leaving the system as it "
+                        "was just before the failure, so a Crow-AMSAA-style model is enough.")
+            else:
+                verdict = "maybe_minimal"
+                tail = (": the data can't rule out as bad as old, but the best estimate is that repairs do "
+                        "restore part of it.")
+        elif has_new:
+            if eff >= 1.0 - _NEAR_END:
+                verdict = "maximal" if model_id == "ari" else "perfect"
+                tail = f": consistent with {top}."
+            else:
+                verdict = "maybe_perfect"
+                tail = f": the data can't rule out {top}, but the best estimate is short of it."
+        else:
+            verdict = "partial"
+            tail = f": better than as bad as old, short of {top}."
+    return {"verdict": verdict, "sentence": amount + tail, "effectiveness": eff, "effectiveness_ci": eci, **base}
 
 
 def _gap_scale(model, inputs: dict) -> float:
@@ -949,7 +1015,12 @@ def renewal_payload(np_model, live, inputs: dict, model_id: str, opts: dict, uni
     params = _param_rows(rows, names)
     rest_name = _RESTORATION[model_id][0]
     est, lo, hi = rows.get(rest_name, (None, None, None))
-    rest = restoration(model_id, opts, float(est), [lo, hi] if lo is not None else None) if est is not None else None
+    rest = None
+    if est is not None:
+        ci, how = restoration_interval(live, rest_name, [lo, hi] if lo is not None else None)
+        rest = restoration(model_id, opts, float(est), ci, method=how)
+        # The parameter table shows the same interval as the words.
+        params = [{**p, "ci": ci, "ci_method": how} if p["name"] == rest_name and ci else p for p in params]
     grid = np.linspace(0.0, float(out["end_of_observation"]) or 1.0, _GRID)
     with ignore_warnings(), np.errstate(all="ignore"):
         fitted = np.asarray(live.mcf(grid, items=1000, random_state=0), dtype=float)
@@ -964,7 +1035,7 @@ def renewal_payload(np_model, live, inputs: dict, model_id: str, opts: dict, uni
         "lifetime": "Weibull" if model_id != "ari" else None,
         "baseline": {"id": opts["baseline"], "name": BASELINE_NAMES[opts["baseline"]]} if model_id == "ari" else None,
         "restoration": rest,
-        "repair_test": repair_verdict(live, model_id),
+        "repair_test": repair_verdict(live, model_id, rest),
         "next_failure": next_failures(live, inputs),
         "mcf": {**out["mcf"], "fitted": {"x": grid.tolist(), "mcf": fitted.tolist(), "simulated": True}},
         **_diagnostics(live, out["n_events"], out["n_systems"], gof_test, slow=True),
