@@ -60,7 +60,7 @@ items. Under **Life model**:
   of the class: it says how many, with their failures and
   suspensions), or **both**: this position's history, with the class's other
   positions' history as a prior. Choose the **method**: a plain fit (the
-  numbers that make the data most likely, with 95% confidence bounds) or
+  numbers that make the data most likely, with 90% confidence bounds) or
   **with a prior** (what you already believed, moved by the data, with 90%
   credible intervals). The prior can be the class's history, a saved model,
   numbers you know or a B10 you believe, and you say how much to trust it

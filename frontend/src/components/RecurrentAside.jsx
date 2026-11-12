@@ -2,6 +2,7 @@ import { openGuide } from "./HelpButton.jsx";
 import { formatNumber } from "../format.js";
 import { boundWords } from "../lifeResults.js";
 import { COLORWAY } from "../plotTheme.js";
+import { ciPct } from "../levels.js";
 import {
   ciText, dataText, familyOf, growthReading, paramLabel, pct, perUnit, ratioText, repairTitle,
 } from "../recurrentResults.js";
@@ -36,7 +37,7 @@ export default function RecurrentAside({ r, onStats = null, onData = null, onNex
   return (
     <>
       {fam !== "renewal" && r.mtbf != null && <NowCard r={r} unit={unit} />}
-      {fam === "renewal" && rest && <RepairCard rest={rest} />}
+      {fam === "renewal" && rest && <RepairCard rest={rest} level={ciPct(r)} />}
       {fam === "renewal" && r.next_failure?.units?.length > 0 && <NextCard nf={r.next_failure} unit={unit} onNext={onNext} />}
 
       {reading && (
@@ -62,7 +63,7 @@ export default function RecurrentAside({ r, onStats = null, onData = null, onNex
             <span className="gk">{paramLabel(r, shape.name)}</span>
             <span className="gv-col">
               <span className="gv">{sig(shape.value)}</span>
-              {ciText(shape.ci) && <span className="param-ci">95% {ciText(shape.ci)}</span>}
+              {ciText(shape.ci) && <span className="param-ci">{ciPct(r)} {ciText(shape.ci)}</span>}
             </span>
           </div>
         )}
@@ -96,7 +97,7 @@ function NowCard({ r, unit }) {
   const mtbfTitle = [
     "MTBF now: 1 ÷ the failure rate at the end of the data",
     dm?.lower != null ? boundWords(level, "lower", dm.lower, null, fmtT) : null,
-    ciText(r.mtbf_ci) ? `95% interval ${ciText(r.mtbf_ci)}` : null,
+    ciText(r.mtbf_ci) ? `${ciPct(r)} interval ${ciText(r.mtbf_ci)}` : null,
   ].filter(Boolean).join(". ");
   return (
     <div className="gof-card life-card">
@@ -112,7 +113,7 @@ function NowCard({ r, unit }) {
         </span>
       </div>
       <div className="gofr life-row"
-           title={ciText(r.rocof_ci) ? `Failures per ${perUnit(unit) || "unit time"}. 95% interval ${ciText(r.rocof_ci)}.` : undefined}>
+           title={ciText(r.rocof_ci) ? `Failures per ${perUnit(unit) || "unit time"}. ${ciPct(r)} interval ${ciText(r.rocof_ci)}.` : undefined}>
         <span className="gk">Failure rate</span>
         <span className="gv">{sig(r.rocof)}</span>
         <span className="life-lo">{unit ? `per ${perUnit(unit)}` : ""}</span>
@@ -123,10 +124,10 @@ function NowCard({ r, unit }) {
 
 // Imperfect repair: how much of the age a repair takes away (or, for G1, the
 // gap ratio), with its interval.
-function RepairCard({ rest }) {
+function RepairCard({ rest, level }) {
   return (
     <div className="gof-card life-card">
-      <div className="gofh life-card-head"><span>Each repair</span><span className="gof-sub">95% interval</span></div>
+      <div className="gofh life-card-head"><span>Each repair</span><span className="gof-sub">{level} interval</span></div>
       <div className="gofr life-row" title={`${rest.sentence} ${rest.scale || ""}`}>
         <span className="gk">{rest.ratio != null ? "Gap ratio" : "Restores"}</span>
         <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(rest.effectiveness)}</span>
@@ -167,7 +168,7 @@ function NextCard({ nf, unit, onNext }) {
   );
 }
 
-// The By cause view's panel: each cause (choose one to see its 95% band), its
+// The By cause view's panel: each cause (choose one to see its band), its
 // failures and growth shape, and the chosen cause's reading.
 export function CausesSide({ r, chosen, onChoose }) {
   const bc = r.by_cause || {};
@@ -201,7 +202,7 @@ export function CausesSide({ r, chosen, onChoose }) {
       )}
       <p className="life-method">
         {bc.model || "Crow-AMSAA per cause"}{bc.aic != null ? ` · AIC ${formatNumber(bc.aic, { sig: 5 })}` : ""}.
-        {bc.note ? ` ${bc.note}` : ""} Choose a cause to see its 95% band.
+        {bc.note ? ` ${bc.note}` : ""} Choose a cause to see its {ciPct(r)} band.
       </p>
     </>
   );

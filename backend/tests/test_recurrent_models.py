@@ -71,11 +71,11 @@ def test_proportional_intensity_matches_surpyval_and_reads_each_covariate():
     by_name = {c["name"]: c for c in payload["coefficients"]}
     for name in ("site: Inland", "duty_pct"):
         assert by_name[name]["coef"] == pytest.approx(estimate[name], rel=1e-6)
-        lo = float(np.ravel(direct.param_cb(name, alpha_ci=0.05))[0])
+        lo = float(np.ravel(direct.param_cb(name, alpha_ci=0.10))[0])
         assert by_name[name]["ratio_ci"][0] == pytest.approx(np.exp(lo), rel=1e-6)
     params = {p["name"]: p for p in payload["params"]}
     assert params["beta"]["value"] == pytest.approx(estimate["beta"], rel=1e-6)
-    assert params["beta"]["ci"][0] == pytest.approx(float(np.ravel(direct.param_cb("beta", alpha_ci=0.05))[0]),
+    assert params["beta"]["ci"][0] == pytest.approx(float(np.ravel(direct.param_cb("beta", alpha_ci=0.10))[0]),
                                                     rel=1e-6)
 
     # Plain readings: inland pumps fail more often, and higher duty too.
@@ -129,7 +129,7 @@ def test_generalized_renewal_matches_surpyval(model_id, kijima):
     rest = payload["restoration"]
     assert rest["parameter"] == "q" and rest["value"] == pytest.approx(q, rel=1e-6)
     assert rest["effectiveness"] == pytest.approx(1 - q, rel=1e-6)
-    lo, hi = direct.param_cb("q", alpha_ci=0.05)
+    lo, hi = direct.param_cb("q", alpha_ci=0.10)
     assert rest["effectiveness_ci"] == pytest.approx([1 - hi, 1 - lo], rel=1e-6)
     assert f"{round((1 - q) * 100)}%" in rest["sentence"]
 
@@ -213,7 +213,7 @@ def test_by_cause_matches_cause_specific_mcf_and_nhpp():
     para = _quiet(CauseSpecificNHPP.fit, ended["x"], i=ended["i"], c=ended["c"], e=e)
     valve = bc["causes"][0]
     assert valve["mcf"]["mcf"] == pytest.approx(list(mcf.models["valve"].mcf_hat))
-    cb = mcf.mcf_cb(np.asarray(valve["mcf"]["x"]), "valve", alpha_ci=0.05)
+    cb = mcf.mcf_cb(np.asarray(valve["mcf"]["x"]), "valve", alpha_ci=0.10)
     assert valve["mcf"]["upper"] == pytest.approx(list(np.max(cb, axis=1)))
     assert valve["fit"]["beta"] == pytest.approx(float(para.models["valve"].params[1]), rel=1e-6)
     assert valve["fit"]["growth"] == "deteriorating"

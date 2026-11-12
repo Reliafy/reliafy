@@ -76,7 +76,7 @@ show up, which is not always where they happen.
 it**: of the missions that get that far, the share that fail there.
 
 When the mission can't be worked out exactly, it is simulated, and the
-answer says so and gives a 95% interval. **Edit phases** reopens the editor.
+answer says so and gives a 90% interval. **Edit phases** reopens the editor.
 
 ## Limits
 

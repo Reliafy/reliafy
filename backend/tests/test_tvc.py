@@ -63,7 +63,7 @@ def test_interval_rows_fit_as_surpyval_does():
     assert [p["value"] for p in r["params"]] == pytest.approx(list(ref.params[:2]))
     assert r["coefficients"][0]["value"] == pytest.approx(ref.params[2])
     se = ref.standard_errors()[2]
-    assert r["coefficients"][0]["ci"] == pytest.approx([ref.params[2] - 1.959964 * se, ref.params[2] + 1.959964 * se])
+    assert r["coefficients"][0]["ci"] == pytest.approx([ref.params[2] - 1.644854 * se, ref.params[2] + 1.644854 * se])
     assert r["kind"] == "regression" and r["n"] == 30
     t = r["tvc"]
     assert t["layout"] == "intervals" and t["items"] == 30 and t["rows"] == len(df)
@@ -229,12 +229,12 @@ def test_readings_by_family():
     fields = [{"name": "load", "type": "number", "default": 1.0, "step": 10.0}]
     coef = [{"name": "load", "value": 0.05, "ci": [0.01, 0.09], "covariate_unit": "%"}]
     hazard = tvc.readings(coef, "hazard", fields)[0]["text"]
-    assert hazard == ("Every +10% in load multiplies the hazard by 1.65 (95% interval 1.11 to 2.46).")
+    assert hazard == ("Every +10% in load multiplies the hazard by 1.65 (90% interval 1.11 to 2.46).")
     assert math.exp(0.5) == pytest.approx(1.6487, rel=1e-4)
     aft = tvc.readings(coef, "aft", fields)[0]["text"]
     assert "makes the item age 1.65× as fast" in aft
     po = tvc.readings([{**coef[0], "value": -0.05, "ci": [-0.09, -0.01]}], "odds", fields)[0]["text"]
-    assert "multiplies the odds of surviving by 0.607 (95% interval 0.407 to 0.905)" in po
+    assert "multiplies the odds of surviving by 0.607 (90% interval 0.407 to 0.905)" in po
     ah = tvc.readings([{"name": "load", "value": 2e-5, "ci": None}], "additive", fields)[0]["text"]
     assert ah == "Every +10 in load adds 2.00e-04 to the hazard rate."
 

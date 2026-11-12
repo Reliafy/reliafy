@@ -10,6 +10,7 @@ import { useAskText } from "../components/ConfirmProvider.jsx";
 import { changedText, renamePrompt } from "../confirm.js";
 import { getFleet, putFleetItems, renameFleet } from "../api.js";
 import { fleetForecastCsv } from "../fleetCsv.js";
+import { rangeLevelText } from "../levels.js";
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -453,7 +454,7 @@ export default function FleetForecastPage() {
               )
             }
             stats={[
-              range && { label: "Likely range (80%)", value: range, hint: rangeHint },
+              range && { label: `Likely range (${rangeLevelText(forecast.interval_level)})`, value: range, hint: rangeHint },
               forecast.periods > 1 && {
                 label: `Average a ${periodWord}`,
                 value: `≈ ${formatNumber(forecast.expected / forecast.periods, { sig: 2 })}`,
@@ -493,7 +494,7 @@ export default function FleetForecastPage() {
                 }}
               />
               {periodBand && (
-                <p className="rs-note">Whiskers: each {periodWord}’s likely range (80%).</p>
+                <p className="rs-note">Whiskers: each {periodWord}’s likely range ({rangeLevelText(forecast.interval_level)}).</p>
               )}
             </>
           )}

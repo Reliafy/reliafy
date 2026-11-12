@@ -128,7 +128,11 @@ test("effectsByMode words each mode's coefficients, with the interval", () => {
   });
   assert.equal(out.length, 2);
   assert.equal(out[0].lines[0].text,
-    "Each +1 in duty_pct multiplies the bearing wear failure rate by 1.14 (95% 1.08 to 1.21).");
+    "Each +1 in duty_pct multiplies the bearing wear failure rate by 1.14 (90% 1.08 to 1.21).");
+  // A fit saved before the 90% rule says its own level.
+  assert.match(effectsByMode({ ratio_label: "hazard ratio", coefficients: [
+    { cause: "bearing wear", covariate: "duty_pct", ratio: 1.14, ratio_ci: [1.08, 1.21], p_value: 0.0001 }] }, "95%")[0]
+    .lines[0].text, /\(95% 1\.08 to 1\.21\)/);
   assert.match(out[1].lines[0].text, /can't rule out no effect\.$/);
   assert.deepEqual(effectsByMode(null), []);
 });

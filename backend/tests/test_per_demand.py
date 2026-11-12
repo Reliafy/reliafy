@@ -20,10 +20,10 @@ def test_result_per_demand_math():
     lo, hi = d["ci"]
     assert 0 < lo < d["p"] < hi < 0.1
     # Exact (Clopper-Pearson) since SurPyval 0.23 (#233): 3 in 130 was Wilson's
-    # [0.00788, 0.06565]; it is [0.00478, 0.06596], as scipy's binomtest.
-    exact = stats.binomtest(3, 130).proportion_ci(0.95, method="exact")
+    # [0.00788, 0.06565]; it is exact, as scipy's binomtest, at the app's 90% by default.
+    exact = stats.binomtest(3, 130).proportion_ci(0.90, method="exact")
     assert (lo, hi) == pytest.approx((exact.low, exact.high), rel=1e-9)
-    assert d["method"] == "exact" and d["confidence"] == 0.95
+    assert d["method"] == "exact" and d["confidence"] == 0.90
     assert d["reliability_ci"] == pytest.approx([1 - hi, 1 - lo])
     assert r["functions"] is None and r["gof"] == []
 
@@ -93,8 +93,9 @@ def test_one_batch_is_the_single_count():
 def test_zero_failures_in_every_batch_is_a_success_run():
     r = fitting.result_per_demand(batches=[{"demands": 30, "failures": 0}, {"demands": 29, "failures": 0}])
     d = r["per_demand"]
-    assert d["success_run"]["reliability_lower"] == pytest.approx(0.05 ** (1 / 59))
-    assert d["reliability_lower"] == pytest.approx(0.05 ** (1 / 59), rel=1e-12)
+    # At the default 90%: R ≥ 0.1^(1/59).
+    assert d["success_run"]["reliability_lower"] == pytest.approx(0.10 ** (1 / 59))
+    assert d["reliability_lower"] == pytest.approx(0.10 ** (1 / 59), rel=1e-12)
 
 
 @pytest.mark.parametrize("bad, match", [
@@ -212,7 +213,7 @@ def test_mcp_fit_per_demand_and_save(env):
     assert "exactly one" in _err(_call(token, "analyse", {"action": "fit_per_demand"}))
 
     saved = _ok(_call(token, "change", {"action": "model_fit", "name": "Deluge valves", "demand_batches": BATCHES}))
-    assert saved["saved"] is True and saved["kind"] == "per_demand" and saved["confidence"] == 0.95
+    assert saved["saved"] is True and saved["kind"] == "per_demand" and saved["confidence"] == 0.90
     got = _ok(_call(token, "get", {"kind": "model", "id": saved["model_id"]}))
     assert got["kind"] == "per_demand"
     assert "don't apply" in _err(_call(token, "change", {"action": "model_fit",

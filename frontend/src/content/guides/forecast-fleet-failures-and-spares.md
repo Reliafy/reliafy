@@ -35,8 +35,8 @@ The answer comes first:
 
 Two tiles sit under it:
 
-- **Likely range (80%)** — **37–44**. In eight years out of ten the count falls
-  in this range; in one year in ten it's above 44. The range comes from
+- **Likely range (90%)** — **36–45**. In nine years out of ten the count falls
+  in this range; in one year in twenty it's above 45. The range comes from
   simulating the fleet many times, so it includes the chance in *which* items
   fail and when.
 - **Average a month** — **≈ 3.4**.

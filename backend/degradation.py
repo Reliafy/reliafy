@@ -152,6 +152,7 @@ def fit(
 
 
 _DEFAULT_ALPHA = 0.10  # 90% two-stage confidence band by default
+LIFE_LEVEL_ALPHA = 0.10  # the B-lives' lower bounds: 90% one-sided (backend.levels)
 
 
 def _col(a) -> list:
@@ -160,7 +161,10 @@ def _col(a) -> list:
 
 def reliability_curves(model, alpha_ci: float = _DEFAULT_ALPHA) -> dict | None:
     """Population reliability curve (sf) with SurPyval's two-stage confidence
-    bounds. Returns ``{x, sf, lower, upper, alpha_ci}`` or ``None``."""
+    bounds. Returns ``{x, sf, lower, upper, alpha_ci}`` or ``None``; plus
+    ``life_lower``, the reliability's one-sided 90% lower bound (``life_level``),
+    whatever ``alpha_ci``: the B-lives' and the design life's lower bounds are
+    read off it, by the rule for life bounds (90% one-sided, backend.levels)."""
     try:
         life = model.life_model
         t_hi = float(life.qf(0.99))
@@ -174,6 +178,13 @@ def reliability_curves(model, alpha_ci: float = _DEFAULT_ALPHA) -> dict | None:
             if cb.ndim == 2 and cb.shape[1] == 2:
                 out["lower"] = _col(cb[:, 0])
                 out["upper"] = _col(cb[:, 1])
+        except Exception:  # pragma: no cover - bounds are optional
+            pass
+        try:
+            lo = np.asarray(model.cb(grid, on="sf", alpha_ci=LIFE_LEVEL_ALPHA, bound="lower"), dtype=float).ravel()
+            if lo.size == grid.size:
+                out["life_lower"] = _col(lo)
+                out["life_level"] = 1.0 - LIFE_LEVEL_ALPHA
         except Exception:  # pragma: no cover - bounds are optional
             pass
         return out

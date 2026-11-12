@@ -12,6 +12,7 @@ import { hasMeanLife, meanLifeAnswer } from "./meanLife.js";
 import { unitInText } from "./components/unitText.js";
 import { anyAt } from "./competingRisks.js";
 import { riskText } from "./joint.js";
+import { LEVEL_TEXT, ciLevelOf, ciPct, levelPct } from "./levels.js";
 
 export const TAB_LABELS = {
   plot: "Probability plot",
@@ -41,8 +42,9 @@ const MAX_TABS = 6;
 
 // How a model's intervals were made and at what level, so every tab says the
 // same: a Bayesian update's are credible intervals at its own level (90%), a
-// library record's are its source's 5–95% range, anything else 95%
-// confidence. ``label`` goes before a range ("90% credible 2.3–3.9").
+// library record's are its source's 5–95% range, anything else confidence
+// at its ``ci_level`` (90%, the app's rule; 95% on a result saved before it
+// that the server couldn't move). ``label`` goes before a range ("90% credible 2.3–3.9").
 export function intervalLevel(result) {
   const r = result || {};
   if (r.method === "bayesian_update") {
@@ -50,7 +52,8 @@ export function intervalLevel(result) {
     return { pct, label: `${pct}% credible`, credible: true };
   }
   if (r.method === "library") return { pct: 90, label: "Source's 5–95%", credible: false };
-  return { pct: 95, label: "95%", credible: false };
+  const level = ciLevelOf(r);
+  return { pct: Math.round(level * 1000) / 10, label: levelPct(level), credible: false };
 }
 const tab = (id) => ({ id, label: TAB_LABELS[id] });
 
@@ -291,15 +294,16 @@ function termName(name) {
   return m ? { label: `${m[1]} = ${m[2]}`, categorical: true, base: m[1] } : { label: String(name) };
 }
 
-// Every covariate's effect as a ratio with its 95% interval: [{ name,
-// ratio, lo, hi, unit, p }]; for an additive model (no ratio) the
+// Every covariate's effect as a ratio with its interval (90%; ``level`` says
+// it): [{ name, ratio, lo, hi, unit, p, level }]; for an additive model (no ratio) the
 // coefficient itself, with ``additive``.
 export function forestRows(result) {
   const r = result || {};
+  const level = ciPct(r);
   if (r.kind === "joint") {
     return (r.hazard_ratios || []).map((h) => ({
       name: h.kind === "marker" ? r.marker || h.name : h.name, ratio: h.hr, lo: h.lower, hi: h.upper,
-      unit: h.kind === "marker" ? r.marker_unit || "" : "", text: h.text,
+      unit: h.kind === "marker" ? r.marker_unit || "" : "", text: h.text, level,
     }));
   }
   const table = Object.fromEntries((r.coef_table || []).filter((t) => t.part === "coefficients").map((t) => [t.name, t]));
@@ -308,23 +312,24 @@ export function forestRows(result) {
     const p = table[c.name]?.p ?? null;
     const unit = c.covariate_unit || r.covariate_units?.[c.name] || "";
     if (!r.ratio_label) {
-      return { name: c.name, value: c.value, lo: ci?.[0] ?? null, hi: ci?.[1] ?? null, unit, p, additive: true };
+      return { name: c.name, value: c.value, lo: ci?.[0] ?? null, hi: ci?.[1] ?? null, unit, p, additive: true, level };
     }
     const exp = (v) => (v == null ? null : Math.exp(v));
-    return { name: c.name, ratio: c.ratio ?? exp(c.value), lo: exp(ci?.[0]), hi: exp(ci?.[1]), unit, p };
+    return { name: c.name, ratio: c.ratio ?? exp(c.value), lo: exp(ci?.[0]), hi: exp(ci?.[1]), unit, p, level };
   });
 }
 
 // One effect in words: "Each +1 °C in temp_C multiplies the failure rate by
-// 1.15 (95% 1.10 to 1.20)." For a small effect per unit it also gives a step
+// 1.15 (90% 1.10 to 1.20)." For a small effect per unit it also gives a step
 // of 10 ("+10: ×4.0"), so it reads at a size people think in.
 export function effectText(row, ratioLabel = "hazard ratio") {
   if (row.text) return row.text;
   const name = termName(row.name);
   const unit = row.unit ? ` ${row.unit}` : "";
   const subject = name.categorical ? `${name.label}` : `Each +1${unit} in ${name.label}`;
+  const lv = row.level || LEVEL_TEXT;
   if (row.additive) {
-    const ci = row.lo != null ? ` (95% ${formatNumber(row.lo)} to ${formatNumber(row.hi)})` : "";
+    const ci = row.lo != null ? ` (${lv} ${formatNumber(row.lo)} to ${formatNumber(row.hi)})` : "";
     return `${subject} adds ${formatNumber(row.value)} to the failure rate${ci}.`;
   }
   const verb = RATIO_VERB[ratioLabel] || "the rate";
@@ -333,7 +338,7 @@ export function effectText(row, ratioLabel = "hazard ratio") {
     ? `${subject} (against the base level) multiplies ${verb} by ${formatNumber(r)}`
     : `${subject} multiplies ${verb} by ${formatNumber(r)}`;
   if (row.lo != null && row.hi != null) {
-    text += ` (95% ${formatNumber(row.lo)} to ${formatNumber(row.hi)})`;
+    text += ` (${lv} ${formatNumber(row.lo)} to ${formatNumber(row.hi)})`;
   }
   if (!name.categorical && r > 0.95 && r < 1.05 && r !== 1) {
     text += `; +10${unit} multiplies it by ${formatNumber(r ** 10)}`;

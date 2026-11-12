@@ -166,7 +166,7 @@ def _five_failure_beta():
 
 def test_a_poorly_known_beta_warns():
     est, (lo, hi) = _five_failure_beta()
-    assert lo < 1.1 and hi > 4  # five failures: β's interval is wide
+    assert lo < 1.2 and hi > 3.5  # five failures: β's 90% interval is wide
 
     plan = demonstration_test(confidence=0.9, mission_time=1000, b_life=10, test_multiple=3, shape=est,
                               shape_interval=[lo, hi], shape_model="Five seals", unit="cycles")

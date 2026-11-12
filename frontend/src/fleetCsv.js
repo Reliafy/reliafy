@@ -19,10 +19,10 @@ export function fleetForecastCsv({ items = [], perItem = {}, fields = [], defaul
   })];
   rows.push([]);
   rows.push(["fleet_expected", n(forecast.expected) ?? ""]);
-  rows.push(["interval_p10", n(forecast.interval?.[0]) ?? "", "interval_p90", n(forecast.interval?.[1]) ?? ""]);
+  rows.push(["interval_p5", n(forecast.interval?.[0]) ?? "", "interval_p95", n(forecast.interval?.[1]) ?? ""]);
   if (forecast.per_period_interval) {
     rows.push([]);
-    rows.push(["period", "expected", "p10", "p90"]);
+    rows.push(["period", "expected", "p5", "p95"]);
     (forecast.per_period || []).forEach((v, i) =>
       rows.push([i + 1, n(v), n(forecast.per_period_interval[i]?.[0]) ?? "", n(forecast.per_period_interval[i]?.[1]) ?? ""]));
   }

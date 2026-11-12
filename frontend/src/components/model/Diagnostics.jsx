@@ -17,6 +17,7 @@ import { COLORWAY, DATA_INK, dataPoints, fitLine, referenceShape } from "../../p
 import { checkRows, checksTone } from "../../modelChecks.js";
 import { countsSummary, curveSummary, hazardShape, oddUnits, ppSummary } from "../../modelFrame.js";
 import { unitInText } from "../unitText.js";
+import { levelPct } from "../../levels.js";
 
 const fmt5 = (v) => formatNumber(v, { sig: 5 });
 const tAxis = (unit) => ({ title: { text: unit ? `Time (${unit})` : "Time" }, rangemode: "tozero" });
@@ -520,7 +521,7 @@ export function JointDiagnostics({ results, name, PathChart }) {
       }
     >
       <CheckCard chart question={`Do the units' readings follow the fitted path?`} term={`${(r.path_label || "").toLowerCase()} path`}
-                 verdict={`Faint lines: some units' readings of ${r.marker || "the reading"}. The band is where 95% of units' true paths lie (a new unit with typical covariates); readings far outside it don't follow the path.`}>
+                 verdict={`Faint lines: some units' readings of ${r.marker || "the reading"}. The band is where ${levelPct(r.confidence ?? 0.95)} of units' true paths lie (a new unit with typical covariates); readings far outside it don't follow the path.`}>
         <PathChart results={r} name={name} fill />
       </CheckCard>
     </ChecksGrid>

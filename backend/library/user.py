@@ -45,8 +45,10 @@ LIFE_FAMILIES = ("weibull", "exponential", "lognormal", "normal", "gamma")
 #: How a saved model's ``results.method`` reads in a record.
 METHODS = {"bayesian_update": "bayes", "library": "library", "params": "params"}
 #: The level of a saved model's parameter intervals: a Bayesian update stores
-#: ``credible_level``; a maximum-likelihood fit's are 95% Wald intervals.
-MLE_LEVEL = 0.95
+#: ``credible_level``; a maximum-likelihood fit's are 90% Wald intervals (``ci_level``;
+#: a fit saved before is read at 90% too, backend.param_intervals.at_level). A record
+#: keeps the level it was taken at.
+MLE_LEVEL = 0.90
 
 
 class LibraryError(ValueError):
@@ -202,7 +204,7 @@ def snapshot(model, label: str, equipment_type: str, failure_mode: str, notes: s
     r = model.results or {}
     family = r.get("distribution_id") or model.distribution_id
     level = r.get("credible_level") if r.get("method") == "bayesian_update" else (
-        MLE_LEVEL if any(p.get("ci") for p in r.get("params") or []) else None)
+        (r.get("ci_level") or MLE_LEVEL) if any(p.get("ci") for p in r.get("params") or []) else None)
     params = []
     for p in r.get("params") or []:
         entry: dict = {"name": p["name"], "value": float(p["value"])}

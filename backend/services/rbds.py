@@ -205,7 +205,7 @@ def analyze_graph(
     covariate values for proportional-hazards nodes. ``conditional_age``
     conditions the curves on having already survived to that age.
     ``at_times`` (non-repairable) adds the system reliability evaluated
-    exactly at those times. ``band`` (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    exactly at those times. ``band`` (``{"level": 0.9}``) adds a confidence band from the fitted blocks'
     parameter uncertainty (non-repairable diagrams only). ``state`` (repairable, canonical: see
     :func:`rbd_analysis.parse_current_state`) starts the availability simulation from the blocks'
     current states. ``current_state`` (non-repairable, raw: see

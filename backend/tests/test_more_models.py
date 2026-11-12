@@ -143,14 +143,14 @@ def test_additive_hazards_and_proportional_odds_report_wald_intervals_and_p_valu
         direct = fitter.fit_from_df(DF, x_col="t", Z_cols=["z"], c_col="c")
         se = float(np.asarray(direct.standard_errors())[0])
         assert r["coefficients"][0]["ci"] == pytest.approx(
-            [direct.beta[0] - 1.959964 * se, direct.beta[0] + 1.959964 * se], rel=1e-4)
+            [direct.beta[0] - 1.644854 * se, direct.beta[0] + 1.644854 * se], rel=1e-4)  # 90%
         assert r["coefficients"][0]["p"] == pytest.approx(float(direct.p_values[0]), rel=1e-9)
 
 
 def test_buckley_james_has_bootstrap_intervals_and_no_hazard():
     r = fitting.fit("buckley_james", DF, MAP, covariates=["z", "temp"])
     direct = sp.BuckleyJames.fit_from_df(DF, x_col="t", Z_cols=["z", "temp"], c_col="c")
-    boot = direct.bootstrap_ci(alpha_ci=0.05, n_boot=200, random_state=0)
+    boot = direct.bootstrap_ci(alpha_ci=0.10, n_boot=200, random_state=0)  # 90%
     for c, expect in zip(r["coefficients"], boot.tolist()):
         assert c["ci"] == pytest.approx(expect, rel=1e-9)
     assert r["ci_method"].startswith("bootstrap")
@@ -190,7 +190,8 @@ def test_frailty_matches_surpyval(key, fitter):
     f = r["frailty"]
     assert f["theta"] == pytest.approx(direct.theta, rel=1e-6)
     kw = {} if key == "cox_frailty" else {"method": "lr"}  # a Cox frailty's is Wald only
-    assert f["theta_ci"] == pytest.approx(list(direct.param_cb("theta", **kw)), rel=1e-6)
+    assert f["theta_ci"] == pytest.approx(list(direct.param_cb("theta", alpha_ci=0.10, **kw)), rel=1e-6)  # 90%
+    assert f["theta_ci_level"] == 0.90
     assert f["kendall_tau"] == pytest.approx(direct.kendall_tau, rel=1e-6)
     assert f["group_column"] == "site" and f["n_groups"] == 30
     assert {g["label"]: g["frailty"] for g in f["groups"]} == pytest.approx(dict(direct.frailties))
@@ -198,7 +199,7 @@ def test_frailty_matches_surpyval(key, fitter):
         # The baseline by its own names, with SurPyval's interval.
         names = list(direct.dist.parameter_names)
         assert [p["name"] for p in r["params"]] == names
-        assert r["params"][0]["ci"] == pytest.approx(list(direct.param_cb(names[0])), rel=1e-6)
+        assert r["params"][0]["ci"] == pytest.approx(list(direct.param_cb(names[0], alpha_ci=0.10)), rel=1e-6)
 
 
 def test_frailty_reading_says_when_groups_may_not_differ():

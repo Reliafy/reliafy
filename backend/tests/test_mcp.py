@@ -473,18 +473,19 @@ def test_plan_demonstration_test(env):
 
     # Weibayes: test twice as long with a known shape, fewer units; the same plan the app computes.
     ext = _ok(_call(env.token[A], "analyse", {"action": "plan_demonstration_test",
-        "reliability": 0.95, "mission_time": 1000, "test_multiple": 2, "shape": 2, "unit": "hours"}))
+        "reliability": 0.95, "confidence": 0.95, "mission_time": 1000, "test_multiple": 2, "shape": 2,
+        "unit": "hours"}))
     assert ext["units"] == 15 and ext["test_time_per_unit"] == 2000
     assert ext["tradeoff"]["rows"]["2,000 hours (2×)"] == [15, 24, 32, 40]
 
     # Units given: solve for the test time per unit.
     tt = _ok(_call(env.token[A], "analyse", {"action": "plan_demonstration_test",
-        "reliability": 0.95, "mission_time": 1000, "shape": 2, "units": 20, "unit": "hours"}))
+        "reliability": 0.95, "confidence": 0.95, "mission_time": 1000, "shape": 2, "units": 20, "unit": "hours"}))
     assert tt["solve_for"] == "test_time" and round(tt["test_time_per_unit"]) == 1709
 
     mtbf = _ok(_call(env.token[A], "analyse", {"action": "plan_demonstration_test", "method": "mtbf",
                                                           "mtbf": 1000, "unit": "hours"}))
-    assert round(mtbf["total_test_time"]) == 2996 and mtbf["summary"].startswith("Run 2,996 hours")
+    assert round(mtbf["total_test_time"]) == 2303 and mtbf["summary"].startswith("Run 2,303 hours")  # 90%
 
     assert "Weibull shape" in _err(_call(env.token[A], "analyse", {"action": "plan_demonstration_test",
         "reliability": 0.95, "test_multiple": 2}))

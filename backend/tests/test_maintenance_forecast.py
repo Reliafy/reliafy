@@ -53,7 +53,7 @@ def test_renewals_are_counted_and_the_range_matches_a_poisson_process(m):
     mean = 3 * RATE * 12 * 30.4375
     assert out["expected"] == pytest.approx(mean, rel=0.04)
     assert out["expected"] > 3  # more failures than positions: replacements fail again
-    lo, hi = poisson.ppf(0.1, mean), poisson.ppf(0.9, mean)
+    lo, hi = poisson.ppf(0.05, mean), poisson.ppf(0.95, mean)
     assert abs(out["interval"][0] - lo) <= 1 and abs(out["interval"][1] - hi) <= 1
     assert out["headline"] == f"≈ {forecast._num(out['expected'])} failures in the next 12 months " \
                               f"(likely {out['interval'][0]:g}–{out['interval'][1]:g})"
@@ -62,7 +62,7 @@ def test_renewals_are_counted_and_the_range_matches_a_poisson_process(m):
     assert sum(r["expected"] for r in rows) == pytest.approx(out["expected"])
     month = 3 * RATE * 30.4375
     assert rows[5]["expected"] == pytest.approx(month, rel=0.15)
-    assert rows[5]["p10"] == poisson.ppf(0.1, month) and rows[5]["p90"] == poisson.ppf(0.9, month)
+    assert rows[5]["low"] == poisson.ppf(0.05, month) and rows[5]["high"] == poisson.ppf(0.95, month)
     assert out["sims"] >= 200 and out["n_forecast"] == 3 and out["not_forecast"] == []
 
 

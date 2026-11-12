@@ -651,7 +651,7 @@ def confidence_endpoint(
         return JSONResponse(content=confidence_bounds(
             model_id,
             on=body.get("on", "sf"),
-            alpha_ci=float(body.get("alpha_ci", 0.05)),
+            alpha_ci=float(body.get("alpha_ci", 0.10)),  # 90% two-sided by default
             bound=body.get("bound", "two-sided"),
             owner=user["uid"],
             values=body.get("values"),

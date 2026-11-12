@@ -12,7 +12,7 @@ reliability-growth model — or Duane, HPP or the Cox-Lewis log-linear NHPP),
 two **trend tests** (Laplace and MIL-HDBK-189C) and a **goodness-of-fit** test
 (Cramér-von Mises) — and derive the ROCOF / MTBF at the end of observation with
 confidence bounds, the demonstrated MTBF, and a growth verdict from the growth
-parameter's 95% interval (#81).
+parameter's 90% interval (#81).
 
 Like the other fits, live surpyval objects can't be pickled, so they're kept in
 a bounded in-memory store and re-fitted on demand from the dataset + spec.
@@ -47,7 +47,7 @@ MODEL_CHOICES = list(MODELS.keys())
 FROM_PARAMS_MODELS = ("crow_amsaa", "duane")
 
 # Each model's growth parameter and its no-trend value. The growth verdict is
-# "deteriorating" when the parameter's 95% interval lies wholly above that
+# "deteriorating" when the parameter's 90% interval lies wholly above that
 # value, "improving" when wholly below, else "stable" (#81). Duane's shape is
 # SurPyval's ``alpha``; Cox-Lewis's ``beta`` is a log-linear slope (0 = flat).
 _GROWTH_PARAM = {
@@ -55,7 +55,7 @@ _GROWTH_PARAM = {
     "duane": {"param": "alpha", "symbol": "β", "what": "growth shape", "no_trend": 1.0},
     "cox_lewis": {"param": "beta", "symbol": "β", "what": "log-linear slope", "no_trend": 0.0},
 }
-CI_LEVEL = 0.95            # parameter, ROCOF and MTBF intervals
+CI_LEVEL = 0.90            # parameter, ROCOF, MTBF and MCF intervals, two-sided (backend.levels)
 DEMONSTRATED_LEVEL = 0.90  # the one-sided demonstrated-MTBF bound (MIL-HDBK-189C's usual level)
 _CVM_BUDGET = 400_000      # events x bootstrap replicates for the Cramér-von Mises p-value (about 4 s)
 _CVM_MAX_BOOT, _CVM_MIN_BOOT = 200, 40
@@ -341,11 +341,11 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
     n_systems = int(len(set(i.tolist())))
     n_events = int(len(x))
 
-    # Nonparametric MCF step (observed) with a 95% confidence band.
+    # Nonparametric MCF step (observed) with a 90% confidence band.
     nx = np.asarray(np_model.x, dtype=float)
     mcf_obs = np.asarray(np_model.mcf_hat, dtype=float)
     try:
-        cb = np.asarray(np_model.mcf_cb(nx, alpha_ci=0.05), dtype=float)
+        cb = np.asarray(np_model.mcf_cb(nx, alpha_ci=1 - CI_LEVEL), dtype=float)
         # Order-proof: SurPyval 0.22 returns (lower, upper); earlier releases
         # returned (upper, lower).
         lower, upper = np.minimum(cb[:, 0], cb[:, 1]).tolist(), np.maximum(cb[:, 0], cb[:, 1]).tolist()
@@ -372,6 +372,7 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
     tests = trend_tests(para)
     payload = {
         "kind": "recurrent",
+        "ci_level": CI_LEVEL,  # every interval and band, two-sided; one saved before has none (95%)
         "family": "nhpp",
         "unit": canonical_unit(unit),
         "n_systems": n_systems,
@@ -434,7 +435,7 @@ def _rates_at(model, t: float) -> tuple:
 
 
 def _shape_ci(model_id: str, cis: dict) -> list | None:
-    """The 95% interval on the power-law growth shape β (Crow-AMSAA's
+    """The 90% interval on the power-law growth shape β (Crow-AMSAA's
     ``beta``, Duane's ``alpha``); None for HPP and Cox-Lewis."""
     if model_id not in ("crow_amsaa", "duane"):
         return None
@@ -444,7 +445,7 @@ def _shape_ci(model_id: str, cis: dict) -> list | None:
 def growth_verdict(model_id: str, params, cis: dict | None = None) -> tuple:
     """``(growth, basis)``: improving / stable / deteriorating, and why.
 
-    With the growth parameter's 95% interval (a fit to data), the verdict is
+    With the growth parameter's 90% interval (a fit to data), the verdict is
     whether that interval excludes the no-trend value (β = 1 for a power law,
     a slope of 0 for Cox-Lewis): wholly above is deteriorating, wholly below
     improving, and an interval that includes it is "stable" — the data don't
@@ -472,7 +473,7 @@ def growth_verdict(model_id: str, params, cis: dict | None = None) -> tuple:
 
 
 def rate_bounds(model_id: str, model, t_end: float) -> dict:
-    """Confidence bounds at the end of observation (#81): the 95% intervals on
+    """Confidence bounds at the end of observation (#81): the 90% intervals on
     the ROCOF and the instantaneous MTBF, and the demonstrated MTBF's one-
     sided 90% lower bound ("demonstrated MTBF ≥ X at 90%").
 
@@ -586,7 +587,7 @@ def system_residuals(model) -> list | None:
 
 
 def param_intervals(model_id: str, model) -> dict:
-    """``{name: [lower, upper]}``: the 95% confidence interval on each of a
+    """``{name: [lower, upper]}``: the 90% confidence interval on each of a
     fit's parameters (SurPyval's Wald bounds from the observed information,
     kept inside each parameter's support). Only a maximum-likelihood fit to
     data has them: {} for a model built from its parameters or one restored
@@ -598,7 +599,7 @@ def param_intervals(model_id: str, model) -> dict:
         try:
             with warnings.catch_warnings(), np.errstate(all="ignore"):
                 warnings.simplefilter("ignore")
-                lo, hi = (float(v) for v in np.asarray(model.param_cb(name, alpha_ci=0.05), dtype=float))
+                lo, hi = (float(v) for v in np.asarray(model.param_cb(name, alpha_ci=1 - CI_LEVEL), dtype=float))
         except Exception:  # noqa: BLE001 - no likelihood (from params / restored): no interval
             return {}
         if np.isfinite(lo) and np.isfinite(hi) and lo <= hi:
@@ -666,6 +667,7 @@ def _params_payload(para, model_id: str, values: list, horizon: float, unit: str
     growth, growth_basis = growth_verdict(model_id, values)
     payload = {
         "kind": "recurrent",
+        "ci_level": CI_LEVEL,  # every interval and band, two-sided; one saved before has none (95%)
         "unit": canonical_unit(unit),
         "n_systems": None,
         "n_events": None,

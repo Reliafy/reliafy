@@ -6,7 +6,7 @@ import { betaSource } from "../requirement.js";
 import "./Requirement.css";
 
 // "Use β from a saved model" in the demonstration test (#295): pick a saved
-// Weibull model, see its β and 95% interval, and plan with the estimate or
+// Weibull model, see its β and 90% interval, and plan with the estimate or
 // the conservative lower bound. ``source`` is { name, estimate, lower,
 // upper, modelId? } or null; ``onSource(source, unit)`` sets it (null clears
 // it); ``bound`` is "estimate" | "lower".
@@ -51,7 +51,7 @@ export default function DemoShapeSource({ source, onSource, bound, onBound }) {
       <div className="demo-beta">
         <p className="demo-beta-line">
           β from <b>{source.name}</b>: {fmtBeta(source.estimate)}
-          {hasCi ? <>, 95% interval {fmtBeta(source.lower)}–{fmtBeta(source.upper)}</> : " (no interval)"}
+          {hasCi ? <>, 90% interval {fmtBeta(source.lower)}–{fmtBeta(source.upper)}</> : " (no interval)"}
           <button type="button" className="link demo-beta-clear" onClick={() => onSource(null)}>Don't use</button>
         </p>
         {hasCi && (

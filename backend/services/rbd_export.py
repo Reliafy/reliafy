@@ -1580,7 +1580,8 @@ def _repairable_body(script: _Script, graph) -> str:
                "availability_tolerance)")
     out.append("# or MAX_SIMS have run (Reliafy's limit comes from a time "
                "budget).")
-    out.append(f"CONFIDENCE = {rbd_analysis._AVAIL_CONFIDENCE!r}")
+    out.append(f"STOP_CONFIDENCE = {rbd_analysis._AVAIL_STOP_CONFIDENCE!r}  # the precision target's level")
+    out.append(f"CONFIDENCE = {rbd_analysis._AVAIL_CONFIDENCE!r}  # the interval shown, as Reliafy's results")
     out.append(f"BATCH = {rbd_analysis._AVAIL_BATCH}")
     out.append(f"REL_TOLERANCE = {rbd_analysis._AVAIL_REL_TOLERANCE!r}")
     out.append(f"MAX_TOLERANCE = {rbd_analysis._AVAIL_MAX_TOLERANCE!r}")
@@ -1760,7 +1761,7 @@ def simulate(availability, tolerance, overrides):
         return rbd.availability(mc_samples=N_SIMS + N_SIMS % 2, **run, **overrides)
     max_n = max(2, MAX_SIMS - MAX_SIMS % 2)
     batch = min(BATCH, max_n)
-    sim = rbd.availability(mc_samples=batch, tolerance=tolerance, confidence=CONFIDENCE,
+    sim = rbd.availability(mc_samples=batch, tolerance=tolerance, confidence=STOP_CONFIDENCE,
                            max_samples=max_n, **run, **overrides)
     # One batch that saw no system downtime has a zero-width interval: for a
     # system that does go down, that's a lack of evidence, not precision.

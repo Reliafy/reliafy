@@ -217,13 +217,13 @@ def readings(coefficients: list, effect: str, fields: list) -> list:
                     else f"{lead} {verb} {_sig(factor)}")
             interval = sorted(math.exp(v) for v in lo_hi) if lo_hi else None
         if interval and all(math.isfinite(v) for v in interval):
-            text += f" (95% interval {_sig(interval[0])} to {_sig(interval[1])})"
+            text += f" (90% interval {_sig(interval[0])} to {_sig(interval[1])})"
         out.append({"name": name, "text": text + "."})
     return out
 
 
 def _baseline_and_coefficients(model, effect: str, ratio_label):
-    """Baseline parameters and coefficients with 95% Wald intervals, in the
+    """Baseline parameters and coefficients with 90% Wald intervals, in the
     shape the regression payload uses (see ``fitting._fit_regression``)."""
     params = np.asarray(model.params, dtype=float)
     k = int(getattr(model, "k_dist", 0) or 0)

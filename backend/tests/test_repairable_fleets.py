@@ -57,9 +57,9 @@ def test_equal_rates_match_surpyval_forecast(session):
     out = fs.compute(session, fleet, [A])
     assert out["status"] == "ok" and out["method"] == "repairable" and out["model_kind"] == "recurrent"
     ref = surpyval.forecast(CrowAMSAA.from_params([ALPHA, BETA]), age=ages, horizon=[25, 50, 75, 100],
-                            alpha_ci=0.2)
+                            alpha_ci=0.1)
     assert out["expected"] == pytest.approx(float(ref.expected[-1]), rel=1e-12)
-    assert out["interval"] == [float(ref.lower[-1]), float(ref.upper[-1])]  # Poisson P10–P90
+    assert out["interval"] == [float(ref.lower[-1]), float(ref.upper[-1])]  # Poisson P5–P95
     assert out["per_period"] == pytest.approx(list(ref.period_expected), rel=1e-12)
     assert out["per_period_interval"] == [[float(lo), float(hi)]
                                           for lo, hi in zip(ref.period_lower, ref.period_upper)]
@@ -92,7 +92,7 @@ def test_per_item_rates_next_service_and_idle_items(session):
     assert "next_service_at" not in slow
     total = fast["expected"] + slow["expected"] + late["expected"]
     assert out["expected"] == pytest.approx(total, rel=1e-12)
-    assert out["interval"] == [float(poisson.ppf(0.1, total)), float(poisson.ppf(0.9, total))]
+    assert out["interval"] == [float(poisson.ppf(0.05, total)), float(poisson.ppf(0.95, total))]
     # Each period's mean is that period's slice of every item's use.
     p2 = sum(float(lam(a + 2 * r) - lam(a + r)) for a, r in ((300, 40), (100, 5), (600, 25)))
     assert out["per_period"][1] == pytest.approx(p2, rel=1e-12)
@@ -111,7 +111,7 @@ def test_many_rates_vectorised_path_matches_surpyval():
     assert np.unique(rates[rates > 0]).size > fs._FORECAST_GROUPS
     out = fs.forecast_repairable(model, ages, rates, 6, items)
     for k in (3, 30, 59):
-        ref = surpyval.forecast(model, age=[ages[k]], horizon=rates[k] * np.arange(1, 7), alpha_ci=0.2)
+        ref = surpyval.forecast(model, age=[ages[k]], horizon=rates[k] * np.arange(1, 7), alpha_ci=0.1)
         assert out["per_item"][k]["expected"] == pytest.approx(float(ref.per_unit[0, -1]), rel=1e-12)
     assert all(out["per_item"][k]["expected"] == 0.0 for k in range(3))
     # The grouped path gives the same numbers.

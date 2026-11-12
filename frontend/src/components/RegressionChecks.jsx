@@ -9,6 +9,7 @@ import { COLORWAY, referenceShape } from "../plotTheme.js";
 import { unitInText } from "./unitText.js";
 import "./RegressionChecks.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { levelPct } from "../levels.js";
 
 // "Does the model hold?" (#61), beside "How good is this model?" in a
 // regression model's Validation tab: a plain verdict on each check first —
@@ -175,7 +176,7 @@ function RobustTable({ rob }) {
     <ScrollCue className="rs-table-wrap">
       <table className="mini-table checks-table">
         <thead>
-          <tr><th>Covariate</th><th>Hazard ratio</th><th>Std error</th><th>Robust</th><th>Robust 95% interval</th><th>p (robust)</th></tr>
+          <tr><th>Covariate</th><th>Hazard ratio</th><th>Std error</th><th>Robust</th><th>Robust {levelPct(rob.ci_level ?? 0.95)} interval</th><th>p (robust)</th></tr>
         </thead>
         <tbody>
           {rob.rows.map((r) => (

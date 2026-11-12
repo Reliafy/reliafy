@@ -407,7 +407,9 @@ def summary(model_type: str, doc) -> dict:
     r = dict(getattr(doc, "results", None) or {})
     unit = r.get("unit") or ""
     out = {"name": doc.name, "unit": unit, "family": "life", "kind": "", "numbers": [], "counts": {},
-           "quality": _quality(None, "life"), "path": None, "trend": None}
+           "quality": _quality(None, "life"), "path": None, "trend": None,
+           # The two-sided bounds' level: 90%; a repairable fit saved before the rule kept 95%.
+           "ci_level": float(r.get("ci_level") or (0.95 if model_type == "recurrent_model" else 0.9))}
     if model_type == "model":
         kind = getattr(doc, "kind", "distribution")
         dist = r.get("distribution_id") or getattr(doc, "distribution_id", "")
@@ -737,14 +739,16 @@ def stale(m, link: dict) -> str | None:
 
 
 def _curves(model_type: str, doc, db, owners) -> dict | None:
-    """The plot's lines: reliability and hazard over time, with the reliability's 95%
-    bounds where the model has them."""
+    """The plot's lines: reliability and hazard over time, with the reliability's 90%
+    two-sided bounds where the model has them (``band`` says the level)."""
     r = dict(doc.results or {})
     if model_type == "model" and doc.kind == "joint":
         s = r.get("survival_new") or {}
         if s.get("x") and s.get("sf"):
             return {"x": s["x"], "sf": s["sf"], "sf_lower": s.get("sf_lower"), "sf_upper": s.get("sf_upper"),
-                    "hf": None, "what": "Reliability of a new unit"}
+                    "hf": None, "what": "Reliability of a new unit",
+                    "band": {"kind": "confidence", "level": float(r.get("confidence") or 0.95)}
+                    if s.get("sf_lower") else None}
         return None
     if model_type == "alt_model":
         # At its lowest tested level, with the Wald band: the model as fitted (a position's stress is set
@@ -769,7 +773,7 @@ def _curves(model_type: str, doc, db, owners) -> dict | None:
             if len(x):
                 out["sf_lower"] = np.interp(x, band["x"], band["lower"]).tolist()
                 out["sf_upper"] = np.interp(x, band["x"], band["upper"]).tolist()
-                out["band"] = {"kind": "confidence", "level": 0.95}
+                out["band"] = {"kind": "confidence", "level": float((ev.get("bounds") or {}).get("confidence") or 0.9)}
         return out if out["x"] and out["sf"] else None
     if model_type == "model":
         c = (r.get("functions") or {}).get("curves") or {}
@@ -798,7 +802,7 @@ def _curves(model_type: str, doc, db, owners) -> dict | None:
                 cb = models_service.confidence(db, doc.id, {"on": "sf"}, owners)
                 if cb.get("lower") and len(cb["lower"]) == len(c["x"]):
                     out["sf_lower"], out["sf_upper"] = cb.get("lower"), cb.get("upper")
-                    out["band"] = {"kind": "confidence", "level": 0.95}
+                    out["band"] = {"kind": "confidence", "level": round(1.0 - float(cb.get("alpha_ci") or 0.1), 6)}
             except Exception:  # noqa: BLE001 - the line stands without its bounds
                 pass
         return out

@@ -168,7 +168,7 @@ def get_live_model(db, model_id: str, owner_id):
 
 def shape_interval(db, doc: RecurrentModelDoc) -> dict | None:
     """``{"beta", "alpha", "ci"}``: a data-fitted Crow-AMSAA model's growth
-    shape β, its scale and β's 95% interval — as stored with the fit, or for
+    shape β, its scale and β's interval (90%; 95% for a fit saved before the rule) — as stored with the fit, or for
     a model saved before intervals were, from a fresh fit of its dataset
     (then stored on the model). None for a model built from parameters,
     another model family, or one whose dataset is gone."""

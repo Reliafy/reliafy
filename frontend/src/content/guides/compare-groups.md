@@ -42,7 +42,7 @@ Press **Compare**. The sample *Valve seal life vs. temperature & load* split by
 `load` gives:
 
 > load 0.5 lasts longer: log-rank p = 0.02; on average 306 hours more over the
-> first 1,560 hours (95% CI 53.6 to 557 hours).
+> first 1,560 hours (90% CI 94.1 to 517 hours).
 
 ![Compare groups: the verdict, each group's reliability curve and the average-life table](/guides/img/cmp-01-groups.png)
 
@@ -65,7 +65,7 @@ luck. Here p = 0.02, so the seals at the lower load really do last longer.
 restricted mean survival time (RMST). It is the area under each group's curve
 up to the window, the dotted line on the chart. In plain words: over the first
 1,560 hours, a seal at load 0.5 runs 1,171 hours on average and one at load 0.9
-runs 865 hours. The difference is 306 hours, with a 95% interval of 54 to 557
+runs 865 hours. The difference is 306 hours, with a 90% interval of 94 to 517
 hours. An interval that doesn't cross zero agrees with the test.
 
 The window is needed because a curve that never reaches zero has no finite

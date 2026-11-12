@@ -11,7 +11,7 @@ matter.
 
 Every model here pairs a **baseline distribution** with an **effect type**, and
 it's the effect type that determines how you read the coefficients. Reliafy
-reports each coefficient with a 95% interval; an interval spanning zero means
+reports each coefficient with a 90% interval; an interval spanning zero means
 the data can't distinguish that covariate from no effect.
 
 **In Python:** these are [SurPyval](https://github.com/derrynknife/SurPyval)'s
@@ -222,7 +222,7 @@ unspecified baseline hazard, `h(t | z) = h₀(t) + β·z`, the additive analogue
 `cox_ph`.
 
 Each coefficient is the excess failure rate per unit of its covariate, with a
-95% interval and p-value. There is no likelihood, so no AIC — judge it by how
+90% interval and p-value. There is no likelihood, so no AIC — judge it by how
 well it ranks the units (Validation). Right-censored data only. **Watch out:**
 nothing keeps the total hazard positive; Reliafy warns when the reliability
 would rise above 1.
@@ -242,7 +242,7 @@ delayed entry allowed.
 the error distribution left unspecified — the time-scale analogue of `cox_ph`.
 `exp(β)` is a **time ratio**.
 
-It has no standard errors in closed form, so the 95% intervals come from 200
+It has no standard errors in closed form, so the 90% intervals come from 200
 bootstrap resamples (with a fixed seed, so they never change). No likelihood, so
 no AIC; no hazard or density either, only the survival curve. Right-censored
 data only.
@@ -255,7 +255,7 @@ fail sooner that the covariates don't record. Choose the group column as
 **Group by**.
 
 Alongside the coefficients (hazard ratios, conditional on the frailty) you get
-`θ`, the spread between groups, with a 95% profile-likelihood interval: one
+`θ`, the spread between groups, with a 90% profile-likelihood interval: one
 that reaches 0 means the groups may not differ at all. Each group's frailty is
 listed too — above 1 fails sooner than average. Right-censored data only.
 
@@ -277,6 +277,6 @@ column — see `weibull_frailty` for how to read `θ` and each group's frailty.
 ## cox_frailty
 
 **Cox PH with a shared frailty:** the semi-parametric version, with no baseline
-shape assumed. `θ`'s 95% interval here is a Wald interval. As for `cox_ph`, it
+shape assumed. `θ`'s 90% interval here is a Wald interval. As for `cox_ph`, it
 gives covariate effects and the spread between groups rather than absolute
 lives.

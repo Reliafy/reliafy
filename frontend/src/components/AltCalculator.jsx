@@ -47,7 +47,7 @@ export function initAltCalc(results) {
   // Reference: the harshest tested level of each stress.
   const ref = stresses.map((_, j) => { const a = perDim(j); return a.length ? String(Math.max(...a)) : "0"; });
   return {
-    ref, refOn: true, mission: "", confidence: 0.95, method: "wald", active: "sf",
+    ref, refOn: true, mission: "", confidence: 0.9, method: "wald", active: "sf",
     res: null, bounds: null, job: null, inputs: null,
   };
 }

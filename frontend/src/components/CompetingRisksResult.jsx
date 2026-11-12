@@ -22,6 +22,7 @@ import {
   ANY_MODE, anyAt, causesAt, effectsByMode, incidenceRows, leadSentence, modeSupport, pct, readingAt,
   timeToChance, widestBand,
 } from "../competingRisks.js";
+import { ciPct } from "../levels.js";
 import "./NonParametric.css";
 import "./CompetingRisks.css";
 
@@ -115,7 +116,7 @@ function ModesTab({ result, name, onGroups }) {
               options={[
                 { value: true, label: "Stacked", title: "The modes stacked: the top is the chance of failing from any mode" },
                 { value: false, label: "Each mode",
-                  title: result.mode_bounds === false ? "Each mode on its own" : "Each mode on its own, with its 95% band" },
+                  title: result.mode_bounds === false ? "Each mode on its own" : `Each mode on its own, with its ${ciPct(result)} band` },
               ]}
               value={stacked}
               onChange={setStacked}
@@ -140,9 +141,9 @@ function EffectsTab({ result, name }) {
   const label = reg.ratio_label === "hazard ratio" ? "hazard ratio" : "subdistribution hazard ratio";
   const rows = reg.coefficients.map((c) => ({
     name: reg.covariates.length > 1 ? `${cap(c.cause)}: ${c.covariate}` : cap(c.cause),
-    ratio: c.ratio, lo: c.ratio_ci?.[0] ?? null, hi: c.ratio_ci?.[1] ?? null, p: c.p_value,
+    ratio: c.ratio, lo: c.ratio_ci?.[0] ?? null, hi: c.ratio_ci?.[1] ?? null, p: c.p_value, level: ciPct(result),
   }));
-  const words = effectsByMode(reg);
+  const words = effectsByMode(reg, ciPct(result));
   const failed = reg.maximum && reg.maximum !== "verified";
   return (
     <PlotPanel
@@ -222,7 +223,7 @@ function CrCalculator({ result, name, state, setState }) {
       <div className="cr-calc-table">
         <table className="calc-table">
           <thead>
-            <tr><th>Failure mode</th><th>Chance by then</th><th>95% band</th><th>Share of failures</th></tr>
+            <tr><th>Failure mode</th><th>Chance by then</th><th>{ciPct(result)} band</th><th>Share of failures</th></tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
@@ -254,8 +255,8 @@ function CrCalculator({ result, name, state, setState }) {
     }
     let range = null;
     if (r?.time != null) {
-      if (r.lower != null && r.upper != null) range = `we're 95% sure it's between ${at(r.lower, unit)} and ${at(r.upper, unit)}`;
-      else if (r.lower != null) range = `we're 95% sure it's after ${at(r.lower, unit)}; the data can't bound it from above`;
+      if (r.lower != null && r.upper != null) range = `we're ${ciPct(result)} sure it's between ${at(r.lower, unit)} and ${at(r.upper, unit)}`;
+      else if (r.lower != null) range = `we're ${ciPct(result)} sure it's after ${at(r.lower, unit)}; the data can't bound it from above`;
     }
     answer = (
       <div className="calc-answer">
@@ -348,7 +349,7 @@ function CrCalculator({ result, name, state, setState }) {
               )}
               <p className="calc-note">
                 Read off the curves on the Failure modes tab
-                {result.mode_bounds === false ? ", whose modes have no band of their own" : ", with their 95% bands"}.
+                {result.mode_bounds === false ? ", whose modes have no band of their own" : `, with their ${ciPct(result)} bands`}.
                 {last != null && ` The data ends at ${at(last, unit)}.`}
               </p>
             </div>
@@ -361,7 +362,7 @@ function CrCalculator({ result, name, state, setState }) {
 
 // ---- Diagnostics ------------------------------------------------------------
 
-// Each mode's chance by the horizon with its 95% band, as a dot and a bar.
+// Each mode's chance by the horizon with its band (90%), as a dot and a bar.
 function BandsChart({ result, name }) {
   const unit = unitOf(result);
   const rows = (result.causes || []).map((k) => ({ name: cap(k.name), ...k.at }));
@@ -378,7 +379,7 @@ function BandsChart({ result, name }) {
       arrayminus: rows.map((r) => (has(r) ? r.cif - r.lower : 0)),
     },
     customdata: rows.map((r) => (has(r) ? `${pct(r.lower)} to ${pct(r.upper)}` : "no band")),
-    hovertemplate: "%{y}: %{x:.1%} (95% %{customdata})<extra></extra>",
+    hovertemplate: `%{y}: %{x:.1%} (${ciPct(result)} %{customdata})<extra></extra>`,
   };
   return (
     <Plot fill data={[trace]} download={`${name || "Failure modes"} — bands`}
@@ -487,7 +488,7 @@ function CrDiagnostics({ result, name }) {
           </tbody>
         </table>
       </CheckCard>
-      <CheckCard chart question="How sure is each mode's chance?" term={result.mode_bounds === false ? "Kaplan-Meier bounds" : "Aalen's 95% bounds"}
+      <CheckCard chart question="How sure is each mode's chance?" term={result.mode_bounds === false ? "Kaplan-Meier bounds" : `Aalen's ${ciPct(result)} bounds`}
                  verdict={result.mode_bounds === false
                    ? "Each mode's curve comes without a band here; only any mode has one."
                    : widestBand(result, unit)}>
@@ -505,8 +506,8 @@ function howNotes(result) {
   const out = [];
   out.push(result.mode_bounds === false
     ? "Non-parametric cumulative incidence (Aalen-Johansen): no distribution is assumed. The chance of failing from "
-      + "any mode has Kaplan-Meier 95% pointwise bounds; each mode's own curve comes without a band."
-    : "Non-parametric cumulative incidence (Aalen-Johansen), with Aalen's 95% pointwise bounds: no distribution is "
+      + `any mode has Kaplan-Meier ${ciPct(result)} pointwise bounds; each mode's own curve comes without a band.`
+    : `Non-parametric cumulative incidence (Aalen-Johansen), with Aalen's ${ciPct(result)} pointwise bounds: no distribution is `
       + "assumed.");
   out.push("A mode's curve is the chance of failing from it by each time while the other modes still act, so the "
     + "curves add up to the chance of failing from any mode.");
@@ -575,7 +576,7 @@ function CrDataTab({ result, datasetId }) {
             </div>
             <div className="cr-table-wrap">
               <table className="mini-table cr-table">
-                <thead><tr><th>Mode</th><th>Failures</th><th>Share</th><th>Chance</th><th>95% band</th></tr></thead>
+                <thead><tr><th>Mode</th><th>Failures</th><th>Share</th><th>Chance</th><th>{ciPct(result)} band</th></tr></thead>
                 <tbody>
                   {(result.causes || []).map((k, i) => (
                     <tr key={k.name}>
@@ -591,12 +592,12 @@ function CrDataTab({ result, datasetId }) {
             </div>
           </section>
           {reg ? (
-            <ScrollCard title="Every coefficient" sub="per mode, with 95% intervals">
+            <ScrollCard title="Every coefficient" sub={`per mode, with ${ciPct(result)} intervals`}>
               <table className="mini-table cr-table cr-coef-table">
                 <thead>
                   <tr><th>Mode</th><th>Covariate</th><th>β</th>
                     <th>{reg.ratio_label === "hazard ratio" ? "Hazard ratio" : "Subdist. HR"}</th>
-                    <th>95% interval</th><th>p</th></tr>
+                    <th>{ciPct(result)} interval</th><th>p</th></tr>
                 </thead>
                 <tbody>
                   {reg.coefficients.map((c) => (

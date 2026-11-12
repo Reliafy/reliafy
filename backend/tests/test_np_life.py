@@ -84,11 +84,11 @@ def test_bands_are_surpyvals(method):
     est = _fit("kaplan_meier", t, c)["estimate"]
     band = est["bands"][method]
     km = KaplanMeier.fit(t, c)
-    expected = np.asarray(km.band(np.asarray(band["x"]), method=method, alpha_ci=0.05))
+    expected = np.asarray(km.band(np.asarray(band["x"]), method=method, alpha_ci=0.10))
     assert band["lower"] == pytest.approx(expected[:, 0].tolist())
     assert band["upper"] == pytest.approx(expected[:, 1].tolist())
     # A whole-curve band is at least as wide as the pointwise one where both exist.
-    pw = np.asarray(km.cb(np.asarray(band["x"]), alpha_ci=0.05)).reshape(-1, 2)
+    pw = np.asarray(km.cb(np.asarray(band["x"]), alpha_ci=0.10)).reshape(-1, 2)
     assert np.all(np.asarray(band["upper"]) - np.asarray(band["lower"]) >= pw[:, 1] - pw[:, 0] - 1e-9)
 
 

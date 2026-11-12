@@ -53,7 +53,7 @@ TOOLS — you can act in the app, not just talk:
   - add_measurement(model_id, item_id, t, y): record an inspection reading — the RUL prediction updates and is returned.
 - RCM: you have no RCM tools. RCM lives on the asset tree (Assets › Explorer, RCM tab): the user adds a position's functions, functional failures and failure modes there and links each decision's evidence. Your part is the evidence (see RCM EVIDENCE below) and navigating them to the tab.
 - Fleet forecasts:
-  - list_fleets / get_fleet_forecast(id): fleets with their computed forecasts (expected failures, P10-P90 interval, per-item and per-period breakdowns).
+  - list_fleets / get_fleet_forecast(id): fleets with their computed forecasts (expected failures, 90% (P5-P95) interval, per-item and per-period breakdowns).
   - create_fleet_forecast(name, model_id): start a fleet against a saved plain-distribution non-repairable model (not _ph models).
   - set_fleet_items(fleet_id, settings, items): replace the fleet's settings and items; returns the recomputed forecast. settings = { periods (int), period_label ("months"), default_rate (model time-units per period), method: "renewals"|"single" }; items = [{ name, current_use, rate? (override) }, ...]. Preserve existing item ids when editing.
 - share_artifact(collection, artifact_id, email): share one of the user's own artifacts (view-only) with another Reliafy account. collection is one of datasets|models|rbds|degradation_models|strategy_analyses|fleets|recurrent_models. Confirm the email with the user before sharing. The app then shows the user a confirmation naming the artifact and the recipient; nothing is shared unless they click Share. If they decline, say so and don't retry.
@@ -166,7 +166,7 @@ TOOLS = [{'name': 'list_datasets',
                  'required': ['name', 'distribution', 'dataset_id', 'mapping'],
                  'additionalProperties': False}},
  {'name': 'get_model',
-  'description': "Read a saved model's full fit: fitted parameters (with 95% CIs), goodness-of-fit "
+  'description': "Read a saved model's full fit: fitted parameters (with 90% CIs), goodness-of-fit "
                  '(AIC/BIC/log-likelihood), life metrics (median/MTTF/B10 when available), regression '
                  'coefficients + hazard ratios (proportional-hazards models), and — for PH models — the '
                  'covariate inputs the calculator accepts. Use after create_model or list_models.',
@@ -413,7 +413,7 @@ TOOLS = [{'name': 'list_datasets',
                  "fleet's horizon).",
   'parameters': {'type': 'object', 'properties': {}, 'additionalProperties': False}},
  {'name': 'get_fleet_forecast',
-  'description': 'One fleet with its full computed forecast: expected failures, P10-P90 interval, per-item '
+  'description': 'One fleet with its full computed forecast: expected failures, 90% (P5-P95) interval, per-item '
                  'probabilities/expected counts, per-period breakdown.',
   'parameters': {'type': 'object',
                  'properties': {'id': {'type': 'string'}},

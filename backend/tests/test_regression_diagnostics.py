@@ -115,12 +115,12 @@ def test_diagnostics_never_raise():
 
 def test_robust_errors_are_surpyvals_sandwich():
     rob = fit("cox_ph", _rossi(), MAPPING, covariates=COVS)["diagnostics"]["robust"]
-    plain, want = _cox().summary(), _cox().summary(robust=True)
+    plain, want = _cox().summary(), _cox().summary(alpha_ci=0.10, robust=True)
     for row in rob["rows"]:
         name = row["covariate"]
         assert row["se"] == pytest.approx(plain.loc[name, "se(coef)"])
         assert row["robust_se"] == pytest.approx(want.loc[name, "se(coef)"])
-        assert row["ratio_lower"] == pytest.approx(want.loc[name, "exp(coef) lower 95%"])
+        assert row["ratio_lower"] == pytest.approx(want.loc[name, "exp(coef) lower 90%"])
         assert row["p"] == pytest.approx(want.loc[name, "p"])
     assert rob["cluster"] is None and rob["tone"] == "good" and "within" in rob["reading"]
 

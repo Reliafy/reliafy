@@ -2,6 +2,7 @@
 // names in full, the growth verdict and why, a rate in words, and the
 // model's family. Pure functions, so `node --test` covers them.
 import { formatNumber } from "./format.js";
+import { ciPct } from "./levels.js";
 
 // "Hours" → "hour", for "per hour"; any other unit as written, lower case.
 export function perUnit(unit) {
@@ -71,7 +72,7 @@ const GROWTH = {
   deteriorating: { title: "Deteriorating", note: "failures are accelerating" },
 };
 
-// The growth verdict and why (#81): the growth parameter's 95% interval
+// The growth verdict and why (#81): the growth parameter's interval (90%)
 // against its no-trend value, or the value itself for a model built from
 // parameters. Null when the model has no growth parameter.
 // The growth parameter's symbol, as the parameter table names it (Duane's
@@ -90,7 +91,7 @@ export function growthReading(r) {
   if (b.ci) {
     const [lo, hi] = b.ci;
     const where = lo > nul ? `wholly above ${nul}` : hi < nul ? `wholly below ${nul}` : `includes ${nul}`;
-    why = `${sym}'s 95% interval, ${ciText(b.ci)}, is ${where}`;
+    why = `${sym}'s ${ciPct(r)} interval, ${ciText(b.ci)}, is ${where}`;
   } else {
     why = `${sym} = ${formatNumber(b.estimate, { sig: 4 })}${r.from_params ? ", built from parameters (no interval)" : " (this fit gives no interval)"}`;
   }
@@ -205,22 +206,22 @@ const unitWord = (r) => String(r?.unit || "").trim().toLowerCase();
 const withUnitR = (v, r) => `${sig3(v)}${unitWord(r) ? ` ${unitWord(r)}` : ""}`;
 
 // "MTBF now 323 hours (≥ 230 at 90%)": the instantaneous MTBF at the end of
-// the data, with the demonstrated lower bound (or the 95% interval).
+// the data, with the demonstrated lower bound (or the interval, 90%).
 export function mtbfWords(r) {
   if (r?.mtbf == null || !Number.isFinite(r.mtbf)) return null;
   const dm = r.demonstrated_mtbf;
   const bound = dm?.lower != null
     ? ` (≥ ${sig3(dm.lower)} at ${Math.round((dm.confidence || 0.9) * 100)}%)`
-    : ciText(r.mtbf_ci) ? ` (95% ${ciText(r.mtbf_ci)})` : "";
+    : ciText(r.mtbf_ci) ? ` (${ciPct(r)} ${ciText(r.mtbf_ci)})` : "";
   const who = r.rates_at ? ", average system" : "";
   return `MTBF ${r.from_params ? "at the horizon" : "now"} ${withUnitR(r.mtbf, r)}${bound}${who}`;
 }
 
-// The growth shape in a few words: "β 2.06 (95% 1.44–2.95)".
+// The growth shape in a few words: "β 2.06 (90% 1.44–2.95)".
 function shapeWords(r) {
   const b = r?.growth_basis;
   if (!b || b.estimate == null) return null;
-  return `${growthSymbol(r)} ${formatNumber(b.estimate, { sig: 3 })}${ciText(b.ci) ? ` (95% ${ciText(b.ci)})` : ""}`;
+  return `${growthSymbol(r)} ${formatNumber(b.estimate, { sig: 3 })}${ciText(b.ci) ? ` (${ciPct(r)} ${ciText(b.ci)})` : ""}`;
 }
 
 // The covariate with the largest effect: "site Inland: failures ×2.2 (1.37–3.40)".
@@ -242,9 +243,9 @@ export function recurrentAnswer(r, { saved = null } = {}) {
     add(r.repair_test ? repairTitle(r.repair_test.verdict) : r.model?.name);
     const rest = r.restoration;
     if (rest?.effectiveness != null) {
-      add(`repairs remove ${pct(rest.effectiveness)} of the age${rest.effectiveness_ci ? ` (95% ${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])})` : ""}`);
+      add(`repairs remove ${pct(rest.effectiveness)} of the age${rest.effectiveness_ci ? ` (${ciPct(r)} ${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])})` : ""}`);
     } else if (rest?.ratio != null) {
-      add(`gap ratio ${ratioText(rest.ratio)}${rest.ratio_ci ? ` (95% ${ciText(rest.ratio_ci)})` : ""}`);
+      add(`gap ratio ${ratioText(rest.ratio)}${rest.ratio_ci ? ` (${ciPct(r)} ${ciText(rest.ratio_ci)})` : ""}`);
     }
     const soon = r.next_failure?.units?.[0];
     if (soon?.median != null) add(`next failure: ${soon.system} in about ${withUnitR(soon.median, r)} (median)`);
@@ -339,7 +340,7 @@ export function growingCheck(r) {
       const [lo, hi] = b.ci;
       const nul = b.no_trend;
       const where = lo > nul ? `wholly above ${nul}` : hi < nul ? `wholly below ${nul}` : `includes ${nul}`;
-      why = ` (${growthSymbol(r)}'s 95% interval, ${ciText(b.ci)}, is ${where})`;
+      why = ` (${growthSymbol(r)}'s ${ciPct(r)} interval, ${ciText(b.ci)}, is ${where})`;
     } else if (b?.estimate != null) {
       why = ` (${growthSymbol(r)} = ${formatNumber(b.estimate, { sig: 3 })})`;
     }

@@ -178,7 +178,7 @@ def failure_finding_endpoint(
 def demonstration_test_endpoint(
     method: str = Body(default="attribute"),
     reliability: float | None = Body(default=None),
-    confidence: float | None = Body(default=0.95),
+    confidence: float | None = Body(default=0.90),
     mission_time: float | None = Body(default=None),
     failures: float | None = Body(default=0),
     test_multiple: float | None = Body(default=1.0),

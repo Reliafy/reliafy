@@ -21,7 +21,8 @@ import pytest
 from backend import fitting, param_intervals
 from backend.tests.test_mcp import A, _call, _err, _ok, env  # noqa: F401 - env is a fixture
 
-Z95 = param_intervals.Z95
+Z95 = param_intervals.Z95  # intervals saved before the 90% rule
+Z = param_intervals.Z  # the 90% two-sided quantile every interval is at now
 
 
 @pytest.fixture()
@@ -49,8 +50,8 @@ def test_three_point_weibull_shape_interval_stays_above_zero():
     assert beta["value"] - Z95 * beta["se"] < 0  # the old interval went negative
     lo, hi = beta["ci"]
     assert 0 < lo < beta["value"] < hi
-    # The log-scale interval: value·exp(±z·se/value).
-    k = Z95 * beta["se"] / beta["value"]
+    # The log-scale interval: value·exp(±z·se/value), at 90% (the app's rule).
+    k = Z * beta["se"] / beta["value"]
     assert (lo, hi) == pytest.approx((beta["value"] * math.exp(-k), beta["value"] * math.exp(k)))
     alpha = next(p for p in r["params"] if p["name"] == "alpha")
     assert alpha["ci"][0] > 0
@@ -62,7 +63,7 @@ def test_three_point_weibull_shape_interval_stays_above_zero():
 def test_unbounded_parameters_keep_the_symmetric_interval():
     r = fitting.fit("normal", _df([10.0, 40.0, 90.0]), {"x": "x"})
     mu, sigma = r["params"]
-    assert mu["ci"] == pytest.approx([mu["value"] - Z95 * mu["se"], mu["value"] + Z95 * mu["se"]])
+    assert mu["ci"] == pytest.approx([mu["value"] - Z * mu["se"], mu["value"] + Z * mu["se"]])
     assert sigma["ci"][0] > 0 and (sigma["ci"][0] + sigma["ci"][1]) / 2 > sigma["value"]  # log scale: skewed up
 
 
@@ -83,9 +84,9 @@ def test_a_probability_parameter_stays_inside_zero_one():
 
 
 def test_wald_interval_helper():
-    assert param_intervals.wald_interval(2.0, 0.5) == pytest.approx([2 - Z95 * 0.5, 2 + Z95 * 0.5])
+    assert param_intervals.wald_interval(2.0, 0.5) == pytest.approx([2 - Z * 0.5, 2 + Z * 0.5])
     lo, hi = param_intervals.wald_interval(1.0, 1.0, 0, None)
-    assert lo == pytest.approx(math.exp(-Z95)) and hi == pytest.approx(math.exp(Z95))
+    assert lo == pytest.approx(math.exp(-Z)) and hi == pytest.approx(math.exp(Z))
     lo, hi = param_intervals.wald_interval(0.5, 0.2, 0, 1)
     assert 0 < lo < 0.5 < hi < 1
     assert param_intervals.wald_interval(0.0, 1.0, 0, None) is None  # on the bound
@@ -154,7 +155,9 @@ def test_saved_regression_without_se_is_corrected_from_its_width():
                "coefficients": [{"name": "z", "value": 0.5, "ci": _old_symmetric(0.5, 0.4)}]}
     fixed = param_intervals.corrected_results(results)
     assert fixed["params"][0]["ci"] == pytest.approx(param_intervals.wald_interval(10.0, 6.0, 0, None))
-    assert fixed["coefficients"] == results["coefficients"]
+    # Served at 90%: the coefficient's symmetric interval narrows to ± 1.645·se.
+    assert fixed["coefficients"][0]["ci"] == pytest.approx([0.5 - Z * 0.4, 0.5 + Z * 0.4])
+    assert fixed["ci_level"] == 0.90
 
 
 def test_mcp_fit_reports_log_scale_intervals_and_the_note(env):
@@ -169,8 +172,10 @@ def test_mcp_fit_reports_log_scale_intervals_and_the_note(env):
 def test_alt_helper_is_the_shared_one():
     from backend import alt
 
-    assert alt.bounded_wald_interval(0.994, 0.6, 0, None, 0.95) == pytest.approx(
+    assert alt.bounded_wald_interval(0.994, 0.6, 0, None, 0.90) == pytest.approx(
         param_intervals.wald_interval(0.994, 0.6, 0, None))
+    assert alt.bounded_wald_interval(0.994, 0.6, 0, None, 0.95) == pytest.approx(
+        param_intervals.wald_interval(0.994, 0.6, 0, None, z=param_intervals.Z95))
 
 
 # ---- 4. the sample Crow-AMSAA model is projection-ready -----------------------------------------

@@ -74,7 +74,7 @@ MAX_NAME = 80
 #: seed (the same figures every time for the same diagram).
 SIM_MISSIONS = 20_000
 SIM_SEED = 1
-SIM_CONFIDENCE = 0.95
+SIM_CONFIDENCE = 0.90  # the simulated mission reliability's interval, two-sided (backend.levels)
 
 STRESS_NOTE = ("Each block keeps one non-repairable model through the whole mission, ageing from the start of the "
                "first phase to the end of the last.")

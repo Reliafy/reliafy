@@ -13,7 +13,7 @@ import { CheckCard, ChecksGrid, NumbersSheet, PlotCard, PlotPanel, ScrollCard, T
 import ChartPair from "./model/ChartPair.jsx";
 import { InducedLifeCard, InducedLifeCheck, useInducedLife } from "./DegradationInducedLife.jsx";
 import {
-  PATH_FORMULAS, POPULATION_METHODS, bLives, bandLevel, degradationTabs, meanAnswer, oneSidedLevel, pathParams, pathRanking,
+  PATH_FORMULAS, POPULATION_METHODS, bLives, bandLevel, degradationTabs, lifeBoundLevel, meanAnswer, pathParams, pathRanking,
   reliabilityAt, resolveDegradationTab, routesVerdict, scatterCheck, thresholdText, timeAtReliability,
 } from "../degradationFrame.js";
 import "./DegradationResultView.css";
@@ -192,11 +192,11 @@ function PathsTab({ r, name, design, onDiag, onCalc }) {
 }
 
 // The design life in a line: the band's lower end at the chosen reliability,
-// said as the one-sided lower bound it is (the life pages' "≥ … at 95%").
+// said as the one-sided lower bound it is (the life pages' "≥ … at 90%").
 function DesignLife({ design, onCalc }) {
-  const { life, relPct, level, unit } = design;
+  const { life, relPct, lifeLevel, unit } = design;
   const u = unit ? ` ${unitInText(unit)}` : "";
-  const os = pct(oneSidedLevel(level));
+  const os = pct(lifeLevel);
   return (
     <div className="life-reading">
       <div className="life-reading-title">Design life</div>
@@ -226,6 +226,7 @@ function CalculatorTab({ r, name, curves, band, relPct, setRelPct, time, setTime
   const at = t != null ? reliabilityAt(curves, t) : null;
   const traces = relTraces(curves, xTitle, rel, life, at && !at.beyond ? { ...at, t } : null);
   const level = bandLevel(curves);
+  const os = lifeBoundLevel(curves);
   return (
     <PlotPanel
       plot={
@@ -255,8 +256,8 @@ function CalculatorTab({ r, name, curves, band, relPct, setRelPct, time, setTime
           <div className="gof-card" aria-live="polite">
             <div className="gofh">Time to {pct(relPct)}% reliability</div>
             <div className="gofr"><span className="gk">Best estimate</span><span className="gv">{life?.value != null ? `${formatNumber(life.value)}${u}` : "—"}</span></div>
-            <div className="gofr"><span className="gk">Design life ({pct(oneSidedLevel(level))}% lower bound)</span><span className="gv">{life?.lower != null ? `${formatNumber(life.lower)}${u}` : "—"}</span></div>
-            <div className="gofr"><span className="gk">{pct(level)}% band</span><span className="gv">{spanText(life?.lower, life?.upper, u)}</span></div>
+            <div className="gofr"><span className="gk">Design life ({pct(os)}% lower bound)</span><span className="gv">{life?.lower != null ? `${formatNumber(life.lower)}${u}` : "—"}</span></div>
+            <div className="gofr"><span className="gk">{pct(level)}% band</span><span className="gv">{spanText(life?.bandLower, life?.upper, u)}</span></div>
             {at && (
               <>
                 <div className="gofh deg-subhead">Reliability at {formatNumber(t)}{u}</div>
@@ -275,8 +276,8 @@ function CalculatorTab({ r, name, curves, band, relPct, setRelPct, time, setTime
             )}
           </div>
           <p className="life-method">
-            The design life is where the band's lower edge reaches the reliability: a one-sided {pct(oneSidedLevel(level))}% lower
-            bound (the lower end of the two-sided {pct(level)}% band), the cautious figure to plan with.
+            The design life is a one-sided {pct(os)}% lower bound on the time to that reliability
+            {curves?.life_lower ? "" : ` (the lower end of the two-sided ${pct(level)}% band)`}, the cautious figure to plan with.
             The band is the uncertainty in the population curve from tracking only {r.n_units ?? (r.units || []).length} items.
           </p>
         </>
@@ -323,6 +324,7 @@ function CharsTab({ r, curves, band, onCalc }) {
   const median = rows.find((b) => b.label === "B50");
   const b10 = rows.find((b) => b.label === "B10");
   const level = bandLevel(curves);
+  const os = lifeBoundLevel(curves);
   const chooser = band.can ? (
     <Select
       value={band.level}
@@ -351,7 +353,7 @@ function CharsTab({ r, curves, band, onCalc }) {
             <span className="gk">Design life (B10)</span>
             <span className="gv-col">
               <span className="gv">{formatNumber(b10.lower)}{u}</span>
-              <span className="param-ci">B10 lower bound ({pct(oneSidedLevel(level))}%, one-sided): the {pct(level)}% band's lower end</span>
+              <span className="param-ci">B10 lower bound ({pct(os)}%, one-sided){curves?.life_lower ? "" : `: the ${pct(level)}% band's lower end`}</span>
             </span>
           </div>
         )}
@@ -594,6 +596,11 @@ function useBand(results, modelId) {
   const [error, setError] = useState(null);
   useEffect(() => { setCurves(saved); setError(null); }, [results]); // eslint-disable-line react-hooks/exhaustive-deps
   const level = bandLevel(curves);
+  // A model saved before the life bounds' own 90% one-sided curve: ask the model for it once.
+  useEffect(() => {
+    if (!modelId || !saved || saved.life_lower) return;
+    degradationReliability(modelId, level / 100).then((c) => { if (c?.x && c.life_lower) setCurves(c); }).catch(() => {});
+  }, [modelId, saved]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = async (pctLevel) => {
     if (!modelId) return;
     const conf = pctLevel / 100;
@@ -627,7 +634,7 @@ export default function DegradationResultView({ results, modelId = null, name = 
   const [time, setTime] = useState("");
   const rel = Math.min(Math.max(relPct / 100, 1e-6), 1 - 1e-6);
   const design = band.curves
-    ? { life: timeAtReliability(band.curves, rel), relPct, level: band.level, unit: r.unit }
+    ? { life: timeAtReliability(band.curves, rel), relPct, lifeLevel: lifeBoundLevel(band.curves), unit: r.unit }
     : null;
   const toCalc = has("calc") ? () => setTab("calc") : null;
 

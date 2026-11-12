@@ -7,6 +7,7 @@ import { compareGroups } from "../api.js";
 import { unitInText } from "./unitText.js";
 import { guessCompareColumns } from "../datasetGuess.js";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
+import { ciPct } from "../levels.js";
 import "./Datasets.css";
 
 // Compare groups within one dataset (#175): split by a column, overlay each
@@ -252,7 +253,7 @@ function CompareGroupsResult({ result, reference, onReference }) {
               <th>Units</th>
               <th>Failed</th>
               <th>Median{u && ` (${result.unit})`}</th>
-              <th>Average life (95% CI)</th>
+              <th>Average life ({ciPct(result)} CI)</th>
               <th>
                 {result.groups.length > 2 ? (
                   <span className="cg-ref">
@@ -268,7 +269,7 @@ function CompareGroupsResult({ result, reference, onReference }) {
                 ) : (
                   <>vs {result.reference}</>
                 )}{" "}
-                (95% CI)
+                ({ciPct(result)} CI)
               </th>
             </tr>
           </thead>

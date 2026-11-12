@@ -180,7 +180,7 @@ there.
 
 The panel beside the probability plot has:
 
-- **Parameters** — each fitted parameter with its 95% interval, the number of
+- **Parameters** — each fitted parameter with its 90% interval, the number of
   observations, and **Fit statistics** (the AIC, which opens the Diagnostics
   tab).
 - **Failure pattern** — what the fit means in a word: for a Weibull, wear-out,
@@ -206,7 +206,7 @@ real — often that you have two failure modes mixed together and would be bette
 off splitting the data.
 
 For the sample bearing model, 30 failures fit a Weibull with shape **β = 2.50**
-(95% 1.88–3.32) and scale **α = 1,440 hours**. For a Weibull fit, **β is the
+(90% 1.96–3.17) and scale **α = 1,440 hours**. For a Weibull fit, **β is the
 number worth understanding**:
 
 - **β < 1** — failures are *decreasing* over time. Infant mortality: bad
@@ -220,7 +220,7 @@ number worth understanding**:
 That single parameter often changes the maintenance decision more than anything
 else on the page, which is why the panel spells it out. The bearings' whole
 interval sits above 1, so the **Failure pattern** row reads *Wear-out*, and
-clicking it says *β is above 1 at 95% confidence*.
+clicking it says *β is above 1 at 90% confidence*.
 
 The **Calculator** tab lets you ask the model direct questions: reliability (or
 any other function) at a given time, or, with **Time at reliability**, the time

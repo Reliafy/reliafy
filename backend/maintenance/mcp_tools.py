@@ -693,7 +693,7 @@ POSITION_MODELS: Table = {
         position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
         replace_link_id: the model on it this replaces. library_record_id: a data library record (list kind library)
         as an exponential model, cited, with every one of its covariates given (pipe length, clock, demands a year...). fit true with data (position, class, both: the class's history
-        as the prior) and method (mle: plain, 95% confidence; bayes: with a prior {kind: class | model | params | b10,
+        as the prior) and method (mle: plain, 90% confidence; bayes: with a prior {kind: class | model | params | b10,
         ...}, 90% credible); trust weighs a prior (close, guide, start). fit true with baseline: a Bayesian update of a
         baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
         prediction {environment?, mission_time?, assign?: {part number: {record_id, quality_factor?} or

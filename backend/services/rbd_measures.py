@@ -79,7 +79,7 @@ N_DRAWS = 1000
 N_DRAWS_OVER_TIME = 200
 N_DRAWS_SOBOL = 500
 MAX_TIMES = 6
-LEVEL = 0.95
+LEVEL = 0.90  # two-sided, the app's rule (backend.levels); a request may ask for another
 SEED = 20261
 #: Uncertain inputs above which a Sobol run is refused (n_draws × (inputs + 2)
 #: evaluations).
@@ -159,7 +159,7 @@ def options(measure=None, window=None, group_by=None, method=None, times=None, l
             try:
                 lv = float(level)
             except (TypeError, ValueError):
-                raise AnalysisError("level must be a confidence level such as 0.95.") from None
+                raise AnalysisError("level must be a confidence level such as 0.9.") from None
             if not 0.5 <= lv < 1.0:
                 raise AnalysisError("The confidence level must be from 50% up to (not including) 100%.")
             out["level"] = lv

@@ -30,7 +30,8 @@ from backend.units import unit_in_text
 from surpyval import KaplanMeier, gray_test, logrank, rmst_diff
 from backend.errors import client_message
 
-ALPHA = 0.05
+ALPHA = 0.05  # the tests' significance level (a test, not a bound)
+CI_ALPHA = 0.10  # the average lives' and their differences' intervals: 90% two-sided (backend.levels)
 MAX_GROUPS = 12
 MAX_CAUSES = 8
 _CURVE_POINTS = 600  # per group; longer curves are thinned for the plot
@@ -314,7 +315,7 @@ def compare_groups(
         m = lab == g
         failures = int(n[m][c[m] == 0].sum())
         units = int(round(n[m].sum()))
-        r = kms[g].rmst(tau=tau, alpha_ci=ALPHA)
+        r = kms[g].rmst(tau=tau, alpha_ci=CI_ALPHA)
         summaries.append({
             "group": g,
             "units": units,
@@ -348,7 +349,7 @@ def compare_groups(
     for g in order:
         if g == reference:
             continue
-        d = rmst_diff(kms[g], kms[reference], tau=tau, alpha_ci=ALPHA)
+        d = rmst_diff(kms[g], kms[reference], tau=tau, alpha_ci=CI_ALPHA)
         differences.append({
             "group": g, "reference": reference,
             "difference": _num(d["difference"]), "lower": _num(d["lower"]), "upper": _num(d["upper"]),
@@ -362,6 +363,7 @@ def compare_groups(
         "reference": reference,
         "tau": float(tau),
         "alpha": ALPHA,
+        "ci_level": round(1.0 - CI_ALPHA, 6),
         "logrank": primary,
         "tests": tests,
         "rmst_differences": differences,
@@ -455,7 +457,7 @@ def _verdict(out: dict, us: str) -> dict:
         else:
             best, worst, lo_b, hi_b = ref, other, -hi, -lo
         gain = abs(diff)
-        ci = f"(95% CI {fmt_num(lo_b)} to {fmt_num(hi_b)}{us})"
+        ci = f"(90% CI {fmt_num(lo_b)} to {fmt_num(hi_b)}{us})"
         # The two halves are judged separately (#211): the curves by the
         # log-rank p, the average life by whether its CI excludes 0.
         clear_gain = lo_b > 0

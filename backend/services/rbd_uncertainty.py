@@ -50,7 +50,7 @@ from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.uncertainty import draw_models
 from repyability.utils.wrappers import conditional_survival
 
-DEFAULT_LEVEL = 0.95
+DEFAULT_LEVEL = 0.90  # two-sided, the app's rule (backend.levels); a request may ask for another
 # Draws of every uncertain model. Cold/warm standby blocks are rebuilt per draw
 # (each ~5-15 ms: RePyability prepares the switching integral), so diagrams with
 # uncertain standby blocks use fewer draws to keep the band quick.

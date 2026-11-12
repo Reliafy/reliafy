@@ -28,7 +28,7 @@ def check_block_mean(
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """``node`` (a standby or load-sharing block as the builder stores it):
-    its exact mean life and the simulated mean with a 95% interval."""
+    its exact mean life and the simulated mean with a 90% interval."""
 
     def resolve_model(model_id: str):
         return models_service.get_live_model(session, model_id, ctx.read_owners)

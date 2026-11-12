@@ -410,7 +410,7 @@ def test_check_by_simulation_matches_repyability(data):
     model = StandbyModel([w] * (data["k"] + 1), k=data["k"], dormancy_factor=data["dormancy"])
     assert out["exact_mean"] == pytest.approx(model.mean(method="exact"), rel=1e-12)
     ci = NonRepairableRBD([("in", "x"), ("x", "out")], {"x": model}).mean_time_to_failure_interval(
-        mc_samples=4000, seed=1)
+        mc_samples=4000, seed=1, confidence=0.90)  # the app's 90%
     assert out["simulated"]["estimate"] == pytest.approx(ci.estimate, rel=1e-12)
     assert (out["simulated"]["lower"], out["simulated"]["upper"]) == pytest.approx((ci.lower, ci.upper), rel=1e-12)
     assert out["within"] is True and "inside the interval" in out["summary"]

@@ -128,9 +128,9 @@ def _fleet(session, model_id, items, settings, model_kind=None):
 
 
 def _same(ours: dict, theirs):
-    """Our first-failure forecast against ``surpyval.forecast`` at 80%."""
+    """Our first-failure forecast against ``surpyval.forecast`` at 90% (P5–P95)."""
     assert ours["status"] == "ok", ours
-    assert ours["interval_method"] == "exact" and ours["interval_level"] == 0.8
+    assert ours["interval_method"] == "exact" and ours["interval_level"] == 0.9
     assert ours["expected"] == pytest.approx(theirs.expected[-1], rel=1e-9)
     assert ours["interval"] == [theirs.lower[-1], theirs.upper[-1]]
     assert ours["per_period"] == pytest.approx(list(theirs.period_expected), rel=1e-9, abs=1e-12)
@@ -148,7 +148,7 @@ def test_single_forecast_is_surpyvals_forecast(session):
     fleet = _fleet(session, model.id, [{"name": f"i{k}", "current_use": a} for k, a in enumerate(ages)], {})
     ours = fs.compute(session, fleet, A, item_periods=True)
     dist = sp.Weibull.from_params([p["value"] for p in model.results["params"]])
-    theirs = sp.forecast(dist, age=ages, horizon=50.0 * np.arange(1, 7), alpha_ci=0.2)
+    theirs = sp.forecast(dist, age=ages, horizon=50.0 * np.arange(1, 7), alpha_ci=0.1)
     _same(ours, theirs)
     # Whole failures at the interval's ends; item_periods gives each item's curve.
     assert all(float(v).is_integer() for v in ours["interval"])
@@ -195,7 +195,7 @@ def test_use_and_calendar_warranty_limits(session):
 
     # A use limit is forecast's own `limit` on the model's time scale.
     fleet = _fleet(session, model.id, items, {"warranty_use": 600})
-    _same(fs.compute(session, fleet, A), sp.forecast(dist, age=ages, horizon=horizon, limit=600, alpha_ci=0.2))
+    _same(fs.compute(session, fleet, A), sp.forecast(dist, age=ages, horizon=horizon, limit=600, alpha_ci=0.1))
     out = fs.compute(session, fleet, A)
     assert out["out_of_warranty"] == 1 and out["per_item"][2]["prob_any"] == 0.0
 
@@ -204,11 +204,11 @@ def test_use_and_calendar_warranty_limits(session):
     timed = [{**it, "service_periods": s} for it, s in zip(items, (1.0, 5.0, 2.0))]
     fleet = _fleet(session, model.id, timed, {"warranty_periods": 8})
     limits = [a + 50.0 * (8 - s) for a, s in zip(ages, (1.0, 5.0, 2.0))]
-    _same(fs.compute(session, fleet, A), sp.forecast(dist, age=ages, horizon=horizon, limit=limits, alpha_ci=0.2))
+    _same(fs.compute(session, fleet, A), sp.forecast(dist, age=ages, horizon=horizon, limit=limits, alpha_ci=0.1))
     # Without service_periods, time in service is read off use / rate.
     fleet = _fleet(session, model.id, items, {"warranty_periods": 8})
     limits = [a + 50.0 * (8 - a / 50.0) for a in ages]
-    _same(fs.compute(session, fleet, A), sp.forecast(dist, age=ages, horizon=horizon, limit=limits, alpha_ci=0.2))
+    _same(fs.compute(session, fleet, A), sp.forecast(dist, age=ages, horizon=horizon, limit=limits, alpha_ci=0.1))
 
 
 def test_an_item_past_the_models_support_counts_as_certain():
@@ -246,7 +246,7 @@ def test_regression_fleet_forecasts_each_item_at_its_covariates(session):
     entry = ms.get_live_model(session, model.id, A)
     load_default = next(f["default"] for f in entry["fields"] if f["name"] == "load")
     Z = pd.DataFrame({"load": [0.6, 1.4, load_default], "site": ["A", "B", "B"]})
-    theirs = sp.forecast(entry["model"], age=[200, 500, 800], Z=Z, horizon=50.0 * np.arange(1, 7), alpha_ci=0.2)
+    theirs = sp.forecast(entry["model"], age=[200, 500, 800], Z=Z, horizon=50.0 * np.arange(1, 7), alpha_ci=0.1)
     _same(ours, theirs)
     assert ours["model_kind"] == "regression"
     assert [f["name"] for f in ours["covariate_fields"]] == ["load", "site"]
@@ -289,7 +289,7 @@ def test_alt_fleet_forecasts_each_item_at_its_stress(session):
     ours = fs.compute(session, fleet, A)
     live = alt_service.get_live_model(session, model.id, A)
     theirs = sp.forecast(live, age=[2000, 1000], Z=[[300.0], [320.0]], horizon=200.0 * np.arange(1, 7),
-                         alpha_ci=0.2)
+                         alpha_ci=0.1)
     _same(ours, theirs)
     assert ours["model_kind"] == "alt" and ours["model_url"] == f"/models/alt/{model.id}"
     # Hotter runs fail sooner.

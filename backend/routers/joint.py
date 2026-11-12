@@ -177,7 +177,7 @@ def delete_model(model_id: str, session=Depends(get_session), ctx: AccessCtx = D
 def unit_view(model_id: str, unit_id: str, session=Depends(get_session),
               ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """A fitted running unit's updating prediction: its survival from its
-    age now (with 95% bounds), remaining-life quantiles, and its reading's
+    age now (with 90% bounds), remaining-life quantiles, and its reading's
     smoothed and projected path with an interval."""
     model = _readable(session, model_id, ctx)
     if model is None:

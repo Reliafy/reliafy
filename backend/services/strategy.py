@@ -104,7 +104,7 @@ def _model_from_params(distribution_id: str, params: list, extras: dict | None =
 _MIN_SAVING = 0.005
 
 #: The confidence level of the bounds a fitted model's parameters carry.
-_PARAM_BOUNDS_LEVEL = 0.95
+_PARAM_BOUNDS_LEVEL = 0.90  # two-sided, the app's rule (backend.levels); saved fits are read at it
 
 
 def _replacement_point(model, cp: float, cu: float, lfp: bool) -> dict:
@@ -900,7 +900,7 @@ def _multiple_phrase(k: float) -> str:
 
 def demonstration_test(
     reliability=None,
-    confidence=0.95,
+    confidence=0.90,
     mission_time=None,
     failures=0,
     test_multiple=1.0,
@@ -953,7 +953,7 @@ def demonstration_test(
     ``b_life`` (#295, the x in Bx: 10 for B10) states the requirement as a
     B-life instead: "B10 ≥ ``mission_time``" is ``reliability`` 0.9 over
     ``mission_time``. ``shape_interval`` ([lower, upper], e.g. a saved
-    Weibull fit's 95% interval on β, named by ``shape_model``) adds
+    Weibull fit's 90% interval on β, named by ``shape_model``) adds
     ``shape_sensitivity``: the plan at each end of the interval, and a
     warning when β is too poorly known for the plan
     (:mod:`backend.services.demo_shape`).

@@ -231,7 +231,7 @@ def _rows_from_attributes(model, ratio: bool = False) -> list[dict]:
     """The coefficient table from what the model already holds, where its
     ``summary()`` gives no table (SurPyval 0.23's additive-hazards,
     Buckley-James and Royston-Parmar models): each parameter's estimate,
-    SurPyval's standard error and p-value where it has them, and the 95%
+    SurPyval's standard error and p-value where it has them, and the 90%
     Wald interval from that standard error, as every regression's
     coefficients get (``fitting._fit_regression``). ``ratio``: the model's
     coefficients have a ratio (exp(estimate)), as a Buckley-James AFT's do;
@@ -259,14 +259,17 @@ def _rows_from_attributes(model, ratio: bool = False) -> list[dict]:
 def summary_rows(model, ratio: bool = False) -> list[dict]:
     """``model.summary()`` as plain rows: the part (baseline, coefficients,
     frailty), the name, the estimate, exp(estimate), its standard error, the
-    95% interval and the Wald p-value, None where SurPyval gives none. A
+    90% interval and the Wald p-value, None where SurPyval gives none. A
     model whose ``summary()`` is no table (or that has none) gets its rows
     from its own attributes (:func:`_rows_from_attributes`, with exp(estimate)
     when ``ratio``)."""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            table = model.summary()
+            try:
+                table = model.summary(alpha_ci=0.10)  # 90% two-sided (backend.levels)
+            except TypeError:  # a summary that takes no level (its columns then say 95%)
+                table = model.summary()
     except Exception:  # noqa: BLE001 - no table: read the attributes
         table = None
     if not isinstance(table, pd.DataFrame):
@@ -274,6 +277,8 @@ def summary_rows(model, ratio: bool = False) -> list[dict]:
     if table.empty:
         return []
     table = table.reset_index()
+    lo_col = next((c for c in table.columns if str(c).startswith("coef lower")), None)
+    hi_col = next((c for c in table.columns if str(c).startswith("coef upper")), None)
     rows = []
     for rec in table.to_dict("records"):
         rows.append({
@@ -282,15 +287,15 @@ def summary_rows(model, ratio: bool = False) -> list[dict]:
             "value": _f(rec.get("coef")),
             "exp_value": _f(rec.get("exp(coef)")),
             "se": _f(rec.get("se(coef)")),
-            "ci": [_f(rec.get("coef lower 95%")), _f(rec.get("coef upper 95%"))]
-            if _f(rec.get("coef lower 95%")) is not None else None,
+            "ci": [_f(rec.get(lo_col)), _f(rec.get(hi_col))]
+            if lo_col and _f(rec.get(lo_col)) is not None else None,
             "p": _f(rec.get("p")),
         })
     return rows
 
 
 def _frailty_block(model, mapping: dict) -> dict:
-    """The shared frailty in plain terms: its variance θ with a 95% interval
+    """The shared frailty in plain terms: its variance θ with a 90% interval
     (profile likelihood for a parametric baseline, which stays finite where
     there is no frailty in the data; Wald for Cox), Kendall's τ between two
     units of a group, and each group's estimated frailty."""
@@ -303,7 +308,7 @@ def _frailty_block(model, mapping: dict) -> dict:
             # Wald is the default, and the only interval a Cox frailty's
             # param_cb gives in SurPyval 0.23 (it takes no ``method``).
             kw = {"method": "lr"} if method == "lr" else {}
-            cb = np.asarray(model.param_cb("theta", alpha_ci=0.05, **kw), dtype=float).ravel()
+            cb = np.asarray(model.param_cb("theta", alpha_ci=0.10, **kw), dtype=float).ravel()
         if cb.size == 2:
             ci = [_f(cb[0]), _f(cb[1])]
     except Exception:  # noqa: BLE001 - no interval rather than a wrong one
@@ -317,6 +322,7 @@ def _frailty_block(model, mapping: dict) -> dict:
         "family": getattr(model, "family", "gamma"),
         "theta": theta,
         "theta_ci": ci,
+        "theta_ci_level": 0.90,
         "theta_ci_method": "profile likelihood" if method == "lr" else "Wald",
         "kendall_tau": tau,
         "n_groups": int(getattr(model, "n_groups", len(groups)) or len(groups)),
@@ -331,10 +337,10 @@ def frailty_reading(theta: Optional[float], ci) -> str:
     if theta is None:
         return "The spread between groups couldn't be estimated."
     if ci and ci[0] is not None and ci[0] <= 1e-3:
-        return ("The groups may not differ at all: the spread between them (θ) could be zero at 95% "
+        return ("The groups may not differ at all: the spread between them (θ) could be zero at 90% "
                 "confidence.")
     return ("The groups differ: some fail consistently sooner than others, beyond what the covariates "
-            "explain (θ is above zero at 95% confidence).")
+            "explain (θ is above zero at 90% confidence).")
 
 
 def enrich_regression(distribution: str, model, result: dict, mapping: dict) -> dict:
@@ -356,7 +362,7 @@ def enrich_regression(distribution: str, model, result: dict, mapping: dict) -> 
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                boot = np.asarray(model.bootstrap_ci(alpha_ci=0.05, n_boot=200, random_state=0), dtype=float)
+                boot = np.asarray(model.bootstrap_ci(alpha_ci=0.10, n_boot=200, random_state=0), dtype=float)
             if boot.shape == (len(coefficients), 2):
                 coefficients = [dict(c, ci=[_f(lo), _f(hi)]) for c, (lo, hi) in zip(coefficients, boot)]
                 out["ci_method"] = "bootstrap (200 resamples)"

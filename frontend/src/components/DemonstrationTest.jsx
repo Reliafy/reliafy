@@ -24,7 +24,7 @@ export default function DemonstrationTest({ initial = null }) {
   const [target, setTarget] = useState(initial?.target || "reliability");
   const [bLife, setBLife] = useState(initial?.bLife || "10");
   const [reliability, setReliability] = useState("95");
-  const [confidence, setConfidence] = useState(initial?.confidence || "95");
+  const [confidence, setConfidence] = useState(initial?.confidence || "90");
   const [missionTime, setMissionTime] = useState(initial?.missionTime || "1000");
   const [unit, setUnit] = useState(initial?.unit || "hours");
   // β from a saved model (or the fit the requirement came from), and which

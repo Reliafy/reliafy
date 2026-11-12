@@ -1442,7 +1442,7 @@ export default function RbdCalculator({
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
   const [showCov, setShowCov] = useState(false);
   // Confidence band (#103), with intervals at several B-lives and times (#325).
-  const [band, setBand] = useState({ on: false, level: 0.95, b_lives: [1, 10, 50], times: [] });
+  const [band, setBand] = useState({ on: false, level: 0.9, b_lives: [1, 10, 50], times: [] });
   const [bandRerun, setBandRerun] = useState(0);
   // "As of now" — the blocks' current states: repairable (#155) and
   // non-repairable (#173, where a failed block stays failed).

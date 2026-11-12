@@ -302,7 +302,7 @@ def api_demonstration_test(
     """Plan a reliability demonstration test (RePyability's test planning).
 
     Body: ``reliability`` (target over one mission), optional ``confidence``
-    (default 0.95), ``mission_time``, ``failures`` (allowed, default 0),
+    (default 0.9), ``mission_time``, ``failures`` (allowed, default 0),
     ``test_multiple`` + ``shape`` (Weibull beta) for a longer test per unit,
     ``units`` (to solve for the test time per unit instead), ``unit``,
     ``design_reliability``. ``method="mtbf"`` with ``mtbf`` plans a
