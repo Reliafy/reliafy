@@ -43,6 +43,9 @@ def _list_query(owner_id, shared=frozenset()):
 
 def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> RecurrentModelDoc:
     """Fit and persist a recurrent model. Raises ``FitError`` on a bad fit."""
+    from backend.services import dataset_reading
+
+    spec = dataset_reading.with_reading(spec, dataset)
     df = datasets_service.load_dataframe(dataset)
     payload, cache_id = recurrent_fit.fit_spec(df, spec)
     doc = RecurrentModelDoc(

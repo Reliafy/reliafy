@@ -66,8 +66,8 @@ test("accelerated life: the life selectors only, stresses on the Model step; sam
   assert.deepEqual(altFields(altMapping(byHand({}, map, ALT_ROWS, {}, ["range"])), g.stress), before);
   assert.deepEqual(altDataIssues(map), []);
   assert.deepEqual(altStressIssues(g.stress, 1, "arrhenius", map), []);
-  // A stress column already mapped on the Data step, or a temperature with no unit, is said beside the stress.
-  assert.match(altStressIssues([{ col: "hours", unit: "K" }], 1, "arrhenius", map)[0].text, /mapped on the Data step/);
+  // A stress column already given a role in the reading, or a temperature with no unit, is said beside the stress.
+  assert.match(altStressIssues([{ col: "hours", unit: "K" }], 1, "arrhenius", map)[0].text, /has a role in the dataset.s reading/);
   assert.match(altStressIssues([{ col: "temp_C", unit: "" }], 1, "arrhenius", map)[0].text, /temperature's unit/);
   // The range comes with x on the same screen.
   assert.deepEqual(altMapping({ ...map, x: "", xl: "a", xr: "b" }), { xl: "a", xr: "b", c: "censored" });

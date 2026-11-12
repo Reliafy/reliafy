@@ -102,7 +102,8 @@ def test_upload_with_dataset_col_makes_one_dataset_per_value(web):
     detail = client.get(f"/api/datasets/{out['datasets'][1]['id']}").json()
     assert detail["last_mapping"] is None and detail["last_recurrent_mapping"] is None
     doc = db.datasets.find_one({"name": "Coal mill"})
-    assert "reading" not in doc and "dataset" not in str(doc.keys())
+    # No reading was sent: none is kept (the dataset reads as guessed until a fit confirms it).
+    assert doc.get("reading") is None and "dataset" not in str(doc.keys())
 
 
 def test_without_dataset_col_nothing_changes(web):

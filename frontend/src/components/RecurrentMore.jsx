@@ -4,8 +4,9 @@ import Chip from "./ui/Chip.jsx";
 // What repairable data can carry beyond its columns' selectors (ColumnMapper:
 // i, x, c, n, tl, tr and the failure mode, as "mode"): covariates for
 // proportional intensity, and observation gaps — window columns, or windows
-// typed in (#65).
-export default function RecurrentMore({ columns, mapping, onChange, windows = "", onWindowsChange = null }) {
+// typed in (#65). ``covariates={false}``: the gaps only (the covariates come
+// from the dataset's reading).
+export default function RecurrentMore({ columns, mapping, onChange, windows = "", onWindowsChange = null, covariates = true }) {
   const setField = (field, value) => onChange({ ...mapping, [field]: value });
   const [typing, setTyping] = useState(!!String(windows || "").trim());
   // Columns free for a covariate: not the system, time or a modifier.
@@ -30,7 +31,7 @@ export default function RecurrentMore({ columns, mapping, onChange, windows = ""
             </div>
           </div>
         </div>
-        <div className="ds-field rec-map-cov">
+        {covariates && <div className="ds-field rec-map-cov">
           <span className="ds-label">Covariates <span className="gof-sub">for proportional intensity</span></span>
           {covariateCols.length > 0 ? (
             <span className="chip-row">
@@ -42,7 +43,7 @@ export default function RecurrentMore({ columns, mapping, onChange, windows = ""
               ))}
             </span>
           ) : <span className="muted-line" style={{ margin: 0 }}>No other columns.</span>}
-        </div>
+        </div>}
         {onWindowsChange && (
           typing ? (
             <label className="ds-field rec-map-windows">

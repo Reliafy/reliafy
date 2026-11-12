@@ -51,6 +51,10 @@ class Dataset(BaseModel):
     data: bytes = b""  # raw CSV bytes (excluded from API responses)
     notes: Optional[str] = None  # free-text annotation (set over MCP: change dataset_update)
     measurements: Optional[DatasetPart] = None
+    # How the columns are read for modelling (x, c, n, … and the covariates
+    # Z), kept from upload: backend/services/dataset_reading.py. None for a
+    # dataset saved before readings: one is derived on read, never written.
+    reading: Optional[dict] = None
 
 
 class Model(BaseModel):

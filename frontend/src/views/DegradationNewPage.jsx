@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { DataSourceStep } from "../components/DatasetPicker.jsx";
 import { ErrorNotice } from "../components/StorageCap.jsx";
 import {
-  getColumns,
   getDataset,
   getDegradationOptions,
   listDatasets,
@@ -11,22 +10,26 @@ import {
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import {
-  DEGRADATION_KEYS, DEGRADATION_ROWS, DEGRADATION_WORDS, degradationIssues, guessDegradationColumns, guessDirection,
-  guessMeasurementUnit, guessTimeUnit, thresholdProblem, usableForDegradation,
+  degradationIssues, degradationMappingFromReading, guessDirection, thresholdProblem, usableForDegradation,
 } from "../degradation.js";
-import ColumnMapper from "../components/ColumnMapper.jsx";
+import { emptyReading } from "../datasetReading.js";
+import { useDatasetReading } from "../useDatasetReading.js";
+import { columnFacts } from "../lifeData.js";
+import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
+import MeasurementsReadingChange from "../components/MeasurementsReadingChange.jsx";
+import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
-import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import Select from "../components/Select.jsx";
-import PreviewTable from "../components/PreviewTable.jsx";
-import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 
-// New degradation model (/models/degradation/new) — a three-step page like the
-// accelerated-life one: (1) pick a source (upload / saved dataset), (2) map
-// the columns (i, x, m: the shared selectors), (3) the model's own inputs:
-// the failure threshold and the path model, then fit and save in one go and
-// open the saved model's page (the confidence inputs need a saved model).
-const STEPS = ["Source", "Data", "Model"];
+// New degradation model (/models/degradation/new) — a two-step page: (1) pick
+// a saved dataset, or upload a file (saved first as a dataset, with how its
+// columns are read, through the Data library's own dialog); (2) the model: the
+// dataset's reading in one line (i, x and m, with Change), then the failure
+// threshold and the path model; fit and save in one go and open the saved
+// model's page (the confidence inputs need a saved model). The columns are
+// never asked again: they come from the dataset's reading
+// (degradationMappingFromReading).
+const STEPS = ["Source", "Model"];
 // The fit needs an item id, a time and a measurement column: in the readings (the measurements
 // part, when the dataset has one), the table the fit reads.
 const degradationRule = (d) => (usableForDegradation(d.measurements || d)
@@ -41,22 +44,16 @@ export default function DegradationNewPage() {
   const [params] = useSearchParams();
   const fromData = params.get("dataset");
   const [step, setStep] = useState(1);
-  // An Excel workbook becomes a CSV of the chosen sheet before anything else.
-  const { toCsv, modal: sheetModal } = useSpreadsheet();
-  const [file, setFile] = useState(null);
-  const [headerNote, setHeaderNote] = useState(null); // a file with no header row (#434)
+  // A file to save as a dataset first (the upload screen), then fit from.
+  const [pending, setPending] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
+  const [detail, setDetail] = useState(null); // the dataset's detail (getDataset)
   const [sourceName, setSourceName] = useState("");
-  const [csv, setCsv] = useState(null); // { columns, preview, n_rows }
-  const [mapping, setMapping] = useState({ i: "", x: "", y: "" });
   const [threshold, setThreshold] = useState("");
   // Which way m goes to failure: a check on the threshold (the fit reads each item's path).
   const [direction, setDirection] = useState(null);
-  // null until typed: then the units read from the mapped columns' names
-  // ("hours" → Hours, "wear_mm" → mm) fill the fields.
-  const [unitTyped, setUnitTyped] = useState(null);
-  const [measurementUnitTyped, setMeasurementUnitTyped] = useState(null);
   const [nameTyped, setNameTyped] = useState(null);
+  const [measEditing, setMeasEditing] = useState(false);
   const [options, setOptions] = useState({ paths: [], distributions: [], population_methods: [] });
   const [path, setPath] = useState("best");
   const [distribution, setDistribution] = useState("weibull");
@@ -72,63 +69,53 @@ export default function DegradationNewPage() {
     listDatasets().then((d) => setDatasets(d.datasets || [])).catch(() => setDatasets([]));
   }, []);
 
-  const unit = unitTyped ?? guessTimeUnit(mapping.x);
-  const measurementUnit = measurementUnitTyped ?? guessMeasurementUnit(mapping.y);
+  // How the dataset is read (kept with it): the readings are its measurements
+  // part when it has one, else its one table.
+  const rd = useDatasetReading(detail);
+  const hasPart = !!detail?.measurements;
+  // The measurements' reading comes with every detail (kept, or guessed by the server).
+  const meas = rd.reading?.measurements || detail?.reading?.measurements || null;
+  const reading = hasPart ? { ...(rd.reading || emptyReading()), measurements: meas || {} } : rd.reading;
+  const derived = reading ? degradationMappingFromReading(reading) : null;
+  const mapping = derived?.mapping || { i: "", x: "", y: "" };
+  const unit = derived?.unit || "";
+  const measurementUnit = derived?.measurementUnit || "";
+  // The table the fit reads, in /api/columns' shape, for the checks.
+  const csv = useMemo(() => {
+    const table = detail ? (detail.measurements || detail) : null;
+    if (!table) return null;
+    return { columns: table.preview_columns || [], preview: table.preview || [], n_rows: table.n_rows,
+             n_unique: table.n_unique, dtypes: table.dtypes, values: table.values, blanks: table.blanks,
+             whole: table.whole };
+  }, [detail]);
+  const measFacts = useMemo(() => (hasPart && csv ? columnFacts(csv) : {}), [hasPart, csv]);
   const pathName = (options.paths || []).find((p) => p.id === path)?.name;
   const name = nameTyped ?? `${baseName(sourceName) || "Degradation"} — ${
     path !== "best" && pathName ? `${pathName.toLowerCase()} degradation` : "degradation"}`;
 
   // What stops the Data step, beside its selector (at least 2 items, each read twice).
-  const dataIssues = csv ? degradationIssues(csv, mapping) : [];
+  const dataIssues = derived?.missing ? [] : csv ? degradationIssues(csv, mapping) : [];
   const way = direction ?? guessDirection(csv, mapping);
 
-  // A new source starts with units and name read afresh.
-  const resetTyped = () => {
-    setUnitTyped(null);
-    setMeasurementUnitTyped(null);
-    setNameTyped(null);
-  };
-
-  const pickFile = async (picked, { keepHeader = false } = {}) => {
+  // A file is saved as a dataset first (with how its columns are read), then used.
+  const pickFile = (picked) => {
     if (!picked) return;
-    const csvFile = await toCsv(picked);
-    if (!csvFile) return;
-    const { file: f, note } = await detectHeader(picked, csvFile, { keepHeader });
-    setHeaderNote(note);
-    setFile(f);
-    setDatasetId(null);
-    setSourceName(f.name);
-    resetTyped();
     setError(null);
-    setLoading(true);
-    try {
-      const cols = await getColumns(f);
-      setCsv(cols);
-      setMapping(guessDegradationColumns(cols.columns));
-      setStep(2);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    setPending(picked);
   };
 
   const pickDataset = async (d) => {
-    setFile(null);
-    setHeaderNote(null);
     setDatasetId(d.id);
     setSourceName(d.name);
-    resetTyped();
+    setNameTyped(null);
+    setDirection(null);
+    setMeasEditing(false);
     setError(null);
     setLoading(true);
     try {
       const full = await getDataset(d.id);
       if (!d.name) setSourceName(full.name || "");
-      // The readings: the dataset's measurements part when it has one, else its one table.
-      const table = full.measurements || full;
-      const columns = table.preview_columns || [];
-      setCsv({ columns, preview: table.preview || [], n_rows: table.n_rows, n_unique: table.n_unique });
-      setMapping(guessDegradationColumns(columns));
+      setDetail(full);
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -148,17 +135,17 @@ export default function DegradationNewPage() {
     pickFile(e.dataTransfer.files?.[0]);
   };
 
-  const mappingValid = dataIssues.length === 0;
+  const mappingValid = !!derived && !derived.missing && dataIssues.length === 0;
   const thresholdWhy = csv ? thresholdProblem(csv, mapping, threshold, way, measurementUnit) : null;
   // A number is required; the first-reading check is said, not blocking (one item may start past it).
   const thresholdBlocks = threshold === "" || !Number.isFinite(Number(threshold));
 
   const onFit = async () => {
-    if ((!file && !datasetId) || !name.trim()) return;
+    if (!datasetId || !name.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const saved = await saveDegradationModel(name.trim(), file, {
+      const saved = await saveDegradationModel(name.trim(), null, {
         datasetId,
         mapping,
         threshold: Number(threshold),
@@ -203,18 +190,14 @@ export default function DegradationNewPage() {
   if (step === 1) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
       <span className="hint" style={{ margin: 0 }}>Pick a dataset and press <b>Use this dataset</b>, or upload a CSV or Excel file</span></>);
-  } else if (step === 2) {
-    nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-      {!mappingValid && (
-        <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
-          First settle the note{new Set(dataIssues.map((i) => i.row)).size === 1 ? "" : "s"} beside {[...new Set(dataIssues.map((i) => i.row))].join(", ")}.
-        </span>
-      )}
-      <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button></>);
   } else {
+    const editing = rd.editing || measEditing;
+    const why = editing ? "First save or cancel the change to the reading."
+      : !mappingValid ? "First settle what the reading lacks (above)."
+        : thresholdBlocks ? "First enter the failure threshold." : null;
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-      {thresholdBlocks && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>First enter the failure threshold.</span>}
-      <button onClick={onFit} disabled={loading || !name.trim() || thresholdBlocks}>
+      {why && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span>}
+      <button onClick={onFit} disabled={loading || !name.trim() || !!why}>
         {loading ? "Fitting…" : "Fit and save"}
       </button></>);
   }
@@ -230,16 +213,14 @@ export default function DegradationNewPage() {
     </label>
   );
 
-  const colSelect = (label, key) => (
-    <label className="login-field" style={{ flex: 1 }}>
-      <span>{label}</span>
-      <Select
-        value={mapping[key]}
-        onChange={(v) => setMapping({ ...mapping, [key]: v })}
-        options={[{ value: "", label: "—" }, ...csv.columns]}
-      />
-    </label>
-  );
+  // Change: the main reading (one table), or the measurements part's own.
+  const startChange = () => (hasPart ? setMeasEditing(true) : rd.startChange());
+  const keepMeasurements = async (next) => {
+    if (await rd.keepMeasurements(next)) setMeasEditing(false);
+  };
+  const summaryReading = hasPart ? { ...emptyReading(), ...(meas || {}) } : rd.reading;
+  const summarySource = hasPart ? (meas?.source === "saved" ? "saved" : "guessed") : rd.source;
+  const problems = derived?.missing ? [derived.missing] : dataIssues.map((i) => i.text);
 
   return (
     <div className="app">
@@ -282,15 +263,14 @@ export default function DegradationNewPage() {
               </span>
               {loading ? (
                 <span className="dz-big">Reading file…</span>
-              ) : file ? (
-                <span className="dz-big filename">{file.name}</span>
+              ) : pending ? (
+                <span className="dz-big filename">{pending.name}</span>
               ) : (
                 <span className="dz-big">Drop a CSV or Excel file here or <strong>click to browse</strong></span>
               )}
               <span className="dz-hint">long format: item id · time · measurement (one row per reading)</span>
               <input ref={inputRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
-              {sheetModal}
             </div>
                 </>
               )}
@@ -298,33 +278,50 @@ export default function DegradationNewPage() {
           </>
         )}
 
-        {step === 2 && csv && (
+        {step === 2 && detail && (
           <>
             <p className="muted-line" style={{ marginTop: 0 }}>
-              {sourceName} · {csv.n_rows} rows
+              {sourceName} · {(csv?.n_rows ?? 0).toLocaleString()} {hasPart ? "readings (its measurements)" : "rows"}
             </p>
-            <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
-            <PreviewTable columns={csv.columns} rows={csv.preview} />
-            <ColumnMapper
-              columns={csv.columns}
-              mapping={mapping}
-              onChange={setMapping}
-              unit={unit}
-              onUnitChange={setUnitTyped}
-              mUnit={measurementUnit}
-              onMUnitChange={setMeasurementUnitTyped}
-              rows={DEGRADATION_ROWS}
-              range={false}
-              keys={DEGRADATION_KEYS}
-              words={DEGRADATION_WORDS}
-              issues={dataIssues}
-            />
+            {!rd.editing && !measEditing && (
+              <ReadingSummary
+                name={sourceName}
+                reading={summaryReading}
+                source={summarySource}
+                use={["i", "x", "m"]}
+                note={hasPart ? "These are its measurements: the readings on each item over time." : null}
+                onChange={startChange}
+                onConfirm={hasPart ? () => keepMeasurements({ ...(meas || {}), source: "saved" }) : rd.confirm}
+                confirming={rd.saving}
+                readOnly={rd.readOnly}
+              />
+            )}
+            {!rd.editing && !measEditing && problems.length > 0 && (
+              <div className="xcn-below" role="status">
+                {problems.map((t) => <p key={t} className="xcn-issue">{t}</p>)}
+                <button type="button" className="link" onClick={startChange}>Change the reading</button>
+              </div>
+            )}
+            <ReadingChange name={sourceName} rd={rd} />
+            {measEditing && (
+              <MeasurementsReadingChange
+                name={sourceName}
+                columns={csv?.columns || []}
+                facts={measFacts}
+                value={meas}
+                onKeep={keepMeasurements}
+                onCancel={() => setMeasEditing(false)}
+                saving={rd.saving}
+                error={rd.error}
+                readOnly={rd.readOnly}
+              />
+            )}
           </>
         )}
 
-        {step === 3 && (
+        {step === 2 && detail && !rd.editing && !measEditing && (
           <>
-            <label className="login-field" style={{ marginTop: 0 }}>
+            <label className="login-field">
               <span>Model name</span>
               <input type="text" value={name} onChange={(e) => setNameTyped(e.target.value)} />
             </label>
@@ -371,6 +368,20 @@ export default function DegradationNewPage() {
           <div className="row" style={{ margin: 0 }}>{nav}</div>
         </div>
       </div>
+      {pending && (
+        <NewDatasetModal
+          initialFile={pending}
+          initialName={baseName(pending.name)}
+          title="Save the readings as a dataset"
+          withMeasurements={false}
+          onClose={() => setPending(null)}
+          onCreated={(ds) => {
+            setPending(null);
+            listDatasets().then((d) => setDatasets(d.datasets || [])).catch(() => {});
+            pickDataset({ id: ds.id, name: ds.name || "" });
+          }}
+        />
+      )}
     </div>
   );
 }

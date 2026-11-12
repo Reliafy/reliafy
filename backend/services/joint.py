@@ -179,6 +179,12 @@ def start_fit(db, *, uid: str, owners, body: dict, save: bool = True,
     if save and not name:
         raise FitError("Give the model a name.")
     request = _request(db, spec, owners)
+    if save and spec.get("dataset_id"):
+        from backend.services import dataset_reading
+
+        ds = datasets_service.get_dataset(db, spec["dataset_id"], owner_id=owners)
+        if ds is not None:
+            spec = dataset_reading.with_reading(spec, ds)
     pending = {"save": bool(save), "name": name, "owner_id": owner_id or uid, "spec": spec}
     if not compute_queue.configured():
         try:

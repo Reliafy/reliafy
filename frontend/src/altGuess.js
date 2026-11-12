@@ -4,6 +4,8 @@
 // stress, and never a time-like column ("hours") for a stress. Pure, so
 // `node --test` covers it.
 import { censorInverted, guessUnit, isNumeric } from "./datasetGuess.js";
+import { missingFor } from "./datasetReading.js";
+import { codedStatus, unitColumnProblem } from "./readingCodes.js";
 
 // A column name as words: "temp_C" → "temp C", "TempK" → "Temp K".
 const words = (name) =>
@@ -167,11 +169,69 @@ export function altStressIssues(stress, nStress, lifeModel, map) {
   const out = [];
   stress.slice(0, nStress).forEach((s, j) => {
     if (!s.col) out.push({ stress: j, text: `Pick the column for stress ${j + 1}.` });
-    else if (used.has(s.col)) out.push({ stress: j, text: `“${s.col}” is mapped on the Data step: pick another column.` });
+    else if (used.has(s.col)) out.push({ stress: j, text: `“${s.col}” has a role in the dataset's reading: pick another column.` });
     else if (stress.slice(0, j).some((o) => o.col === s.col)) out.push({ stress: j, text: "Pick a different column for each stress." });
     if (j === 0 && isThermal(lifeModel) && !["°C", "K", "°F"].includes(String(s.unit || "").trim())) {
       out.push({ stress: 0, text: "Pick the temperature's unit (°C, K or °F): this model needs absolute temperature, so °C and °F are converted to kelvin before the fit." });
     }
   });
   return out;
+}
+
+// A saved dataset's reading (datasetReading.js) as the ALT fit's Data-step
+// mapping, so a fit from a saved dataset asks no column questions:
+// { map, unit, status, missing }. ``map``: x with its range, c, n, tl, tr
+// (altMapping sends the set ones); ``status``: readingCodes.codedStatus (this
+// fit reads c as 0/1 codes); ``missing``: what stops the fit, in words, or null.
+export function altMappingFromReading(r, facts = {}, nRows = 0) {
+  if (!r) return null;
+  const status = codedStatus(r, facts, nRows);
+  const map = {
+    x: r.x || "", xl: r.xl || "", xr: r.xr || "", c: status.c, n: r.n || "", tl: r.tl || "", tr: r.tr || "",
+  };
+  const unit = r.unit || guessUnit(map.x);
+  const missing = missingFor("alt", r) || unitColumnProblem(r) || status.problem;
+  return { map, unit, status, missing };
+}
+
+// The columns offered for the stresses: the reading's covariates (Z), else
+// the numeric columns the reading gives no role (nor the fit's c).
+export function altStressPool(source, r, c = "") {
+  const z = (r?.z || []).filter((col) => col && col !== c);
+  if (z.length) return z;
+  const used = new Set(["x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u"].map((k) => r?.[k]).filter(Boolean));
+  if (c) used.add(c);
+  const facts = columnFacts(source);
+  return numericColumns(facts, source?.preview).map((f) => f.name).filter((name) => !used.has(name));
+}
+
+// ``source`` cut to ``cols`` (names, dtypes, values, counts and preview), so
+// the stress guess and the life-stress suggestion look only at those.
+function sourceOf(source, cols) {
+  const names = source?.columns || source?.preview_columns || [];
+  const idx = cols.map((c) => names.indexOf(c)).filter((i) => i >= 0);
+  const pick = (arr) => (Array.isArray(arr) ? idx.map((i) => arr[i]) : arr);
+  return {
+    columns: idx.map((i) => names[i]),
+    dtypes: pick(source?.dtypes), values: pick(source?.values), n_unique: pick(source?.n_unique),
+    preview: (source?.preview || []).map((row) => (Array.isArray(row) ? idx.map((i) => row[i]) : row)),
+  };
+}
+
+// The first stress guess from the reading: guessAltColumns over the pool only.
+export function altStressFromReading(source, r, { nStress = 1, lifeModel = "arrhenius", c = "" } = {}) {
+  const pool = sourceOf(source, altStressPool(source, r, c));
+  // guessAltColumns also guesses a time: here every pool column is a stress candidate.
+  const g = guessAltColumns({ ...pool, columns: pool.columns }, { nStress, lifeModel });
+  if (g.x && !g.stress.some((s) => s.col === g.x) && g.stress.some((s) => !s.col)) {
+    const free = g.stress.findIndex((s) => !s.col);
+    const t = isThermal(lifeModel) && free === 0 ? temperatureUnitOf(g.x) : "";
+    g.stress[free] = { col: g.x, label: "", unit: t };
+  }
+  return g.stress;
+}
+
+// The life-stress relationship the pool's names suggest ("" when they don't).
+export function suggestLifeModelFromReading(source, r, c = "") {
+  return suggestLifeModel(sourceOf(source, altStressPool(source, r, c)));
 }

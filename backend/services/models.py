@@ -91,6 +91,8 @@ def save_model(
             "unit": canonical_unit(unit),
             "options": result.get("options") or None,
             **({"covariate_units": result["covariate_units"]} if result.get("covariate_units") else {}),
+            # How the dataset read its columns when this model was fitted.
+            **({"reading": dict(dataset.reading)} if getattr(dataset, "reading", None) else {}),
         },
         results=result,
         serialized=serialized,

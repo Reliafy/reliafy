@@ -175,3 +175,27 @@ export function thresholdProblem(csv, mapping, threshold, direction, unit = "") 
   if (direction === "rises" && start >= t) return `The first reading (${start}${u}) is already at or above ${t}${u}: check the threshold, or whether m falls to it.`;
   return null;
 }
+
+// A saved dataset's reading as the degradation fit's mapping (no Data step):
+// the readings are the dataset's measurements part when it has one (the
+// reading's ``measurements``: i, x, m with their units), else its one table
+// (the main reading's i, x and m). m is sent as ``y``; the units are the
+// reading's, else read from the columns' names as the Data step did.
+// { mapping: { i, x, y }, unit, measurementUnit, readings, missing } —
+// ``readings``: the sub-reading used; ``missing``: what it lacks, in words, or null.
+export function degradationMappingFromReading(r) {
+  const src = (r?.measurements ? r.measurements : r) || {};
+  const mapping = { i: src.i || "", x: src.x || "", y: src.m || "" };
+  const lacks = [!mapping.i && "i (which item each reading belongs to)", !mapping.x && "x (when each reading was taken)",
+    !mapping.y && "m (the measured value)"].filter(Boolean);
+  const where = r?.measurements ? "The dataset's measurements are" : "This dataset is";
+  return {
+    mapping,
+    unit: src.unit || guessTimeUnit(mapping.x),
+    measurementUnit: src.m_unit || guessMeasurementUnit(mapping.y),
+    readings: { i: mapping.i, x: mapping.x, m: mapping.y, unit: src.unit || "", m_unit: src.m_unit || "" },
+    missing: lacks.length
+      ? `A degradation model follows each item's readings, so it needs ${lacks.join(lacks.length > 2 ? ", " : " and ").replace(/, ([^,]*)$/, " and $1")}. ${where} read without ${lacks.length === 1 ? "it" : "them"}: change the reading to pick ${lacks.length === 1 ? "it" : "them"}.`
+      : null,
+  };
+}

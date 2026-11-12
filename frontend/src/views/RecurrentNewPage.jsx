@@ -1,33 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DataSourceStep } from "../components/DatasetPicker.jsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import RefLink from "../components/RefLink.jsx";
-import PreviewTable from "../components/PreviewTable.jsx";
-import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
-import ColumnMapper from "../components/ColumnMapper.jsx";
+import NewDatasetModal from "../components/NewDatasetModal.jsx";
+import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
+import { useDatasetReading } from "../useDatasetReading.js";
 import RecurrentMore from "../components/RecurrentMore.jsx";
 import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
 import { recurrentAnswer } from "../recurrentResults.js";
 import {
-  RECURRENT_KEYS, RECURRENT_NONE, RECURRENT_ROWS, RECURRENT_WORDS, guessRecurrentMapping, recurrentIssues,
+  readingWithRecurrentMapping, recurrentIssues, recurrentMappingFromReading, recurrentWithCovariates,
   savedRecurrentMapping,
 } from "../recurrentMapping.js";
-import { guessUnit } from "../datasetGuess.js";
+import { codedStatusNote } from "../readingCodes.js";
+import { fileStem } from "../datasetGuess.js";
 import {
   getRecurrentOptions,
-  getColumns,
   listDatasets,
   getDataset,
   fitRecurrent,
   saveRecurrentModel,
   SPREADSHEET_ACCEPT,
 } from "../api.js";
-import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import { ErrorNotice } from "../components/StorageCap.jsx";
 
 // The model families (#65): minimal repair (Poisson processes), covariates on
@@ -57,34 +56,34 @@ const MODEL_DESC = {
   cox_lewis: "Cox-Lewis log-linear NHPP — the rate changes by a fixed proportion per unit time. β > 0 worsening, β < 0 improving.",
 };
 
-const STEPS = ["Source", "Data", "Model", "Result"];
+const STEPS = ["Source", "Model", "Result"];
+// What a repairable fit takes from a dataset's reading (the rest shown quieter).
+const USES = ["x", "c", "n", "tl", "tr", "i", "e"];
 
-// New recurrent-event (repairable-system) model, as a 4-step wizard that mirrors
-// the life-data fit flow: (1) pick a data source, (2) preview + map columns,
-// (3) choose a growth model and fit, (4) review the fit, name it, and save.
+// New recurrent-event (repairable-system) model, as a 3-step wizard that mirrors
+// the life-data fit flow: (1) pick a saved dataset, or upload a file (saved as
+// a dataset first, with how its columns are read), (2) choose a growth model
+// and fit, the columns read as the dataset's reading says, (3) review the
+// fit, name it, and save.
 export default function RecurrentNewPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState(null); // null | "data" | "params"
   const [step, setStep] = useState(1);
-  // An Excel workbook becomes a CSV of the chosen sheet before anything else.
-  const { toCsv, modal: sheetModal } = useSpreadsheet();
 
   const [modelOpts, setModelOpts] = useState([]);
   const [datasets, setDatasets] = useState(null); // null while the list loads
 
+  // An uploaded file, while it is saved as a dataset (NewDatasetModal).
   const [file, setFile] = useState(null);
-  const [headerNote, setHeaderNote] = useState(null); // a file with no header row (#434)
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
-  const [csv, setCsv] = useState(null); // { columns, preview, n_rows }
-  const [map, setMap] = useState({ i: "", x: "", c: "", n: "", tl: "", tr: "" });
+  const [detail, setDetail] = useState(null); // the dataset (getDataset)
   const [model, setModel] = useState("crow_amsaa");
   const [baselines, setBaselines] = useState([]);
   const [options, setOptions] = useState({});
+  // Observation gaps: window columns (ws, we) or windows typed in (#65).
+  const [gaps, setGaps] = useState({ ws: "", we: "" });
   const [windows, setWindows] = useState("");
-  const [unit, setUnit] = useState("");
-  // The repairable model whose column reading a dataset's fit started from.
-  const [keptFrom, setKeptFrom] = useState(null);
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -103,6 +102,24 @@ export default function RecurrentNewPage() {
     listDatasets().then((d) => setDatasets(d.datasets || [])).catch(() => setDatasets([]));
   }, []);
 
+  // How the dataset's columns are read (kept with it): the fit's columns come
+  // from there. A dataset saved before readings whose newest repairable model
+  // read its columns starts from that model's columns.
+  const rd = useDatasetReading(detail);
+  const kept = useMemo(
+    () => (detail && rd.source !== "saved" && !detail.reading_kept ? savedRecurrentMapping(detail.last_recurrent_mapping, rd.cols?.columns) : null),
+    [detail, rd.source, rd.cols],
+  );
+  const reading = useMemo(
+    () => (kept ? readingWithRecurrentMapping(rd.reading, kept, rd.facts, rd.nRows) : rd.reading),
+    [kept, rd.reading, rd.facts, rd.nRows],
+  );
+  const derived = useMemo(
+    () => recurrentMappingFromReading(reading, rd.facts, rd.nRows),
+    [reading, rd.facts, rd.nRows],
+  );
+  const unit = derived?.unit || "";
+
   const modelEntry = modelOpts.find((m) => m.id === model);
   const modelName = modelEntry?.name || "model";
   const family = modelEntry?.family || "nhpp";
@@ -111,49 +128,36 @@ export default function RecurrentNewPage() {
     if (first) setModel(first.id);
     setOptions({});
   };
+  // What's sent: the reading's columns; its covariates (Z) for the covariate
+  // models only; the gaps, when given.
+  const map = useMemo(() => {
+    if (!derived) return { i: "", x: "" };
+    const m = family === "regression" ? recurrentWithCovariates(derived.mapping, reading) : derived.mapping;
+    return { ...m, ...(gaps.ws ? { ws: gaps.ws } : {}), ...(gaps.we ? { we: gaps.we } : {}) };
+  }, [derived, family, reading, gaps]);
   // Proportional intensity needs covariates; gaps only the Poisson processes.
   const hasWindows = !!(map.ws && map.we) || !!windows.trim();
   const modelBlock = family === "regression" && !(map.z || []).length
-    ? "Choose at least one covariate column on the Data step (Back)."
+    ? "This dataset's reading has no covariates (Z) for the failure rate to depend on: Change the reading to add them."
     : family !== "nhpp" && hasWindows
-    ? "Observation windows work with the minimal-repair models only: clear them on the Data step, or pick one of those."
+    ? "Observation windows work with the minimal-repair models only: clear them under Gaps in the records, or pick one of those."
     : null;
 
-  const pickFile = async (picked, { keepHeader = false } = {}) => {
+  // An uploaded file is saved as a dataset first, through the upload's own
+  // screen (how its columns are read), then the fit goes on from it.
+  const pickFile = (picked) => {
     if (!picked) return;
-    const csvFile = await toCsv(picked);
-    if (!csvFile) return;
-    if (csvFile.size > 5 * 1024 * 1024) {
-      setError(`That file is ${(csvFile.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB. Try trimming unused columns or rows.`);
-      return;
-    }
-    const { file: f, note } = await detectHeader(picked, csvFile, { keepHeader });
-    setHeaderNote(note);
-    setFile(f);
-    setDatasetId(null);
-    setSourceName(f.name);
-    setResult(null);
     setError(null);
-    setLoading(true);
-    try {
-      const cols = await getColumns(f);
-      setCsv(cols);
-      const g = guessRecurrentMapping(cols.columns, { dtypes: cols.dtypes, preview: cols.preview });
-      setMap(g);
-      setUnit(guessUnit(g.x) || guessUnit(g.tr));
-      setKeptFrom(null);
-      setWindows("");
-      setStep(2);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
+    setFile(picked);
+  };
+  const onCreated = (ds) => {
+    setFile(null);
+    if (!ds?.id) return;
+    setDatasets((cur) => [ds, ...(cur || []).filter((d) => d.id !== ds.id)]);
+    pickDataset(ds);
   };
 
   const pickDataset = async (d) => {
-    setFile(null);
-    setHeaderNote(null);
     setDatasetId(d.id);
     setSourceName(d.name);
     setResult(null);
@@ -161,15 +165,9 @@ export default function RecurrentNewPage() {
     setLoading(true);
     try {
       const full = await getDataset(d.id);
-      const columns = full.preview_columns || [];
       if (!d.name) setSourceName(full.name || "dataset");
-      setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
-      // The newest repairable model's reading of these columns, else a guess.
-      const kept = savedRecurrentMapping(full.last_recurrent_mapping, columns);
-      const g = kept?.mapping || guessRecurrentMapping(columns, { dtypes: full.dtypes, preview: full.preview });
-      setMap(g);
-      setUnit(kept?.unit || guessUnit(g.x) || guessUnit(g.tr));
-      setKeptFrom(kept ? kept.from || "the last model" : null);
+      setDetail(full);
+      setGaps({ ws: "", we: "" });
       setWindows("");
       setStep(2);
     } catch (err) {
@@ -180,7 +178,7 @@ export default function RecurrentNewPage() {
   };
 
   // ?dataset=<id> (a dataset page's "Fit a repairable model") starts on that
-  // dataset, at the column mapping.
+  // dataset, at the Model step.
   const [params] = useSearchParams();
   const startDataset = params.get("dataset");
   const started = useRef(false);
@@ -198,21 +196,27 @@ export default function RecurrentNewPage() {
     pickFile(e.dataTransfer.files?.[0]);
   };
 
-  // Item id and failure value are required and must be different columns;
-  // each problem, and the missing end of record, sits beside its selector.
-  const mapIssues = recurrentIssues(map, windows);
-  const mappingValid = mapIssues.every((i) => i.note);
+  // What the reading lacks for this model (no i), else the fit's own checks
+  // on its columns; the missing end of record is said without stopping it.
+  const missing = derived?.missing || null;
+  const mapIssues = missing ? [] : recurrentIssues(map, windows);
+  const blocking = mapIssues.filter((i) => !i.note);
+  const readingValid = !!derived && !missing && blocking.length === 0;
+  const fitBlock = !readingValid
+    ? "First fix how the columns are read: Change the reading."
+    : rd.editing ? "First save or cancel the change to the reading."
+    : modelBlock;
 
   const onFit = async () => {
-    if (!file && !datasetId) return;
+    if (!datasetId || fitBlock) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fitRecurrent(datasetId ? null : file, { datasetId, mapping: map, model, unit, options, windows });
+      const res = await fitRecurrent(null, { datasetId, mapping: map, model, unit, options, windows });
       setResult(res);
-      const src = (file?.name || sourceName || "dataset").replace(/\.csv$/i, "");
+      const src = (sourceName || "dataset").replace(/\.csv$/i, "");
       setName(`${res.results?.model?.name || modelName} — ${src}`);
-      setStep(4);
+      setStep(3);
     } catch (err) {
       setError(err);
     } finally {
@@ -225,9 +229,8 @@ export default function RecurrentNewPage() {
     setSaving(true);
     setError(null);
     try {
-      // A preview of an upload stores nothing (dataset_id null): the save sends the file.
-      const saved = await saveRecurrentModel(name.trim(), result.dataset_id ? null : file, {
-        datasetId: result.dataset_id, mapping: map, model, unit, options, windows,
+      const saved = await saveRecurrentModel(name.trim(), null, {
+        datasetId: result.dataset_id || datasetId, mapping: map, model, unit, options, windows,
       });
       navigate(`/models/recurrent/${saved.id}`);
     } catch (err) {
@@ -272,20 +275,8 @@ export default function RecurrentNewPage() {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        {!mappingValid && (
-          <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
-            First settle the note{new Set(mapIssues.filter((i) => !i.note).map((i) => i.row)).size === 1 ? "" : "s"} beside{" "}
-            {[...new Set(mapIssues.filter((i) => !i.note).map((i) => i.row))].join(", ")}.
-          </span>
-        )}
-        <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
-      </>
-    );
-  } else if (step === 3) {
-    nav = (
-      <>
-        <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button onClick={onFit} disabled={loading || !!modelBlock}>{loading ? "Fitting…" : `Fit ${modelEntry?.short || modelName}`}</button>
+        <button onClick={onFit} disabled={loading || !!fitBlock}>{loading ? "Fitting…" : `Fit ${modelEntry?.short || modelName}`}</button>
+        {fitBlock && !loading && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{fitBlock}</span>}
         {loading && model !== "crow_amsaa" && (
           <span className="hint" role="status" style={{ margin: 0 }}>
             The fit check refits this model up to 200 times: allow 10–30 seconds.
@@ -317,7 +308,7 @@ export default function RecurrentNewPage() {
               : "New repairable model"}
           </h1>
           <p>
-            {mode === "data" ? "Pick a repairable fleet's event history, map columns, fit a growth model, then review and save."
+            {mode === "data" ? "Pick a repairable fleet's event history, fit a growth model, then review and save."
               : mode === "params" ? "Build a simple model from known parameters — for repair-vs-replace decisions."
               : "How do you want to build the model?"}
           </p>
@@ -378,7 +369,7 @@ export default function RecurrentNewPage() {
                 </svg>
               </span>
               {loading ? (
-                <span className="dz-big">Reading file…</span>
+                <span className="dz-big">Reading the dataset…</span>
               ) : file ? (
                 <span className="dz-big filename">{file.name}</span>
               ) : (
@@ -387,7 +378,6 @@ export default function RecurrentNewPage() {
               <span className="dz-hint">one row per failure: system · its age at the failure · optional end of record</span>
               <input ref={inputRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
-              {sheetModal}
             </div>
                 </>
               )}
@@ -395,40 +385,39 @@ export default function RecurrentNewPage() {
           </>
         )}
 
-        {step === 2 && csv && (
-          <div className="fit-step">
-            <p className="muted-line">{sourceName} · {csv.n_rows} rows · {csv.columns.length} columns</p>
-            <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
-            <PreviewTable columns={csv.columns} rows={csv.preview} />
-            {keptFrom && (
-              <p className="muted-line" role="status" style={{ margin: 0 }}>
-                Columns read as for “{keptFrom}”, the last repairable model fitted to this dataset.
-              </p>
-            )}
-            <ColumnMapper
-              columns={csv.columns}
-              mapping={map}
-              onChange={setMap}
-              unit={unit}
-              onUnitChange={setUnit}
-              rows={RECURRENT_ROWS}
-              range={false}
-              keys={RECURRENT_KEYS}
-              words={RECURRENT_WORDS}
-              none={RECURRENT_NONE}
-              meanings={false}
-              codeWords="0 = a failure, 1 = the end of the record"
-              issues={mapIssues.filter((i) => !i.note)}
-              notes={mapIssues.filter((i) => i.note)}
-            />
-            <ResultDetails summary="Covariates and gaps (optional)" open={!!(map.z || []).length || !!(map.ws || map.we) || !!windows.trim()}>
-              <RecurrentMore columns={csv.columns} mapping={map} onChange={setMap} windows={windows} onWindowsChange={setWindows} />
-            </ResultDetails>
-          </div>
+        {file && (
+          <NewDatasetModal title="Save the file as a dataset" initialFile={file} initialName={fileStem(file.name)}
+                           withMeasurements={false} onCreated={onCreated} onClose={() => setFile(null)} />
         )}
 
-        {step === 3 && (
+        {step === 2 && detail && reading && (
           <div className="fit-step">
+            <ReadingSummary name={sourceName} reading={reading} source={rd.source}
+                            use={family === "regression" ? [...USES, "z"] : USES}
+                            note={codedStatusNote(derived?.status)}
+                            onChange={rd.editing ? null : () => rd.setDraft(reading)}
+                            onConfirm={() => rd.keep(reading)} confirming={rd.saving} readOnly={rd.readOnly} />
+            <ReadingChange name={sourceName} rd={rd} />
+            {!rd.editing && <ErrorNotice error={rd.error} />}
+            {missing ? (
+              <div className="xcn-below" role="status">
+                <p className="xcn-issue" style={{ margin: 0 }}>{missing}</p>
+                {!rd.editing && (
+                  <button type="button" className="secondary" style={{ alignSelf: "flex-start" }}
+                          onClick={() => rd.setDraft(reading)}>Change the reading</button>
+                )}
+              </div>
+            ) : mapIssues.length > 0 && (
+              <div className="xcn-below">
+                {mapIssues.map((i) => (
+                  <p key={i.text} className={"xcn-issue" + (i.note ? " xcn-note" : "")} role="status">
+                    {i.text}{!i.note && " Change the reading to fix it."}
+                  </p>
+                ))}
+              </div>
+            )}
+            {!missing && !rd.editing && (
+              <>
             <p className="muted-line">Choose how repairs work, then the model to fit to the fleet's event history.</p>
             <SegmentedControl options={FAMILIES} value={family} onChange={pickFamily} label="Kind of model"
                               style={{ alignSelf: "flex-start", maxWidth: "100%" }} />
@@ -473,11 +462,18 @@ export default function RecurrentNewPage() {
                 </div>
               </ResultDetails>
             )}
+            <ResultDetails summary="Gaps in the records (optional)" open={!!(gaps.ws || gaps.we) || !!windows.trim()}>
+              <RecurrentMore columns={rd.cols?.columns || []} mapping={{ ...map, ...gaps }} covariates={false}
+                             onChange={(m) => setGaps({ ws: m.ws || "", we: m.we || "" })}
+                             windows={windows} onWindowsChange={setWindows} />
+            </ResultDetails>
             {modelBlock && <p className="hint" style={{ margin: 0 }}>{modelBlock}</p>}
+              </>
+            )}
           </div>
         )}
 
-        {step === 4 && result && (
+        {step === 3 && result && (
           <div className="fit-step">
             <label className="login-field">
               <span>Model name</span>
@@ -485,7 +481,7 @@ export default function RecurrentNewPage() {
                      onChange={(e) => setName(e.target.value)} />
             </label>
             <p className="muted-line" style={{ margin: 0 }}>
-              Review the fit below. Go <b>Back</b> to change the mapping or model and re-fit, or save it.
+              Review the fit below. Go <b>Back</b> to change the model or how the columns are read and fit again, or save it.
             </p>
             {/* The model page's frame, inside the wizard: the answer line over the tabs. */}
             <ModelFrame embedded notice={<div className="mf-wizard-head"><AnswerLine parts={recurrentAnswer(result.results)} /></div>}>

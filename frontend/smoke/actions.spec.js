@@ -7,7 +7,8 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
   await open(page, "/data/sample-ds-bearings");
   await page.getByRole("button", { name: "Fit a model" }).click();
   await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-bearings/);
-  await page.getByRole("button", { name: "Next" }).click();
+  // No column step: the dataset's reading in one line, then the model.
+  await expect(page.locator('[data-wt="reading-summary"]')).toContainText("x = ");
   await page.getByRole("button", { name: "Fit Weibull" }).click();
   await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
   await expectHealthy(page, problems, { label: "fitted model", chart: true });
@@ -28,10 +29,12 @@ test("data with covariates that change over time fits a non-repairable model", a
   await expect(page.getByRole("button", { name: "Fit a degradation model" })).toHaveCount(0);
   await page.getByRole("button", { name: "Fit a non-repairable model with covariates that change over time" }).click();
   await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-pump-load/);
-  // The Data step opens with start and stop rows mapped.
-  await expect(page.getByRole("combobox", { name: "Start of the row" })).toContainText("start_h");
-  await expect(page.getByRole("combobox", { name: "End of the row" })).toContainText("stop_h");
-  await page.getByRole("button", { name: "Next" }).click();
+  // The reading has the start and stop rows; a life model reads one life per item,
+  // a regression on Z fits the covariates over time.
+  const summary = page.locator('[data-wt="reading-summary"]');
+  await expect(summary).toContainText("range = start_h to stop_h");
+  await expect(summary).toContainText("a life model reads one life per item");
+  await page.getByRole("radio", { name: /Regression on Z/ }).click();
   await expect(page.getByText(/Covariates change over time/)).toBeVisible();
   await page.getByRole("button", { name: "Fit Weibull PH" }).click();
   await expect(page.getByText(/Weibull PH, covariates changing over time/)).toBeVisible({ timeout: 30_000 });
@@ -57,15 +60,26 @@ test("fit a new model from a saved dataset picked in the list", async ({ page, p
     await expect(page.getByRole("tab", { name: "Saved data" })).toHaveAttribute("aria-selected", "true");
     await page.getByRole("searchbox", { name: "Search datasets" }).fill("smoke saved");
     await page.getByRole("radio", { name: /Smoke saved lives/ }).click();
-    await expect(page.locator(".dsp-reads")).toContainText("0 = failed, 1 = still running");
+    await expect(page.locator('[data-wt="reading-summary"]')).toContainText("c = censored");
     await expect(page.getByText(/3\s+failures, 2 still running/)).toBeVisible();
     // A repairable sample is listed, greyed, with what to fit it with instead.
     await page.getByRole("searchbox", { name: "Search datasets" }).fill("compressor fleet");
     await expect(page.getByRole("radio", { name: /Compressor fleet/ })).toBeDisabled();
     await expect(page.getByText("Repeated failures of the same units: fit a repairable model instead.")).toBeVisible();
+    await page.getByRole("searchbox", { name: "Search datasets" }).fill("smoke saved");
     await page.getByRole("button", { name: "Next" }).click();
-    await expect(page.getByText(/Smoke saved lives · 5 rows/)).toBeVisible();
-    await page.getByRole("button", { name: "Next" }).click();
+    // Saved without a reading (as before readings): guessed, checked once with "Looks right".
+    const summary = page.locator('[data-wt="reading-summary"]');
+    await expect(summary).toContainText("guessed — check it");
+    await expect(page.getByRole("button", { name: "Fit Weibull" })).toBeDisabled();
+    await summary.getByRole("button", { name: "Looks right" }).click();
+    await expect(summary).not.toContainText("guessed");
+    const kept = await (await page.request.get(`/api/datasets/${made.id}`)).json();
+    expect(kept.reading_source).toBe("saved");
+    // Change opens the upload's selectors, kept for the dataset.
+    await summary.getByRole("button", { name: "Change" }).click();
+    await expect(page.locator(".reading-change")).toBeVisible();
+    await page.locator(".reading-change").getByRole("button", { name: "Cancel" }).click();
     await page.getByRole("button", { name: "Fit Weibull" }).click();
     await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
     await expectHealthy(page, problems, { label: "fit from a saved dataset", chart: true });
@@ -78,7 +92,7 @@ test("fit a new model from a saved dataset picked in the list", async ({ page, p
 // same prior path, the prior's curve under the fit, and saved as a Bayesian model keeping its prior.
 test("fit a new model with a prior and save it with its prior", async ({ page, problems }) => {
   await open(page, "/models/new?dataset=sample-ds-bearings");
-  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.locator('[data-wt="reading-summary"]')).toBeVisible();
   await page.getByRole("radio", { name: "With a prior" }).click();
   await page.getByLabel("Prior", { exact: true }).selectOption("params");
   await expect(page.getByRole("button", { name: "Fit with the prior" })).toBeDisabled();
@@ -112,14 +126,15 @@ test("repairable, accelerated, degradation and condition-and-life flows share th
   await page.getByRole("searchbox", { name: "Search datasets" }).fill("compressor fleet");
   await page.getByRole("radio", { name: /Compressor fleet/ }).click();
   await page.getByRole("button", { name: "Use this dataset" }).click();
-  await expect(page.getByText(/Compressor fleet — repair history \(sample\) · 30 rows/)).toBeVisible();
+  // No column step: the dataset's reading in one line, then the model.
+  await expect(page.locator('[data-wt="reading-summary"]')).toBeVisible();
+  await expect(page.getByText(/Choose how repairs work/)).toBeVisible();
 
   await open(page, "/models/alt/new");
   await page.getByRole("radio", { name: /Insulating fluid/ }).click();
   await page.getByRole("button", { name: "Use this dataset" }).click();
-  // The Data step: the life selectors; the stresses are the Model step's.
-  await expect(page.getByRole("combobox", { name: "x", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Next" }).click();
+  // No column step: the dataset's reading in one line; the stresses are the Model step's.
+  await expect(page.locator('[data-wt="reading-summary"]')).toBeVisible();
   await expect(page.getByText("Life-stress relationship", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Stress 1 column" })).toBeVisible();
   // The upload tab still takes a file.
@@ -131,9 +146,8 @@ test("repairable, accelerated, degradation and condition-and-life flows share th
   await page.getByRole("button", { name: "New model" }).first().click();
   await page.getByRole("radio", { name: /Brake pad wear/ }).click();
   await page.getByRole("button", { name: "Use this dataset" }).click();
-  // The Data step maps i, x and m; the threshold is the Model step's.
-  await expect(page.getByRole("combobox", { name: "m", exact: true })).toContainText("wear_mm");
-  await page.getByRole("button", { name: "Next" }).click();
+  // No column step: i, x and m from the dataset's reading; the threshold is the Model step's.
+  await expect(page.locator('[data-wt="reading-summary"]')).toContainText("wear_mm");
   await expect(page.getByRole("spinbutton", { name: "Failure threshold" })).toBeVisible();
   await page.keyboard.press("Escape");
 
@@ -222,22 +236,29 @@ async function uploadAndFit(page) {
   await page.locator('input[type="file"]').setInputFiles({
     name: "raw.csv", mimeType: "text/csv", buffer: Buffer.from(HEADERLESS),
   });
-  await expect(page.getByText("Your first row looks like data, so we've treated it as data.")).toBeVisible();
-  await expect(page.getByText(/raw\.csv · 8 rows/)).toBeVisible();
+  // A new file is saved as a dataset first, through New dataset's reading screen.
+  const dialog = page.getByRole("dialog", { name: "Save the data as a dataset" });
+  await expect(dialog.getByText("Your first row looks like data, so we've treated it as data.")).toBeVisible();
   // One selector per input, labelled x, c, n…: col 1 is read as x.
-  await expect(page.getByRole("combobox", { name: "x", exact: true })).toContainText("col 1");
+  await expect(dialog.getByRole("combobox", { name: "x", exact: true })).toContainText("col 1");
 
   // The column of decimals is offered as n (a count) only with the reason, and can't be picked.
-  await page.getByRole("combobox", { name: "n", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "n", exact: true }).click();
   const count = page.getByRole("option", { name: /^col 2/ });
   await expect(count).toBeDisabled();
   await expect(count).toContainText("has decimals");
-  await page.keyboard.press("Escape");
+  // Close the list by clicking the dialog's own text (Escape would close the dialog too).
+  await dialog.getByText("How the columns are read for modelling").click();
+  await expect(count).toBeHidden();
 
-  // No unit can be guessed from "col 1": the unit box is empty, but Next is never blocked.
-  await expect(page.getByRole("combobox", { name: "Unit of the values" })).toHaveValue("");
-  await expect(page.getByRole("button", { name: "Next" })).toBeEnabled();
-  await page.getByRole("button", { name: "Next" }).click();
+  // c is required: a status column, or "every row failed" said on purpose.
+  await expect(dialog.getByRole("button", { name: "Create dataset" })).toBeDisabled();
+  await expect(dialog.getByText(/beside c/)).toBeVisible();
+  await dialog.getByLabel("No status column: every row failed").check();
+  // No unit can be guessed from "col 1": the unit box is empty, but nothing is blocked.
+  await expect(dialog.getByRole("combobox", { name: "Unit of the values" })).toHaveValue("");
+  await dialog.getByRole("button", { name: "Create dataset" }).click();
+  await expect(page.locator('[data-wt="reading-summary"]')).toContainText("c = every row failed");
   await page.getByRole("button", { name: "Fit Weibull" }).click();
   await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("This fit isn't saved yet.")).toBeVisible();
@@ -253,11 +274,11 @@ async function expectSavedWithData(page) {
   expect(dataset.columns.map((c) => c.name)).toEqual(["col 1", "col 2"]);
 }
 
-test("a headerless CSV is detected, fitted and saved with its data in one click", async ({ page, problems }) => {
+test("a headerless CSV is detected, saved as a dataset with its reading, fitted and saved", async ({ page, problems }) => {
   await uploadAndFit(page);
   await expectHealthy(page, problems, { label: "fitted headerless CSV", chart: true });
-  await page.getByRole("button", { name: "Save this model and its data" }).click();
-  await page.getByRole("dialog", { name: "Name this model" }).getByRole("button", { name: "Save model and data" }).click();
+  await page.getByRole("button", { name: "Save this model", exact: true }).click();
+  await page.getByRole("dialog", { name: "Name this model" }).getByRole("button", { name: "Save model", exact: true }).click();
   await expectSavedWithData(page);
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });
@@ -266,7 +287,7 @@ test("a fit left unsaved is offered for saving on the next visit to Models", asy
   await uploadAndFit(page);
   await open(page, "/models");
   await expect(page.getByText("You left a fit without saving it")).toBeVisible();
-  await page.getByRole("button", { name: "Save it and its data" }).click();
+  await page.getByRole("button", { name: "Save it", exact: true }).click();
   await expectSavedWithData(page);
   // Saved: no reminder now.
   await open(page, "/models");
