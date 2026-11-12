@@ -433,6 +433,11 @@ def summary(model_type: str, doc) -> dict:
             return out
         params = {str(p.get("name")): p for p in r.get("params") or []}
         label = DIST_LABELS.get(dist) or r.get("distribution") or dist or "Model"
+        spec = getattr(doc, "spec", None) or {}
+        if assumed and spec.get("params_only") and not spec.get("per_demand") and dist in DIST_LABELS:
+            # Typed in: its numbers, so the row can offer Edit parameters… (no unlink and enter again).
+            out["entered"] = {"distribution": dist, "unit": spec.get("unit") or unit,
+                              "params": {k: _num(v.get("value")) for k, v in params.items()}}
         if kind == "regression":
             # A covariate (e.g. proportional-hazards) model as fitted: its covariates, and the figures at the
             # training data's averages; the stress at a position is set where it's used (an RBD block, a calculation).
@@ -1692,13 +1697,47 @@ def built_rbd_link(links: list) -> dict | None:
 
 #: Keys of a position's diagram a mission's copy of it leaves behind (its missions and links).
 _NOT_COPIED = ("phases", "missions", "mission_name", "mission_of")
+#: What a repairable diagram has that a mission (non-repairable, phased) doesn't use: the diagram's
+#: crews, groups and costs, and each block's repair, planned work and costs.
+_REPAIR_DIAGRAM_KEYS = ("repairable", "repair_crews", "maintenance_groups", "costs")
+_REPAIR_BLOCK_KEYS = ("repair", "instant_repair", "preventive", "inspection", "duty", "crew_priority",
+                      "maintenance_group", "tree_settings", "tree_plan", "costs", "spares")
+
+
+def _mission_source_rbd(m, fetch, position_id: str):
+    """The position's own RBD a mission starts from: the one in use, else the one built there, else
+    the first linked; never a network (a mission isn't flown on one). None where it has none."""
+    links = [x for x in m.position_models(position_id) if x.get("model_type") == "rbd"]
+    built = built_rbd_link(links)
+    links.sort(key=lambda x: (not x.get("in_use"), x is not built))
+    for x in links:
+        doc = fetch("rbd", x["model_id"])
+        if doc is not None and not (doc.graph or {}).get("network"):
+            return doc
+    return None
+
+
+def _mission_copy(graph: dict) -> tuple[dict, bool]:
+    """A copy of a position's diagram for a mission, wired as it is (redundancy stays redundancy):
+    its missions left behind and, from a repairable diagram, its repairs and planned work (a phased
+    mission is non-repairable). (graph, was repairable)."""
+    repairable = bool((graph or {}).get("repairable"))
+    drop = _NOT_COPIED + (_REPAIR_DIAGRAM_KEYS if repairable else ())
+    out = {k: v for k, v in (graph or {}).items() if k not in drop}
+    if repairable:
+        out["nodes"] = [{**n, "data": {k: v for k, v in (n.get("data") or {}).items() if k not in _REPAIR_BLOCK_KEYS}}
+                        if isinstance(n, dict) else n for n in out.get("nodes") or []]
+    return out, repairable
 
 
 def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None) -> dict:
-    """A new mission on a position, with an RBD of its own (one RBD per mission): built from what's
-    inside the position as Build from what's inside builds (placeholders flagged, never a made-up
-    figure); a position with nothing inside starts from a copy of its own non-repairable RBD, else
-    is one block, its own model in use (``built_from``: tree, copy or model).
+    """A new mission on a position, with an RBD of its own (one RBD per mission). It starts from a
+    copy of the position's own RBD where it has one (wired as drawn there: parallel trains, standby
+    and k-of-n stay as they are; a repairable one loses only its repairs and planned work), else is
+    built from what's inside the position as Build from what's inside builds (placeholders flagged,
+    never a made-up figure; blocks with no connections or redundancy groups go in series, and the
+    mission then says so until its RBD is rewired), else is one block, its own model in use
+    (``built_from``: copy, tree or model).
     Saved once as "<position> — <mission>", marked ``mission_of`` the position (not linked as one
     of its models). {rbd: {id, name}, mission: summary, notes, placeholders}."""
     from backend.services import rbd_missions
@@ -1724,24 +1763,24 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
         name = f"Mission {k}"
     kids = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
     notes, placeholders, source = [], [], "tree"
-    if kids:
+    owner = {"position_id": position_id}
+    src = _mission_source_rbd(m, fetcher(db, owners, hidden), position_id)
+    if src is not None:
+        graph, was_repairable = _mission_copy(src.graph or {})
+        notes = [f"Started from a copy of {src.name}, wired as it is there"
+                 + (" (its repairs and planned work aren't part of a mission)." if was_repairable else ".")]
+        source = "copy"
+    elif kids:
         graph, built, _, _, _ = _tree_graph(m, db, owners, hidden, position_id)
         notes, placeholders = built["notes"], built["placeholders"]
+        if rbd_missions.all_in_series(graph):
+            # The tree doesn't say which positions are redundant: said on the mission until it's rewired.
+            owner["built_in_series"] = True
     else:
-        fetch = fetcher(db, owners, hidden)
-        own = [fetch("rbd", x["model_id"]) for x in m.position_models(position_id) if x.get("model_type") == "rbd"]
-        own = [d for d in own if d is not None and not (d.graph or {}).get("repairable")
-               and not (d.graph or {}).get("network")]
-        if own:
-            src = own[0]
-            graph = {k: v for k, v in (src.graph or {}).items() if k not in _NOT_COPIED}
-            notes = [f"Started from a copy of {src.name}: {p['name']} has no positions inside."]
-            source = "copy"
-        else:
-            source = "model"
-            graph, note = _one_block_graph(m, db, owners, hidden, p)
-            notes = [note] if note else []
-    graph = {**graph, "mission_of": {"position_id": position_id}, "mission_name": name}
+        source = "model"
+        graph, note = _one_block_graph(m, db, owners, hidden, p)
+        notes = [note] if note else []
+    graph = {**graph, "mission_of": owner, "mission_name": name}
     try:
         graph = normalize_graph(graph, resolve_saved_model=lambda mid: fetcher(db, owners, hidden)("model", mid))
         rbd = rbds_service.save_rbd(db, f"{p['name']} — {name}"[:200], graph, owner_id)
@@ -1750,7 +1789,8 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     mission = rbd_missions.find(rbd.graph or graph, rbd_missions.LEGACY_ID)
     return {"rbd": {"id": rbd.id, "name": rbd.name, "updated_at": rbd.updated_at.isoformat() if rbd.updated_at else None},
             "mission": rbd_missions.summary(rbd.graph or graph, mission), "position_id": position_id,
-            "notes": notes[:20], "placeholders": placeholders, "built_from": source}
+            "notes": notes[:20], "placeholders": placeholders, "built_from": source,
+            "series_warning": rbd_missions.series_warning(rbd.graph or graph)}
 
 
 def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:

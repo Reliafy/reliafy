@@ -14,8 +14,26 @@ test("the task replaces whatever was drawn; the diagram keeps only its own setti
   assert.deepEqual(out.preventive, { policy: "age", interval: 4383, duration: 8, cost: 1200, opportunity: 2000 });
   assert.equal(out.duty, 0.5);
   assert.equal(out.crew_priority, 2);
-  assert.equal(out.tree_settings, undefined);
+  assert.deepEqual(out.tree_settings, { opportunity: 2000, threshold: 0.1 });
   assert.deepEqual(out.tree_plan, { position_id: "p1", task_id: "t1" });
+});
+
+// The browser sends the merged diagram and the server merges it again (rbd_tree_plan.merge): the
+// diagram's own settings must survive that second pass, for every kind of task.
+test("merging twice gives the same data: each setting kind survives the round trip", () => {
+  const kinds = [
+    [AGE, { opportunity: 2000 }],
+    [{ ...AGE, task: "condition", interval: 730.5, duration: null, cost: null, inspection_cost: 90 },
+      { threshold: 0.05, cost: 4500, duration: 8 }],
+    [{ ...AGE, task: "test", interval: 8766, duration: 2, cost: 300 }, { offset: 100, coverage: 0.9, full_test: 4 }],
+  ];
+  for (const [plan, settings] of kinds) {
+    const once = mergeTreeData({ label: "X", tree_settings: settings }, row(plan));
+    const twice = mergeTreeData(once, row(plan));
+    assert.deepEqual(twice, once);
+    const where = plan.task === "test" ? twice.inspection : twice.preventive;
+    for (const [k, v] of Object.entries(settings)) assert.equal(where[k], v, `${plan.task}: ${k}`);
+  }
 });
 
 test("no tasks on the position: it runs to failure", () => {

@@ -444,6 +444,15 @@ export function createModelFromParams(name, distribution, params, { unit, extras
   );
 }
 
+// Change a model saved from parameters in place (same id): a typed-in figure put right.
+export function updateModelParams(id, { distribution, params, unit } = {}) {
+  return request(`/api/models/${encodeURIComponent(id)}/params`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ distribution, params, unit: unit || null }),
+  });
+}
+
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, covariateUnits, formula, unit, fitOptions } = {}) {
@@ -1137,6 +1146,16 @@ export function analyzeSavedRbd(id, tMax) {
 // Check whether an (unsaved) graph is a valid, analytically solvable RBD.
 // Returns { valid, analytic, can_calculate, errors, warnings,
 // non_analytic_nodes }.
+// A graph with its sub-system blocks expanded into their own blocks, wired as inside them (what a
+// repairable diagram needs). Nothing is saved: {graph, expanded, notes}.
+export function expandRbdSubsystems(graph) {
+  return request("/api/rbds/expand-subsystems", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph }),
+  });
+}
+
 export function validateRbd(graph) {
   return request("/api/rbds/validate", {
     method: "POST",

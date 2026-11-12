@@ -889,6 +889,33 @@ def update_model_fit(
     return JSONResponse(content=_model_detail(model, ctx))
 
 
+@router.put("/models/{model_id}/params")
+def update_model_params(
+    model_id: str,
+    distribution: str = Body(...),
+    params: list = Body(default=[]),
+    unit: str | None = Body(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Change a model saved from parameters in place (same id): a typed-in figure put right."""
+    existing, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if existing is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    denial = access_service.write_denial(ctx, existing.owner_id)
+    if denial:
+        status, payload = denial
+        return JSONResponse(status_code=status, content=payload)
+    try:
+        model = models_service.update_params(session, model_id, existing.owner_id, distribution, params, unit)
+        access_service.stamp_editor(session, "models", model.id, ctx)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    return JSONResponse(content=_model_detail(model, ctx))
+
+
 @router.patch("/models/{model_id}")
 def rename_model(
     model_id: str,

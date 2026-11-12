@@ -1353,6 +1353,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       // The fit pane with this row's model as the prior: a Bayesian row takes its new failures (its own prior kept).
       openFit(withClass, { ...priorFrom(link), from: link.id });
     }
+    else if (id === "model-params-edit") setModelModal({ kind: "params", position, link });
     else if (id === "model-replace") setModelModal({ kind: "assign", position, link });
     else if (id === "model-unlink") unlinkModel(confirm, link, (text) => { say(text); setPanel(false); setRcmFocus(null); pmodels.load(); });
   };
@@ -1447,8 +1448,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       const made = await createPositionMission(positionId);
       const ph = made.placeholders?.length ? ` ${made.placeholders.length} block${made.placeholders.length === 1 ? " is a placeholder" : "s are placeholders"}: give ${made.placeholders.length === 1 ? "it a model" : "them models"} in its RBD.` : "";
       const from = made.built_from === "model" ? `one block, ${positionName}'s own model in use`
-        : made.built_from === "copy" ? `a copy of ${positionName}'s RBD` : `what's inside ${positionName}`;
-      say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph} Now give it its phases.`);
+        : made.built_from === "copy" ? `a copy of ${positionName}'s RBD, wired as it is there` : `what's inside ${positionName}`;
+      const series = made.series_warning ? " Its blocks are in series: check the wiring in its RBD." : "";
+      say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph}${series} Now give it its phases.`);
       pmissions.load();
       pending.current = missionKey(made.rbd.id, made.mission.id);
       openMission(positionId, made.rbd.id, made.mission.id);
@@ -2640,7 +2642,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                             onClose={() => setModelModal(null)} />
       )}
       {modelModal?.kind === "params" && (
-        <ParamsModal position={modelModal.position} onClose={() => setModelModal(null)}
+        <ParamsModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
                      onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
       {modelModal?.kind === "rbd-link" && (

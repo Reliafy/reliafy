@@ -176,12 +176,20 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                        onChange={(e) => { setName(e.target.value); setDirty(true); onDirty?.(true); }} />
               </label>
               <p className="rim-tquiet mission-on">
-                Flown on <b>{detail.rbd.name}</b>{onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}{u ? `, in ${u}` : ""}: {rows.length} phase{rows.length === 1 ? "" : "s"},{" "}
+                Runs on <b>{detail.rbd.name}</b>{onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}{u ? `, in ${u}` : ""}: {rows.length} phase{rows.length === 1 ? "" : "s"},{" "}
                 {lengthText(total, unit)} in all. The blocks age through the whole mission, except while they stand by: wear in one phase stays for the next.{" "}
                 <ShowMe help={{ guide: "missions-and-phases" }}>Show me how</ShowMe>
               </p>
             </div>
 
+            {(detail.series_warning || result?.series_warning) && (
+              <section className="mission-ph mission-series" role="note" aria-label="Blocks placed in series">
+                <p>
+                  <b>Check the wiring:</b> {result?.series_warning || detail.series_warning}{" "}
+                  {onOpenRbd && <button type="button" className="secondary sm" onClick={onOpenRbd}>Open the RBD</button>}
+                </p>
+              </section>
+            )}
             <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} stale={calc.stale}
                            total={total} unit={unit} />
             {!calc.stale && !calc.error && (
@@ -285,7 +293,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                 );
               })}
             </ol>
-            {rows.length === 0 && <p className="rim-tquiet">No phases yet. Add the first: take-off, a transit, a survey…</p>}
+            {rows.length === 0 && <p className="rim-tquiet">No phases yet. Add the first: a start-up, steady running, a peak…</p>}
 
             {tried && errors.length > 0 && (
               <ul className="rbd-costs-errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
@@ -340,10 +348,11 @@ function MissionAnswer({ result, busy, error, stale, total, unit }) {
                      ph ? (ph.without != null ? { label: `Without ${ph.n === 1 ? "it" : "them"}`, value: pct(ph.without), hint: "the blocks with models" } : null)
                        : { label: "Fails", value: pct(result.unreliability) },
                      { label: "Mission length", value: lengthText(total, unit) },
+                     result.interval ? { label: `Range (${fmt(result.interval.confidence * 100)}%)`, value: `${pct(result.interval.lower)}–${pct(result.interval.upper)}`, hint: "the simulation's precision" } : null,
                      risky && (result.phases || []).length > 1 ? { label: "Riskiest phase", value: risky.name } : null,
                    ]}>
       {waiting && result.needs?.length ? result.needs.map((n) => `${n.phase}: ${n.lines.join("; ")}`).join(" · ") : null}
-      {!waiting ? `${result.method === "exact" ? "Worked out exactly." : "Simulated: the mission is too large to work out exactly."} ${(result.notes || []).join(" ")}` : null}
+      {!waiting ? `${result.method === "exact" ? "Worked out exactly." : "Simulated: the mission is too large to work out exactly."} ${result.bound_note ? `${result.bound_note} ` : ""}${(result.notes || []).filter((n) => n !== result.series_warning).join(" ")}` : null}
     </ResultSummary>
   );
 }

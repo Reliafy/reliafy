@@ -194,7 +194,9 @@ def test_each_mission_builds_an_rbd_of_its_own_and_isn_t_a_model_of_the_position
     assert one["rbd"]["id"] != two["rbd"]["id"]
     assert one["mission"]["id"] == rm.LEGACY_ID and one["mission"]["phases"] == 0
     doc = db.rbds.find_one({"_id": one["rbd"]["id"]})
-    assert doc["graph"]["mission_of"] == {"position_id": plant} and doc["graph"]["mission_name"] == "Duty run"
+    # Nothing inside is connected, so the pumps went in series: the mission says so until it's rewired.
+    assert doc["graph"]["mission_of"] == {"position_id": plant, "built_in_series": True}
+    assert doc["graph"]["mission_name"] == "Duty run" and "placed in series" in one["series_warning"]
     labels = sorted(n["data"]["label"] for n in doc["graph"]["nodes"] if n["type"] == "component")
     assert labels == ["Pump A", "Pump B"]
     # Not linked as a model: no event written, and the position's models are as they were.
@@ -234,6 +236,86 @@ def test_a_position_with_nothing_inside_starts_from_a_copy_of_its_rbd(m, db):
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     assert "missions" not in graph and graph["mission_of"]["position_id"] == pump
     assert made["notes"][0].startswith("Started from a copy of Lone pump RBD")
+
+
+def _parallel_station_rbd(m, db, plant, repairable=False):
+    """The station's own RBD, rewired by hand: the two pumps in parallel (duty and standby)."""
+    link = pm.build_rbd(m, db, OWNERS, set(), plant)
+    doc = db.rbds.find_one({"_id": link["model_id"]})
+    g = doc["graph"]
+    blocks = [n["id"] for n in g["nodes"] if n["type"] == "component"]
+    ins = next(n["id"] for n in g["nodes"] if n["type"] == "input")
+    outs = next(n["id"] for n in g["nodes"] if n["type"] == "output")
+    g["edges"] = [{"id": f"e{i}{j}", "source": s, "target": t}
+                  for i, b in enumerate(blocks) for j, (s, t) in enumerate([(ins, b), (b, outs)])]
+    if repairable:
+        g["repairable"] = True
+        g["costs"] = {"downtime_cost": 800}
+        for n in g["nodes"]:
+            if n["type"] == "component":
+                n["data"]["repair"] = _exp(0.1)
+                n["data"]["duty"] = 0.5
+                n["data"]["tree_settings"] = {"threshold": 0.05}
+    db.rbds.update_one({"_id": link["model_id"]}, {"$set": {"graph": g}})
+    return link["model_id"]
+
+
+@pytest.mark.parametrize("repairable", [False, True])
+def test_a_mission_starts_from_the_positions_own_rbd_wired_as_it_is(m, db, repairable):
+    """Redundancy stays redundancy: a mission on a station whose RBD has its pumps in parallel is
+    flown on that wiring, never rebuilt from the tree in series (which understated the station)."""
+    plant = _station(m, db)
+    _parallel_station_rbd(m, db, plant, repairable)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Summer")
+    assert made["built_from"] == "copy" and made["series_warning"] is None
+    assert made["notes"][0].startswith("Started from a copy of Pump station (from the tree), wired as it is")
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    assert graph["mission_of"] == {"position_id": plant} and not graph.get("repairable") and "costs" not in graph
+    for n in graph["nodes"]:
+        assert not {"repair", "duty", "tree_settings"} & set(n.get("data") or {})
+    g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Run", "duration": 500}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert "series_warning" not in got
+    # The same two pumps in series (what the tree's build gives) complete with r²; in parallel,
+    # as drawn on the station, 1 − (1 − r)²: the higher figure is the one flown.
+    other = _station(m, db)
+    tree = pm.build_mission_rbd(m, db, OWNERS, set(), other, ORG, "Summer")
+    tg, _ = rm.save(db.rbds.find_one({"_id": tree["rbd"]["id"]})["graph"], rm.LEGACY_ID,
+                    phases=[{"name": "Run", "duration": 500}])
+    r = math.sqrt(rm.analyze(db, OWNERS, tg, tg["phases"])["reliability"])
+    assert got["reliability"] == pytest.approx(1 - (1 - r) ** 2, rel=1e-6)
+    assert got["reliability"] > r * r
+
+
+def test_a_mission_built_from_the_tree_in_series_says_so_until_it_is_rewired(m, db):
+    plant = _station(m, db)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Summer")
+    assert made["built_from"] == "tree" and "placed in series" in made["series_warning"]
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    g, mission = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Run", "duration": 500}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert got["series_warning"] == made["series_warning"] and got["notes"][0] == made["series_warning"]
+    assert rm.detail(db, OWNERS, g, mission)["series_warning"] == made["series_warning"]
+    # Survives a save of the diagram (normalize_graph carries it).
+    resolve = pm.fetcher(db, OWNERS, set())
+    kept = normalize_graph(g, resolve_saved_model=lambda mid: resolve("model", mid))
+    assert kept["mission_of"]["built_in_series"] is True
+    # Rewired in parallel: nothing more to say.
+    blocks = [n["id"] for n in g["nodes"] if n["type"] == "component"]
+    ins = next(n["id"] for n in g["nodes"] if n["type"] == "input")
+    outs = next(n["id"] for n in g["nodes"] if n["type"] == "output")
+    rewired = {**g, "edges": [{"source": s, "target": t} for b in blocks for s, t in ((ins, b), (b, outs))]}
+    assert rm.series_warning(rewired) is None
+    assert "series_warning" not in rm.analyze(db, OWNERS, rewired, g["phases"])
+
+
+def test_a_mission_result_says_why_it_has_no_bound(m, db):
+    g, _ = rm.save({**_parallel(), "mission_of": {"position_id": "p"}, "mission_name": "M"}, rm.LEGACY_ID,
+                   phases=[{"name": "Run", "duration": 10}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert got["method"] == "exact" and "interval" not in got
+    assert got["bound_note"].startswith("No bound:")
+    assert rbd_phases.agent_summary(got)["bound_note"] == got["bound_note"]
 
 
 def test_a_leaf_with_a_model_in_use_flies_a_one_block_mission(m, db):

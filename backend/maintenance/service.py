@@ -4822,6 +4822,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 return self.rcm_mode(mode_id)
             said = str(cleaned.get("task") or "").strip()
             outcome = cleaned.get("outcome")
+            if not task_id and task is None and outcome in SCHEDULED_OUTCOMES and said:
+                # A task of that name added on the position (on its Maintenance tab, serving no failure
+                # mode yet) is the decision's, its cost, LSA and package with it: never a second copy
+                # with no cost. One another mode's decision made stays that mode's own.
+                key = " ".join(said.split()).casefold()
+                same = [t for t in self._tasks_on(position["id"])
+                        if " ".join(str(t.get("name") or "").split()).casefold() == key
+                        and not self.s.out(self.org, t["id"], "MITIGATES")]
+                if len(same) == 1:
+                    task_id = same[0]["id"]
             if task_id:
                 # An existing task is the decision's: its name and interval stand in
                 # for any the decision doesn't give.

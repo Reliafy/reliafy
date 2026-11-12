@@ -117,12 +117,42 @@ def carry(graph: dict, out: dict) -> None:
 
 
 def mission_of(graph: dict) -> Optional[dict]:
-    """The position a mission's own RBD belongs to ({position_id}), or None for any other diagram."""
+    """The position a mission's own RBD belongs to ({position_id}, and built_in_series true when its
+    blocks were put in series from the tree, which doesn't say what's redundant), or None for any
+    other diagram."""
     raw = (graph or {}).get("mission_of")
     if not isinstance(raw, dict):
         return None
     pid = str(raw.get("position_id") or "").strip()
-    return {"position_id": pid[:80]} if pid else None
+    if not pid:
+        return None
+    return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {})}
+
+
+def all_in_series(graph: dict) -> bool:
+    """Two or more blocks, each the only one after the one before: one chain from In to Out."""
+    nodes = [n for n in (graph or {}).get("nodes") or [] if isinstance(n, dict)]
+    io = {n.get("id") for n in nodes if n.get("type") in ("input", "output")}
+    blocks = [n for n in nodes if n.get("id") not in io]
+    if len(blocks) < 2 or any(n.get("type") == "knode" for n in blocks):
+        return False
+    outs: dict = {}
+    ins: dict = {}
+    for e in (graph or {}).get("edges") or []:
+        outs[e.get("source")] = outs.get(e.get("source"), 0) + 1
+        ins[e.get("target")] = ins.get(e.get("target"), 0) + 1
+    return all(outs.get(n.get("id"), 0) <= 1 and ins.get(n.get("id"), 0) <= 1 for n in nodes)
+
+
+def series_warning(graph: dict) -> Optional[str]:
+    """What a mission's RBD built from the tree with every block in series has to say until it's
+    rewired: the tree doesn't say which positions are redundant, so the figure may be too low."""
+    owner = mission_of(graph)
+    if not owner or not owner.get("built_in_series") or not all_in_series(graph):
+        return None
+    return ("Its blocks were placed in series when the mission was added: the tree doesn't say which positions "
+            "are redundant (duty and standby sets, parallel trains). This figure counts every block as needed. "
+            "If any are redundant, wire them so in the mission's RBD (open it) and calculate again.")
 
 
 def missions_of(graph: dict) -> list[dict]:
@@ -547,10 +577,15 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
         out["reliability"] = out["unreliability"] = out["riskiest"] = None
         out["without_placeholders"] = None
         out.pop("interval", None)
+        out.pop("bound_note", None)
         out["phases"] += [_waiting(p, s) for p, s in zip(clean[gap:], starts[gap:])]
         out["needs"] = needs
     else:
         out["through"] = None
+    warn = series_warning(graph)
+    if warn:
+        out["series_warning"] = warn
+        out["notes"] = [warn, *(out.get("notes") or [])]
     return out
 
 
@@ -585,7 +620,8 @@ def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callab
         phases.append({"name": p["name"], "covariates": rows,
                        "needs": sorted({b for r in rows for b in r["missing"]})})
     return {"mission": mission, "unit": (graph or {}).get("unit") or "", "blocks": blocks, "votes": votes,
-            "covariates": got["rows"], "problems": got["problems"], "phases": phases}
+            "covariates": got["rows"], "problems": got["problems"], "phases": phases,
+            "series_warning": series_warning(graph or {})}
 
 
 

@@ -188,6 +188,35 @@ def import_model(
     return model
 
 
+def update_params(db, model_id: str, owner_id: str, distribution: str, params: list, unit: str | None = None) -> Model:
+    """Change a parameters-only model's numbers in place (same id: everything using it sees them):
+    a figure typed in wrong (an MTBF typed as a rate) is put right without unlinking and entering it
+    again. Only for a distribution saved from parameters alone; its notes and references stay.
+    Raises ModelNotFound, or FitError for one fitted to data or bad parameters."""
+    model = get_model(db, model_id, owner_id)
+    if model is None or model.owner_id != owner_id:
+        raise ModelNotFound(model_id)
+    spec = dict(model.spec or {})
+    if not spec.get("params_only") or model.kind != "distribution" or spec.get("per_demand"):
+        raise fitting.FitError("Only a model saved from parameters can have its parameters changed: refit one "
+                               "fitted to data.")
+    distribution_id = fitting.resolve_distribution_id(distribution)
+    extras = {k: v for k, v in ((model.results or {}).get("extras") or {}).items() if k in ("gamma", "p", "f0")}
+    result = fitting.result_from_params(distribution_id, params, extras or None, unit)
+    before = model.results
+    spec.update(distribution_id=distribution_id, unit=canonical_unit(unit), options=result.get("options") or None)
+    now = datetime.now(timezone.utc)
+    db.models.update_one({"_id": model_id, "owner_id": owner_id}, {"$set": {
+        "results": result, "distribution_id": distribution_id, "spec": spec, "updated_at": now,
+        "surpyval_version": getattr(surpyval, "__version__", None)}})
+    _LIVE.pop(model_id, None)
+    from backend.services import workspace_changes
+
+    workspace_changes.record_refit(db, model_id, owner_id, before, result)
+    model.results, model.spec, model.distribution_id, model.updated_at = result, spec, distribution_id, now
+    return model
+
+
 def create_per_demand(db, uid: str, name: str, demands=None, failures=None, confidence: float = 0.95,
                       batches=None, source_dataset_id: str | None = None) -> Model:
     """Create a per-demand (Binomial) model from a demands/failures count, or
