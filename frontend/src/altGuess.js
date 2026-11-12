@@ -128,3 +128,50 @@ export function suggestLifeModel(source) {
   if (pool.some(named(OTHER_STRESS))) return "inverse_power";
   return "";
 }
+
+// The accelerated-life Data step: the life selectors (ColumnMapper) the ALT
+// fit takes: x with its range, c (0/1 codes: the fit reads no words and no
+// flip), n, tl and tr. Covariates have no place here: the stresses are the
+// model's own inputs, on the Model step.
+export const ALT_ROWS = ["x", "c", "n", "tl", "tr"];
+
+// The mapping sent, in order, with its unset columns left out.
+export function altMapping(map) {
+  return Object.fromEntries(["x", "xl", "xr", "c", "n", "tl", "tr"].filter((k) => map?.[k]).map((k) => [k, map[k]]));
+}
+
+// The form fields an ALT fit is sent as (api.js altForm): [[field, value]].
+export function altFields(mapping, stress = []) {
+  const out = [];
+  ["x", "xl", "xr", "c", "n", "tl", "tr"].forEach((k) => { if (mapping?.[k]) out.push([k, mapping[k]]); });
+  stress.slice(0, 2).forEach((s, j) => {
+    if (!s) return;
+    out.push([`s${j + 1}`, s.col]);
+    if (s.label) out.push([`s${j + 1}_label`, s.label]);
+  });
+  stress.slice(0, 2).forEach((s, j) => { if (s?.unit?.trim()) out.push([`s${j + 1}_unit`, s.unit.trim()]); });
+  return out;
+}
+
+// What stops the ALT fit, beside its selector: the Data step's ([{ row, text }])
+// and the Model step's stress inputs ([{ stress: j, text }]).
+export function altDataIssues(map) {
+  const out = [];
+  const range = !!(map.xl || map.xr);
+  if (range && !(map.xl && map.xr)) out.push({ row: "x", text: "Pick both xl and xr for the range, or neither." });
+  if (!map.x && !range) out.push({ row: "x", text: "Pick x: the column with the value when each unit failed or was removed." });
+  return out;
+}
+export function altStressIssues(stress, nStress, lifeModel, map) {
+  const used = new Set(Object.values(altMapping(map)));
+  const out = [];
+  stress.slice(0, nStress).forEach((s, j) => {
+    if (!s.col) out.push({ stress: j, text: `Pick the column for stress ${j + 1}.` });
+    else if (used.has(s.col)) out.push({ stress: j, text: `“${s.col}” is mapped on the Data step: pick another column.` });
+    else if (stress.slice(0, j).some((o) => o.col === s.col)) out.push({ stress: j, text: "Pick a different column for each stress." });
+    if (j === 0 && isThermal(lifeModel) && !["°C", "K", "°F"].includes(String(s.unit || "").trim())) {
+      out.push({ stress: 0, text: "Pick the temperature's unit (°C, K or °F): this model needs absolute temperature, so °C and °F are converted to kelvin before the fit." });
+    }
+  });
+  return out;
+}

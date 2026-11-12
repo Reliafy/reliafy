@@ -271,3 +271,37 @@ export function paramGroups(params) {
 export function usedOnPositions(links, modelId) {
   return !!modelId && (links || []).some((l) => l?.model_type === "model" && l?.model_id === modelId);
 }
+
+// The condition-and-life Data step: the shared selectors (ColumnMapper) for
+// each of its two tables. Lifetimes: i (the item id, sent as ``id``), x and
+// its range, c (0/1 codes, flipped with c_invert) and tl; readings: i, x
+// (when the reading was taken, sent as ``age``) and m (the measured value,
+// sent as ``value``): measurements, not covariates.
+export const JOINT_LIFE_ROWS = ["i", "x", "c", "tl"];
+export const JOINT_LIFE_KEYS = { i: "id" };
+export const JOINT_READ_ROWS = ["i", "x", "m"];
+export const JOINT_READ_KEYS = { i: "id", x: "age", m: "value" };
+
+// The lifetimes mapping sent: x, or the range (xl, xr) when x is blank, never
+// both (the fit reads one or the other); unset columns left out.
+export function jointLifeMapping(map) {
+  const m = map.x ? { id: map.id, x: map.x, c: map.c, tl: map.tl }
+    : { id: map.id, xl: map.xl, xr: map.xr, c: map.c, tl: map.tl };
+  return Object.fromEntries(Object.entries(m).filter(([, v]) => v));
+}
+
+// What stops a condition-and-life fit, beside its selector: [{ table, row, text }].
+export function jointIssues(map, rmap) {
+  const out = [];
+  const add = (table, row, text) => out.push({ table, row, text });
+  const range = !!(map.xl || map.xr);
+  if (!map.id) add("life", "i", "Pick i: the column saying which item each row is.");
+  if (map.x && range) add("life", "x", "Condition and life takes x or a range (xl to xr), not both: clear one.");
+  else if (range && !(map.xl && map.xr)) add("life", "x", "Pick both xl and xr for the range, or neither.");
+  else if (!map.x && !range) add("life", "x", "Pick x: the column with the value when each item failed or was last seen.");
+  if (!map.c) add("life", "c", "Pick c: the column saying whether each item failed or is still running.");
+  if (!rmap.id) add("reads", "i", "Pick i: the column saying which item each reading belongs to.");
+  if (!rmap.age) add("reads", "x", "Pick x: the column saying when each reading was taken.");
+  if (!rmap.value) add("reads", "m", "Pick m: the column with the measured value.");
+  return out;
+}

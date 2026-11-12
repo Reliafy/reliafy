@@ -2,6 +2,8 @@
 import { loadAuth } from "./firebase.js";
 import { trackEvent } from "./telemetry.js";
 import { mappingFields } from "./lifeData.js";
+import { altFields } from "./altGuess.js";
+import { recurrentFields } from "./recurrentMapping.js";
 
 // SSE streaming (the metered assistant) is served straight from Cloud Run to
 // bypass Firebase Hosting's CDN, which buffers Server-Sent Events. Cross-origin
@@ -1334,14 +1336,10 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name, options, w
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  form.append("i", mapping.i);
-  form.append("x", mapping.x);
-  // Optional modifiers, matching the life-data column surface.
-  // ``mode`` is each failure's mode (or cause): a growth projection (#232)
-  // and the MCF by cause (#65); ``ws``/``we`` observation-window columns.
-  ["c", "n", "tl", "tr", "t", "mode", "ws", "we"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
-  // #65: covariate columns, a model's options, windows entered by hand.
-  (mapping.z || []).forEach((col) => form.append("z", col));
+  // i, x and the optional modifiers (``mode``: each failure's mode or cause,
+  // #232 / #65; ``ws``/``we``: observation windows), then the covariates (#65):
+  // recurrentMapping.js. Then a model's options and windows entered by hand.
+  for (const [k, v] of recurrentFields(mapping)) form.append(k, v);
   if (options?.baseline) form.append("baseline", options.baseline);
   if (options?.m != null && options.m !== "") form.append("m", String(options.m));
   if (windows && String(windows).trim()) form.append("windows", windows);
@@ -1446,14 +1444,9 @@ function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, un
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  // The failure time x, or inspection data's interval xl / xr (#237).
-  ["x", "xl", "xr", "c", "n", "tl", "tr"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
-  // stress = [{col,label}, …]; s1 required, s2 optional.
-  if (stress[0]) { form.append("s1", stress[0].col); if (stress[0].label) form.append("s1_label", stress[0].label); }
-  if (stress[1]) { form.append("s2", stress[1].col); if (stress[1].label) form.append("s2_label", stress[1].label); }
-  // Optional stress units, e.g. "K" or "kV" (#265).
-  if (stress[0]?.unit?.trim()) form.append("s1_unit", stress[0].unit.trim());
-  if (stress[1]?.unit?.trim()) form.append("s2_unit", stress[1].unit.trim());
+  // The value x and/or its range xl / xr (#237), c, n, tl, tr; the stresses
+  // s1 (required) and s2, with optional labels and units (#265): altGuess.js.
+  for (const [k, v] of altFields(mapping, stress)) form.append(k, v);
   if (distribution) form.append("distribution", distribution);
   if (lifeModel) form.append("life_model", lifeModel);
   if (unit) form.append("unit", unit);

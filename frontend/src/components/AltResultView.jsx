@@ -27,7 +27,8 @@ import "./alt/AltFrame.css";
 // ``onUseStress``: told the use stress (in the model's units) once the user
 // enters one, so the page's "Plan the next test" carries it.
 export default function AltResultView({ results, modelId = null, name = null, datasetId = null,
-                                        tab: wanted = undefined, onTab = null, onUseStress = null }) {
+                                        tab: wanted = undefined, onTab = null, onUseStress = null,
+                                        initialUse = null }) {
   const r = results || {};
   const tabs = altTabs(r, { saved: !!modelId });
   const [own, setOwn] = useState(() => resolveAltTab(tabs, wanted));
@@ -35,7 +36,9 @@ export default function AltResultView({ results, modelId = null, name = null, da
   const setTab = (id) => { setOwn(id); onTab?.(id); };
 
   // The use stress (as typed), and whether it is still the default.
-  const [use, setUseRaw] = useState(() => defaultUse(r).map(String));
+  // ``initialUse``: the use stress typed on the wizard's Model step, as entered.
+  const startUse = () => (initialUse ? initialUse.map(String) : defaultUse(r).map(String));
+  const [use, setUseRaw] = useState(startUse);
   const [edited, setEdited] = useState(false);
   const setUse = (next) => { setUseRaw(next); setEdited(true); onUseStress?.(useForModel(r, next)); };
   const [calc, setCalc] = useState(() => initAltCalc(r));
@@ -43,7 +46,7 @@ export default function AltResultView({ results, modelId = null, name = null, da
   if (r !== prev) {
     // Another fit in place (the wizard): start again from its defaults.
     setPrev(r);
-    setUseRaw(defaultUse(r).map(String));
+    setUseRaw(startUse());
     setEdited(false);
     setCalc(initAltCalc(r));
   }

@@ -101,11 +101,13 @@ def test_alt_interval_without_flags_and_blank_upper_bounds():
     assert [p["value"] for p in flagged["params"]] == pytest.approx([p["value"] for p in with_flags["params"]])
 
 
-def test_alt_mapping_takes_x_or_both_interval_columns():
+def test_alt_mapping_takes_both_interval_columns():
+    # x with the range is read per row (test_alt_exact_and_ranges.py); a lone xl is refused.
     df = _inspected(_alt_df())
-    for mapping in ({"xl": "lo"}, {"x": "lo", "xl": "lo", "xr": "hi"}):
-        with pytest.raises(FitError, match="not both"):
-            alt.fit(df, mapping, ["tempK"], "weibull", "arrhenius")
+    with pytest.raises(FitError, match="not both"):
+        alt.fit(df, {"xl": "lo"}, ["tempK"], "weibull", "arrhenius")
+    with pytest.raises(FitError, match="Every row has x"):
+        alt.fit(df, {"x": "lo", "xl": "lo", "xr": "hi"}, ["tempK"], "weibull", "arrhenius")
 
 
 def test_alt_truncation_matches_surpyval():

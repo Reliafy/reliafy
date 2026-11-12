@@ -117,7 +117,11 @@ test("repairable, accelerated, degradation and condition-and-life flows share th
   await open(page, "/models/alt/new");
   await page.getByRole("radio", { name: /Insulating fluid/ }).click();
   await page.getByRole("button", { name: "Use this dataset" }).click();
-  await expect(page.getByText("Life-stress relationship")).toBeVisible();
+  // The Data step: the life selectors; the stresses are the Model step's.
+  await expect(page.getByRole("combobox", { name: "x", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByText("Life-stress relationship", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Stress 1 column" })).toBeVisible();
   // The upload tab still takes a file.
   await open(page, "/models/alt/new");
   await page.getByRole("tab", { name: "Upload a file" }).click();
@@ -127,7 +131,10 @@ test("repairable, accelerated, degradation and condition-and-life flows share th
   await page.getByRole("button", { name: "New model" }).first().click();
   await page.getByRole("radio", { name: /Brake pad wear/ }).click();
   await page.getByRole("button", { name: "Use this dataset" }).click();
-  await expect(page.getByText("Failure threshold *")).toBeVisible();
+  // The Data step maps i, x and m; the threshold is the Model step's.
+  await expect(page.getByRole("combobox", { name: "m", exact: true })).toContainText("wear_mm");
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("spinbutton", { name: "Failure threshold" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await open(page, "/models/joint/new");

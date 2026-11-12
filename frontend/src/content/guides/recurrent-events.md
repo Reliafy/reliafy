@@ -32,28 +32,35 @@ CMP-1,2050,5000
 CMP-2,1400,5000
 ```
 
-The key columns are **System or unit** (this is what groups events into
-per-machine histories) and **Time of each failure** (measured from that
-system's start, not a calendar date).
+The Data step uses the same selectors as a non-repairable fit, labelled with
+SurPyval's names, plus **i** first. The key columns are **i** (*which item each
+row belongs to*: this is what groups events into per-machine histories) and
+**x** (*the value at each failure, counted from new*: hours, cycles or
+kilometres from that system's start, not a calendar date). **c** (a failure, 0,
+or the end of the record, 1), **n** (how many failures the row stands for) and
+**tl** (start of record) are there if your data has them. There is no range
+(xl to xr): a repairable fit takes each failure's own value.
 
-You should also give each system's **End of record** — how long you watched
+You should also give each system's **tr** (*end of record: observed only up to
+this value*) — how long you watched
 it, whether or not it failed again. Without it the analysis
 can't tell the difference between a machine that stopped failing and a machine
 you stopped watching, and it will quietly conclude your fleet is improving.
 The Data step guesses it from names like "observed to", "records end" or "end
-of record", and warns you while it's empty. Fitting again from a saved dataset
+of record", and says so beside **tr** while it's empty. Fitting again from a saved dataset
 starts from the columns and unit its last repairable model used.
 
 Three optional columns add more:
 
-- **Cause of each failure** (a failure mode such as seal or bearing): the MCF of
+- **failure mode** (*each failure's cause*, such as seal or bearing): the MCF of
   each cause, and a growth projection.
-- **Covariates** (site, duty, operating condition), constant for each system: what
+- Under **Covariates and gaps (optional)**:
+  - **Covariates** (site, duty, operating condition), constant for each system: what
   drives the repair rate.
-- **Observation windows**, when a system wasn't watched for a while (mothballed,
-  records lost): a window-start and window-end column, or type them in as
-  `system, start, end`, one a line. A failure has to fall inside one of its
-  system's windows.
+  - **Observation windows**, when a system wasn't watched for a while (mothballed,
+    records lost): a window-start and window-end column, or type them in as
+    `system, start, end`, one a line. A failure has to fall inside one of its
+    system's windows.
 
 ## Fitting
 
