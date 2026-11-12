@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  addCorrectiveAction, getFailureReport, listFailureReports, saveFailureReportInvestigation, setFailureReportStatus,
-  updateCorrectiveAction, verifyFailureReport,
+  addCorrectiveAction, getFailureReport, listFailureReports, listMaintenanceWorkOrders, raiseActionWorkOrder,
+  saveFailureReportInvestigation, setFailureReportStatus, updateCorrectiveAction, verifyFailureReport,
 } from "../api.js";
+import { workOrderPath } from "../maintenanceOrders.js";
 import {
   ACTION_STATUSES, MAX_WHYS, RESULTS, ROOT_CAUSES, STATUSES, canMoveTo, closeBlock, consequenceLabel, fmtWhen, historyRows,
-  isOpen, itemText, repeatSentence, resultLabel, rootCauseLabel, signOffText, stageOf, statusLabel,
+  isOpen, itemText, lifeDataText, repeatSentence, resultLabel, rootCauseLabel, signOffText, stageOf, statusLabel,
 } from "../failureReports.js";
 import { SHORT_TEXT, tooLong } from "../maintenanceText.js";
 import { useAuth } from "../AuthProvider.jsx";
@@ -147,16 +149,44 @@ function Investigation({ report, editable, onSave, busy }) {
   );
 }
 
-function Actions({ report, editable, today, onAdd, onUpdate, busy }) {
+// The work orders a corrective action can link: those on the report's position or its
+// item, open ones first, then the latest closed.
+function useReportWorkOrders(report, enabled) {
+  const [wos, setWos] = useState([]);
+  const ids = [report.position?.id, report.item?.id].filter(Boolean).join(",");
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let live = true;
+    const wanted = new Set(ids.split(","));
+    Promise.all([listMaintenanceWorkOrders({ status: "open" }), listMaintenanceWorkOrders({ status: "done", limit: 200 })])
+      .then(([o, d]) => {
+        if (!live) return;
+        const rows = [...(o.work_orders || []), ...(d.work_orders || [])].filter((w) => wanted.has(w.subject?.id));
+        setWos(rows);
+      })
+      .catch(() => live && setWos([]));
+    return () => { live = false; };
+  }, [ids, enabled]);
+  return wos;
+}
+
+function woText(w) {
+  return `#${w.number} ${w.title}${w.status === "closed" ? " (closed)" : w.status === "cancelled" ? " (cancelled)" : ""}`;
+}
+
+function Actions({ report, editable, today, onAdd, onUpdate, onRaise, busy }) {
   const [what, setWhat] = useState("");
   const [owner, setOwner] = useState("");
   const [due, setDue] = useState("");
   const [ref, setRef] = useState("");
+  const [woId, setWoId] = useState("");
   const actions = report.actions || [];
+  const wos = useReportWorkOrders(report, editable);
   const add = async () => {
-    const ok = await onAdd({ what: what.trim(), owner: owner.trim(), due: due || null, work_order_ref: ref.trim() });
+    const ok = await onAdd({ what: what.trim(), owner: owner.trim(), due: due || null, work_order_ref: ref.trim(),
+      work_order_id: woId || null });
     if (!ok) return; // the reason is said; what was typed stays to try again
-    setWhat(""); setOwner(""); setDue(""); setRef("");
+    setWhat(""); setOwner(""); setDue(""); setRef(""); setWoId("");
   };
   return (
     <>
@@ -174,7 +204,14 @@ function Actions({ report, editable, today, onAdd, onUpdate, busy }) {
                   <td className={a.due && a.status === "open" && a.due < today ? "maint-overdue" : "lib-date"}>
                     {a.due ? `${fmtDate(a.due)}${a.status === "open" && a.due < today ? " (overdue)" : ""}` : "—"}
                   </td>
-                  <td>{a.work_order_ref || <span className="lib-date">—</span>}</td>
+                  <td>
+                    {a.work_order ? <Link to={workOrderPath(a.work_order.id)}>{woText(a.work_order)}</Link>
+                      : a.work_order_ref || (editable && a.status === "open" ? (
+                        <button type="button" className="secondary sm" disabled={busy} onClick={() => onRaise(a.id)}
+                                title="A corrective work order on this position, linked to this action">Raise work order</button>
+                      ) : <span className="lib-date">—</span>)}
+                    {a.work_order && a.work_order_ref && <div className="lib-date">{a.work_order_ref}</div>}
+                  </td>
                   <td>
                     <span className={`td-pill act-${a.status}`}>{ACTION_STATUSES[a.status] || a.status}</span>
                     {a.status === "done" && a.done_on && <span className="lib-date"> {fmtDate(a.done_on)}</span>}
@@ -209,10 +246,16 @@ function Actions({ report, editable, today, onAdd, onUpdate, busy }) {
             <Field label="Due (optional)">
               <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
             </Field>
-            <Field label="Work order (optional)" text={ref} max={SHORT_TEXT}>
-              <input value={ref} placeholder="WO number or link" onChange={(e) => setRef(e.target.value)} />
+            <Field label="Work order (optional)">
+              <select value={woId} onChange={(e) => setWoId(e.target.value)}>
+                <option value="">None yet (raise one from the action once added)</option>
+                {wos.map((w) => <option key={w.id} value={w.id}>{woText(w)}</option>)}
+              </select>
             </Field>
           </div>
+          <Field label="Or a reference kept elsewhere (optional)" text={ref} max={SHORT_TEXT}>
+            <input value={ref} placeholder="A number or link in another system" onChange={(e) => setRef(e.target.value)} />
+          </Field>
           <div className="fr-form-foot">
             <button type="button" onClick={add} disabled={busy || !what.trim() || tooLong(what) || tooLong(owner) || tooLong(ref)}>
               {busy ? "Adding…" : "Add action"}
@@ -452,6 +495,7 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
           <div><dt>Failure mode</dt><dd>{report.failure_mode ? <>{report.failure_mode.text}{report.failure_mode.ad_hoc && <span className="lib-date"> (not in the RCM)</span>}</> : <span className="lib-date">Not known</span>}</dd></div>
           <div><dt>Consequence</dt><dd>{consequenceLabel(report.consequence)}</dd></div>
         </dl>
+        {lifeDataText(report.life_data, fmtDate) && <p className="lib-date">{lifeDataText(report.life_data, fmtDate)}</p>}
       </section>
 
       <Fold id="investigation" title="Investigation" summary={invSummary} open={!isFolded("investigation")} onToggle={toggle}>
@@ -461,7 +505,9 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
       <Fold id="actions" title="Corrective actions" summary={actSummary} open={!isFolded("actions")} onToggle={toggle}>
         <Actions report={report} editable={editable} today={today} busy={busy}
                  onAdd={(body) => run(() => addCorrectiveAction(report.id, body), "Action added.")}
-                 onUpdate={(aid, body, text) => run(() => updateCorrectiveAction(report.id, aid, body), text)} />
+                 onUpdate={(aid, body, text) => run(() => updateCorrectiveAction(report.id, aid, body), text)}
+                 onRaise={(aid) => run(() => raiseActionWorkOrder(report.id, aid),
+                   (view) => `Raised work order #${view.actions.find((x) => x.id === aid)?.work_order?.number ?? ""}, linked to this action.`)} />
       </Fold>
       <Fold id="verification" title="Verification" summary={verSummary} open={!isFolded("verification")} onToggle={toggle}>
         <Verification report={report} editable={editable} today={today} busy={busy}

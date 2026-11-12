@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  actionKinds, closeActionKind, defaultCloseKind, defaultFailed, itemAtText, replaceReason, replaceRecordText, subjectApiPath, subjectBadge, subjectPath, taskUnits, whileStoredText,
+  actionKinds, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, foundFailedText, itemAtText, newItemBody, replaceReason, replaceRecordText, subjectApiPath, subjectBadge, subjectPath, taskUnits, whileStoredText,
 } from "./maintenanceSubjects.js";
 
 test("each subject has its own page and API path", () => {
@@ -93,4 +93,29 @@ test("a breakdown's replacement starts as a failure; planned work as a planned r
   assert.equal(replaceReason({ failed: false }), "planned");
   assert.match(replaceRecordText({ failed: false }, { ...fitted, type: "preventive" }), /still running \(a suspension\)/);
   assert.match(replaceRecordText({ failed: true }, { type: "corrective" }), /Nothing is fitted here/);
+});
+
+test("a serial typed with no name still goes as the new item", () => {
+  assert.deepEqual(newItemBody({ kind: "replace", new_serial: "MS65-0031" }), { name: "", serial: "MS65-0031" });
+  assert.deepEqual(newItemBody({ kind: "replace", new_name: "Seal", new_serial: "" }), { name: "Seal", serial: "" });
+  assert.equal(newItemBody({ kind: "replace" }), null);
+  assert.equal(newItemBody({ kind: "repair", new_serial: "X" }), null);
+});
+
+test("an action inside the work order's position uses that position's fitted item and modes", () => {
+  const wo = {
+    position: { id: "pump", name: "P-202" }, fitted: { item: { name: "Pump" } }, failure_modes: [{ id: "a", text: "Bearing" }],
+    suggested_parts: [{ part: { id: "p1" } }],
+    inside_positions: [{ id: "seal", name: "Mechanical seal", label: "Mechanical seal", fitted: { item: { name: "Seal 17" } },
+      failure_modes: [{ id: "b", text: "Leak" }], class_failure_modes: ["Worn faces"], parts_list: [{ part: { id: "p2" } }] }],
+  };
+  const own = closeTarget(wo, "");
+  assert.equal(own.fitted.item.name, "Pump");
+  assert.equal(own.failure_modes[0].text, "Bearing");
+  const seal = closeTarget(wo, "seal");
+  assert.equal(seal.id, "seal");
+  assert.equal(seal.fitted.item.name, "Seal 17");
+  assert.deepEqual(seal.failure_modes.map((m) => m.text), ["Leak"]);
+  assert.equal(seal.suggested_parts[0].part.id, "p2");
+  assert.match(foundFailedText(seal), /Seal 17 at Mechanical seal as failed some time between its last good check/);
 });

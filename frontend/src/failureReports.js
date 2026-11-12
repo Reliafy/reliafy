@@ -289,3 +289,20 @@ export function fmtWhen(iso) {
   if (!iso) return "";
   return formatDateTime(new Date(iso)) || iso;
 }
+
+// Where a report opens from elsewhere (a work order that's its corrective action): its
+// position in the Explorer, on the Failure reports tab, opened on it.
+export function reportLink(r) {
+  const q = new URLSearchParams({ arrange: "positions", tab: "reports", sel: r.position_id || "", report: r.id });
+  return `/asset-register/explorer?${q}`;
+}
+
+// What a report does to the life data, in words ("" when the server doesn't say).
+export function lifeDataText(life, fmt = (d) => d) {
+  if (!life) return "";
+  if (!life.counts) return life.why ? `Not in the life data: ${life.why}.` : "";
+  const item = life.item?.name ? `${life.item.name}${life.item.serial ? ` (${life.item.serial})` : ""}` : "The item";
+  return `In the life data: ${item} counts as failed on ${fmt(life.on)}` +
+    (life.replaced ? ", the day this report gives (its replacement ends the same life: not a second failure)."
+      : ". If it's replaced later for this failure, that ends the same life: not a second failure.");
+}

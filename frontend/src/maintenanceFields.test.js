@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  costText, costValue, datedText, daysText, documentFileProblem, fileSizeText, moneyText, roughDateInput,
+  costText, costValue, datedText, daysText, daysTitle, documentFileProblem, fileSizeText, lifeOutcomeText, moneyText, roughDateInput,
   roughDateValue, safeHref,
 } from "./maintenanceFields.js";
 
@@ -67,4 +67,16 @@ test("file sizes read plainly", () => {
   assert.equal(fileSizeText(820 * 1024), "820 KB");
   assert.equal(fileSizeText(3.4 * 1048576), "3.4 MB");
   assert.equal(fileSizeText(undefined), "");
+});
+
+test("a life row says how its failure is known: a check that found it failed, or a report", () => {
+  const found = { status: "failed", x: 11, c: 2, xl: 0, xr: 22, found_failed: { on: "2026-11-12", last_good: "2026-10-21" } };
+  assert.equal(lifeOutcomeText(found), "found failed 2026-11-12: failed after the good check of 2026-10-21");
+  assert.equal(daysText(found), "0–22");
+  assert.match(daysTitle(found), /between the last good check and the finding/);
+  assert.equal(lifeOutcomeText({ status: "failed", found_failed: { on: "2026-11-12", last_good: null } }),
+    "found failed 2026-11-12: failed some time since it went in");
+  assert.equal(lifeOutcomeText({ status: "failed", failed_on: "2026-11-09", report: { label: "FR-16" } }), "failed 2026-11-09 (FR-16)");
+  assert.equal(lifeOutcomeText({ status: "still fitted" }), "still fitted");
+  assert.equal(daysTitle({ x: 4 }), undefined);
 });

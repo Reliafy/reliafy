@@ -386,7 +386,9 @@ Its checklist is one flat list: each task's line (lines[].index) then its steps 
 task line ticked is done; each line not ticked must be listed in not_done [{task_id, reason}] (it isn't renewed, \
 stays due and goes on the next work order). A line ticked that found a problem: an action with position_id \
 (one of line_positions on maintenance get.work_order) records the replacement or failure at that position, so \
-the life data stays right. The result's packages, lines_added and packages_skipped say what happened.
+the life data stays right. The result's packages, lines_added and packages_skipped say what happened. \
+work_orders.generate with package_id raises that package's next visit now and nothing else. A task overdue when it went \
+into a package stays overdue from its own due date until it's done (overdue_before_package).
 - A paused package's open work order shows paused and isn't late (list.packages counts it out); out of season \
 the same. A task on equipment out of service shows out_of_service and isn't overdue.
 - During a visit, save each line as it's done: work_orders.mark (work_order_id, task_id, state done, not_done \
@@ -402,7 +404,11 @@ suggested_parts; from_location_id issues it from stock there), cost (a contracto
 - close, with the actions in order: replace (it failed: name failure_mode_id, or failure_mode_text when none \
 fits; reason 'failure' when it failed and the mode isn't known; none named and no reason = a planned \
 replacement; new_item, item_id or part_id is what went in), repair, inspect (finding \
-ok, degraded or found_failed), other; plus readings taken (readings [{point_id, value}]: get.work_order's \
+ok, degraded or found_failed: found_failed records the fitted item as failed between its last good check and \
+now, interval censored in its life data), other. When the failed thing is inside the work order's position \
+(the seal in the pump), give the action position_id from get.work_order's inside_positions, for the finding and \
+the replacement alike. A failure report that isn't rejected already counts the item as failed on the day it \
+occurred; a replacement for the same failure ends the same life, never a second one. Plus readings taken (readings [{point_id, value}]: get.work_order's \
 reading_points lists what it asks for: its tasks' tools' points, a trigger's point, a counter, the settings \
 there). Example: the seasonal change-over work order records the new chlorinator output, {action: \
 'work_orders.close', work_order_id, actions: [{kind: 'other'}], readings: [{point_id: <CHL-SET>, value: 60}]}: \

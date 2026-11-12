@@ -523,6 +523,14 @@ def update_corrective_action(report_id: str, action_id: str, body: dict = Body(.
                 **{k: v for k, v in body.items() if k != "by"})
 
 
+@router.post("/failure-reports/{report_id}/actions/{action_id}/work-order")
+def raise_action_work_order(report_id: str, action_id: str, body: dict | None = Body(None),
+                            ctx: AccessCtx = Depends(get_access),
+                            m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Raise a corrective work order for one corrective action, linked to it; returns the report."""
+    return _run(m.raise_action_work_order, report_id, action_id, by=_who(ctx, body or {}))
+
+
 @router.put("/failure-reports/{report_id}/verification")
 def verify_failure_report(report_id: str, body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
                           m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
@@ -2609,7 +2617,9 @@ def remove_package_task(package_id: str, task_id: str, m: Maintenance = Depends(
 @router.post("/packages/{package_id}/{change}")
 def change_package(package_id: str, change: str, body: dict = Body(default={}),
                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """pause, resume, retire or restore."""
+    """pause, resume, retire, restore, or raise (its next visit's work order, now and on its own)."""
+    if change == "raise":
+        return _run(m.raise_package_visit, package_id)
     if change == "pause":
         return _run(m.pause_package, package_id, body.get("reason", ""), body.get("until"), body.get("full_visit"))
     if change == "retire":

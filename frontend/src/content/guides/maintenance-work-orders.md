@@ -36,7 +36,12 @@ the rest come last, under "Not in a package".
 
 **Create N work orders** raises what's missing in one click, and says what it
 will make: one work order for each package visit, and one for each task that
-isn't in a package.
+isn't in a package. To raise one package's visit and nothing else, use
+**Raise this visit** on that package's row (or on the package's own page).
+
+A task that was already overdue when it went into a package stays overdue,
+from its own due date, until it's done: the package's next visit doesn't make
+it on time. Its due date says "late before it was packaged".
 
 ## Open a work order
 
@@ -69,7 +74,15 @@ one failed, and it ends the old item's time at the position. On a corrective
 work it starts at **No, a planned replacement**. A line under the action says
 what closing will record: a failure (counted as failed in life fits) or a
 planned replacement (counted as still running). Add another
-action when you did more than one thing. Values filled in under **Readings and
+action when you did more than one thing.
+
+When what failed is inside the work order's position (the seal inside the pump
+whose check this is), pick it under **On** for each action: the finding, the
+failure mode and the replacement are then recorded on it, not on the pump.
+**Inspected it** with **Found failed** records the item as failed some time
+between its last good check and today, and life fits count it that way. A
+serial typed for the new item is kept even with no name: the item is named
+after the part or what it replaces. Values filled in under **Readings and
 settings** are recorded when you close it.
 
 ## Look back: closed work orders

@@ -666,3 +666,6 @@ tr.field-report-open {
 .field-report-actions .grow {
   flex: 1;
 }
+
+/* A package group's "Raise this visit" in Due soon: beside its name, wrapping on a phone. */
+.maint-group-btn { margin-left: 0.6rem; vertical-align: middle; }
