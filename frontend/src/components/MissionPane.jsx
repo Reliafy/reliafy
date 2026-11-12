@@ -333,6 +333,57 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   );
 }
 
+// A new mission's name, asked first in the table pane (Add a mission): nothing is saved, and no RBD
+// made, until it's named. Its RBD is then built and saved as "<position> — <name>", so the RBDs list
+// never fills with "Mission 1"s. `taken`: the position's mission names (a clash is said as typed).
+//   position {id, name}   onCreate(name) a promise (a refusal's message shows here)   onClose()
+export function NewMissionPane({ position, taken = [], phone = false, headingRef = null, onCreate, onClose }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const [tried, setTried] = useState(false);
+  const clean = name.trim().replace(/\s+/g, " ");
+  const clash = clean && taken.some((t) => String(t || "").trim().toLowerCase() === clean.toLowerCase());
+  const why = !clean ? "Give the mission a name." : clash ? `${position.name} already has a mission named “${clean}”.` : null;
+  const save = async (e) => {
+    e?.preventDefault();
+    setTried(true);
+    if (why || busy) return;
+    setBusy(true);
+    setFailed(null);
+    try {
+      await onCreate(clean);
+    } catch (err) {
+      setFailed(err.message);
+      setBusy(false);
+    }
+  };
+  return (
+    <TablePane title="New mission" subject={position.name} phone={phone} busy={busy} headingRef={headingRef} onClose={onClose}
+               className="mission-pane">
+      <form className="mission mission-new" onSubmit={save}>
+        <label className="mission-name">
+          <span>Mission name</span>
+          <input value={name} maxLength={80} autoFocus disabled={busy} placeholder="e.g. Summer peak, Survey run"
+                 aria-invalid={tried && why ? "true" : undefined} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <p className="rim-tquiet">
+          A mission is the system run through phases, each with its own length and the blocks it needs. Adding it builds
+          an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.{" "}
+          <ShowMe help={{ guide: "missions-and-phases" }}>Show me how</ShowMe>
+        </p>
+        {tried && why && <p className="field-error" role="alert">{why}</p>}
+        {failed && <p className="field-error" role="alert">{failed}</p>}
+        <div className="mission-foot">
+          <span className="mission-foot-gap" />
+          <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" disabled={busy} aria-busy={busy || undefined}>{busy ? "Adding…" : "Add the mission"}</button>
+        </div>
+      </form>
+    </TablePane>
+  );
+}
+
 // The answer first: the chance the mission completes, in words, then the numbers.
 function MissionAnswer({ result, busy, error, stale, total, unit }) {
   if (error) return <p className="field-error" role="alert">{error}</p>;

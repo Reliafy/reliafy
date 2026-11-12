@@ -156,7 +156,8 @@ def _write(session, ctx: AccessCtx, rbd_id: str, change, expected_updated_at: st
     except (rbd_missions.MissionError, GraphError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     try:
-        saved = rbds_service.save_rbd(session, rbd.name, graph, ctx.write_owner, rbd_id=rbd.id,
+        name = rbd_missions.rbd_name_after(rbd.name, rbd.graph or {}, graph)
+        saved = rbds_service.save_rbd(session, name, graph, ctx.write_owner, rbd_id=rbd.id,
                                       expected_updated_at=expected_updated_at)
     except access_service.EditConflict:
         return JSONResponse(status_code=409, content={"detail": access_service.CONFLICT_MSG, "code": "conflict"})

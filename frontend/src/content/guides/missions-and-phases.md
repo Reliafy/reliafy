@@ -38,7 +38,9 @@ above it: a gimbal's own missions are flown on the gimbal's own RBD.
 
 ## Add a mission
 
-On the position's **⋯** menu, choose **Add a mission**. A position with an RBD
+Click **Add a mission** in the position's row (or choose it on the position's **⋯** menu),
+type the mission's name in the pane and choose **Add the mission**. Nothing is
+saved until it's named. A position with an RBD
 of its own gives the mission a copy of it, wired as it is there: parallel
 trains, standby and k-out-of-n stay as they are (a repairable RBD's repairs and
 planned work are left out: a mission doesn't repair). Without one, Reliafy
@@ -49,10 +51,13 @@ never a made-up figure. Positions marked as backing each other up (the position'
 **Redundancy inside…**) are wired as redundancy. Where nothing says how the blocks are wired (no
 connections and no redundancy sets), they go in series, and the mission says so
 (**Check the wiring**) until you mark the sets or wire its RBD otherwise. It's saved once, named after the
-position and the mission ("Pump station — Mission 1"). A position with nothing
+position and the mission ("Pump station — Summer peak"), and renamed with the mission. A position with nothing
 inside and no RBD is a single block: the position's own model in use. A
-position with nothing inside and no model can't have a mission yet: give it a
-model on the **Modelling** tab first.
+position with nothing inside and no model can't have a mission yet: its row says
+why ("needs a life model or positions inside"). Give it a life model on the
+**Modelling** tab first; a condition-and-life model can't be a block, so its row says that instead.
+
+Click a mission's row to open it.
 
 The answer says why it has no bound: a mission is worked out from each block's
 model at its point values. A mission too large to work out exactly is
