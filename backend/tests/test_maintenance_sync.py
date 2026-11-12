@@ -214,11 +214,14 @@ def test_a_crash_after_the_log_took_the_close_is_a_duplicate_on_the_resend(m, mo
 def test_a_refused_close_writes_nothing_even_when_it_was_refused_late(m):
     pos, hours, wo = _job(m)
     d = Device()
-    m.record_reading(hours["id"], 2000)
+    # Both readings timed, the counter's 2000 before the device's 1500: undated, the
+    # 2000 is "today" and the close's reading the op's day, which in the first
+    # minutes after the workspace's midnight is yesterday (and so rightly earlier).
+    m.record_reading(hours["id"], 2000, at=_iso(-10))
     snapshot = m.s.snapshot()
     out = d.push(m, d.op("work_orders.close", {
         "work_order_id": wo["id"], "actions": [{"kind": "repair"}],
-        "readings": [{"point_id": hours["id"], "value": 1500}]}))      # lower than the counter's last
+        "readings": [{"point_id": hours["id"], "value": 1500, "at": _iso(-5)}]}))  # lower than the counter's last
     answer = out["ops"][0]
     assert answer["status"] == "needs_decision" and answer["reason"] == "refused" and "lower" in answer["message"]
     assert m.s.snapshot() == snapshot and out["work_orders"][wo["id"]]["status"] == "open"
@@ -258,7 +261,7 @@ def test_a_cancelled_job_a_different_fitment_and_a_changed_reading_each_say_so(m
     out = d.push(m, d.op("work_orders.close", {"work_order_id": wo["id"], "actions": [{"kind": "repair"}]},
                          {"work_order_status": ["open"], "fitment_id": saw}))
     assert out["ops"][0]["expectation"] == "fitment_id" and "Seal Mk2" in out["ops"][0]["message"]
-    m.record_reading(hours["id"], 50)
+    m.record_reading(hours["id"], 50, at=_iso(-10))   # timed, so it stays before the readings below at midnight
     out = d.push(m, d.op("measurements.record", {"point_id": hours["id"], "value": 60, "at": _iso(-1)},
                          {"last_reading": {"point_id": hours["id"], "value": None}}))
     assert out["ops"][0]["expectation"] == "last_reading" and "50 hours" in out["ops"][0]["message"]

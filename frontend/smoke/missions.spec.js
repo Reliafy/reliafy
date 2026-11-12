@@ -147,6 +147,13 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await expectHealthy(page, problems, { label: "missions on the Explorer" });
 });
 
+// Add a mission asks the mission's name first, in the table pane; nothing is saved until then.
+async function nameMission(page, name) {
+  const naming = page.getByRole("region", { name: "New mission" });
+  await expect(naming).toBeVisible();
+  await naming.getByLabel("Mission name").fill(name);
+}
+
 // One RBD per mission: Add a mission on a position with no RBD builds the mission an RBD of its own
 // from what's inside; the phase × block grid sets a pump on standby by day and the other by night;
 // the result says what standby means; the mission's RBD opens in the shared builder beside the tree.
@@ -163,12 +170,14 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   const stationRow = nameRow(page, `Pump station ${tag}`).first();
   await expect(stationRow).toContainText("Add a mission");
   await stationRow.locator(".tp-nm").click({ button: "right" });
-  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${station.id}/missions`) && r.request().method() === "POST");
   await page.getByRole("menuitem", { name: "Add a mission", exact: true }).click();
+  await nameMission(page, "Mission 1");  // named first, nothing saved until then (#833)
+  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${station.id}/missions`) && r.request().method() === "POST");
+  await page.getByRole("region", { name: "New mission" }).getByRole("button", { name: "Add the mission" }).click();
   expect((await made).status()).toBe(200);
   const pane = page.getByRole("region", { name: "Mission" });
   await expect(pane).toBeVisible();
-  await expect(pane).toContainText(`Flown on Pump station ${tag} — Mission 1`);
+  await expect(pane).toContainText(`Runs on Pump station ${tag} — Mission 1`);
   await expect(nameRow(page, "Mission 1")).toBeVisible();
   await shot(page, "mission-rbd-added-1440");
 
@@ -239,12 +248,14 @@ test("missions: a leaf with a model gets a one-block mission; the RBD list label
 
   // The leaf with a model: a mission of one block.
   await nameRow(page, `Arm ${tag}`).locator(".tp-nm").click({ button: "right" });
-  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${arm.id}/missions`) && r.request().method() === "POST");
   await page.getByRole("menuitem", { name: "Add a mission", exact: true }).click();
+  await nameMission(page, "Mission 1");  // named first (#833)
+  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${arm.id}/missions`) && r.request().method() === "POST");
+  await page.getByRole("region", { name: "New mission" }).getByRole("button", { name: "Add the mission" }).click();
   const body = await (await made).json();
   expect(body.built_from).toBe("model");
   const pane = page.getByRole("region", { name: "Mission" });
-  await expect(pane).toContainText(`Flown on Arm ${tag} — Mission 1`);
+  await expect(pane).toContainText(`Runs on Arm ${tag} — Mission 1`);
   await expect(pane.getByRole("region", { name: "Blocks in each phase" })).toBeVisible();
   await shot(page, "mission-leaf-one-block-1440");
   await page.setViewportSize({ width: 400, height: 860 });

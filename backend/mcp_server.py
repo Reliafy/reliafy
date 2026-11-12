@@ -3543,6 +3543,16 @@ class BlockCosts(BaseModel):
         "Purchase price, once. analyse rbd_cheapest_design copies the blocks that have one."))
 
 
+class PreventiveRestoration(BaseModel):
+    """What a fixed-interval task leaves the unit as (Kijima virtual age)."""
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["as_new", "kijima1", "kijima2"] = Field(description=(
+        "as_new = renewed; kijima1 = each task removes part of the age gained since the last one; kijima2 = "
+        "part of the whole age."))
+    q: Optional[float] = Field(None, ge=0, le=1, description=(
+        "kijima1/kijima2: the share of the age left after a task (0 = as new, 1 = as before)."))
+
+
 class Preventive(BaseModel):
     model_config = ConfigDict(extra="forbid")
     policy: Literal["age", "block", "condition"] = Field("age", description=(
@@ -3563,6 +3573,12 @@ class Preventive(BaseModel):
     opportunity: Optional[float] = Field(None, ge=0, description=(
         "age only, with maintenance_group: renewed early at a stop of its group once at least this old "
         "(0 to interval)."))
+    restoration: Optional[PreventiveRestoration] = Field(None, description=(
+        "age or block: what each task leaves the unit as when it isn't renewed; omit = as good as new."))
+    replace_every: Optional[int] = Field(None, ge=1, description=(
+        "With restoration: every this many tasks is a full replacement (as new) instead."))
+    replacement_cost: Optional[float] = Field(None, ge=0, description=(
+        "With replace_every: the cost of each full replacement; omit = 0."))
 
 
 class ProofTest(BaseModel):

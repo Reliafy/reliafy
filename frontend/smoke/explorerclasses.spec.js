@@ -257,7 +257,8 @@ test("a position's Condition monitoring: its risk in words and two charts, or wh
   const words = risk.locator(".joint-unit-sum");
   await expect(words).toContainText(`Position Feed pump A ${tag}, age 90 days, 3 readings.`);
   for (const horizon of ["30 days", "90 days", "365 days"]) await expect(words).toContainText(`chance of failing in the next ${horizon}`);
-  await expect(words).toContainText(/Median life left: (not reached|[\d.,]+ days)\./);
+  // The median now carries its one-sided 90% lower bound (#821).
+  await expect(words).toContainText(/Median life left: (not reached|[\d.,]+ days( \((at least [\d.,]+ days, 90%|no 90% bound here)\))?)\./);
   await expect(risk.getByRole("heading", { name: "Survival from now" })).toBeVisible();
   await expect(risk.getByRole("heading", { name: /^Its / })).toBeVisible();
   await expect(risk.locator(".js-plotly-plot .main-svg").nth(1)).toBeVisible({ timeout: 20_000 });

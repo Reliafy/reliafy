@@ -267,11 +267,15 @@ def test_the_range_comes_from_the_model_when_the_inputs_lack_it():
     x = sp.Weibull.random(200, 1000, 2.0) * np.exp(-0.02 * (load - 70))
     r = fitting.fit("weibull_ph", pd.DataFrame({"t": x, "load": load}), {"x": "t"}, ["load"])
     e = fitting._MODEL_STORE[r["functions"]["model_id"]]
-    assert "max" not in e["fields"][0]
-    assert rbd_tvc.fitted_range(e["model"], e["fields"][0]) == pytest.approx((load.min(), load.max()))
+    # Fields carry the data's range since #834; a model saved before then has
+    # none, so the range must still come from the model itself.
+    assert (e["fields"][0]["min"], e["fields"][0]["max"]) == pytest.approx((load.min(), load.max()))
+    old_field = {k: v for k, v in e["fields"][0].items() if k not in ("min", "max")}
+    assert rbd_tvc.fitted_range(e["model"], old_field) == pytest.approx((load.min(), load.max()))
     cox = fitting.fit("cox_ph", pd.DataFrame({"t": x, "load": load}), {"x": "t"}, ["load"])
     ce = fitting._MODEL_STORE[cox["functions"]["model_id"]]
-    assert rbd_tvc.fitted_range(ce["model"], ce["fields"][0]) == pytest.approx((load.min(), load.max()))
+    old_field = {k: v for k, v in ce["fields"][0].items() if k not in ("min", "max")}
+    assert rbd_tvc.fitted_range(ce["model"], old_field) == pytest.approx((load.min(), load.max()))
     node = rbd_tvc.build_node(ce, {"load": {"expression": "60 if t < 500 else 80"}}, None, "Cox")
     want = ce["model"].sf_tvc(np.array([800.0]), sp.StepSchedule.from_changepoints([0, 500], [[60.0], [80.0]]))
     assert node.sf(np.array([800.0])) == pytest.approx(want)
