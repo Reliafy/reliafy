@@ -73,7 +73,6 @@ from __future__ import annotations
 
 import math
 import time
-import warnings
 from typing import Any, Optional
 
 import numpy as np
@@ -83,6 +82,7 @@ from backend.services import repy_compat
 from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError
 from backend.units import unit_in_text
+from backend.warn_capture import ignore_warnings
 
 #: The default step: each lever moved 10% of its value (a 10% longer mean life).
 DEFAULT_STEP = 0.10
@@ -357,8 +357,7 @@ def _mean(spec, params) -> Optional[float]:
     """The mean of ``spec``'s model with its parameters at ``params`` (in
     the spec's order, any limited-failure or zero-inflated share included)."""
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
             m = float(spec.build(list(params)).mean())
     except Exception:  # noqa: BLE001
         return None
@@ -600,8 +599,7 @@ def _values(rbd, quantities, overrides: dict, window: Optional[float]) -> dict:
     (the unavailability worked out in its own right, so a small one keeps its
     precision), or over ``[0, window)`` from new."""
     out = {}
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         if "availability" in quantities:
             if window is None:
                 out["unavailability"] = float(rbd.mean_unavailability(**overrides))
@@ -783,8 +781,7 @@ def _deterministic(rbd, found, overrides, window, step, rank_by, quantities, rou
     rebuilt diagram (long run) or the derivative times the step."""
     base = _values(rbd, quantities, overrides, window)
     kw = {"window": window} if window is not None else {}
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         sens = rbd.parameter_sensitivity(overrides["working_nodes"], overrides["broken_nodes"],
                                          of=tuple(quantities), **kw)
     rows = []

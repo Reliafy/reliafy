@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { getModel, listModels } from "../api.js";
+import { getAltModel, getModel, listAltModels, listModels } from "../api.js";
 import { betaSource } from "../requirement.js";
 import "./Requirement.css";
 
 // "Use β from a saved model" in the demonstration test (#295): pick a saved
-// Weibull model, see its β and 90% interval, and plan with the estimate or
+// Weibull model (non-repairable, or an accelerated life fit, whose shape is
+// the same at every stress), see its β and 90% interval, and plan with the estimate or
 // the conservative lower bound. ``source`` is { name, estimate, lower,
 // upper, modelId? } or null; ``onSource(source, unit)`` sets it (null clears
 // it); ``bound`` is "estimate" | "lower".
@@ -19,6 +20,9 @@ export function fmtBeta(v) {
 }
 
 const isWeibull = (m) => m.kind === "distribution" && /^weibull$/i.test(String(m.distribution || "").trim());
+const isWeibullAlt = (m) => /^weibull$/i.test(String(m.distribution || "").trim());
+// An accelerated life model's id in the picker: "alt:<id>".
+const ALT = "alt:";
 
 export default function DemoShapeSource({ source, onSource, bound, onBound }) {
   const [picking, setPicking] = useState(false);
@@ -27,16 +31,21 @@ export default function DemoShapeSource({ source, onSource, bound, onBound }) {
 
   useEffect(() => {
     if (!picking || models) return;
-    listModels()
-      .then((d) => setModels((d.models || []).filter(isWeibull)))
+    Promise.all([listModels(), listAltModels().catch(() => ({ models: [] }))])
+      .then(([d, a]) => setModels([
+        ...(d.models || []).filter(isWeibull),
+        ...(a.models || []).filter(isWeibullAlt).map((m) => ({ ...m, id: `${ALT}${m.id}`, name: `${m.name} · accelerated life` })),
+      ]))
       .catch((err) => setError(err.message));
   }, [picking, models]);
 
   const pick = async (id) => {
     setError(null);
     try {
-      const full = await getModel(id);
-      const src = betaSource(full.results, full.name, id);
+      const alt = id.startsWith(ALT);
+      const realId = alt ? id.slice(ALT.length) : id;
+      const full = alt ? await getAltModel(realId) : await getModel(realId);
+      const src = betaSource(full.results, full.name, realId);
       if (!src) throw new Error("That model has no Weibull shape β.");
       onSource(src, full.results?.unit || "");
       setPicking(false);

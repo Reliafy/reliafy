@@ -57,7 +57,6 @@ diagram.
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Any, Callable, Optional
 
 import numpy as np
@@ -66,6 +65,7 @@ from backend import levels
 from backend.errors import client_message
 from backend.services import rbd_repeats
 from backend.services.rbd_analysis import AnalysisError
+from backend.warn_capture import ignore_warnings
 
 #: The most phases a mission may have.
 MAX_PHASES = 50
@@ -566,8 +566,7 @@ def analyze_phases(
     interval = None
     reason = None
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with ignore_warnings():
             reliability = float(mission.reliability())
             unreliability = float(mission.unreliability())
             failing = mission.phase_failure_probabilities()
@@ -576,8 +575,7 @@ def analyze_phases(
         reason = ("The mission is too large to work out exactly, so it was simulated "
                   f"({SIM_MISSIONS:,} missions).")
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with ignore_warnings():
                 ci = mission.reliability_interval(SIM_MISSIONS, seed=SIM_SEED, confidence=SIM_CONFIDENCE)
                 failing = mission.phase_failure_probabilities("simulate", mc_samples=SIM_MISSIONS, seed=SIM_SEED)
         except (NotImplementedError, AttributeError, TypeError) as exc:
@@ -702,8 +700,7 @@ def _add_placeholders(out: dict, graph: dict, resolve_subsystem, resolve_model, 
         try:
             mission, _, _, _ = build_mission(graph, resolve_subsystem, resolve_model, covariates, phases=phases,
                                              perfect=frozenset(counted), built=built)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with ignore_warnings():
                 r = float(mission.reliability())
             out["without_placeholders"] = {"reliability": r, "unreliability": 1.0 - r}
         except (AnalysisError, NotImplementedError, ValueError):
@@ -749,8 +746,7 @@ def _add_weakest(out: dict, graph: dict, resolve_subsystem, resolve_model, covar
         try:
             mission, _, _, _ = build_mission(graph, resolve_subsystem, resolve_model, covariates, phases=phases,
                                              perfect=frozenset({nid}), built=built)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with ignore_warnings():
                 failing = mission.phase_failure_probabilities()
         except (AnalysisError, NotImplementedError, ValueError):
             continue

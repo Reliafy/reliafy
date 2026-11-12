@@ -345,7 +345,8 @@ Fleets (Reliafy Pro).
 the ingest API. list kind fleets lists them (model_kind life, regression, alt or recurrent).
 - analyse fleet_forecast: expected failures over the horizon with a 90% range (P5–P95), per period and per item (the \
 top 20 unless include_items; item_probabilities adds each item's chance by period). Recurrent fleets count every \
-repeat failure.
+repeat failure: an item named as a system in the model's data uses its own history (rate_factor; imperfect repair \
+simulated from its state), and the range carries the fit's uncertainty; covariate recurrent models aren't taken.
 - Spares: fleet_forecast with spares = {lead_time (in the fleet's periods), service_level (default 0.95), review, \
 per_failure, stock, unit_cost} (or the fleet's saved spares settings) adds spares: hold (the stock for that chance \
 of no stock-out over the lead time plus review), reorder_at, risk_at_stock, hold_cost, the same per period, and \

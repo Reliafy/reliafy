@@ -104,6 +104,7 @@ export function InducedLifeCheck({ induced, unit, name }) {
                  <p className="muted-line">
                    Solid: {Number(data.n_samples || 0).toLocaleString("en-US")} paths drawn from the fitted population, each
                    run to the threshold. Dashed: the life model fitted to the items' own crossing times.
+                   {data.curve?.beyond > 0 && <> The chart stops at {formatNumber(data.curve.x[data.curve.x.length - 1])}{unit ? ` ${unitInText(unit)}` : ""}: {formatPercent(data.curve.beyond)} of the drawn paths cross later or never.</>}
                  </p>
                )}>
       {body}

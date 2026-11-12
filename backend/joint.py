@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import io
 import math
-import warnings
 from typing import Any, Optional
 
 import numpy as np
@@ -31,6 +30,7 @@ import pandas as pd
 
 from backend.fitting import FitError
 from backend.units import canonical_unit, normalize_unit, unit_in_text
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 #: The path models offered, by id: (SurPyval's class name, label, formula,
 #: a plain description). Linear first: the default.
@@ -359,8 +359,7 @@ def fit_model(items: list[dict], covariates: list[str], path_model: str = DEFAUL
         if hazard is not None:
             kwargs["hazard_covariates"] = hazard
             kwargs["path_covariates"] = path
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         try:
             with np.errstate(all="ignore"):
                 model = fitter(path_model).fit_from_df(df, **kwargs)
@@ -640,8 +639,7 @@ def risk_upper(pred, h: list[float], alpha: float = LIFE_ALPHA) -> Optional[list
     the parameters' uncertainty; the reading's own noise is in the estimate).
     None where the bounds can't be worked out (never a made-up number)."""
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             lower = np.ravel(np.asarray(pred.cb(pred.age + np.asarray(h, dtype=float), on="sf",
                                                 alpha_ci=float(alpha), bound="lower"), dtype=float))
     except (ValueError, TypeError, NotImplementedError, np.linalg.LinAlgError, ArithmeticError):

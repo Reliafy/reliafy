@@ -8,12 +8,12 @@ import Chip from "./ui/Chip.jsx";
 // optional (#65): the cause of each failure, covariates (site, duty, ...) and
 // observation gaps — window columns, or windows typed in.
 const FIELD_INFO = {
-  i: { label: "i", help: "System / unit id — groups events by machine", req: true },
-  x: { label: "x", help: "Event time (failure / repair)", req: true },
-  c: { label: "c", help: "Censor flag: 0 event, 1 right, -1 left" },
-  n: { label: "n", help: "Count of events per row" },
-  tl: { label: "tl", help: "Left truncation — observation start / left entry" },
-  tr: { label: "tr", help: "Right truncation — each system's observation window" },
+  i: { label: "System", code: "i", help: "System / unit id — groups events by machine", req: true },
+  x: { label: "Failure time", code: "x", help: "Event time (failure / repair)", req: true },
+  c: { label: "Censor flag", code: "c", help: "Censor flag: 0 event, 1 right, -1 left" },
+  n: { label: "Count", code: "n", help: "Count of events per row" },
+  tl: { label: "Start of record", code: "tl", help: "Left truncation — observation start / left entry" },
+  tr: { label: "End of record", code: "tr", help: "How far each system's records go (its observation end): without it each record is taken to end at its last failure" },
 };
 
 const COMMON_UNITS = [
@@ -22,8 +22,9 @@ const COMMON_UNITS = [
 ];
 
 const GROUPS = [
-  { title: "Event — system and time", fields: ["i", "x"], cols: 2 },
-  { title: "Modifiers (optional)", fields: ["c", "n", "tl", "tr"], cols: 4 },
+  { title: "Event — system (i) and failure time (x)", fields: ["i", "x"], cols: 2 },
+  { title: "Modifiers (optional) — censor flag (c), count (n), start of record (tl), end of record (tr)",
+    fields: ["c", "n", "tl", "tr"], cols: 4 },
 ];
 
 const NONE = { value: "", label: "— none —" };
@@ -57,10 +58,10 @@ export default function RecurrentColumnMapper({ columns, mapping, onChange, unit
                     className={"map-field" + (selected ? " selected" : "")}
                     key={field}
                     htmlFor={`recmap-${field}`}
-                    title={`${info.label}${info.req ? " (required)" : ""} — ${info.help}`}
+                    title={`${info.label} (${info.code})${info.req ? " (required)" : ""} — ${info.help}`}
                   >
                     <span className="map-badge">
-                      {info.label}
+                      {info.code}
                       {info.req && <i className="req">*</i>}
                     </span>
                     <Select

@@ -214,7 +214,7 @@ export function SimulationCheck({ kind, inputs }) {
         </div>
       )}
       {error && <div className="calc-warn">{error}</div>}
-      {out && <p className="tp-sim-out" role="status">{out.summary}</p>}
+      {out && <p className={`tp-sim-out${out.verdict === "weak" ? " calc-warn" : ""}`} role="status">{out.summary}</p>}
     </div>
   );
 }

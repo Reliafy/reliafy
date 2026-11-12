@@ -15,13 +15,13 @@ of the same units, which is exactly that.
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Optional
 
 import numpy as np
 
 from backend.services import rbd_analysis as ra
 from backend.services.rbd_analysis import AnalysisError
+from backend.warn_capture import ignore_warnings
 
 CHECK_SAMPLES = 20_000
 CHECK_SEED = 1
@@ -51,8 +51,7 @@ def check_mean(node: dict, resolve_model=None, unit: str = "",
     if resolve_model is None and node.get("type") == "loadshare":
         raise AnalysisError(f"“{label}”: its load-life model can't be read here.")
     model = _node_model(node, resolve_model)
-    with warnings.catch_warnings(), np.errstate(all="ignore"):
-        warnings.simplefilter("ignore")
+    with ignore_warnings(), np.errstate(all="ignore"):
         try:
             exact = float(model.mean(method="exact"))
         except NotImplementedError as exc:

@@ -132,11 +132,12 @@ def fit_preview(
                                c=c, n=n, xl=xl, xr=xr, tl=tl, tr=tr,
                                s1_label=s1_label, s2_label=s2_label,
                                s1_unit=s1_unit, s2_unit=s2_unit)
+        spec = alt_fit.with_kelvin(spec, df)
         payload, _ = alt_fit.fit(
             df, spec["mapping"], spec["stress_cols"],
             distribution_id=spec["distribution_id"], life_model_id=spec["life_model_id"],
             unit=spec["unit"], stress_labels=spec["stress_labels"],
-            stress_units=spec.get("stress_units"),
+            stress_units=spec.get("stress_units"), kelvin_from=spec.get("kelvin_from"),
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})

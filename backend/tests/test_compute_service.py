@@ -38,6 +38,7 @@ matplotlib.use("Agg")
 import pytest
 from fastapi.testclient import TestClient
 
+from backend import levels
 from backend.tests.test_availability_paid import (  # noqa: F401 - fixtures
     ADMIN, BUYER, FREE, PRO, USERS, client, _analyze, _save, _with_param,
 )
@@ -771,7 +772,7 @@ def test_free_user_runs_a_quick_simulation_in_process(client, monkeypatch):
     assert body["n_simulations"] == 100 and body["time_budget_s"] == 3.0
     assert body["has_simulation"] is True and body["simulation_status"] == {"state": "done"}
     assert body["exact"]["status"] == "ok"
-    assert body["precision"]["half_width"] > 0 and body["precision"]["confidence"] == 0.95
+    assert body["precision"]["half_width"] > 0 and body["precision"]["confidence"] == levels.LEVEL
     assert body["precision"]["mode"] == "quick"
     assert body["can_recompute"] is False and body["free_sims"]["remaining_today"] == 49
 

@@ -8,7 +8,7 @@
 // to, and every parameter).
 import { formatNumber } from "./format.js";
 import { unitInText } from "./components/unitText.js";
-import { stressName } from "./components/stressName.js";
+import { stressName, withUnit as nameWithUnit } from "./components/stressName.js";
 import { ciPct } from "./levels.js";
 
 export const ALT_TAB_LABELS = {
@@ -77,10 +77,63 @@ export function shapeWords(results) {
   return `${s.symbol} ${formatNumber(s.value)}${ci}`;
 }
 
+// ---- A temperature given in °C or °F ------------------------------------------
+// A thermal model's temperature typed in °C or °F is fitted in kelvin (the
+// stress's ``unit`` is "K"; ``entered_unit`` the one the user chose). The
+// page takes the use stress and shows the tested levels in the user's unit,
+// and asks the model in kelvin.
+
+export const enteredUnit = (s) => (s?.entered_unit === "°C" || s?.entered_unit === "°F" ? s.entered_unit : "");
+const tidy = (v) => Number(Number(v).toPrecision(12));
+export function fromKelvin(v, unit) {
+  const k = Number(v);
+  if (!Number.isFinite(k)) return k;
+  if (unit === "°C") return tidy(k - 273.15);
+  if (unit === "°F") return tidy((k - 273.15) * 9 / 5 + 32);
+  return k;
+}
+export function toKelvin(v, unit) {
+  const t = Number(v);
+  if (!Number.isFinite(t)) return t;
+  if (unit === "°C") return tidy(t + 273.15);
+  if (unit === "°F") return tidy((t - 32) * 5 / 9 + 273.15);
+  return t;
+}
+
+// A stress's name as the use-stress boxes take it: "Temperature (°C)" for a
+// temperature given in °C, else its own name ("Temperature (K)").
+export function inputStressName(s) {
+  const u = enteredUnit(s);
+  return u ? nameWithUnit(s?.label || s?.column || "Temperature", u) : stressName(s);
+}
+
+// The use stress as typed (the user's units) → the model's units (kelvin),
+// or null while any is blank or not a number.
+export function useForModel(results, values) {
+  const n = parseUse(values);
+  if (!n) return null;
+  const ss = results?.stresses || [];
+  return n.map((v, j) => toKelvin(v, enteredUnit(ss[j])));
+}
+
+// "40 °C is 313.15 K" for a converted use stress; null when nothing is converted.
+export function kelvinWords(results, values) {
+  const ss = results?.stresses || [];
+  const n = parseUse(values);
+  if (!n) return null;
+  const parts = n.map((v, j) => {
+    const u = enteredUnit(ss[j]);
+    return u ? `${formatNumber(v, { sig: 6 })} ${u} is ${formatNumber(toKelvin(v, u), { sig: 6 })} K` : null;
+  }).filter(Boolean);
+  return parts.length ? parts.join("; ") : null;
+}
+
 // A tested level's stresses in words: "30 kV", "60 °C, load 0.5".
 export function levelWords(stress, stresses) {
   return (stress || []).map((v, j) => {
     const s = (stresses || [])[j] || {};
+    const shown = enteredUnit(s);
+    if (shown) return `${formatNumber(fromKelvin(v, shown), { sig: 4 })} ${shown}`;
     const label = String(s.label || s.column || `stress ${j + 1}`);
     // The unit given, or the one the label names ("Temperature (°C)").
     const unit = String(s.unit || "").trim() || (/\(([^()]+)\)\s*$/.exec(label) || [])[1] || "";
@@ -133,12 +186,13 @@ export function parseUse(values) {
   return out.length && out.every(Number.isFinite) ? out : null;
 }
 
-// The default use stress: the mildest tested level of each stress (lowest).
+// The default use stress: the mildest tested level of each stress (lowest),
+// in the user's units (105 for a temperature given in °C).
 export function defaultUse(results) {
   const r = results || {};
-  return (r.stresses || []).map((_, j) => {
+  return (r.stresses || []).map((s, j) => {
     const vals = (r.levels || []).map((l) => l.stress?.[j]).filter((v) => Number.isFinite(v));
-    return vals.length ? Math.min(...vals) : 0;
+    return vals.length ? fromKelvin(Math.min(...vals), enteredUnit(s)) : 0;
   });
 }
 
