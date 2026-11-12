@@ -222,6 +222,14 @@ const NTH = [[1, "first"], [2, "second"], [3, "third"], [4, "fourth"], [-1, "las
 // Package selected… (and Add a package…, with no tasks): a new package on the
 // picked position or place, with the tasks ticked; its cadence starts from
 // their commonest interval.
+// Overdue tasks going into a package stay overdue until done: the package's first visit
+// doesn't make them on time.
+export function overdueNote(n) {
+  return `${n === 1 ? "1 of these is" : `${n} of these are`} overdue. ${n === 1 ? "It stays" : "They stay"} overdue, from ` +
+    `${n === 1 ? "its" : "their"} own due date, until done: the package's first visit doesn't reset that. ` +
+    "To do them sooner, raise the visit now from the package's page.";
+}
+
 export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) {
   const start = useMemo(() => cadenceFor(tasks), [tasks]);
   const trades = [...new Set(tasks.map((t) => t.trade).filter(Boolean))];
@@ -254,6 +262,11 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
           ? <>A package {where}, done on one visit: {tasks.map((t) => t.name).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
           : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
       </p>
+      {tasks.some((t) => t.overdue) && (
+        <p className="maint-overdue" role="status">
+          {overdueNote(tasks.filter((t) => t.overdue).length)}
+        </p>
+      )}
       <Field label="Name" text={name}><input autoFocus value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="e.g. Weekly inspection" /></Field>
       <Field label="Dates">
         <select value={timing} onChange={(e) => setTiming(e.target.value)}>
@@ -389,6 +402,7 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
     <FormModal title={`Add ${plural(tasks.length, "task")} to a package`} submitLabel="Add" pendingLabel="Adding…"
                canSubmit={!!pick && (rule === "every" || Number(nth) >= 2)} onClose={onClose} onSubmit={submit}>
       {error && <div className="card error">{error}</div>}
+      {tasks.some((t) => t.overdue) && <p className="maint-overdue" role="status">{overdueNote(tasks.filter((t) => t.overdue).length)}</p>}
       {!list && !error && <p className="lib-date">Loading…</p>}
       {list && list.length === 0 && <p className="lib-date">No packages on this part of the tree yet: use Package selected… to make one.</p>}
       {list && list.length > 0 && (

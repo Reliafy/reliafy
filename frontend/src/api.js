@@ -2495,6 +2495,11 @@ export function addCorrectiveAction(id, body) {
   return postJson(`/api/maintenance/failure-reports/${id}/actions`, body);
 }
 
+// A corrective work order for one corrective action, on the report's position, linked to it.
+export function raiseActionWorkOrder(id, aid) {
+  return postJson(`/api/maintenance/failure-reports/${id}/actions/${aid}/work-order`, {});
+}
+
 export function updateCorrectiveAction(id, aid, body) {
   return jsonMethod("PATCH", `/api/maintenance/failure-reports/${id}/actions/${aid}`, body);
 }
@@ -3468,6 +3473,11 @@ export function updatePackage(id, body) {
   });
 }
 // change: pause ({reason, until?, full_visit?}), resume, retire ({reason?}) or restore.
+// Raise one package's next visit now, on its own: {work_order, raised, lines_added, package}.
+export function raisePackageVisit(id) {
+  return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/raise`, {});
+}
+
 export function changePackage(id, change, body = {}) {
   return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/${change}`, body);
 }

@@ -506,14 +506,16 @@ WORK_ORDERS: Table = {
         failure if a failure mode is named, else planned) and fits the new one: that builds the life data. Get the failure-mode ids from maintenance get.work_order
          first; if none fits, use failure_mode_text, never a failure as planned. An item's work
         order acts at the position it's fitted to now; a location's (a round) takes repair, inspect and other
-        only. A work package's: not_done for lines not ticked; an action's position_id picks a line's position.
+        only. A work package's: not_done for lines not ticked. An action's position_id: a line's position, or a
+        position inside the work order's (get.work_order inside_positions: the seal in the pump's check).
         readings: values read or set during the work (a new chlorinator setting), linked to it. Nothing is saved
         if any action or reading is invalid."""),
     "cancel": ("work_order_id", "reason", """Cancel one that won't be done (a duplicate, raised by mistake);
         reason kept as cancel_reason. Work that was done: close."""),
-    "generate": ("", "horizon_days", """Open a preventive work order for every task due within horizon_days
+    "generate": ("", "horizon_days package_id", """Open a preventive work order for every task due within horizon_days
         (default 30, at most 366) that has none open, on the task's subject; one per work package visit (lines
-        added to its open one instead); skipped: any it couldn't, and why."""),
+        added to its open one instead); skipped: any it couldn't, and why. package_id: only that package's next
+        visit, raised now whenever it is (nothing else)."""),
     "labour": ("work_order_id hours", "who rate on note", "Hours worked, by whom, at an hourly rate if known."),
     "part_used": ("work_order_id", "part quantity unit_cost part_number note part_id from_location_id", """A part
         or consumable used: free text (part) or a catalogue part (part_id, from the work order's
@@ -1865,6 +1867,8 @@ def register() -> None:
                 "open / close: notes. update: replaces the WHOLE note (to add, use append_note)."))] = None,
             append_note: AppendNote = None, trade: str | None = None, include_positions: bool | None = None,
             assignee: str | None = None, planned_for: str | None = None,
+            package_id: Annotated[str | None, Field(description=(
+                "generate: only this work package's next visit, raised now on its own."))] = None,
             status: Literal["open", "planned", "in_progress", "waiting"] | None = None,
             note: str | None = None,
             actions: Annotated[list[dict] | None, Field(description=(
@@ -1919,6 +1923,8 @@ def register() -> None:
         if action == "cancel":
             return run(m.cancel_work_order, work_order_id, reason or "")
         if action == "generate":
+            if package_id:
+                return run(m.raise_package_visit, package_id)
             return run(m.generate, max(0, min(_d(horizon_days, 30), 366)))
         if action == "labour":
             return run(m.log_labour, work_order_id, hours, who or "", rate, on, note or "")

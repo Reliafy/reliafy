@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   CONSEQUENCES, DEFAULT_FILTERS, DESIGN_FILTERS, OPEN_STATUSES, STATUSES, STATUS_CHIPS, canMoveTo, closeBlock, consequenceLabel,
   consequenceShort, countsSentence, defaultFoundBy, filtering, fmtWhen, historyRows, isOpen, itemText, levelText, nextStatus,
-  builtItemChoices, builtItemPlace, positionsInScope, queryParams, repeatSentence, scopeOf, signOffText, statusLabel,
+  builtItemChoices, builtItemPlace, lifeDataText, positionsInScope, queryParams, repeatSentence, reportLink, scopeOf, signOffText, statusLabel,
 } from "./failureReports.js";
 import { buildDisplay } from "./assetTree.js";
 
@@ -160,4 +160,13 @@ test("a history line's time reads day first on a 24-hour clock", () => {
   assert.equal(fmtWhen("2026-11-01T08:04:00"), "1 Nov 2026, 08:04");
   assert.equal(fmtWhen(""), "");
   assert.equal(fmtWhen("some time ago"), "some time ago");
+});
+
+test("a report says what it does to the life data, and opens from a work order", () => {
+  assert.equal(lifeDataText({ counts: true, on: "2026-11-09", item: { name: "Diaphragm", serial: "D2" }, replaced: false }),
+    "In the life data: Diaphragm (D2) counts as failed on 2026-11-09. If it's replaced later for this failure, that ends the same life: not a second failure.");
+  assert.match(lifeDataText({ counts: true, on: "2026-11-09", item: null, replaced: true }), /^In the life data: The item counts as failed on 2026-11-09, the day/);
+  assert.equal(lifeDataText({ counts: false, why: "rejected: not counted as a failure" }), "Not in the life data: rejected: not counted as a failure.");
+  assert.equal(lifeDataText(null), "");
+  assert.equal(reportLink({ id: "r1", position_id: "p1" }), "/asset-register/explorer?arrange=positions&tab=reports&sel=p1&report=r1");
 });
