@@ -1146,6 +1146,16 @@ export function analyzeSavedRbd(id, tMax) {
 // Check whether an (unsaved) graph is a valid, analytically solvable RBD.
 // Returns { valid, analytic, can_calculate, errors, warnings,
 // non_analytic_nodes }.
+// A graph with its sub-system blocks expanded into their own blocks, wired as inside them (what a
+// repairable diagram needs). Nothing is saved: {graph, expanded, notes}.
+export function expandRbdSubsystems(graph) {
+  return request("/api/rbds/expand-subsystems", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph }),
+  });
+}
+
 export function validateRbd(graph) {
   return request("/api/rbds/validate", {
     method: "POST",

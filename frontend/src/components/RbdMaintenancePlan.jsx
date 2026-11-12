@@ -28,9 +28,12 @@ import "./RbdMaintenancePlan.css";
 //                      standing for a position shows its position's task, read only, with "Edit in
 //                      the tree"; only the RBD's own settings for it are edited here
 //   onTreeLink(e, path)  a link to the tree was followed (the Explorer's pane asks first when unsaved)
+//   onExpand()         expand the diagram's sub-system blocks into their own blocks (a promise of the
+//                      notes to show): a repairable diagram can't take sub-systems, and the tasks on
+//                      the positions inside them reach the plan only as blocks of their own
 export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, groupNames = [], selected = [],
                                              onChange, onShowAll, onCrewsAndGroups, onClose, tree = null,
-                                             onTreeLink = null }) {
+                                             onTreeLink = null, onExpand = null }) {
   const all = planRows(nodes);
   const filtered = selected.length ? all.filter((r) => selected.includes(r.id)) : all;
   // Counted as calculated: a tree-linked block with its position's task.
@@ -45,6 +48,17 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
   const listId = useId();
   const [open, setOpen] = useState({});
   const standby = nodes.filter((n) => n.type === "standby").length;
+  const subsystems = nodes.filter((n) => n.type === "subsystem").map((n) => n.data?.label || "Sub-system");
+  const [expanding, setExpanding] = useState({ busy: false, said: null, error: null });
+  const expand = async () => {
+    setExpanding({ busy: true, said: null, error: null });
+    try {
+      const notes = await onExpand();
+      setExpanding({ busy: false, said: (notes || []).join(" "), error: null });
+    } catch (e) {
+      setExpanding({ busy: false, said: null, error: e.message });
+    }
+  };
 
   return (
     <section className="rbd-plan" aria-label="Maintenance plan" data-wt="rbd-plan">
@@ -81,6 +95,23 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
           you set only what belongs to the diagram (duty, crew priority, a few settings under More).
         </p>
       )}
+      {subsystems.length > 0 && (
+        <div className="rbd-plan-subs" role="note">
+          <p>
+            <b>{subsystems.join(", ")}</b> {subsystems.length === 1 ? "is a sub-system" : "are sub-systems"}: a
+            repairable diagram can&apos;t take {subsystems.length === 1 ? "it" : "them"} as one block, and the tasks on
+            the positions inside don&apos;t reach this plan. Expand {subsystems.length === 1 ? "it" : "them"} into
+            {subsystems.length === 1 ? " its" : " their"} own blocks, wired as inside (series stays series, parallel stays parallel).
+          </p>
+          {onExpand && (
+            <button type="button" className="secondary sm" onClick={expand} disabled={expanding.busy} aria-busy={expanding.busy || undefined}>
+              {expanding.busy ? "Expanding…" : "Expand sub-systems"}
+            </button>
+          )}
+          {expanding.error && <p className="field-error" role="alert">{expanding.error}</p>}
+        </div>
+      )}
+      {expanding.said && !subsystems.length && <p className="rbd-plan-tree" role="status">{expanding.said}</p>}
       {selected.length > 0 && (
         <p className="rbd-plan-filter">
           Showing the {filtered.length === 1 ? "selected block" : `${filtered.length} selected blocks`}.{" "}

@@ -1146,7 +1146,12 @@ def validate_graph(
             data = node.get("data") or {}
             if ntype == "knode":
                 continue
-            if ntype not in ("component", "standby"):
+            if ntype == "subsystem":
+                errors.append(
+                    f"“{lbl}” is a sub-system, which a repairable diagram can't take as one block. Expand it "
+                    "into its own blocks (Maintenance plan › Expand sub-systems), wired as inside it, or "
+                    "switch to a non-repairable diagram.")
+            elif ntype not in ("component", "standby"):
                 errors.append(
                     f"“{lbl}” isn't supported in a repairable diagram — availability "
                     "uses component and standby blocks (each with a non-repairable model and a "
