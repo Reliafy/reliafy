@@ -217,14 +217,14 @@ def update_params(db, model_id: str, owner_id: str, distribution: str, params: l
     return model
 
 
-def create_per_demand(db, uid: str, name: str, demands=None, failures=None, confidence: float = 0.95,
+def create_per_demand(db, uid: str, name: str, demands=None, failures=None, confidence: float = 0.90,
                       batches=None, source_dataset_id: str | None = None) -> Model:
     """Create a per-demand (Binomial) model from a demands/failures count, or
     from several batches (``[{label, demands, failures}]``) pooled with exact
     bounds (#233).
 
     ``confidence`` sets the level of the exact bounds; with zero failures the
-    one-sided bound is the success-run demonstration (default 95%)."""
+    one-sided bound is the success-run demonstration (default 90%, the app's rule)."""
     result = fitting.result_per_demand(demands, failures, confidence, batches=batches)
     pd_ = result["per_demand"]
     stored = {"demands": int(pd_["demands"]), "failures": int(pd_["failures"]),
@@ -629,7 +629,7 @@ def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max
     return fitting.confidence_bounds(
         _live_cache_id(db, model_id, owner_id),
         on=params.get("on", "sf"),
-        alpha_ci=float(params.get("alpha_ci", 0.05)),
+        alpha_ci=float(params.get("alpha_ci", 0.10)),  # 90% two-sided by default
         bound=params.get("bound", "two-sided"),
         x_min=x_min,
         x_max=x_max,

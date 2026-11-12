@@ -49,7 +49,8 @@ MAX_HORIZON_DAYS = 10 * 365.25 + 1  # 10 years ahead at most
 MAX_PARTS = 25  # parts tallied per class (the replacement parts and critical spares)
 MAX_RANKED = 100  # positions listed in at_risk
 RATE_WINDOW_DAYS = 365  # counter readings the usage rate is estimated from
-LEVEL = 0.8  # P10–P90
+LEVEL = 0.9  # the failures' and costs' likely range: P5–P95, 90% two-sided (backend.levels)
+Q_LOW, Q_HIGH = 0.05, 0.95
 DEFAULT_LEAD_DAYS = 30  # a part's lead time when it has none (said so: "assumed")
 MAX_LEAD_DAYS = spares.MAX_LEAD_DAYS
 CACHE_SECONDS = 300
@@ -315,13 +316,13 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
     failures = tally[:, :, 0]
     total = failures.sum(axis=1)
     expected = float(total.mean())
-    interval = [_q(total, 0.1), _q(total, 0.9)]
+    interval = [_q(total, Q_LOW), _q(total, Q_HIGH)]
     per_period = []
     for k in range(periods):
         col = failures[:, k]
         end = (date.fromisoformat(starts[k + 1]) - timedelta(days=1)).isoformat()
-        per_period.append({"start": starts[k], "end": end, "expected": float(col.mean()), "p10": _q(col, 0.1),
-                           "p90": _q(col, 0.9)})
+        per_period.append({"start": starts[k], "end": end, "expected": float(col.mean()), "low": _q(col, Q_LOW),
+                           "high": _q(col, Q_HIGH)})
 
     ranked = []
     for u, p_next, row in zip(units, nxt, sim["per_item"]):
@@ -474,7 +475,7 @@ def _budget(m: Maintenance, node: dict, positions, failures: np.ndarray, starts:
             periods: int) -> dict | None:
     """What the failures cost (each at the class's failure cost, else its default
     replacement cost), plus the scheduled replacements falling due at the planned
-    cost; per period and in total, with the failures' P10–P90."""
+    cost; per period and in total, with the failures' P5–P95 (a 90% range)."""
     failure_cost, basis, currency = node.get("failure_cost"), "failure_cost", None
     if failure_cost is None and (node.get("replacement_cost") or {}).get("amount") is not None:
         failure_cost, basis = node["replacement_cost"]["amount"], "replacement_cost"
@@ -487,16 +488,16 @@ def _budget(m: Maintenance, node: dict, positions, failures: np.ndarray, starts:
     rows = []
     for k in range(periods):
         col = failures[:, k] * fc
-        rows.append({"start": starts[k], "failures": float(col.mean()), "failures_p10": _q(col, 0.1),
-                     "failures_p90": _q(col, 0.9), "planned": planned[k] * pc, "planned_count": planned[k]})
+        rows.append({"start": starts[k], "failures": float(col.mean()), "failures_low": _q(col, Q_LOW),
+                     "failures_high": _q(col, Q_HIGH), "planned": planned[k] * pc, "planned_count": planned[k]})
     total = failures.sum(axis=1) * fc
     plan_total = sum(planned) * pc
     return {
         "cost_per_failure": failure_cost, "basis": basis, "currency": currency, "planned_cost": planned_cost,
-        "failures": float(total.mean()), "failures_interval": [_q(total, 0.1), _q(total, 0.9)],
+        "failures": float(total.mean()), "failures_interval": [_q(total, Q_LOW), _q(total, Q_HIGH)],
         "planned": plan_total, "planned_count": sum(planned),
         "expected": float(total.mean()) + plan_total,
-        "interval": [_q(total, 0.1) + plan_total, _q(total, 0.9) + plan_total],
+        "interval": [_q(total, Q_LOW) + plan_total, _q(total, Q_HIGH) + plan_total],
         "per_period": rows,
     }
 

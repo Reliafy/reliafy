@@ -130,7 +130,7 @@ export const DATA_CHIPS = [
 
 // The method's one line, the result pane's subtitle.
 export const METHOD_LINE = {
-  mle: "Maximum likelihood: the numbers that make the data most likely, with 95% confidence bounds.",
+  mle: "Maximum likelihood: the numbers that make the data most likely, with 90% confidence bounds.",
   bayes: "Bayesian: the prior moved by the data, with 90% credible intervals.",
 };
 

@@ -9,6 +9,7 @@ import { bestFitSentence, compareRows, criterionLabel, timeAtValue } from "../li
 import { unitInText } from "./unitText.js";
 import { PARAMS, paramLabel } from "../paramLabels.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { ciPct } from "../levels.js";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
@@ -44,7 +45,7 @@ function lifeFromCurve(result, q) {
 const shapeFmt = new Intl.NumberFormat("en-US", { minimumSignificantDigits: 3, maximumSignificantDigits: 3 });
 const fmtShape = (v) => (Math.abs(v) >= 0.001 && Math.abs(v) < 1e7 ? shapeFmt.format(v) : formatNumber(v));
 
-const HOW_CI = "95% intervals. A positive parameter's interval is taken on the log scale, so it stays above zero.";
+const HOW_CI = "90% intervals (two-sided). A positive parameter's interval is taken on the log scale, so it stays above zero.";
 
 // What the fit says, as a short title and one line: the failure pattern when
 // the shape says one (Weibull, exponential), otherwise the median life.
@@ -64,10 +65,10 @@ function verdictText(result) {
     const beta = byName.beta.value;
     const v = result.randomness?.verdict;
     if (v === "wear_out")
-      return { title: "Wear-out", text: "β is above 1 at 95% confidence: the failure rate rises with age, so preventive replacement can pay off.",
+      return { title: "Wear-out", text: `β is above 1 at ${ciPct(result)} confidence: the failure rate rises with age, so preventive replacement can pay off.`,
                action: "replacement" };
     if (v === "infant_mortality")
-      return { title: "Early-life failures", text: "β is below 1 at 95% confidence: the failure rate falls with age, so replacing early does harm." };
+      return { title: "Early-life failures", text: `β is below 1 at ${ciPct(result)} confidence: the failure rate falls with age, so replacing early does harm.` };
     if (v === "random" && byName.beta.ci) {
       const title = Math.abs(beta - 1) < 0.1 ? "Consistent with random failures"
         : beta > 1 ? "Borderline wear-out" : "Borderline early-life failures";
@@ -256,7 +257,7 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
                 {/* A Bayesian update's are credible intervals (bayes_life.py), never confidence bounds. */}
                 {v.ci && <span className="param-ci" title={result.ci_note || HOW_CI}>
                   {result.method === "bayesian_update" ? `${Math.round((result.credible_level || 0.9) * 100)}% credible`
-                    : result.method === "library" ? "Source's 5–95%" : "95%"} {v.ci}</span>}
+                    : result.method === "library" ? "Source's 5–95%" : ciPct(result)} {v.ci}</span>}
               </span>
             </div>
           );

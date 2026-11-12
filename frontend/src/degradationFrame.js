@@ -93,11 +93,16 @@ export function reliabilityAt(curves, t) {
 // band's ends: { value, lower, upper }. The band's lower curve reaches it
 // first, so ``lower`` (the design life) is the earlier time. Null ends where
 // a curve doesn't reach it on its grid.
+// ``lower`` is the life's one-sided lower bound: off the 90% one-sided curve
+// (``life_lower``) where the curves carry it, else the band's lower end;
+// ``bandLower`` / ``upper`` are the two-sided band's ends.
 export function timeAtReliability(curves, rel) {
   if (!hasCurve(curves) || !(rel > 0 && rel < 1)) return null;
+  const bandLower = curves.lower ? timeAtValue(curves.x, curves.lower, rel) : null;
   return {
     value: timeAtValue(curves.x, curves.sf, rel),
-    lower: curves.lower ? timeAtValue(curves.x, curves.lower, rel) : null,
+    lower: curves.life_lower ? timeAtValue(curves.x, curves.life_lower, rel) : bandLower,
+    bandLower,
     upper: curves.upper ? timeAtValue(curves.x, curves.upper, rel) : null,
   };
 }
@@ -121,19 +126,30 @@ const span = (lo, hi) => `${formatNumber(lo)}–${formatNumber(hi)}`;
 // "90% band 3,210–3,950" (or "≥ 3,210 at 95%" with only the lower end).
 export function bandWords(life, level) {
   if (!life) return "";
-  if (life.lower != null && life.upper != null) return `${formatNumber(level)}% band ${span(life.lower, life.upper)}`;
-  return lowerBoundWords(life, level);
+  const lo = life.bandLower !== undefined ? life.bandLower : life.lower;
+  if (lo != null && life.upper != null) return `${formatNumber(level)}% band ${span(lo, life.upper)}`;
+  return lowerBoundWords(life, oneSidedLevel(level));
 }
 
 // The band is two-sided, so its lower end alone is a one-sided bound at a
 // higher confidence: the lower end of a 90% band is a 95% lower bound.
 export const oneSidedLevel = (level) => 100 - (100 - Number(level)) / 2;
 
-// The band's lower end as the other model pages say a bound: "≥ 3,210 at 95%".
+// The one-sided level (%) of the life bounds ``timeAtReliability`` gives: 90
+// off the curves' one-sided lower curve (the rule for life bounds); a model
+// whose curves predate it reads the band's lower end, 95% for a 90% band.
+export function lifeBoundLevel(curves) {
+  const l = Number(curves?.life_level);
+  if (curves?.life_lower && Number.isFinite(l) && l > 0 && l < 1) return Math.round(l * 1000) / 10;
+  return oneSidedLevel(bandLevel(curves));
+}
+
+// A life's lower bound as the other model pages say it: "≥ 3,210 at 90%".
+// ``level`` is the one-sided level (%).
 export function lowerBoundWords(life, level) {
   if (life?.lower == null) return "";
   // A no-break space keeps "≥" with its number when the line wraps.
-  return `≥\u00a0${formatNumber(life.lower)} at ${formatNumber(oneSidedLevel(level))}%`;
+  return `≥\u00a0${formatNumber(life.lower)} at ${formatNumber(level)}%`;
 }
 
 // The life model's mean in the shape the shared mean-life words take.
@@ -172,7 +188,7 @@ export function degradationAnswer(results, { saved = null } = {}) {
   const curves = curvesOf(r);
   const b10 = timeAtReliability(curves, 0.9);
   if (b10?.value != null) {
-    const bound = lowerBoundWords(b10, bandLevel(curves));
+    const bound = lowerBoundWords(b10, lifeBoundLevel(curves));
     add(`B10 ${withUnit(b10.value, r.unit)}${bound ? ` (${bound})` : ""}`);
   }
   const mean = meanAnswer(r);

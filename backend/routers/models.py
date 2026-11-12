@@ -761,7 +761,7 @@ def create_per_demand(
     name: str = Body(...),
     demands: int | None = Body(default=None),
     failures: int | None = Body(default=None),
-    confidence: float = Body(default=0.95),
+    confidence: float = Body(default=0.90),
     batches: list[dict] | None = Body(default=None),
     dataset_id: str | None = Body(default=None),
     demands_column: str | None = Body(default=None),

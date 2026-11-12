@@ -223,7 +223,7 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
 // each re-evaluated by the backend and overlaid on the chart. ``fill``: the
 // chart fills the tab's height (the model page's frame).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
-                                     paramLabel = null, fill = false, ciLabel = "95%", ciNote = null,
+                                     paramLabel = null, fill = false, ciLabel = "90%", ciNote = null,
                                      credible = false, spread = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
@@ -782,7 +782,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                     </span>
                   </div>
                 ))}
-                {ciNote ? <p className="param-ci-note">{ciNote}</p> : <CiNote params={params} />}
+                {ciNote ? <p className="param-ci-note">{ciNote}</p> : <CiNote params={params} level={ciLabel} />}
               </div>
             )}
 

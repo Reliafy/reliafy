@@ -68,20 +68,20 @@ by a round time near the last failure, the chance of failing from any mode, and
 the data.
 
 The **Failure modes** chart stacks the modes. Each band is one mode's share; the
-top edge is the chance of failing from any mode, with its 95% band in grey.
+top edge is the chance of failing from any mode, with its 90% band in grey.
 Switch **Show** to **Each mode** to see each mode on its own, with its own band.
 
 ![Each mode's cumulative incidence, stacked, with the share of units failing from each by 5,000 hours](/guides/img/crisk-02-incidence.png)
 
 The **Failure modes** panel beside it reads the curves at that round time: each
 mode's share of the failures, the share of units that failed from it (with its
-95% interval) and its count. For the sample at 5,000 hours:
+90% interval) and its count. For the sample at 5,000 hours:
 
-| Mode | Units failed from it by 5,000 hours | 95% interval |
+| Mode | Units failed from it by 5,000 hours | 90% interval |
 |---|---|---|
-| Bearing wear | 40% | 28%–52% |
-| Seal leak | 21% | 12%–31% |
-| Impeller damage | 8.7% | 3.5%–17% |
+| Bearing wear | 40% | 30%–51% |
+| Seal leak | 21% | 13%–29% |
+| Impeller damage | 8.7% | 4.1%–15% |
 
 The reading under it says it in words: *Bearing wear causes 58% of failures by
 5,000 hours … Seal leak leads early; bearing wear overtakes it at about 2,810
@@ -92,17 +92,17 @@ should target.
 ### Ask the model a question
 
 The **Calculator** tab reads the same curves at any time you choose. **Chance
-by a time** gives each mode's chance of failing by then, with its 95% band, and
+by a time** gives each mode's chance of failing by then, with its 90% band, and
 the chance from any mode. **Time to a chance** turns it round: pick a mode (or
 **Any mode**) and a share of units, and it gives the time by which that share
-has failed, with its 95% range. If the curve never gets that high within the
+has failed, with its 90% range. If the curve never gets that high within the
 data, it says how far it gets by the last time in the data instead.
 
 ### Can you trust it?
 
 The **Diagnostics** tab asks whether there's enough data behind each mode (a
 mode with fewer than five failures is flagged: read its curve as rough) and how
-sure each mode's chance is (each mode's 95% band side by side). No
+sure each mode's chance is (each mode's 90% band side by side). No
 distribution is assumed, so there is no fit to test: the curves are the data's
 own. The **Data** tab has the counts, the chance of failing from each mode at
 every failure time, and how the model was fitted.
@@ -143,17 +143,17 @@ two regressions by mode:
   with the other modes acting. Use it to predict *how many* units a mode will
   take.
 
-The result gains an **Effects** tab: each mode's ratio on a chart with its 95%
+The result gains an **Effects** tab: each mode's ratio on a chart with its 90%
 interval, and each effect in words. The **Data** tab lists every coefficient with
 its p-value. With `duty_pct` as the covariate, the sample gives:
 
 > Each +1 in duty_pct multiplies the bearing wear failure rate by 1.14.
 
-| Failure mode | Hazard ratio | 95% interval | p-value |
+| Failure mode | Hazard ratio | 90% interval | p-value |
 |---|---|---|---|
-| Bearing wear | 1.14 | 1.08–1.21 | < 0.001 |
-| Impeller damage | 1 | 0.939–1.07 | 0.9 |
-| Seal leak | 0.973 | 0.932–1.02 | 0.22 |
+| Bearing wear | 1.14 | 1.09–1.20 | < 0.001 |
+| Impeller damage | 1 | 0.949–1.06 | 0.9 |
+| Seal leak | 0.973 | 0.939–1.01 | 0.22 |
 
 A ratio above 1 makes the mode come sooner; below 1, later. Here duty drives
 bearing wear only: each extra 10% of duty multiplies the bearing wear rate by
@@ -168,6 +168,6 @@ about 1.14¹⁰ ≈ 3.7, while seals and impellers don't care.
 - For covariates without failure modes, see
   [fit a model with covariates](/guides/covariates-and-regression).
 
-The cumulative incidence (Aalen–Johansen, with Aalen's 95% bounds) and Gray's
+The cumulative incidence (Aalen–Johansen, with Aalen's 90% bounds) and Gray's
 test come from [SurPyval](https://github.com/derrynknife/SurPyval), an
 open-source Python library.

@@ -9,6 +9,7 @@
 import { formatNumber } from "./format.js";
 import { unitInText } from "./components/unitText.js";
 import { stressName } from "./components/stressName.js";
+import { ciPct } from "./levels.js";
 
 export const ALT_TAB_LABELS = {
   life: "Life-stress",
@@ -67,12 +68,12 @@ export function shapeParam(results) {
 
 const withUnit = (v, unit) => `${formatNumber(v)}${unit ? ` ${unitInText(unit)}` : ""}`;
 
-// "β 0.78 (95% 0.63–0.96)".
+// "β 0.78 (90% 0.63–0.96)".
 export function shapeWords(results) {
   const s = shapeParam(results);
   if (!s || !Number.isFinite(Number(s.value))) return null;
   const ci = Array.isArray(s.ci) && s.ci.every((v) => Number.isFinite(Number(v)))
-    ? ` (95% ${formatNumber(s.ci[0])}–${formatNumber(s.ci[1])})` : "";
+    ? ` (${ciPct(results, 0.9)} ${formatNumber(s.ci[0])}–${formatNumber(s.ci[1])})` : "";
   return `${s.symbol} ${formatNumber(s.value)}${ci}`;
 }
 

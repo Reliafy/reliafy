@@ -202,7 +202,7 @@ _PUMP = [
 def test_optimal_replacement_range_comes_from_the_parameter_bounds():
     res = st.optimal_replacement("weibull", _PUMP, 1000, 8000, unit="Months")
     rng = res["optimal_time_range"]
-    assert rng["level"] == 0.95 and rng["always_beneficial"] is True
+    assert rng["level"] == 0.90 and rng["always_beneficial"] is True
     assert [(c["param"], c["bound"]) for c in rng["cases"]] == [
         ("alpha", "lower"), ("alpha", "upper"), ("beta", "lower"), ("beta", "upper"),
     ]

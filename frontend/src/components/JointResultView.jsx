@@ -12,6 +12,7 @@ import { JointEffects } from "./model/Effects.jsx";
 import { JointDiagnostics } from "./model/Diagnostics.jsx";
 import { modelTabs, resolveTab } from "../modelFrame.js";
 import { explorerPath } from "../assetTree.js";
+import { ciPct, levelPct } from "../levels.js";
 
 // A fitted condition and life model in the model frame's five tabs:
 //   Risk now     the running units' risk (highest first) and the chosen unit
@@ -33,7 +34,7 @@ const n3 = (v) => formatNumber(v);
 const FAINT = "rgba(20, 23, 28, 0.18)";
 const SIGN_IN = "Sign in to change this: a unit's prediction needs your own copy of the model.";
 
-function Params({ params }) {
+function Params({ params, level = "90%" }) {
   const groups = paramGroups(params);
   return (
     <table className="calc-table joint-params">
@@ -41,7 +42,7 @@ function Params({ params }) {
         <tr>
           <th>Parameter</th>
           <th className="num">Estimate</th>
-          <th className="num">95% interval</th>
+          <th className="num">{level} interval</th>
           <th>What it means</th>
         </tr>
       </thead>
@@ -75,7 +76,7 @@ export function PathChart({ results, name, fill = false }) {
     });
   });
   if (path.x) {
-    traces.push(...bandPair(path.x, path.lower, path.upper, { name: "95% of units' paths" }));
+    traces.push(...bandPair(path.x, path.lower, path.upper, { name: `${levelPct(results.confidence ?? 0.95)} of units' paths` }));
     traces.push(fitLine({ x: path.x, y: path.mean, name: "Mean path" }));
   }
   const layout = {
@@ -217,8 +218,8 @@ function JointData({ results }) {
     <TablePanel
       className="mf-l5-wide"
       main={
-        <ScrollCard title="Every parameter" sub="with 95% intervals">
-          <Params params={r.params} />
+        <ScrollCard title="Every parameter" sub={`with ${ciPct(r)} intervals`}>
+          <Params params={r.params} level={ciPct(r)} />
           <p className="mf-note">Times and rates in {r.unit ? r.unit.toLowerCase() : "the model's time unit"}.</p>
         </ScrollCard>
       }

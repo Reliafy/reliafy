@@ -160,7 +160,7 @@ export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, downloa
           ...(d.curves.sf_lower && d.curves.sf_upper ? [
             { x: d.curves.x, y: d.curves.sf_upper, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
             { x: d.curves.x, y: d.curves.sf_lower, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: BAND_FILL,
-              name: bayes ? "90% credible band" : "95% confidence band", hoverinfo: "skip" },
+              name: bayes ? "90% credible band" : "90% confidence band", hoverinfo: "skip" },
           ] : []),
           ...(d.curves.baseline_sf ? [{ x: d.curves.x, y: d.curves.baseline_sf, mode: "lines", line: { color: MUTED, width: 1.5, dash: "dash" },
             name: priorName }] : []),
@@ -194,7 +194,7 @@ export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, downloa
           <span className="fit2-age-r">
             {Math.round(d.at_age.reliability * 1000) / 10}%
             {d.at_age.lower != null && d.at_age.upper != null
-              ? ` (${bayes ? "90% credible" : "95% confidence"} ${Math.round(d.at_age.lower * 1000) / 10}–${Math.round(d.at_age.upper * 1000) / 10}%)` : ""}
+              ? ` (${bayes ? "90% credible" : "90% confidence"} ${Math.round(d.at_age.lower * 1000) / 10}–${Math.round(d.at_age.upper * 1000) / 10}%)` : ""}
           </span>
         )}
       </div>

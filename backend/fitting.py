@@ -85,7 +85,7 @@ from surpyval import GumbelPH, LogisticPH
 from surpyval import AFT, AH, PH, PO
 from surpyval.univariate.regression import CoxPH
 
-from backend import life_bounds, np_life, param_intervals
+from backend import levels, life_bounds, np_life, param_intervals
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
@@ -1274,7 +1274,10 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
     scalar (Gamma reads ``params[0]`` as its shape). The paper is only a choice
     of axes, so one component's parameters define it perfectly well.
     """
-    data = model.get_plot_data(heuristic=heuristic)
+    try:  # the band at the 90% rule (a mixture's plot data takes no level and has no band)
+        data = model.get_plot_data(heuristic=heuristic, alpha_ci=levels.ALPHA)
+    except TypeError:
+        data = model.get_plot_data(heuristic=heuristic)
     params = model.params if paper_params is None else paper_params
 
     def ty(p):
@@ -1321,6 +1324,7 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
             "x": line_x.tolist(),
             "lower": lower.tolist(),
             "upper": upper.tolist(),
+            "level": levels.LEVEL,  # two-sided
         },
         "x_range": x_range,
         "y_range": y_range,
@@ -1789,6 +1793,8 @@ def fit(
     if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
             result.get("params")):
         result["ci_note"] = param_intervals.CI_NOTE
+    if result.get("kind") in ("distribution", "discrete", "regression"):
+        result["ci_level"] = levels.LEVEL  # every interval 90% two-sided (param_intervals.at_level)
     if result.get("mixture_summary") and result["unit"]:
         result["mixture_summary"] = (mixture_summary(result, unit_in_text(result["unit"]))
                                      or result["mixture_summary"])
@@ -2050,7 +2056,7 @@ def per_demand_batches_from_df(df: pd.DataFrame, demands_col: str, failures_col:
 def result_per_demand(
     demands: Optional[int] = None,
     failures: Optional[int] = None,
-    confidence: float = 0.95,
+    confidence: float = levels.LEVEL,
     batches: Optional[list] = None,
 ) -> dict:
     """Per-demand (Binomial) reliability: probability of failure per demand.
@@ -2070,7 +2076,7 @@ def result_per_demand(
     the success-run demonstration, ``R >= (1 - C)**(1/n)`` (59 clean demands
     demonstrate 95% reliability at 95% confidence) -- the same number, now
     from one method. (Before SurPyval 0.23 the interval was Wilson's, at 95%
-    whatever the confidence.)
+    whatever the confidence.) The default is the app's 90% (:mod:`backend.levels`).
     """
     if batches is None:
         batches = [{"demands": demands, "failures": failures}]
@@ -2080,7 +2086,7 @@ def result_per_demand(
     except (TypeError, ValueError):
         raise FitError("Confidence must be a number between 0 and 1.")
     if not (0.0 < confidence < 1.0):
-        raise FitError("Confidence must be between 0 and 1 (e.g. 0.95).")
+        raise FitError("Confidence must be between 0 and 1 (e.g. 0.9).")
     alpha = 1.0 - confidence
 
     n_demands = int(sum(r["demands"] for r in rows))
@@ -2957,7 +2963,7 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
         xs = np.asarray(model.x, dtype=float)
         R = np.asarray(model.R, dtype=float)
         try:
-            cb = np.asarray(model.cb(model.x, on="sf", alpha_ci=0.05), dtype=float)
+            cb = np.asarray(model.cb(model.x, on="sf", alpha_ci=levels.ALPHA), dtype=float)
             lower, upper = cb[:, 0], cb[:, 1]
         except Exception:  # not all estimators expose bounds for all data
             lower = upper = np.full_like(R, np.nan)
@@ -2984,8 +2990,9 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
             # The life table on the model page's Data tab: units at risk and
             # failing at each time (absent where the estimator has none).
             **_life_table(model, finite),
-            # #85: simultaneous 95% bands, for the plot's whole-curve toggle.
+            # #85: simultaneous 90% bands, for the plot's whole-curve toggle.
             "bands": np_life.bands(model),
+            "level": levels.LEVEL,  # the pointwise and whole-curve bands, two-sided
         },
         "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
         "gof": [],
@@ -3024,14 +3031,14 @@ def _life_metrics(model) -> dict:
 
 
 def _params_with_uncertainty(model, param_names, bounds: Optional[dict] = None) -> list[dict]:
-    """Parameter estimates with standard errors and 95% Wald CIs from the
+    """Parameter estimates with standard errors and 90% Wald CIs from the
     fit's covariance matrix.
 
     ``bounds`` (``{name: (lower, upper)}``, SurPyval's declared parameter
     bounds) puts a positive parameter's interval on the log scale and a
     (0, 1) one's on the logit scale, so neither leaves its support: a small
     sample's Weibull shape no longer gets a negative lower bound (#265). An
-    unbounded parameter keeps ``value ± 1.96·se``.
+    unbounded parameter keeps ``value ± 1.645·se``.
     """
     values = np.atleast_1d(np.asarray(model.params, dtype=float))
     ses = [None] * len(values)
@@ -3060,7 +3067,7 @@ def _randomness_verdict(distribution_id: str, params: list[dict]) -> dict | None
     """Whether the fitted model is consistent with random (constant-rate)
     failures — the statistical evidence behind a run-to-failure decision.
 
-    Weibull: read the shape parameter's 95% CI against 1. Exponential: random
+    Weibull: read the shape parameter's 90% CI against 1. Exponential: random
     by construction (memoryless). Other distributions can't establish this and
     return no block.
     """
@@ -3158,7 +3165,7 @@ def _fit_regression(
     params_arr = np.asarray(model.params, dtype=float)
     k_dist = int(getattr(model, "k_dist", 0) or 0)
 
-    # Standard errors (baseline params then coefficients) for 95% Wald intervals.
+    # Standard errors (baseline params then coefficients) for 90% Wald intervals.
     # Unavailable for semi-parametric Cox / when the Hessian is singular.
     try:
         ses = np.asarray(model.standard_errors(), dtype=float).ravel()
@@ -3186,7 +3193,7 @@ def _fit_regression(
         for i, name in enumerate(base_names)
     ]
 
-    # Regression coefficients with a 95% CI. exp(coefficient) is a hazard ratio
+    # Regression coefficients with a 90% CI. exp(coefficient) is a hazard ratio
     # (PH), time ratio (AFT) or odds ratio (PO); additive-hazards coefficients
     # have no natural ratio, so ``ratio``/``ratio_label`` are omitted for AH.
     # ``ratio_label`` in the payload tells the UI which; ``hazard_ratio`` is kept
@@ -3472,7 +3479,7 @@ _CB_BOUNDS = {"two-sided", "lower", "upper"}
 def confidence_bounds(
     model_id: str,
     on: str = "sf",
-    alpha_ci: float = 0.05,
+    alpha_ci: float = levels.ALPHA,
     bound: str = "two-sided",
     x_min=None,
     x_max=None,

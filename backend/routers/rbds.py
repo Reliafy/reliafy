@@ -640,7 +640,7 @@ def analyze_graph(
     ``covariates`` maps node id -> covariate values for proportional-hazards
     nodes. ``conditional_age`` conditions the curves on having already survived
     to that age (so the result is the conditional survival). ``band``
-    (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    (``{"level": 0.9}``) adds a confidence band from the fitted blocks'
     parameter uncertainty.
 
     Repairable graphs get the exact availability figures (free) and the

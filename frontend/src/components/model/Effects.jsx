@@ -1,6 +1,6 @@
 // The Effects tab (regressions, covariates that change over time, condition
 // and life): what changes the life. A chart of each covariate's ratio with
-// its 95% interval (a "forest" chart: 1 means no effect), each effect in
+// its 90% interval (a "forest" chart: 1 means no effect), each effect in
 // words, and a panel with the baseline the ratios multiply.
 import Plot from "../Plot.jsx";
 import CiNote from "../CiNote.jsx";
@@ -10,6 +10,7 @@ import { ACCENT, DATA_INK, referenceShape } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { dataWords, effectText, forestRows } from "../../modelFrame.js";
 import { fmtP } from "../RegressionChecks.jsx";
+import { LEVEL_TEXT, ciPct, levelPct } from "../../levels.js";
 
 const sentence = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
@@ -31,7 +32,7 @@ export function ForestChart({ rows, ratioLabel, name, download }) {
       arrayminus: shown.map((r) => (hasCi(r) ? point(r) - r.lo : 0)),
     },
     customdata: shown.map((r) => (hasCi(r) ? `${formatNumber(r.lo)} to ${formatNumber(r.hi)}` : "no interval")),
-    hovertemplate: `%{y}: %{x:.3~g} (95% %{customdata})<extra></extra>`,
+    hovertemplate: `%{y}: %{x:.3~g} (${rows[0]?.level || LEVEL_TEXT} %{customdata})<extra></extra>`,
     name: additive ? "Coefficient" : sentence(ratioLabel || "ratio"),
   };
   const values = shown.flatMap((r) => [point(r), r.lo, r.hi]).filter((v) => v != null && (additive || v > 0));
@@ -101,7 +102,7 @@ function EffectsPanel({ result, split }) {
               <span className="gk">{v.label}</span>
               <span className="gv-col">
                 <span className="gv">{v.value}</span>
-                {v.ci && <span className="param-ci">95% {v.ci}</span>}
+                {v.ci && <span className="param-ci">{ciPct(result)} {v.ci}</span>}
               </span>
             </div>
           );
@@ -119,13 +120,13 @@ function EffectsPanel({ result, split }) {
             <span className="gk" title="How much the groups' hidden multipliers vary">Spread θ</span>
             <span className="gv-col">
               <span className="gv">{formatNumber(f.theta)}</span>
-              {f.theta_ci && <span className="param-ci">95% {formatNumber(f.theta_ci[0])}–{formatNumber(f.theta_ci[1])}</span>}
+              {f.theta_ci && <span className="param-ci">{levelPct(f.theta_ci_level ?? 0.95)} {formatNumber(f.theta_ci[0])}–{formatNumber(f.theta_ci[1])}</span>}
             </span>
           </div>
           {f.reading && <p className="mf-note">{f.reading}</p>}
         </div>
       )}
-      <CiNote params={params} note={result.ci_note} />
+      <CiNote params={params} note={result.ci_note} level={ciPct(result)} />
       <p className="life-method">
         {result.effect === "aft"
           ? "A time ratio of 2 doubles the life; 0.5 halves it."
@@ -145,7 +146,7 @@ export default function Effects({ result, name, split }) {
   return (
     <PlotPanel
       plot={
-        <PlotCard title={result.ratio_label ? `Each covariate's ${result.ratio_label}, with its 95% interval` : "Each covariate's effect, with its 95% interval"}>
+        <PlotCard title={result.ratio_label ? `Each covariate's ${result.ratio_label}, with its ${ciPct(result)} interval` : `Each covariate's effect, with its ${ciPct(result)} interval`}>
           <ForestChart rows={rows} ratioLabel={result.ratio_label} name={name || result.distribution} />
         </PlotCard>
       }
@@ -166,7 +167,7 @@ export function JointEffects({ results, name }) {
   return (
     <PlotPanel
       plot={
-        <PlotCard title="What changes the risk: each hazard ratio, with its 95% interval">
+        <PlotCard title={`What changes the risk: each hazard ratio, with its ${ciPct(results)} interval`}>
           <ForestChart rows={rows} ratioLabel="hazard ratio" name={name} />
         </PlotCard>
       }

@@ -88,7 +88,7 @@ def test_the_results_say_the_hazard_ratios_plainly_and_list_the_running_units(fi
     assert hr["marker_effect"]["hr"] == pytest.approx(np.exp(next(
         p["value"] for p in r["params"] if p["name"] == "marker_effect")))
     assert hr["marker_effect"]["text"].startswith("Each 1 unit higher vibration multiplies the failure rate by")
-    assert "at the same vibration" in hr["load"]["text"] and "95% CI" in hr["load"]["text"]
+    assert "at the same vibration" in hr["load"]["text"] and "90% CI" in hr["load"]["text"]
     assert r["horizons"]["labels"] == ["30 days", "90 days", "365 days"]
     running = fitted["L"][fitted["L"].running == 1]
     assert r["n_running"] == len(running) == len(r["risk"]) == len(fitted["out"]["units"])

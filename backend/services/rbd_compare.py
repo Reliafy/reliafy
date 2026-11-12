@@ -241,7 +241,8 @@ def compare_availability(
     tolerance = _TOLERANCE_FRACTION * ra._availability_tolerance(worse)
     expect_downtime = bool(np.isfinite(worse) and worse > 0.0)
 
-    z = ra._z(ra._AVAIL_CONFIDENCE)
+    z = ra._z(ra._AVAIL_CONFIDENCE)  # the interval shown (90%)
+    z_stop = ra._z(ra._AVAIL_STOP_CONFIDENCE)  # the precision target's, so the run length is unchanged
     fa: list = []
     fb: list = []
     ca: list = []
@@ -261,7 +262,7 @@ def compare_availability(
         est, se = _difference(np.asarray(fa), np.asarray(fb), paired)
         # Batches that saw no downtime in either design say nothing yet.
         evidence = not expect_downtime or min(min(fa), min(fb)) < 1.0
-        reached = bool(np.isfinite(se) and z * se <= tolerance and evidence)
+        reached = bool(np.isfinite(se) and z_stop * se <= tolerance and evidence)
         if reached and not n_simulations:
             break
     fa_arr, fb_arr = np.asarray(fa), np.asarray(fb)

@@ -17,6 +17,7 @@ import {
 } from "../../altFrame.js";
 import { altPlanLink, altPrefill } from "../../testPlanning.js";
 import { unitInText } from "../unitText.js";
+import { ciPct } from "../../levels.js";
 
 const SMALL = { margin: { t: 6, r: 10, b: 44, l: 54 } };
 // A tested level as a category on a small chart's axis: one stress a line.
@@ -47,7 +48,7 @@ function noOwnFits() {
   return <p className="muted-line">Not stored with this model: fit it again to see each level's own fit.</p>;
 }
 
-// Each level's own shape (fitted to that level alone, with its 95% interval)
+// Each level's own shape (fitted to that level alone, with its interval, 90%)
 // against the model's one shape.
 function ShapeChart({ results, name }) {
   const r = results;
@@ -63,7 +64,7 @@ function ShapeChart({ results, name }) {
     traces.push({
       type: "scatter", mode: "lines", x: [...x, ...[...x].reverse()],
       y: [...x.map(() => shape.ci[1]), ...x.map(() => shape.ci[0])], fill: "toself", fillcolor: BAND_FILL,
-      line: { width: 0 }, hoverinfo: "skip", name: "Model's 95% interval",
+      line: { width: 0 }, hoverinfo: "skip", name: `Model's ${ciPct(results, 0.9)} interval`,
     });
   }
   traces.push({
@@ -84,7 +85,7 @@ function ShapeChart({ results, name }) {
   );
 }
 
-// Each level's own life (fitted alone, with its 95% interval) against the
+// Each level's own life (fitted alone, with its interval, 90%) against the
 // life the model gives that level.
 function LifeChart({ results, name }) {
   const r = results;
@@ -200,7 +201,7 @@ export default function AltDiagnostics({ results, modelId, name, use }) {
                  tone={shape?.tone} verdict={shape?.words || pending}
                  footer={r.distribution_id !== "exponential" && (
                    <>
-                     <p className="muted-line">Dots: each level fitted alone, with its 95% interval. Line and band: the model's one shape.</p>
+                     <p className="muted-line">Dots: each level fitted alone, with its {ciPct(results, 0.9)} interval. Line and band: the model's one shape.</p>
                      {noteLines(noteOf(/common-shape/))}
                    </>
                  )}>
@@ -210,7 +211,7 @@ export default function AltDiagnostics({ results, modelId, name, use }) {
                  tone={life?.tone} verdict={life?.words || pending}
                  footer={(
                    <>
-                     <p className="muted-line">Dots: each level's own life, with its 95% interval. Diamonds: the life the model gives it.</p>
+                     <p className="muted-line">Dots: each level's own life, with its {ciPct(results, 0.9)} interval. Diamonds: the life the model gives it.</p>
                      {noteLines(noteOf(/life-stress test/))}
                    </>
                  )}>

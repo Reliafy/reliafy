@@ -24,7 +24,7 @@ const blank = () => ({ n: 0, stale: 0, missing: 0 });
 export const MODEL_COLUMNS = [
   { id: "kind", label: "Kind", width: 150 },
   { id: "source", label: "Source", width: 230 },
-  { id: "numbers", label: "Headline", width: 260, title: "The model's main numbers in its unit, with 95% bounds where it has them" },
+  { id: "numbers", label: "Headline", width: 260, title: "The model's main numbers in its unit, with 90% bounds where it has them" },
   { id: "mean", label: "Mean life", width: 150, num: true, title: "The mean life, with its 90% lower bound" },
   { id: "b10", label: "B10 life", width: 150, num: true, usual: false, title: "The age by which 10% have failed, with its 90% lower bound" },
   { id: "quality", label: "Confidence", width: 150, title: "How much data is behind it, in a word" },
@@ -44,11 +44,13 @@ export function fmt(v) {
 
 // The bound beside a fitted number: "1,410–2,530" (two-sided), or "≥ 467" (one-sided
 // lower). A B-life or mean life fitted with a prior carries its level (bayes_life.py):
-// "≥ 3,814 at 90% credible", as the saved model's page says it. null with no bound.
+// "≥ 3,814 at 90% credible", as the saved model's page says it; a plain fit's
+// (``kind: "confidence"``) "≥ 3,810 at 90%". null with no bound.
 export function rangeBound(p) {
   if (!p || p.lower == null) return null;
   if (p.upper != null) return `${fmt(p.lower)}–${fmt(p.upper)}`;
-  const level = p.bound === "lower" && p.level ? ` at ${Math.round(p.level * 100)}% credible` : "";
+  const word = p.kind === "confidence" ? "" : " credible";
+  const level = p.bound === "lower" && p.level ? ` at ${Math.round(p.level * 100)}%${word}` : "";
   return `≥ ${fmt(p.lower)}${level}`;
 }
 
@@ -60,8 +62,9 @@ const pct = (level) => `${Math.round(Number(level || 0.9) * 100)}%`;
 
 // What a model's intervals are, for a column or a legend: a Bayesian update's are
 // credible intervals at its level ("90% credible interval"), never "bounds" or
-// "confidence"; a fitted model's are its 95% bounds.
-export const boundsLabel = (model) => (model?.credible ? `${pct(model.credible_level)} credible interval` : "95% bounds");
+// "confidence"; a fitted model's are its 90% bounds (``ci_level``).
+export const boundsLabel = (model) => (model?.credible ? `${pct(model.credible_level)} credible interval`
+  : `${pct(model?.ci_level ?? 0.9)} bounds`);
 
 // One number with its bounds and unit: "1,435 hours (1,234–1,669)"; a one-sided lower
 // bound: "1,239 hours (≥ 1,109)"; a credible interval (a Bayesian update, `level` its

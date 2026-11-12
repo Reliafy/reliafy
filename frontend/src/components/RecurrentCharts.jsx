@@ -7,6 +7,7 @@ import { formatNumber } from "../format.js";
 import { ciText, effectTone, familyOf } from "../recurrentResults.js";
 import { ForestChart } from "./model/Effects.jsx";
 import { PlotCard, PlotPanel, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
+import { ciPct } from "../levels.js";
 
 // The charts of a repairable model's tabs, each filling its box in the model
 // frame (components/model/): the mean cumulative function (all failures, or
@@ -26,12 +27,12 @@ function bandTrace(obs, extra = {}) {
     x: [...obs.x, ...[...obs.x].reverse()],
     y: [...obs.upper, ...[...obs.lower].reverse()],
     fillcolor: NEUTRAL_BAND_FILL,
-    name: "95% band",
+    name: "Band",
     ...extra,
   });
 }
 
-// The MCF: the observed step with its 95% band, and the fitted model's
+// The MCF: the observed step with its band (90%), and the fitted model's
 // curve (one per level of a covariate model's first text covariate).
 export function McfPlot({ r, name }) {
   const obs = r.mcf?.observed || {};
@@ -39,7 +40,7 @@ export function McfPlot({ r, name }) {
   const groups = r.mcf?.groups || [];
   const fam = familyOf(r);
   const traces = [];
-  if (obs.lower && obs.upper) traces.push(bandTrace(obs));
+  if (obs.lower && obs.upper) traces.push(bandTrace(obs, { name: `${ciPct(r)} band` }));
   if (obs.x?.length) {
     traces.push(dataPoints({
       x: obs.x, y: obs.mcf, mode: "lines+markers",
@@ -78,7 +79,7 @@ export function CausesPlot({ r, name, chosen }) {
   causes.forEach((c, k) => {
     const color = COLORWAY[k % COLORWAY.length];
     if (c.label === pick && c.mcf.lower && c.mcf.upper) {
-      traces.push(bandTrace(c.mcf, { name: `${c.label}: 95% band`, fillcolor: hexA(color, 0.12) }));
+      traces.push(bandTrace(c.mcf, { name: `${c.label}: ${ciPct(r)} band`, fillcolor: hexA(color, 0.12) }));
     }
     traces.push(dataLine({
       x: c.mcf.x, y: c.mcf.mcf, name: c.label,
@@ -94,12 +95,13 @@ export function CausesPlot({ r, name, chosen }) {
   return <Plot fill data={traces} layout={layout} download={`${name || "Repairable model"} — MCF by cause`} />;
 }
 
-// The Effects tab (covariate models): each covariate's rate ratio with its 95%
+// The Effects tab (covariate models): each covariate's rate ratio with its 90%
 // interval (1 is no effect), each one in words, and the baseline beside them.
 export function RecurrentEffects({ r, name }) {
   const coefs = r.coefficients || [];
   const rows = coefs.filter((c) => c.ratio != null).map((c) => ({
     name: c.name.replace(": ", " "), ratio: c.ratio, lo: c.ratio_ci?.[0] ?? null, hi: c.ratio_ci?.[1] ?? null,
+    level: ciPct(r),
   }));
   const cats = (r.covariates || []).filter((m) => m.kind === "category");
   const shape = (r.params || []).find((p) => p.name === (r.baseline?.id === "duane" ? "alpha" : "beta"));
@@ -107,7 +109,7 @@ export function RecurrentEffects({ r, name }) {
     <PlotPanel
       sideClassName="rec-side"
       plot={
-        <PlotCard title="How many times as often failures come, for each covariate, with its 95% interval">
+        <PlotCard title={`How many times as often failures come, for each covariate, with its ${ciPct(r)} interval`}>
           <ForestChart rows={rows} ratioLabel="failure rate ratio" name={name} download={`${name || "Repairable model"} — covariate effects`} />
         </PlotCard>
       }
@@ -137,7 +139,7 @@ export function RecurrentEffects({ r, name }) {
                 <span className="gk">Shape {r.baseline?.id === "duane" ? "α" : "β"}</span>
                 <span className="gv-col">
                   <span className="gv">{formatNumber(shape.value, { sig: 3 })}</span>
-                  {ciText(shape.ci) && <span className="param-ci">95% {ciText(shape.ci)}</span>}
+                  {ciText(shape.ci) && <span className="param-ci">{ciPct(r)} {ciText(shape.ci)}</span>}
                 </span>
               </div>
             )}

@@ -81,7 +81,7 @@ def test_the_class_history_as_a_power_prior_is_surpyvals(m, db):
 def test_the_data_choices_and_the_labels(m, db):
     new = _plant(m)
     own = fit_life.fit(m, db, OWNERS, set(), new, data="position", method="mle", distribution="exponential")
-    assert own["interval_label"] == "95% confidence bounds" and own["counts"]["failures"] == 1
+    assert own["interval_label"] == "90% confidence bounds" and own["counts"]["failures"] == 1
     with pytest.raises(Invalid, match="a plain weibull fit needs at least 2"):
         fit_life.fit(m, db, OWNERS, set(), new, data="position", method="mle")
     pooled = fit_life.fit(m, db, OWNERS, set(), new, data="class", method="mle")

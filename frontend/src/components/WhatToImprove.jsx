@@ -39,7 +39,7 @@ const BASIS_TEXT = {
     "Each effect is RePyability's numerical (deterministic, to about 1e-7) value recomputed with the lever moved — no simulation.",
   simulation:
     "Each effect is simulated: the diagram with the lever moved against the diagram as it is, with common random numbers, " +
-    "with its 95% interval.",
+    "with its 90% interval.",
 };
 
 // The method's one word, leading the line under the table.

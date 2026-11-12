@@ -591,18 +591,19 @@ def _fitted_weibull(env, name, seed, beta, n=30, cutoff=7000.0):
 
 def test_optimal_replacement_flags_weak_wear_out_evidence(env):
     costs = {"planned_cost": 4000, "unplanned_cost": 25000}
-    # β ≈ 1.97, 95% CI ≈ [1.26, 3.08] — on the log scale since #265 ([1.09, 2.84] symmetric before).
+    # β ≈ 1.97, 90% CI ≈ [1.35, 2.88] — on the log scale since #265, at 90% since Nov 2026.
     weak, b = _fitted_weibull(env, "Weak", seed=1, beta=1.77)
-    assert 1 < b["ci"][0] < 1.3
+    assert 1 < b["ci"][0] < 1.4
     out = _ok(_call(env.token[A], "analyse", {"action": "optimal_replacement", "model_id": weak, **costs}))
     assert out["beneficial"] is True
     su = out["shape_uncertainty"]
-    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    assert su["beta_ci"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
     assert su["at_beta_lower"]["savings"] < 0.5 * out["savings"] < su["at_beta_upper"]["savings"]
-    assert "reaches down to 1.26" in out["uncertainty_note"] and "weakly" in out["uncertainty_note"]
+    assert "reaches down to 1.35" in out["uncertainty_note"] and "weakly" in out["uncertainty_note"]
 
-    # β ≈ 1.49, log-scale CI ≈ [0.97, 2.31] (#265: seed 3's interval no longer reaches 1).
-    random_ish, b = _fitted_weibull(env, "Random-ish", seed=13, beta=1.77)
+    # β ≈ 1.43, 90% log-scale CI ≈ [0.95, 2.15] (#265: seed 3's interval no longer reaches 1;
+    # seed 13's 90% interval no longer does either).
+    random_ish, b = _fitted_weibull(env, "Random-ish", seed=53, beta=1.77)
     assert b["ci"][0] < 1 < b["ci"][1]
     out = _ok(_call(env.token[A], "analyse", {"action": "optimal_replacement", "model_id": random_ish, **costs}))
     assert "includes 1" in out["uncertainty_note"]
@@ -627,7 +628,7 @@ def test_failure_finding_interval_gets_the_shape_treatment(env):
     early, b = _fitted_weibull(env, "Early", seed=3, beta=0.6, n=20, cutoff=1e9)  # β ≈ 0.62, CI ≈ [0.41, 0.83]
     out = _ok(_call(env.token[A], "analyse", {"action": "failure_finding_interval", "model_id": early, **target}))
     su = out["shape_uncertainty"]
-    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    assert su["beta_ci"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
     alpha = next(p["value"] for p in _ok(_call(env.token[A], "get", {"kind": "model", "id": early}))["params"]
                  if p["name"] == "alpha")
     for end, beta in (("at_beta_lower", b["ci"][0]), ("at_beta_upper", b["ci"][1])):
@@ -675,7 +676,7 @@ def test_optimal_overhaul_gets_the_shape_treatment(env):
     assert 2.0 < b["ci"][0] < b["value"] < b["ci"][1]  # the interval is stored with the fit
     out = _ok(_call(env.token[A], "analyse", {"action": "optimal_overhaul", "model_id": clear.id, **costs}))
     su = out["shape_uncertainty"]
-    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    assert su["beta_ci"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
     low = recurrent_fit.optimal_overhaul({"model_id": "crow_amsaa", "params": [a["value"], b["ci"][0]]}, 100, 1000)
     assert su["at_beta_lower"]["optimal_interval"] == pytest.approx(low["optimal"]["interval"], rel=1e-3)
     assert su["at_beta_lower"]["saving_pct"] == pytest.approx(low["saving_pct"], rel=1e-3)
@@ -685,7 +686,7 @@ def test_optimal_overhaul_gets_the_shape_treatment(env):
 
     weak = _nhpp_model(env, "Pumps", seed=2, beta=1.5, systems=2, window=2000)
     out = _ok(_call(env.token[A], "analyse", {"action": "optimal_overhaul", "model_id": weak.id, **costs}))
-    assert out["optimal"] and out["shape_uncertainty"]["beta_ci_95"][0] < 1
+    assert out["optimal"] and out["shape_uncertainty"]["beta_ci"][0] < 1
     assert out["shape_uncertainty"]["at_beta_lower"]["pays"] is False
     assert "includes 1" in out["uncertainty_note"] and "tentative" in out["uncertainty_note"]
 

@@ -25,7 +25,7 @@ from backend.services.rbd_analysis import AnalysisError
 
 CHECK_SAMPLES = 20_000
 CHECK_SEED = 1
-CONFIDENCE = 0.95
+CONFIDENCE = 0.90  # the simulated mean's interval, two-sided (backend.levels)
 TYPES = ("standby", "loadshare")
 
 

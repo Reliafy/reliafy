@@ -43,6 +43,7 @@ from backend.fitting import (
 )
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
+from backend import levels as rule
 from surpyval import AcceleratedLife
 from surpyval.univariate.regression import accelerated_life as _al
 from backend.errors import client_message
@@ -414,7 +415,7 @@ def refit(inputs: dict, distribution_id: str, life_model_id: str):
         raise FitError(str(exc) or type(exc).__name__) from exc
 
 
-_Z95 = 1.959963984540054
+_Z95 = rule.Z95  # intervals saved before the 90% rule
 
 
 def _characteristic_life(model, Z: np.ndarray) -> np.ndarray:
@@ -444,17 +445,17 @@ def _build_payload(
     def _ci(i):
         if ses is None or not np.isfinite(ses[i]):
             return None
-        # SurPyval's own 95% Wald interval (#231): on the log scale for a
+        # SurPyval's own 90% Wald interval (#231): on the log scale for a
         # positive shape parameter, so it stays inside its support; a
         # positive life-stress coefficient (Arrhenius' b) on the log scale
         # too (#262); the unbounded coefficients' is symmetric.
         if i < len(model_names):
-            ci = param_interval(model, model_names[i], 0.95, "wald")
+            ci = param_interval(model, model_names[i], rule.LEVEL, "wald")
             if ci is not None:
                 return ci
             if _bounded_coefficient(model, model_names[i]) is not None:
                 return None  # never a symmetric interval that leaves its support
-        return [float(params[i] - _Z95 * ses[i]), float(params[i] + _Z95 * ses[i])]
+        return [float(params[i] - rule.Z * ses[i]), float(params[i] + rule.Z * ses[i])]
 
     # Distribution shape parameters: everything after the substituted scale
     # (index 0, a fixed placeholder). Names come from the distribution.
@@ -510,6 +511,7 @@ def _build_payload(
         "stresses": stresses,
         "params": shape_params,
         "coefficients": coeffs,
+        "ci_level": rule.LEVEL,  # every interval here, two-sided (at_level moves a fit saved before)
         "levels": levels,
         "n_failures": int(round(float(np.sum(failed)))),
         "life_stress_plot": _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels, inputs),
@@ -569,7 +571,7 @@ _MAX_OWN_FITS = 40
 def _own_fits(dist, inputs: dict, uniq: np.ndarray, failed: np.ndarray) -> list:
     """Each tested level's distribution fitted on its own data alone (as the
     probability plot's points are placed): its own characteristic life (the
-    parameter the life-stress model replaces) and shape, with 95% intervals,
+    parameter the life-stress model replaces) and shape, with 90% intervals,
     for the Diagnostics tab's "is the shape the same at every stress?" and
     "do the levels follow the life model?" charts. None for a level with
     fewer than two failures or no verified fit."""
@@ -603,7 +605,7 @@ def _own_fits(dist, inputs: dict, uniq: np.ndarray, failed: np.ndarray) -> list:
             try:
                 with warnings.catch_warnings(), np.errstate(all="ignore"):
                     warnings.simplefilter("ignore")
-                    ci = np.asarray(fit.param_cb(name, alpha_ci=0.05, bound="two-sided"), dtype=float).ravel()
+                    ci = np.asarray(fit.param_cb(name, alpha_ci=rule.ALPHA, bound="two-sided"), dtype=float).ravel()
             except Exception:  # noqa: BLE001 - no covariance
                 return None
             return [float(ci[0]), float(ci[1])] if ci.size == 2 and np.all(np.isfinite(ci)) else None
@@ -897,7 +899,7 @@ def evaluate(
     points: int = 300,
     *,
     mission_time: Optional[float] = None,
-    confidence: float = 0.95,
+    confidence: float = rule.LEVEL,
     bounds_method: Optional[str] = "wald",
     tested=None,
 ) -> dict:
@@ -983,7 +985,7 @@ def evaluate(
 #: interval over ``n_boot`` refits; tens of seconds, so a compute job).
 BOUND_METHODS = ("wald", "lr", "bootstrap")
 METHOD_NAMES = {"wald": "Wald (Fisher matrix)", "lr": "Likelihood ratio", "bootstrap": "Bootstrap (BCa)"}
-DEFAULT_CONFIDENCE = 0.95
+DEFAULT_CONFIDENCE = rule.LEVEL  # the app's 90% (two-sided band, one-sided life bounds)
 #: Bootstrap refits: SurPyval's default. 1000 is steadier at a 5% tail, at
 #: five times the cost.
 DEFAULT_N_BOOT = 200
@@ -1161,8 +1163,8 @@ def _bounded_wald(model, name: str, confidence: float):
 
 
 def positive_coefficient_intervals(results: dict) -> dict:
-    """A saved fit's results with its bounded life-stress coefficients' 95%
-    intervals on the log scale (#262). Fits saved before then hold
+    """A saved fit's results with its bounded life-stress coefficients'
+    intervals on the log scale (#262), and every interval at 90% (:func:`at_level`). Fits saved before then hold
     SurPyval's symmetric Wald interval, ``value ± z·se``, which can go below
     zero for a positive coefficient (Arrhenius' ``b``): the standard error is
     read back from its width and the interval rebuilt as a new fit gives it.
@@ -1170,11 +1172,11 @@ def positive_coefficient_intervals(results: dict) -> dict:
     entry = LIFE_MODELS.get((results or {}).get("life_model_id"))
     coeffs = (results or {}).get("coefficients")
     if entry is None or not isinstance(coeffs, list):
-        return results
+        return at_level(results)
     pm = getattr(entry["model"], "phi_param_map", {}) or {}
     declared = getattr(entry["model"], "phi_bounds", None)
     if not pm or callable(declared) or not declared:
-        return results
+        return at_level(results)
     changed = False
     fixed = []
     for c in coeffs:
@@ -1189,7 +1191,7 @@ def positive_coefficient_intervals(results: dict) -> dict:
         except (TypeError, ValueError, KeyError):
             fixed.append(c)
             continue
-        symmetric = abs((lo + hi) / 2.0 - value) <= 1e-9 * max(1.0, abs(value), abs(hi - lo))
+        symmetric = abs((lo + hi) / 2.0 - value) <= 1e-9 * max(abs(value), abs(hi - lo), 1e-300)
         if (lower is None and upper is None) or not symmetric or hi <= lo:
             fixed.append(c)
             continue
@@ -1200,7 +1202,64 @@ def positive_coefficient_intervals(results: dict) -> dict:
             new = [v if v is not None and math.isfinite(v) else None for v in new]
         fixed.append({**c, "ci": new})
         changed = True
-    return {**results, "coefficients": fixed} if changed else results
+    return at_level({**results, "coefficients": fixed} if changed else results)
+
+
+def _rescaled(ci, value, lower=None):
+    """A stored 95% interval moved to 90%: on the log of the distance to
+    ``lower`` (a positive parameter, a bounded coefficient), else symmetric."""
+    if not (isinstance(ci, list) and len(ci) == 2) or any(v is None for v in ci):
+        return ci
+    try:
+        off = float(lower) if lower is not None else None
+        v, lo, hi = float(value), float(ci[0]), float(ci[1])
+    except (TypeError, ValueError):
+        return ci
+    if off is not None:
+        new = rule.rescale(v - off, lo - off, hi - off, log=True)
+        return [new[0] + off, new[1] + off] if new else ci
+    return rule.rescale(v, lo, hi) or ci
+
+
+def at_level(results: dict) -> dict:
+    """A saved fit's parameter, coefficient and per-level intervals at 90%
+    two-sided (``ci_level``). One saved before the rule holds 95% Wald
+    intervals: each is moved to 90% on the scale it was taken on (the shape
+    and the levels' own fits on the log scale; a bounded coefficient on the
+    log of its distance to the bound; any other coefficient symmetric). The
+    stored document is left as it is."""
+    if not isinstance(results, dict) or results.get("ci_level") is not None or results.get("kind") != "alt":
+        return results
+    entry = LIFE_MODELS.get(results.get("life_model_id")) or {}
+    pm = getattr(entry.get("model"), "phi_param_map", {}) or {}
+    declared = getattr(entry.get("model"), "phi_bounds", None)
+    declared = declared if isinstance(declared, (list, tuple)) else []
+    out = dict(results)
+    out["params"] = [{**p, "ci": _rescaled(p.get("ci"), p.get("value"), 0.0)} if isinstance(p, dict) else p
+                     for p in results.get("params") or []]
+    coeffs = []
+    for c in results.get("coefficients") or []:
+        if not isinstance(c, dict):
+            coeffs.append(c)
+            continue
+        off = pm.get(c.get("name"))
+        lower = declared[off][0] if off is not None and off < len(declared) and declared[off] else None
+        symmetric = isinstance(c.get("ci"), list) and len(c["ci"]) == 2 and None not in c["ci"] and abs(
+            (float(c["ci"][0]) + float(c["ci"][1])) / 2.0 - float(c.get("value") or 0)) <= 1e-9 * max(
+            abs(float(c.get("value") or 0)), abs(float(c["ci"][1]) - float(c["ci"][0])), 1e-300)
+        coeffs.append({**c, "ci": _rescaled(c.get("ci"), c.get("value"), None if symmetric else lower)})
+    out["coefficients"] = coeffs
+    lv = []
+    for row in results.get("levels") or []:
+        own = row.get("own") if isinstance(row, dict) else None
+        if isinstance(own, dict):
+            own = {**own, "life_ci": _rescaled(own.get("life_ci"), own.get("life"), 0.0),
+                   "shape": [{**s, "ci": _rescaled(s.get("ci"), s.get("value"), 0.0)} for s in own.get("shape") or []]}
+            row = {**row, "own": own}
+        lv.append(row)
+    out["levels"] = lv
+    out["ci_level"] = rule.LEVEL
+    return out
 
 
 def param_interval(model, name: str, confidence: float, method: str = "wald", **boot) -> Optional[list]:

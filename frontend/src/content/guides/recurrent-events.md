@@ -105,7 +105,7 @@ The number that formalises this is **β**:
   faster than repairs restore it, and there's usually a decision waiting at the
   end of that trend.
 
-β comes with its **95% confidence interval**, and the verdict is read from the
+β comes with its **90% confidence interval**, and the verdict is read from the
 interval rather than the point estimate: *deteriorating* only when the whole
 interval is above 1, *improving* only when it's all below, and *stable* when it
 includes 1 — the data can't tell the trend from a constant rate.
@@ -119,12 +119,12 @@ exact bounds from MIL-HDBK-189C when the test design allows. Below them, the
 verdict in words.
 
 When the data names each failure's cause, the switch under the chart changes
-**All failures** to **By cause**: the MCF of each cause, with the 95% band of the
+**All failures** to **By cause**: the MCF of each cause, with the 90% band of the
 one you pick, and each cause's own growth shape β. Often one failure mode is
 accelerating while the rest are steady.
 
 **Effects** (covariate models only) gives each covariate's effect as a rate
-ratio, charted with its 95% interval and in words: "at site Inland, failures
+ratio, charted with its 90% interval and in words: "at site Inland, failures
 come about 2.2× as often as at Coastal". A text covariate is compared with the
 level most systems have; an interval that includes 1 means the data can't rule
 out no effect.

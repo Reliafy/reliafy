@@ -61,8 +61,8 @@ METHODS = ("renewals", "single")
 # (repairable-system) model whose every failure is counted (#235).
 MODEL_KINDS = FLEET_MODEL_KINDS
 MODEL_COLLECTIONS = FLEET_MODEL_COLLECTIONS  # the collection each kind's model_id lives in
-# The repairable forecast's interval: P10–P90, as the life-model forecasts report.
-_LEVELS = (0.10, 0.90)
+# The repairable forecast's interval: P5–P95 (90% two-sided, backend.levels), as the life-model forecasts report.
+_LEVELS = (0.05, 0.95)
 RATE_SOURCES = ("manual", "estimated")
 
 # Per-item fields maintained by the ingest API's rate estimator (never taken
@@ -430,6 +430,7 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
         "unit": results.get("unit", ""),
         "n_items": len(items),
         "rate_source": settings.get("rate_source", "manual"),
+        "interval_level": INTERVAL_LEVEL,
     }
     if not items:
         return {**base, "expected": 0.0, "interval": [0.0, 0.0],
@@ -630,9 +631,9 @@ def _cond_prob(dist, age, extra):
     return np.clip(np.nan_to_num(p, nan=0.0), 0.0, 1.0)
 
 
-# The single (first-failure) forecast's interval: P10–P90, the same level as
-# the renewals simulation's percentile interval.
-INTERVAL_LEVEL = 0.8
+# The single (first-failure) forecast's interval: P5–P95 (90% two-sided, the
+# app's rule), the same level as the renewals simulation's percentile interval.
+INTERVAL_LEVEL = 0.9
 
 
 class _ItemClock:
@@ -712,7 +713,7 @@ def _rows(Z, keep):
 def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
                      item_periods: bool = False, unit: str = "") -> dict:
     """First failures (each item fails at most once) from ``surpyval.forecast``:
-    expected failures with an exact Poisson-binomial P10–P90 interval, the same
+    expected failures with an exact Poisson-binomial P5–P95 interval, the same
     per period, and each item's chance of failing (#234)."""
     k = len(items)
     horizon = np.arange(1, periods + 1, dtype=float)
@@ -833,11 +834,11 @@ def _forecast_renewals(dist, ages, uses, rates, periods, items, *, weights=None)
         per_item_counts[i] = item_total / sims
 
     expected = float(counts.mean())
-    p10, p90 = np.percentile(counts, [10, 90])
+    p_lo, p_hi = np.percentile(counts, [5, 95])
     prob_any = _cond_prob(dist, ages, uses)
     out = {
         "expected": expected,
-        "interval": [float(p10), float(p90)],
+        "interval": [float(p_lo), float(p_hi)],
         "sims": sims,
         "per_item": [
             {"id": it["id"], "expected": float(per_item_counts[i]),
@@ -1088,7 +1089,7 @@ def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
         "unit": (doc.results or {}).get("unit", ""),
         "n_items": len(items),
         "rate_source": settings.get("rate_source", "manual"),
-        "interval_level": "P10–P90",
+        "interval_level": INTERVAL_LEVEL,
         "note": REPAIRABLE_NOTE,
     }
     if not items:
@@ -1109,7 +1110,7 @@ def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
 
 
 def _poisson_interval(mean) -> np.ndarray:
-    """``[[lower, upper], ...]``: the P10–P90 interval of Poisson counts."""
+    """``[[lower, upper], ...]``: the P5–P95 interval of Poisson counts."""
     from scipy.stats import poisson
 
     mean = np.atleast_1d(np.asarray(mean, dtype=float))
@@ -1142,7 +1143,7 @@ def forecast_repairable(model, ages, rates, periods: int, items, services=None) 
         for rate in distinct:
             idx = np.flatnonzero(rates == rate)
             with np.errstate(all="ignore"):
-                fc = surpyval.forecast(model, age=ages[idx], horizon=rate * steps, alpha_ci=0.2)
+                fc = surpyval.forecast(model, age=ages[idx], horizon=rate * steps, alpha_ci=1.0 - INTERVAL_LEVEL)
             cum[idx] = np.asarray(fc.per_unit, dtype=float)
     else:
         # Many different rates: the same means, Λ(a + k·r) − Λ(a), in one

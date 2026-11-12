@@ -379,7 +379,7 @@ def get_item(
 def item_prediction_at_confidence(
     model_id: str,
     item_id: str,
-    confidence: float = 0.95,
+    confidence: float = 0.80,  # two-sided: its lower end is the 90% one-sided bound (the rule)
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:

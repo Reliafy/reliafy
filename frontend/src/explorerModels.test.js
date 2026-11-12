@@ -133,7 +133,8 @@ test("a Bayesian update's numbers are credible intervals at its level, never bou
   assert.equal(meanText(bayes), "3.68 years, 90% credible 2.9–4.6");
   assert.equal(boundsLabel(bayes), "90% credible interval");
   assert.equal(boundsLabel({ ...bayes, credible_level: 0.95 }), "95% credible interval");
-  assert.equal(boundsLabel(WEIBULL), "95% bounds");
+  assert.equal(boundsLabel(WEIBULL), "90% bounds");
+  assert.equal(boundsLabel({ ...WEIBULL, ci_level: 0.95 }), "95% bounds"); // a repairable fit saved before the rule
   for (const text of [headline(bayes), meanText(bayes), boundsLabel(bayes)]) assert.doesNotMatch(text, /bound|confidence/i);
 });
 

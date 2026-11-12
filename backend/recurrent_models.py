@@ -14,7 +14,7 @@ Crow-AMSAA, Duane, HPP and Cox-Lewis. This module adds, from
   for the Poisson-process models;
 - **cause marks**: ``CauseSpecificMCF`` and ``CauseSpecificNHPP`` when the
   data has a cause (failure-mode) column: the MCF of each cause with its
-  95% band and a Crow-AMSAA fit per cause.
+  90% band and a Crow-AMSAA fit per cause.
 
 Every statistic comes from SurPyval; this module only prepares the inputs
 and puts the results in words.
@@ -82,7 +82,7 @@ EXTRA_MODELS = {
 BASELINES = {"crow_amsaa": CrowAMSAA, "duane": Duane, "cox_lewis": CoxLewis}
 BASELINE_NAMES = {"crow_amsaa": "Crow-AMSAA", "duane": "Duane", "cox_lewis": "Cox-Lewis"}
 
-CI_LEVEL = 0.95
+CI_LEVEL = 0.90  # two-sided, the app's rule (backend.levels)
 _MAX_LEVELS = 12        # levels of one categorical covariate
 _MAX_CAUSES = 12        # causes shown, most failures first
 _UNIT_ROWS = 50         # systems in the next-failure table
@@ -458,9 +458,9 @@ def cause_labels(df: pd.DataFrame, mapping: dict, keep: pd.Series) -> np.ndarray
 
 
 def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
-    """The MCF of each cause with its 95% band (``CauseSpecificMCF``) and a
+    """The MCF of each cause with its 90% band (``CauseSpecificMCF``) and a
     Crow-AMSAA fit per cause (``CauseSpecificNHPP``): its growth shape with
-    the 95% interval, and its failures. Failures with no cause count under
+    the 90% interval, and its failures. Failures with no cause count under
     "No cause given"; end-of-observation rows carry none. The most frequent
     causes first, at most 12 (the MCFs of the rest are left out, the fit
     still uses them)."""
@@ -652,6 +652,7 @@ def _base(np_model, inputs: dict, model_id: str, opts: dict, unit: str) -> dict:
     x, i = inputs["x"], inputs["i"]
     return {
         "kind": "recurrent",
+        "ci_level": CI_LEVEL,  # every interval and band, two-sided
         "family": family(model_id),
         "unit": canonical_unit(unit),
         "n_systems": int(len(set(np.asarray(i).tolist()))),
@@ -681,11 +682,11 @@ def _ratio_reading(name: str, meta: list, ratio: float, ci) -> tuple[str, str]:
     if col and col["kind"] == "category":
         text = f"At {subject}, failures come about {ratio:.2g}× as often{versus}"
         if ci:
-            text += f" (we're 95% sure it's {ci[0]:.2g}× to {ci[1]:.2g}×)"
+            text += f" (we're 90% sure it's {ci[0]:.2g}× to {ci[1]:.2g}×)"
     else:
         text = f"With {subject}, failures come {_change(ratio)}"
         if ci:
-            text += f" (we're 95% sure: {_change(ci[0], short=True)} to {_change(ci[1], short=True)})"
+            text += f" (we're 90% sure: {_change(ci[0], short=True)} to {_change(ci[1], short=True)})"
     text += "." if effect != "unclear" else ", but the data can't rule out no effect."
     return text[0].upper() + text[1:], effect
 
@@ -800,7 +801,7 @@ _RESTORATION = {
 
 def restoration(model_id: str, opts: dict, value: float, ci) -> dict:
     """The repair-effectiveness parameter in words: how much of a system's
-    age (or failure rate) each repair takes away, with its 95% interval."""
+    age (or failure rate) each repair takes away, with its 90% interval."""
     param, label, kind = _RESTORATION[model_id]
     out = {"parameter": param, "label": label, "value": value, "ci": ci}
     if kind == "g1":
@@ -810,7 +811,7 @@ def restoration(model_id: str, opts: dict, value: float, ci) -> dict:
         text = f"Each time between failures is about {ratio:.2f}× the one before"
         short = f"{text}: the gap {trend} with every repair."
         if rci:
-            text += f" (we're 95% sure: {rci[0]:.2f}× to {rci[1]:.2f}×)"
+            text += f" (we're 90% sure: {rci[0]:.2f}× to {rci[1]:.2f}×)"
         text += f": the gap {trend} with every repair"
         text += " (deterioration)." if ratio < 1 else " (improvement)." if ratio > 1 else "."
         out.update({"effectiveness": None, "ratio": ratio, "ratio_ci": rci, "sentence": text, "short": short,
@@ -840,7 +841,7 @@ def restoration(model_id: str, opts: dict, value: float, ci) -> dict:
     short = text + "."
     if eci:
         lo, hi = max(eci[0], -9.99), min(eci[1], 9.99)
-        text += f" (we're 95% sure: {_pct(lo)} to {_pct(hi)})"
+        text += f" (we're 90% sure: {_pct(lo)} to {_pct(hi)})"
     text += "."
     scale = ("0% is a minimal repair (as bad as old)." if model_id == "ari"
              else "100% is as good as new, 0% as bad as old.")

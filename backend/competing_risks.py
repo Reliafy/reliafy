@@ -56,7 +56,8 @@ CR_MODELS = {
 }
 RATIO_LABELS = {"Cox": "hazard ratio", "Fine-Gray": "subdistribution hazard ratio"}
 
-ALPHA = 0.05  # 95% bounds on the incidence curves
+ALPHA = 0.10  # 90% two-sided bounds on the incidence curves (backend.levels)
+SIGNIFICANCE = 0.05  # Gray's test and the coefficients' p-values: a test, not a bound
 MAX_CAUSES = 12
 MAX_GROUPS = 12
 CURVE_POINTS = 400
@@ -205,7 +206,7 @@ def _incidence(model, cause, t) -> np.ndarray:
 
 
 def _cif_bounds(model, cause, t) -> Optional[np.ndarray]:
-    """A mode's pointwise 95% bounds, where SurPyval gives them
+    """A mode's pointwise 90% bounds, where SurPyval gives them
     (``CompetingRisks.cb``, since 0.24): None otherwise."""
     cb = getattr(model, "cb", None)
     if not callable(cb):
@@ -216,7 +217,7 @@ def _cif_bounds(model, cause, t) -> Optional[np.ndarray]:
 
 
 def _all_cause_bounds(prep: dict, grid: np.ndarray, everything: np.ndarray) -> np.ndarray:
-    """The all-cause failure probability's pointwise 95% bounds: SurPyval's
+    """The all-cause failure probability's pointwise 90% bounds: SurPyval's
     Kaplan-Meier ``cb`` on the same data (the all-cause curve *is* the
     Kaplan-Meier one). Before the first failure the curve is 0 for certain,
     so the bound there is 0."""
@@ -282,7 +283,7 @@ def _reading(causes: list[dict], horizon: float, leads: list[dict], us: str) -> 
     text = (f"{top['name'][:1].upper()}{top['name'][1:]} causes {_pct(top['share'])} of failures by {when}: "
             f"{_pct(at['cif'])} of units fail from it by then")
     if at.get("lower") is not None and at.get("upper") is not None:
-        text += f" (we're 95% sure it's between {_pct(at['lower'])} and {_pct(at['upper'])})"
+        text += f" (we're 90% sure it's between {_pct(at['lower'])} and {_pct(at['upper'])})"
     text += "."
     if len(leads) > 1:
         first, then = leads[0], leads[1]
@@ -334,7 +335,7 @@ def _gray(prep: dict, horizon: float, group_column: str, us: str) -> dict:
                 r = gray_test(x, e, group, event=cause, c=c, n=n)
             p = _num(r.p_value)
             row.update({"statistic": _num(r.statistic), "df": int(r.df), "p_value": p,
-                        "significant": p is not None and p < ALPHA})
+                        "significant": p is not None and p < SIGNIFICANCE})
         except Exception as exc:  # noqa: BLE001 - one mode failing shouldn't sink the rest
             row.update({"error": str(exc) or type(exc).__name__, "significant": False})
         results.append(row)
@@ -394,7 +395,7 @@ def _values(model, name: str, k: int) -> list:
 
 def _regression(kind: str, prep: dict, df: pd.DataFrame, covariates: list) -> dict:
     """Cause-specific Cox or Fine-Gray coefficients per failure mode, with
-    their ratios, 95% intervals and p-values: the coefficients from
+    their ratios, 90% intervals and p-values: the coefficients from
     ``CompetingRisksProportionalHazards``, the standard errors and p-values
     from SurPyval's one-mode fit of the same model (:func:`_one_mode`)."""
     if not covariates:
@@ -458,7 +459,7 @@ def _regression(kind: str, prep: dict, df: pd.DataFrame, covariates: list) -> di
 def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional[list] = None,
         unit: Optional[str] = None) -> dict:
     """Fit life data by failure mode and build the payload: each mode's
-    cumulative incidence with 95% bounds, the all-cause failure probability,
+    cumulative incidence with 90% bounds, the all-cause failure probability,
     each mode at a round horizon near the last failure, which mode leads
     when, Gray's test across groups (a ``g`` column), a sentence, and — for
     the regression ids — the coefficients per mode."""
@@ -520,6 +521,7 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional
             "all_upper": _nums(all_cb[:, 1]),
         },
         "mode_bounds": mode_bounds,
+        "ci_level": round(1.0 - ALPHA, 6),  # every band and interval here, two-sided
         "reading": _reading(rows, horizon, leads, us),
         "cause_column": mapping.get(CAUSE_KEY),
     }

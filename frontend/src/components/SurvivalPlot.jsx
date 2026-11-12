@@ -3,24 +3,28 @@ import Plot from "./Plot.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { bandPair, fitLine } from "../plotTheme.js";
 import "./NonParametric.css";
+import { levelPct } from "../levels.js";
 
 // The band choices (#85): pointwise holds at each time on its own; the two
-// simultaneous bands hold for the whole curve at once.
-const BANDS = [
-  { value: "pointwise", label: "Each time", legend: "95% CI",
-    title: "95% sure of the curve at each time on its own" },
-  { value: "hall-wellner", label: "Whole curve", legend: "95% band, whole curve",
-    title: "Hall-Wellner band: 95% sure the whole curve lies inside it, from the first failure to the last" },
-  { value: "nair", label: "Whole curve (Nair)", legend: "95% band, whole curve (Nair)",
-    title: "Nair's equal-precision band: 95% sure the whole curve lies inside it, over the middle of the data; "
+// simultaneous bands hold for the whole curve at once. ``lv``: "90%", the
+// estimate's level (95% on one saved before the rule).
+const bandChoices = (lv) => [
+  { value: "pointwise", label: "Each time", legend: `${lv} CI`,
+    title: `${lv} sure of the curve at each time on its own` },
+  { value: "hall-wellner", label: "Whole curve", legend: `${lv} band, whole curve`,
+    title: `Hall-Wellner band: ${lv} sure the whole curve lies inside it, from the first failure to the last` },
+  { value: "nair", label: "Whole curve (Nair)", legend: `${lv} band, whole curve (Nair)`,
+    title: `Nair's equal-precision band: ${lv} sure the whole curve lies inside it, over the middle of the data; `
       + "its width follows the pointwise bounds" },
 ];
 
 // Step survival curve for a non-parametric estimate (KM/NA/FH/Turnbull),
-// with a 95% confidence band where available. ``estimate.bands`` (fits from
+// with a 90% confidence band where available. ``estimate.bands`` (fits from
 // #85 on) adds the simultaneous bands, chosen under the chart.
 export default function SurvivalPlot({ estimate, unit, download = null, fill = false }) {
   const { x = [], R = [], cb_lower = [], cb_upper = [], bands = {} } = estimate || {};
+  const lv = levelPct(estimate?.level ?? 0.95);
+  const BANDS = bandChoices(lv);
   const [which, setWhich] = useState("pointwise");
   const options = BANDS.filter((b) => b.value === "pointwise" || bands[b.value]);
   const pick = options.find((b) => b.value === which) || options[0];
@@ -54,7 +58,7 @@ export default function SurvivalPlot({ estimate, unit, download = null, fill = f
         <div className="plot-option-row">
           <SegmentedControl
             size="sm"
-            label="95% band"
+            label={`${lv} band`}
             showLabel
             options={options.map(({ value, label, title }) => ({ value, label, title }))}
             value={pick.value}

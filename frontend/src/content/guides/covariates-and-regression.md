@@ -95,14 +95,14 @@ in service.
 
 Fit the seal data with **Weibull PH** (the sample model *Valve seal life —
 Weibull PH on temp & load* is this fit). It opens on the **Effects** tab: a
-chart of each covariate's hazard ratio with its 95% interval (1 means no
+chart of each covariate's hazard ratio with its 90% interval (1 means no
 effect), each effect in words, and the baseline beside them. The **Data** tab
 has every coefficient:
 
-| Covariate | β | 95% interval | Hazard ratio e^β |
+| Covariate | β | 90% interval | Hazard ratio e^β |
 |---|---|---|---|
-| temp_C | 0.138 | 0.093 to 0.183 | 1.148 |
-| load | 5.32 | 3.02 to 7.63 | 205 |
+| temp_C | 0.138 | 0.101 to 0.176 | 1.148 |
+| load | 5.32 | 3.39 to 7.26 | 205 |
 
 ![The Effects tab: each covariate's hazard ratio with its interval, and the effects in words](/guides/img/cov-02-coefficients.png)
 
@@ -205,7 +205,7 @@ hours) = 36%, at least 26% at 90% confidence.
 ![A changing-load model's calculator: 60% load, then 90% from 4,800 hours](/guides/img/cov-03-schedule.png)
 
 Its **Effects** tab says it in words: *every +10% in load_pct multiplies
-the hazard by 1.74 (95% interval 1.19 to 2.55)*, and **Model characteristics**
+the hazard by 1.74 (90% interval 1.26 to 2.4)*, and **Model characteristics**
 gives the B-lives and the mean life along the Calculator's schedule.
 
 ## Use it elsewhere

@@ -419,7 +419,7 @@ export function deleteModel(id) {
 // { batches: [{label, demands, failures}] } (one row = one count) or
 // { dataset_id, demands_column, failures_column, batch_column? }; the bounds
 // are exact at ``confidence`` (#233).
-export function createPerDemandModel(name, source, confidence = 0.95) {
+export function createPerDemandModel(name, source, confidence = 0.9) {
   return withEvent(
     request("/api/models/per-demand", {
       method: "POST",
@@ -1110,7 +1110,7 @@ export function compareRbds(graph, otherId, { name = null, otherName = null, tMa
 }
 
 // Check by simulation (#326): a standby or load-sharing block's exact mean
-// life beside its simulated mean and 95% interval. ``node`` is the block as
+// life beside its simulated mean and 90% interval. ``node`` is the block as
 // the builder stores it ({type, data}). Quick and free.
 export function checkBlockMean(node, unit = "") {
   return request("/api/rbds/check-block-mean", {

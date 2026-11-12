@@ -12,6 +12,7 @@ import {
   phaseCovariates, phaseLine, phaseNeeds, placeholderWarning, unitWord, withBlockValue, withValue,
 } from "../explorerMissions.js";
 import "./CovariateCalculator.css";
+import { levelPct } from "../levels.js";
 import "./RbdMission.css";
 import "./MissionPane.css";
 
@@ -348,7 +349,7 @@ function MissionAnswer({ result, busy, error, stale, total, unit }) {
                      ph ? (ph.without != null ? { label: `Without ${ph.n === 1 ? "it" : "them"}`, value: pct(ph.without), hint: "the blocks with models" } : null)
                        : { label: "Fails", value: pct(result.unreliability) },
                      { label: "Mission length", value: lengthText(total, unit) },
-                     result.interval ? { label: `Range (${fmt(result.interval.confidence * 100)}%)`, value: `${pct(result.interval.lower)}–${pct(result.interval.upper)}`, hint: "the simulation's precision" } : null,
+                     result.interval ? { label: `Range (${levelPct(result.interval.confidence)})`, value: `${pct(result.interval.lower)}–${pct(result.interval.upper)}`, hint: "the simulation's precision" } : null,
                      risky && (result.phases || []).length > 1 ? { label: "Riskiest phase", value: risky.name } : null,
                    ]}>
       {waiting && result.needs?.length ? result.needs.map((n) => `${n.phase}: ${n.lines.join("; ")}`).join(" · ") : null}

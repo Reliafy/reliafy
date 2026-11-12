@@ -55,7 +55,7 @@ model on the **Modelling** tab first.
 
 The answer says why it has no bound: a mission is worked out from each block's
 model at its point values. A mission too large to work out exactly is
-simulated, and the range shown is the simulation's own precision.
+simulated, and the range shown (90%, two-sided) is the simulation's own precision.
 
 Under **Modelling → System models → RBDs**, a mission's RBD has a **Mission**
 label and says which mission and position it belongs to.

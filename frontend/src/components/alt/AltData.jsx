@@ -6,6 +6,7 @@ import { ScrollCard, TablePanel } from "../model/ModelLayouts.jsx";
 import { formatNumber } from "../../format.js";
 import { shapeParam, stressName } from "../../altFrame.js";
 import { unitInText } from "../unitText.js";
+import { ciPct } from "../../levels.js";
 
 // "85.9–203", or "−0.862 to −0.366" where a dash would read as a minus.
 const ci = (pair) => {
@@ -55,9 +56,9 @@ export default function AltData({ results, datasetId }) {
             </table>
             <p className="mf-note">Life is the characteristic life: the {r.distribution === "Weibull" ? "time by which 63.2% have failed" : "life parameter"} at that level.</p>
           </ScrollCard>
-          <ScrollCard title="Every parameter" sub="with 95% intervals" id="alt-params-h">
+          <ScrollCard title="Every parameter" sub={`with ${ciPct(results, 0.9)} intervals`} id="alt-params-h">
             <table className="mini-table">
-              <thead><tr><th>Parameter</th><th className="mf-num">Estimate</th><th className="mf-num">95% interval</th></tr></thead>
+              <thead><tr><th>Parameter</th><th className="mf-num">Estimate</th><th className="mf-num">{ciPct(results, 0.9)} interval</th></tr></thead>
               <tbody>
                 {(r.params || []).map((p, i) => (
                   <tr key={p.name}>

@@ -23,7 +23,7 @@ from typing import Optional
 import numpy as np
 
 BAND_METHODS = ("hall-wellner", "nair")
-BAND_CONFIDENCE = 0.95
+BAND_CONFIDENCE = 0.90  # two-sided, the app's rule (backend.levels)
 
 
 def is_nonparametric(model) -> bool:

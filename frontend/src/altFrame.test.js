@@ -39,7 +39,7 @@ test("tabs: old ids and names open the tab that holds them now", () => {
 test("answer line: the model, its shape, the life across the levels, the data", () => {
   assert.deepEqual(altAnswerParts(FLUID, { saved: "saved 1 min ago" }), [
     "Inverse power law model (Weibull)",
-    "β 0.777 (95% 0.63–0.959)",
+    "β 0.777 (90% 0.63–0.959)",
     "life 18.4–1,950 minutes across 2 tested levels",
     "70 failed, 6 still running",
     "saved 1 min ago",
@@ -112,4 +112,9 @@ test("diagnostics in words", () => {
   assert.match(shapeCheck({ shape: null }, { distribution_id: "exponential" }).words, /no shape/);
   assert.equal(lifeCheck({ life_stress: { computed: false, detail: "two levels" } }).words, "Can't tell: two levels.");
   assert.equal(compareCheck({ comparison: [{ current: true, delta: 0 }, { delta: 1.2 }] }).tone, "good");
+});
+
+test("the shape's interval says its level: 90% by the rule, a fit's own level where it carries one", () => {
+  assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.9 })[1], "β 0.777 (90% 0.63–0.959)");
+  assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.95 })[1], "β 0.777 (95% 0.63–0.959)");
 });

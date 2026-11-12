@@ -64,9 +64,10 @@ def test_wald_range_is_the_delta_method_written_by_hand_arrhenius():
     assert b["characteristic_life"]["value"] == pytest.approx(life, rel=1e-9)
     g = np.array([1.0 / USE[0], 1.0 / _value(m, "b")])
     se = math.sqrt(float(g @ _coefficient_cov(m, "a", "b") @ g))
-    by_hand = [life * math.exp(-Z95 * se), life * math.exp(Z95 * se)]
+    z90 = float(norm.ppf(0.95))  # the app's 90% two-sided
+    by_hand = [life * math.exp(-z90 * se), life * math.exp(z90 * se)]
     assert b["characteristic_life"]["ci"] == pytest.approx(by_hand, rel=1e-6)
-    assert b["confidence"] == 0.95 and b["method"] == "wald"
+    assert b["confidence"] == 0.90 and b["method"] == "wald"
     assert "note" not in b["characteristic_life"]
 
 
@@ -144,11 +145,11 @@ def test_likelihood_ratio_range_is_surpyvals_bound_on_that_quantile(distribution
 def test_bootstrap_range_shares_the_seeded_refits():
     m = _fit()
     b = alt.use_level_bounds(m, USE, "arrhenius", method="bootstrap", n_boot=100, seed=7)
-    ref = np.ravel(m.quantile_cb([1 - math.exp(-1)], [USE], bound="two-sided", method="bootstrap",
+    ref = np.ravel(m.quantile_cb([1 - math.exp(-1)], [USE], alpha_ci=0.10, bound="two-sided", method="bootstrap",
                                  n_boot=100, random_state=7))
     assert b["characteristic_life"]["ci"] == pytest.approx(ref.tolist(), rel=1e-9)
     # The B-lives are what they were without it.
-    q = m.quantile_cb([0.1, 0.01], [USE], bound="lower", method="bootstrap", n_boot=100, random_state=7)
+    q = m.quantile_cb([0.1, 0.01], [USE], alpha_ci=0.10, bound="lower", method="bootstrap", n_boot=100, random_state=7)
     assert [b["b_lives"]["b10"]["lower"], b["b_lives"]["b1"]["lower"]] == pytest.approx(q.tolist(), rel=1e-9)
 
 
@@ -199,11 +200,11 @@ def test_a_saved_model_gives_the_same_range_and_no_other_number_moves():
     b = ev["bounds"]
     assert set(b) == {"method", "method_name", "confidence", "use_stress", "band", "b_lives", "mission",
                       "coefficients", "characteristic_life", "warnings", "note"}
-    q = direct.quantile_cb([0.1, 0.01], Z, bound="lower")
+    q = direct.quantile_cb([0.1, 0.01], Z, alpha_ci=0.10, bound="lower")
     assert [b["b_lives"]["b10"]["lower"], b["b_lives"]["b1"]["lower"]] == pytest.approx(q.tolist(), rel=1e-6)
-    band = direct.cb(np.asarray(b["band"]["x"]), Z, on="sf")
+    band = direct.cb(np.asarray(b["band"]["x"]), Z, on="sf", alpha_ci=0.10)
     np.testing.assert_allclose(b["band"]["lower"], band[:, 0], rtol=1e-6)
     assert b["mission"]["lower"] == pytest.approx(
-        float(np.ravel(direct.cb([2000.0], Z, on="sf", bound="lower"))[0]), rel=1e-6)
+        float(np.ravel(direct.cb([2000.0], Z, on="sf", alpha_ci=0.10, bound="lower"))[0]), rel=1e-6)
     assert set(ev["metrics"]) == {"characteristic_life", "mean_life", "b50", "b10", "b1", "mission_time",
                                   "mission_reliability"}

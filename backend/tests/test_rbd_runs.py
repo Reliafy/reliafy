@@ -53,7 +53,7 @@ def test_an_in_process_run_is_in_the_history_with_what_it_ran_on(client):
     assert row["method"] == {"key": "tolerance", "label": "Full", "from_now": False}
     assert row["where"] == "In the app" and row["runtime_s"] > 0 and row["replications"] == 20
     a = row["availability"]
-    assert a["lower"] <= a["value"] <= a["upper"] and a["confidence"] == 0.95
+    assert a["lower"] <= a["value"] <= a["upper"] and a["confidence"] == 0.90
     assert row["quote"]["text"] and row["quote"]["median_s"] > 0
 
     detail = client.get(f"/api/rbd-runs/{row['run_id']}").json()

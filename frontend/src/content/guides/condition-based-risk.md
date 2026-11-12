@@ -140,7 +140,7 @@ The **Effects** tab charts each hazard ratio with its interval and puts the
 fitted effects in words: *each 1 mm/s higher vibration multiplies the failure
 rate by 2.79*. A hazard ratio of 2 doubles the failure rate at any moment; 0.5
 halves it. When the interval includes 1, it says the data can't rule out no
-effect. The **Data** tab has every fitted value with its 95% interval and a
+effect. The **Data** tab has every fitted value with its 90% interval and a
 line on what it means. **Diagnostics** draws the units' readings against the
 fitted path, says whether the fit settled, and gives its fit statistics.
 
@@ -153,7 +153,7 @@ charts:
 - **Survival from now**: the chance it is still running at each age ahead. It
   starts at 1 at its age now, because it has survived that far.
 - **Its vibration**: its readings, its own path through them, and where that
-  path is heading, with a 95% band.
+  path is heading, with a 90% band.
 
 ![One unit's view: its survival from now and its own reading path](/guides/img/cbr-03-unit.png)
 

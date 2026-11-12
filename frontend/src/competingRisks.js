@@ -1,8 +1,9 @@
 // Competing risks (#177): read a fit's stored incidence curves at a time and
 // say what they mean. The curves are SurPyval's (Aalen-Johansen, with
-// Aalen's 95% bounds); these helpers only look a step function up and word
+// Aalen's 90% bounds); these helpers only look a step function up and word
 // it. Pure, so `node --test` covers them.
 import { formatNumber, formatPercent } from "./format.js";
+import { LEVEL_TEXT, ciPct } from "./levels.js";
 
 // The value of a right-continuous step curve at ``t``: the last point at or
 // before it (the curve's first value before its first point).
@@ -42,7 +43,7 @@ export const pct = (p) => formatPercent(p);
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 // The answer in words at ``t``: "Bearing wear causes 58% of failures by
-// 5,000 hours: 40% of units fail from it by then (we're 95% sure it's
+// 5,000 hours: 40% of units fail from it by then (we're 90% sure it's
 // between 28% and 52%)." ``unit`` is the unit as running text.
 export function readingAt(result, t, unit = "") {
   const rows = causesAt(result, t);
@@ -56,7 +57,7 @@ export function readingAt(result, t, unit = "") {
   let text = `${cap(top.name)} causes ${pct(top.share)} of failures by ${when}: ${pct(top.cif)} of units fail `
     + "from it by then";
   if (top.lower != null && top.upper != null)
-    text += ` (we're 95% sure it's between ${pct(top.lower)} and ${pct(top.upper)})`;
+    text += ` (we're ${ciPct(result)} sure it's between ${pct(top.lower)} and ${pct(top.upper)})`;
   return `${text}.`;
 }
 
@@ -82,7 +83,7 @@ export function effectSentence(coef, ratioLabel) {
 // The all-cause curve's key: "any mode" in the calculator and the tables.
 export const ANY_MODE = "__any__";
 
-// The chance of failing from any mode by ``t``, with its 95% band (the
+// The chance of failing from any mode by ``t``, with its band (90%, the
 // all-cause Kaplan-Meier bounds): { cif, lower, upper }.
 export function anyAt(result, t) {
   const c = result?.curves;
@@ -114,7 +115,7 @@ export function firstReach(xs, ys, p) {
 }
 
 // The time by which a share ``p`` (0–1) of units have failed from ``mode``
-// (a mode's name or ANY_MODE): { time, lower, upper, top, last }. The 95%
+// (a mode's name or ANY_MODE): { time, lower, upper, top, last }. The 90%
 // range comes from the band: the upper curve reaches ``p`` first (the
 // earliest time), the lower one last (the latest). ``time`` is null when
 // the curve never reaches ``p`` within the data; ``top`` is then how far it
@@ -133,7 +134,7 @@ export function timeToChance(result, mode, p) {
 }
 
 // How much data stands behind each mode's curve, for Diagnostics: each
-// mode's failures and the width of its 95% band at the horizon, with a
+// mode's failures and the width of its band at the horizon, with a
 // verdict. A mode resting on fewer than ``few`` failures is flagged: its
 // curve is a handful of steps and its band is wide.
 export const FEW_FAILURES = 5;
@@ -153,7 +154,7 @@ export function modeSupport(result, few = FEW_FAILURES) {
   return { rows, tone: !rows.length ? undefined : thin.length ? "caveat" : "good", words };
 }
 
-// The widest 95% band at the horizon, in words: "Bearing wear is the least
+// The widest band (90%) at the horizon, in words: "Bearing wear is the least
 // certain: 28% to 52% by 5,000 hours." Empty without bands.
 export function widestBand(result, unit = "") {
   const rows = modeSupport(result).rows.filter((r) => r.width != null);
@@ -182,7 +183,7 @@ export function incidenceRows(result) {
 }
 
 // The regression by mode in words, one line per mode: { mode, lines: [...] }.
-export function effectsByMode(regression) {
+export function effectsByMode(regression, level = LEVEL_TEXT) {
   if (!regression?.coefficients?.length) return [];
   const by = new Map();
   for (const c of regression.coefficients) {
@@ -195,7 +196,7 @@ export function effectsByMode(regression) {
       const base = effectSentence(c, regression.ratio_label);
       if (!base) return { covariate: c.covariate, text: `${c.covariate}: no estimate.` };
       const ci = c.ratio_ci?.[0] != null && c.ratio_ci?.[1] != null
-        ? ` (95% ${formatNumber(c.ratio_ci[0])} to ${formatNumber(c.ratio_ci[1])})` : "";
+        ? ` (${level} ${formatNumber(c.ratio_ci[0])} to ${formatNumber(c.ratio_ci[1])})` : "";
       const none = c.ratio_ci?.[0] != null && c.ratio_ci[0] <= 1 && c.ratio_ci[1] >= 1
         ? ". The interval includes 1, so the data can't rule out no effect" : "";
       return { covariate: c.covariate, text: `${base}${ci}${none}.`, p: c.p_value ?? null };

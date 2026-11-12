@@ -1,5 +1,6 @@
 import Plot from "./Plot.jsx";
 import { GRID, band, dataPoints, fitLine } from "../plotTheme.js";
+import { levelPct } from "../levels.js";
 
 // Renders a probability plot from the backend payload. The backend has already
 // linearised both axes with the distribution's own probability-paper
@@ -7,7 +8,9 @@ import { GRID, band, dataPoints, fitLine } from "../plotTheme.js";
 // supplied tick values/labels.
 // ``bandName`` / ``lineName``: the legend's words (a Bayesian update's band is
 // a credible one, its line the updated model).
-export default function ProbabilityPlot({ plot, unit, download = null, fill = false, bandName = "95% CI", lineName = "Fit" }) {
+export default function ProbabilityPlot({ plot, unit, download = null, fill = false, bandName = null, lineName = "Fit" }) {
+  // The band's level as the fit gives it (90% two-sided; 95% on a plot saved before the rule).
+  bandName = bandName || `${levelPct(plot?.bounds?.level ?? 0.95)} CI`;
   const { scatter, line, bounds, x_range, y_range, x_ticks, y_ticks } = plot;
   const xTitle = unit ? `Time (${unit})` : "Time";
 

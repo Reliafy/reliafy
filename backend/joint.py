@@ -55,8 +55,8 @@ MAX_READINGS = 20000
 MAX_UNITS_QUADRATIC = 600
 #: The running units whose risk the fit works out (each a prediction).
 MAX_RISK_UNITS = 500
-#: The confidence level of every interval shown.
-ALPHA_CI = 0.05
+#: Every interval and band shown: 90% two-sided (backend.levels).
+ALPHA_CI = 0.10
 # Life bounds shown with a position's risk (the Explorer): 90% one-sided, a lower bound on
 # life left (the workspace rule for B-lives and other life bounds), and 90% two-sided bands
 # on the curves.
@@ -432,9 +432,10 @@ def _part(heading: str) -> str:
 
 
 def parameter_rows(model) -> list[dict]:
-    """Each parameter with its standard error and 95% interval (and, for the
+    """Each parameter with its standard error and 90% interval (and, for the
     risk coefficients, the hazard ratio), and what it means in plain words."""
     table = model.summary(alpha_ci=ALPHA_CI).reset_index()
+    pct = f"{round(100 * (1 - ALPHA_CI)):g}%"
     path_names = list(model.path_model.parameter_names)
     out = []
     for row in table.to_dict("records"):
@@ -446,13 +447,13 @@ def parameter_rows(model) -> list[dict]:
             "name": name,
             "value": _f(row.get("coef")),
             "se": _f(row.get("se(coef)")),
-            "lower": _f(row.get("coef lower 95%")),
-            "upper": _f(row.get("coef upper 95%")),
+            "lower": _f(row.get(f"coef lower {pct}")),
+            "upper": _f(row.get(f"coef upper {pct}")),
             "p": _f(row.get("p")),
         }
         if part in ("survival", "link") and name not in ("alpha", "beta"):
-            rec.update(hr=_f(row.get("exp(coef)")), hr_lower=_f(row.get("exp(coef) lower 95%")),
-                       hr_upper=_f(row.get("exp(coef) upper 95%")))
+            rec.update(hr=_f(row.get("exp(coef)")), hr_lower=_f(row.get(f"exp(coef) lower {pct}")),
+                       hr_upper=_f(row.get(f"exp(coef) upper {pct}")))
         rec["meaning"] = _meaning(part, name, path_names, model)
         out.append(rec)
     return out
@@ -483,7 +484,7 @@ def _meaning(part: str, name: str, path_names: list, model) -> str:
     return f"Change in the log failure rate per 1 unit of {name}, at the same reading."
 
 
-def hazard_ratios(rows: list[dict], marker: str) -> list[dict]:
+def hazard_ratios(rows: list[dict], marker: str, level: float = 1 - ALPHA_CI) -> list[dict]:
     """The risk coefficients as hazard ratios, each said in plain words."""
     out = []
     for r in rows:
@@ -499,11 +500,41 @@ def hazard_ratios(rows: list[dict], marker: str) -> list[dict]:
         if r["part"] != "link":
             text += f" at the same {marker}"
         if lo is not None and hi is not None:
-            text += f" (95% CI {lo:.3g} to {hi:.3g})"
+            text += f" ({round(100 * level):g}% CI {lo:.3g} to {hi:.3g})"
             if lo <= 1 <= hi:
                 text += "; the interval includes 1, so the data can't rule out no effect"
         out.append({"name": r["name"], "kind": "marker" if r["part"] == "link" else "covariate",
                     "hr": hr, "lower": lo, "upper": hi, "text": text + "."})
+    return out
+
+
+def at_level(results: dict) -> dict:
+    """A saved joint fit's parameter and hazard-ratio intervals at 90%
+    two-sided (``ci_level``). A fit saved before the rule holds 95% Wald
+    intervals: each moves to 90% about its estimate on the scale it was taken
+    on (a hazard ratio's on the log scale). Its survival band keeps its saved
+    level, which ``confidence`` states. Nothing is written back."""
+    from backend import levels
+
+    if not isinstance(results, dict) or results.get("kind") != "joint" or results.get("ci_level") is not None:
+        return results
+    rows = []
+    for r in results.get("params") or []:
+        if not isinstance(r, dict):
+            rows.append(r)
+            continue
+        r = dict(r)
+        ci = levels.rescale(r.get("value"), r.get("lower"), r.get("upper"), log=None)
+        if ci:
+            r["lower"], r["upper"] = ci
+        if r.get("hr") is not None:
+            hr = levels.rescale(r.get("hr"), r.get("hr_lower"), r.get("hr_upper"), log=True)
+            if hr:
+                r["hr_lower"], r["hr_upper"] = hr
+        rows.append(r)
+    out = {**results, "params": rows, "ci_level": levels.LEVEL}
+    if results.get("hazard_ratios") is not None:
+        out["hazard_ratios"] = hazard_ratios(rows, results.get("marker") or "the reading", levels.LEVEL)
     return out
 
 
@@ -710,6 +741,7 @@ def results_payload(model, items: list[dict], covariates: list[str], *, path_mod
         "log_likelihood": _f(-model.neg_ll()) if hasattr(model, "neg_ll") else None,
         "aic": _f(model.aic()) if hasattr(model, "aic") else None,
         "confidence": 1 - ALPHA_CI,
+        "ci_level": 1 - ALPHA_CI,  # the parameters' and hazard ratios' intervals (at_level moves older fits)
         "params": rows,
         "hazard_ratios": hazard_ratios(rows, marker),
         "path": {"sample": _sample_paths(items), **new_dict["marker"]},

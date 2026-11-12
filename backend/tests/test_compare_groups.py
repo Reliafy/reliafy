@@ -50,7 +50,7 @@ def test_two_groups_match_surpyval_logrank_and_rmst():
     km = {k: sp.KaplanMeier.fit(x[g == k], c=c[g == k]) for k in ("Maintained", "Nonmaintained")}
     # Default horizon: the shorter group's longest time.
     assert res["tau"] == 45.0
-    d = sp.rmst_diff(km["Nonmaintained"], km["Maintained"], tau=45.0)
+    d = sp.rmst_diff(km["Nonmaintained"], km["Maintained"], tau=45.0, alpha_ci=0.10)  # 90%
     (diff,) = res["rmst_differences"]
     assert diff["reference"] == "Maintained" and diff["group"] == "Nonmaintained"
     for key in ("difference", "lower", "upper", "p_value"):
@@ -70,7 +70,7 @@ def test_verdict_reads_in_plain_words():
     v = res["verdict"]
     assert v["significant"] is False and v["better"] is None  # p = 0.065
     assert v["text"].startswith("No clear difference between Maintained and Nonmaintained: log-rank p = 0.07.")
-    assert "Maintained averages" in v["text"] and "weeks more (95% CI" in v["text"]
+    assert "Maintained averages" in v["text"] and "weeks more (90% CI" in v["text"]
 
     # A clear difference names the longer-lived group, the gain and the window.
     rng = np.random.default_rng(3)

@@ -106,7 +106,7 @@ export function modelPhoneRow(r, rollup) {
 
 export const modelRowActions = (r, opts) => rowActions(r, opts);
 
-// The plot: reliability (with its 95% bounds, or a Bayesian update's credible band) or hazard over age, or a repairable
+// The plot: reliability (with its 90% bounds, or a Bayesian update's credible band) or hazard over age, or a repairable
 // model's expected failures so far.
 function ModelPlot({ curves, unit, name }) {
   const [on, setOn] = useState("sf");
@@ -124,7 +124,8 @@ function ModelPlot({ curves, unit, name }) {
   const traces = [];
   if (!hazard && curves.sf_lower && curves.sf_upper) {
     traces.push({ x: curves.x, y: curves.sf_upper, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false });
-    const band = curves.band?.kind === "credible" ? `${Math.round(curves.band.level * 100)}% credible band` : "95% bounds";
+    const band = curves.band?.kind === "credible" ? `${Math.round(curves.band.level * 100)}% credible band`
+      : `${Math.round((curves.band?.level ?? 0.9) * 100)}% bounds`;
     traces.push({ x: curves.x, y: curves.sf_lower, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: BAND_FILL, name: band, hoverinfo: "skip" });
   }
   traces.push({ x: curves.x, y: hazard ? curves.hf : curves.sf, mode: "lines", line: { color: ACCENT, width: 2 }, name: hazard ? "Hazard rate" : curves.what || "Reliability" });

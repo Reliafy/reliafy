@@ -2118,7 +2118,7 @@ def analyze(
     each reliability is ``R(s + t) / R(s)``; the MTTF becomes the mean residual
     life at ``s``. ``at_times`` adds ``at: {t, sf}`` — the system reliability
     evaluated exactly at those times (not read off the grid, so times past the
-    axis end are still right). ``band`` (``{"level": 0.95}``) adds a
+    axis end are still right). ``band`` (``{"level": 0.9}``) adds a
     confidence band on the reliability, MTTF and B-lives from the fitted
     blocks' parameter uncertainty (see :mod:`backend.services.rbd_uncertainty`);
     it isn't computed unless asked for. ``current_state`` (#173; see
@@ -2462,7 +2462,11 @@ _AVAIL_TIME_BUDGET = 20.0
 _AVAIL_MIN_SIMS = 100
 _AVAIL_PILOT_SIMS = 20
 _AVAIL_SEED = 1
-_AVAIL_CONFIDENCE = 0.95
+# Intervals shown on simulated availability, costs and differences: 90% two-sided
+# (backend.levels). The run to a precision target stops on the 95% interval, as
+# before, so the number of histories (and the estimates) don't change with it.
+_AVAIL_CONFIDENCE = 0.90
+_AVAIL_STOP_CONFIDENCE = 0.95
 
 # Quick (time-capped) runs (#147): a pilot block of _QUICK_BLOCK replications
 # times the simulation, then one run of as many whole blocks as fit the rest of
@@ -2896,7 +2900,7 @@ def _resample_step(timeline, values, grid) -> np.ndarray:
 
 
 def _availability_curve(res, t_simulation: float) -> Optional[dict]:
-    """The time-dependent availability curve (with its pointwise 95% band when
+    """The time-dependent availability curve (with its pointwise 90% band when
     the result provides one), resampled onto a uniform grid."""
     av_series = getattr(res, "availability", None)
     timeline = getattr(res, "timeline", None)
@@ -2911,10 +2915,10 @@ def _availability_curve(res, t_simulation: float) -> Optional[dict]:
     interval = getattr(res, "availability_interval", None)
     if callable(interval):
         try:
-            lower, upper = interval(0.95)
+            lower, upper = interval(_AVAIL_CONFIDENCE)
             curve["lower"] = _clean(_resample_step(tl, lower, grid))
             curve["upper"] = _clean(_resample_step(tl, upper, grid))
-            curve["confidence"] = 0.95
+            curve["confidence"] = _AVAIL_CONFIDENCE
         except Exception:  # noqa: BLE001 - the band is optional
             pass
     return curve
@@ -3228,7 +3232,7 @@ def _run_to_precision(rbd, t_sim: float, overrides: dict, batch: int, max_n: int
     and one batch that saw no system downtime at all has a zero-width
     interval — for a system that does go down that is a lack of evidence, not
     precision, so the run is then repeated at ``max_n``."""
-    kwargs = {"confidence": _AVAIL_CONFIDENCE}
+    kwargs = {"confidence": _AVAIL_STOP_CONFIDENCE}
     if max_n > batch:
         kwargs.update(tolerance=tolerance, max_samples=max_n)
     res, antithetic = _simulate(rbd, t_sim, overrides, batch, seed=seed, **kwargs)
@@ -3279,7 +3283,8 @@ def _precision(res, tolerance: float, antithetic: bool, max_n: Optional[int],
     se = _f(ci.standard_error)
     # z·SE, unclipped: the interval is clipped to [0, 1], its precision isn't.
     half = None if se is None else _z(_AVAIL_CONFIDENCE) * se
-    reached = half is not None and half <= tolerance and (se > 0.0 or not expect_downtime)
+    # Reached on the stopping rule's own (95%) interval, the one the run was made to.
+    reached = se is not None and _z(_AVAIL_STOP_CONFIDENCE) * se <= tolerance and (se > 0.0 or not expect_downtime)
     return {
         "window_availability": _f(ci.estimate),
         "lower": _f(ci.lower),

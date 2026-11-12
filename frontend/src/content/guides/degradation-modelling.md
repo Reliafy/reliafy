@@ -70,9 +70,9 @@ which is how a set of wear curves becomes a reliability model of the population.
 For the sample brake pads (six pads, an 8 mm wear limit, linear paths) the
 crossing times fit a Weibull with a mean life of **5,960 hours**. The line under
 the model's name gives the answer: B10 is **4,710 hours** (the time by which 10%
-of pads reach the limit), with **≥ 3,210 at 95%** beside it: we're 95% sure at
-least 90% of pads last 3,210 hours. That lower bound (the lower end of the
-two-sided 90% band, so a one-sided 95% bound) is the design life to plan with.
+of pads reach the limit), with **≥ 3,670 at 90%** beside it: we're 90% sure at
+least 90% of pads last 3,670 hours. That one-sided lower bound is the design
+life to plan with; the shaded band on the reliability curve is two-sided 90%.
 
 ## Reading the model's page
 

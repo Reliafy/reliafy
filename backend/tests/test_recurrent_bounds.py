@@ -67,13 +67,13 @@ def _fit(model_id="crow_amsaa", df=None, mapping=MAPPING):
 def test_beta_interval_matches_surpyval_and_decides_the_verdict():
     r, _ = _fit()
     ref = _ref()
-    lo, hi = ref.param_cb("beta", alpha_ci=0.05)
+    lo, hi = ref.param_cb("beta", alpha_ci=0.10)
     assert r["beta"] == pytest.approx(ref.params[1], rel=1e-9)
     assert r["beta_ci"] == pytest.approx([lo, hi], rel=1e-9)
     assert {p["name"]: p["ci"] for p in r["params"]}["beta"] == pytest.approx([lo, hi], rel=1e-9)
     assert lo > 1 and r["growth"] == "deteriorating"
     b = r["growth_basis"]
-    assert b["rule"] == "interval" and b["no_trend"] == 1.0 and b["level"] == 0.95
+    assert b["rule"] == "interval" and b["no_trend"] == 1.0 and b["level"] == 0.90
     assert b["ci"] == pytest.approx([lo, hi], rel=1e-9)
 
 
@@ -86,7 +86,7 @@ def test_interval_that_includes_one_is_stable_even_outside_the_old_band():
     r, _ = _fit(df=df, mapping={"i": "system", "x": "time"})
     x = np.array(times["S1"], dtype=float)
     ref = CrowAMSAA.fit(x=x, i=np.array(["S1"] * x.size))
-    lo, hi = ref.param_cb("beta", alpha_ci=0.05)
+    lo, hi = ref.param_cb("beta", alpha_ci=0.10)
     assert not 0.95 <= r["beta"] <= 1.05
     assert lo < 1 < hi
     assert r["growth"] == "stable" and r["growth_basis"]["ci"] == pytest.approx([lo, hi], rel=1e-9)
@@ -95,7 +95,7 @@ def test_interval_that_includes_one_is_stable_even_outside_the_old_band():
 def test_duane_shape_interval_is_its_alpha():
     r, _ = _fit("duane")
     ref = _ref(Duane)
-    assert r["beta_ci"] == pytest.approx(ref.param_cb("alpha", alpha_ci=0.05), rel=1e-9)
+    assert r["beta_ci"] == pytest.approx(ref.param_cb("alpha", alpha_ci=0.10), rel=1e-9)
     assert r["growth_basis"]["parameter"] == "alpha"
 
 
@@ -120,8 +120,8 @@ def test_time_terminated_crow_amsaa_gets_crow_exact_bounds():
     assert r["bounds_method"] == "crow"
     assert r["rocof"] == pytest.approx(float(ref.iif(END)), rel=1e-12)
     assert r["mtbf"] == pytest.approx(float(ref.mtbf(END)), rel=1e-12)
-    assert r["mtbf_ci"] == pytest.approx(ref.mtbf_cb(END, alpha_ci=0.05, method="crow"), rel=1e-9)
-    assert r["rocof_ci"] == pytest.approx(ref.iif_cb(END, alpha_ci=0.05, method="crow"), rel=1e-9)
+    assert r["mtbf_ci"] == pytest.approx(ref.mtbf_cb(END, alpha_ci=0.10, method="crow"), rel=1e-9)
+    assert r["rocof_ci"] == pytest.approx(ref.iif_cb(END, alpha_ci=0.10, method="crow"), rel=1e-9)
     dm = r["demonstrated_mtbf"]
     assert dm["method"] == "crow" and dm["confidence"] == 0.9 and dm["at"] == END
     assert dm["lower"] == pytest.approx(float(ref.mtbf_cb(END, alpha_ci=0.10, bound="lower", method="crow")),
@@ -153,8 +153,8 @@ def test_unequal_windows_fall_back_to_wald_bounds():
     x, i = _arrays()
     ref = CrowAMSAA.fit(**_ended(x, i, df["obs_end"].to_numpy(dtype=float)))
     assert r["bounds_method"] == "wald" and r["demonstrated_mtbf"]["method"] == "wald"
-    assert r["mtbf_ci"] == pytest.approx(ref.mtbf_cb(END, alpha_ci=0.05), rel=1e-9)
-    assert r["rocof_ci"] == pytest.approx(ref.iif_cb(END, alpha_ci=0.05), rel=1e-9)
+    assert r["mtbf_ci"] == pytest.approx(ref.mtbf_cb(END, alpha_ci=0.10), rel=1e-9)
+    assert r["rocof_ci"] == pytest.approx(ref.iif_cb(END, alpha_ci=0.10), rel=1e-9)
     assert r["demonstrated_mtbf"]["lower"] == pytest.approx(
         float(ref.mtbf_cb(END, alpha_ci=0.10, bound="lower")), rel=1e-9)
 
@@ -164,7 +164,7 @@ def test_hpp_gets_wald_bounds_and_no_growth_verdict():
     ref = _ref(HPP)
     assert r["growth"] is None and r["beta"] is None
     assert r["mtbf"] == pytest.approx(float(ref.mtbf(END)), rel=1e-12)
-    assert r["mtbf_ci"] == pytest.approx(ref.mtbf_cb(END, alpha_ci=0.05), rel=1e-9)
+    assert r["mtbf_ci"] == pytest.approx(ref.mtbf_cb(END, alpha_ci=0.10), rel=1e-9)
     assert r["bounds_method"] == "wald"
 
 
@@ -262,7 +262,7 @@ def test_cox_lewis_fit_matches_surpyval_and_its_slope_decides():
     ref = _ref(CoxLewis)
     assert [p["name"] for p in r["params"]] == ["alpha", "beta"]
     assert [p["value"] for p in r["params"]] == pytest.approx(ref.params, rel=1e-6)
-    lo, hi = ref.param_cb("beta", alpha_ci=0.05)
+    lo, hi = ref.param_cb("beta", alpha_ci=0.10)
     assert r["growth_basis"]["no_trend"] == 0.0 and r["growth_basis"]["ci"] == pytest.approx([lo, hi], rel=1e-6)
     assert r["growth"] == ("deteriorating" if lo > 0 else "improving" if hi < 0 else "stable")
     assert r["beta"] is None and r["beta_ci"] is None  # not a power-law shape
@@ -339,14 +339,14 @@ def test_mcp_get_model_reports_the_evidence(env):
         env.db, "Fleet", ds, {"mapping": MAPPING, "model_id": "crow_amsaa", "unit": "hours"}, A)
     out = _ok(_call(env.token[A], "get", {"kind": "model", "id": doc.id}))
     ref = _ref()
-    lo, hi = ref.param_cb("beta", alpha_ci=0.05)
+    lo, hi = ref.param_cb("beta", alpha_ci=0.10)
     assert out["growth"] == "deteriorating"
-    assert out["beta_ci_95"] == [float(f"{lo:.4g}"), float(f"{hi:.4g}")]
+    assert out["beta_ci"] == [float(f"{lo:.4g}"), float(f"{hi:.4g}")] and out["ci_level"] == 0.90
     assert "excludes 1" in out["growth_basis"]
     dm = out["demonstrated_mtbf"]
     assert dm["lower_bound"] == float(f"{float(ref.mtbf_cb(END, alpha_ci=0.1, bound='lower', method='crow')):.4g}")
     assert dm["confidence"] == 0.9 and "Crow" in dm["method"]
-    assert out["mtbf_ci_95"] == [float(f"{v:.4g}") for v in ref.mtbf_cb(END, alpha_ci=0.05, method="crow")]
+    assert out["mtbf_ci"] == [float(f"{v:.4g}") for v in ref.mtbf_cb(END, alpha_ci=0.10, method="crow")]
     assert [t["test"] for t in out["trend_tests"]] == ["Laplace", "MIL-HDBK-189C"]
     assert out["gof"]["bic"] == float(f"{ref.bic():.4g}")
     assert out["gof_test"]["test"] == "Cramér-von Mises" and out["gof_test"]["n_boot"] == 200

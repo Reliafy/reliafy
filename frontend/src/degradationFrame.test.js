@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   bLives, bandLevel, bandWords, degradationAnswer, degradationTabs, hasResiduals, itemsWords, lowerBoundWords, meanAnswer,
-  oneSidedLevel,
+  lifeBoundLevel, oneSidedLevel,
   pathParams, pathRanking, reliabilityAt, resolveDegradationTab, routesVerdict, scatterCheck, timeAtReliability,
 } from "./degradationFrame.js";
 
@@ -85,7 +85,10 @@ test("the curve is read at a time and at a reliability, with the band's ends", (
   assert.equal(bandWords({ value: 500, lower: 400, upper: null }, 95), "≥\u00a0400 at 97.5%");
   // The lower end of a two-sided band is a one-sided bound at the higher level.
   assert.equal(oneSidedLevel(90), 95);
-  assert.equal(lowerBoundWords({ value: 500, lower: 400, upper: 600 }, 90), "≥\u00a0400 at 95%");
+  // lowerBoundWords takes the one-sided level itself.
+  assert.equal(lowerBoundWords({ value: 500, lower: 400, upper: 600 }, 90), "≥\u00a0400 at 90%");
+  assert.equal(lifeBoundLevel(curves), 95); // no one-sided curve: the 90% band's lower end
+
   assert.equal(lowerBoundWords({ value: 500, lower: null, upper: 600 }, 90), "");
 });
 
@@ -142,4 +145,14 @@ test("do the readings scatter evenly about each path?", () => {
   assert.equal(scatterCheck(tidy).tone, "good");
   assert.equal(scatterCheck({ ...results, units: [unit("A")] }), null);
   assert.equal(scatterCheck({ ...tidy, measurement_var: 0 }).tone, null);
+});
+
+test("life bounds come off the 90% one-sided curve where the curves carry it", () => {
+  const withLife = { ...curves, life_lower: curves.x.map((x, i) => Math.max(0, curves.lower[i] + 0.05)), life_level: 0.9 };
+  assert.equal(lifeBoundLevel(withLife), 90);
+  const t = timeAtReliability(withLife, 0.9);
+  const plain = timeAtReliability(curves, 0.9);
+  assert.ok(t.lower >= plain.lower); // a one-sided 90% bound sits inside the two-sided band's lower end
+  assert.equal(t.bandLower, plain.lower);
+  assert.match(degradationAnswer({ life_model: { curves: withLife } }).join(" "), /at 90%/);
 });

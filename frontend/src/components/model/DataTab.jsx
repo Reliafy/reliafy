@@ -12,6 +12,7 @@ import { getDataset } from "../../api.js";
 import { formatNumber, formatPercent } from "../../format.js";
 import { bestFitSentence, compareRows } from "../../lifeResults.js";
 import { dataWords, intervalLevel } from "../../modelFrame.js";
+import { ciPct, levelPct } from "../../levels.js";
 import { unitInText } from "../unitText.js";
 import { fmtP } from "../RegressionChecks.jsx";
 
@@ -160,7 +161,7 @@ function LifeTable({ result }) {
             {table && <th className="mf-num">At risk</th>}
             {table && <th className="mf-num">Failed</th>}
             <th className="mf-num">R(t)</th>
-            {band && <th className="mf-num">95% band</th>}
+            {band && <th className="mf-num">{levelPct(e.level ?? 0.95)} band</th>}
           </tr>
         </thead>
         <tbody>
@@ -216,13 +217,13 @@ function Parameters({ result }) {
     const showRatio = ratio && table.some((r) => r.exp_value != null);
     const showP = table.some((r) => r.p != null);
     return (
-      <ScrollCard title="Every parameter" sub="with 95% intervals">
+      <ScrollCard title="Every parameter" sub={`with ${ciPct(result)} intervals`}>
         <table className="mini-table">
           <thead>
             <tr>
               <th>Term</th><th className="mf-num">Estimate</th>
               {showRatio && <th className="mf-num">{ratio[0].toUpperCase() + ratio.slice(1)}</th>}
-              <th className="mf-num">95% interval</th>{showP && <th className="mf-num">p</th>}
+              <th className="mf-num">{ciPct(result)} interval</th>{showP && <th className="mf-num">p</th>}
             </tr>
           </thead>
           <tbody>
@@ -279,7 +280,7 @@ function Parameters({ result }) {
       </table>
       {lv.credible || result.method === "library"
         ? result.ci_note && <p className="param-ci-note">{result.ci_note}</p>
-        : <CiNote params={params} note={result.ci_note} />}
+        : <CiNote params={params} note={result.ci_note} level={lv.label} />}
     </ScrollCard>
   );
 }

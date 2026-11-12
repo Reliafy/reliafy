@@ -1454,7 +1454,7 @@ def preview_position_prediction(position_id: str, body: dict = Body(default={}),
 def preview_position_fit(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
                          ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """"Fit a life model…", previewed (nothing saved; a refusal comes back as {refused: words}): data (position, class, both), method (mle: a plain fit
-    with 95% confidence bounds; bayes: with a prior, 90% credible intervals), prior ({kind: class | model |
+    with 90% confidence bounds; bayes: with a prior, 90% credible intervals), prior ({kind: class | model |
     params | b10, ...}), distribution (weibull, exponential, lognormal; best for a plain fit), failure_mode_ids,
     exclude (fitment ids to leave out), trust (close, guide, start), age. Save with POST /positions/{id}/models
     {fit: true, data, method, prior, ...}."""
@@ -1493,7 +1493,7 @@ def class_forecast(position_class: str, period: str = "month", periods: int = 12
                    service_level: float | None = None, lead_time_days: float | None = None,
                    review_days: float | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The class's failure forecast from the register (#407): expected failures per
-    period with P10–P90, positions at risk, spares demand against stock and each
+    period with a 90% range (P5–P95), positions at risk, spares demand against stock and each
     spare's stock levels (#31: service_level and lead_time_days override every
     part's own), budget."""
     from backend.maintenance import forecast

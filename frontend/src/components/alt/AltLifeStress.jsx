@@ -14,6 +14,7 @@ import { formatNumber } from "../../format.js";
 import { evaluateAlt } from "../../api.js";
 import { accelerationRows, levelWords, parseUse, shapeParam, stressName } from "../../altFrame.js";
 import { unitInText } from "../unitText.js";
+import { ciPct } from "../../levels.js";
 
 const SERIES = COLORWAY;
 const USE_MARK = "#b45309";
@@ -184,7 +185,7 @@ function Side({ results, modelId, use, onUse, edited, state }) {
             <span className="gk">{shape.label}</span>
             <span className="gv">
               {formatNumber(shape.value)}
-              {Array.isArray(shape.ci) && <span className="gof-sub alt-ci"> 95% {formatNumber(shape.ci[0])}–{formatNumber(shape.ci[1])}</span>}
+              {Array.isArray(shape.ci) && <span className="gof-sub alt-ci"> {ciPct(results, 0.9)} {formatNumber(shape.ci[0])}–{formatNumber(shape.ci[1])}</span>}
             </span>
           </div>
         )}

@@ -448,7 +448,7 @@ means every failure there. replace_link_id swaps one model for another (a refit,
 or attach unasked: say what the data supports first (failures, suspensions, the shape).
 - Fitting from history: models.link with fit true, data (position: its own history; class: the class's pooled \
 history; both: its own history with the class's other positions' history as the prior) and method (mle: a plain \
-fit, 95% confidence bounds; bayes: with a prior, 90% credible intervals). The prior: {kind: class} (the class's \
+fit, 90% confidence bounds; bayes: with a prior, 90% credible intervals). The prior: {kind: class} (the class's \
 history as a power prior, SurPyval's prior.from_data: trust close counts all of its evidence, guide half, start a \
 fifth), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind: around, distribution, unit, \
 params: {alpha: {about: 4, between: [3, 6]}, beta: {between: [1.5, 3]}}} (90% between the bounds; a parameter left \
@@ -519,7 +519,7 @@ Deciding with the numbers.
 horizon_years, discount_rate): what the class's replacement plan costs a year, now, at the best interval and \
 running to failure, each with its net present cost. Needs the class's fitted model and costs (learn topic).
 - maintenance get.class_forecast, id = the position class (period month / quarter / year, periods, default \
-12 months): failures expected from the positions' fitted items with P10–P90, per period too, counting \
+12 months): failures expected from the positions' fitted items with a 90% range (P5–P95), per period too, counting \
 replacements that fail again (headline: say it as given); at_risk, positions by chance of failing next period; \
 not_forecast, positions with nothing fitted or no usage rate (a model by use needs counter readings); spares, each \
 replacement or critical part's demand per period and cumulative against usable stock (prob_covered); budget, from \

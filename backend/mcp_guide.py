@@ -45,7 +45,10 @@ method bayes and prior {kind: library, record_id} (e.g. a motor-operated valve's
 library): on an exponential its gamma is the prior exactly (conjugate). On a maintenance position, maintenance models.link \
 with fit and baseline saves one and attaches it.
 - Weibull beta < 1 = infant mortality, ≈ 1 = random failures, > 1 = wear-out.
-- Read saved models: list kind models, get kind model (parameters with 95% CIs, goodness of fit, B-lives with \
+- Every bound is at 90%: life quantities (B-lives, mean life, life left) one-sided lower, a chance of \
+failing one-sided upper, everything else (parameters, ratios, bands, forecast ranges) two-sided. Say the level \
+with each bound; a result's ci_level or confidence field gives it (95% on some fits saved before Nov 2026).
+- Read saved models: list kind models, get kind model (parameters with 90% CIs, goodness of fit, B-lives with \
 one-sided 90% lower bounds; regression models: validation and the proportional-hazards checks).
 - Evaluate: analyse reliability_at (R(t), F(t), hazard; conditional_age for a unit still working; \
 confidence for bounds, quoted with the point values; covariates or a covariate_schedule for regression \
@@ -68,7 +71,7 @@ once per unit, a reading on every row) works as it is, or change dataset_split m
 new, in one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates \
 change how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
 analyse fit_joint reports; change model_fit_joint saves. The fit runs on the calculation service (8-40 s): \
-it may come back as a job (get kind job). Quote each hazard ratio with its 95% CI, as its text says.
+it may come back as a job (get kind job). Quote each hazard ratio with its 90% CI, as its text says.
 - A running unit's risk: analyse predict_joint (unit_id, or age_now + readings + unit_covariates): \
 survival over the horizons with bounds, and the median remaining life. Never quote a mean life for these \
 units: a reading that levels off can leave a chance of never failing, so the mean can be infinite; "not \
@@ -126,7 +129,7 @@ Repairable systems: many failures per system.
 inline times + systems (censored: 0 failure, 1 end of observation; or observed_to) or a dataset. Minimal \
 repair: crow_amsaa (default), duane, hpp, cox_lewis; covariates on the repair rate: pi_nhpp; imperfect repair: \
 grp_i / grp_ii, ara, ari, g1. windows give observation gaps; causes add each cause's growth. Fitting is Pro.
-- get kind model on one: the growth verdict with β's 95% interval, ROCOF and MTBF with bounds, the \
+- get kind model on one: the growth verdict with β's 90% interval, ROCOF and MTBF with bounds, the \
 demonstrated MTBF's lower bound, trend and goodness-of-fit tests, and (imperfect repair) the repair \
 effectiveness and each system's next failure.
 - analyse next_failure: at a system's age, the chance of a failure within given times and the \
@@ -331,7 +334,7 @@ are exact and free; sampling (Pro) is for calendars whose cycle is very long, wi
 next shut of each kind, between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
 (from that age replacing now beats waiting).
 - With a saved Weibull (or Crow-AMSAA) model fitted to data, shape_uncertainty gives the answer at each end of \
-the shape's 95% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
+the shape's 90% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
 (for a protective function, the shorter interval is the safe side).
 - A whole diagram's intervals together: analyse rbd_optimise_intervals. A demonstration test or a B-life \
 check: analyse plan_demonstration_test / check_life_requirement. Fleets: guide topic fleets."""),
@@ -340,7 +343,7 @@ check: analyse plan_demonstration_test / check_life_requirement. Fleets: guide t
 Fleets (Reliafy Pro).
 - A fleet is in-service items run against one saved model; the app creates them and usage arrives through \
 the ingest API. list kind fleets lists them (model_kind life, regression, alt or recurrent).
-- analyse fleet_forecast: expected failures over the horizon with a P10–P90 range, per period and per item (the \
+- analyse fleet_forecast: expected failures over the horizon with a 90% range (P5–P95), per period and per item (the \
 top 20 unless include_items; item_probabilities adds each item's chance by period). Recurrent fleets count every \
 repeat failure.
 - Spares: fleet_forecast with spares = {lead_time (in the fleet's periods), service_level (default 0.95), review, \

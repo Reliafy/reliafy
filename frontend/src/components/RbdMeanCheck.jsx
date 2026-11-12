@@ -5,7 +5,7 @@ import { formatNumber } from "../format.js";
 import "./RbdBlockOptions.css";
 
 // "Check by simulation" (#326) on a standby or load-sharing block: the exact
-// mean life beside the mean of 20,000 simulated lives and its 95% interval.
+// mean life beside the mean of 20,000 simulated lives and its 90% interval.
 // ``node`` is the block as it would be saved ({type, data}); null while the
 // dialog is incomplete.
 export default function RbdMeanCheck({ node, unit }) {

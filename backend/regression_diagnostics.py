@@ -324,7 +324,11 @@ def robust(cox, cluster: Optional[np.ndarray] = None, cluster_name: Optional[str
     (SurPyval's ``summary(robust=True, cluster=)``), with a verdict on how
     far apart they are."""
     plain = cox.summary()
-    rob = cox.summary(robust=True, cluster=cluster) if cluster is not None else cox.summary(robust=True)
+    # The robust interval at 90% two-sided, the app's rule (backend.levels).
+    rob = (cox.summary(alpha_ci=0.10, robust=True, cluster=cluster) if cluster is not None
+           else cox.summary(alpha_ci=0.10, robust=True))
+    lo_col = next(c for c in rob.columns if str(c).startswith("exp(coef) lower"))
+    hi_col = next(c for c in rob.columns if str(c).startswith("exp(coef) upper"))
     rows, worst = [], (0.0, None)
     for name in rob.index:
         se, rse = _num(plain.loc[name, "se(coef)"]), _num(rob.loc[name, "se(coef)"])
@@ -334,11 +338,11 @@ def robust(cox, cluster: Optional[np.ndarray] = None, cluster_name: Optional[str
         rows.append({
             "covariate": str(name), "coef": _num(rob.loc[name, "coef"]), "ratio": _num(rob.loc[name, "exp(coef)"]),
             "se": se, "robust_se": rse, "change": change,
-            "ratio_lower": _num(rob.loc[name, "exp(coef) lower 95%"]),
-            "ratio_upper": _num(rob.loc[name, "exp(coef) upper 95%"]),
+            "ratio_lower": _num(rob.loc[name, lo_col]),
+            "ratio_upper": _num(rob.loc[name, hi_col]),
             "p": _num(rob.loc[name, "p"]),
         })
-    out = {"available": True, "rows": rows, "cluster": cluster_name, "max_change": worst[0]}
+    out = {"available": True, "rows": rows, "cluster": cluster_name, "max_change": worst[0], "ci_level": 0.90}
     by = f", clustered by {cluster_name}" if cluster_name else ""
     pct = abs(worst[0]) * 100
     if cluster is not None:

@@ -618,7 +618,7 @@ function ForecastCard({ name }) {
               <>≈ <b>{formatNumber(data.expected)}</b> failures in the next <b>{horizon}</b> (likely {rangeText(data.interval)}).</>
             ) : data.headline}
             stats={[
-              data.n_forecast > 0 && { label: "Likely range (80%)", value: rangeText(data.interval), hint: "P10–P90, counting replacements that fail again" },
+              data.n_forecast > 0 && { label: "Likely range (90%)", value: rangeText(data.interval), hint: "P5–P95, counting replacements that fail again" },
               data.n_forecast > 0 && data.periods > 1 && { label: `Average a ${shown}`, value: `≈ ${formatNumber(data.expected / data.periods, { sig: 2 })}` },
               { label: "Positions forecast", value: `${data.n_forecast} of ${data.n_positions}` },
               budget && { label: "Budget", value: `≈ ${money(budget.expected, budget.currency)}`, hint: `likely ${moneyRange(budget.interval, budget.currency)}` },
@@ -635,10 +635,10 @@ function ForecastCard({ name }) {
                   marker: { color: ACCENT },
                   error_y: {
                     type: "data", symmetric: false, color: INK, thickness: 1, width: 3,
-                    array: data.per_period.map((r) => Math.max(0, r.p90 - r.expected)),
-                    arrayminus: data.per_period.map((r) => Math.max(0, r.expected - r.p10)),
+                    array: data.per_period.map((r) => Math.max(0, r.high - r.expected)),
+                    arrayminus: data.per_period.map((r) => Math.max(0, r.expected - r.low)),
                   },
-                  customdata: data.per_period.map((r, i) => [labels[i], r.p10, r.p90]),
+                  customdata: data.per_period.map((r, i) => [labels[i], r.low, r.high]),
                   hovertemplate: "%{customdata[0]}: %{y:.2f} expected (likely %{customdata[1]}–%{customdata[2]})<extra></extra>",
                 }]}
                 layout={{
@@ -648,7 +648,7 @@ function ForecastCard({ name }) {
                 }}
                 download={`${name} — failure forecast`}
               />
-              <p className="rs-note">Whiskers: each {shown}’s likely range (80%).</p>
+              <p className="rs-note">Whiskers: each {shown}’s likely range (90%).</p>
             </>
           )}
 

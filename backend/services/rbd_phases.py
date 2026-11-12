@@ -62,6 +62,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
+from backend import levels
 from backend.errors import client_message
 from backend.services import rbd_repeats
 from backend.services.rbd_analysis import AnalysisError
@@ -74,7 +75,7 @@ MAX_NAME = 80
 #: seed (the same figures every time for the same diagram).
 SIM_MISSIONS = 20_000
 SIM_SEED = 1
-SIM_CONFIDENCE = 0.95
+SIM_CONFIDENCE = 0.90  # the simulated mission reliability's interval, two-sided (backend.levels)
 
 STRESS_NOTE = ("Each block keeps one non-repairable model through the whole mission, ageing from the start of the "
                "first phase to the end of the last.")
@@ -93,8 +94,8 @@ NOT_NEEDED_NOTE = ("Not needed: the phase works without the block. Its clock kee
 #: Why a mission's chance has no bound, or what its range is (stated on every result).
 NO_BOUND_NOTE = ("No bound: the mission is worked out exactly from each block's model at its point values, so "
                  "the uncertainty in a fitted model isn't carried into it (and figures typed in have none to carry).")
-SIM_RANGE_NOTE = ("The range is the simulation's own precision ({n:,} missions), not the uncertainty in the blocks' "
-                  "models, which isn't carried into a mission.")
+SIM_RANGE_NOTE = ("The range ({level}, two-sided) is the simulation's own precision ({n:,} missions), not the "
+                  "uncertainty in the blocks' models, which isn't carried into a mission.")
 STANDBY_NOTE = ("Standby: the block is there but not running, so it neither ages nor fails in that phase; it counts "
                 "as working if it was still working when the phase began, and its age carries on when it next runs. "
                 "Switching over is taken as perfect, and a standby block's running time after it takes over within "
@@ -638,7 +639,7 @@ def analyze_phases(
         out["notes"].append(STANDBY_NOTE)
     if interval is not None:
         out["interval"] = interval
-        out["bound_note"] = SIM_RANGE_NOTE.format(n=interval["n_samples"])
+        out["bound_note"] = SIM_RANGE_NOTE.format(n=interval["n_samples"], level=levels.pct(interval.get("confidence") or SIM_CONFIDENCE))
     else:
         out["bound_note"] = NO_BOUND_NOTE
     if reason:

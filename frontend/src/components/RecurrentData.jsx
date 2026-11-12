@@ -5,6 +5,7 @@ import { ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { DatasetRows } from "./model/DataTab.jsx";
 import { formatNumber } from "../format.js";
 import { ciText, familyOf, orderedParams, paramLabel, ratioCiText, ratioText } from "../recurrentResults.js";
+import { ciPct } from "../levels.js";
 
 const sig = (v) => formatNumber(v, { sig: 4 });
 
@@ -105,9 +106,9 @@ function Parameters({ r }) {
   const params = orderedParams(r);
   const coefs = r.coefficients || [];
   return (
-    <ScrollCard title="Every parameter" sub={params.some((p) => p.ci) ? "with 95% intervals" : null}>
+    <ScrollCard title="Every parameter" sub={params.some((p) => p.ci) ? `with ${ciPct(r)} intervals` : null}>
       <table className="mini-table rec-stats-table">
-        <thead><tr><th>Parameter</th><th>Estimate</th><th>95% interval</th></tr></thead>
+        <thead><tr><th>Parameter</th><th>Estimate</th><th>{ciPct(r)} interval</th></tr></thead>
         <tbody>
           {params.map((p) => (
             <tr key={p.name}><td>{paramLabel(r, p.name)}</td><td>{sig(p.value)}</td><td>{ciText(p.ci) || "—"}</td></tr>

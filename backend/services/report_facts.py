@@ -160,7 +160,9 @@ def _fleet(payload: dict) -> list[str]:
         _add(lines, "Expected failures", num(f.get("expected")))
         lo, hi = (f.get("interval") or [None, None])[:2]
         if num(lo) is not None and num(hi) is not None:
-            _add(lines, "Likely range (P10–P90)", f"{num(lo)} to {num(hi)}")
+            lvl = f.get("interval_level")
+            words = f"{round(float(lvl) * 100):g}%" if isinstance(lvl, (int, float)) else "80%"
+            _add(lines, f"Likely range ({words})", f"{num(lo)} to {num(hi)}")
         _add(lines, "Horizon", f"{f.get('periods')} {f.get('period_label') or 'periods'}")
         _add(lines, "Items", num(f.get("n_items")))
         _add(lines, "Non-repairable model", f.get("model_name"))

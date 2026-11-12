@@ -349,8 +349,8 @@ def test_life_left_has_its_90_percent_lower_bound_and_bands_are_90_percent(m, db
     assert one["median_lower"] == pytest.approx(low, rel=1e-5)
     assert one["unit"]["prediction"]["alpha_ci"] == pytest.approx(0.1)
     assert one["unit"]["median_lower"] == pytest.approx(low, rel=1e-5) and one["unit"]["life_level"] == pytest.approx(0.9)
-    # The model's own page keeps its bands as they were (another view, unchanged here).
-    assert joint.unit_view(live, {"load": 1.0}, markers, 100.0, "Days")["prediction"]["alpha_ci"] == pytest.approx(0.05)
+    # The model's own page: bands 90% two-sided too (the rule), without the life bound.
+    assert joint.unit_view(live, {"load": 1.0}, markers, 100.0, "Days")["prediction"]["alpha_ci"] == pytest.approx(0.1)
     assert "median_lower" not in joint.unit_view(live, {"load": 1.0}, markers, 100.0, "Days")
 
 
