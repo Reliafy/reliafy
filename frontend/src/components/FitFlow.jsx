@@ -31,9 +31,9 @@ import { TvcToggle } from "./TvcColumns.jsx";
 import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts, tvcUnit } from "../tvcData.js";
 import { guessUnit, isNumeric, timeUnitOf } from "../datasetGuess.js";
 import {
-  EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
+  EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, savedMapping, statusSummary, summaryParts,
   dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
-  dataQuestions, answerQuestion, flagWords, unitColumnWords, unitCounts,
+  dataQuestions, answerQuestion, flagWords, unitColumnWords, unitCounts, lateEntryWords,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -77,6 +77,10 @@ export { parsePastedValues };
 // ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
 // ``initialSource`` opens the source step on "saved" (default: the user's
 // datasets and the samples), "paste" or "upload".
+// Non-parametric estimators that need exact failure times: inspection data
+// (failed between two times) takes Turnbull instead.
+const EXACT_TIMES_ONLY = ["kaplan_meier", "nelson_aalen", "fleming_harrington"];
+
 export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit, initialSource }) {
   const [step, setStep] = useState(1);
   // Source step: "saved" (a saved dataset), "paste" (values typed / pasted in) or "upload" (a file).
@@ -109,6 +113,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [advanced, setAdvanced] = useState(false);
   const [formula, setFormula] = useState("");
   const [distributions, setDistributions] = useState([]);
+  // The model whose column reading a dataset's fit started from, or null.
+  const [keptFrom, setKeptFrom] = useState(null);
   const [distribution, setDistribution] = useState("weibull");
   const [fitOpts, setFitOpts] = useState({});
   const [coxOpts, setCoxOpts] = useState({}); // Cox PH: ties, strata, cluster (#61)
@@ -180,10 +186,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // column (#177) fits the modes as competing risks.
   const byMode = !!mapping.e;
   // Covariates over time (#60) take the regressions that can fit them.
+  // Inspection data (an earliest and a latest time) takes Turnbull, not the
+  // estimators that need exact failure times: those aren't offered.
+  const intervalTimes = !!(mapping.xl || mapping.xr);
   const options = useMemo(
     () => (byMode ? CR_OPTIONS : distributions)
-      .filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false)),
-    [distributions, hasCovariates, byMode, tvc]
+      .filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false)
+        && !(intervalTimes && EXACT_TIMES_ONLY.includes(d.id))),
+    [distributions, hasCovariates, byMode, tvc, intervalTimes]
   );
 
   // Keep the selected model valid for the current filtered list.
@@ -204,16 +214,21 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   // New columns in: guess the mapping and unit, clear covariates. Returns
   // them (the guided first run fits straight away).
-  const loadColumns = (cols, simplePaste = false) => {
+  // ``saved``: a dataset's ``last_mapping``, how its newest model read the
+  // columns (the status words, the late-entry column): used when it fits.
+  const loadColumns = (cols, simplePaste = false, saved = null) => {
     const facts = columnFacts(cols);
-    const g = guessMapping(cols.columns, facts);
+    const kept = !simplePaste ? savedMapping(saved, cols.columns) : null;
+    const g = kept || guessMapping(cols.columns, facts);
     const map = simplePaste
       // A pasted flag column is 0 = failed, 1 = still running, as the paste box says.
       ? { ...EMPTY_MAPPING, x: "time", c: cols.columns.includes("censored") ? "censored" : "" }
       : g.mapping;
+    setKeptFrom(kept ? kept.from || "the last model" : null);
     // Start and stop rows of items (#60): fit their covariates over time.
-    const timeVarying = simplePaste ? null : guessTvc(cols.columns, facts, cols.n_rows);
-    const tvcMap = timeVarying && tvcMapping(map, "intervals", cols.columns, facts, cols.n_rows);
+    const timeVarying = simplePaste ? null
+      : kept ? (kept.mapping.i ? "intervals" : null) : guessTvc(cols.columns, facts, cols.n_rows);
+    const tvcMap = timeVarying && !kept && tvcMapping(map, "intervals", cols.columns, facts, cols.n_rows);
     const used = new Set(Object.values(tvcMap || {}).filter((v) => typeof v === "string" && v));
     setCsv(cols);
     setAnswered([]);
@@ -275,7 +290,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     if (!picked?.detail) return null;
     const cols = datasetColumns(picked.detail);
     const facts = columnFacts(cols);
-    const g = guessMapping(cols.columns, facts);
+    const g = savedMapping(picked.detail.last_mapping, cols.columns) || guessMapping(cols.columns, facts);
     const status = statusSummary(g.mapping, facts, cols.n_rows);
     // Where the reading is a guess, the pane asks rather than counts.
     const questions = dataQuestions(g.mapping, facts, cols.columns, cols.n_rows);
@@ -295,7 +310,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setDatasetId(full.id);
     setSourceName(full.name);
     setError(null);
-    loadColumns(datasetColumns(full));
+    loadColumns(datasetColumns(full), false, full.last_mapping);
     setStep(2);
   };
 
@@ -315,7 +330,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         setFile(null);
         setDatasetId(initialDatasetId);
         setSourceName(full.name || "dataset");
-        const { mapping: map, unit: guessedUnit } = loadColumns(datasetColumns(full));
+        const { mapping: map, unit: guessedUnit } = loadColumns(datasetColumns(full), false, full.last_mapping);
         if (autoFit && map.x) {
           const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId, unit: guessedUnit });
           setSplit(null);
@@ -480,6 +495,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   };
   // The age asked about on the Result step: asked again a moment after it's typed.
   const priorAge = prior.age;
+  const priorNeed = prior.need;
   useEffect(() => {
     if (step !== 4 || !priorResult) return undefined;
     let live = true;
@@ -487,7 +503,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       askPrior().then((res) => live && !res.refused && setPriorResult(res), () => {});
     }, 400);
     return () => { live = false; clearTimeout(t); };
-  }, [priorAge]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [priorAge, priorNeed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onFit = async () => {
     if (!file && !datasetId) return;
@@ -915,6 +931,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               {flagWords(mapping, facts) && (
                 <span className="ds-summary-note"> · {flagWords(mapping, facts)}</span>
               )}
+              {mapping.tl && (
+                <span className="ds-summary-note"> · {lateEntryWords(mapping.tl, facts)}</span>
+              )}
               {!mapping.c && (
                 <span className="ds-summary-note">
                   {simple ? " · every value is a time to failure"
@@ -925,6 +944,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               )}
             </p>
           ) : null}
+          {keptFrom && (
+            <p className="muted-line" role="status">Columns read as for “{keptFrom}”, the last model fitted to this dataset.</p>
+          )}
           {problems.length === 0 && !tvc && unitColumnWords(mapping, facts, unit)?.note && (
             <p className="ds-flag-notice" role="status">
               <span>{unitColumnWords(mapping, facts, unit).note}</span>
@@ -1021,7 +1043,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             {byMode
               ? hasCovariates
                 ? `Failure modes from “${mapping.e}”, with covariates — choose a regression by mode.`
-                : `Failure modes from “${mapping.e}” — they are fitted as competing risks.`
+                : `Failure modes from “${mapping.e}” — they are fitted as competing risks. To fit every failure as one, set “${mapping.e}” to Ignore on the Data step.`
               : tvc
               ? "Covariates change over time — choose a regression model. Each item's covariates follow its rows."
               : hasCovariates
@@ -1105,6 +1127,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               <FitOutcome d={priorResult} priorKind={prior.priorKind} unit={(priorResult.unit || "").toLowerCase()}
                           chart={chart} onChart={setChart} download={name || "Life model"}
                           age={prior.age} onAge={(v) => setP("age", v)}
+                          need={prior.need} onNeed={(v) => setP("need", v)}
                           dataWords={file?.name === PASTED ? "the pasted values" : `“${(file?.name || sourceName || "the data").replace(/\.csv$/i, "")}”`} />
             </div>
           ) : (

@@ -13,6 +13,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 from backend import storage
@@ -859,6 +860,71 @@ def _name_words(name) -> str:
     return re.sub(r"[_\-./()\[\]#:]+", " ", re.sub(r"([a-z])([A-Z])", r"\1 \2", str(name or ""))).strip()
 
 
+# A phrase of status words ("Removed, OK", "Found failed", "OK at last
+# check"): read by its words when they all point one way and nothing negates
+# them ("not failed" is left for the person to say). The same rule as the fit
+# wizard's ``guessStatusMeaning`` (frontend/src/datasetGuess.js).
+_PHRASE_FAILED = frozenset({"fail", "failed", "failure", "fault", "faulty", "broken", "broke", "dead", "died",
+                            "unserviceable", "defect", "defective", "tripped", "seized", "burst", "leaking",
+                            "leaked", "cracked", "worn"})
+_PHRASE_RUNNING = frozenset({"ok", "okay", "running", "suspended", "suspension", "censored", "survived", "alive",
+                             "working", "operating", "operational", "serviceable", "good", "healthy", "removed",
+                             "retired", "planned", "preventive", "still", "active", "unfailed"})
+_PHRASE_NEGATION = frozenset({"not", "no", "non", "never", "without", "un", "nil"})
+
+
+def status_code(value, column: str = "") -> int | None:
+    """What one status value means: 0 failed, 1 still running, None when it
+    can't be told. Words by their meaning ("Failed", "Running", "F" / "S"),
+    yes / no by the column's name (a "running" column's yes is still
+    running), and phrases of status words ("Removed, OK", "Found failed")."""
+    v = str(value).strip() if value is not None else ""
+    if not v:
+        return None
+    if _FAILED_VALUE_RE.fullmatch(v):
+        return 0
+    if _RUNNING_VALUE_RE.fullmatch(v):
+        return 1
+    words = _name_words(column)
+    running_name = bool(_RUNNING_NAME_RE.search(words)) and not _FAILED_NAME_RE.fullmatch(str(column).strip())
+    if _YES_RE.fullmatch(v):
+        return 1 if running_name else 0
+    if _NO_RE.fullmatch(v):
+        return 0 if running_name else 1
+    tokens = set(re.findall(r"[a-z]+", v.lower()))
+    if not tokens or tokens & _PHRASE_NEGATION:
+        return None
+    failed, running = bool(tokens & _PHRASE_FAILED), bool(tokens & _PHRASE_RUNNING)
+    if failed != running:
+        return 0 if failed else 1
+    return None
+
+
+def status_column(df: pd.DataFrame, skip: set | None = None) -> str | None:
+    """The column that most likely says which units failed: a 0/1 flag named
+    like a status (``_censor_column``), else a column of a few words named like
+    one ("Status": Failed / Removed, OK). None when nothing looks like it.
+    Compare groups preselects it, so still-running units are never counted as
+    failures by default."""
+    skip = skip or set()
+    flag = _censor_column(df)
+    if flag and flag not in skip and _CENSOR_NAME_RE.search(flag):
+        return flag
+    for col in df.columns:
+        if str(col) in skip or pd.api.types.is_numeric_dtype(df[col]):
+            continue
+        words = _name_words(col)
+        if not _STATUS_NAME_RE.search(words) or _NOT_STATUS_RE.search(words):
+            continue
+        values = df[col].dropna().astype(str).str.strip()
+        if values.empty or values.nunique() > 12:
+            continue
+        known = sum(1 for v in values.unique() if status_code(v, str(col)) is not None)
+        if known * 2 >= values.nunique():
+            return str(col)
+    return None
+
+
 def _word_status(df: pd.DataFrame, skip: set) -> tuple[str, pd.Series] | None:
     """A text column that says failed or still running on every row, and its
     values as censor codes (0 failed, 1 running); None when no column does."""
@@ -871,18 +937,9 @@ def _word_status(df: pd.DataFrame, skip: set) -> tuple[str, pd.Series] | None:
         values = df[col].dropna().astype(str).str.strip()
         if values.empty or len(values) != len(df) or values.nunique() > 12:
             continue
-        running_name = bool(_RUNNING_NAME_RE.search(words)) and not _FAILED_NAME_RE.fullmatch(str(col).strip())
 
-        def code(v, running_name=running_name):
-            if _FAILED_VALUE_RE.fullmatch(v):
-                return 0
-            if _RUNNING_VALUE_RE.fullmatch(v):
-                return 1
-            if _YES_RE.fullmatch(v):
-                return 1 if running_name else 0
-            if _NO_RE.fullmatch(v):
-                return 0 if running_name else 1
-            return None
+        def code(v, col=str(col)):
+            return status_code(v, col)
 
         codes = values.map(code)
         if codes.notna().all():
@@ -1033,11 +1090,24 @@ def profile(dataset: Dataset) -> dict:
     unit histories (``repeated_units``), and — for a dataset whose one table
     holds life data and readings together — how it would ``split``."""
     df = load_dataframe(dataset)
+    distinct = {str(c): int(df[c].nunique(dropna=True)) for c in df.columns}
     return {
-        "distinct": {str(c): int(df[c].nunique(dropna=True)) for c in df.columns},
+        "distinct": distinct,
+        # A few-valued column's values and their rows ({"Failed": 35, ...}), so
+        # Compare groups can say what each status value means, as the fit does.
+        "values": {str(c): {_value_label(v): int(k) for v, k in df[c].value_counts(dropna=True).items()}
+                   for c in df.columns if 0 < distinct[str(c)] <= 12},
+        "status_column": status_column(df),
         "repeated_units": repeated_units(df),
         "split": None if dataset.measurements is not None else split_plan(df),
     }
+
+
+def _value_label(v) -> str:
+    """A cell as the status maps match it: 1.0 reads "1"."""
+    if isinstance(v, (float, np.floating)) and float(v).is_integer():
+        return str(int(v))
+    return str(v)
 
 
 def dependents_message(dependents: list[dict]) -> str:

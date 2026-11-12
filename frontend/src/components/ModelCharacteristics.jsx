@@ -106,10 +106,19 @@ function BLivesCard({ life, level, pending, unit, noun = "time", credible = fals
         <div className="gofr life-row" key={b.label}
              title={`${b.label}: the ${noun} by which ${Math.round(b.p * 100)}% have failed`}>
           <span className="gk">{B_NAMES[b.label] || b.label}</span>
-          <span className="gv">{b.value != null ? `${formatNumber(b.value)}${u}` : "—"}</span>
-          <span className="life-lo">{spread ? across(b) : b.lower != null ? `≥ ${formatNumber(b.lower)}` : pending ? "…" : ""}</span>
+          <span className="gv">{b.value != null ? `${formatNumber(b.value)}${u}`
+            : b.between ? `${formatNumber(b.between[0])}–${formatNumber(b.between[1])}${u}` : "—"}</span>
+          <span className="life-lo" title={b.lower_note || undefined}>
+            {spread ? across(b) : b.lower != null ? `≥ ${formatNumber(b.lower)}` : pending ? "…" : b.lower_note ? "no bound" : ""}
+          </span>
         </div>
       ))}
+      {rows.some((b) => b.between) && (
+        <p className="mf-note">
+          Inspection data: each B-life is the interval between the two inspections it falls in; the data can&apos;t
+          say where within it.{rows.some((b) => b.lower_note) ? ` ${rows.find((b) => b.lower_note).lower_note}` : ""}
+        </p>
+      )}
       <p className="mf-note">
         B10 is the {noun} by which 10% have failed (90% still running): the usual design life.
       </p>

@@ -22,5 +22,9 @@ export function baselineOf(s) {
   }
   const v = n(s.b10?.value), lo = n(s.b10?.low), hi = n(s.b10?.high);
   if (![v, lo, hi].every(Number.isFinite) || !(lo < v && v < hi)) return null;
-  return { b10: { value: v, low: lo, high: hi }, shape: { low: n(s.shape?.low) ?? 1.2, high: n(s.shape?.high) ?? 4 }, unit: s.unit };
+  // A shape range only when one was given (a datasheet's "shape 1.5 to 2.5"):
+  // otherwise the server assumes a wide one and says so in the prior's name.
+  const slo = n(s.shape?.low), shi = n(s.shape?.high);
+  const shape = Number.isFinite(slo) && Number.isFinite(shi) ? { shape: { low: slo, high: shi } } : {};
+  return { b10: { value: v, low: lo, high: hi }, ...shape, unit: s.unit };
 }

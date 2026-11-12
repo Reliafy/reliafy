@@ -605,13 +605,18 @@ def map_censor_column(df: pd.DataFrame, column: str, codes: dict) -> pd.DataFram
             raise FitError(f"'{value}' in '{column}' must mean failed (0) or still running (1).")
         lookup[_status_key(value)] = code
     blank = df[column].isna() | (df[column].astype(str).str.strip() == "")
-    if blank.any():
+    # A blank cell can be given a meaning too ("" in ``codes``): a failure-mode
+    # column used as the status is blank for the units still running.
+    blank_code = lookup.get("")
+    if blank.any() and blank_code is None:
         n = int(blank.sum())
         raise FitError(
             f"{n} row{'s' if n != 1 else ''} {'have' if n != 1 else 'has'} no value in '{column}'. "
-            "Fill in whether each unit failed or was still running, then try again."
+            "Say what a blank means (failed or still running), or fill each one in, then try again."
         )
     mapped = df[column].map(lambda v: lookup.get(_status_key(v)))
+    if blank.any():
+        mapped = mapped.where(~blank, blank_code)
     if mapped.isna().any():
         shown = ", ".join(sorted({_status_label(v) for v in df[column][mapped.isna()]})[:5])
         raise FitError(f"Say whether these values in '{column}' mean failed or still running: {shown}.")
@@ -1828,10 +1833,32 @@ def fit(
         split = model_split.data_split(df, mapping)
         if split is not None:
             result["split"] = split
+    if result.get("kind") in model_split.SPLIT_KINDS:
+        if (mapping.get("xl") or mapping.get("xr")) and "interval_censored" not in result:
+            result["interval_censored"] = True
+        late = late_entry(df, mapping)
+        if late:
+            # Said on the result: "20 units entered late (observed from ...): accounted for".
+            result["late_entry"] = late
     # Confidence bounds and probability-paper transforms can produce non-finite
     # values at the extremes (e.g. a Weibull bound that maps to ±inf/NaN). These
     # are not valid JSON, so coerce them to null — Plotly renders them as gaps.
     return _json_safe(result)
+
+
+def late_entry(df: pd.DataFrame, mapping: dict) -> Optional[dict]:
+    """Units that entered observation late (left truncation, the ``tl``
+    column): ``{"column", "units"}`` (rows entering after 0, weighted by the
+    count column), or None without a ``tl`` column."""
+    col = (mapping or {}).get("tl")
+    if not col or col not in df.columns:
+        return None
+    tl = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
+    n = np.ones_like(tl)
+    if mapping.get("n") and mapping["n"] in df.columns:
+        n = pd.to_numeric(df[mapping["n"]], errors="coerce").fillna(1).to_numpy(dtype=float)
+    late = np.isfinite(tl) & (tl > 0)
+    return {"column": str(col), "units": int(round(float(n[late].sum())))}
 
 
 def _json_safe(value):
@@ -2959,6 +2986,16 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
     est = entry["est"]
     try:
         kwargs = build_fit_inputs(df, mapping)
+    except FitError:
+        raise
+    except Exception as exc:
+        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+    if distribution != "turnbull" and np.isin(np.asarray(kwargs.get("c", []), dtype=float), (2, -1)).any():
+        # Said in plain words, not the library's "c=2".
+        raise FitError(f"{entry['name']} needs exact failure times. Here some units were found failed between two "
+                       "inspections (or at the first one), so use Turnbull, which reads failures between two "
+                       "times, or fit a distribution such as Weibull.")
+    try:
         model = note_fit(est.fit(**kwargs))
         xs = np.asarray(model.x, dtype=float)
         R = np.asarray(model.R, dtype=float)

@@ -536,6 +536,36 @@ def compare_two(spec_a: dict, spec_b: dict, unit: Optional[str] = None) -> dict:
     }
 
 
+def with_life_bounds(result: dict, bounds: dict) -> dict:
+    """``compare_two``'s result with each side's B10 and median 90% one-sided
+    lower bounds (``bounds``: ``{"a": {"b10": lo, "median": lo, "note"}, ...}``,
+    from the saved models' own fits) and one sentence on whether the B10s are
+    clearly apart: the longer one's lower bound above the other's estimate."""
+    out = dict(result)
+    for k in ("a", "b"):
+        if bounds.get(k):
+            out[k] = {**out[k], "lower": {m: bounds[k].get(m) for m in ("b10", "median")},
+                      **({"bounds_note": bounds[k]["note"]} if bounds[k].get("note") else {})}
+    a, b = out["a"], out["b"]
+    ea, eb = a["metrics"].get("b10"), b["metrics"].get("b10")
+    la, lb = (a.get("lower") or {}).get("b10"), (b.get("lower") or {}).get("b10")
+    us = f" {unit_in_text(out.get('unit'))}" if out.get("unit") else ""
+    if ea and eb and (la is not None or lb is not None):
+        long_, short_ = (a, b) if ea >= eb else (b, a)
+        lo = (long_.get("lower") or {}).get("b10")
+        if lo is not None and lo > short_["metrics"]["b10"]:
+            text = (f"{long_['label']}'s B10 is clearly longer: we're 90% sure it's at least {fmt_num(lo)}{us}, above "
+                    f"{short_['label']}'s best estimate of {fmt_num(short_['metrics']['b10'])}{us}.")
+        elif lo is not None:
+            text = (f"{long_['label']}'s B10 is longer at its best estimate, but not clearly: its 90% lower bound "
+                    f"({fmt_num(lo)}{us}) is below {short_['label']}'s estimate ({fmt_num(short_['metrics']['b10'])}{us}). "
+                    "More data would settle it.")
+        else:
+            text = f"{long_['label']}'s B10 is longer at its best estimate; it has no bound to say how sure."
+        out["b10_reading"] = text
+    return out
+
+
 _ALPHA = 0.05
 _WEIGHTINGS = [
     ("log-rank", "Log-rank", "log-rank"),

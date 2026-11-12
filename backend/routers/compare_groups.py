@@ -34,6 +34,8 @@ def compare_groups_endpoint(
     count_column: Optional[str] = Body(default=None),
     cause_column: Optional[str] = Body(default=None),
     c_invert: bool = Body(default=False),
+    c_map: Optional[dict] = Body(default=None),
+    all_failed: bool = Body(default=False),
     groups: Optional[list] = Body(default=None),
     reference: Optional[str] = Body(default=None),
     tau: Optional[float] = Body(default=None),
@@ -47,9 +49,15 @@ def compare_groups_endpoint(
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
     try:
         df = datasets_service.load_dataframe(dataset)
-        data = compare_service.prepare(
+        # No status column chosen: one the data has is read, never "all failed" by default.
+        censor_column, hint, flip = compare_service.auto_status(
             df, time_column=time_column, group_column=group_column, censor_column=censor_column or None,
-            count_column=count_column or None, cause_column=cause_column or None, c_invert=c_invert)
+            cause_column=cause_column or None, all_failed=all_failed)
+        data = compare_service.prepare(
+            df, time_column=time_column, group_column=group_column, censor_column=censor_column,
+            count_column=count_column or None, cause_column=cause_column or None, c_invert=c_invert or flip,
+            c_map=c_map or None)
+        data["status_hint"] = hint
         result = compare_service.compare_groups(
             data, groups=groups, reference=reference or None, tau=tau, unit=unit, group_column=group_column)
     except ValueError as exc:

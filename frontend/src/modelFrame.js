@@ -170,7 +170,11 @@ const PATTERNS = {
 function bLifeWords(result, label = "B10") {
   const life = result?.life;
   const b = (life?.b_lives || []).find((x) => x.label === label);
+  // Inspection data: the interval it falls in, never one end as the value.
+  if (b?.between) return `${label} ${formatNumber(b.between[0])}–${withUnit(b.between[1], result.unit)} (between inspections)`;
   if (!b || !Number.isFinite(Number(b.value))) return null;
+  // No bound (a fit method without one): said, so its absence isn't read as certainty.
+  if (b.lower == null && life.bounds_note) return `${label} ${withUnit(b.value, result.unit)} (no bound with this fit)`;
   const bound = b.lower != null && Number.isFinite(Number(b.lower)) && life.confidence
     ? ` (≥ ${formatNumber(b.lower)} at ${Math.round(life.confidence * 100)}%${intervalLevel(result).credible ? " credible" : ""})` : "";
   return `${label} ${withUnit(b.value, result.unit)}${bound}`;
@@ -181,6 +185,8 @@ function meanWords(result) {
   const mttf = result.life?.mttf || (result.metrics?.mttf != null ? { value: result.metrics.mttf } : null);
   const answer = meanLifeAnswer(result, mttf);
   if (answer.kind !== "mean") return null;
+  // From a handful of failures the mean is the curve's shape talking: say so beside it.
+  if (answer.fewFailures) return `mean ${withUnit(answer.value, result.unit)} (from ${answer.fewFailures} failure${answer.fewFailures === 1 ? "" : "s"}: extrapolated)`;
   return `mean ${withUnit(answer.value, result.unit)}`;
 }
 

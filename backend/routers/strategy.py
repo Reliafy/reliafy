@@ -129,16 +129,41 @@ def calendar_next_endpoint(
         )
 
 
+def _saved_bounds(session, model_id, ctx: AccessCtx) -> dict | None:
+    """A saved model's B10 and median lower bounds (90% one-sided), or None
+    when it can't be read or bounded (the comparison stands without them)."""
+    from backend.services import models as models_service
+
+    try:
+        out = models_service.life(session, str(model_id), {"reliability": [0.9, 0.5], "confidence": 0.9},
+                                  ctx.read_owners)
+    except Exception:  # noqa: BLE001 - the comparison doesn't depend on its bounds
+        return None
+    pts = out.get("points") or []
+    if len(pts) < 2:
+        return None
+    return {"b10": pts[0].get("lower"), "median": pts[1].get("lower"), "note": out.get("bounds_note")}
+
+
 @router.post("/compare-two")
 def compare_two_endpoint(
     a: dict = Body(...),
     b: dict = Body(...),
     unit: str | None = Body(default=None),
     user: dict = Depends(get_current_user),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Compare two models' reliability (which item is more reliable)."""
+    """Compare two models' reliability (which item is more reliable). A side
+    given as a saved model (``model_id``) also gets its B10 and median's 90%
+    one-sided lower bounds from that model's own fit."""
     try:
-        return JSONResponse(content=strategy_service.compare_two(a, b, unit=unit))
+        result = strategy_service.compare_two(a, b, unit=unit)
+        bounds = {k: _saved_bounds(session, side.get("model_id"), ctx) for k, side in (("a", a), ("b", b))
+                  if isinstance(side, dict) and side.get("model_id")}
+        if any(bounds.values()):
+            result = strategy_service.with_life_bounds(result, bounds)
+        return JSONResponse(content=result)
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive

@@ -107,6 +107,8 @@
 .cg-aside .calc-t { min-width: 0; }
 .cg-aside .calc-t input,
 .cg-aside .sel-trigger { width: 100%; box-sizing: border-box; }
+.cg-read-as { margin: 0; font-size: var(--fs-13); }
+.cg-aside .ds-status { margin-top: calc(-1 * var(--sp-1)); }
 .cg-aside .cg-invert { margin-top: calc(-1 * var(--sp-1)); font-weight: 500; font-size: var(--fs-13); }
 .cg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
 .cg-run { width: 100%; justify-content: center; margin-top: var(--sp-1); }

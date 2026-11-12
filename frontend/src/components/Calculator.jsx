@@ -335,6 +335,31 @@ export default function Calculator({ functions, unit, params, state, setState, n
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeMode, lifePath, tarKey, rValid]);
 
+  // Several covariate combinations: each one's time and bound from the life
+  // path too, so the table keeps the bounds a single combination shows.
+  const tars = state.tars || {};
+  const tarKeyOf = (s) => `${rNum}|${ciLevel}|${tarBound}|${JSON.stringify(s.values || {})}`;
+  const seriesValues = JSON.stringify(series.map((s) => [s.id, s.values]));
+  useEffect(() => {
+    if (!timeMode || !lifePath || !rValid || !ciOk || !hasCov || series.length < 2) return undefined;
+    const timers = series.map((s) => {
+      const key = tarKeyOf(s);
+      const have = tars[s.id];
+      if (have?.key === key && (have.data || have.error)) return null;
+      return setTimeout(() => {
+        const put = (v) => setState((st) => ({ ...st, tars: { ...(st.tars || {}), [s.id]: v } }));
+        lifeAt(lifePath, {
+          reliability: [rNum / 100], confidence: ciLevel / 100, bound: tarBound, covariates: s.values,
+        })
+          .then((res) => put({ key, data: res, error: null }))
+          .catch((err) => put({ key, data: null, error: err.message }));
+      }, 300);
+    });
+    return () => timers.forEach((id) => id && clearTimeout(id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeMode, lifePath, rValid, ciOk, hasCov, seriesValues, rNum, ciLevel, tarBound]);
+  const tarOf = (s) => (tars[s.id]?.key === tarKeyOf(s) ? tars[s.id]?.data?.points?.[0] : null);
+
   const x = functions.curves.x;
 
   const cond = condAge === "" ? 0 : Number(condAge);
@@ -415,6 +440,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const current = series.map(curveIsCurrent);
   const tarTimes = series.map((s, i) =>
     i === 0 && tarPoint && !multi ? tarPoint.time
+      : multi && tarOf(s)?.time != null ? tarOf(s).time
       : rValid && current[i] ? timeAtValue(views[i]?.x, views[i]?.sf, rNum / 100) : null
   );
   // The answer is on its way: say so, rather than show the one before.
@@ -538,7 +564,9 @@ export default function Calculator({ functions, unit, params, state, setState, n
           </span>
           {!multi && (
             <span className="calc-answer-value">
-              <b aria-live="polite">{tarTimes[0] != null ? fmtTime(tarTimes[0]) : working ? WORKING : "—"}</b>
+              <b aria-live="polite">{tarTimes[0] != null ? fmtTime(tarTimes[0])
+                : tarPoint?.between ? `between ${formatNumber(tarPoint.between[0])} and ${fmtTime(tarPoint.between[1])}`
+                : working ? WORKING : "—"}</b>
               {spread && !lifePath && rValid && (() => {
                 const r = spreadTime(spread, rNum / 100);
                 return r ? <span className="calc-answer-ci"> — {spreadRangeText(r.lower, r.upper, fmtTime)}</span> : null;
@@ -583,6 +611,9 @@ export default function Calculator({ functions, unit, params, state, setState, n
       {timeMode && tarPoint && tar.data?.bounds_note && ci.bound !== "none" && (
         <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>{tar.data.bounds_note}</p>
       )}
+      {timeMode && tarPoint?.lower_note && ci.bound !== "none" && (
+        <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>{tarPoint.lower_note}</p>
+      )}
       {curveWarning && <p className="calc-warn">⚠ {curveWarning}</p>}
       {confidencePath && ci.bound !== "none" && bandError && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
@@ -599,18 +630,33 @@ export default function Calculator({ functions, unit, params, state, setState, n
       {multi && timeMode ? (
         <table className="calc-table">
           <thead>
-            <tr><th>Combination</th><th>Time at R = {rValid ? `${rNum}%` : "—"}{unitWord ? ` (${unitWord.trim()})` : ""}</th></tr>
+            <tr>
+              <th>Combination</th><th>Time at R = {rValid ? `${rNum}%` : "—"}{unitWord ? ` (${unitWord.trim()})` : ""}</th>
+              {lifePath && ci.bound !== "none" && <th>{ciLevel}% {tarBound === "two-sided" ? "range" : `${tarBound} bound`}</th>}
+            </tr>
           </thead>
           <tbody>
-            {series.map((s, i) => (
-              <tr key={s.id}>
-                <td className="calc-row-label">
-                  <span className="combo-dot" style={{ background: COLORS[i % COLORS.length] }} />
-                  {labelOf(s)}
-                </td>
-                <td>{tarTimes[i] != null ? formatNumber(tarTimes[i]) : s.pending ? WORKING : "—"}</td>
-              </tr>
-            ))}
+            {series.map((s, i) => {
+              const pt = tarOf(s);
+              return (
+                <tr key={s.id}>
+                  <td className="calc-row-label">
+                    <span className="combo-dot" style={{ background: COLORS[i % COLORS.length] }} />
+                    {labelOf(s)}
+                  </td>
+                  <td>{tarTimes[i] != null ? formatNumber(tarTimes[i]) : s.pending ? WORKING : "—"}</td>
+                  {lifePath && ci.bound !== "none" && (
+                    <td>
+                      {pt ? (tarBound === "two-sided"
+                        ? (pt.lower != null && pt.upper != null ? `${formatNumber(pt.lower)} – ${formatNumber(pt.upper)}` : "—")
+                        : tarBound === "lower" ? (pt.lower != null ? `≥ ${formatNumber(pt.lower)}` : "—")
+                          : (pt.upper != null ? `≤ ${formatNumber(pt.upper)}` : "—"))
+                        : tars[s.id]?.error ? "—" : "…"}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : multi ? (

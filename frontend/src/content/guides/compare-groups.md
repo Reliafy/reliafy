@@ -29,10 +29,12 @@ top of the page. The panel on the right asks for:
 
 - **Time column**: the time to failure or removal.
 - **Split by**: the column that names each unit's group.
-- **Censor column (optional)**: which units failed and which are still
-  running. Tick **1 = failed here (invert it)** if your file uses 1 for a
-  failure. With no censor column, every row counts as a failure, unless you
-  choose a failure-mode column.
+- **Failed or still running?**: the column that says which units failed and
+  which are still running. A status column the data has (say *Status*, with
+  *Failed* and *Removed, OK*) is picked for you, and each of its values gets
+  **Failed** or **Still running**, as when you fit a model; the line under it
+  says how the rows were read (*35 failed, 25 still running*). Choose
+  **none: every row failed** only when every unit really failed.
 - **Failure mode (optional)**: to test each mode separately as well (see
   below). With no censor column, a row with a blank mode is a unit still
   running, just as when you fit a competing-risks model.

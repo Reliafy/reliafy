@@ -132,6 +132,25 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
     }
 
 
+def _last_mapping(models: list, columns: list) -> dict | None:
+    """How the newest model fitted from a dataset read its columns, so a new
+    fit from the dataset starts there (the status words, the late-entry
+    column...) rather than from a fresh guess: ``{mapping, options, unit,
+    model_name}``, or None. Only a mapping whose columns are all still in the
+    dataset counts; options are the status reading only."""
+    names = {c.get("name") if isinstance(c, dict) else str(c) for c in columns or []}
+    for m in models:
+        spec = m.spec or {}
+        mapping = {k: v for k, v in (spec.get("mapping") or {}).items() if v}
+        if not (mapping.get("x") or mapping.get("xl")) or not set(mapping.values()) <= names:
+            continue
+        opts = spec.get("options") or {}
+        return {"mapping": mapping, "unit": spec.get("unit") or (m.results or {}).get("unit") or "",
+                "options": {k: opts[k] for k in ("c_map", "c_invert") if opts.get(k)},
+                "model_name": m.name}
+    return None
+
+
 def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     # A public link shows the dataset, not the grantor's models fitted to it:
     # a direct share of the dataset doesn't show those either.
@@ -169,6 +188,8 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "values": preview.get("values"),
         "whole": preview.get("whole"),
         "models": [_model_summary(m, ctx) for m in models],
+        # How the newest model read the columns: a new fit from here starts there.
+        "last_mapping": _last_mapping(models, dataset.columns),
         "other_models": others,
         "profile": profile,
         # The measurements part (readings at ages), with its own preview and
@@ -695,7 +716,8 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
     library, record_id, covariates?, shape?} (the record's covariates: a pipe's length, the clock, the
     demands a year...), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind:
     around, distribution, params, unit} or {kind: b10, b10, shape, unit}: the priors the Explorer's
-    "Fit a life model…" takes, but the class's history), trust, age (adds the reliability there).
+    "Fit a life model…" takes, but the class's history), trust, age (adds the reliability there), need (a
+    required B10: adds the chance it is met).
     Previewed (a refusal comes back as {refused}); with save true, saved as a model (counts against the
     model cap)."""
     from backend.maintenance import library_models
@@ -712,7 +734,8 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
             body.get("censor_column") or None, body.get("unit") or "hours", body.get("prior") or {},
             body.get("distribution") or "exponential", body.get("trust") or "guide", bool(body.get("c_invert")),
             hidden=ctx.hidden, content=content,
-            c_map=body.get("c_map") if isinstance(body.get("c_map"), dict) else None, age=body.get("age"))
+            c_map=body.get("c_map") if isinstance(body.get("c_map"), dict) else None, age=body.get("age"),
+            need=body.get("need"))
     except KeyError:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
     except ValueError as exc:
@@ -723,7 +746,19 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
     denied = _creation_denied(session, ctx, "models")
     if denied is not None:
         return denied
-    doc = bayes_life.save(session, ctx.write_owner, model, result, None, body.get("name"))
+    # The user's own table and columns go with the model (not a table of
+    # shortest / longest times), so a refit from it starts from the same reading.
+    dataset = None
+    if body.get("dataset_id"):
+        dataset = datasets_service.get_dataset(session, str(body["dataset_id"]), ctx.read_owners)
+    elif content is not None:
+        label = str(body.get("name") or result.get("label") or "Life data").strip()[:150]
+        dataset = datasets_service.create_dataset(session, f"{label}: data.csv", content, ctx.write_owner)
+    mapping = {"x": str(body.get("time_column") or ""), "c": body.get("censor_column") or ""}
+    options = {"c_invert": bool(body.get("c_invert")) or None,
+               "c_map": body.get("c_map") if isinstance(body.get("c_map"), dict) else None}
+    doc = bayes_life.save(session, ctx.write_owner, model, result, None, body.get("name"),
+                          dataset=dataset, mapping=mapping if mapping["x"] else None, options=options)
     access_service.stamp_editor(session, "models", doc.id, ctx)
     return JSONResponse(content=_model_detail(doc, ctx))
 
@@ -809,6 +844,11 @@ def get_model(
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if model.kind == "competing_risks":
+        # Saved before the 90% rule and the counts by the horizon: refitted from its data.
+        from backend import competing_risks
+
+        model.results = competing_risks.refreshed(session, model)
     detail = _model_detail(model, ctx)
     # "5 failed, 7 running" (#303), for a model saved before fits recorded it.
     split = model_split.split_for_model(session, model)

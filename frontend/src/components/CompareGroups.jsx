@@ -6,6 +6,8 @@ import { COLORWAY, referenceShape } from "../plotTheme.js";
 import { compareGroups } from "../api.js";
 import { unitInText } from "./unitText.js";
 import { guessCompareColumns } from "../datasetGuess.js";
+import { guessStatus, statusMeaning, statusValues, statusValuesWithBlank } from "../lifeData.js";
+import StatusMeanings from "./StatusMeanings.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { ciPct } from "../levels.js";
 import "./Datasets.css";
@@ -38,6 +40,28 @@ const HISTORY_FIT = {
   },
 };
 
+// The status fields for a column: guessed from its values, as the fit's Data
+// step guesses them; without values (an older dataset), the 0/1 direction.
+function statusFor(column, facts, invert) {
+  if (!column) return { c_invert: false, c_map: null };
+  if (facts[column]?.values) return guessStatus(column, facts);
+  return { c_invert: !!invert, c_map: null };
+}
+
+// Failed and still-running rows under the meanings chosen; null while a value
+// has none (or the column's values aren't known).
+function statusCounts(fact, status) {
+  if (!fact?.values) return null;
+  const out = { failed: 0, running: 0 };
+  for (const v of statusValues(statusValuesWithBlank(fact.values, 0))) {
+    const m = statusMeaning(v.label, status);
+    if (m === 0) out.failed += v.rows;
+    else if (m === 1) out.running += v.rows;
+    else return null;
+  }
+  return out;
+}
+
 export default function CompareGroups({ dataset, splitBy, onClose }) {
   const columns = dataset.columns || [];
   const distinct = dataset.profile?.distinct;
@@ -46,14 +70,23 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
     () => guessCompareColumns(columns, { distinct: distinct || {}, splitBy }),
     [columns, distinct, splitBy]
   );
+  // Each column's few values (the dataset's profile), so a status column of
+  // words ("Failed", "Removed, OK") is read as the fit reads it.
+  const facts = useMemo(() => Object.fromEntries(columns.map((c) => [c.name, {
+    dtype: c.dtype, values: dataset.profile?.values?.[c.name] || null,
+  }])), [columns, dataset.profile]);
+  // The status column the data has is preselected: still-running units are
+  // never counted as failures by default.
+  const firstCensor = dataset.profile?.status_column || first.censor;
   const [timeCol, setTimeCol] = useState(first.time);
   const [groupCol, setGroupCol] = useState(first.group);
-  const [censorCol, setCensorCol] = useState(first.censor);
-  // A "failed"-style column is 1 = failed: ticked for it, so running units
-  // aren't counted as failures by default.
-  const [invert, setInvert] = useState(first.invert);
+  const [censorCol, setCensorCol] = useState(firstCensor);
+  // What each status value means: { c_invert, c_map } (lifeData.js). A
+  // "failed"-style 0/1 column is 1 = failed, so it starts inverted.
+  const [status, setStatus] = useState(() => statusFor(firstCensor, facts, first.invert));
   const [causeCol, setCauseCol] = useState("");
-  const [unit, setUnit] = useState(first.unit);
+  // The dataset's own unit ("hour" → "hours") when it names one.
+  const [unit, setUnit] = useState(first.unit || (dataset.time_unit ? `${String(dataset.time_unit).toLowerCase()}s` : ""));
   const [tau, setTau] = useState("");
   const [reference, setReference] = useState(null);
   const [result, setResult] = useState(null);
@@ -74,7 +107,11 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
         time_column: timeCol,
         group_column: groupCol,
         censor_column: censorCol || null,
-        c_invert: !!censorCol && invert,
+        c_invert: !!censorCol && !!status.c_invert,
+        c_map: censorCol && status.c_map ? status.c_map : null,
+        // "none: all failed" said in so many words: otherwise the server reads
+        // a status column the data has rather than count every row as failed.
+        all_failed: !censorCol && !causeCol,
         cause_column: causeCol || null,
         unit: unit || null,
         tau: t,
@@ -93,11 +130,14 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
   // A new split starts from the default reference group.
   useEffect(() => { setReference(null); }, [groupCol, timeCol]);
 
-  // A new censor column: guess its direction again.
+  // A new censor column: guess what its values mean again.
   const pickCensor = (v) => {
     setCensorCol(v);
-    setInvert(guessCompareColumns(columns.filter((c) => c.name === v)).invert);
+    setStatus(statusFor(v, facts, guessCompareColumns(columns.filter((c) => c.name === v)).invert));
   };
+  const readAs = censorCol ? statusCounts(facts[censorCol], status) : null;
+  const unread = censorCol && facts[censorCol]?.values
+    ? statusValues(facts[censorCol].values).filter((v) => statusMeaning(v.label, status) === null) : [];
 
   const fit = repeated && HISTORY_FIT[repeated.kind];
 
@@ -164,14 +204,26 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
             <Select value={groupCol} onChange={setGroupCol} options={colOptions} />
           </label>
           <label className="calc-t">
-            <span>Censor column (optional)</span>
-            <Select value={censorCol} onChange={pickCensor} options={optional(causeCol ? "— none: blank mode = running —" : "— none: all failed —")} />
+            <span>Failed or still running?</span>
+            <Select value={censorCol} onChange={pickCensor} options={optional(causeCol ? "— none: blank mode = running —" : "— none: every row failed —")} />
           </label>
-          {censorCol && (
+          {censorCol && facts[censorCol]?.values ? (
+            <StatusMeanings column={censorCol} values={facts[censorCol].values} mapping={status}
+                            onChange={(m) => setStatus({ c_invert: !!m.c_invert, c_map: m.c_map || null })} />
+          ) : censorCol ? (
             <label className="map-invert cg-invert">
-              <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
+              <input type="checkbox" checked={!!status.c_invert}
+                     onChange={(e) => setStatus({ c_invert: e.target.checked, c_map: null })} />
               <span>1 = failed here (invert it)</span>
             </label>
+          ) : null}
+          {readAs && (
+            <p className="muted-line cg-read-as">
+              Read as: <b>{readAs.failed.toLocaleString()} failed</b>, <b>{readAs.running.toLocaleString()} still running</b>
+            </p>
+          )}
+          {!censorCol && !causeCol && (
+            <p className="muted-line cg-read-as">Every row is counted as a failure.</p>
           )}
           <label className="calc-t">
             <span>Failure mode (optional)</span>
@@ -187,7 +239,8 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
               <input type="number" inputMode="decimal" min="0" placeholder="auto" value={tau} onChange={(e) => setTau(e.target.value)} />
             </label>
           </div>
-          <button className="cg-run" onClick={() => run(null)} disabled={loading || !timeCol || !groupCol}>
+          <button className="cg-run" onClick={() => run(null)} disabled={loading || !timeCol || !groupCol || unread.length > 0}
+                  title={unread.length ? "Say what each status value means first" : undefined}>
             {loading ? "Comparing…" : "Compare"}
           </button>
         </aside>
@@ -242,6 +295,13 @@ function CompareGroupsResult({ result, reference, onReference }) {
         }
       />
 
+      {result.read_as && (
+        <p className="muted-line cg-read-as">
+          Read as {result.read_as.failed.toLocaleString()} failed, {result.read_as.running.toLocaleString()} still
+          running{result.read_as.status_column ? ` (from “${result.read_as.status_column}”)`
+            : result.read_as.cause_column ? ` (a blank “${result.read_as.cause_column}” is still running)` : ": every row counted as a failure"}.
+        </p>
+      )}
       <Plot data={traces} layout={layout} />
 
       <div className="ds-section-h cg-h">Groups · average life over the first {fmt(result.tau)}{u}</div>

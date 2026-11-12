@@ -120,13 +120,18 @@ def prepare(
     count_column: Optional[str] = None,
     cause_column: Optional[str] = None,
     c_invert: bool = False,
+    c_map: Optional[dict] = None,
     names: Optional[dict] = None,
 ) -> dict:
     """Pull times, flags, counts, group labels (and failure modes) out of a
     dataset, dropping rows with no time or no group. Only right-censoring
     (0 = failed, 1 = still running) is accepted: the log-rank test needs it.
-    ``names`` says how a column reads in an error message (for inline data,
-    the argument that filled it, e.g. ``{"c": "`censored`"}``, #211)."""
+    A status column of words ("Failed", "Removed, OK") is read as the fit
+    reads it: by ``c_map`` (``{"Failed": 0, "Removed, OK": 1}``) when given,
+    else by the words' meaning; a value whose meaning can't be told is
+    refused with the values to map. ``names`` says how a column reads in an
+    error message (for inline data, the argument that filled it, e.g.
+    ``{"c": "`censored`"}``, #211)."""
     names = names or {}
 
     def called(col: str, role: str) -> str:
@@ -139,7 +144,10 @@ def prepare(
                    censor_column=censor_column, count_column=count_column, cause_column=cause_column)
     if group_column == time_column:
         raise CompareGroupsError("Split by a column other than the time column.")
-    if c_invert:
+    status_words = None
+    if censor_column and (c_map or not _numeric_flags(df[censor_column])):
+        df, status_words = _read_status_words(df, censor_column, c_map, called(censor_column, "Status"))
+    if c_invert and status_words is None:
         if not censor_column:
             raise CompareGroupsError("'1 = failed' flips the censor column: choose one too.")
         try:
@@ -192,7 +200,80 @@ def prepare(
     out = {"x": x, "c": c, "n": n, "group": labels, "dropped": dropped}
     if cause is not None:
         out["cause"] = cause
+    # How the rows were read, to show beside the answer: "35 failed, 25
+    # still running", by the column (or none) that said so.
+    out["read_as"] = {
+        "failed": int(round(float(n[c == 0].sum()))), "running": int(round(float(n[c == 1].sum()))),
+        "status_column": censor_column or None, "cause_column": cause_column or None,
+    }
+    if status_words:
+        out["read_as"]["meanings"] = status_words
     return out
+
+
+def auto_status(df: pd.DataFrame, *, time_column: str, group_column: str, censor_column: Optional[str],
+                cause_column: Optional[str], all_failed: bool = False) -> tuple[Optional[str], Optional[str], bool]:
+    """The status column to read when none was chosen: a dataset that has one
+    ("Status": Failed / Removed, OK) never has its still-running units counted
+    as failures by default. ``all_failed`` says every row really failed.
+    Returns ``(censor_column, note, c_invert)``: the note says which column was
+    read; ``c_invert`` is true for a 0/1 flag named for failing ("failed",
+    "event"), which is 1 when the unit failed."""
+    if censor_column or cause_column or all_failed:
+        return censor_column, None, False
+    from backend.services.datasets import _FAILED_NAME_RE, status_column
+
+    found = status_column(df, skip={time_column, group_column})
+    if not found:
+        return None, None, False
+    invert = bool(_numeric_flags(df[found])) and bool(_FAILED_NAME_RE.fullmatch(found.strip()))
+    return found, (f"“{found}” was read as which units failed and which were still running"
+                   f"{' (1 = failed)' if invert else ''}. If every row really is a failure, say so (all_failed) "
+                   "and it is left out."), invert
+
+
+def _numeric_flags(col: pd.Series) -> bool:
+    """A column of numbers (or blanks) only: read as 0/1 codes, not words."""
+    vals = col.dropna()
+    return bool(vals.empty or pd.to_numeric(vals, errors="coerce").notna().all())
+
+
+def _read_status_words(df: pd.DataFrame, column: str, c_map: Optional[dict], called: str):
+    """``df`` with a status column of words turned into 0 / 1, and what each
+    word was read as (``{"Failed": "failed", "Removed, OK": "still running"}``).
+    ``c_map`` wins; otherwise each word by its meaning, as the fit wizard
+    guesses it. A word whose meaning can't be told stops the comparison."""
+    from backend.services.datasets import status_code
+
+    if c_map:
+        try:
+            out = fitting.map_censor_column(df, column, c_map)
+        except fitting.FitError as exc:
+            raise CompareGroupsError(str(exc)) from exc
+        bad = ~out[column].isin((0, 1))
+        if bad.any():
+            raise CompareGroupsError(f"{called} can only mean failed or still running here: these tests need "
+                                     "right-censored data.")
+        codes = {str(k): int(v) for k, v in c_map.items()}
+    else:
+        values = [str(v).strip() for v in pd.unique(df[column].dropna()) if str(v).strip()]
+        codes = {v: status_code(v, column) for v in values}
+        unknown = [v for v, code in codes.items() if code is None]
+        if unknown:
+            shown = ", ".join(f"“{v}”" for v in unknown[:5])
+            raise CompareGroupsError(
+                f"Say whether {shown} in {called} mean{'s' if len(unknown) == 1 else ''} failed or still running "
+                "under the status column.")
+        blank = df[column].isna() | (df[column].astype(str).str.strip() == "")
+        if blank.any():
+            k = int(blank.sum())
+            raise CompareGroupsError(
+                f"{k} row{'s' if k != 1 else ''} {'have' if k != 1 else 'has'} no value in {called}. Fill in "
+                "whether each unit failed or was still running.")
+        out = df.copy()
+        out[column] = df[column].map(lambda v: codes.get(str(v).strip())).astype(int)
+    words = {k: ("failed" if int(v) == 0 else "still running") for k, v in codes.items()}
+    return out, words
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +451,9 @@ def compare_groups(
         "rows_used": int(len(x)),
         "rows_dropped": int(data.get("dropped") or 0),
     }
+    out["read_as"] = data.get("read_as")
+    if data.get("status_hint"):
+        notes.insert(0, data["status_hint"])
     if data.get("dropped"):
         notes.append(f"{data['dropped']} row{'s' if data['dropped'] != 1 else ''} with no time or no group "
                      "left out.")

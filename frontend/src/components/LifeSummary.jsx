@@ -106,6 +106,7 @@ function dataText(result, split) {
     const parts = [`${split.failed.toLocaleString()} failed`];
     if (split.running) parts.push(`${split.running.toLocaleString()} running`);
     if (split.other) parts.push(`${split.other.toLocaleString()} other censored`);
+    if (result.late_entry?.units) parts.push(`${result.late_entry.units.toLocaleString()} entered late: accounted for`);
     return parts.join(", ");
   }
   return result.n != null ? `${result.n.toLocaleString()} observations` : null;

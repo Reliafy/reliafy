@@ -1,8 +1,8 @@
 import Select from "./Select.jsx";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
+import StatusMeanings from "./StatusMeanings.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { guessUnit } from "../datasetGuess.js";
-import { countProblem, setMappingField, setStatusMeaning, statusMeaning, statusValues } from "../lifeData.js";
+import { countProblem, setMappingField } from "../lifeData.js";
 import { TVC_STATUS, TvcTimeFields } from "./TvcColumns.jsx";
 
 // Column mapping in plain words (#291). Encodes SurPyval's input rules:
@@ -28,12 +28,6 @@ const ADVANCED = [
   { field: "tr", label: "Observed until (right truncation)" },
 ];
 
-const MEANINGS = [
-  { value: 0, label: "Failed" },
-  { value: 1, label: "Still running" },
-];
-const FIXED = { "-1": "Found failed (left-censored)", 2: "Failed between the two times (interval)" };
-
 // ``failureMode`` offers the failure-mode column (#177: the fit wizard only);
 // ``timeVarying`` (#60) is the layout of an item's rows when covariates change over time.
 export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {},
@@ -50,8 +44,6 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
     }
     onChange(next);
   };
-
-  const values = mapping.c ? statusValues(facts[mapping.c]?.values) : [];
 
   // A count holds whole numbers (#434): a column of text or decimals is
   // shown, but can't be picked, with the reason beside it.
@@ -109,31 +101,9 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
         <div className="ds-field">
           {field("c", TVC_STATUS[timeVarying] || "Failed or still running?",
                  usingInterval ? "— none: read from the two times —" : "— none: every row failed —")}
-          {values.length > 0 && (
-            <div className="ds-status" role="group" aria-label={`What each value in ${mapping.c} means`}>
-              {values.map((v) => {
-                const m = statusMeaning(v.label, mapping);
-                return (
-                  <div className="ds-status-row" key={v.label}>
-                    <span className="ds-status-value">
-                      {v.label}
-                      <span className="ds-status-rows">{v.rows.toLocaleString()} {v.rows === 1 ? "row" : "rows"}</span>
-                    </span>
-                    {FIXED[m] ? (
-                      <span className="ds-status-fixed">{FIXED[m]}</span>
-                    ) : (
-                      <SegmentedControl
-                        size="sm"
-                        label={`${v.label} means`}
-                        options={MEANINGS}
-                        value={m}
-                        onChange={(meaning) => onChange(setStatusMeaning(mapping, facts[mapping.c]?.values, v.label, meaning))}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          {mapping.c && (
+            <StatusMeanings column={mapping.c} values={facts[mapping.c]?.values} blanks={facts[mapping.c]?.blanks || 0}
+                            mapping={mapping} onChange={onChange} />
           )}
         </div>
         {!timeVarying && field("n", "Count (optional)", "— none: one unit per row —")}

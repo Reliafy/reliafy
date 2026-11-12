@@ -120,11 +120,26 @@ export function firstReach(xs, ys, p) {
 // earliest time), the lower one last (the latest). ``time`` is null when
 // the curve never reaches ``p`` within the data; ``top`` is then how far it
 // gets by ``last``, the last time in the data.
+//
+// A time to a share failed is a life, so its bound is one-sided (the B-life
+// rule, levels.js): the 90% one-sided lower bound, where the chance's 90%
+// one-sided upper bound (the fit's ``one_sided``) first reaches ``p``;
+// ``bound`` "lower" and no ``upper``. A fit saved without them gives the
+// two-sided range from the band, ``bound`` "two-sided".
 export function timeToChance(result, mode, p) {
   const xs = result?.curves?.x || [];
   const { y, lower, upper } = modeCurves(result, mode);
   const known = y.filter((v) => v != null && Number.isFinite(v));
+  const one = result?.one_sided;
+  const oneUpper = one ? (mode === ANY_MODE ? one.all_upper : one.upper?.[mode]) : null;
+  if (oneUpper?.length) {
+    return {
+      time: firstReach(xs, y, p), lower: firstReach(xs, oneUpper, p), upper: null, bound: "lower",
+      level: one.level, top: known.length ? Math.max(...known) : null, last: xs.length ? xs[xs.length - 1] : null,
+    };
+  }
   return {
+    bound: "two-sided",
     time: firstReach(xs, y, p),
     lower: firstReach(xs, upper, p),
     upper: firstReach(xs, lower, p),
@@ -142,7 +157,7 @@ export function modeSupport(result, few = FEW_FAILURES) {
   const rows = (result?.causes || []).map((k) => {
     const at = k.at || {};
     const width = at.lower != null && at.upper != null ? at.upper - at.lower : null;
-    return { name: k.name, failures: k.failures, cif: at.cif ?? null, lower: at.lower ?? null,
+    return { name: k.name, failures: k.failures, share: k.share ?? null, cif: at.cif ?? null, lower: at.lower ?? null,
              upper: at.upper ?? null, width, few: Number(k.failures) < few };
   });
   const thin = rows.filter((r) => r.few);
