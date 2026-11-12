@@ -228,8 +228,7 @@ def _cif_upper_one(model, cause, t) -> Optional[np.ndarray]:
     cb = getattr(model, "cb", None)
     if not callable(cb):
         return None
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         try:
             return np.asarray(cb(t, cause, on="cif", alpha_ci=ALPHA, bound="upper"), dtype=float).ravel()
         except Exception:  # noqa: BLE001 - the time then goes without its bound
@@ -239,8 +238,7 @@ def _cif_upper_one(model, cause, t) -> Optional[np.ndarray]:
 def _all_cause_upper_one(prep: dict, grid: np.ndarray, everything: np.ndarray) -> np.ndarray:
     """The all-cause failure probability's 90% one-sided upper bound (the
     Kaplan-Meier one): the upper end of its 80% two-sided interval."""
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         km = KaplanMeier.fit(prep["x"], c=prep["c"], n=prep["n"])
         cb = np.asarray(km.cb(grid, on="ff", alpha_ci=2 * ALPHA), dtype=float).reshape(-1, 2)[:, 1]
     cb[(everything == 0) & ~np.isfinite(cb)] = 0.0
@@ -268,8 +266,7 @@ def eliminated(prep: dict, cause: str) -> dict:
         return out
     cc = np.where(keep, 0, 1)
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             m = Weibull.fit(x, c=cc, n=n)
             life = life_bounds.time_at_reliability(m, [1.0 - ELIMINATED_B], 1.0 - ALPHA, "lower")
     except Exception as exc:  # noqa: BLE001 - the rest of the result stands
