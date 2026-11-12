@@ -7,12 +7,16 @@ import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
-import RecurrentColumnMapper from "../components/RecurrentColumnMapper.jsx";
+import ColumnMapper from "../components/ColumnMapper.jsx";
+import RecurrentMore from "../components/RecurrentMore.jsx";
 import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
 import { recurrentAnswer } from "../recurrentResults.js";
-import { NO_RECORD_END, guessRecurrentMapping, savedRecurrentMapping } from "../recurrentMapping.js";
+import {
+  RECURRENT_KEYS, RECURRENT_NONE, RECURRENT_ROWS, RECURRENT_WORDS, guessRecurrentMapping, recurrentIssues,
+  savedRecurrentMapping,
+} from "../recurrentMapping.js";
 import { guessUnit } from "../datasetGuess.js";
 import {
   getRecurrentOptions,
@@ -194,8 +198,10 @@ export default function RecurrentNewPage() {
     pickFile(e.dataTransfer.files?.[0]);
   };
 
-  // System id and event time are required and must be different columns.
-  const mappingValid = map.i && map.x && map.i !== map.x;
+  // Item id and failure value are required and must be different columns;
+  // each problem, and the missing end of record, sits beside its selector.
+  const mapIssues = recurrentIssues(map, windows);
+  const mappingValid = mapIssues.every((i) => i.note);
 
   const onFit = async () => {
     if (!file && !datasetId) return;
@@ -266,6 +272,12 @@ export default function RecurrentNewPage() {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+        {!mappingValid && (
+          <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
+            First settle the note{new Set(mapIssues.filter((i) => !i.note).map((i) => i.row)).size === 1 ? "" : "s"} beside{" "}
+            {[...new Set(mapIssues.filter((i) => !i.note).map((i) => i.row))].join(", ")}.
+          </span>
+        )}
         <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
       </>
     );
@@ -342,6 +354,7 @@ export default function RecurrentNewPage() {
 
       {mode === "data" && (
       <div className="card fit-flow">
+        <div className="fit-flow-head">{stepper}</div>
         {step === 1 && (
           <>
             <DataSourceStep
@@ -392,25 +405,25 @@ export default function RecurrentNewPage() {
                 Columns read as for “{keptFrom}”, the last repairable model fitted to this dataset.
               </p>
             )}
-            <RecurrentColumnMapper
+            <ColumnMapper
               columns={csv.columns}
               mapping={map}
               onChange={setMap}
               unit={unit}
               onUnitChange={setUnit}
-              windows={windows}
-              onWindowsChange={setWindows}
+              rows={RECURRENT_ROWS}
+              range={false}
+              keys={RECURRENT_KEYS}
+              words={RECURRENT_WORDS}
+              none={RECURRENT_NONE}
+              meanings={false}
+              codeWords="0 = a failure, 1 = the end of the record"
+              issues={mapIssues.filter((i) => !i.note)}
+              notes={mapIssues.filter((i) => i.note)}
             />
-            <p className="muted-line" style={{ margin: 0 }}>
-              One row per failure: which system and its age at the failure. Add a row (or a column) for
-              where each system's record ends, so the time since its last failure counts.
-            </p>
-            {!mappingValid && (
-              <p className="hint">Pick different columns for the system and the time of each failure.</p>
-            )}
-            {mappingValid && !map.tr && !map.c && !(map.ws && map.we) && !windows.trim() && (
-              <p className="hint fleet-alert-warn" role="note">{NO_RECORD_END}</p>
-            )}
+            <ResultDetails summary="Covariates and gaps (optional)" open={!!(map.z || []).length || !!(map.ws || map.we) || !!windows.trim()}>
+              <RecurrentMore columns={csv.columns} mapping={map} onChange={setMap} windows={windows} onWindowsChange={setWindows} />
+            </ResultDetails>
           </div>
         )}
 
@@ -484,7 +497,6 @@ export default function RecurrentNewPage() {
         <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
-          {stepper}
           <div className="row" style={{ margin: 0 }}>{nav}</div>
         </div>
       </div>

@@ -117,3 +117,61 @@ export function guessDegradationColumns(columns) {
   const y = cols.find((c) => c !== i && c !== x) || "";
   return { i, x, y };
 }
+
+// The degradation Data step: the shared selectors (ColumnMapper) with only
+// what the fit reads: i (the item), x (when each reading was taken) and m
+// (the measured value, sent as ``y``). No c (an item's readings simply stop)
+// and no covariates (the fit takes none).
+export const DEGRADATION_ROWS = ["i", "x", "m"];
+export const DEGRADATION_KEYS = { m: "y" };
+export const DEGRADATION_WORDS = {
+  i: "which item each reading belongs to",
+  x: "when the reading was taken",
+  m: "the measured value",
+};
+
+// What stops the Data step, beside its selector: [{ row, text }].
+export function degradationIssues(csv, mapping) {
+  const out = [];
+  if (!mapping.i) out.push({ row: "i", text: "Pick i: the column saying which item each reading belongs to." });
+  if (!mapping.x) out.push({ row: "x", text: "Pick x: the column saying when each reading was taken." });
+  if (!mapping.y) out.push({ row: "m", text: "Pick m: the column with the measured value." });
+  const cols = [mapping.i, mapping.x, mapping.y].filter(Boolean);
+  if (new Set(cols).size < cols.length) out.push({ row: "m", text: "i, x and m must be three different columns." });
+  const items = distinctCount(csv, mapping.i);
+  if (mapping.i && items !== null && items < 2) {
+    out.push({ row: "i", text: `“${mapping.i}” has ${items === 1 ? "only 1 item" : "no values"}: the fit needs at least 2 items.` });
+  } else if (mapping.i && items !== null && csv?.n_rows && items === csv.n_rows) {
+    out.push({ row: "i", text: `Each of the ${items} items has only one reading: a path needs at least two readings per item.` });
+  }
+  return out;
+}
+
+// The way m goes towards failure, from the first item's readings in the
+// preview: "falls" or "rises" (rises when it can't be told).
+export function guessDirection(csv, mapping) {
+  const cols = csv?.columns || [];
+  const [ii, xi, yi] = [mapping.i, mapping.x, mapping.y].map((c) => cols.indexOf(c));
+  if (ii < 0 || xi < 0 || yi < 0) return "rises";
+  const first = (csv.preview || []).filter((r) => r[ii] === csv.preview[0][ii])
+    .map((r) => [Number(r[xi]), Number(r[yi])]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b))
+    .sort((a, b) => a[0] - b[0]);
+  if (first.length < 2) return "rises";
+  return first[first.length - 1][1] < first[0][1] ? "falls" : "rises";
+}
+
+// The threshold against the first reading: the problem beside it, or null.
+// ``direction`` isn't sent: the fit reads each item's path; this is a check.
+export function thresholdProblem(csv, mapping, threshold, direction, unit = "") {
+  if (threshold === "" || threshold == null) return "Enter the value at which an item counts as failed.";
+  const t = Number(threshold);
+  if (!Number.isFinite(t)) return "The threshold must be a number.";
+  const cols = csv?.columns || [];
+  const yi = cols.indexOf(mapping.y);
+  const start = yi < 0 ? NaN : Number(csv.preview?.[0]?.[yi]);
+  if (!Number.isFinite(start)) return null;
+  const u = unit ? ` ${unit}` : "";
+  if (direction === "falls" && start <= t) return `The first reading (${start}${u}) is already at or below ${t}${u}: check the threshold, or whether m rises to it.`;
+  if (direction === "rises" && start >= t) return `The first reading (${start}${u}) is already at or above ${t}${u}: check the threshold, or whether m falls to it.`;
+  return null;
+}

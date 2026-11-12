@@ -48,11 +48,15 @@ the same.
 
 Go to **Modelling → Models → Accelerated life → New model** and pick your data: a saved
 dataset under **Saved data** (those with times to failure and a stress column come first), or a
-file under **Upload a file**. The flow then asks for the
-**model before the data**, which is deliberate — the life-stress relationship
-determines how many stress columns you'll be mapping.
+file under **Upload a file**.
 
-You pick two things:
+The **Data** step is the same as for a non-repairable fit: the first rows, then
+**x** (*the value when it failed or was removed*) with its unit and, where x is
+blank, a range **xl to xr** for failures found at an inspection; **c** (0 =
+failed, 1 = still running), **n**, **tl** and **tr**. The stresses aren't mapped
+there: they are the model's own inputs, on the **Model** step.
+
+On the **Model** step you pick:
 
 - **A life distribution** — Weibull, lognormal, normal, exponential or gamma.
   This describes the scatter in failure times at any fixed stress.
@@ -62,7 +66,7 @@ You pick two things:
 Match the relationship to the physics:
 
 - **Arrhenius** for thermal ageing. The model needs **absolute temperature
-  (kelvin)**, so the Data step asks which unit the temperature column is in:
+  (kelvin)**, so the Model step asks which unit the temperature column is in:
   **°C**, **K** or **°F**. Reliafy converts °C and °F to kelvin before fitting,
   and you enter the use temperature in the same unit you chose.
 - **Inverse power law** for voltage, load, or pressure.
@@ -71,8 +75,11 @@ Match the relationship to the physics:
 - **Dual exponential (temp–humidity)**, **Temperature–nonthermal** or **Dual
   power** for two stresses together.
 
-Then map your columns — the failure time, the stress column(s), and censoring if
-you have it — and fit.
+Then its fixed inputs: **Stress 1** (and **Stress 2** for a two-stress model),
+each a column not mapped on the Data step, with its **unit** (°C, K, °F, V, kV,
+MPa, or type your own) and, if you know it, the **use stress** in that unit:
+the Calculator starts there. Reliafy picks the stress columns from their names
+to start with. Then fit.
 
 ![Choosing a life distribution and a life-stress relationship](/guides/img/alt-01-new.png)
 

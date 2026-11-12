@@ -34,6 +34,7 @@ from backend.fitting import (
     FitError,
     _eval_functions,
     _json_safe,
+    combine_exact_and_ranges,
     failure_positions_mask,
     no_maximum_notice,
     outside_support_message,
@@ -187,6 +188,9 @@ def build_inputs(df: pd.DataFrame, mapping: dict, stress_cols: list, kelvin_from
     and optional ``c``/``n``/``t`` (an n×2 truncation window).
     """
     mapping = {k: v for k, v in (mapping or {}).items() if v}
+    # x beside a range: an exact value where x is filled, the range elsewhere
+    # (rows giving both are left out; the fit says so).
+    df, mapping = combine_exact_and_ranges(df, mapping)
     interval = bool(mapping.get("xl") or mapping.get("xr"))
     if interval and (mapping.get("x") or not (mapping.get("xl") and mapping.get("xr"))):
         raise FitError("Map the failure time to x, or inspection data to both xl (the last inspection it "
@@ -327,6 +331,9 @@ def fit(
             if labels[j] == stress_cols[j]:
                 labels[j] = "Temperature"  # "temp_C (K)" would read as Celsius
 
+    from backend.fitting import x_and_range_rows  # the Data step's warning, on the result too
+
+    both = x_and_range_rows(df, mapping)
     inputs = build_inputs(df, mapping, stress_cols, kelvin_from)
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
@@ -373,6 +380,9 @@ def fit(
         said = fit_warnings(caught)
         if said:
             payload["fit_warnings"] = said
+    if both:
+        payload["fit_warnings"] = [*(payload.get("fit_warnings") or []), both["warning"]]
+        payload["x_and_range_rows"] = both
     return payload, store_live(model)
 
 

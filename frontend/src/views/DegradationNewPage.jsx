@@ -11,8 +11,11 @@ import {
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import {
-  TIME_UNITS, distinctCount, guessDegradationColumns, guessMeasurementUnit, guessTimeUnit, usableForDegradation,
+  DEGRADATION_KEYS, DEGRADATION_ROWS, DEGRADATION_WORDS, degradationIssues, guessDegradationColumns, guessDirection,
+  guessMeasurementUnit, guessTimeUnit, thresholdProblem, usableForDegradation,
 } from "../degradation.js";
+import ColumnMapper from "../components/ColumnMapper.jsx";
+import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import Select from "../components/Select.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
@@ -20,9 +23,9 @@ import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 
 // New degradation model (/models/degradation/new) — a three-step page like the
 // accelerated-life one: (1) pick a source (upload / saved dataset), (2) map
-// item/time/measurement columns + set the failure threshold, (3) choose path
-// model + options, then fit and save in one go and open the saved model's page
-// (the confidence inputs need a saved model).
+// the columns (i, x, m: the shared selectors), (3) the model's own inputs:
+// the failure threshold and the path model, then fit and save in one go and
+// open the saved model's page (the confidence inputs need a saved model).
 const STEPS = ["Source", "Data", "Model"];
 // The fit needs an item id, a time and a measurement column: in the readings (the measurements
 // part, when the dataset has one), the table the fit reads.
@@ -47,6 +50,8 @@ export default function DegradationNewPage() {
   const [csv, setCsv] = useState(null); // { columns, preview, n_rows }
   const [mapping, setMapping] = useState({ i: "", x: "", y: "" });
   const [threshold, setThreshold] = useState("");
+  // Which way m goes to failure: a check on the threshold (the fit reads each item's path).
+  const [direction, setDirection] = useState(null);
   // null until typed: then the units read from the mapped columns' names
   // ("hours" → Hours, "wear_mm" → mm) fill the fields.
   const [unitTyped, setUnitTyped] = useState(null);
@@ -73,9 +78,9 @@ export default function DegradationNewPage() {
   const name = nameTyped ?? `${baseName(sourceName) || "Degradation"} — ${
     path !== "best" && pathName ? `${pathName.toLowerCase()} degradation` : "degradation"}`;
 
-  // Distinct ids in the mapped item column over every row (the fit needs at
-  // least 2 items); null when unknown, and then the wizard says nothing.
-  const itemCount = distinctCount(csv, mapping.i);
+  // What stops the Data step, beside its selector (at least 2 items, each read twice).
+  const dataIssues = csv ? degradationIssues(csv, mapping) : [];
+  const way = direction ?? guessDirection(csv, mapping);
 
   // A new source starts with units and name read afresh.
   const resetTyped = () => {
@@ -143,11 +148,10 @@ export default function DegradationNewPage() {
     pickFile(e.dataTransfer.files?.[0]);
   };
 
-  const mappingValid =
-    mapping.i && mapping.x && mapping.y &&
-    new Set([mapping.i, mapping.x, mapping.y]).size === 3 &&
-    threshold !== "" && Number.isFinite(Number(threshold)) &&
-    !(itemCount !== null && itemCount < 2);
+  const mappingValid = dataIssues.length === 0;
+  const thresholdWhy = csv ? thresholdProblem(csv, mapping, threshold, way, measurementUnit) : null;
+  // A number is required; the first-reading check is said, not blocking (one item may start past it).
+  const thresholdBlocks = threshold === "" || !Number.isFinite(Number(threshold));
 
   const onFit = async () => {
     if ((!file && !datasetId) || !name.trim()) return;
@@ -201,10 +205,16 @@ export default function DegradationNewPage() {
       <span className="hint" style={{ margin: 0 }}>Pick a dataset and press <b>Use this dataset</b>, or upload a CSV or Excel file</span></>);
   } else if (step === 2) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+      {!mappingValid && (
+        <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
+          First settle the note{new Set(dataIssues.map((i) => i.row)).size === 1 ? "" : "s"} beside {[...new Set(dataIssues.map((i) => i.row))].join(", ")}.
+        </span>
+      )}
       <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button></>);
   } else {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-      <button onClick={onFit} disabled={loading || !name.trim()}>
+      {thresholdBlocks && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>First enter the failure threshold.</span>}
+      <button onClick={onFit} disabled={loading || !name.trim() || thresholdBlocks}>
         {loading ? "Fitting…" : "Fit and save"}
       </button></>);
   }
@@ -245,6 +255,7 @@ export default function DegradationNewPage() {
       </header>
 
       <div className="card fit-flow">
+        <div className="fit-flow-head">{stepper}</div>
         {step === 1 && (
           <>
             <DataSourceStep
@@ -290,49 +301,24 @@ export default function DegradationNewPage() {
         {step === 2 && csv && (
           <>
             <p className="muted-line" style={{ marginTop: 0 }}>
-              {sourceName} · {csv.n_rows} rows · {csv.columns.length} columns
+              {sourceName} · {csv.n_rows} rows
             </p>
             <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
             <PreviewTable columns={csv.columns} rows={csv.preview} />
-            <div className="row" style={{ gap: "0.8rem" }}>
-              {colSelect("Item id column", "i")}
-              {colSelect("Time column", "x")}
-              {colSelect("Measurement column", "y")}
-            </div>
-            <div className="row" style={{ gap: "0.8rem" }}>
-              <label className="login-field" style={{ flex: 1 }}>
-                <span>Failure threshold *</span>
-                <input type="number" step="any" value={threshold} placeholder="e.g. 8.0"
-                       aria-describedby="deg-threshold-hint"
-                       onChange={(e) => setThreshold(e.target.value)} />
-              </label>
-              <label className="login-field" style={{ flex: 1 }}>
-                <span>Time unit</span>
-                <input type="text" list="deg-time-units" value={unit} placeholder="e.g. Hours"
-                       onChange={(e) => setUnitTyped(e.target.value)} />
-                <datalist id="deg-time-units">
-                  {TIME_UNITS.map((u) => <option value={u} key={u} />)}
-                </datalist>
-              </label>
-              <label className="login-field" style={{ flex: 1 }}>
-                <span>Measurement unit</span>
-                <input type="text" value={measurementUnit} placeholder="e.g. mm"
-                       onChange={(e) => setMeasurementUnitTyped(e.target.value)} />
-              </label>
-            </div>
-            <p className="hint" id="deg-threshold-hint" style={{ marginTop: "0.4rem" }}>
-              The reading at which an item counts as worn out, whether readings rise or fall: e.g. 80 for 80% capacity,
-              or 8 for 8 mm of wear.
-            </p>
-            {itemCount !== null && itemCount < 2 ? (
-              <p className="hint">
-                The item id column has {itemCount === 1 ? "only 1 distinct value" : "no values"}: the fit needs at least 2 items.
-              </p>
-            ) : !mappingValid && (
-              <p className="hint" style={{ marginTop: "0.6rem" }}>
-                Map three different columns and set a numeric threshold.
-              </p>
-            )}
+            <ColumnMapper
+              columns={csv.columns}
+              mapping={mapping}
+              onChange={setMapping}
+              unit={unit}
+              onUnitChange={setUnitTyped}
+              mUnit={measurementUnit}
+              onMUnitChange={setMeasurementUnitTyped}
+              rows={DEGRADATION_ROWS}
+              range={false}
+              keys={DEGRADATION_KEYS}
+              words={DEGRADATION_WORDS}
+              issues={dataIssues}
+            />
           </>
         )}
 
@@ -342,16 +328,36 @@ export default function DegradationNewPage() {
               <span>Model name</span>
               <input type="text" value={name} onChange={(e) => setNameTyped(e.target.value)} />
             </label>
+            {/* The model's own inputs: when an item counts as failed, and the path's shape. */}
+            <div className="xcn">
+              <div className="xcn-row">
+                <span className="xcn-key"><code>Fixed inputs</code><span className="xcn-words">when an item counts as failed</span></span>
+                <div className="xcn-fields">
+                  <span className="xcn-words">Fails when <code>m</code></span>
+                  <SegmentedControl size="sm" label="Which way m goes to failure" value={way} onChange={setDirection}
+                                    options={[{ value: "falls", label: "falls to" }, { value: "rises", label: "rises to" }]} />
+                  <input className="units-input deg-threshold" type="number" step="any" value={threshold}
+                         aria-label="Failure threshold" placeholder="e.g. 3"
+                         onChange={(e) => setThreshold(e.target.value)} />
+                  <span className="xcn-words">{measurementUnit ? `(in ${measurementUnit})` : "(in m's unit)"}</span>
+                </div>
+                {thresholdWhy && <div className="xcn-below"><p className="xcn-issue" role="status">{thresholdWhy}</p></div>}
+              </div>
+              <div className="xcn-row">
+                <span className="xcn-key"><code>Path</code><span className="xcn-words">the shape a reading follows on each item</span></span>
+                <div className="xcn-fields">
+                  <Select value={path} onChange={setPath} ariaLabel="Degradation path" className="xcn-pick"
+                          options={(options.paths || []).map((o) => ({ value: o.id, label: o.name }))} />
+                </div>
+              </div>
+            </div>
             <details className="deg-advanced" style={{ marginTop: "0.8rem" }}>
               <summary>Advanced (the defaults are fine)</summary>
               <div className="row" style={{ gap: "0.8rem" }}>
-                {select("Degradation path", path, setPath, options.paths)}
                 {select("Life distribution", distribution, setDistribution, options.distributions)}
                 {select("Population method", populationMethod, setPopulationMethod, options.population_methods)}
               </div>
               <ul className="hint deg-advanced-notes">
-                <li><b>Degradation path</b>: the shape a reading follows over time on each item. "Best" tries every
-                  shape and keeps the one that fits closest (a few seconds).</li>
                 <li><b>Life distribution</b>: the shape of the spread in when items reach the threshold.</li>
                 <li><b>Population method</b>: how the items' paths are pooled into one model for the whole population.</li>
               </ul>
@@ -362,7 +368,6 @@ export default function DegradationNewPage() {
         <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
-          {stepper}
           <div className="row" style={{ margin: 0 }}>{nav}</div>
         </div>
       </div>

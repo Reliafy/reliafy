@@ -6,17 +6,19 @@ import DatasetPicker from "../components/DatasetPicker.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import { DatasetPartModal } from "../components/DatasetPartInput.jsx";
-import Units from "../components/Units.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import {
   cancelRbdJob, checkJointData, fitJointModel, getDataset, getJointOptions, getRbdJob, listDatasets,
 } from "../api.js";
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { columnFacts } from "../lifeData.js";
-import { covariateParts, guessLifetimeColumns, guessReadingColumns } from "../joint.js";
+import {
+  JOINT_LIFE_KEYS, JOINT_LIFE_ROWS, JOINT_READ_KEYS, JOINT_READ_ROWS, covariateParts, guessLifetimeColumns,
+  guessReadingColumns, jointIssues, jointLifeMapping,
+} from "../joint.js";
+import ColumnMapper from "../components/ColumnMapper.jsx";
 import ProTag from "../components/ProTag.jsx";
 
-const NONE = { value: "", label: "— none —" };
 const POLL_MS = 2000;
 
 // The one dataset: an existing one holding its units' life data with their measurements (or one
@@ -38,20 +40,6 @@ function UploadNew({ onPick }) {
   );
 }
 
-function ColumnSelect({ label, value, onChange, columns, optional = false }) {
-  return (
-    <label className="dist-field">
-      <span className="dist-label">{label}</span>
-      <Select
-        value={value || ""}
-        onChange={onChange}
-        ariaLabel={label}
-        options={[...(optional ? [NONE] : []), ...columns.map((c) => ({ value: c, label: c }))]}
-      />
-    </label>
-  );
-}
-
 // A part's columns with the facts the guesses need.
 function describe(part) {
   if (!part) return null;
@@ -69,7 +57,6 @@ export default function JointNewPage() {
   const [opts, setOpts] = useState(null);
   const [dataset, setDataset] = useState(null); // {id, name, life, reads, combined, missing}
   const [map, setMap] = useState({ id: "", x: "", xl: "", xr: "", c: "", tl: "" });
-  const [interval, setInterval_] = useState(false);
   const [invert, setInvert] = useState(false);
   const [rmap, setRmap] = useState({ id: "", age: "", value: "" });
   const [covs, setCovs] = useState([]); // [{name, risk, path}]
@@ -110,7 +97,6 @@ export default function JointNewPage() {
       if (life) {
         const g = guessLifetimeColumns(life.described);
         setMap({ id: g.id, x: g.x, xl: "", xr: "", c: g.c, tl: "" });
-        setInterval_(false);
         setInvert(g.invert);
         if (g.unit && !unit) setUnit(g.unit);
         setCovs(g.covariates.map((c) => ({ name: c, risk: false, path: false })));
@@ -132,9 +118,9 @@ export default function JointNewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const mapping = interval
-    ? { id: map.id, xl: map.xl, xr: map.xr, c: map.c, tl: map.tl }
-    : { id: map.id, x: map.x, c: map.c, tl: map.tl };
+  // x, or the range when x is blank (joint.js), as before.
+  const mapping = jointLifeMapping(map);
+  const issues = jointIssues(map, rmap);
   const parts = covariateParts(covs);
   const body = useMemo(() => ({
     dataset_id: dataset?.id,
@@ -146,7 +132,7 @@ export default function JointNewPage() {
   }), [dataset?.id, JSON.stringify(mapping), JSON.stringify(rmap), invert, JSON.stringify(parts)]);
 
   const ready = dataset && dataset.life && dataset.reads && !dataset.missing;
-  const mapped = ready && map.id && map.c && (interval ? map.xl && map.xr : map.x) && rmap.id && rmap.age && rmap.value;
+  const mapped = ready && issues.length === 0;
 
   const onCheck = async () => {
     setBusy("check"); setError(null);
@@ -285,34 +271,36 @@ export default function JointNewPage() {
         <div className="card">
           <h2>2. Columns</h2>
           <h3 className="joint-h3">Life data</h3>
-          <div className="joint-fields">
-            <ColumnSelect label="Unit id" value={map.id} columns={lifeCols} onChange={(v) => setMap({ ...map, id: v })} />
-            {interval ? (
-              <>
-                <ColumnSelect label="Last seen working (age)" value={map.xl} columns={lifeCols} onChange={(v) => setMap({ ...map, xl: v })} />
-                <ColumnSelect label="Found failed (age)" value={map.xr} columns={lifeCols} onChange={(v) => setMap({ ...map, xr: v })} />
-              </>
-            ) : (
-              <ColumnSelect label="Age at failure, or now" value={map.x} columns={lifeCols} onChange={(v) => setMap({ ...map, x: v })} />
-            )}
-            <ColumnSelect label="Censoring flag" value={map.c} columns={lifeCols} onChange={(v) => setMap({ ...map, c: v })} />
-            <ColumnSelect label="Entry age (optional)" value={map.tl} columns={lifeCols} optional onChange={(v) => setMap({ ...map, tl: v })} />
-          </div>
-          <label className="joint-check">
-            <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
-            My flag is 1 = failed, 0 = still running <span className="muted">(Reliafy's is 0 = failed, 1 = still running)</span>
-          </label>
-          <label className="joint-check">
-            <input type="checkbox" checked={interval} onChange={(e) => setInterval_(e.target.checked)} />
-            Failures found at inspections (an age range per unit; flag 2)
-          </label>
+          <ColumnMapper
+            columns={lifeCols}
+            mapping={{ ...map, c_invert: invert }}
+            onChange={({ c_invert: inv, ...next }) => { setMap(next); setInvert(!!inv); }}
+            unit={unit}
+            onUnitChange={setUnit}
+            facts={dataset.life?.facts || {}}
+            rows={JOINT_LIFE_ROWS}
+            keys={JOINT_LIFE_KEYS}
+            words={{ x: "the value when it failed, or now if still running" }}
+            none={{ c: "— pick a column —" }}
+            meanings={false}
+            issues={issues.filter((i) => i.table === "life")}
+          />
 
           <h3 className="joint-h3">Measurements</h3>
-          <div className="joint-fields">
-            <ColumnSelect label="Reading's unit id" value={rmap.id} columns={readCols} onChange={(v) => setRmap({ ...rmap, id: v })} />
-            <ColumnSelect label="Age when read" value={rmap.age} columns={readCols} onChange={(v) => setRmap({ ...rmap, age: v })} />
-            <ColumnSelect label="Value" value={rmap.value} columns={readCols} onChange={(v) => setRmap({ ...rmap, value: v })} />
-          </div>
+          <p className="muted-line" style={{ margin: 0 }}>m is what was measured on each item over time: readings, not covariates.</p>
+          <ColumnMapper
+            columns={readCols}
+            mapping={rmap}
+            onChange={setRmap}
+            facts={dataset.reads?.facts || {}}
+            rows={JOINT_READ_ROWS}
+            range={false}
+            keys={JOINT_READ_KEYS}
+            words={{ i: "which item each reading belongs to", x: "when the reading was taken (same unit as above)" }}
+            mUnit={markerUnit}
+            onMUnitChange={setMarkerUnit}
+            issues={issues.filter((i) => i.table === "reads")}
+          />
 
           <h3 className="joint-h3">Covariates (optional)</h3>
           {covs.length === 0 ? (
@@ -356,17 +344,12 @@ export default function JointNewPage() {
                   .map((p) => ({ value: p.id, label: p.name, hint: p.formula }))}
               />
             </label>
-            <Units value={unit} onChange={setUnit} />
           </div>
           {pathOpt?.description && <p className="hint">{pathOpt.description}</p>}
           <div className="joint-fields">
             <label className="dist-field">
               <span className="dist-label">What is read</span>
               <input value={marker} onChange={(e) => setMarker(e.target.value)} placeholder="e.g. vibration" />
-            </label>
-            <label className="dist-field">
-              <span className="dist-label">Its unit (optional)</span>
-              <input value={markerUnit} onChange={(e) => setMarkerUnit(e.target.value)} placeholder="e.g. mm/s" />
             </label>
             <label className="dist-field">
               <span className="dist-label">Model name</span>
@@ -376,6 +359,11 @@ export default function JointNewPage() {
           <p className="hint">Ages and the risk horizons are in {unitWord}, counted from new.</p>
 
           <div className="joint-actions">
+            {!mapped && issues.length > 0 && (
+              <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
+                First settle the notes beside {[...new Set(issues.map((i) => `${i.row === "e" ? "failure mode" : i.row} (${i.table === "life" ? "life data" : "measurements"})`))].join(", ")}.
+              </span>
+            )}
             <button type="button" className="secondary" disabled={!mapped || !!busy} onClick={onCheck}>
               {busy === "check" ? "Checking…" : "Check data"}
             </button>
