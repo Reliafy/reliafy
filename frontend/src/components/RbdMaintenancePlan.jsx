@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { CloseIcon } from "./icons.jsx";
 import { unitAbbr } from "./rbdModelText.js";
 import { costLabel, workspaceCurrency } from "../money.js";
 import {
   RESTORATIONS, TASKS, costText, dutyText, dutyWords, fmt, hasDuty, intervalBasis, operatingAllowed, parseCost,
   parseDuty, parseNumber, planColumns, planCounts, planRows, rowProblems, schedule, setCrewPriority, setDuty,
-  setGroup, setInterval, setIntervalBasis, setScheduleField, setTask, toCalendar,
+  setGroup, setInterval, setIntervalBasis, setScheduleField, setTask, taskLabel, taskOf, toCalendar,
 } from "../rbdMaintenancePlan.js";
+import { mergeTreeData, setTreeSetting, treeRowProblems, treeTaskPath } from "../rbdTreePlan.js";
 import "../views/Maintenance.css";
 import "./RbdMaintenancePlan.css";
 
@@ -22,11 +24,22 @@ import "./RbdMaintenancePlan.css";
 //   selected           ids of the component blocks selected on the canvas (filters the table)
 //   onChange(id, data) a block's new data      onShowAll()  clear the selection
 //   onCrewsAndGroups() open Crews and groups…  onClose()
+//   tree               the diagram's plan read from the tree (rbdTreePlan.js; null: none): a block
+//                      standing for a position shows its position's task, read only, with "Edit in
+//                      the tree"; only the RBD's own settings for it are edited here
+//   onTreeLink(e, path)  a link to the tree was followed (the Explorer's pane asks first when unsaved)
 export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, groupNames = [], selected = [],
-                                             onChange, onShowAll, onCrewsAndGroups, onClose }) {
+                                             onChange, onShowAll, onCrewsAndGroups, onClose, tree = null,
+                                             onTreeLink = null }) {
   const all = planRows(nodes);
   const filtered = selected.length ? all.filter((r) => selected.includes(r.id)) : all;
-  const counts = planCounts(all);
+  // Counted as calculated: a tree-linked block with its position's task.
+  const counts = planCounts(all.map((r) => {
+    const t = tree?.blocks?.[r.id];
+    if (!t) return r;
+    const data = mergeTreeData(r.data, t);
+    return { ...r, data, task: taskOf(data) };
+  }));
   const cols = planColumns({ crews });
   const u = unitAbbr(unit);
   const listId = useId();
@@ -61,6 +74,13 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
           all the time, or whose life was measured in calendar time.
         </p>
       </details>
+      {tree?.position && (
+        <p className="rbd-plan-tree" role="note">
+          Blocks standing for a position inside <strong>{tree.position.name}</strong> take their maintenance from
+          that position&apos;s tasks on the Maintenance tab, read each time it&apos;s calculated. Edit a task there; here
+          you set only what belongs to the diagram (duty, crew priority, a few settings under More).
+        </p>
+      )}
       {selected.length > 0 && (
         <p className="rbd-plan-filter">
           Showing the {filtered.length === 1 ? "selected block" : `${filtered.length} selected blocks`}.{" "}
@@ -86,11 +106,15 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
                 <th scope="col"><span className="sr-only">More</span></th>
               </tr>
             </thead>
-            {filtered.map((r) => (
+            {filtered.map((r) => (tree?.blocks?.[r.id] ? (
+              <TreeRow key={r.id} row={r} tree={tree.blocks[r.id]} unit={unit} u={u} crews={cols.includes("crew")}
+                       listId={listId} open={!!open[r.id]} onToggle={() => setOpen((o) => ({ ...o, [r.id]: !o[r.id] }))}
+                       onChange={(data) => onChange(r.id, data)} onTreeLink={onTreeLink} />
+            ) : (
               <PlanRow key={r.id} row={r} unit={unit} u={u} crews={cols.includes("crew")} listId={listId}
                        open={!!open[r.id]} onToggle={() => setOpen((o) => ({ ...o, [r.id]: !o[r.id] }))}
                        onChange={(data) => onChange(r.id, data)} />
-            ))}
+            )))}
           </table>
           <datalist id={listId}>{groupNames.map((g) => <option value={g} key={g} />)}</datalist>
         </div>
@@ -223,6 +247,154 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
         </tr>
       )}
     </tbody>
+  );
+}
+
+const RESTORE_WORDS = { as_new: RESTORATIONS.as_new };
+
+// A block standing for a position: its maintenance is its position's task, read from the tree and
+// shown, not edited, here ("Edit in the tree"); the RBD's own settings for it (duty, crew priority,
+// and under More what the task can't say) are edited as on any row.
+function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, onTreeLink }) {
+  const { data } = row;
+  const plan = tree.plan;
+  const used = tree.tasks.find((t) => t.used) || null;
+  const name = row.label;
+  const span = 9 + (crews ? 1 : 0);
+  const problems = treeRowProblems(data, tree);
+  const pos = tree.position;
+  const editPath = treeTaskPath(pos.id, used ? { taskId: used.id } : { add: true });
+  const follow = (e, path) => onTreeLink?.(e, path);
+  const settings = data.tree_settings || {};
+  const extras = plan && (plan.task === "condition" || plan.task === "test" || plan.task === "age");
+  const num = (v, suffix = u) => (v == null ? <span className="muted">—</span> : <>{fmt(v)}{suffix ? ` ${suffix}` : ""}</>);
+  const others = tree.tasks.filter((t) => !t.used);
+  return (
+    <tbody className={"rbd-plan-block is-tree" + (problems.length ? " has-problem" : "")}>
+      <tr>
+        <th scope="row" className="calc-row-label rbd-plan-name">
+          {name}
+          <small className="rbd-plan-from">
+            <Link to={treeTaskPath(pos.id)} onClick={(e) => follow(e, treeTaskPath(pos.id))}
+                  title={`Open ${pos.name} in the tree`}>Open in the tree</Link>
+          </small>
+        </th>
+        <td className="rbd-plan-duty-cell">
+          <span className="rbd-plan-with-suffix">
+            <DraftInput value={dutyText(data.duty)} parse={parseDuty} placeholder="100" label={`${name}: duty, % of the time it runs`}
+                        onCommit={(v) => onChange(setDuty(data, v))} className="rbd-plan-num rbd-plan-pct" />
+            <span aria-hidden="true">%</span>
+          </span>
+          <small className="muted">{hasDuty(data) && data.duty < 1 ? dutyWords(data.duty, unit).replace(/^Runs \S+ of the time · /, "") : "all the time"}</small>
+        </td>
+        <td className="rbd-plan-tree-task">
+          {plan ? (
+            <>
+              <span>{taskLabel(plan.task)}</span>
+              <small className="muted" title={used.kind_words}>“{used.name}”</small>
+            </>
+          ) : (
+            <>
+              <span>Run to failure</span>
+              <small className="muted">no maintenance tasks on {pos.name}</small>
+            </>
+          )}
+        </td>
+        <td>
+          {!plan ? <span className="muted">—</span> : plan.interval != null ? num(plan.interval) : plan.operating_interval != null ? (
+            <>
+              {num(plan.operating_interval, `running ${u}`)}
+              {hasDuty(data) && <small className="muted">= {fmt(toCalendar(plan.operating_interval, Number(data.duty)))} {u} on the calendar</small>}
+            </>
+          ) : <span className="muted">not set</span>}
+          {plan && <small className="muted">{used.interval_words}</small>}
+        </td>
+        <td>{!plan ? <span className="muted">—</span> : plan.task === "condition" ? num(settings.duration) : plan.duration == null ? <span className="muted">none</span> : num(plan.duration)}</td>
+        <td>
+          {!plan ? <span className="muted">—</span> : plan.task === "condition" ? (
+            <>
+              {settings.cost == null ? <span className="muted">—</span> : costText(settings.cost)}
+              <small className="muted">inspection {plan.inspection_cost == null ? "—" : fmt(plan.inspection_cost)}</small>
+            </>
+          ) : plan.cost == null ? <span className="muted">—</span> : fmt(plan.cost)}
+        </td>
+        <td>
+          {tree.restoration ? <span title={tree.restoration.note}>{RESTORE_WORDS[tree.restoration.kind] || tree.restoration.kind}</span>
+            : <span className="muted">—</span>}
+        </td>
+        <td>
+          {plan?.group ? <span title="From the task's work package">{plan.group}</span>
+            : !plan || plan.task === "test" ? <span className="muted">—</span> : (
+              <DraftInput value={data.maintenance_group || ""} parse={(t) => ({ value: t.trim() || null, error: null })}
+                          placeholder="—" label={`${name}: maintenance group`} list={listId} type="text" className="rbd-plan-group"
+                          onCommit={(v) => onChange(setGroup(data, v))} />
+            )}
+        </td>
+        {crews && (
+          <td>
+            <DraftInput value={String(data.crew_priority ?? "")} placeholder="0" label={`${name}: crew priority`} className="rbd-plan-num"
+                        parse={(t) => (t.trim() === "" ? { value: null, error: null } : Number.isFinite(Number(t)) ? { value: Number(t), error: null } : { value: null, error: "A number" })}
+                        onCommit={(v) => onChange(setCrewPriority(data, v))} />
+          </td>
+        )}
+        <td>
+          {extras ? (
+            <button type="button" className="ghost sm rbd-plan-more" aria-expanded={open} onClick={onToggle}
+                    aria-label={`${name}: ${open ? "fewer" : "more"} settings`}>{open ? "Less" : "More"}</button>
+          ) : null}
+        </td>
+      </tr>
+      {open && extras && (
+        <tr className="rbd-plan-extra">
+          <td colSpan={span}>
+            <div className="rbd-plan-pin"><TreeFields data={data} task={plan.task} name={name} u={u} settings={settings} onChange={onChange} /></div>
+          </td>
+        </tr>
+      )}
+      <tr className="rbd-plan-treenote">
+        <td colSpan={span}>
+          <span className="rbd-plan-pin">
+            <Link to={editPath} onClick={(e) => follow(e, editPath)} className="rbd-plan-edit-tree">
+              {used ? "Edit in the tree" : "Add a task in the tree"}
+            </Link>
+            {used?.crew ? <span className="muted"> · {used.crew}</span> : null}
+            {others.length > 0 && <span className="muted"> · also on {pos.name}, not modelled: {others.map((t) => t.name).join(", ")}</span>}
+            {[...tree.flags, ...tree.notes.filter((n) => !/a block takes one today/.test(n)), ...(tree.repair_missing ? [tree.repair_missing] : [])]
+              .map((t) => <span key={t} className="rbd-plan-flag"> {t}</span>)}
+          </span>
+        </td>
+      </tr>
+      {problems.length > 0 && (
+        <tr className="rbd-plan-problem">
+          <td colSpan={span} role="status"><span className="rbd-plan-pin">{problems.join(" ")}</span></td>
+        </tr>
+      )}
+    </tbody>
+  );
+}
+
+// The RBD's own settings for a tree-linked block: what its task can't say.
+function TreeFields({ data, task, name, u, settings, onChange }) {
+  const field = (key, label, hint, parse) => (
+    <label className="rbd-plan-field">
+      <span>{label}</span>
+      <DraftInput value={key === "cost" ? costText(settings[key]) : String(settings[key] ?? "")} parse={parse}
+                  placeholder="—" label={`${name}: ${label.toLowerCase()}`} className="rbd-plan-num"
+                  onCommit={(v) => onChange(setTreeSetting(data, key, v))} />
+      {hint && <small className="muted">{hint}</small>}
+    </label>
+  );
+  return (
+    <div className="rbd-plan-fields">
+      {task === "condition" && field("threshold", "Replace above", "chance of failing before the next inspection, e.g. 0.05", (t) => parseNumber(t, { max: 1 }))}
+      {task === "condition" && field("cost", "Replacement cost", "the inspection task's cost is the inspection's", parseCost)}
+      {task === "condition" && field("duration", "Replacement takes", `${u} off-line`, (t) => parseNumber(t))}
+      {task === "age" && field("opportunity", "Renew early from age", `${u} · at a stop of its group`, (t) => parseNumber(t))}
+      {task === "test" && field("offset", "First test at", `${u} · stagger redundant channels`, (t) => parseNumber(t))}
+      {task === "test" && field("coverage", "Coverage", "share of failures a test finds · blank = all", (t) => parseNumber(t, { max: 1 }))}
+      {task === "test" && Number(settings.coverage) < 1 && settings.coverage != null &&
+        field("full_test", "Full test every", `${u} · a multiple of the test interval`, (t) => parseNumber(t, { positive: true }))}
+    </div>
   );
 }
 

@@ -1072,9 +1072,21 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
   ].filter(Boolean) : [];
   const routes = Object.entries(exact?.routes || {});
 
+  const tasksChanged = result.simulation_status?.tasks_changed || null;
   return (
     <div className="rbd-avail">
       {answer}
+      {/* The saved simulation used maintenance tasks (read from the tree) that have changed since:
+          said, never rerun unasked. */}
+      {tasksChanged?.length > 0 && (
+        <div className="card note rbd-tasks-changed" role="status">
+          <p style={{ margin: 0 }}>
+            <b>The saved simulation is out of date.</b> It was run before {tasksChanged.length === 1 ? "this task" : "these tasks"} in
+            the tree changed: {tasksChanged.join(", ")}. The exact figures above use the tasks as they are now; run the
+            simulation again for its figures.
+          </p>
+        </div>
+      )}
       {/* No exact figures over time: said once, by the answer card or the
           simulated chart, unless the exact ones are there to be asked for. */}
       {exact && (exact.status === "on_request" || (exact.status !== "ok" && exact.status !== "simulation_only" && !needsSim && exact.message)) && (

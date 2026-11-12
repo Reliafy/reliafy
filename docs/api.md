@@ -284,15 +284,29 @@ missing is refused, naming each block and what it needs. `POST
 /api/rbds/binding-inputs {binding}` lists a model's inputs (the same shape for
 every source) and `POST /api/rbds/bound-blocks {graph}` each bound block's
 open inputs, the value each takes and where it came from.
-An RBD row: `rbd_id` links an existing diagram; `build_rbd: true` makes a new
-one from the positions one level inside (each block the child's model in use,
-or its own RBD as a sub-system; a flagged placeholder where it has none), wired
+An RBD row: `rbd_id` links an existing diagram; `new_rbd: {repairable, start}`
+starts one of the position's own on any position, a leaf included (`start`:
+`blank`, just In and Out, or `self`, one block for the position with its life
+model in use, a flagged placeholder where it has none); `build_rbd: true` makes a new
+one from the positions one level inside (each block the child's model in use;
+else its class's fitted model; else, for a sub-assembly with positions inside,
+its own RBD built from them, as a sub-system block; a flagged placeholder only
+where there's none of these; each block's `model_source` says which), wired
 by their connections and redundancy groups, in series where there are none,
 saved under Design › Systems as "<position> (from the tree)". A position has
 one built diagram: `build_rbd` where it already has one saves nothing and
 answers with that row and `existing: true`. With `replace_link_id` (its RBD
-row) it's rebuilt into the same diagram, adding new positions and keeping
-edits. `POST /api/rbds/validate` (and `GET /api/rbds/{id}/validate`) also
+row) it's rebuilt into the same diagram, adding new positions, giving a block
+still on a placeholder the model its position has now, and keeping edits.
+A repairable RBD linked to a position takes each tree-linked block's
+maintenance from that position's tasks, read at calculation time (nothing is
+copied into the diagram): `POST /api/maintenance/rbd-tree-plan {rbd_id, graph?}`
+gives, per block, the position, its tasks, the one modelled (kind, interval in
+the diagram's unit, time off-line, cost, package) and what's blank, and
+`GET /api/maintenance/rbd-plan-uses?task_ids=` the RBDs whose plans read those
+tasks. An availability answer for such a diagram carries `tree_plan` (the
+task versions used); when the saved simulation used older versions,
+`simulation_status.tasks_changed` names the tasks and it isn't rerun unasked. `POST /api/rbds/validate` (and `GET /api/rbds/{id}/validate`) also
 answer `series_hints`: which of the `warnings` are the "like blocks wired in
 series" hints (one per run of like blocks), where there are any. `use_link_id` makes one of the position's rows
 its model in use (by default its own life model, else its RBD, else its

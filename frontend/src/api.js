@@ -3495,6 +3495,15 @@ export function linkPositionModel(positionId, body) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
+// A saved RBD's maintenance plan as its position's tasks give it (rbd_tree_plan.py): each block
+// standing for a position, the tasks there and the one modelled. graph: the diagram as it stands.
+export function getRbdTreePlan(rbdId, graph) {
+  return postJson("/api/maintenance/rbd-tree-plan", { rbd_id: rbdId, ...(graph ? { graph } : {}) });
+}
+// The repairable RBDs whose plans read these tasks: {uses: [{rbd, block, task, used, last, outdated}]}.
+export function getRbdPlanUses(taskIds) {
+  return request(`/api/maintenance/rbd-plan-uses?task_ids=${encodeURIComponent((taskIds || []).join(","))}`);
+}
 export function unlinkPositionModel(linkId) {
   return request(`/api/maintenance/position-models/${linkId}`, { method: "DELETE" });
 }

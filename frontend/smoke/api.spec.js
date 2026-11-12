@@ -19,6 +19,9 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/position-models"],
   // Trade rates: they price each task's labour (its cost each time; Nov 2026).
   ["GET", "/api/maintenance/trade-rates"],
+  // A repairable RBD's maintenance read from the tree, and the RBDs that use a position's tasks.
+  ["POST", "/api/maintenance/rbd-tree-plan"],
+  ["GET", "/api/maintenance/rbd-plan-uses"],
   // Field reports (notes, photos and sound from the field).
   ["GET", "/api/maintenance/captures"],
   // The data library as models and priors (Models › Library).

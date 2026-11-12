@@ -198,13 +198,17 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   assert.deepEqual(g.map((x) => x.label), ["Life model", "RBD", "Prediction"]);
   assert.deepEqual(g[0].items.map((x) => x.label), ["Fit a life model…", "Assign a saved model…", "From the data library…",
     "From the class…", "Enter parameters…", "Add to a library…"]);
-  assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Link an existing RBD…"]);
+  assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "New blank RBD…", "Link an existing RBD…"]);
+  // A leaf: nothing to build from, so a new blank RBD is the way in.
+  const leaf = attachGroups({ hasInside: false })[1].items;
+  assert.ok(leaf.find((x) => x.id === "model-attach-rbd-build").disabled);
+  assert.ok(!leaf.find((x) => x.id === "model-attach-rbd-new").disabled);
   assert.deepEqual(g[2].items.map((x) => x.id), ["model-attach-predict", "model-refresh-predict"]);
   // A position that already has an RBD built from what's inside: the menu opens it, and a rebuild
   // is its own item. Building is never offered twice.
   const had = attachGroups({ builtRbd: true })[1].items;
-  assert.deepEqual(had.map((x) => x.label), ["Open the RBD", "Rebuild from what's inside…", "Link an existing RBD…"]);
-  assert.deepEqual(had.map((x) => x.id), ["model-attach-rbd-open", "model-attach-rbd-rebuild", "model-attach-rbd-link"]);
+  assert.deepEqual(had.map((x) => x.label), ["Open the RBD", "Rebuild from what's inside…", "New blank RBD…", "Link an existing RBD…"]);
+  assert.deepEqual(had.map((x) => x.id), ["model-attach-rbd-open", "model-attach-rbd-rebuild", "model-attach-rbd-new", "model-attach-rbd-link"]);
   assert.ok(attachGroups({ builtRbd: true, viewOnly: "View only" })[1].items.find((x) => x.id === "model-attach-rbd-rebuild").disabled);
   // Which row that is: an RBD built from the tree on this position (the one in use first); a linked
   // diagram, a life model and another position's RBD are not it.
