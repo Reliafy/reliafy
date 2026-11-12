@@ -651,6 +651,15 @@ export function previewPastedDataset(content, noHeader = null) {
 // Keep a new reading for a dataset (Change on a fit, or confirming a guessed
 // one): later fits use it; models already made keep their own. Answers the
 // dataset's detail.
+// Only the reading of a dataset's measurements part ({ i, x, m, unit, m_unit }).
+export function setDatasetMeasurementsReading(id, measurements) {
+  return request(`/api/datasets/${id}/reading`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ measurements }),
+  });
+}
+
 export function setDatasetReading(id, reading) {
   return request(`/api/datasets/${id}/reading`, {
     method: "PUT",

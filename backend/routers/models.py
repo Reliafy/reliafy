@@ -498,19 +498,30 @@ def rename_dataset(
 @router.put("/datasets/{dataset_id}/reading")
 def set_dataset_reading(
     dataset_id: str,
-    reading: dict = Body(..., embed=True),
+    reading: dict | None = Body(default=None, embed=True),
+    measurements: dict | None = Body(default=None, embed=True),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Keep a new reading for the dataset (Change on a fit, or confirming a
     guessed one): later fits use it; models already made keep the reading
-    they were fitted with. The data never changes."""
+    they were fitted with. The data never changes. ``measurements`` alone
+    changes only the measurements part's reading (a guessed main reading is
+    kept as guessed)."""
     dataset = _writable_dataset(session, dataset_id, ctx)
     if isinstance(dataset, JSONResponse):
         return dataset
+    if reading is None and measurements is None:
+        return JSONResponse(status_code=422, content={"detail": "Give the reading (or the measurements' reading)."})
     try:
-        dataset = datasets_service.set_reading(session, dataset, {k: v for k, v in reading.items() if k != "guessed"},
-                                               ctx.write_owner)
+        if reading is None:
+            if dataset.measurements is None:
+                return JSONResponse(status_code=422, content={"detail": "This dataset has no measurements."})
+            current, source = dataset_reading.for_dataset_db(session, dataset, ctx.read_owners, ctx.hidden)
+            reading = {**current, "measurements": measurements, **({"guessed": True} if source != "saved" else {})}
+        else:
+            reading = {k: v for k, v in reading.items() if k != "guessed"}
+        dataset = datasets_service.set_reading(session, dataset, reading, ctx.write_owner)
     except dataset_reading.ReadingError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     access_service.stamp_editor(session, "datasets", dataset.id, ctx)

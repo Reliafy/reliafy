@@ -171,6 +171,8 @@ export function datasetReading(detail, cols) {
   const reading = complete(start.mapping, start.unit, columns, facts, cols.n_rows);
   // As fits read it before readings: no status column is every row failed.
   if (!reading.c && !reading.xl && !reading.m) reading.all_failed = true;
+  // The measurements part's own reading (the server's, kept or guessed) rides along.
+  if (detail.reading?.measurements) reading.measurements = detail.reading.measurements;
   return { reading, source: "guessed", from: start.from };
 }
 
@@ -293,6 +295,7 @@ export function missingFor(kind, r) {
   if (!r) return null;
   const x = r.x || r.xl;
   if (kind === "repairable" && !r.i) return "A repairable model follows each system's failures, so it needs i: the column that says which system each row belongs to. This dataset's reading has none.";
+  if (kind === "degradation" && !x) return "A degradation model follows each item's readings over x (the age or time of each reading), and this dataset's reading has no x.";
   if (kind === "degradation" && (!r.i || !r.m)) return `A degradation model follows each item's readings, so it needs ${!r.i ? "i (which item each row belongs to)" : ""}${!r.i && !r.m ? " and " : ""}${!r.m ? "m (the measured value)" : ""}. This dataset's reading has ${!r.i && !r.m ? "neither" : "none"}.`;
   if (!x) return "This dataset's reading has no x: the value when each unit failed or was removed.";
   return null;

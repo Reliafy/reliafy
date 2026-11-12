@@ -8,8 +8,9 @@
 //   rd.startChange() → rd.draft (edit with <ReadingEditor reading={rd.draft} onChange={rd.setDraft} />)
 //   rd.keep(rd.draft) → PUT /api/datasets/{id}/reading (a sample or view-only share: this fit only)
 //   rd.confirm() → keeps a guessed reading as it is ("Looks right")
+//   rd.keepMeasurements({ i, x, m, unit, m_unit }) → the measurements part's reading only
 import { useEffect, useMemo, useState } from "react";
-import { setDatasetReading } from "./api.js";
+import { setDatasetMeasurementsReading, setDatasetReading } from "./api.js";
 import { columnFacts } from "./lifeData.js";
 import { datasetReading, detailColumns, readingPayload } from "./datasetReading.js";
 
@@ -47,7 +48,24 @@ export function useDatasetReading(detail) {
     }
   };
 
+  // Only the measurements part's reading: a guessed main reading stays guessed.
+  const keepMeasurements = async (sub) => {
+    setSaving(true);
+    setError(null);
+    try {
+      if (!readOnly) await setDatasetMeasurementsReading(detail.id, sub);
+      setReading((r) => ({ ...r, measurements: { ...sub, source: "saved" } }));
+      return true;
+    } catch (err) {
+      setError(err);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
+    keepMeasurements,
     cols, facts, nRows: cols?.n_rows || 0, reading, source, from: start?.from || null, readOnly,
     draft, setDraft, editing: draft !== null, saving, error,
     startChange: () => setDraft(reading),
