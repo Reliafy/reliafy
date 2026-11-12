@@ -46,6 +46,7 @@ from repyability.non_repairable import NonRepairable
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
 from backend.errors import client_message
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 # Number of points on the reliability time grid.
 _GRID_POINTS = 200
@@ -2142,9 +2143,8 @@ def analyze(
     """
     args = (graph, resolve_subsystem, t_max, covariates, resolve_model, conditional_age, at_times, band,
             current_state, target_reliability, evaluate_at)
-    with warnings.catch_warnings(record=True) as caught:
+    with collect_warnings(UserWarning, message=_CCF_WARNING.pattern) as caught:
         # Every time, not once per place: each analysis builds its own RBD.
-        warnings.filterwarnings("always", message=_CCF_WARNING.pattern, category=UserWarning)
         result, labels, notes = _analyze(*args)
     relayed = []
     for w in caught:
@@ -2777,8 +2777,7 @@ def _without_groups_availability(rbd, overrides: dict) -> Optional[float]:
     groups (None where there's no exact value)."""
     try:
         twin = RepairableRBD(**{**rbd._init_args, "ccf_groups": None})
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
             return _f(twin.mean_availability(**overrides))
     except Exception:  # noqa: BLE001 - only a comparison figure
         return None
@@ -3110,8 +3109,7 @@ def _simulate(rbd, t_sim: float, overrides: dict, n: int, seed: int = _AVAIL_SEE
     intervals drive the stopping rule, the curve and the criticality indices;
     the exact window mean is reported beside them (:func:`_window_exact`)."""
     plain = {"control_variate": False, "conditional": False}
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with ignore_warnings(RuntimeWarning):
         try:
             res = rbd.availability(t_simulation=t_sim, mc_samples=_even(n), method="c", seed=seed,
                                    antithetic=True, **plain, **kwargs, **overrides)
@@ -3153,8 +3151,7 @@ def _window_exact(rbd, graph: dict, t_sim: float, overrides: dict,
         return None, "simulation"
     state_kw = {"state": node_states} if node_states else {}
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with ignore_warnings(RuntimeWarning), np.errstate(all="ignore"):
             value = _f(rbd.mission_availability(float(t_sim), **overrides, **state_kw))
     except Exception:  # noqa: BLE001 - the simulated mean stands
         return None, "simulation"
@@ -3610,8 +3607,7 @@ def _residual_mean(spec, t: float) -> Optional[float]:
         r_t = sf(t)
         if not (np.isfinite(r_t) and r_t > 0):
             return None
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             area, _ = quad(sf, t, np.inf, limit=200)
         mean = area / r_t
     except Exception:  # noqa: BLE001 - covariate models, odd specs: skip
@@ -4008,8 +4004,7 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
     cost = None
     cost_note = None
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with ignore_warnings(RuntimeWarning), np.errstate(all="ignore"):
             curve = np.asarray(rbd.point_availability(grid, **overrides, **state_kw), dtype=float)
             # A safety function's PFD(t) from the library's unavailability (#322).
             pfd = (rbd_unavailability.over_time(rbd, grid, window, overrides, state_kw)

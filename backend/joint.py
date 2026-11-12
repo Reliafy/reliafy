@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import io
 import math
-import warnings
 from typing import Any, Optional
 
 import numpy as np
@@ -31,6 +30,7 @@ import pandas as pd
 
 from backend.fitting import FitError
 from backend.units import canonical_unit, normalize_unit, unit_in_text
+from backend.warn_capture import collect_warnings
 
 #: The path models offered, by id: (SurPyval's class name, label, formula,
 #: a plain description). Linear first: the default.
@@ -357,8 +357,7 @@ def fit_model(items: list[dict], covariates: list[str], path_model: str = DEFAUL
         if hazard is not None:
             kwargs["hazard_covariates"] = hazard
             kwargs["path_covariates"] = path
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with collect_warnings() as caught:
         try:
             with np.errstate(all="ignore"):
                 model = fitter(path_model).fit_from_df(df, **kwargs)

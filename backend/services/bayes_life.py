@@ -484,10 +484,9 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
                       words=f"No history to update with yet: the baseline ({base['name']}) stands as given, with the "
                             "range the trust allows. Add failures or running units first.")
         return None, result, priors
-    import warnings
+    from backend.warn_capture import collect_warnings
 
-    with warnings.catch_warnings(record=True) as said:
-        warnings.simplefilter("always")
+    with collect_warnings() as said:
         model = _fit(dist_id, x, c, priors, unit)
     # SurPyval says when the data disagree with the prior ("neither is taken as right"): pass it on.
     result["warnings"] = sorted({str(w.message) for w in said if "prior" in str(w.message).lower()})[:3]

@@ -92,6 +92,7 @@ from backend.model_validation import validate_regression
 from backend import regression_bands, regression_diagnostics
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.errors import client_message
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
 # ``offsetable``: supports the 3-parameter offset (failure-free period) —
@@ -864,8 +865,8 @@ def no_maximum_notice(model, caught=(), coefficient_names: Optional[list] = None
 
 
 def reissue_deprecations(caught) -> None:
-    """Re-issue the deprecation warnings a ``catch_warnings(record=True)``
-    block swallowed, so a call into SurPyval through a name it has
+    """Re-issue the deprecation warnings a ``collect_warnings()`` block
+    swallowed, so a call into SurPyval through a name it has
     deprecated still reaches the warnings filter (and fails the suite run
     with ``-W error::DeprecationWarning``)."""
     for w in caught:
@@ -2231,8 +2232,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         if options.get("offset") and entry.get("offsetable"):
             kwargs["offset"] = True
         try:
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
+            with collect_warnings() as caught:
                 model = note_fit(entry["dist"].fit(**kwargs), kwargs.get("how"))
             reissue_deprecations(caught)
             scores = _criteria(_goodness_of_fit(model))
@@ -2267,8 +2267,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         label = f"{entry['name']} mixture ({BEST_MIXTURE_COMPONENTS} components)"
         try:
             check_fittable(dict(base_kwargs), f"a {entry['name']} mixture")
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with ignore_warnings():
                 raw = _fit_raw_mixture(entry["dist"], BEST_MIXTURE_COMPONENTS, dict(base_kwargs))
         except Exception as exc:  # noqa: BLE001 - skipped, and listed
             failed.append({"id": cid, "name": label, "reason": _short_reason(
@@ -2717,8 +2716,7 @@ def _fit_distribution(
         # Some fitters (MPS in particular) warn that the optimisation failed and
         # then return numbers anyway. Silently handing those to a user is worse
         # than the fit being unavailable, so capture and report it.
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(dist.fit(**kwargs), kwargs.get("how"))
         reissue_deprecations(caught)
         # No finite maximum (#230): say which parameter runs off, and why.
@@ -3143,8 +3141,7 @@ def _fit_regression(
     fit_kwargs = more_models.regression_fit_kwargs(distribution, mapping, fit_kwargs)
 
     try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with collect_warnings() as caught:
             model = note_fit(fitter.fit_from_df(df, **fit_kwargs, **cox_kwargs))
         # A stratified Cox model reads its stratum from the covariate row.
         model = regression_diagnostics.stratify(model, cox_opts)
@@ -3367,8 +3364,7 @@ def regression_metrics_at_defaults(model, fields: list) -> Optional[dict]:
         return None
     Z = pd.DataFrame({f["name"]: [f["default"]] for f in fields}) if fields else None
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), ignore_warnings():
             q = np.asarray(qf(np.array([0.5, 0.1, 1e-6, 1.0 - 1e-9]), Z), dtype=float).ravel()
             median, b10, lo, hi = (float(v) for v in q[:4])
             mttf = None
@@ -3513,8 +3509,7 @@ def confidence_bounds(
         raise FitError("This model type doesn't provide confidence bounds.")
 
     try:
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+        with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
             if regression:
                 cb = regression_bands.band(model, entry["fields"], values, grid, on, alpha_ci, bound)
             elif life_bounds.is_bayesian(model):
@@ -3602,8 +3597,7 @@ def _eval_functions(model, grid, Z=None) -> dict:
             # Buckley-James has no hazard or density (#179): those are absent.
             curves[fn] = None
             continue
-        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always", RuntimeWarning)
+        with np.errstate(all="ignore"), collect_warnings(RuntimeWarning) as caught:
             y = np.asarray(func(grid) if Z is None else func(grid, Z), dtype=float)
         outside = outside or any(_OUTSIDE_SUPPORT in str(w.message) for w in caught)
         raw[fn] = y

@@ -24,11 +24,11 @@ one-sided 90% lower bound.
 
 from __future__ import annotations
 
-import warnings
 
 import numpy as np
 
 from backend import levels
+from backend.warn_capture import ignore_warnings
 from backend.fitting import FitError, _json_safe
 
 DRAWS = 2000          # parameter draws for a minimal-repair range
@@ -143,8 +143,7 @@ def unit_effects(model) -> dict | None:
     if not nhpp_id(model):
         return None
     try:
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             res = np.asarray(model.residuals("martingale"), dtype=float)
         data = model.data
         ids = list(data.ids)
@@ -375,8 +374,7 @@ def _renewal_means(model, horizons, rows, ages, items: int, seed) -> tuple[np.nd
     k = len(rows) + len(ages)
     out = np.zeros((k, horizons.size))
     var = 0.0
-    with warnings.catch_warnings(), np.errstate(all="ignore"):
-        warnings.simplefilter("ignore")
+    with ignore_warnings(), np.errstate(all="ignore"):
         if rows:
             fc = surpyval.forecast(model, horizon=horizons, items=items, random_state=seed,
                                    alpha_ci=1 - levels.LEVEL)
@@ -556,8 +554,7 @@ def calculate(model, results: dict, t: float, start: float | None = None, profil
         Z = z[None, :]
         out["profile"] = label or "the fleet's average covariates"
         tt = np.array([t])
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             n_t = _first(model.cif(tt, Z))
             rocof = _first(model.iif(tt, Z))
             try:
@@ -579,8 +576,7 @@ def calculate(model, results: dict, t: float, start: float | None = None, profil
     if model_id is None:
         raise FitError("This model can't be evaluated here.")
     tt = np.array([t])
-    with warnings.catch_warnings(), np.errstate(all="ignore"):
-        warnings.simplefilter("ignore")
+    with ignore_warnings(), np.errstate(all="ignore"):
         n_t = _first(model.cif(tt))
         rocof = _first(model.iif(tt))
         try:
@@ -622,8 +618,7 @@ def _renewal_calc(model, t: float, start: float | None) -> dict:
     grid = np.array([v for v in (start, t) if v is not None], dtype=float)
 
     def mcf(m, items):
-        with warnings.catch_warnings(), np.errstate(all="ignore"):
-            warnings.simplefilter("ignore")
+        with ignore_warnings(), np.errstate(all="ignore"):
             return np.asarray(m.mcf(grid, items=items, random_state=SEED), dtype=float).ravel()
 
     base = mcf(model, 4000)
