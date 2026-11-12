@@ -37,13 +37,15 @@ tested at 60, 80 and 100 °C and at two loads.
 
 Start a new model under **Modelling → Models → Non-repairable** and choose **Fit to data**.
 Map the time and status columns in the **Data** step as usual (see
-[fit your first non-repairable model](/guides/fit-your-first-model)). Then open
-**Advanced (regression): covariates** and tick each covariate column. Give each
-one a unit if you like (°C, kN); it's shown with its input and its coefficient.
+[fit your first non-repairable model](/guides/fit-your-first-model)). Then set
+each covariate column's heading to **Covariate**. Give each one a unit if you
+like (°C, kN), in the box under it; it's shown with its input and its
+coefficient.
 
-![The Data step with temp_C and load ticked as covariates](/guides/img/cov-01-covariates.png)
+![The Data step with temp_C and load as covariates](/guides/img/cov-01-covariates.png)
 
-Text columns, such as a site or a supplier, need **Advanced formula**. Write a
+Text columns, such as a site or a supplier, need a formula: under **More
+options**, tick **Covariates as a formula**. Write a
 formula over your columns, such as `temp_C + load + site`, and categories are
 expanded for you. A formula can also hold interactions (`temp_C:load`) when
 one factor's effect depends on another.
@@ -181,8 +183,9 @@ P-01,1500,3700,1,75
 P-01,3700,4289,0,90
 ```
 
-Under **Advanced (regression): covariates**, tick **Covariates change over
-time** and choose how the rows are laid out:
+Under **More options**, tick **Covariates change over time** and choose how
+the rows are laid out (a column's heading then offers **Item** and the row's
+times):
 
 - **Start and stop rows**: each row is one stretch, from **Start of the row**
   to **End of the row**, and **Did the row end in a failure?** says whether the

@@ -525,6 +525,14 @@ def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
 
     if df.empty or df.shape[1] == 0:
         raise FitError("The uploaded CSV is empty.")
+    # A row with every cell blank (a gap left in a sheet) is no unit: it's
+    # skipped, and ``attrs["blank_rows"]`` says how many, for the Data step.
+    blank = df.isna().all(axis=1)
+    if blank.any():
+        df = df.loc[~blank].reset_index(drop=True)
+        if df.empty:
+            raise FitError("The uploaded CSV is empty.")
+    df.attrs["blank_rows"] = int(blank.sum())
     return df
 
 
@@ -604,7 +612,9 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
         .where(pd.notna(df.head(rows)), None)
         .values.tolist()
     )
-    out = {"columns": columns, "preview": sample, "n_rows": int(df.shape[0])}
+    out = {"columns": columns, "preview": sample, "n_rows": int(df.shape[0]),
+           # Rows left wholly blank, skipped (see read_dataframe).
+           "blank_rows": int(df.attrs.get("blank_rows", 0))}
     if distinct:
         out["n_unique"] = [int(n) for n in df.nunique(dropna=True).tolist()]
         # What the Data step needs to guess the time and status columns, map a
@@ -615,6 +625,13 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
         out["values"] = [_few_values(df[c]) for c in df.columns]
         # Whole numbers only (null for text): what a count column needs (#434).
         out["whole"] = [_whole_column(df[c]) for c in df.columns]
+        # Values at or below 0 in each numeric column (null for text): a time
+        # of 0 or less can't be fitted by most distributions, so the Data step
+        # says so on the time column before the fit refuses it.
+        out["nonpositive"] = [
+            int((pd.to_numeric(df[c], errors="coerce") <= 0).sum()) if pd.api.types.is_numeric_dtype(df[c]) else None
+            for c in df.columns
+        ]
     return out
 
 

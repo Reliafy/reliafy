@@ -4947,43 +4947,111 @@ h1 .chip,
 .ds-flag-notice > span { flex: 1 1 260px; min-width: 0; }
 .ds-flag-notice .link { font-size: inherit; }
 
-/* Every column and its role (#434), the used / ignored summary as its head. */
-.col-roles { display: flex; flex-direction: column; gap: var(--sp-2); }
-.col-roles-h { margin: 0; font-size: var(--fs-13); line-height: 1.5; overflow-wrap: anywhere; }
-.col-roles-sum { color: var(--muted); }
-.col-roles-sum b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
-.col-roles-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: var(--sp-2) var(--sp-4);
-}
-.col-role {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 190px);
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 6px var(--sp-2) 6px var(--sp-3);
+/* The Data step's one table (DataMapper): each column's role picked in its
+   heading, what that role needs under it, then the sheet's first rows. The
+   table scrolls inside its card; on a phone the pickers stack above it. */
+.dm { min-width: 0; }
+.dm-scroll {
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: var(--surf);
+  max-width: 100%;
 }
-.col-role.ignored { background: var(--surf-2); }
-.col-role.ignored .col-role-name { color: var(--muted); }
-.col-role-name {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.dm-table { width: 100%; }
+.dm-table thead th { position: static; vertical-align: top; white-space: normal; color: var(--ink); font-weight: 500; }
+.dm-table thead th.dm-col { min-width: 190px; max-width: 320px; padding: var(--sp-3); border-right: 1px solid var(--line2); }
+.dm-table thead th.dm-col:last-child { border-right: 0; }
+.dm-table th.ignored { background: var(--surf); }
+.dm-table th.issue { box-shadow: inset 0 3px 0 var(--warn-line); }
+.dm-table td.ignored, .dm-table th.ignored .dm-name { color: var(--muted); }
+.dm-head { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.dm-name {
   font-size: var(--fs-14);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.col-role-eg { font-size: var(--fs-12); font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.dm-head .ds-status { margin-top: 0; padding: var(--sp-2); gap: var(--sp-2); grid-template-columns: minmax(0, 1fr); }
+/* Each value over its meaning, so a long value ("OK at last check") never squeezes. */
+.dm-head .ds-status-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.dm-head .ds-status-value { font-size: var(--fs-13); }
+.dm-unit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--sp-2); }
+.dm-unit .units-input { width: 100%; max-width: 200px; padding: 6px 30px 6px 10px; font-size: var(--fs-13); }
+.dm-unit .ds-unitless { min-height: 28px; font-size: var(--fs-12); }
+.dm-cov-unit { width: 100%; max-width: 200px; padding: 6px 10px; font-size: var(--fs-13); }
+.dm-issue {
+  margin: 0;
+  padding: 6px var(--sp-2);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  line-height: 1.45;
+}
+.dm-aside .ds-flag-notice, .dm-question {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin: 0;
+  padding: var(--sp-2);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  line-height: 1.45;
+}
+.dm-aside .ds-flag-notice > span { flex: none; }
+.dm-question button, .dm-aside button { white-space: normal; text-align: left; font-size: var(--fs-12); min-height: 32px; }
+/* A phone: one card per column, its picker and notes, above the rows. */
+.dm-phone { display: flex; flex-direction: column; gap: var(--sp-3); }
+.dm-stack { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.dm-stack > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  min-width: 0;
+}
+.dm-stack > li.ignored { background: var(--surf-2); }
+.dm-stack > li.ignored .dm-name { color: var(--muted); }
+.dm-stack > li.issue { border-color: var(--warn-line); }
+.dm-eg { font-size: var(--fs-12); color: var(--muted); overflow-wrap: anywhere; }
+.dm-phone .dm-table thead th { white-space: nowrap; }
+@media (max-width: 720px) {
+  .dm-head .seg-btn, .dm-stack .seg-btn, .dm-question button { min-height: 44px; }
+}
+
+/* "Read as": what the Data step will fit, with Next (or what's missing) beside it. */
+.ds-readas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surf-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.ds-readas-line { margin: 0; flex: 1 1 320px; min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.ds-readas-l { color: var(--muted); }
+.ds-readas-sep { color: var(--muted); }
+.ds-readas-go { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-2) var(--sp-3); flex: 0 1 auto; min-width: 0; }
+.ds-readas-ok { color: var(--muted); font-size: var(--fs-14); }
+.ds-readas-why { color: var(--warn); font-size: var(--fs-13); max-width: 420px; line-height: 1.4; }
+.ds-readas.waiting { border-color: var(--warn-line); }
+.ds-more-opts { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ds-more-opts .ds-hint { margin: 0; font-size: var(--fs-13); }
 
 /* "Your first row looks like data…" with its Undo (#434). */
 .ds-header-note {
@@ -7518,10 +7586,13 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 /* ---- New-model fit flow (page panel) ---------------------------------- */
+/* The stepper sits at the top of the flow. */
+.fit-flow-head { margin-bottom: 1rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--line2); }
+.fit-flow-head .steps { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
 .fit-flow-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1rem;
   margin-top: 1.25rem;
   padding-top: 1rem;
@@ -7530,7 +7601,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   flex-wrap: wrap;
 }
 .fit-flow-foot .row { flex-wrap: wrap; }
-.fit-flow-foot .steps { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
 /* Result step: the model's name sits beside Save (#311). */
 .fit-save-name {
   width: 280px;
@@ -7552,14 +7622,14 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* A phone: the stepper and the buttons wrap instead of scrolling the page. */
 @media (max-width: 560px) {
   .fit-flow-foot { flex-wrap: wrap; }
-  .fit-flow-foot .steps { flex-wrap: wrap; gap: 6px; min-width: 0; }
-  .fit-flow-foot .steps .step-wrap { gap: 6px; }
-  .fit-flow-foot .steps .sep { width: 10px; }
   .fit-flow-foot .row { flex-wrap: wrap; }
   .fit-save-name { flex: 1 1 100%; width: auto; order: -1; }
+  .fit-flow-head .steps { gap: 6px; }
+  .fit-flow-head .steps .step-wrap { gap: 6px; }
+  .fit-flow-head .steps .sep { width: 10px; }
   /* One line of numbered dots, with only the current step's name. */
-  .fit-flow-foot .steps { flex-wrap: nowrap; }
-  .fit-flow-foot .steps .step:not(.active) .step-label {
+  .fit-flow-head .steps { flex-wrap: nowrap; }
+  .fit-flow-head .steps .step:not(.active) .step-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -10000,3 +10070,21 @@ main.content:focus { outline: none; }
 .rcm-on-tree { margin-bottom: 16px; }
 .rcm-on-tree-list { margin: 8px 0 0; padding-left: 18px; }
 .rcm-on-tree-list li { margin: 4px 0; overflow-wrap: anywhere; }
+
+/* A workbook's sheet chosen in the fit flow's source step, not in a modal. */
+.xl-inline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  min-width: 0;
+}
+.xl-inline-title { margin: 0; font-size: var(--fs-16); font-weight: 600; overflow-wrap: anywhere; }
+.xl-inline-actions { margin: 0; justify-content: flex-end; flex-wrap: wrap; }
+/* A phone: the header-row picker takes the panel's width, never more. */
+.xl-picker .xl-inline { max-width: 100%; min-width: 0; flex-wrap: wrap; }
+.xl-picker .xl-inline .select-wrap, .xl-picker .xl-inline > div { min-width: 0; max-width: 100%; flex: 1 1 12rem; }
+.xl-picker .xl-inline button { max-width: 100%; }

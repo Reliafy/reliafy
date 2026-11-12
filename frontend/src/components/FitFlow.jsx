@@ -10,16 +10,13 @@ import {
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
-import ColumnMapper from "./ColumnMapper.jsx";
-import ColumnRoles from "./ColumnRoles.jsx";
+import DataMapper from "./DataMapper.jsx";
 import HeaderNote, { detectHeader } from "./HeaderNote.jsx";
 import { useUnsavedFitScope } from "./UnsavedFitReminder.jsx";
 import { useAskText } from "./ConfirmProvider.jsx";
 import { PASTED_FILE, dataName, defaultFitName } from "../fitName.js";
 import { forgetUnsavedFit, rememberUnsavedFit, unsavedFitRecord } from "../unsavedFit.js";
-import Covariates from "./Covariates.jsx";
 import CoxOptions from "./CoxOptions.jsx";
-import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import CompetingRisksStep, { CR_OPTIONS } from "./CompetingRisksStep.jsx";
 import { frailtyFitOptions, groupProblem, withGroup } from "../moreModels.js";
@@ -31,11 +28,11 @@ import { answerParts } from "../modelFrame.js";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { TvcToggle } from "./TvcColumns.jsx";
 import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts, tvcUnit } from "../tvcData.js";
-import { guessUnit, isNumeric, timeUnitOf } from "../datasetGuess.js";
+import { isNumeric, timeUnitOf } from "../datasetGuess.js";
 import {
-  EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, savedMapping, statusSummary, summaryParts,
-  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
-  dataQuestions, answerQuestion, flagWords, unitColumnWords, unitCounts, lateEntryWords,
+  EMPTY_MAPPING, columnFacts, isSimplePaste, startingMapping, statusSummary, summaryParts,
+  dataStepProblems, dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
+  dataQuestions, answerQuestion, unitCounts, readAsParts, guessUnitNames, keptChoices, dataStepNotes,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -63,11 +60,15 @@ const PASTED = PASTED_FILE;
 const datasetColumns = (full) => ({
   columns: full.preview_columns || [],
   preview: full.preview || [],
-  n_rows: full.n_rows,
+  // Wholly blank rows are skipped by every fit, so they aren't counted.
+  n_rows: full.n_rows - (full.blank_rows || 0),
+  blank_rows: full.blank_rows || 0,
   n_unique: full.n_unique,
   dtypes: full.dtypes,
   blanks: full.blanks,
   values: full.values,
+  whole: full.whole,
+  nonpositive: full.nonpositive,
 });
 
 // The paste parser lives in lifeData.js (unit-tested there).
@@ -109,6 +110,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // asked for, with "Change columns" to see the full mapping (#291).
   const [simple, setSimple] = useState(false);
   const [covariates, setCovariates] = useState([]);
+  // The column naming each unit ("Seal"): for the Data step's words only, never sent.
+  const [idColumn, setIdColumn] = useState("");
   // Covariates that change over time (#60): null, "intervals" or "timeline".
   const [tvc, setTvc] = useState(null);
   const [covUnits, setCovUnits] = useState({}); // optional unit per covariate (#265)
@@ -127,7 +130,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
   // An Excel workbook becomes a CSV of the chosen sheet before anything else.
-  const { toCsv, modal: sheetModal } = useSpreadsheet();
+  // Part of the source step, not a modal over it.
+  const { toCsv, modal: sheetModal } = useSpreadsheet({ inline: true });
   const inputRef = useRef(null);
 
   // Step 4 (Result): the fit, a name, and the save action.
@@ -224,15 +228,30 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // them (the guided first run fits straight away).
   // ``saved``: a dataset's ``last_mapping``, how its newest model read the
   // columns (the status words, the late-entry column): used when it fits.
-  const loadColumns = (cols, simplePaste = false, saved = null) => {
+  // ``previous``: the choices made on the file loaded before; a corrected copy
+  // of it (every column they name still there) keeps them.
+  const loadColumns = (cols, simplePaste = false, saved = null, previous = null) => {
     const facts = columnFacts(cols);
-    const kept = !simplePaste ? savedMapping(saved, cols.columns) : null;
-    const g = kept || guessMapping(cols.columns, facts);
+    const again = simplePaste ? null : keptChoices(previous, cols.columns);
+    if (again) {
+      setCsv(cols);
+      setMapping(again.mapping);
+      setTvc(again.tvc);
+      setUnit(again.unit);
+      setSimple(false);
+      setCovariates(again.covariates);
+      setIdColumn(again.idColumn);
+      setKeptFrom("the file you loaded before");
+      return { mapping: again.mapping, unit: again.unit };
+    }
+    // The saved reading when it still reads cleanly, else a fresh guess (startingMapping).
+    const g = startingMapping(simplePaste ? null : saved, cols.columns, facts, cols.n_rows);
+    const kept = g.from ? g : null;
     const map = simplePaste
       // A pasted flag column is 0 = failed, 1 = still running, as the paste box says.
       ? { ...EMPTY_MAPPING, x: "time", c: cols.columns.includes("censored") ? "censored" : "" }
       : g.mapping;
-    setKeptFrom(kept ? kept.from || "the last model" : null);
+    setKeptFrom(kept ? `“${kept.from || "the last model"}”, the last model fitted to this dataset` : null);
     // Start and stop rows of items (#60): fit their covariates over time.
     const timeVarying = simplePaste ? null
       : kept ? (kept.mapping.i ? "intervals" : null) : guessTvc(cols.columns, facts, cols.n_rows);
@@ -245,7 +264,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     const guessedUnit = simplePaste ? "" : (timeVarying && tvcUnit(timeVarying)) || g.unit || "";
     setUnit(guessedUnit);
     setSimple(simplePaste);
-    setCovariates(timeVarying ? cols.columns.filter((c) => !used.has(c) && isNumeric(facts[c]?.dtype)) : []);
+    const covs = timeVarying ? cols.columns.filter((c) => !used.has(c) && isNumeric(facts[c]?.dtype)) : [];
+    setCovariates(covs);
+    setIdColumn(simplePaste || timeVarying ? "" : guessUnitNames(cols.columns, facts, cols.n_rows, map, covs));
     setGroup("");
     return { mapping: tvcMap || map, unit: guessedUnit };
   };
@@ -273,7 +294,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setLoading(true);
     try {
       const cols = await getColumns(use);
-      loadColumns(cols, isSimplePaste(cols.columns) && use.name === PASTED);
+      // A corrected copy of the file loaded before keeps the choices made on it.
+      const previous = csv && file && file.name !== PASTED && !simple
+        ? { mapping, unit, covariates: advanced ? [] : covariates, idColumn, tvc } : null;
+      loadColumns(cols, isSimplePaste(cols.columns) && use.name === PASTED, null, previous);
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -298,7 +322,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     if (!picked?.detail) return null;
     const cols = datasetColumns(picked.detail);
     const facts = columnFacts(cols);
-    const g = savedMapping(picked.detail.last_mapping, cols.columns) || guessMapping(cols.columns, facts);
+    const g = startingMapping(picked.detail.last_mapping, cols.columns, facts, cols.n_rows);
     const status = statusSummary(g.mapping, facts, cols.n_rows);
     // Where the reading is a guess, the pane asks rather than counts.
     const questions = dataQuestions(g.mapping, facts, cols.columns, cols.n_rows);
@@ -380,11 +404,6 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     pickFile(new File([parsed.csv], PASTED, { type: "text/csv" }));
   };
 
-  const toggleCovariate = (col) =>
-    setCovariates((prev) =>
-      prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]
-    );
-
   // Columns already claimed by a survival field (x/xl/xr/c/n/tl/tr) can't also
   // be covariates. Disable them in the picker and drop any that got mapped.
   const mappedColumns = useMemo(
@@ -399,11 +418,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   // What the mapping reads as, and what stops it fitting, before the fit.
   const facts = useMemo(() => (csv ? columnFacts(csv) : {}), [csv]);
-  const problems = useMemo(
-    () => (!csv ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0)
-      : dataStepProblems(mapping, facts, csv.n_rows, unit)),
+  // Each with the column it comes from, shown in that column's heading.
+  const issues = useMemo(
+    () => (!csv ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0).map((text) => ({ col: null, text }))
+      : dataStepIssues(mapping, facts, csv.n_rows, unit)),
     [csv, mapping, facts, tvc, hasCovariates, unit]
   );
+  const problems = useMemo(() => issues.map((i) => i.text), [issues]);
   // Covariates over time on or off, or the rows' layout changed (#60).
   const changeTvc = (layout) => {
     setTvc(layout);
@@ -463,6 +484,48 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     if (mapping.c) setAnswered((a) => [...a, `flags:${mapping.c}`]);
     setMapping((m) => ({ ...m, c_invert: !m.c_invert }));
   };
+  const swappedNotice = swapped && (
+    <div className="ds-flag-notice" role="status">
+      <span>
+        Most units are marked as still running ({swapped.code}).
+        If {swapped.code} means failed in your sheet, swap the flags.
+      </span>
+      <button type="button" className="secondary" onClick={swapFlags}>Swap the flags</button>
+    </div>
+  );
+
+  // The Data step's "Read as" line: what will be fitted, the answer first.
+  const readParts = !csv ? [] : tvc
+    ? [...tvcSummaryParts(mapping, facts, csv.n_rows, tvc), "covariates change over time"]
+    : [
+      ...readAsParts({ mapping, facts, nRows: csv.n_rows, unit, summary, idColumn, inspection, blankRows: csv.blank_rows || 0 }),
+      ...(simple && !mapping.c ? ["every value is a time to failure"] : []),
+      ...(!simple && hasCovariates ? [advanced ? "covariates from a formula" : `${covariates.length} ${covariates.length === 1 ? "covariate" : "covariates"}`] : []),
+    ];
+  // Problems about no one column (no time picked yet) show under the line;
+  // the rest in their column's heading, with each question there too.
+  const generalIssues = issues.filter((i) => !i.col || !csv?.columns.includes(i.col) || simple).map((i) => i.text);
+  const asides = {};
+  if (problems.length === 0) {
+    for (const q of questions) {
+      asides[q.column] = (
+        <div className="dm-question" role="group" aria-label="A question about this column" key={q.id}>
+          <span>{q.text}</span>
+          <button type="button" className="secondary" onClick={() => answer(q, true)}>{q.yes}</button>
+          <button type="button" className="secondary" onClick={() => answer(q, false)}>{q.no}</button>
+        </div>
+      );
+    }
+    if (swapped && mapping.c && !asides[mapping.c]) asides[mapping.c] = swappedNotice;
+  }
+  // Next is never greyed without the reason beside it.
+  const flagged = [...new Set([...issues.filter((i) => i.col && csv?.columns.includes(i.col)).map((i) => i.col),
+    ...(problems.length === 0 ? questions.map((q) => q.column) : [])])];
+  const waitingFor = mappingValid ? null
+    : generalIssues.length ? generalIssues[0]
+    : flagged.length ? `First settle the note${flagged.length === 1 ? "" : "s"} under ${flagged.map((c) => `“${c}”`).join(", ")}.`
+    : reading?.error ? reading.error
+    : "Waiting for the rows to be read…";
 
   // Cox PH's own options travel with a Cox fit only.
   const familyOpts = frailtyFitOptions(options.find((d) => d.id === distribution), fitOpts);
@@ -691,12 +754,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       </>
     );
   } else if (step === 2) {
-    nav = (
-      <>
-        <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button data-wt="fit-next" onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
-      </>
-    );
+    // Next sits with the "Read as" line at the top, with its reason when greyed.
+    nav = <button className="secondary" onClick={goBack} disabled={loading}>Back</button>;
   } else if (step === 3) {
     nav = (
       <>
@@ -720,6 +779,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   return (
     <div className="card fit-flow">
+      <div className="fit-flow-head">{stepper}</div>
       {step === 1 && (
         <>
           <div className="source-toggle" role="tablist" aria-label="Where the data comes from">
@@ -810,7 +870,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             </div>
           )}
 
-          {source === "upload" && (
+          {source === "upload" && !sheetModal && (
           <div
             className={`dropzone${dragging ? " dragging" : ""}`}
             onClick={() => inputRef.current?.click()}
@@ -865,150 +925,119 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       {step === 2 && csv && (
         <div className="fit-step" data-wt="fit-data">
           <p className="muted-line">
-            {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows} rows
-            {!simple && ` · ${csv.columns.length} columns`}
+            {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows.toLocaleString()} rows
           </p>
           <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
-          {simple ? (
-            <div className="ds-row">
-              <RequiredUnit label="Unit of these times" value={unit} onChange={setUnit} listId="paste-units" autoFocus />
-            </div>
-          ) : (
-            <>
-              <PreviewTable columns={csv.columns} rows={csv.preview} />
-              <ColumnMapper
-                columns={csv.columns}
-                mapping={mapping}
-                onChange={(next) => {
-                  // Meanings set by hand answer the which-way-round question.
-                  if (next.c && next.c === mapping.c && (next.c_invert !== mapping.c_invert || next.c_map !== mapping.c_map)) {
-                    setAnswered((a) => [...a, `flags:${next.c}`]);
-                  }
-                  setMapping(next);
-                }}
-                unit={unit}
-                onUnitChange={setUnit}
-                renderUnit={() => <RequiredUnit value={unit} onChange={setUnit} listId="x-units" />}
-                facts={facts}
-                timeVarying={tvc}
-                failureMode
-              />
-              <ColumnRoles
-                columns={csv.columns}
-                mapping={mapping}
-                covariates={advanced ? [] : covariates}
-                facts={facts}
-                timeVarying={tvc}
-                covariatesAllowed={!advanced}
-                failureMode
-                onChange={(next, { col, role }) => {
-                  // A unit guessed from the old time column follows the new one.
-                  if (role === "x" && (!unit || unit === guessUnit(mapping.x))) setUnit(guessUnit(col));
-                  setMapping(next.mapping);
-                  if (!advanced) setCovariates(next.covariates);
-                }}
-              />
-              <ResultDetails
-                summary="Advanced (regression): covariates"
-                open={covariates.length > 0 || advanced || !!tvc}
-              >
-                <TvcToggle layout={tvc} onChange={changeTvc} />
-                <Covariates
-                  columns={csv.columns}
-                  selected={covariates}
-                  onToggle={toggleCovariate}
-                  advanced={advanced}
-                  onSetAdvanced={setAdvanced}
-                  formula={formula}
-                  onSetFormula={setFormula}
-                  disabledColumns={mappedColumns}
-                  units={covUnits}
-                  onSetUnit={(col, u) => setCovUnits((prev) => ({ ...prev, [col]: u }))}
-                  folded
-                />
-              </ResultDetails>
-            </>
-          )}
-          {problems.length > 0 ? (
-            <ul className="ds-problems" role="status">
-              {problems.map((p) => <li key={p}>{p}</li>)}
-            </ul>
-          ) : tvc ? (
-            <p className="ds-summary" role="status">
-              {tvcSummaryParts(mapping, facts, csv.n_rows, tvc).map((part, i) => {
+          {/* The answer first: what will be fitted, then Next, or what's missing beside it. */}
+          <div className={`ds-summary ds-readas${mappingValid ? "" : " waiting"}`} role="status">
+            <p className="ds-readas-line">
+              <span className="ds-readas-l">Read as: </span>
+              {readParts.map((part, i) => {
                 const [num, ...rest] = part.split(" ");
-                return <span key={part}>{i > 0 && ", "}<b>{num}</b> {rest.join(" ")}</span>;
-              })}
-              <span className="ds-summary-note"> · covariates change over time</span>
-            </p>
-          ) : summary ? (
-            <p className="ds-summary" role="status">
-              <span className="ds-summary-note">Read as: </span>
-              {summaryParts(summary, { inspection }).map((part, i) => {
-                const [num, ...rest] = part.split(" ");
+                const bold = /^[\d,]+$/.test(num) && rest[0] !== "=";
                 return (
                   <span key={part}>
-                    {i > 0 && ", "}
-                    <b>{num}</b> {rest.join(" ")}
+                    {i > 0 && <span className="ds-readas-sep"> · </span>}
+                    {bold ? <><b>{num}</b> {rest.join(" ")}</> : part}
                   </span>
                 );
               })}
-              {flagWords(mapping, facts) && (
-                <span className="ds-summary-note"> · {flagWords(mapping, facts)}</span>
-              )}
-              {mapping.tl && (
-                <span className="ds-summary-note"> · {lateEntryWords(mapping.tl, facts)}</span>
-              )}
-              {!mapping.c && (
-                <span className="ds-summary-note">
-                  {simple ? " · every value is a time to failure"
-                    : mapping.e ? " · a blank failure mode is a unit still running"
-                    : inspection ? (summary.running ? " · a blank latest time is a unit still running" : "")
-                    : " · no status column, so every row is a failure"}
-                </span>
-              )}
             </p>
-          ) : null}
-          {keptFrom && (
-            <p className="muted-line" role="status">Columns read as for “{keptFrom}”, the last model fitted to this dataset.</p>
-          )}
-          {problems.length === 0 && !tvc && unitColumnWords(mapping, facts, unit)?.note && (
-            <p className="ds-flag-notice" role="status">
-              <span>{unitColumnWords(mapping, facts, unit).note}</span>
-            </p>
-          )}
-          {problems.length === 0 && questions.map((q) => (
-            <div className="ds-flag-notice" role="group" aria-label="A question about this file" key={q.id}>
-              <span>{q.text}</span>
-              <button type="button" className="secondary" onClick={() => answer(q, true)}>{q.yes}</button>
-              <button type="button" className="secondary" onClick={() => answer(q, false)}>{q.no}</button>
+            <div className="ds-readas-go">
+              {mappingValid ? <span className="ds-readas-ok">Looks right?</span>
+                : <span className="ds-readas-why">{waitingFor}</span>}
+              <button type="button" data-wt="fit-next" onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
             </div>
-          ))}
+          </div>
+          {keptFrom && (
+            <p className="muted-line" role="status">Columns read as for {keptFrom}.</p>
+          )}
+          {generalIssues.length > 0 && (
+            <ul className="ds-problems" role="status">
+              {generalIssues.map((p) => <li key={p}>{p}</li>)}
+            </ul>
+          )}
           {problems.length === 0 && reading?.error && (
             <ul className="ds-problems" role="status"><li>{reading.error}</li></ul>
           )}
           {problems.length === 0 && (reading?.notes || []).map((note) => (
             <p className="ds-flag-notice" role="status" key={note}><span>{note}</span></p>
           ))}
-          {problems.length === 0 && swapped && (
-            <div className="ds-flag-notice" role="status">
-              <span>
-                Most units are marked as still running ({swapped.code}).
-                If {swapped.code} means failed in your sheet, swap the flags.
-              </span>
-              <button type="button" className="secondary" onClick={swapFlags}>Swap the flags</button>
-            </div>
-          )}
-          {problems.length === 0 && !swapped && simple && mapping.c && mapping.c_invert && (
-            <p className="ds-flag-notice" role="status">
-              <span>Flags swapped: 1 = failed, 0 = still running.</span>
-              <button type="button" className="link" onClick={swapFlags}>Swap back</button>
-            </p>
-          )}
-          {simple && (
-            <button type="button" className="link ds-change" onClick={() => setSimple(false)}>
-              Change columns
-            </button>
+          {simple ? (
+            <>
+              <div className="ds-row">
+                <RequiredUnit label="Unit of these times" value={unit} onChange={setUnit} listId="paste-units" autoFocus />
+              </div>
+              {problems.length === 0 && mapping.c && mapping.c_invert && !swapped && (
+                <p className="ds-flag-notice" role="status">
+                  <span>Flags swapped: 1 = failed, 0 = still running.</span>
+                  <button type="button" className="link" onClick={swapFlags}>Swap back</button>
+                </p>
+              )}
+              {problems.length === 0 && swapped && swappedNotice}
+              <button type="button" className="link ds-change" onClick={() => setSimple(false)}>
+                Change columns
+              </button>
+            </>
+          ) : (
+            <>
+              <DataMapper
+                columns={csv.columns}
+                rows={csv.preview}
+                facts={facts}
+                mapping={mapping}
+                covariates={advanced ? [] : covariates}
+                idColumn={idColumn}
+                unit={unit}
+                onUnitChange={setUnit}
+                covUnits={covUnits}
+                onCovUnit={(col, u) => setCovUnits((prev) => ({ ...prev, [col]: u }))}
+                timeVarying={tvc}
+                covariatesAllowed={!advanced}
+                failureMode
+                issues={issues}
+                notes={tvc ? [] : dataStepNotes(mapping, facts)}
+                asides={asides}
+                onChange={(next, { meanings }) => {
+                  // Meanings set by hand answer the which-way-round question.
+                  if (meanings && mapping.c) setAnswered((a) => [...a, `flags:${mapping.c}`]);
+                  setMapping(next.mapping);
+                  if (!advanced) setCovariates(next.covariates);
+                  setIdColumn(next.idColumn);
+                }}
+              />
+              <ResultDetails
+                summary="More options: counts, interval or late-entry data, covariates"
+                open={advanced || !!tvc}
+              >
+                <div className="ds-more-opts">
+                  <p className="ds-hint">
+                    Each column's role is picked in its heading. Under “Less common” there: a <b>count</b> (several
+                    units on one row), the <b>earliest and latest failure times</b> of inspection data, <b>observed
+                    from</b> for units already in service when records began (late entry), and a column giving
+                    each row's time unit. A <b>covariate</b> (a load, a site) fits a regression model.
+                  </p>
+                  <TvcToggle layout={tvc} onChange={changeTvc} />
+                  <label className="cov-adv-toggle">
+                    <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
+                    Covariates as a formula
+                  </label>
+                  {advanced && (
+                    <div className="cov-formula">
+                      <input type="text" aria-label="Covariate formula" placeholder="e.g. load + speed + site"
+                             value={formula} onChange={(e) => setFormula(e.target.value)} />
+                      <span className="map-help">
+                        A formula over your columns: + adds a column, load:speed lets two act together. Text
+                        columns are compared as groups automatically.{" "}
+                        <a href="https://matthewwardrop.github.io/formulaic/" target="_blank" rel="noreferrer">
+                          Formula syntax
+                        </a>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </ResultDetails>
+            </>
           )}
         </div>
       )}
@@ -1184,7 +1213,6 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
-        {stepper}
         <div className="row" style={{ margin: 0 }}>{nav}</div>
       </div>
     </div>

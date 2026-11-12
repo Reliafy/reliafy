@@ -106,6 +106,9 @@ const words = (name) =>
 
 // A time to failure or removal: hours, cycles, km, age… in the name.
 const TIME_WORDS = /\b(hours?|hrs?|hr|time|times|age|cycles?|km|kms|kilomet(?:re|er)s?|miles?|mileage|odometer|days?|weeks?|months?|years?|minutes?|mins?|starts?|operations?|landings?|shots?|runtime|duration|life|ttf|tbf|mtbf)\b/i;
+// A column named like a time with no unit in its name ("Time in service").
+export const unitlessTimeName = (name) => TIME_WORDS.test(words(name)) && !guessUnit(name);
+
 // A failed / still-running flag: status, failed, censor, event, suspended…
 const STATUS_WORDS = /\b(status|state|fail|failed|failure|failures|censor|censored|censoring|cens|event|events|suspend|suspended|suspension|suspensions|running|outcome|survived|alive|dead)\b/i;
 // …but not a failure *mode*, cause or date.
@@ -226,12 +229,49 @@ export function guessLifeColumns(columns) {
   const count = columns.find((col) => col.name !== c && isNumeric(col.dtype) && col.whole !== false
     && COUNT_NAMES.test(String(col.name).trim()));
   const n = count?.name || "";
-  const numeric = columns.filter((col) => isNumeric(col.dtype) && col.name !== c && col.name !== n);
+  // A late-entry column ("Entered at (h)") is never the time, however numeric.
+  const numeric = columns.filter((col) => isNumeric(col.dtype) && col.name !== c && col.name !== n
+    && !LATE_ENTRY.test(words(col.name)));
+  // A header that carries its unit ("Hours in service") beats a bare "Time in service".
   const x =
+    numeric.find((col) => TIME_WORDS.test(words(col.name)) && guessUnit(col.name)) ||
     numeric.find((col) => TIME_WORDS.test(words(col.name))) ||
     numeric.find((col) => !ID_WORDS.test(words(col.name))) ||
     numeric[0];
   return { x: x?.name || "", c, n, unit: guessUnit(x?.name) };
+}
+
+// Late entry (left truncation): units already in service when records began,
+// named like "Entered at (h)", "Entry age", "Observed from", "tl". A numeric
+// column only; its name is all the guess goes on.
+const LATE_ENTRY = /\b(entered|entry|enters|observed from|observation start|left truncat\w*|truncat\w*|tl)\b/i;
+export function guessLateEntry(columns, exclude = []) {
+  return columns.find((c) => isNumeric(c.dtype) && !exclude.includes(c.name) && LATE_ENTRY.test(words(c.name)))?.name || "";
+}
+
+// The column that names each unit ("Seal", "Seal ID", "Idler No."): a column
+// the mapping doesn't use whose every value differs (one row per unit), named
+// like an id, or else the first such text column. It's only for the words
+// ("80 seals"): nothing is sent with the fit. "" when there is none.
+const NAME_WORDS = /\b(id|ids|no|number|serial|sn|tag|asset|unit|item|equipment|name|ref|reference)\b/i;
+export function guessIdColumn(columns, nRows, exclude = []) {
+  const pool = columns.filter((c) => !exclude.includes(c.name) && !c.blanks
+    && (c.nUnique == null ? !isNumeric(c.dtype) && NAME_WORDS.test(words(c.name)) : c.nUnique === nRows));
+  return (pool.find((c) => NAME_WORDS.test(words(c.name))) || pool.find((c) => !isNumeric(c.dtype)))?.name || "";
+}
+
+// What the units are called, from the column that names them: "Seal" →
+// "seals", "Idler No." → "idlers", "Pump tag" → "pumps"; "units" otherwise.
+const NAME_TOKENS = new Set(["id", "ids", "no", "number", "serial", "sn", "tag", "code", "name", "ref", "reference", "of", "the"]);
+export function unitNoun(column, n = 2) {
+  const tokens = words(column).toLowerCase().split(/\s+/).filter((t) => t && /^[a-z]+$/.test(t) && !NAME_TOKENS.has(t));
+  const one = tokens[tokens.length - 1];
+  if (!one || one.length < 2) return n === 1 ? "unit" : "units";
+  if (n === 1) return one;
+  if (/s$/.test(one)) return one;
+  if (/[^aeiou]y$/.test(one)) return `${one.slice(0, -1)}ies`;
+  if (/(ch|sh|x|z)$/.test(one)) return `${one}es`;
+  return `${one}s`;
 }
 
 // Inspection data: the two times a failure lies between, by their names —

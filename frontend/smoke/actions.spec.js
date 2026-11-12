@@ -28,7 +28,8 @@ test("data with covariates that change over time fits a non-repairable model", a
   await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-pump-load/);
   // The Data step opens with start and stop rows mapped.
   await expect(page.getByText("Start of the row", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText(/start_h \(start of the row\), stop_h \(end of the row\)/)).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "What “start_h” is" })).toContainText("Start of the row");
+  await expect(page.getByRole("combobox", { name: "What “stop_h” is" })).toContainText("End of the row");
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByText(/Covariates change over time/)).toBeVisible();
   await page.getByRole("button", { name: "Fit Weibull PH" }).click();
@@ -214,8 +215,10 @@ async function uploadAndFit(page) {
     name: "raw.csv", mimeType: "text/csv", buffer: Buffer.from(HEADERLESS),
   });
   await expect(page.getByText("Your first row looks like data, so we've treated it as data.")).toBeVisible();
-  await expect(page.getByText(/raw\.csv · 8 rows · 2 columns/)).toBeVisible();
-  await expect(page.getByText(/col 1 \(time to failure\)/)).toBeVisible();
+  await expect(page.getByText(/raw\.csv · 8 rows/)).toBeVisible();
+  // One table: each column's role in its heading, and the answer first above it.
+  await expect(page.getByRole("combobox", { name: "What “col 1” is" })).toContainText("Time to failure or removal");
+  await expect(page.getByText(/Read as:/)).toBeVisible();
 
   // The column of decimals is offered as a count only with the reason, and can't be picked.
   await page.getByRole("combobox", { name: "What “col 2” is" }).click();
@@ -225,8 +228,8 @@ async function uploadAndFit(page) {
   await expect(page.getByRole("option", { name: "Ignore this column" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // No unit can be guessed from "col 1": a hint asks for one, but Next is never blocked.
-  await expect(page.getByText(/Add a unit \(Hours, Days, Cycles/)).toBeVisible();
+  // No unit can be guessed from "col 1": the Read as line says so, but Next is never blocked.
+  await expect(page.getByText(/no time unit yet/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Next" })).toBeEnabled();
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Fit Weibull" }).click();
