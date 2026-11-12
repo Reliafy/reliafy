@@ -4,7 +4,8 @@ import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import JointResultView from "../components/JointResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { deleteJointModel, downloadJointPython, getJointModel, updateJointModel } from "../api.js";
+import { deleteJointModel, downloadJointPython, getJointModel, listPositionModels, updateJointModel } from "../api.js";
+import { usedOnPositions } from "../joint.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
@@ -26,10 +27,17 @@ export default function JointModelPage() {
   // Not on this list (404): ModelNotFound looks in the others.
   const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
-  // Risk now for things in service is the Explorer's (by Classes: a class's fleet), so where the
-  // account has the Explorer this page has no Risk now tab; without it, the tab stays.
+  // Risk now (the model's own running units) is always here. Where the account has the asset
+  // tree and a position uses this model, a line also links to the Explorer's class fleet.
   const { has } = useRoles();
-  const riskNow = !has.maintenance;
+  const [onPositions, setOnPositions] = useState(false);
+  useEffect(() => {
+    setOnPositions(false);
+    if (!has.maintenance) return undefined;
+    let live = true;
+    listPositionModels().then((r) => live && setOnPositions(usedOnPositions(r?.links, id))).catch(() => {});
+    return () => { live = false; };
+  }, [id, has.maintenance]);
 
   useEffect(() => {
     setModel(null);
@@ -64,7 +72,7 @@ export default function JointModelPage() {
       crumbs={[{ label: "Models", to: "/models" }, { label: "Condition and life", to: "/models/joint" }]}
       title={model ? itemName(model) : "Model"}
       badges={model?.is_sample && <Chip>Sample</Chip>}
-      answer={model ? answerParts({ ...r, kind: "joint" }, { saved: `saved ${relativeTime(model.created_at)}`, riskNow }) : null}
+      answer={model ? answerParts({ ...r, kind: "joint" }, { saved: `saved ${relativeTime(model.created_at)}` }) : null}
       id={model?.id}
       actions={model && (
         <ShareButton collection="models" artifactId={model.id} name={model.name} readOnly={model.read_only} />
@@ -87,7 +95,7 @@ export default function JointModelPage() {
         // A model this page can't draw shows a card here, not the whole-app error page.
         <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
           <JointResultView results={model.results} modelId={model.id} name={model.name}
-                           tab={tab} onTab={(t) => setTab(t, riskNow ? "risk" : "calc")} riskNow={riskNow} />
+                           tab={tab} onTab={(t) => setTab(t, "risk")} onPositions={onPositions} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="joint" />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
