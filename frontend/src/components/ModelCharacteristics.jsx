@@ -20,6 +20,19 @@ import { SPREAD_LABEL, rateSpread, spreadMean, spreadTime, spreadWords } from ".
 // the model's life path and kept here, so going back to it doesn't ask again.
 const cache = new Map();
 
+// What the mean is beside the median, and which way round they are here:
+// a long right tail puts the mean later; a mixture's early group, or a
+// left-skewed curve, can put it earlier.
+export function meanVsMedian(noun, answer, median) {
+  const lead = `The average ${noun} to failure. It isn't the median (B50, when half have failed)`;
+  const mean = Number(answer?.value);
+  const med = Number(median);
+  if (!Number.isFinite(mean) || !Number.isFinite(med) || median == null) return `${lead}.`;
+  if (mean > med * 1.005) return `${lead}: a few long-lived units pull the mean up, so here it's the later of the two.`;
+  if (mean < med * 0.995) return `${lead}: a group of early failures pulls the mean down, so here it's the earlier of the two.`;
+  return `${lead}, though here the two are about the same.`;
+}
+
 function useMeanLife(result, level, tau) {
   const path = result.functions?.life_path;
   const stored = result.life || null;
@@ -228,7 +241,7 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
             {answer.kind !== "none" && <p>
               {answer.kind === "restricted"
                 ? "The average time to failure, counting only up to that time: some units were still running at the end of the data, so the full mean can't be estimated. Move the time to see how the mean grows."
-                : `The average ${noun} to failure. It isn't the median (B50, when half have failed): a few long-lived units pull the mean up, so it's usually the later of the two.`}
+                : meanVsMedian(noun, answer, median)}
               {median != null && answer.kind === "mean" && <> Here the median is <b>{withUnit(median)}</b>.</>}
             </p>}
             {answer.kind === "none" && median != null && (

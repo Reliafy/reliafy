@@ -75,7 +75,7 @@ def test_fit_surfaces_x_and_interval_error():
 
 def test_fit_surfaces_negative_value_error():
     df = _df("x\n-1\n2\n3\n4\n")
-    with pytest.raises(FitError, match="support"):
+    with pytest.raises(FitError, match="out of range"):
         fit("weibull", df, {"x": "x"})
 
 

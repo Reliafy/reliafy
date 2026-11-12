@@ -281,8 +281,8 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                   </div>
                   <p className="muted-line" style={{ margin: "0.4rem 0 0", width: "100%" }}>
                     More components always fit better, so compare the AIC against a
-                    single fit and keep the simplest that clearly wins. A mixture
-                    reports no confidence bounds.
+                    single fit and keep the simplest that clearly wins. A mixture's
+                    parameters carry no intervals.
                   </p>
                 </div>
               )}

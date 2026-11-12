@@ -93,7 +93,7 @@ export function PriorFields({ state, set, kind, kinds = null, onKind, trust = tr
       {kind === "model" && (
         <Select aria-label="Prior model" value={state.modelId || ""} onChange={(e) => set("modelId", e.target.value || null)}>
           <option value="">{models === null ? "Loading models…" : "Pick a Weibull, exponential or lognormal model"}</option>
-          {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}{m.is_sample ? " (sample)" : ""}</option>)}
+          {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}{m.is_sample && !/\(sample\)\s*$/i.test(m.name || "") ? " (sample)" : ""}</option>)}
           {modelFallback}
         </Select>
       )}
@@ -199,7 +199,9 @@ export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, downloa
           <span className="fit2-age-r">
             {Math.round(d.at_age.reliability * 1000) / 10}%
             {d.at_age.lower != null && d.at_age.upper != null
-              ? ` (${bayes ? "90% credible" : "90% confidence"} ${Math.round(d.at_age.lower * 1000) / 10}–${Math.round(d.at_age.upper * 1000) / 10}%)` : ""}
+              ? ` (${bayes ? "90% credible" : "90% confidence"} ${Math.round(d.at_age.lower * 1000) / 10}–${Math.round(d.at_age.upper * 1000) / 10}%)`
+              : d.at_age.lower != null
+              ? `: we're 90% sure it's at least ${Math.round(d.at_age.lower * 1000) / 10}% (90% one-sided ${bayes ? "credible" : "confidence"} bound)` : ""}
           </span>
         )}
       </div>

@@ -2,6 +2,7 @@
 // table (scrolling inside its card), how it was fitted (the method and its
 // options, the notes that used to sit under "Details") and every parameter
 // with its interval.
+import { extraParamView } from "../../paramLabels.js";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import CiNote from "../CiNote.jsx";
@@ -53,7 +54,10 @@ function howWords(result) {
   }
   if (result.mixture_summary) out.push(result.mixture_summary);
   if (result.mixture > 1) {
-    out.push("A mixture has no covariance matrix, so it reports no confidence bounds: judge it on the AIC against a single fit (Diagnostics).");
+    const bounded = (result.life?.b_lives || []).some((b) => b.lower != null || b.upper != null);
+    out.push(bounded
+      ? "A mixture's parameters carry no intervals; its B-lives are bounded from the whole fit. Judge it on the AIC against a single fit (Diagnostics)."
+      : "A mixture has no covariance matrix, so it reports no confidence bounds: judge it on the AIC against a single fit (Diagnostics).");
   }
   if (result.interval_censored) out.push("Inspection data: each failure lies between two inspections.");
   if (result.late_entry?.units) {
@@ -273,9 +277,10 @@ function Parameters({ result }) {
             const v = paramView(result.kind === "regression" ? base : result, p);
             return <tr key={p.name}><td>{v.label}</td><td className="mf-num">{formatNumber(p.value, { sig: 4 })}</td><td className="mf-num">{v.ci || "—"}</td></tr>;
           })}
-          {extra.map((p) => (
-            <tr key={p.name}><td>{p.name}</td><td className="mf-num">{formatNumber(p.value, { sig: 4 })}</td><td className="mf-num">—</td></tr>
-          ))}
+          {extra.map((p) => {
+            const v = extraParamView(p.name, p.value, result.unit, (x) => formatNumber(x, { sig: 4 }));
+            return <tr key={p.name}><td>{v.label}</td><td className="mf-num">{v.value}</td><td className="mf-num">—</td></tr>;
+          })}
           {coefs.map((c) => (
             <tr key={`c-${c.name}`}>
               <td>{c.name}{c.covariate_unit ? <span className="mm-part"> (per {c.covariate_unit})</span> : null}</td>

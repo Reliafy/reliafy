@@ -72,7 +72,9 @@ def test_an_early_failure_pulls_the_life_in_and_the_result_says_so():
     assert result["moved"].startswith("2 failures at 1,400 and 1,900 hours pulled the characteristic life from 3,000")
     assert "we're 90% sure it's at least" in result["words"] and "one-sided credible" in result["words"]
     assert "confidence" not in result["words"] and "lies between" not in result["words"]
-    assert 0 < result["at_age"]["lower"] < result["at_age"]["reliability"] < result["at_age"]["upper"] < 1
+    # One-sided: a 90% lower credible bound on reliability, as for a B-life.
+    assert 0 < result["at_age"]["lower"] < result["at_age"]["reliability"] < 1
+    assert result["at_age"]["upper"] is None and result["at_age"]["bound"] == "lower"
     c = result["curves"]
     assert len(c["x"]) == bl.GRID and c["baseline_sf"][0] == pytest.approx(1)
     # Trusting the baseline closely moves it less.

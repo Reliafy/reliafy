@@ -647,6 +647,62 @@ _FAILED_NAME_RE = re.compile(
     r"(is_?)?(fail|failed|failure|failures|event|status|dead|death|broken)(_?flag)?",
     re.IGNORECASE,
 )
+# A header that says what 1 means ("Failed (1=yes)", "status (1 = failed)",
+# "Running (1=yes)", "yes=1"): the same reading as the fit's Data step
+# (``flagHeaderMeaning`` in frontend/src/datasetGuess.js), so the Data list
+# counts failures the way the fit reads them.
+_SUBJECT_FAILED = re.compile(r"\b(fail|failed|fails|failure|failures|event|events|dead|death|died|broken|broke|tripped)\b")
+_SUBJECT_RUNNING = re.compile(r"\b(c|cens|censor|censored|censoring|suspend|suspended|suspension|running|survived"
+                              r"|survives|alive|working|ok|in service)\b")
+_WORD_FAILED = re.compile(r"^(failed|fail|failure|f|broken|dead|event|down)$")
+_WORD_RUNNING = re.compile(r"^(running|run|r|censored|cens|suspended|s|survived|alive|ok|working|in service"
+                           r"|still running)$")
+
+
+def flag_header_meaning(name) -> str | None:
+    """What a 0/1 column's 1 means by its header: ``"failed"``,
+    ``"running"`` or None when the header doesn't say."""
+    raw = re.sub(r"([a-z])([A-Z])", r"\1 \2", str(name or "")).lower()
+    core = re.sub(r"-?\d+\s*=\s*[a-z ]+?(?=[),;/]|$)|[a-z]+\s*=\s*-?\d+", " ", raw)
+    core = re.sub(r"\s+", " ", re.sub(r"[_\-.()\[\]#:?/,;]+", " ", core)).strip()
+    failed, running = bool(_SUBJECT_FAILED.search(core)), bool(_SUBJECT_RUNNING.search(core))
+    subject = "failed" if failed and not running else "running" if running and not failed else None
+
+    def flip(m):
+        return {"failed": "running", "running": "failed"}.get(m)
+
+    def meaning(word):
+        v = re.sub(r"\s+", " ", word.strip())
+        if _WORD_FAILED.match(v):
+            return "failed"
+        if _WORD_RUNNING.match(v):
+            return "running"
+        if re.match(r"^(yes|y|true|t)$", v):
+            return subject
+        if re.match(r"^(no|n|false)$", v):
+            return flip(subject)
+        return None
+
+    for m in re.finditer(r"(?:^|[^\d-])([01])\s*=\s*([a-z][a-z ]*?)(?=\s*(?:[),;/]|$|\d))", raw):
+        w = meaning(m.group(2))
+        if w:
+            return w if m.group(1) == "1" else flip(w)
+    for m in re.finditer(r"([a-z][a-z ]*?)\s*=\s*([01])\b", raw):
+        w = meaning(re.split(r"[(,;/]", m.group(1))[-1])
+        if w:
+            return w if m.group(2) == "1" else flip(w)
+    return subject
+
+
+def one_means_failed(column) -> bool:
+    """Whether a 0/1 flag column reads 1 as failed: its header says so, or
+    (saying nothing) it is named like "failed" / "status" / "event"."""
+    said = flag_header_meaning(column)
+    if said is not None:
+        return said == "failed"
+    return bool(_FAILED_NAME_RE.fullmatch(str(column).strip()))
+
+
 # Interval-censored data has two time columns (the failure lies between them): SurPyval's xl / xr,
 # the shortest / longest a saved Bayesian update writes, or a plain left / right, lower / upper.
 _TIME_NAME_RE = re.compile(
@@ -658,8 +714,18 @@ _STOP_RE = re.compile(r"(stop|end|exit|^tr$|until)", re.IGNORECASE)
 
 
 def _unit_column(df: pd.DataFrame) -> str | None:
-    """A unit-like text column whose values repeat (several rows per unit)."""
+    """A unit-like text column whose values repeat (several rows per unit).
+    A column of time units ("hrs", "days") is never one; nor is a coded
+    group ("CV-07") when another column already names every row (an idler
+    number, a serial): then each row is a unit and the group is a covariate."""
+    from backend.unit_column import _unit_counts  # local: unit_column reads services
+
     numeric = {c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])}
+    rows = df.dropna(how="all")
+    row_ids = len(rows) > 1 and any(
+        g not in numeric and rows[g].notna().all() and rows[g].nunique() == len(rows)
+        and rows[g].astype(str).str.contains(r"\d").mean() >= 0.8
+        for g in df.columns)
     for g in df.columns:
         if g in numeric:
             continue
@@ -669,8 +735,10 @@ def _unit_column(df: pd.DataFrame) -> str | None:
         sizes = col.groupby(col).size()
         if len(sizes) == len(col) or (sizes >= 2).mean() < 0.5:
             continue
+        if _unit_counts(df[g]) is not None:
+            continue
         digits = sizes.index.to_series().str.contains(r"\d").mean()
-        if _UNIT_NAME_RE.search(str(g)) or digits >= 0.8:
+        if _UNIT_NAME_RE.search(str(g)) or (digits >= 0.8 and not row_ids):
             return str(g)
     return None
 
@@ -687,6 +755,7 @@ def _censor_column(df: pd.DataFrame) -> str | None:
 
 def detect_tags(df: pd.DataFrame) -> dict:
     """``{"tags": [...], "use_for": [...]}`` for a dataset's columns."""
+    df = df.dropna(how="all")  # a blank row in a sheet is no unit (the fit skips it too)
     tags: set[str] = set()
     unit = _unit_column(df)
     censor = _censor_column(df)
@@ -812,7 +881,7 @@ def _noun(col: str | None) -> str:
     """What a row's unit is called, from its ID column ("pump" → pumps)."""
     if not col:
         return "unit"
-    word = re.sub(r"[_\s-]*(id|no|number|serial|sn|tag)$", "", str(col).strip(), flags=re.IGNORECASE)
+    word = re.sub(r"[_\s-]*(id|no|number|serial|sn|tag)\.?$", "", str(col).strip(), flags=re.IGNORECASE)
     word = re.sub(r"[_-]+", " ", word).strip().lower()
     if not word or _GENERIC_ID_RE.match(word) or len(word) > 20:
         return "unit"
@@ -980,7 +1049,7 @@ def life_counts(df: pd.DataFrame, censor: str | None = None, times: list[str] | 
         if raw.isna().any():
             return None
         # A flag named "failed" / "status" is 1 = failed; left (-1) and interval (2) stay.
-        flip = bool(_FAILED_NAME_RE.fullmatch(censor.strip()))
+        flip = one_means_failed(censor)
         codes = raw.where(~raw.isin((0, 1)), 1 - raw) if flip else raw
     else:
         words = _word_status(df, skip)
@@ -1033,13 +1102,13 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
     if "Measurements" in tags:
         return f"{units} · {len(df):,} readings"
     if "Repairable" in tags:
-        failed_flag = 1 if censor and _FAILED_NAME_RE.fullmatch(censor.strip()) else 0
+        failed_flag = 1 if censor and one_means_failed(censor) else 0
         n = int((df[censor] == failed_flag).sum()) if censor else len(df)
         return f"{units} · {n:,} {_plural('failure', n)}"
     counts = None if unit else life_counts(df, censor, times)
     if counts is None:
         if censor:  # several rows per unit with a flag (start and stop rows)
-            failed_flag = 1 if _FAILED_NAME_RE.fullmatch(censor.strip()) else 0
+            failed_flag = 1 if one_means_failed(censor) else 0
             return f"{units} · {int((df[censor] == failed_flag).sum()):,} failed"
         # No status, and nothing that looks like one left unread (a column
         # named like a status, a second time): every row is a failure.
