@@ -12,8 +12,56 @@ export const isNumeric = (dtype) => /int|float/.test(String(dtype));
 
 // Is a censor column with this name 1 = failed (so it needs inverting)?
 // "failed", "failure", "event", "status": yes. "censored", "suspended": no.
+// A header that says what 1 means wins: "Failed (1=yes)", "failed?",
+// "failure (y/n)", "1 = failed" are 1 = failed; "Running (1=yes)" isn't.
 export function censorInverted(name) {
+  const said = flagHeaderMeaning(name);
+  if (said) return said === "failed";
   return FAILED_RE.test(String(name || "").trim());
+}
+
+// What a 0/1 flag column's header says 1 means: "failed", "running", or null
+// when the header doesn't say (a bare "status", "flag", "outcome"), so the
+// Data step asks rather than guesses.
+//   - an explicit pair wins: "1=yes", "1 = failed", "yes=1", "0 = running";
+//     yes / no read by the header's subject ("Failed (1=yes)": yes = failed);
+//   - else the subject alone: failed / failure / fail / event / dead / broken
+//     (with or without "?", "(y/n)", "is_", "_flag") is 1 = failed; censored /
+//     suspended / running / survived / alive, and SurPyval's "c", are 1 = still
+//     running.
+const SUBJECT_FAILED = /\b(fail|failed|fails|failure|failures|event|events|dead|death|died|broken|broke|tripped)\b/;
+const SUBJECT_RUNNING = /\b(c|cens|censor|censored|censoring|suspend|suspended|suspension|running|survived|survives|alive|working|ok|in service)\b/;
+const WORD_FAILED = /^(failed|fail|failure|f|broken|dead|event|down)$/;
+const WORD_RUNNING = /^(running|run|r|censored|cens|suspended|s|survived|alive|ok|working|in service)$/;
+const WORD_YES = /^(yes|y|true|t)$/;
+const WORD_NO = /^(no|n|false)$/;
+export function flagHeaderMeaning(name) {
+  const raw = String(name || "").toLowerCase().replace(/([a-z])([A-Z])/g, "$1 $2");
+  const flip = (m) => (m === "failed" ? "running" : m === "running" ? "failed" : null);
+  // The subject: the header with its "x = y" parts, brackets and marks taken out.
+  const core = raw.replace(/-?\d+\s*=\s*[a-z ]+?(?=[),;/]|$)|[a-z]+\s*=\s*-?\d+/g, " ")
+    .replace(/[_\-.()[\]#:?/,;]+/g, " ").replace(/\s+/g, " ").trim();
+  const subject = SUBJECT_FAILED.test(core) && !SUBJECT_RUNNING.test(core) ? "failed"
+    : SUBJECT_RUNNING.test(core) && !SUBJECT_FAILED.test(core) ? "running" : null;
+  const wordMeaning = (w) => {
+    const v = w.trim().replace(/\s+/g, " ");
+    if (WORD_FAILED.test(v)) return "failed";
+    if (WORD_RUNNING.test(v) || v === "still running") return "running";
+    if (WORD_YES.test(v)) return subject;
+    if (WORD_NO.test(v)) return flip(subject);
+    return null;
+  };
+  // "1=yes", "1 = failed", "0 = still running"
+  for (const m of raw.matchAll(/(?:^|[^\d-])([01])\s*=\s*([a-z][a-z ]*?)(?=\s*(?:[),;/]|$|\d))/g)) {
+    const w = wordMeaning(m[2]);
+    if (w) return m[1] === "1" ? w : flip(w);
+  }
+  // "yes=1", "failed = 1"
+  for (const m of raw.matchAll(/([a-z][a-z ]*?)\s*=\s*([01])\b/g)) {
+    const w = wordMeaning(m[1].split(/[(,;/]/).pop());
+    if (w) return m[2] === "1" ? w : flip(w);
+  }
+  return subject;
 }
 
 // The column to split a comparison by: an explicit choice wins; otherwise the
@@ -101,6 +149,35 @@ const UNIT_NAMES = [
 export function guessUnit(name) {
   const w = words(name);
   return UNIT_NAMES.find(([re]) => re.test(w))?.[1] || "";
+}
+
+// A cell that is a calendar time unit, in the unit picker's spelling ("hrs" →
+// "Hours", "d" → "Days"); "" for anything else. These are the units a column
+// of per-row units can be converted between (backend/unit_column.py).
+export const CONVERTIBLE_UNITS = ["Minutes", "Hours", "Days", "Weeks", "Months", "Years"];
+const SHORT_UNITS = { d: "Days", wk: "Weeks", wks: "Weeks", w: "Weeks", mo: "Months", mth: "Months", mths: "Months", y: "Years" };
+export function timeUnitOf(value) {
+  const v = String(value ?? "").trim().toLowerCase().replace(/\.$/, "");
+  const u = SHORT_UNITS[v] || (v && guessUnit(v));
+  return CONVERTIBLE_UNITS.includes(u) && (SHORT_UNITS[v] || words(v).split(" ").length === 1) ? u : "";
+}
+
+// A text column whose every value is a time unit, with more than one unit in
+// it ("hrs" on most rows, "days" on a few): { column, counts: { Hours: 22, Days: 4 },
+// common } with the most common unit; null with none. ``columns``: [{ name,
+// dtype, values }] (``values``: the column's few values and their rows).
+export function guessUnitColumn(columns, exclude = []) {
+  for (const c of columns || []) {
+    if (exclude.includes(c.name) || isNumeric(c.dtype) || !c.values) continue;
+    const entries = Object.entries(c.values).filter(([v]) => String(v).trim() !== "");
+    if (!entries.length || entries.some(([v]) => !timeUnitOf(v))) continue;
+    const counts = {};
+    for (const [v, n] of entries) counts[timeUnitOf(v)] = (counts[timeUnitOf(v)] || 0) + n;
+    if (Object.keys(counts).length < 2) continue;
+    const common = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+    return { column: c.name, counts, common };
+  }
+  return null;
 }
 
 // First guesses for a life-data fit: the time column (x), the status column

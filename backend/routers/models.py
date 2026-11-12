@@ -591,6 +591,7 @@ def save_model(
     criterion: str | None = Form(default=None),
     frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
+    u_col: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
     session=Depends(get_session),
@@ -634,7 +635,7 @@ def save_model(
             options=regression_diagnostics.with_cox_form(options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
                 include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
-            frailty_family=frailty_family,
+            frailty_family=frailty_family, u_col=u_col,
             ), cox),
             covariate_units=covariate_units_from_form(covariate_units),
         )
@@ -852,6 +853,7 @@ def update_model_fit(
     criterion: str | None = Body(default=None),
     frailty_family: str | None = Body(default=None),
     c_map: dict | None = Body(default=None),
+    u_col: str | None = Body(default=None),
     covariate_units: dict | None = Body(default=None),
     cox: dict | None = Body(default=None),
     session=Depends(get_session),
@@ -870,7 +872,7 @@ def update_model_fit(
                "mixture": mixture, "mixture_distribution": mixture_distribution,
                "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures),
                "criterion": criterion or None, "frailty_family": frailty_family or None,
-               "c_map": c_map or None, "cox": cox or None}
+               "c_map": c_map or None, "cox": cox or None, "u_col": u_col or None}
     try:
         model = models_service.update_fit(
             session, model_id, existing.owner_id, distribution,

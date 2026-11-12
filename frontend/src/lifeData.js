@@ -2,13 +2,15 @@
 // value means, the failures-and-running count before a fit, and what is wrong
 // with a mapping, in plain words. Pure, so `node --test src/` covers it.
 import {
-  guessIntervalPair, guessLifeColumns, guessStatusMeaning, guessUnit, isNumeric, likelyStatusColumns,
+  CONVERTIBLE_UNITS, flagHeaderMeaning, guessIntervalPair, guessLifeColumns, guessStatusMeaning, guessUnit,
+  guessUnitColumn, isNumeric, likelyStatusColumns, timeUnitOf,
 } from "./datasetGuess.js";
 
 // ``e`` names each failure's mode and ``g`` the groups to compare (#177):
-// competing risks only.
+// competing risks only. ``u``: a column giving each row's time unit (sent as
+// the ``u_col`` fit option): every time is converted to the fit's unit first.
 export const EMPTY_MAPPING = {
-  x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", e: "", g: "", c_invert: false, c_map: null,
+  x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", e: "", g: "", u: "", c_invert: false, c_map: null,
 };
 
 // Column facts from /api/columns or a dataset's detail: name → { dtype,
@@ -63,11 +65,11 @@ export function setMappingField(mapping, field, value, facts = {}) {
 // a time, a status or a count (a cost, an id) has a home: Ignore, or a
 // covariate where the model takes them.
 
-const ROLE_FIELDS = ["x", "xl", "xr", "i", "c", "n", "e", "tl", "tr", "g", "group"];
+const ROLE_FIELDS = ["x", "xl", "xr", "i", "c", "n", "e", "tl", "tr", "g", "group", "u"];
 const ROLE_LABELS = {
   x: "Time to failure", xl: "Earliest failure time", xr: "Latest failure time", i: "Item",
   c: "Failed or still running", n: "Count", e: "Failure mode", tl: "Observed from", tr: "Observed until",
-  g: "Group to compare", group: "Group by", cov: "Covariate", "": "Ignored",
+  g: "Group to compare", group: "Group by", u: "Unit of each row", cov: "Covariate", "": "Ignored",
 };
 const TVC_LABELS = {
   intervals: { xl: "Start of the row", xr: "End of the row" },
@@ -84,7 +86,7 @@ export function roleLabel(role, timeVarying = null) {
 export function roleChoices({ timeVarying = null, covariates = false, failureMode = false } = {}) {
   const fields = timeVarying === "intervals" ? ["i", "xl", "xr", "c"]
     : timeVarying === "timeline" ? ["i", "x", "c"]
-    : ["x", "c", "n", "xl", "xr", "tl", "tr"];
+    : ["x", "c", "n", "xl", "xr", "tl", "tr", "u"];
   if (failureMode) fields.push("e");
   return [...fields, ...(covariates ? ["cov"] : []), ""];
 }
@@ -192,9 +194,50 @@ export function guessMapping(columns, facts) {
   const g = guessLifeColumns(cols);
   const pair = guessIntervalPair(cols, [g.c, g.n].filter(Boolean));
   const times = pair ? { x: "", ...pair } : { x: g.x };
+  // A column of per-row units ("hrs" / "days"): converted to the most common.
+  const mixed = guessUnitColumn(cols, [g.c, g.n, g.x, pair?.xl, pair?.xr].filter(Boolean));
   return {
-    mapping: { ...EMPTY_MAPPING, ...times, c: g.c, n: g.n, ...guessStatus(g.c, facts) },
-    unit: pair ? guessUnit(pair.xl) || guessUnit(pair.xr) : g.unit,
+    mapping: { ...EMPTY_MAPPING, ...times, c: g.c, n: g.n, u: mixed?.column || "", ...guessStatus(g.c, facts) },
+    unit: mixed ? mixed.common : pair ? guessUnit(pair.xl) || guessUnit(pair.xr) : g.unit,
+  };
+}
+
+// A unit column's rows by unit, from its few values: { Hours: 22, Days: 4 }
+// (null when the values aren't all time units).
+export function unitCounts(column, facts) {
+  const values = facts[column]?.values;
+  if (!values) return null;
+  const counts = {};
+  for (const [v, n] of Object.entries(values)) {
+    if (String(v).trim() === "") continue;
+    const u = timeUnitOf(v);
+    if (!u) return null;
+    counts[u] = (counts[u] || 0) + n;
+  }
+  return counts;
+}
+
+const countsWords = (counts) => Object.entries(counts).sort((a, b) => b[1] - a[1])
+  .map(([u, n]) => `${n.toLocaleString()} in ${u.toLowerCase()}`).join(", ");
+
+// What the Data step says about a unit column: { note } (how many rows are
+// converted to ``unit``) or { problem } (a unit it can't convert to, values it
+// can't read); null without one.
+export function unitColumnWords(mapping, facts, unit) {
+  if (!mapping.u) return null;
+  const counts = unitCounts(mapping.u, facts);
+  if (!counts) {
+    return { problem: `“${mapping.u}” doesn't hold only time units (hours, days, weeks…), so it can't give each row's unit. Set it to Ignore.` };
+  }
+  const to = timeUnitOf(unit) || CONVERTIBLE_UNITS.find((u) => u.toLowerCase() === String(unit || "").trim().toLowerCase());
+  if (!to) {
+    return { problem: `“${mapping.u}” gives each row's unit (${countsWords(counts)}): pick Hours, Days, Weeks, Months, Years or Minutes as the unit to convert them to.` };
+  }
+  const converted = Object.entries(counts).filter(([u]) => u !== to).reduce((a, [, n]) => a + n, 0);
+  return {
+    note: `“${mapping.u}” gives each row's unit (${countsWords(counts)})`
+      + (converted ? `: ${plural(converted, "row is", "rows are")} converted to ${to.toLowerCase()} before the fit.` : "."),
+    converted, to, counts,
   };
 }
 
@@ -206,8 +249,32 @@ export function guessMapping(columns, facts) {
 //   status:<col>  a column named like a status whose values aren't known.
 // ``answered``: the ids already answered "no". Each question:
 // { id, text, yes, no, field, column } — "yes" maps ``column`` to ``field``.
+//   flags:<col>   a status column of 0/1 codes whose header doesn't say what
+//                 1 means ("status", "flag"): which way round, with the
+//                 counts both ways. ``set``: the mapping fields each answer sets.
+//   unit:<col>    a column of per-row units (hrs / days) left unused: convert?
 export function dataQuestions(mapping, facts, columns, nRows, answered = []) {
-  if (mapping.c || mapping.e) return [];
+  const first = [unitQuestion(mapping, facts, columns), mapping.c && flagQuestion(mapping, facts, nRows)]
+    .filter((q) => q && !answered.includes(q.id));
+  if (mapping.c || mapping.e) return first;
+  return [...first, ...otherQuestions(mapping, facts, columns, nRows, answered)];
+}
+
+// A column of mixed per-row units that nothing uses: every time would be read in one unit.
+function unitQuestion(mapping, facts, columns) {
+  if (mapping.u) return null;
+  const used = Object.values(mapping).filter((v) => typeof v === "string" && v);
+  const mixed = guessUnitColumn((columns || []).map((name) => ({ name, ...facts[name] })), used);
+  if (!mixed) return null;
+  return {
+    id: `unit:${mixed.column}`, field: "u", column: mixed.column,
+    text: `“${mixed.column}” says the rows are in different units (${countsWords(mixed.counts)}), but it isn't being used, so every time would be read in one unit. Convert them?`,
+    yes: `Yes: convert each row by “${mixed.column}”`,
+    no: "No: the times are all in one unit",
+  };
+}
+
+function otherQuestions(mapping, facts, columns, nRows, answered) {
   const cols = (columns || []).map((name) => ({ name, ...facts[name] }));
   const used = new Set(Object.values(mapping).filter((v) => typeof v === "string" && v));
   const likely = likelyStatusColumns(cols.filter((c) => !used.has(c.name)));
@@ -234,8 +301,46 @@ export function dataQuestions(mapping, facts, columns, nRows, answered = []) {
   return out.filter((q) => !answered.includes(q.id));
 }
 
+// Whether a status column holds only the codes 0 and 1 (both of them).
+function zeroOneCodes(values) {
+  const keys = statusValues(values).map((v) => statusKey(v.label)).sort();
+  return keys.length === 2 && keys[0] === "0" && keys[1] === "1";
+}
+
+// The failures and units still running with 1 read as failed (``oneFailed``)
+// or as still running, from the status column's value counts.
+function countsWay(mapping, facts, nRows, oneFailed) {
+  return statusSummary({ ...mapping, c_map: null, c_invert: oneFailed }, facts, nRows);
+}
+
+// The question for a 0/1 status column whose header doesn't say which way round
+// it is; null when it says ("Failed (1=yes)", "censored") or isn't 0/1 codes.
+export function flagQuestion(mapping, facts, nRows) {
+  if (!mapping.c || mapping.c_map || !zeroOneCodes(facts[mapping.c]?.values)) return null;
+  if (flagHeaderMeaning(mapping.c)) return null;
+  const a = countsWay(mapping, facts, nRows, true);
+  const b = countsWay(mapping, facts, nRows, false);
+  if (!a || !b) return null;
+  const words = (s) => summaryParts(s).join(", ");
+  return {
+    id: `flags:${mapping.c}`, field: "c", column: mapping.c,
+    text: `“${mapping.c}” doesn't say what 1 means. Which way round is it?`,
+    yes: `1 = failed: ${words(a)}`,
+    no: `0 = failed: ${words(b)}`,
+    set: { yes: { c_invert: true, c_map: null }, no: { c_invert: false, c_map: null } },
+  };
+}
+
+// How a status column is read, in words, for the line above the counts:
+// "1 = failed, 0 = still running". Empty for a word map or no status column.
+export function flagWords(mapping, facts) {
+  if (!mapping.c || mapping.c_map || !zeroOneCodes(facts[mapping.c]?.values)) return "";
+  return mapping.c_invert ? "1 = failed, 0 = still running" : "0 = failed, 1 = still running";
+}
+
 // The mapping after a question is answered, and the ids answered so far.
 export function answerQuestion(mapping, question, yes, facts = {}, answered = []) {
+  if (question.set) return { mapping: { ...mapping, ...(yes ? question.set.yes : question.set.no) }, answered: [...answered, question.id] };
   return {
     mapping: yes ? setMappingField(mapping, question.field, question.column, facts) : mapping,
     answered: [...answered, question.id],
@@ -276,8 +381,10 @@ export function statusSummary(mapping, facts, nRows) {
 // plain 0/1 status column (no word map, no -1 or 2). Spreadsheets often use
 // 1 = failed, and a fit then reads as far too optimistic with no other sign.
 // Returns { code }: the flag value now read as still running, or null.
+// A header that spells it out ("Failed (1=yes)") is taken at its word.
 export function flagsLookSwapped(mapping, summary) {
   if (!mapping.c || mapping.c_map || !summary) return null;
+  if (/(^|[^\d])[01]\s*=|=\s*[01]\b/.test(mapping.c) && flagHeaderMeaning(mapping.c)) return null;
   if (summary.left || summary.interval) return null;
   const total = summary.failed + summary.running;
   if (!total || summary.running * 2 <= total) return null;
@@ -308,8 +415,11 @@ export function summaryParts(s, { inspection = false } = {}) {
 }
 
 // What stops this mapping fitting, in plain words. Empty when it is ready.
-export function dataStepProblems(mapping, facts, nRows) {
+// ``unit``: the fit's unit, which a column of per-row units converts to.
+export function dataStepProblems(mapping, facts, nRows, unit = undefined) {
   const out = [];
+  const perRow = unit === undefined ? null : unitColumnWords(mapping, facts, unit);
+  if (perRow?.problem) out.push(perRow.problem);
   const f = (col) => facts[col] || {};
   const rows = (n) => plural(n, "row has", "rows have");
   const sample = (col) => (f(col).sample != null ? ` (e.g. “${f(col).sample}”)` : "");
@@ -543,5 +653,7 @@ export function mappingWords(mapping, facts = {}, unit = "") {
   if (mapping.n) out.push({ label: "Count", value: `“${mapping.n}”` });
   if (mapping.tl) out.push({ label: "Observed from", value: `“${mapping.tl}”` });
   if (mapping.tr) out.push({ label: "Observed until", value: `“${mapping.tr}”` });
+  const perRow = unitColumnWords(mapping, facts, unit);
+  if (perRow) out.push({ label: "Unit of each row", value: perRow.note || perRow.problem });
   return out;
 }
