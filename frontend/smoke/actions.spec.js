@@ -247,8 +247,8 @@ async function uploadAndFit(page) {
   const count = page.getByRole("option", { name: /^col 2/ });
   await expect(count).toBeDisabled();
   await expect(count).toContainText("has decimals");
-  // Close the list (only the list: Escape with none open would close the dialog).
-  if (await count.isVisible()) await page.keyboard.press("Escape");
+  // Close the list by clicking the dialog's own text (Escape would close the dialog too).
+  await dialog.getByText("How the columns are read for modelling").click();
   await expect(count).toBeHidden();
 
   // c is required: a status column, or "every row failed" said on purpose.
