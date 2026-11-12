@@ -378,3 +378,6 @@ html.print-layout .app.model-frame { height: auto !important; overflow: visible 
 /* A library model's failure rate and its spread across plants, in words first. */
 .mf-note.model-chars-spread { color: var(--ink); font-size: var(--fs-14); }
 .calc-spread-words { margin: -4px 0 8px; }
+
+/* A chance's 90% upper bound under it in the risk table. */
+.joint-risk .joint-risk-up { display: block; font-size: var(--fs-12); color: var(--muted); margin-top: 2px; }

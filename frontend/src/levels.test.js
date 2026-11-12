@@ -1,7 +1,7 @@
 // Run with: node --test src/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ALPHA, LEVEL, LEVEL_TEXT, ciLevelOf, ciPct, levelPct, rangeLevelText } from "./levels.js";
+import { ALPHA, AUTO_BOUND, LEVEL, LEVEL_TEXT, boundOptions, ciLevelOf, ciPct, effectiveBound, levelPct, rangeLevelText, ruleBound } from "./levels.js";
 import { effectText, forestRows, intervalLevel } from "./modelFrame.js";
 
 test("one level everywhere: 90%, SurPyval's alpha 0.1", () => {
@@ -33,4 +33,17 @@ test("an effect in words carries its result's level", () => {
   const [row] = forestRows(result);
   assert.equal(row.level, "90%");
   assert.match(effectText(row, "hazard ratio"), /\(90% 1\.11 to 1\.19\)/);
+});
+
+test("a calculator's bound sits on the safe side for the function shown", () => {
+  // Reliability and lives: the lower bound; a chance of failing and the
+  // cumulative hazard: the upper one ("28%, at most 34%", never "at least 23%").
+  assert.equal(ruleBound("sf"), "lower");
+  assert.equal(ruleBound("time"), "lower");
+  assert.equal(ruleBound("ff"), "upper");
+  assert.equal(ruleBound("Hf"), "upper");
+  assert.equal(ruleBound("hf"), "two-sided");
+  assert.equal(effectiveBound(AUTO_BOUND, "ff"), "upper");
+  assert.equal(effectiveBound("lower", "ff"), "lower"); // the user's own choice stands
+  assert.equal(boundOptions("ff")[0].label, "Safe side (upper)");
 });

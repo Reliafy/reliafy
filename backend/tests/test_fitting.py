@@ -1,4 +1,5 @@
 import io
+import math
 
 import matplotlib
 
@@ -279,8 +280,10 @@ def test_fit_aft_models(dist_id):
     assert result["effect"] == "aft"
     assert result["ratio_label"] == "time ratio"
     assert any(c["name"] == "age" for c in result["coefficients"])
-    # exp(β) exposed as both the generic ratio and the legacy hazard_ratio key.
+    # The time ratio, what the life is multiplied by, is exp(-β) (SurPyval's
+    # β speeds the clock), as both the generic ratio and the legacy key.
     c0 = result["coefficients"][0]
+    assert c0["ratio"] == pytest.approx(math.exp(-c0["value"]))
     assert c0["ratio"] == pytest.approx(c0["hazard_ratio"])
     assert result["functions"] is not None  # calculator curves available
 

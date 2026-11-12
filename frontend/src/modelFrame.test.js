@@ -2,8 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  answerParts, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
-  intervalLevel, listN, nextTabIndex, oddUnits, ppSummary, resolveTab,
+  answerParts, baseLevels, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
+  intervalLevel, listN, nextTabIndex, oddUnits, ppSummary, ratioSign, resolveTab, termName,
 } from "./modelFrame.js";
 
 const labels = (tabs) => tabs.map((t) => t.label);
@@ -153,6 +153,7 @@ test("effects read as ratios with their intervals, and in words", () => {
   assert.match(effectText({ name: "load", ratio: 0.5, lo: 0.4, hi: 0.6 }, "time ratio"), /multiplies the life by 0.5/);
   // A category against its base level.
   assert.match(effectText({ name: "C(site)[T.B]", ratio: 2, lo: 1.2, hi: 3 }), /^site = B \(against the base level\)/);
+  assert.match(effectText({ name: "C(site)[T.B]", ratio: 2, lo: 1.2, hi: 3, base: "A" }), /^site = B \(against A, the base level\)/);
   // An additive model has no ratio.
   const add = forestRows({ kind: "regression", coefficients: [{ name: "x", value: 0.002, ci: [0.001, 0.003] }] });
   assert.equal(add[0].additive, true);
@@ -232,4 +233,47 @@ test("the model list's n: none for a model made from parameters, data plus prior
   assert.equal(listN({ n: 1, method: "bayesian_update" }).text, "1 + prior");
   assert.equal(listN({ n: 1200 }).text, "1,200");
   assert.equal(listN({ n: 1200 }).title, undefined);
+});
+
+// SurPyval's AFT coefficient accelerates the clock: a positive β (dust)
+// shortens the life. Numbers from a Weibull AFT fit to 300 conveyor idlers
+// (dusty β = 0.4388; site North β = -0.2807 against East).
+const aft = {
+  kind: "regression", effect: "aft", ratio_label: "time ratio", ci_level: 0.9,
+  coefficients: [
+    { name: "dusty", value: 0.4388, ci: [0.3, 0.58], ratio: Math.exp(0.4388) },
+    { name: "site[T.North]", value: -0.2807, ci: [-0.44, -0.12] },
+  ],
+  functions: { covariates: [{ name: "dusty", type: "number" }, { name: "site", type: "category", options: ["East", "North"] }] },
+};
+
+test("an AFT time ratio is what the life is multiplied by: dust shortens it", () => {
+  const [dusty, north] = forestRows(aft);
+  // The stored exp(β) of a model saved before is ignored: worked out from β.
+  assert.ok(Math.abs(dusty.ratio - Math.exp(-0.4388)) < 1e-12);
+  assert.ok(dusty.ratio < 1 && dusty.lo < dusty.hi && dusty.hi < 1);
+  assert.ok(Math.abs(dusty.lo - Math.exp(-0.58)) < 1e-12);
+  assert.equal(effectText(dusty, "time ratio"),
+    "Each +1 in dusty multiplies the life by 0.645 (90% 0.56 to 0.741): it ages 1.55× as fast.");
+  assert.ok(north.ratio > 1);
+  assert.match(effectText(north, "time ratio"),
+    /^site = North \(against East, the base level\) multiplies the life by 1\.32 .*: it ages 1\.32× more slowly\.$/);
+  assert.equal(north.label, "site = North vs East");
+});
+
+test("a PO odds ratio is on the odds of having failed; a hazard ratio keeps its sign", () => {
+  const po = forestRows({ kind: "regression", effect: "odds", ratio_label: "odds ratio",
+    coefficients: [{ name: "dusty", value: -1.26, ci: [-1.6, -0.9] }] });
+  assert.ok(po[0].ratio > 1);
+  assert.match(effectText(po[0], "odds ratio"), /multiplies the odds of having failed by 3\.53/);
+  assert.equal(ratioSign({ effect: "hazard", ratio_label: "hazard ratio" }), 1);
+  // A result saved with only its label.
+  assert.equal(ratioSign({ ratio_label: "time ratio" }), -1);
+});
+
+test("a category's base level is named, from the payload or the calculator's levels", () => {
+  assert.deepEqual(baseLevels(aft), { site: "East" });
+  assert.deepEqual(baseLevels({ base_levels: { site: "Mine" } }), { site: "Mine" });
+  assert.deepEqual(termName("C(site)[T.B]"), { label: "site = B", categorical: true, variable: "site", level: "B" });
+  assert.equal(termName("`belt site`[T.B]").variable, "belt site");
 });

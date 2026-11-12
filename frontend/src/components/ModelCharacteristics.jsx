@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import RegressionLife from "./RegressionLife.jsx";
 import { useTvcEvaluation } from "./TvcResult.jsx";
+import { AUTO_BOUND } from "../levels.js";
 import { lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
@@ -334,11 +335,17 @@ function RegressionCharacteristics({ result, level, onLevel, calc, onCalc }) {
 // Covariates that change over time: the B-lives and mean along the
 // calculator's schedule.
 function TvcCharacteristics({ result, tvc, onCalc }) {
-  const { res, error, body } = useTvcEvaluation(result, tvc || {}, { on: "sf" });
+  // Each B-life with its 90% one-sided lower bound, whatever bound the
+  // Calculator shows (where the model has bounds along a schedule).
+  const { res, error, body } = useTvcEvaluation(result, { ...(tvc || {}), bound: AUTO_BOUND, level: 90 }, {
+    on: "sf", bound: "lower", reliability: B_LABELS.map(([, p]) => 1 - p),
+  });
   const unit = result.unit ? unitInText(result.unit) : "";
   const curves = res?.curves;
-  const rows = B_LABELS.map(([label, p]) => ({
-    label, p, value: curves ? timeAtValue(curves.x, curves.sf, 1 - p) : null, lower: null,
+  const lives = res?.life || [];
+  const rows = B_LABELS.map(([label, p], i) => ({
+    label, p, value: lives[i]?.time ?? (curves ? timeAtValue(curves.x, curves.sf, 1 - p) : null),
+    lower: lives[i]?.lower ?? null,
   }));
   const u = unit ? ` ${unit}` : "";
   const sched = body?.schedule || [];

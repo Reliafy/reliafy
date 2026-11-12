@@ -203,7 +203,7 @@ function strongestEffect(result) {
   const top = rows.reduce((a, b) => (Math.abs(Math.log(b.ratio)) > Math.abs(Math.log(a.ratio)) ? b : a));
   const per = top.unit ? ` per ${top.unit}` : "";
   const ci = top.lo != null && top.hi != null ? ` (${range(top.lo, top.hi)})` : "";
-  return `${top.name}: ${result.ratio_label || "ratio"} ${formatNumber(top.ratio)}${per}${ci}`;
+  return `${top.label || top.name}: ${result.ratio_label || "ratio"} ${formatNumber(top.ratio)}${per}${ci}`;
 }
 
 // The three or four numbers that answer "what does this model say?", as
@@ -285,18 +285,54 @@ export function answerParts(result, { split = null, saved = null } = {}) {
 const RATIO_VERB = {
   "hazard ratio": "the failure rate",
   "time ratio": "the life",
-  "odds ratio": "the odds of failing",
+  "odds ratio": "the odds of having failed",
 };
 
-// "C(site)[T.B]" → "site B (against the first site)"; anything else as given.
-function termName(name) {
-  const m = /^(?:C\()?([^()[\]]+)\)?\[T\.([^\]]+)\]$/.exec(String(name));
-  return m ? { label: `${m[1]} = ${m[2]}`, categorical: true, base: m[1] } : { label: String(name) };
+// SurPyval's coefficient β accelerates the clock in an AFT model (the item
+// ages exp(β) times as fast, so its life is multiplied by exp(-β)) and
+// multiplies the odds of surviving in a PO model. The ratio shown reads the
+// way its words do: a time ratio is what the life is multiplied by, an odds
+// ratio what the odds of having failed are multiplied by. Both are exp(-β);
+// a hazard ratio is exp(β). Worked out from the coefficient, so a model saved
+// before this read the same way.
+export function ratioSign(result) {
+  const r = result || {};
+  if (r.effect === "aft" || r.effect === "odds") return -1;
+  if (!r.effect && (r.ratio_label === "time ratio" || r.ratio_label === "odds ratio")) return -1;
+  return 1;
+}
+
+// "C(site)[T.B]" → { label: "site = B", variable: "site", level: "B" };
+// anything else as given.
+export function termName(name) {
+  const m = /^(?:C\(\s*)?`?([^()[\],`]+?)`?\s*(?:,[^)]*)?\)?\[T\.([^\]]+)\]$/.exec(String(name));
+  return m ? { label: `${m[1]} = ${m[2]}`, categorical: true, variable: m[1], level: m[2] } : { label: String(name) };
+}
+
+// The base level each categorical covariate is compared with: the payload's
+// ``base_levels``, else the one level of the calculator's field with no term
+// of its own (a model saved before the payload named it).
+export function baseLevels(result) {
+  const r = result || {};
+  if (r.base_levels && Object.keys(r.base_levels).length) return r.base_levels;
+  const seen = {};
+  (r.coefficients || []).forEach((c) => {
+    const t = termName(c.name);
+    if (t.categorical) (seen[t.variable] ||= new Set()).add(t.level);
+  });
+  const out = {};
+  const fields = r.tvc?.covariates || r.functions?.covariates || [];
+  fields.forEach((f) => {
+    if (f.type !== "category" || !seen[f.name]) return;
+    const rest = (f.options || []).map(String).filter((o) => !seen[f.name].has(o));
+    if (rest.length === 1) out[f.name] = rest[0];
+  });
+  return out;
 }
 
 // Every covariate's effect as a ratio with its interval (90%; ``level`` says
-// it): [{ name, ratio, lo, hi, unit, p, level }]; for an additive model (no ratio) the
-// coefficient itself, with ``additive``.
+// it): [{ name, label, ratio, lo, hi, unit, p, level, base }]; for an additive
+// model (no ratio) the coefficient itself, with ``additive``.
 export function forestRows(result) {
   const r = result || {};
   const level = ciPct(r);
@@ -307,26 +343,35 @@ export function forestRows(result) {
     }));
   }
   const table = Object.fromEntries((r.coef_table || []).filter((t) => t.part === "coefficients").map((t) => [t.name, t]));
+  const bases = baseLevels(r);
+  const sign = ratioSign(r);
   return (r.coefficients || []).map((c) => {
     const ci = c.ci || table[c.name]?.ci || null;
     const p = table[c.name]?.p ?? null;
     const unit = c.covariate_unit || r.covariate_units?.[c.name] || "";
+    const term = termName(c.name);
+    const base = term.categorical ? bases[term.variable] ?? null : null;
+    const label = term.categorical ? `${term.label}${base != null ? ` vs ${base}` : ""}` : c.name;
     if (!r.ratio_label) {
-      return { name: c.name, value: c.value, lo: ci?.[0] ?? null, hi: ci?.[1] ?? null, unit, p, additive: true, level };
+      return { name: c.name, label, value: c.value, lo: ci?.[0] ?? null, hi: ci?.[1] ?? null, unit, p, additive: true, level, base };
     }
-    const exp = (v) => (v == null ? null : Math.exp(v));
-    return { name: c.name, ratio: c.ratio ?? exp(c.value), lo: exp(ci?.[0]), hi: exp(ci?.[1]), unit, p, level };
+    const exp = (v) => (v == null ? null : Math.exp(sign * v));
+    const ends = ci && ci[0] != null && ci[1] != null ? [exp(ci[0]), exp(ci[1])].sort((a, b) => a - b) : [null, null];
+    const ratio = c.value != null ? exp(c.value) : c.ratio;
+    return { name: c.name, label, ratio, lo: ends[0], hi: ends[1], unit, p, level, base };
   });
 }
 
 // One effect in words: "Each +1 °C in temp_C multiplies the failure rate by
 // 1.15 (90% 1.10 to 1.20)." For a small effect per unit it also gives a step
-// of 10 ("+10: ×4.0"), so it reads at a size people think in.
+// of 10 ("+10: ×4.0"), so it reads at a size people think in. A time ratio
+// also says how much faster the item ages; a category names its base level.
 export function effectText(row, ratioLabel = "hazard ratio") {
   if (row.text) return row.text;
   const name = termName(row.name);
   const unit = row.unit ? ` ${row.unit}` : "";
-  const subject = name.categorical ? `${name.label}` : `Each +1${unit} in ${name.label}`;
+  const against = row.base != null ? `against ${row.base}, the base level` : "against the base level";
+  const subject = name.categorical ? `${name.label} (${against})` : `Each +1${unit} in ${name.label}`;
   const lv = row.level || LEVEL_TEXT;
   if (row.additive) {
     const ci = row.lo != null ? ` (${lv} ${formatNumber(row.lo)} to ${formatNumber(row.hi)})` : "";
@@ -334,11 +379,12 @@ export function effectText(row, ratioLabel = "hazard ratio") {
   }
   const verb = RATIO_VERB[ratioLabel] || "the rate";
   const r = row.ratio;
-  let text = name.categorical
-    ? `${subject} (against the base level) multiplies ${verb} by ${formatNumber(r)}`
-    : `${subject} multiplies ${verb} by ${formatNumber(r)}`;
+  let text = `${subject} multiplies ${verb} by ${formatNumber(r)}`;
   if (row.lo != null && row.hi != null) {
     text += ` (${lv} ${formatNumber(row.lo)} to ${formatNumber(row.hi)})`;
+  }
+  if (ratioLabel === "time ratio" && r > 0 && r !== 1) {
+    text += r < 1 ? `: it ages ${formatNumber(1 / r)}× as fast` : `: it ages ${formatNumber(r)}× more slowly`;
   }
   if (!name.categorical && r > 0.95 && r < 1.05 && r !== 1) {
     text += `; +10${unit} multiplies it by ${formatNumber(r ** 10)}`;

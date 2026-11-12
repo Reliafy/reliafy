@@ -39,7 +39,8 @@ Covariates stretch or compress the time axis, as though the clock runs faster.
 t(z) = t₀ · exp(−β·z)
 ```
 
-`exp(β)` is a **time ratio**. This is the natural frame for stress: doubling the
+`exp(−β)` is the **time ratio**: what the life is multiplied by (below 1, a
+shorter life); the item ages `exp(β)` times as fast. This is the natural frame for stress: doubling the
 load doesn't just raise the instantaneous risk, it makes everything happen
 sooner. It's also the model underneath accelerated life testing and
 load-sharing.
@@ -49,10 +50,11 @@ load-sharing.
 Covariates multiply the *odds* of failure rather than the hazard.
 
 ```
-F(t|z)/R(t|z) = exp(β·z) · F₀(t)/R₀(t)
+F(t|z)/R(t|z) = exp(−β·z) · F₀(t)/R₀(t)
 ```
 
-`exp(β)` is an **odds ratio**. Useful when effects appear to converge over time
+`exp(−β)` is the **odds ratio**: what the odds of having failed by any age are
+multiplied by (above 1, more failures). Useful when effects appear to converge over time
 — proportional odds allows hazard ratios that shrink toward 1 with age, which
 proportional hazards cannot.
 
@@ -240,7 +242,7 @@ delayed entry allowed.
 
 **Semi-parametric AFT** (Buckley and James): covariates scale log time, with
 the error distribution left unspecified — the time-scale analogue of `cox_ph`.
-`exp(β)` is a **time ratio**.
+`exp(−β)` is the **time ratio**, what the life is multiplied by.
 
 It has no standard errors in closed form, so the 90% intervals come from 200
 bootstrap resamples (with a fixed seed, so they never change). No likelihood, so

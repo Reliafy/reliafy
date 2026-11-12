@@ -126,6 +126,32 @@ export function riskText(p) {
   return formatPercent(v);
 }
 
+// A chance's 90% one-sided upper bound in a cell: "≤ 80%" (blank without one).
+export function riskUpperText(p) {
+  if (p == null || !Number.isFinite(Number(p))) return "";
+  return Number(p) >= 0.999 ? "≤ 100%" : `≤ ${riskText(p)}`;
+}
+
+// A median life left's 90% lower bound in a cell: "≥ 6.6 days" (blank without one).
+export function medianLowerText(row, unit = "") {
+  if (!row || row.median_lower == null || row.median_reached === false || row.median_remaining == null) return "";
+  return `≥ ${lifeLeftNumber(row.median_lower)}${unit ? ` ${unit.toLowerCase()}` : ""}`;
+}
+
+// What the risk table says about its bounds: the level when rows carry them,
+// else why there are none. ``rows``: the table's rows with a risk.
+export function riskBoundNote(rows, level = 0.9) {
+  const scored = (rows || []).filter((r) => r.risk);
+  if (!scored.length) return "";
+  const pct = `${Math.round(level * 100)}%`;
+  if (scored.some((r) => r.risk_upper)) {
+    return `Under each chance, its ${pct} upper bound (we're ${pct} sure the chance is at most that); `
+      + `under each median life left, its ${pct} lower bound.`;
+  }
+  return `No ${pct} bounds on these chances: this model was saved before they were worked out. `
+    + "Fit a new model from the same data to see them.";
+}
+
 // The column a risk table is sorted by: the middle horizon where there is
 // one, else the first.
 export const sortColumn = (labels) => ((labels || []).length > 1 ? 1 : 0);

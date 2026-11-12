@@ -297,3 +297,47 @@ export function slugify(text) {
 export function chartFileName(title, format = "png") {
   return `${slugify(title)}.${format}`;
 }
+
+// Ticks for a log axis over [lo, hi] (values, not logs), labelled in full:
+// "0.4, 0.6, 1, 2" rather than Plotly's own "4, 6, 1, 2" between decades,
+// which read 0.4 as 4. Up to about nine labels: 1, 1.2, 1.5, 2 … 9 where the
+// range is short, thinning to 1–9, 1-2-5, 1-3 and powers of ten as it widens;
+// a very short range gets evenly spaced ticks. { tickvals, ticktext }, or null.
+const MANTISSAS = [
+  [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 9], [1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 2, 3, 5, 7], [1, 2, 5], [1, 3], [1],
+];
+export function logTickText(v) {
+  const r = Number(Number(v).toPrecision(3));
+  return r.toLocaleString("en-US", { maximumFractionDigits: 12 });
+}
+export function logTicks(lo, hi, max = 9) {
+  if (!(lo > 0 && hi > lo && Number.isFinite(lo) && Number.isFinite(hi))) return null;
+  const k0 = Math.floor(Math.log10(lo));
+  const k1 = Math.ceil(Math.log10(hi));
+  const within = (set) => {
+    const out = [];
+    for (let k = k0; k <= k1; k++) {
+      for (const m of set) {
+        const v = Number((m * 10 ** k).toPrecision(12));
+        if (v >= lo && v <= hi) out.push(v);
+      }
+    }
+    return out;
+  };
+  let vals = null;
+  for (const set of MANTISSAS) {
+    const v = within(set);
+    if (v.length <= max) { vals = v; break; }
+  }
+  if (!vals || vals.length < 3) {
+    // A short range (0.95 to 1.08): evenly spaced, at a round step.
+    const raw = (hi - lo) / 4;
+    const p = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) || 10 * p;
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(Number(v.toPrecision(12)));
+    if (out.length >= (vals?.length || 0)) vals = out;
+  }
+  return { tickvals: vals, ticktext: vals.map(logTickText) };
+}

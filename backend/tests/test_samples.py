@@ -232,3 +232,22 @@ def test_instrument_air_samples_seed_once_and_validate(session):
     assert gate["type"] == "knode"
     assert (gate["data"]["n"], gate["data"]["k"]) == (1, 2)
     assert rbd_analysis.validate_graph(ops)["can_calculate"] is True
+
+
+def test_a_joint_sample_saved_before_the_risk_bounds_is_refitted(session):
+    from backend.services import samples
+
+    samples.seed_samples(session)
+    sid = samples.SAMPLE_JOINT_MODELS[0]["id"]
+    doc = session.models.find_one({"_id": sid})
+    rows = doc["results"]["risk"]
+    assert rows and all(r.get("risk_upper") for r in rows)
+    # As it was saved before: no bounds in the risk table.
+    old = [{k: v for k, v in r.items() if k != "risk_upper"} for r in rows]
+    session.models.update_one({"_id": sid}, {"$set": {"results.risk": old}})
+    assert samples._joint_sample_stale(session.models.find_one({"_id": sid}))
+    samples.seed_samples(session)
+    again = session.models.find_one({"_id": sid})
+    assert all(r.get("risk_upper") for r in again["results"]["risk"])
+    assert [r["risk"] for r in again["results"]["risk"]] == [r["risk"] for r in rows]
+    assert session.models.count_documents({"_id": sid}) == 1
