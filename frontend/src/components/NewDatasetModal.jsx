@@ -160,7 +160,7 @@ export default function NewDatasetModal({
   const readingCols = (up.cols?.columns || []).filter((c) => c !== splitCol);
   const reading = up.reading;
   const readingWait = reading ? readingWaiting(reading, up.facts, up.nRows)
-    : up.loading ? "Reading the columns…" : up.error ? "The columns couldn't be read." : null;
+    : up.error ? "The columns couldn't be read." : readingSource ? "Reading the columns…" : null;
   const readingBox = (readingSource || up.reading) && (
     <section className="ds-reading" aria-label="How the columns are read">
       <div className="ds-section-h">How the columns are read for modelling</div>

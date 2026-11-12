@@ -168,7 +168,9 @@ export function datasetReading(detail, cols) {
     return { reading: { ...emptyReading(), ...detail.reading }, source: "guessed", from: null };
   }
   const start = startingMapping(detail.last_mapping, columns, facts, cols.n_rows);
-  const reading = complete(start.mapping, start.unit, columns, facts, cols.n_rows);
+  // Kept from its newest model, else the first guess (start and stop rows included).
+  const reading = start.from ? complete(start.mapping, start.unit, columns, facts, cols.n_rows)
+    : guessReading(columns, facts, cols.n_rows);
   // As fits read it before readings: no status column is every row failed.
   if (!reading.c && !reading.xl && !reading.m) reading.all_failed = true;
   // The measurements part's own reading (the server's, kept or guessed) rides along.
