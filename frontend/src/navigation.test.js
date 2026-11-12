@@ -26,6 +26,7 @@ const REACHED_FROM = {
   "/models/new": "Models › New model, Home's starts, a dataset's Fit menu",
   "/models/recurrent/new": "Models › Repairable › New model",
   "/models/alt/new": "Models › Accelerated life › New model",
+  "/models/degradation/new": "Models › Degradation › New model, a dataset's Fit menu, Time to the limit",
   "/models/joint/new": "Models › Condition and life › New model",
   "/maintainability/new": "Maintainability prediction › New prediction",
   "/systems/b": "RBDs › New diagram, Home's starts",

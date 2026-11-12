@@ -52,6 +52,7 @@ test("pages outside the menu are named", () => {
   assert.equal(titleFor("/api-docs/cli"), "Command line · API docs · Reliafy");
   assert.equal(titleFor("/models/new"), "New model · Non-repairable · Models · Reliafy");
   assert.equal(titleFor("/models/alt/new"), "New model · Accelerated life · Models · Reliafy");
+  assert.equal(titleFor("/models/degradation/new"), "New model · Degradation · Models · Reliafy");
   assert.deepEqual(titleParts("/nowhere"), []);
 });
 

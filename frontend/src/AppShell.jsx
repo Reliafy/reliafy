@@ -29,6 +29,7 @@ const LibrarySource = lazy(() => import("./views/LibraryPages.jsx").then((m) => 
 const LibraryRecord = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryRecord })));
 const LibraryComponent = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryComponent })));
 const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
+const DegradationNewPage = lazy(() => import("./views/DegradationNewPage.jsx"));
 const AltModelPage = lazy(() => import("./views/AltModelPage.jsx"));
 const RbdHome = lazy(() => import("./views/RbdHome.jsx"));
 const RbdBuilder = lazy(() => import("./views/RbdBuilder.jsx"));
@@ -274,6 +275,7 @@ function Shell() {
             <Route path="/models/new" element={<NewModelPage />} />
             <Route path="/models/m/:id" element={<ModelPage />} />
             <Route path="/models/degradation" element={<DegradationHome />} />
+            <Route path="/models/degradation/new" element={<DegradationNewPage />} />
             <Route path="/models/degradation/:id" element={<DegradationModelPage />} />
             <Route path="/models/recurrent" element={<RecurrentHome />} />
             <Route path="/models/recurrent/new" element={<RecurrentNewPage />} />
