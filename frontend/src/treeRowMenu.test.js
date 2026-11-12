@@ -29,16 +29,16 @@ const opts = (mode, extra = {}) => ({ mode, kidsOf: (k) => liveKids(DATA.positio
 test("a position's menu: new inside, add failure report, rename, move, delete; Pin goes before Delete", () => {
   const d = buildDisplay(DATA, "positions");
   const skim = summaryActions(d.rows.get("skim"), opts("positions"));
-  assert.deepEqual(ids(skim), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-delete"]);
-  assert.deepEqual(skim.map((i) => i.label), ["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Delete…"]);
+  assert.deepEqual(ids(skim), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "tree-delete"]);
+  assert.deepEqual(skim.map((i) => i.label), ["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Export this branch…", "Delete…"]);
   assert.ok(skim.every((i) => !i.disabled));
   assert.equal(skim.at(-1).danger, true);
   assert.deepEqual(ids(withPin(skim, [{ id: "pin", label: "Pin this branch" }])),
-    ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "pin", "tree-delete"]);
+    ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "pin", "tree-delete"]);
   assert.deepEqual(ids(withPin([{ id: "tree-rename" }], [{ id: "pin" }])), ["tree-rename", "pin"]);
   // Locations: a position's place there is where it is, so no Move.
   assert.deepEqual(ids(summaryActions({ key: "skim", type: "pos", ref: DATA.positions[4], kids: [] }, opts("locations"))),
-    ["tree-new", "report-new", "event-log", "tree-rename", "tree-delete"]);
+    ["tree-new", "report-new", "event-log", "tree-rename", "tree-export", "tree-delete"]);
 });
 
 test("Delete is never greyed for what's inside: a delete takes it all (and Undo brings it back)", () => {
@@ -60,7 +60,9 @@ test("a team that's view only: every change greyed with the reason; Pin still wo
   assert.match(viewOnlyReason({ can_edit: false }), /needs a Pro plan/);
   const d = buildDisplay(DATA, "positions");
   const items = summaryActions(d.rows.get("skim"), opts("positions", { viewOnly: "View only: editing this team needs a Pro plan." }));
-  assert.ok(items.every((i) => i.disabled && /View only/.test(i.reason)));
+  // Every change greyed; Export this branch… only reads, so it stays.
+  assert.ok(items.filter((i) => i.id !== "tree-export").every((i) => i.disabled && /View only/.test(i.reason)));
+  assert.equal(items.find((i) => i.id === "tree-export").disabled, undefined);
   const withPinned = withPin(items, [{ id: "pin", label: "Pin this branch" }]);
   assert.equal(withPinned.find((i) => i.id === "pin").disabled, undefined);
 });
@@ -100,7 +102,7 @@ test("Isolate: a submenu of levels; just Isolate on a row with nothing inside; n
   assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: false }), []);
   // Before Delete, with Pin this branch after it.
   const skim = summaryActions({ key: "a", type: "pos", kids: ["b"], ref: {} }, { mode: "positions" });
-  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "isolate", "pin", "tree-delete"]);
+  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate", "pin", "tree-delete"]);
 });
 
 test("Add failure report…: positions only (a report sits at a position), greyed when the team is view only", () => {
@@ -131,10 +133,10 @@ test("New position inside is first on the Summary tab only: another tab's adds c
   const pin = [{ id: "isolate:1", label: "Focus" }, { id: "pin", label: "Pin this branch" }];
   // Summary: unchanged (the changes to the tree, Focus and Pin before Delete…).
   assert.equal(skim[0].id, "tree-new");
-  assert.deepEqual(ids(tabMenu("summary", skim, { pin })), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "isolate:1", "pin", "tree-delete"]);
+  assert.deepEqual(ids(tabMenu("summary", skim, { pin })), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate:1", "pin", "tree-delete"]);
   // Failure reports: Add failure report… first, a line, then the rest as they were (New position inside kept).
   const reports = tabMenu("reports", skim);
-  assert.deepEqual(ids(reports), ["report-new", undefined, "tree-new", "event-log", "tree-rename", "tree-move", "tree-delete"]);
+  assert.deepEqual(ids(reports), ["report-new", undefined, "tree-new", "event-log", "tree-rename", "tree-move", "tree-export", "tree-delete"]);
   assert.equal(reports[1].separator, true);
   assert.deepEqual(TAB_LEADS.reports, ["report-new"]);
   // Measurements: its four adds, a line, then the Summary menu.
@@ -153,7 +155,7 @@ test("the LSA tab: Package the tasks here… leads a position's and a place's me
   assert.deepEqual(lead, [{ id: "lsa-package", label: "Package the tasks here…" }]);
   const menu = tabMenu("lsa", summaryActions(row, opts("positions")), { lead, pin });
   assert.deepEqual(menu.map((i) => i.label || "---"), [
-    "Package the tasks here…", "---", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…",
+    "Package the tasks here…", "---", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Export this branch…", "Focus", "Pin this branch", "Delete…",
   ]);
   // A place has packages too.
   const shed = buildDisplay(DATA, "locations").rows.get("shed");
@@ -187,7 +189,7 @@ test("a tab with nothing of its own for a row: the changes to the tree go last, 
   // Any other plain-tree tab (Parts and stock, Classes, when they're switched on): the same rule.
   assert.deepEqual(labels(tabMenu("parts", shed, { pin })), ["Focus", "Pin this branch", "---", "New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
   assert.deepEqual(labels(tabMenu("classes", summaryActions(d.rows.get("skim"), opts("positions")), { pin })),
-    ["Add failure report…", "Log an event…", "Focus", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
+    ["Add failure report…", "Log an event…", "Export this branch…", "Focus", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
   // No line with nothing on one side of it; an item's Rename… goes last as well.
   assert.deepEqual(labels(tabMenu("reports", shed)), ["New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
   assert.deepEqual(labels(tabMenu("reports", summaryActions(ITEM_ROW, opts("locations")), { pin })), ["Focus", "Pin this branch", "---", "Rename…"]);

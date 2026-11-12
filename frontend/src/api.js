@@ -3152,6 +3152,22 @@ export function importMaintenanceSheet(file, dryRun) {
   return request("/api/maintenance/import", { method: "POST", body: form });
 }
 
+// The asset tree in a spreadsheet (backend/maintenance/hierarchy.py): the whole tree or one
+// branch (positionId) as an Excel workbook or a CSV, and the same file back (a dry run unless
+// dryRun is false; with any problem nothing is written).
+export function downloadTreeSheet({ positionId = null, format = "xlsx" } = {}) {
+  const q = new URLSearchParams({ format });
+  if (positionId) q.set("position_id", positionId);
+  return downloadFile(`/api/maintenance/hierarchy/export?${q}`, `Asset tree.${format}`);
+}
+
+export function importTreeSheet(file, dryRun = true) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dry_run", dryRun ? "true" : "false");
+  return request("/api/maintenance/hierarchy/import", { method: "POST", body: form });
+}
+
 export function getClassEconomics(positionClass, { interval, unit, horizonYears, discountRate } = {}) {
   const q = new URLSearchParams({ position_class: positionClass });
   if (interval) q.set("interval", interval);

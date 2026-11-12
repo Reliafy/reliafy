@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+Needs a server on the release that has it.
+
+- **The asset tree as a sheet** (Reliafy Maintenance): `reliafy maintenance
+  list.tree` (`position_id` for a branch, `format csv`) gives one row per
+  position with its path, tag, class, location and fitted item; `reliafy
+  maintenance workspace.import_history` with `sheet tree` takes the same rows
+  back (a dry run by default; matched by ID, else Path; nothing deleted).
+
 ## 0.6.0 (13 Nov 2026)
 
 Needs a server on this release.
