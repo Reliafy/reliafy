@@ -1,9 +1,13 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import { ErrorNotice } from "./StorageCap.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
-import { SPREADSHEET_ACCEPT, isSpreadsheetFile, pasteDataset, uploadDataset } from "../api.js";
+import {
+  SPREADSHEET_ACCEPT, excelToCsvFile, isSpreadsheetFile, pasteDataset, uploadDataset, uploadSplitDatasets,
+} from "../api.js";
+import { useDatasetSplit } from "./DatasetSplit.jsx";
+import { sourceStem } from "../datasetSplit.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import DatasetPartInput, { EMPTY_PART, PART_WORDS, partHasData, submitPart } from "./DatasetPartInput.jsx";
 import { fileStem, firstRowIsData, parsePreview } from "../datasetGuess.js";
@@ -53,8 +57,12 @@ function ListField({ f, v, onChange, disabled, placeholder, broadcast, bad }) {
 
 // ``withMeasurements``: also offer the dataset's measurements (readings on
 // the same units), added to the dataset right after it is created. ``open``
-// starts with that section open (the condition and life page).
-export default function NewDatasetModal({ onClose, onCreated, withMeasurements = true, measurementsOpen = false }) {
+// starts with that section open (the condition and life page). ``onSplit``:
+// offer "Split into datasets by" for an uploaded file (the Data section), and
+// call it once the datasets are saved (the modal then lists them).
+export default function NewDatasetModal({
+  onClose, onCreated, onSplit = null, withMeasurements = true, measurementsOpen = false,
+}) {
   // Opens on the dropzone; "paste or type" switches to entering data.
   const [step, setStep] = useState("upload"); // upload | enter
   const [enterMode, setEnterMode] = useState("paste"); // paste | form
@@ -87,6 +95,18 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
   // text for the preview; an Excel workbook its chosen sheet (the sheet picker
   // already showed its rows).
   const [picked, setPicked] = useState(null); // { file, text?, excel? }
+  // An Excel sheet as CSV, for the split's preview and save: { file, text }
+  // (read only when the split is offered; the plain upload sends the workbook).
+  const [sheetCsv, setSheetCsv] = useState(null);
+  useEffect(() => {
+    setSheetCsv(null);
+    if (!onSplit || !picked?.excel) return undefined;
+    let live = true;
+    excelToCsvFile(picked.file, picked.excel.sheet, picked.excel.headerRow)
+      .then(async (file) => { const text = await file.text(); if (live) setSheetCsv({ file, text }); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [picked, onSplit]);
   // paste
   const [text, setText] = useState("");
 
@@ -100,6 +120,21 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
     [picked, noHeader]
   );
   const preview = useMemo(() => parsePreview(text, { noHeader }), [text, noHeader]);
+
+  // "Split into datasets by": an uploaded file only (DatasetSplit.jsx).
+  const split = useDatasetSplit({
+    enabled: !!onSplit && step === "upload" && !!picked,
+    text: picked?.excel ? sheetCsv?.text ?? null : picked?.text ?? null,
+    noHeader: picked?.excel ? false : noHeader,
+    source: sourceStem(picked?.file?.name),
+  });
+  const onSaveSplit = () => split.save(async (column) => {
+    const out = picked.excel
+      ? await uploadSplitDatasets(sheetCsv.file, sourceStem(picked.file.name), column, false)
+      : await uploadSplitDatasets(picked.file, sourceStem(picked.file.name), column, noHeader);
+    onSplit?.(out);
+    return out;
+  });
 
   // form — one comma-separated value list per field
   const [vals, setVals] = useState({});
@@ -198,7 +233,14 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
   const enter = step === "enter";
   const valid = enter ? (enterMode === "paste" ? pasteValid : formValid) : !!picked;
   const run = enter ? (enterMode === "paste" ? onPaste : onForm) : onUpload;
-  const footer = created ? (
+  const footer = split.saved ? (
+    <button className="ds-foot-primary" onClick={onClose}>Done</button>
+  ) : split.active ? (
+    <>
+      {split.waitingFor && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{split.waitingFor}</span>}
+      <button className="ds-foot-primary" onClick={onSaveSplit} disabled={!split.canSave}>{split.saveLabel}</button>
+    </>
+  ) : created ? (
     <button className="ds-foot-primary" onClick={() => onCreated(created.ds, created.typedName)}>Open the dataset</button>
   ) : (
     <>
@@ -241,8 +283,9 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
   );
 
   return (
-    <Modal title="New dataset" className="ds-new" onClose={onClose} locked={busy} footer={footer}>
-      {step === "upload" && (
+    <Modal title="New dataset" className="ds-new" onClose={onClose} locked={busy || split.saving} footer={footer}>
+      {split.saved && <div className="fit-step">{split.savedList}</div>}
+      {step === "upload" && !split.saved && (
         <div className="fit-step">
           {!picked ? (
             <>
@@ -279,18 +322,23 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
                   </span>
                 )}
                 {picked.excel?.sheet && <span className="muted">Sheet “{picked.excel.sheet}”</span>}
-                <button className="link" onClick={() => { setPicked(null); setHeaderChoice(null); setError(null); }} disabled={busy}>
+                <button className="link" onClick={() => { setPicked(null); setHeaderChoice(null); setError(null); }}
+                        disabled={busy || split.saving}>
                   Choose another file
                 </button>
               </div>
-              <label className="login-field">
-                <span>Dataset name</span>
-                <input type="text" value={name} placeholder="e.g. Pump bearing lives"
-                       onChange={(e) => setName(e.target.value)} />
-              </label>
+              {!split.active && (
+                <label className="login-field">
+                  <span>Dataset name</span>
+                  <input type="text" value={name} placeholder="e.g. Pump bearing lives"
+                         onChange={(e) => setName(e.target.value)} />
+                </label>
+              )}
               {filePreview && <PreviewTable columns={filePreview.columns} rows={filePreview.preview} />}
               {picked.text != null && noHeaderBox(false)}
-              {measurementsBox}
+              {split.picker}
+              {split.summary}
+              {!split.active && measurementsBox}
             </>
           )}
           <input ref={fileRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden

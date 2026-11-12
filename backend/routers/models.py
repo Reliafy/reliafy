@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
@@ -153,25 +152,6 @@ def _last_mapping(models: list, columns: list) -> dict | None:
     return None
 
 
-def _split_reading(dataset, kind: str) -> dict | None:
-    """The column reading a dataset was split from a sheet with (``Dataset.reading``),
-    in ``last_mapping``'s shape, when it is for ``kind`` and its columns are all
-    still there; ``split_from`` names the sheet."""
-    reading = dataset.reading or {}
-    if reading.get("kind") != kind:
-        return None
-    names = {c.get("name") if isinstance(c, dict) else str(c) for c in dataset.columns or []}
-    raw = reading.get("mapping") or {}
-    mapping = {k: v for k, v in raw.items() if isinstance(v, str) and v}
-    z = [str(c) for c in (raw.get("z") or []) if c] if isinstance(raw.get("z"), list) else []
-    if not mapping or not (set(mapping.values()) | set(z)) <= names:
-        return None
-    opts = reading.get("options") or {}
-    return {"mapping": {**mapping, **({"z": z} if z else {})}, "unit": reading.get("unit") or "",
-            "options": {k: opts[k] for k in ("c_map", "c_invert") if opts.get(k)},
-            "model_name": "", "split_from": reading.get("source") or ""}
-
-
 def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     # A public link shows the dataset, not the grantor's models fitted to it:
     # a direct share of the dataset doesn't show those either.
@@ -213,12 +193,10 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "blank_rows": preview.get("blank_rows", 0),
         "models": [_model_summary(m, ctx) for m in models],
         # How the newest model read the columns: a new fit from here starts there.
-        # Else, for a dataset split from a sheet with others, the reading it was split with.
-        "last_mapping": _last_mapping(models, dataset.columns) or _split_reading(dataset, "life"),
+        "last_mapping": _last_mapping(models, dataset.columns),
         # The same for a repairable fit: the newest repairable model's columns.
-        "last_recurrent_mapping": None if public else (recurrent_service.last_mapping(
-            session, dataset.id, ctx.read_owners, ctx.hidden, dataset.columns)
-            or _split_reading(dataset, "recurrent")),
+        "last_recurrent_mapping": None if public else recurrent_service.last_mapping(
+            session, dataset.id, ctx.read_owners, ctx.hidden, dataset.columns),
         "other_models": others,
         "profile": profile,
         # The measurements part (readings at ages), with its own preview and
@@ -295,15 +273,14 @@ def upload_dataset(
     sheet: str | None = Form(default=None),
     header_row: str | None = Form(default=None),
     dataset_col: str | None = Form(default=None),
-    reading: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Store an uploaded CSV as a standalone dataset (no fit required).
 
     ``dataset_col``: split the sheet by this column, one dataset per value,
-    each named by the value (see ``_split_upload``). ``reading`` (JSON, with
-    it): how the Data step read the columns, kept on each new dataset.
+    each named by the value (see ``_split_upload``). Datasets are stored as
+    their rows; the columns are read when fitting, so nothing else is kept.
 
     ``no_header``: true keeps the first row as data (columns ``col 1``,
     ``col 2``, …), false reads it as the column names; blank guesses, so a
@@ -322,7 +299,7 @@ def upload_dataset(
     contents, guess, hint = read
     if (dataset_col or "").strip():
         return _split_upload(session, ctx, contents, dataset_col, (name or "").strip()
-                             or datasets_service.default_name(file.filename), reading)
+                             or datasets_service.default_name(file.filename))
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:
@@ -377,8 +354,7 @@ def paste_dataset(
     return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
 
 
-def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source: str,
-                  reading: str | None) -> JSONResponse:
+def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source: str) -> JSONResponse:
     """One dataset per value of ``column`` (datasets_service.create_split),
     after checking the plan has room for every new one: past the cap nothing
     is saved and the refusal says how many fit. Answers ``{datasets: [{id,
@@ -396,18 +372,7 @@ def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source:
             return JSONResponse(status_code=402, content={
                 "detail": billing_service.cap_room_message(session, ctx.uid, "datasets", wanted),
                 "code": "cap", "upgrade": True})
-        kept = None
-        if reading:
-            try:
-                parsed = json.loads(reading)
-            except ValueError:
-                parsed = None
-            if isinstance(parsed, dict) and isinstance(parsed.get("mapping"), dict):
-                kept = {"kind": str(parsed.get("kind") or "life")[:20], "mapping": parsed["mapping"],
-                        "unit": str(parsed.get("unit") or "")[:40], "source": source[:200],
-                        "options": {k: parsed["options"][k] for k in ("c_map", "c_invert")
-                                    if isinstance(parsed.get("options"), dict) and k in parsed["options"]}}
-        made, blank = datasets_service.create_split(session, contents, column, ctx.write_owner, source, kept)
+        made, blank = datasets_service.create_split(session, contents, column, ctx.write_owner, source)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content={
