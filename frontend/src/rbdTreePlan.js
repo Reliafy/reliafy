@@ -17,6 +17,9 @@ export const TREE_SETTINGS = {
   test: ["offset", "coverage", "full_test"],
 };
 
+// A task's restoration and shutdown, in RePyability's shape (as rbd_tree_plan.merge).
+export const LIBRARY_KEYS = ["restoration", "replace_every", "replacement_cost", "shutdown", "older_than"];
+
 const blank = (v) => v == null || v === "";
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => !blank(v)));
 
@@ -39,6 +42,10 @@ export function mergeTreeData(data = {}, row) {
   const pm = { policy: plan.task, interval: plan.interval, operating_interval: plan.operating_interval };
   if (plan.task === "condition") Object.assign(pm, { inspection_cost: plan.inspection_cost }, own);
   else Object.assign(pm, { duration: plan.duration, cost: plan.cost }, own);
+  // What the library takes only once it supports it (the server puts these in the plan only then;
+  // until then the row's pending says so and it's calculated as new, on its own interval).
+  for (const k of LIBRARY_KEYS) if (plan[k] != null) pm[k] = plan[k];
+  if (plan.shutdown != null) for (const k of ["interval", "operating_interval", "duration", "opportunity"]) delete pm[k];
   out.preventive = pick(pm);
   if (plan.group) out.maintenance_group = plan.group;
   return out;

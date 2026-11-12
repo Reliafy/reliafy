@@ -66,6 +66,24 @@ export function initialForm(pkg) {
     trade: pkg?.trade || "",
     notes: pkg?.notes || "",
     rules: Object.fromEntries((pkg?.tasks || []).map((t) => [t.task_id, ruleOf(t)])),
+    // A shutdown (backend/maintenance/shutdowns.py): its visits take the position off-line.
+    shutdown: !!pkg?.shutdown,
+    shutHours: pkg?.shutdown?.duration_hours != null ? String(pkg.shutdown.duration_hours) : "",
+    shutCost: pkg?.shutdown?.cost != null ? String(pkg.shutdown.cost) : "",
+    shutIdle: pkg?.shutdown ? pkg.shutdown.idle_ageing !== false : true,
+  };
+}
+
+// The shutdown the form says (null: an ordinary package); its scope and dates are kept as they are.
+export function shutdownOf(pkg, form) {
+  if (!form.shutdown) return null;
+  const was = pkg?.shutdown || {};
+  return {
+    duration_hours: Number(form.shutHours),
+    ...(form.shutCost !== "" ? { cost: Number(form.shutCost) } : {}),
+    idle_ageing: !!form.shutIdle,
+    ...(was.scope ? { scope: was.scope.map((x) => x.id) } : {}),
+    ...(was.dates ? { dates: was.dates } : {}),
   };
 }
 
@@ -82,6 +100,12 @@ export function formProblem(form, pkg) {
   if (form.pattern === "day" && !whole(form.day, 1, 31)) return "The day of the month is 1 to 31.";
   if (!pkg?.parent && form.toleranceUnit === "days" && !whole(form.tolerance, 0, 366)) return "On time within is a whole number of days, 0 to 366.";
   if (!pkg?.parent && form.toleranceUnit === "hours" && !(Number(form.tolerance) >= 0)) return "On time within is a number of hours, 0 or more.";
+  if (form.shutdown) {
+    if (pkg?.parent) return "A layer visits on its top package's dates: make the top package the shutdown.";
+    if (!(Number(form.shutHours) > 0)) return "Say how long the shutdown takes the position off-line, in hours.";
+    if (form.shutCost !== "" && !(Number(form.shutCost) >= 0)) return "The shutdown's cost is 0 or more.";
+    if (form.timing !== "fixed" && !pkg?.shutdown?.dates) return "A shutdown is on set dates: choose Set dates.";
+  }
   for (const [id, r] of Object.entries(form.rules)) {
     if (r.rule === "nth" && !whole(r.nth, 2, 100)) {
       const t = (pkg?.tasks || []).find((x) => x.task_id === id);
@@ -137,6 +161,9 @@ export function editBody(pkg, form) {
     });
   }
   if (tasks.length) body.tasks = tasks;
+  const shut = shutdownOf(pkg, form);
+  const wasShut = pkg?.shutdown ? shutdownOf(pkg, start) : null;
+  if (JSON.stringify(shut) !== JSON.stringify(wasShut)) body.shutdown = shut;
   return body;
 }
 

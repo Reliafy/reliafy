@@ -72,6 +72,8 @@ from backend.maintenance.position_models import PositionModelOps
 from backend.maintenance.captures import PROJECTORS as _CAPTURE_PROJECTORS
 from backend.maintenance import task_costs as _task_costs
 from backend.maintenance.captures import CaptureOps
+from backend.maintenance import restoration as _restoration
+from backend.maintenance import shutdowns as _shutdowns
 
 logger = logging.getLogger(__name__)
 
@@ -2924,7 +2926,7 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
-                  CaptureOps):
+                  CaptureOps, _restoration.RestorationOps, _shutdowns.ShutdownOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -4748,6 +4750,48 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def decide_failure_mode(self, mode_id: str, consequence=..., decision=..., task_id=None, hidden=...,
                             strict=True) -> dict:
+        """A failure mode's RCM decision (:meth:`_decide_failure_mode`), with what its fixed-interval
+        task leaves the item as: decision.restoration, or a combination member's restoration
+        (restoration.py), checked before anything is written and set on the decision's task for
+        this mode (task.restoration_set with failure_mode_id)."""
+        wanted = self._decision_restorations(decision)
+        out = self._decide_failure_mode(mode_id, consequence, decision, task_id, hidden, strict)
+        if wanted:
+            fm = self._get(mode_id, "FailureMode")
+            fixed = ([o["task_id"] for o in fm.get("outcomes") or [] if o.get("outcome") == "fixed_interval"
+                      and o.get("task_id")]
+                     or ([fm["task_id"]] if fm.get("outcome") == "fixed_interval" and fm.get("task_id") else []))
+            for tid, value in zip(fixed, wanted):
+                if value is not ...:
+                    self.set_task_restoration(tid, value, failure_mode_id=mode_id)
+            out = self.rcm_mode(mode_id)
+        return out
+
+    def _decision_restorations(self, decision) -> list:
+        """What each fixed-interval task of a decision leaves the item as, in order (... where a
+        member says nothing), checked; [] when none is given."""
+        if not isinstance(decision, dict):
+            return []
+        members = decision.get("outcomes") if isinstance(decision.get("outcomes"), list) else None
+        given = ([m.get("restoration", ...) for m in members if isinstance(m, dict)
+                  and m.get("outcome") == "fixed_interval"] if members
+                 else [decision.get("restoration", ...)] if decision.get("outcome") == "fixed_interval" else [])
+        if members and "restoration" in decision and given and given[0] is ...:
+            given[0] = decision["restoration"]
+        if all(v is ... for v in given):
+            if "restoration" in decision or any(isinstance(m, dict) and "restoration" in m for m in members or []):
+                raise Invalid("restoration goes with a fixed-interval task (replace or restore at the interval).")
+            return []
+        for v in given:
+            if v is not ...:
+                try:
+                    _restoration.clean(v)
+                except _restoration.RestorationError as err:
+                    raise Invalid(str(err)) from None
+        return given
+
+    def _decide_failure_mode(self, mode_id: str, consequence=..., decision=..., task_id=None, hidden=...,
+                             strict=True) -> dict:
         """A failure mode's RCM decision: its two answers (hidden: is the failure
         hidden from the crew in normal operation; consequence: safety,
         environmental, operational or non_operational, for a hidden one what the
@@ -6421,6 +6465,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         }
         # What it costs each time it's done (typed on it, or from its LSA at trade rates).
         out["cost"] = self._task_cost(task, out["resources"])
+        # What it leaves the item as, how its interval is counted, its age limit at a shutdown
+        # (restoration.py): what the RBD plan reads.
+        out |= self._restoration_view(task, out["by_use"])
         if on_event and not open_wo:
             out["status"] = "Waiting for the event"
         if subject and subject["label"] == "Item":
@@ -10004,6 +10051,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                "task_count": len(live), "next_visit": None, "open_work_order": None,
                "season": pkg.get("season") and {**pkg["season"], "text": self._season_text(pkg["season"])},
                "in_season": self._in_season(pkg, self.today()), "pause": None, "flags": []}
+        # A shutdown: its visits take the position (or a set inside it) off-line (shutdowns.py).
+        out["shutdown"] = self._shutdown_view(pkg)
         if status == "retired":
             return out
         pause = self._pause_now(pkg)
@@ -15192,6 +15241,11 @@ PROJECTORS.update(_POSITION_MODEL_PROJECTORS)
 PROJECTORS.update(_CAPTURE_PROJECTORS)
 # What a task costs each time (typed, or from its LSA at trade rates; Nov 2026, task_costs.py).
 PROJECTORS.update(_task_costs.PROJECTORS)
+# What a fixed-interval task leaves the item as (Kijima restoration, every Nth a replacement), how
+# its interval is counted, its age limit at a shutdown; and shutdown packages (Nov 2026,
+# restoration.py, shutdowns.py).
+PROJECTORS.update(_restoration.PROJECTORS)
+PROJECTORS.update(_shutdowns.PROJECTORS)
 
 # Records the walkthroughs found wrong (Nov 2026): an inspection's found-failed finding on
 # the fitment it found (its life-data row is interval censored from the last good check),

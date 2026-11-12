@@ -102,3 +102,21 @@ test("the block dialog shows the tree's task, as the plan and the Calculator use
   assert.equal(none.source, "From the tree: no maintenance tasks on Pump A");
   assert.equal(none.editLabel, "Add a task in the tree");
 });
+
+test("restoration and a shutdown reach the block only when the server's plan carries them", () => {
+  // The library can't take them yet: the plan has none, so the block is as new on its own interval.
+  const now = mergeTreeData({ label: "A" }, row(AGE));
+  assert.equal(now.preventive.restoration, undefined);
+  // The next library: Kijima II, every 3rd a replacement, done at a shutdown.
+  const next = mergeTreeData({ label: "A" }, row({
+    ...AGE, restoration: { model: "kijima2", q: 0.3 }, replace_every: 3, replacement_cost: 0, shutdown: "Annual shut",
+    older_than: 13149,
+  }));
+  assert.deepEqual(next.preventive.restoration, { model: "kijima2", q: 0.3 });
+  assert.equal(next.preventive.replace_every, 3);
+  assert.equal(next.preventive.replacement_cost, 0);
+  assert.equal(next.preventive.shutdown, "Annual shut");
+  assert.equal(next.preventive.older_than, 13149);
+  assert.equal(next.preventive.interval, undefined); // the shut gives its calendar and time off-line
+  assert.equal(next.preventive.duration, undefined);
+});

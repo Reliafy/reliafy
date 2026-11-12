@@ -307,6 +307,19 @@ def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
                 f"“{label}”: early renewal needs a maintenance group whose stops give the "
                 "opportunity — set the block's maintenance group.")
         spec["opportunity"] = age
+    restoration = pm.get("restoration")
+    if restoration is not None:
+        # A task that restores the unit only partly (Kijima I or II), from the Explorer's task: the
+        # tree plan writes it only where the installed RePyability takes it (rbd_tree_plan).
+        from backend.services import repy_compat
+
+        if not repy_compat.plan_supports()["restoration"]:
+            raise AnalysisError(
+                f"“{label}”: its maintenance restores it only partly, which needs the next library update.")
+        spec["restoration"] = {"model": restoration.get("model"), "q": float(restoration.get("q"))}
+        if not _blank(pm.get("replace_every")):
+            spec["replace_every"] = int(pm["replace_every"])
+            spec["replacement_cost"] = float(pm.get("replacement_cost") or 0.0)
     return spec
 
 

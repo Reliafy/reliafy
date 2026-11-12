@@ -19,7 +19,17 @@ What a task gives the block (an RCM decision says *what* a task does; its LSA sa
 * how long it takes the block off-line: its LSA's downtime, else its elapsed time;
 * what it costs each time (task_costs.py); its package (the block's maintenance group); who does
   it (the LSA's labour, in words: the RBD's crews are one pool);
-* restoration: as new, until the library takes a Kijima restoration from the RCM decision.
+* what it leaves the block as (restoration.py): as new, or restored partly (Kijima I or II with a
+  restoration factor q), with every Nth task a full replacement; set on the task or its RCM
+  decision. Several decisions disagreeing: the least restoring, flagged;
+* whether it's counted in running hours (its unit is a meter's, or ``basis`` operating): then
+  the block's duty puts it on the calendar;
+* a shutdown it's done at (its work package is a shutdown, shutdowns.py), and "only if older than".
+
+What the installed RePyability can't take yet (:data:`SUPPORTS`, found by capability) is never
+dropped silently: the plan computes with what it can (as new, no shutdowns) and each such task
+says :data:`PENDING`. The duty a position's running-hours meter suggests is proposed beside the
+block's own ("Runs X% of the time"), never applied.
 
 A block takes one task today: of several, a fixed-interval task first, then on condition, then a
 proof test; the rest are listed as not modelled.
@@ -48,7 +58,21 @@ _ORDER = {"fixed_interval": 0, "on_condition": 1, "failure_finding": 2}
 _PLAN_TASK = {"on_condition": "condition", "failure_finding": "test"}
 _KIND_WORDS = {"fixed_interval": "Replace at age", "on_condition": "On condition", "failure_finding": "Failure finding"}
 _HOURS_IN = {"hour": 1.0, "day": 24.0, "week": 168.0, "month": 730.5, "year": 8766.0, "minute": 1 / 60}
-RESTORATION_NOTE = "As new: restoring it only partly (Kijima) comes with a later library release."
+RESTORATION_NOTE = "As new: the task renews it."
+#: What a saved task says while the library can't use it in results yet.
+PENDING = "Saved — used in results once the next library update is in."
+#: The app passes shutdowns to the library only once the diagram builder and the cost categories
+#: take them (the library adoption step); until then they're shown, saved and pending.
+_APP_TAKES_SHUTDOWNS = False
+
+
+def supports() -> dict:
+    """What the plan can use in results now: {restoration: [kinds], shutdowns: bool}."""
+    from backend.services import repy_compat
+
+    lib = repy_compat.plan_supports()
+    return {"restoration": ["as_new", "kijima1", "kijima2"] if lib["restoration"] else ["as_new"],
+            "shutdowns": bool(lib["shutdowns"] and _APP_TAKES_SHUTDOWNS)}
 
 #: The diagram's own settings for a tree-linked block, by what its task does.
 SETTINGS = {
@@ -101,7 +125,7 @@ def _crew_words(view: dict) -> str:
     return " · ".join([", ".join(dict.fromkeys(trades))] + ([f"{hours:g} h of labour"] if hours else []))
 
 
-def task_plan(m: Maintenance, view: dict, unit: str) -> dict:
+def task_plan(m: Maintenance, view: dict, unit: str, can: dict | None = None) -> dict:
     """What one task gives a block in a diagram whose clock is ``unit``.
 
     ``view``: the task as read (Maintenance._task_view). Returns {id, name, kind, kind_words,
@@ -116,7 +140,9 @@ def task_plan(m: Maintenance, view: dict, unit: str) -> dict:
     out = {"id": view["id"], "name": view["name"], "kind": kind, "kind_words": _KIND_WORDS.get(kind, "Routine work"),
            "modelled": kind is not None, "interval_words": words, "crew": _crew_words(view),
            "package": {"id": entry["package"]["id"], "name": entry["package"].get("name")} if entry else None,
-           "flags": [], "notes": [], "plan": None}
+           "flags": [], "notes": [], "pending": [], "plan": None, "restoration": None,
+           "basis": view.get("basis") or "calendar"}
+    can = can or supports()
     if kind is None:
         out["notes"].append(f"“{view['name']}” is routine work with no RCM kind (replace, inspect on condition or "
                             "proof test), so what it does to the block's life isn't known: it isn't modelled.")
@@ -140,7 +166,7 @@ def task_plan(m: Maintenance, view: dict, unit: str) -> dict:
         out["flags"].append(f"The diagram's clock ({unit or 'no unit'}) isn't a time, so {words} can't be put on it.")
     elif every_h is None:
         out["flags"].append(f"{words.capitalize()} counts {every_unit}, which the diagram's clock can't take.")
-    elif view.get("by_use"):
+    elif view.get("by_use") or view.get("basis") == "operating":
         if plan_task == "test":
             out["flags"].append(f"A proof test {words} of running time can't be modelled yet: give the task a "
                                 "calendar interval.")
@@ -173,14 +199,72 @@ def task_plan(m: Maintenance, view: dict, unit: str) -> dict:
         missing = [*(lsa.get("missing_rates") or []), *(lsa.get("missing_prices") or [])]
         out["flags"].append(f"Its cost is partial: nothing prices {', '.join(missing[:4])}"
                             f"{' …' if len(missing) > 4 else ''}.")
+    if plan_task in ("age", "block"):
+        _restoration_into(out, plan, view.get("restoration") or {}, can)
     out["plan"] = plan
     return out
 
 
-def position_plan(m: Maintenance, position: dict, unit: str) -> dict:
+def _restoration_into(out: dict, plan: dict, r: dict, can: dict) -> None:
+    """What a fixed-interval task leaves the block as, into its row and (when the library takes
+    it) its plan in RePyability's shape: ``restoration`` {model, q}, ``replace_every``,
+    ``replacement_cost`` (none given: 0, flagged)."""
+    from backend.maintenance import restoration as rs
+
+    value = r.get("restoration")
+    out["restoration"] = {"kind": (value or {}).get("kind") or "as_new", "q": (value or {}).get("q"),
+                          "replace_every": (value or {}).get("replace_every"),
+                          "replacement_cost": (value or {}).get("replacement_cost"),
+                          "words": rs.words(value), "source": r.get("source")}
+    if r.get("conflict"):
+        out["flags"].append(r["conflict"])
+    if not value:
+        return
+    if value["kind"] not in can["restoration"]:
+        out["pending"].append(f"{rs.words(value)}. {PENDING} Until then it's calculated as new.")
+        return
+    plan["restoration"] = {"model": value["kind"], "q": value["q"]}
+    if value.get("replace_every"):
+        plan["replace_every"] = value["replace_every"]
+        plan["replacement_cost"] = value.get("replacement_cost") or 0.0
+        if value.get("replacement_cost") is None:
+            out["flags"].append("No replacement cost: every replacement is charged nothing until a price is set "
+                                "on the task.")
+
+
+def _duty_proposal(m: Maintenance, position: dict) -> dict | None:
+    """The share of the time the position runs, from its running-hours meter (or its fitted
+    item's): running hours a calendar hour over the last year of readings. A proposal
+    beside the block's own duty, never applied."""
+    from backend.maintenance import service as sv
+
+    holders = [position]
+    fitted = m.current_fitment(position["id"])
+    item = fitted and m.s.inn(m.org, fitted["id"], "IN")
+    if item:
+        holders.append(item[0])
+    for holder in holders:
+        point = sv._counter_on(m.s, m.org, holder["id"], "hours")
+        if point is None:
+            continue
+        readings = sv._readings(m.s, m.org, point, m.tz)
+        rate = sv._rate(readings)
+        if not rate or rate <= 0:
+            continue
+        duty = min(rate / 24.0, 1.0)
+        pct = float(f"{duty * 100:.3g}")
+        return {"duty": round(duty, 4), "percent": pct, "words": f"Runs {pct:g}% of the time",
+                "point": {"id": point["id"], "name": point.get("name") or ""},
+                "basis": f"from {point.get('name') or 'its running-hours meter'} over the last year of readings",
+                "since": readings[0]["on"] if readings else None, "to": readings[-1]["on"] if readings else None}
+    return None
+
+
+def position_plan(m: Maintenance, position: dict, unit: str, can: dict | None = None) -> dict:
     """A position's plan for the block standing for it: {position {id, name}, tasks: [task_plan],
     used (the task modelled, or None: runs to failure), restoration, flags, notes}."""
-    plans = [task_plan(m, m._task_view(t), unit) for t in m._tasks_on(position["id"])]
+    can = can or supports()
+    plans = [task_plan(m, m._task_view(t), unit, can) for t in m._tasks_on(position["id"])]
     plans.sort(key=lambda x: (_ORDER.get(x["kind"], 9), str(x["name"]).lower(), x["id"]))
     modelled = [x for x in plans if x["modelled"]]
     used = modelled[0] if modelled else None
@@ -192,9 +276,11 @@ def position_plan(m: Maintenance, position: dict, unit: str) -> dict:
         x["used"] = used is not None and x["id"] == used["id"]
     return {"position": {"id": position["id"], "name": position.get("name") or ""}, "tasks": plans,
             "used": used["id"] if used else None, "plan": used["plan"] if used else None,
-            "restoration": ({"kind": "as_new", "note": RESTORATION_NOTE}
+            "restoration": (({**used["restoration"], "note": used["restoration"]["words"]} if used["restoration"]
+                             else {"kind": "as_new", "words": "As new", "note": RESTORATION_NOTE})
                             if used and used["plan"]["task"] != "test" else None),
-            "flags": list(used["flags"]) if used else [], "notes": notes}
+            "flags": list(used["flags"]) if used else [], "notes": notes,
+            "pending": list(used["pending"]) if used else [], "duty_proposal": _duty_proposal(m, position)}
 
 
 def _children(m: Maintenance, position_id: str) -> list[dict]:
@@ -260,9 +346,11 @@ def _component_blocks(graph: dict) -> list[dict]:
 def plans_for_graph(m: Maintenance, rbd_id: str, graph: dict) -> dict:
     """{position: {id, name} | None, blocks: {block id: position_plan + repair_missing}} for a
     diagram saved as ``rbd_id`` (as it stands in ``graph``: unsaved edits included)."""
+    can = supports()
     positions = positions_of_rbd(m, rbd_id)
     if not positions:
-        return {"position": None, "positions": [], "unit": (graph or {}).get("unit") or "", "blocks": {}}
+        return {"position": None, "positions": [], "unit": (graph or {}).get("unit") or "", "blocks": {},
+                "shutdowns": [], "supports": can}
     top = positions[0]
     unit = (graph or {}).get("unit") or ""
     blocks = _component_blocks(graph)
@@ -272,12 +360,101 @@ def plans_for_graph(m: Maintenance, rbd_id: str, graph: dict) -> dict:
         c = mapped.get(b["id"])
         if c is None:
             continue
-        row = position_plan(m, c, unit)
+        row = position_plan(m, c, unit, can)
         if not (b["data"].get("repair") or b["data"].get("instant_repair")):
             row["repair_missing"] = (f"No repair time: neither {c['name']}'s history nor its class holds one. Set "
                                      "the block's repair time; nothing is assumed.")
         out[b["id"]] = row
-    return {"position": {"id": top["id"], "name": top["name"]}, "positions": positions, "unit": unit, "blocks": out}
+    shuts = _shutdowns(m, top, unit, blocks, mapped, out, can)
+    return {"position": {"id": top["id"], "name": top["name"]}, "positions": positions, "unit": unit, "blocks": out,
+            "shutdowns": shuts, "supports": can}
+
+
+def _shutdowns(m: Maintenance, top: dict, unit: str, blocks: list[dict], mapped: dict, rows: dict,
+               can: dict) -> list[dict]:
+    """The shutdown packages on the diagram's position or inside it, each in RePyability's
+    shape (``spec``: period and offset, or times; duration, scope, cost, idle_ageing, in the
+    diagram's unit), and the blocks whose task is done at it bound to it (``"shutdown"``,
+    ``"older_than"`` in their plan) when the library takes shutdowns; else each says PENDING."""
+    from datetime import date
+
+    from backend.maintenance import shutdowns as sd_words
+
+    found = m.shutdowns_for(top["id"])
+    if not found:
+        return []
+    diagram_h = _hours_per(unit)
+    label = {b["id"]: b["label"] for b in blocks}
+    by_position = {c["id"]: bid for bid, c in mapped.items()}
+    out, names = [], set()
+    for x in found:
+        sd, pkg = x["shutdown"], x["package"]
+        name = pkg["name"] if pkg["name"] not in names else f"{pkg['name']} ({pkg['id'][:6]})"
+        names.add(name)
+        row = {"name": name, "package": {"id": pkg["id"], "name": pkg["name"]}, "position": x["position"],
+               "when": ("on " + ", ".join(sd["dates"][:4]) + (" …" if len(sd["dates"]) > 4 else "")
+                        if sd.get("dates") else pkg["cadence"]),
+               "next": x["next"], "words": sd_words.words(sd), "duration_hours": sd["duration_hours"],
+               "cost": sd.get("cost"), "idle_ageing": sd.get("idle_ageing", True), "blocks": [], "scope": None,
+               "flags": [], "pending": None, "spec": None}
+        # What it takes down: the diagram's position (the whole system), else the blocks standing
+        # for the positions in its scope (its package's position by default) or inside them.
+        scope_ids = sd.get("scope") or [x["position"]["id"]]
+        if scope_ids == [top["id"]]:
+            scope_blocks = None
+        else:
+            inside = set(scope_ids)
+            for pid in scope_ids:
+                inside |= {p["id"] for p in m._positions_inside(pid)}
+            scope_blocks = [bid for pid, bid in by_position.items() if pid in inside]
+            row["scope"] = [{"id": bid, "label": label.get(bid, bid)} for bid in scope_blocks]
+            if not scope_blocks:
+                row["flags"].append("None of the positions it takes down is a block in this diagram.")
+        tasks = set(x["tasks"])
+        for bid, r in rows.items():
+            if r.get("used") in tasks and r.get("plan") and r["plan"]["task"] in ("age", "block"):
+                used = next(t for t in r["tasks"] if t["id"] == r["used"])
+                older = (m.s.node(m.org, used["id"], "Task") or {}).get("older_than")
+                older_d = None
+                if older and diagram_h:
+                    older_d = _tidy(older["value"] * _HOURS_IN[older["unit"].rstrip("s")] / diagram_h)
+                row["blocks"].append({"id": bid, "label": label.get(bid, bid), "task": used["name"],
+                                      "older_than": older})
+                if scope_blocks is not None and bid not in scope_blocks:
+                    row["flags"].append(f"{label.get(bid, bid)}'s task is done at it, but it isn't in what it "
+                                        "takes down.")
+                if can["shutdowns"]:
+                    r["plan"]["shutdown"] = name
+                    if older_d is not None:
+                        r["plan"]["older_than"] = older_d
+                else:
+                    said = (f"Done at the shutdown “{name}”"
+                            + (f", only if older than {older['value']:g} {older['unit']}" if older else "")
+                            + f". {PENDING} Until then it's calculated on its own interval.")
+                    r["pending"].append(said)
+                    used["pending"].append(said)
+        if diagram_h is None:
+            row["flags"].append(f"The diagram's clock ({unit or 'no unit'}) isn't a time, so the shutdown can't be "
+                                "put on it.")
+        else:
+            spec: dict = {"duration": _tidy(sd["duration_hours"] / diagram_h), "scope": scope_blocks,
+                          "idle_ageing": sd.get("idle_ageing", True)}
+            if sd.get("cost") is not None:
+                spec["cost"] = sd["cost"]
+            today = date.fromisoformat(x["today"])
+            if sd.get("dates"):
+                spec["times"] = [_tidy((date.fromisoformat(d) - today).days * 24 / diagram_h)
+                                 for d in sd["dates"] if d >= x["today"]]
+            else:
+                period_h = pkg["every"] * _HOURS_IN[str(pkg["unit"]).rstrip("s")]
+                spec["period"] = _tidy(period_h / diagram_h)
+                first = (date.fromisoformat(x["next"]) - today).days * 24 if x["next"] else 0
+                spec["offset"] = _tidy((first % period_h) / diagram_h)
+            row["spec"] = spec
+        if not can["shutdowns"]:
+            row["pending"] = PENDING
+        out.append(row)
+    return out
 
 
 def merge(data: dict, row: dict) -> dict:
@@ -307,6 +484,13 @@ def merge(data: dict, row: dict) -> dict:
         pm.update(own)
     else:
         pm.update(duration=plan["duration"], cost=plan["cost"], **own)
+    # What the library takes only once it supports it (task_plan puts these in the plan only then).
+    for key in ("restoration", "replace_every", "replacement_cost", "shutdown", "older_than"):
+        if plan.get(key) is not None:
+            pm[key] = plan[key]
+    if plan.get("shutdown") is not None:  # the shut gives its calendar and how long it takes
+        for key in ("interval", "operating_interval", "duration", "opportunity"):
+            pm.pop(key, None)
     out["preventive"] = pick(pm)
     if plan.get("group"):
         out["maintenance_group"] = plan["group"]
@@ -319,6 +503,8 @@ def apply(graph: dict, plans: dict) -> dict:
     rows = (plans or {}).get("blocks") or {}
     if not rows:
         return graph
+    if ((plans or {}).get("supports") or {}).get("shutdowns") and plans.get("shutdowns"):
+        graph = {**graph, "shutdowns": {s["name"]: s["spec"] for s in plans["shutdowns"] if s.get("spec")}}
     nodes = []
     for n in (graph or {}).get("nodes") or []:
         row = rows.get(n.get("id")) if isinstance(n, dict) else None
@@ -332,7 +518,13 @@ def fingerprint(plans: dict) -> dict:
     for row in ((plans or {}).get("blocks") or {}).values():
         for t in row.get("tasks") or []:
             if t.get("used"):
-                blob = json.dumps({"plan": t.get("plan"), "name": t.get("name")}, sort_keys=True, default=str)
+                # What it leaves the block as and its shutdown are in the version too, so a saved
+                # calculation says when they changed (even while they're pending).
+                blob = json.dumps({"plan": t.get("plan"), "name": t.get("name"),
+                                   **({"restoration": t["restoration"]}
+                                      if (t.get("restoration") or {}).get("kind") not in (None, "as_new") else {}),
+                                   **({"pending": t["pending"]} if t.get("pending") else {})},
+                                  sort_keys=True, default=str)
                 out[t["id"]] = hashlib.sha1(blob.encode()).hexdigest()[:12]
     return out
 
