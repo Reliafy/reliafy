@@ -216,7 +216,7 @@ export default function DegradationNewPage() {
   // Change: the main reading (one table), or the measurements part's own.
   const startChange = () => (hasPart ? setMeasEditing(true) : rd.startChange());
   const keepMeasurements = async (next) => {
-    if (await rd.keep({ ...(rd.reading || emptyReading()), measurements: next })) setMeasEditing(false);
+    if (await rd.keepMeasurements(next)) setMeasEditing(false);
   };
   const summaryReading = hasPart ? { ...emptyReading(), ...(meas || {}) } : rd.reading;
   const summarySource = hasPart ? (meas?.source === "saved" ? "saved" : "guessed") : rd.source;

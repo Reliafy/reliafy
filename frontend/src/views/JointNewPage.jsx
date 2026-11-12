@@ -213,7 +213,7 @@ export default function JointNewPage() {
   const startChange = () => { setMeasEditing(false); rd.startChange(); if (meas && !rd.reading?.measurements) rd.setDraft({ ...rd.reading, measurements: meas }); };
   const startMeasChange = () => (dataset?.combined ? startChange() : (rd.cancelChange(), setMeasEditing(true)));
   const keepMeasurements = async (next) => {
-    if (await rd.keep({ ...(rd.reading || emptyReading()), measurements: next })) setMeasEditing(false);
+    if (await rd.keepMeasurements(next)) setMeasEditing(false);
   };
   const lifeIssues = issues.filter((i) => i.table === "life");
   const readIssues = issues.filter((i) => i.table === "reads");
