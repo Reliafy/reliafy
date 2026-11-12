@@ -12,11 +12,11 @@ import {
 } from "../api.js";
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { columnFacts } from "../lifeData.js";
-import {
-  JOINT_LIFE_KEYS, JOINT_LIFE_ROWS, JOINT_READ_KEYS, JOINT_READ_ROWS, covariateParts, guessLifetimeColumns,
-  guessReadingColumns, jointIssues, jointLifeMapping,
-} from "../joint.js";
-import ColumnMapper from "../components/ColumnMapper.jsx";
+import { jointIssues, jointMappingsFromReading, jointRequest } from "../joint.js";
+import { emptyReading } from "../datasetReading.js";
+import { useDatasetReading } from "../useDatasetReading.js";
+import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
+import MeasurementsReadingChange from "../components/MeasurementsReadingChange.jsx";
 import ProTag from "../components/ProTag.jsx";
 
 const POLL_MS = 2000;
@@ -49,21 +49,19 @@ function describe(part) {
 }
 
 // A new condition and life model: one dataset (its life data with its
-// measurements), the columns of each part, the covariates and the reading's
-// path; Check data, then Fit (Pro, a job on the calculation service).
+// measurements), how each part is read (the dataset's reading, one line each,
+// with Change: no column questions), the covariates and the reading's path;
+// Check data, then Fit (Pro, a job on the calculation service).
 export default function JointNewPage() {
   const navigate = useNavigate();
   const [datasets, setDatasets] = useState(null); // null while the list loads
   const [opts, setOpts] = useState(null);
   const [dataset, setDataset] = useState(null); // {id, name, life, reads, combined, missing}
-  const [map, setMap] = useState({ id: "", x: "", xl: "", xr: "", c: "", tl: "" });
-  const [invert, setInvert] = useState(false);
-  const [rmap, setRmap] = useState({ id: "", age: "", value: "" });
+  const [detail, setDetail] = useState(null); // the dataset's detail (getDataset)
   const [covs, setCovs] = useState([]); // [{name, risk, path}]
   const [path, setPath] = useState("linear");
-  const [unit, setUnit] = useState("");
-  const [marker, setMarker] = useState("");
-  const [markerUnit, setMarkerUnit] = useState("");
+  const [markerTyped, setMarkerTyped] = useState(null);
+  const [measEditing, setMeasEditing] = useState(false);
   const [name, setName] = useState("");
   const [check, setCheck] = useState(null);
   const [error, setError] = useState(null);
@@ -94,18 +92,8 @@ export default function JointNewPage() {
       const missing = !parts.life ? "life" : !parts.measurements && !parts.combined ? "measurements" : null;
       setDataset({ id, name: full.name, life, reads, combined: !parts.measurements && !!parts.life, missing,
                    readOnly: !!full.read_only });
-      if (life) {
-        const g = guessLifetimeColumns(life.described);
-        setMap({ id: g.id, x: g.x, xl: "", xr: "", c: g.c, tl: "" });
-        setInvert(g.invert);
-        if (g.unit && !unit) setUnit(g.unit);
-        setCovs(g.covariates.map((c) => ({ name: c, risk: false, path: false })));
-      }
-      if (reads) {
-        const r = guessReadingColumns(reads.described);
-        setRmap(r);
-        if (!marker) setMarker(r.value);
-      }
+      setDetail(full);
+      setMeasEditing(false);
       if (!name) setName(full.name.replace(/\s*\(sample\)$/i, "").replace(/\.(csv|tsv|txt|xlsx)$/i, ""));
     } catch (err) { setError(err.message); }
   };
@@ -118,21 +106,39 @@ export default function JointNewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // x, or the range when x is blank (joint.js), as before.
-  const mapping = jointLifeMapping(map);
-  const issues = jointIssues(map, rmap);
-  const parts = covariateParts(covs);
-  const body = useMemo(() => ({
-    dataset_id: dataset?.id,
-    mapping: Object.fromEntries(Object.entries(mapping).filter(([, v]) => v)),
-    readings_mapping: rmap,
-    c_invert: invert,
-    ...parts,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [dataset?.id, JSON.stringify(mapping), JSON.stringify(rmap), invert, JSON.stringify(parts)]);
+  // How the dataset is read (kept with it): the life data from its main
+  // reading, the readings from its measurements part's (or the one table's).
+  const rd = useDatasetReading(detail);
+  const meas = rd.reading?.measurements || detail?.reading?.measurements || null;
+  const reading = rd.reading ? { ...rd.reading, ...(meas ? { measurements: meas } : {}) } : null;
+  const derived = useMemo(
+    () => (reading ? jointMappingsFromReading(reading, { combined: !!dataset?.combined, lifeFacts: dataset?.life?.facts || {} }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(reading), dataset?.combined, dataset?.life],
+  );
+  const map = derived?.map || { id: "", x: "", xl: "", xr: "", c: "", tl: "" };
+  const rmap = derived?.rmap || { id: "", age: "", value: "" };
+  const invert = !!derived?.invert;
+  const unit = derived?.unit || "";
+  const markerUnit = derived?.markerUnit || "";
+  const marker = markerTyped ?? rmap.value;
+  // The covariates offered: the reading's Z (numbers only), each in neither part to start.
+  const covNames = (derived?.covariates || []).join("\u0000");
+  useEffect(() => {
+    setCovs((cur) => (derived?.covariates || []).map((c) => cur.find((k) => k.name === c) || { name: c, risk: false, path: false }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [covNames]);
+  const issues = [
+    ...jointIssues(map, rmap),
+    ...(derived?.statusIssue ? [{ table: "life", row: "c", text: derived.statusIssue }] : []),
+  ];
+  const body = useMemo(() => ({ dataset_id: dataset?.id, ...jointRequest(map, rmap, invert, covs) }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dataset?.id, JSON.stringify(map), JSON.stringify(rmap), invert, JSON.stringify(covs)]);
 
   const ready = dataset && dataset.life && dataset.reads && !dataset.missing;
-  const mapped = ready && issues.length === 0;
+  const editing = rd.editing || measEditing;
+  const mapped = ready && !editing && issues.length === 0;
 
   const onCheck = async () => {
     setBusy("check"); setError(null);
@@ -202,8 +208,21 @@ export default function JointNewPage() {
     setCancelNote(CANCELLED_TEXT);
   };
 
-  const lifeCols = dataset?.life?.columns || [];
   const readCols = dataset?.reads?.columns || [];
+  // Change: the life data's reading (the main one), or the measurements part's own.
+  const startChange = () => { setMeasEditing(false); rd.startChange(); if (meas && !rd.reading?.measurements) rd.setDraft({ ...rd.reading, measurements: meas }); };
+  const startMeasChange = () => (dataset?.combined ? startChange() : (rd.cancelChange(), setMeasEditing(true)));
+  const keepMeasurements = async (next) => {
+    if (await rd.keep({ ...(rd.reading || emptyReading()), measurements: next })) setMeasEditing(false);
+  };
+  const lifeIssues = issues.filter((i) => i.table === "life");
+  const readIssues = issues.filter((i) => i.table === "reads");
+  const issueList = (list, onFix) => list.length > 0 && (
+    <div className="xcn-below" role="status">
+      {list.map((i) => <p key={i.text} className="xcn-issue">{i.text}</p>)}
+      <button type="button" className="link" onClick={onFix}>Change the reading</button>
+    </div>
+  );
   const setCov = (i, patch) => setCovs((cur) => cur.map((c, k) => (k === i ? { ...c, ...patch } : c)));
   const pathOpt = (opts?.paths || []).find((p) => p.id === path);
   const unitWord = unit ? unit.toLowerCase() : "the time unit";
@@ -269,42 +288,60 @@ export default function JointNewPage() {
 
       {ready && (
         <div className="card">
-          <h2>2. Columns</h2>
+          <h2>2. How the data is read</h2>
           <h3 className="joint-h3">Life data</h3>
-          <ColumnMapper
-            columns={lifeCols}
-            mapping={{ ...map, c_invert: invert }}
-            onChange={({ c_invert: inv, ...next }) => { setMap(next); setInvert(!!inv); }}
-            unit={unit}
-            onUnitChange={setUnit}
-            facts={dataset.life?.facts || {}}
-            rows={JOINT_LIFE_ROWS}
-            keys={JOINT_LIFE_KEYS}
-            words={{ x: "the value when it failed, or now if still running" }}
-            none={{ c: "— pick a column —" }}
-            meanings={false}
-            issues={issues.filter((i) => i.table === "life")}
-          />
+          {!editing && (
+            <ReadingSummary
+              name={dataset.name}
+              reading={rd.reading}
+              source={rd.source}
+              use={["i", "x", "c", "tl", "z"]}
+              onChange={startChange}
+              onConfirm={rd.confirm}
+              confirming={rd.saving}
+              readOnly={rd.readOnly}
+            />
+          )}
+          {!editing && issueList(lifeIssues, startChange)}
+          <ReadingChange name={dataset.name} rd={rd} />
 
           <h3 className="joint-h3">Measurements</h3>
           <p className="muted-line" style={{ margin: 0 }}>m is what was measured on each item over time: readings, not covariates.</p>
-          <ColumnMapper
-            columns={readCols}
-            mapping={rmap}
-            onChange={setRmap}
-            facts={dataset.reads?.facts || {}}
-            rows={JOINT_READ_ROWS}
-            range={false}
-            keys={JOINT_READ_KEYS}
-            words={{ i: "which item each reading belongs to", x: "when the reading was taken (same unit as above)" }}
-            mUnit={markerUnit}
-            onMUnitChange={setMarkerUnit}
-            issues={issues.filter((i) => i.table === "reads")}
-          />
+          {!editing && (dataset.combined ? (
+            <p className="muted-line" style={{ margin: 0 }}>
+              From the same table: i = {rmap.id || "—"} · x = {rmap.age || "—"} · m = {rmap.value || "—"}
+            </p>
+          ) : (
+            <ReadingSummary
+              name={dataset.name}
+              reading={{ ...emptyReading(), ...(meas || {}) }}
+              source={meas?.source === "saved" ? "saved" : "guessed"}
+              use={["i", "x", "m"]}
+              note="Its measurements: the readings on each item, at its age when read."
+              onChange={startMeasChange}
+              onConfirm={() => keepMeasurements({ ...(meas || {}), source: "saved" })}
+              confirming={rd.saving}
+              readOnly={rd.readOnly}
+            />
+          ))}
+          {!editing && issueList(readIssues, startMeasChange)}
+          {measEditing && (
+            <MeasurementsReadingChange
+              name={dataset.name}
+              columns={readCols}
+              facts={dataset.reads?.facts || {}}
+              value={meas}
+              onKeep={keepMeasurements}
+              onCancel={() => setMeasEditing(false)}
+              saving={rd.saving}
+              error={rd.error}
+              readOnly={rd.readOnly}
+            />
+          )}
 
           <h3 className="joint-h3">Covariates (optional)</h3>
           {covs.length === 0 ? (
-            <p className="muted-line">No other numeric columns in the life data.</p>
+            <p className="muted-line">No covariates: the reading's Z has no numeric columns. Change the reading to add some.</p>
           ) : (
             <div className="maint-scroll">
               <table className="calc-table joint-covs">
@@ -349,7 +386,7 @@ export default function JointNewPage() {
           <div className="joint-fields">
             <label className="dist-field">
               <span className="dist-label">What is read</span>
-              <input value={marker} onChange={(e) => setMarker(e.target.value)} placeholder="e.g. vibration" />
+              <input value={marker} onChange={(e) => setMarkerTyped(e.target.value)} placeholder="e.g. vibration" />
             </label>
             <label className="dist-field">
               <span className="dist-label">Model name</span>
@@ -359,9 +396,12 @@ export default function JointNewPage() {
           <p className="hint">Ages and the risk horizons are in {unitWord}, counted from new.</p>
 
           <div className="joint-actions">
-            {!mapped && issues.length > 0 && (
+            {ready && editing && (
+              <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>First save or cancel the change to the reading.</span>
+            )}
+            {ready && !editing && issues.length > 0 && (
               <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
-                First settle the notes beside {[...new Set(issues.map((i) => `${i.row === "e" ? "failure mode" : i.row} (${i.table === "life" ? "life data" : "measurements"})`))].join(", ")}.
+                First settle what the reading lacks: {[...new Set(issues.map((i) => `${i.row} (${i.table === "life" ? "life data" : "measurements"})`))].join(", ")}.
               </span>
             )}
             <button type="button" className="secondary" disabled={!mapped || !!busy} onClick={onCheck}>
