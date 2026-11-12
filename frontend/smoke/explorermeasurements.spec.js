@@ -165,6 +165,9 @@ test("roll-ups, the search, Needs attention, a reading in place, the row's ⋯",
   await options.getByRole("menuitem", { name: "Done" }).click();
   // A reading typed in place.
   const r = row(page, `M:${gauge.id}`);
+  // Wait for the filter's row to be back (Needs attention off) before asking whether it is
+  // open: asked before the tree re-rendered, the count was 0 and its chevron not there yet.
+  await expect(row(page, filter.id)).toBeVisible();
   if (!(await r.count())) await row(page, filter.id).locator(".tp-chev").click();
   const box = r.getByRole("textbox", { name: `New reading for Filter pressure ${tag} (kPa)` });
   await box.fill("130");
