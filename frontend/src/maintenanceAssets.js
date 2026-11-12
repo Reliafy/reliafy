@@ -47,3 +47,36 @@ export function assetsSummary(view) {
   return [plural(places.length, "asset"), plural(placed + rest, "position"),
     rest ? `${rest} not at a place yet` : null].filter(Boolean).join(" · ");
 }
+
+// The places a new position can be at, for the New position form's Location box:
+// every place, depth first, A to Z, each labelled with its path ("Riverside ›
+// Pump hall"). `locations`: [{id, name, parent_id}] (or {parent: {id}}).
+export function locationChoices(locations) {
+  const list = (locations || []).filter((l) => l && l.id);
+  const byId = new Map(list.map((l) => [l.id, l]));
+  const parentOf = (l) => {
+    const p = l.parent_id ?? l.parent?.id ?? null;
+    return p && byId.has(p) ? p : null;
+  };
+  const kids = new Map();
+  for (const l of list) {
+    const p = parentOf(l);
+    if (!kids.has(p)) kids.set(p, []);
+    kids.get(p).push(l);
+  }
+  const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+  for (const k of kids.values()) k.sort((a, b) => collator.compare(a.name || "", b.name || ""));
+  const out = [];
+  const seen = new Set();
+  const walk = (p, path) => {
+    for (const l of kids.get(p) || []) {
+      if (seen.has(l.id)) continue;
+      seen.add(l.id);
+      const label = [...path, l.name || "(no name)"];
+      out.push({ id: l.id, label: label.join(" › ") });
+      walk(l.id, label);
+    }
+  };
+  walk(null, []);
+  return out;
+}

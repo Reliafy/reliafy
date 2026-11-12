@@ -478,3 +478,12 @@ def test_an_rcm_task_named_as_one_on_the_position_is_that_task_with_its_cost(m):
     assert view["cost"]["amount"] == 6500 and view["interval"] == 14800
     assert tp.task_kind(m, tasks[0]) == "fixed_interval"
     _same_after_rebuild(m)
+
+
+def test_the_rbds_holding_a_position_are_named_before_it_is_deleted(m, db):
+    plant, a, b, rbd_id = _station(m, db)
+    name = db.rbds.find_one({"_id": rbd_id})["name"]
+    assert tp.rbds_holding(m, db, OWNERS, set(), a) == [{"id": rbd_id, "name": name, "blocks": 1}]
+    # The station itself: its own diagram isn't one above it, so nothing holds a block for it.
+    assert tp.rbds_holding(m, db, OWNERS, set(), plant) == []
+    assert tp.rbds_holding(m, db, OWNERS, set(), "no-such-position") == []

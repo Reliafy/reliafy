@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getLibraryRecord, getLibrarySources, linkPositionModel, listModels, previewPositionFit } from "../api.js";
+import { fitClassModel, getLibraryRecord, getLibrarySources, linkPositionModel, listModels, previewPositionFit } from "../api.js";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
 import { useModes } from "./ModelTable.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
   METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
-  fitChanged, fitTitle, initialFit, keepsOwnPrior, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
+  fitChanged, fitTitle, initialFit, keepsOwnPrior, priorChoices, problem, refusalSwitch, refusalWords, savesForClass, showsTrust,
 } from "../fitDialog.js";
 import { FitOutcome, PriorFields } from "./PriorFit.jsx";
 import TablePane from "./TablePane.jsx";
@@ -164,6 +164,21 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
       setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
     }
   };
+  // The class's model: fitted from its pooled history and saved on the class, then attached here.
+  const forClass = savesForClass(state, position.position_class);
+  const saveForClass = async () => {
+    setSaving(true);
+    setFailed(null);
+    try {
+      await fitClassModel(position.position_class, state.distribution);
+      const made = await linkPositionModel(position.id, { from_class: true, failure_mode_ids: state.modes || [],
+        ...(link ? { replace_link_id: link.id } : {}) });
+      onDone(made, `Saved the class ${position.position_class}'s model and attached it to ${position.name}.`);
+    } catch (e) {
+      setSaving(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
+  };
   const d = preview.data;
   const ctx = d || preview.refused; // the history and counts come with a refusal too
   // The Data dropdown's counts: this position's, remembered from whichever preview last read them.
@@ -272,6 +287,12 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
         <div className="fit2-foot">
           {failed && <p className="field-error fit2-failed" role="alert">{failed}</p>}
           <button type="button" className="secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          {forClass && (
+            <button type="button" className="secondary" onClick={saveForClass} disabled={saving || !d?.can_save}
+                    title="Saved on the class: every position of it can take it (From the class…), and its forecast uses it">
+              Save as the class's model
+            </button>
+          )}
           <button type="button" onClick={save} disabled={saving || !d?.can_save} aria-busy={saving || undefined}>
             {saving ? "Saving…" : "Save as this position's model"}
           </button>

@@ -36,12 +36,13 @@ export { MODEL_TREE_HEAD } from "../explorerModels.js";
 
 // Every attached model, read when the tab is on (and again on `load`).
 export function useTreeModels({ on }) {
-  const [state, setState] = useState({ links: null, error: null });
+  const [state, setState] = useState({ links: null, classModels: null, error: null });
   const load = useCallback(() => listPositionModels()
-    .then((d) => setState({ links: d.links || [], error: null }))
-    .catch((e) => setState((s) => ({ links: s.links, error: e.message }))), []);
+    .then((d) => setState({ links: d.links || [], classModels: d.class_models || {}, error: null }))
+    .catch((e) => setState((s) => ({ ...s, error: e.message }))), []);
   useEffect(() => { if (on) load(); }, [on, load]);
-  return { links: state.links, error: state.error, load };
+  // classModels: {class name: {model_id, failures, failures_now}}, the classes with a fitted model.
+  return { links: state.links, classModels: state.classModels, error: state.error, load };
 }
 
 const QUALITY_TONE = { success: "success", warning: "warning", neutral: "neutral" };

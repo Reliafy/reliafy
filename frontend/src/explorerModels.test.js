@@ -283,3 +283,15 @@ test("a typed-in model's row offers Edit parameters…", () => {
   assert.ok(ids(r({ kind: "Exponential", entered: { distribution: "exponential", params: {} } })).includes("model-params-edit"));
   assert.ok(!ids(r({ kind: "Weibull" })).includes("model-params-edit"));
 });
+
+test("classModelHint: a position with no model whose class has one says so, and how many failures since", async () => {
+  const { classModelHint } = await import("./explorerModels.js");
+  const r = { type: "pos", ref: { position_class: "Seal" }, lsum: { n: 0 } };
+  const cms = { Seal: { failures: 14, failures_now: 15 } };
+  assert.match(classModelHint(r, cms), /Its class \(Seal\) has one: Life model › From the class… \(fitted before 1 new failure: refit it\)/);
+  assert.equal(classModelHint(r, cms, { short: true }), "class model · 1 new failure since");
+  assert.equal(classModelHint(r, { Seal: { failures: 14, failures_now: 14 } }, { short: true }), "class model to attach");
+  assert.equal(classModelHint({ ...r, lsum: { n: 1 } }, cms), "");
+  assert.equal(classModelHint({ ...r, ref: { position_class: "Pump" } }, cms), "");
+  assert.equal(classModelHint(r, null), "");
+});

@@ -1159,11 +1159,20 @@ def retire_task(task_id: str, body: dict = Body(default={}), m: Maintenance = De
 
 
 @router.post("/positions/{position_id}/retire")
-def retire_position(position_id: str, body: dict = Body(default={}),
+def retire_position(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                    ctx: AccessCtx = Depends(get_access),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go.
-    return _run(m.retire_position, position_id, body.get("reason", ""), bool(body.get("cascade")),
-                bool(body.get("dry_run")))
+    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go,
+    # and name the RBDs built from the tree that have blocks for it (rbds: they keep them).
+    from backend.maintenance import rbd_tree_plan as tp
+
+    def run():
+        out = m.retire_position(position_id, body.get("reason", ""), bool(body.get("cascade")), bool(body.get("dry_run")))
+        if body.get("dry_run") and isinstance(out, dict):
+            out = {**out, "rbds": tp.rbds_holding(m, session, ctx.read_owners, ctx.hidden, position_id)}
+        return out
+
+    return _run(run)
 
 
 @router.post("/fitments/{fitment_id}/void")
@@ -1258,7 +1267,10 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
-    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids))})
+    # class_models: the classes with a fitted model, so a position of one with no model of its own
+    # can say so (From the class…), and whether the class has failed again since its fit.
+    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids)),
+                         "class_models": m.class_models()})
 
 
 @router.get("/position-missions")

@@ -213,6 +213,21 @@ export function rollupText(r, open = false) {
   return parts.join(" · ");
 }
 
+// A position with no model of its own whose class has a fitted one (`classModels`: the
+// position-models read's {class name: {failures, failures_now}}): "Its class has a model:
+// From the class… (1 new failure since its fit)"; "" otherwise. The class's model isn't the
+// position's until it's attached, so the roll-up never counts it.
+export function classModelHint(r, classModels, { short = false } = {}) {
+  if (!r || r.type !== "pos" || (r.lsum?.n || 0) > 0) return "";
+  const name = (r.ref?.position_class || "").trim();
+  const cm = name && classModels ? classModels[name] : null;
+  if (!cm) return "";
+  const fresh = Number.isFinite(cm.failures_now) && Number.isFinite(cm.failures) ? cm.failures_now - cm.failures : 0;
+  const since = fresh > 0 ? ` (fitted before ${fresh.toLocaleString("en-AU")} new failure${fresh === 1 ? "" : "s"}: refit it)` : "";
+  if (short) return fresh > 0 ? `class model · ${fresh.toLocaleString("en-AU")} new failure${fresh === 1 ? "" : "s"} since` : "class model to attach";
+  return `No model here yet. Its class (${name}) has one: Life model › From the class…${since}`;
+}
+
 // The model in use in a few words: "RBD", "Prediction", or the life model's kind.
 export function inUseWords(link) {
   if (!link) return "";

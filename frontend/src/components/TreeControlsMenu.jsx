@@ -83,19 +83,23 @@ export default function TreeControlsMenu({
       if (menu.current?.contains(e.target) || btn.current?.contains(e.target)) return;
       close(false);
     };
+    // In the capture phase: a row or the pane that handles Esc itself (and stops it there) never
+    // keeps the menu open.
     const esc = (e) => {
-      if (e.key === "Escape") close(true);
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      close(true);
     };
     const move = () => place();
     document.addEventListener("mousedown", away);
     document.addEventListener("touchstart", away);
-    document.addEventListener("keydown", esc);
+    document.addEventListener("keydown", esc, true);
     window.addEventListener("resize", move);
     window.addEventListener("scroll", move, true);
     return () => {
       document.removeEventListener("mousedown", away);
       document.removeEventListener("touchstart", away);
-      document.removeEventListener("keydown", esc);
+      document.removeEventListener("keydown", esc, true);
       window.removeEventListener("resize", move);
       window.removeEventListener("scroll", move, true);
     };

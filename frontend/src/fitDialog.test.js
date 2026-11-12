@@ -151,3 +151,14 @@ test("the fit pane's preset: the opener's, else the address's row once the rows 
   // A row that's gone (unlinked since): a plain fit.
   assert.deepEqual(fitPreset(null, "gone", rows), { start: {}, link: null });
 });
+
+test("savesForClass: a plain fit of the class's pooled history, one distribution, nothing left out", async () => {
+  const { savesForClass } = await import("./fitDialog.js");
+  const s = { data: "class", method: "mle", distribution: "weibull", exclude: new Set() };
+  assert.equal(savesForClass(s, "Seal"), true);
+  assert.equal(savesForClass(s, ""), false);
+  assert.equal(savesForClass({ ...s, data: "position" }, "Seal"), false);
+  assert.equal(savesForClass({ ...s, method: "bayes" }, "Seal"), false);
+  assert.equal(savesForClass({ ...s, distribution: "best" }, "Seal"), false);
+  assert.equal(savesForClass({ ...s, exclude: new Set(["f1"]) }, "Seal"), false);
+});

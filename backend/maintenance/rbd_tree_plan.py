@@ -336,6 +336,41 @@ def positions_of_rbd(m: Maintenance, rbd_id: str) -> list[dict]:
     return out
 
 
+def rbds_holding(m: Maintenance, db, owners, hidden, position_id: str) -> list[dict]:
+    """The RBDs with a block standing for ``position_id`` or a position inside it (built from the
+    tree, on a position above it): [{id, name, blocks}]. Deleting the position leaves those blocks
+    in place (a diagram is never changed behind its owner's back), so the delete says so."""
+    from backend.maintenance import rbd_derive
+    from backend.maintenance.position_models import fetcher
+
+    if m.s.node(m.org, position_id, "Position") is None:
+        return []
+    gone = [position_id] + [c["id"] for c in _children(m, position_id)] + [c["id"] for c in _below(m, position_id, 12)]
+    bids = {rbd_derive._bid(pid) for pid in gone}
+    above, here = [], position_id
+    for _ in range(12):
+        up = [x for x in m.s.out(m.org, here, "PART_OF") if x["label"] == "Position"]
+        if not up:
+            break
+        here = up[0]["id"]
+        above.append(here)
+    fetch = fetcher(db, owners, hidden)
+    out, seen = [], set()
+    for pid in above:
+        for link in m.position_models(pid):
+            if link.get("model_type") != "rbd" or link["model_id"] in seen:
+                continue
+            seen.add(link["model_id"])
+            doc = fetch("rbd", link["model_id"])
+            if doc is None:
+                continue
+            n = sum(1 for b in _component_blocks(doc.graph or {}) if b["id"] in bids)
+            if n:
+                out.append({"id": doc.id, "name": doc.name, "blocks": n})
+    out.sort(key=lambda r: r["name"].lower())
+    return out
+
+
 def _component_blocks(graph: dict) -> list[dict]:
     """The diagram's own component blocks (a repeated block is its original's unit)."""
     return [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or "", "data": n.get("data") or {}}
