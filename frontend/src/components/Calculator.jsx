@@ -9,6 +9,7 @@ import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
+import { AUTO_BOUND, boundOptions, effectiveBound } from "../levels.js";
 import { boundWords, checkTime, perUnit, precisePercent, timeAtValue, timeInWords } from "../lifeResults.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -38,8 +39,9 @@ export function initCalcState(functions) {
     xMax: "",
     // Confidence bounds config + the last-fetched band of each series, by its
     // id (keyed to avoid refetching): a regression model has one per
-    // covariate combination (#54). 90% one-sided lower by default (#288).
-    ci: { level: 90, bound: "lower", bands: {} },
+    // covariate combination (#54). 90% one-sided on the safe side by default:
+    // lower on reliability and lives, upper on a chance of failing (#288).
+    ci: { level: 90, bound: AUTO_BOUND, bands: {} },
     // "value": a function at a time; "time": the time at a reliability (#288).
     mode: "value",
     rTarget: 90, // %, for the time at a reliability
@@ -283,21 +285,23 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const ciLevel = ciOk ? pcts.checks.level.percent : Number(ci.level);
   const ciValid = confidencePath && ciOk;
   const ciAlpha = 1 - ciLevel / 100;
+  // The bound on the function shown: the user's choice, or the rule's side.
+  const bound = effectiveBound(ci.bound, active);
   const bands = ci.bands || {};
   const banded = hasCov ? series : series.slice(0, 1);
   const bandValues = JSON.stringify(banded.map((s) => [s.id, hasCov ? s.values : null]));
   const setBand = (id, value) =>
     setState((st) => ({ ...st, ci: { ...st.ci, bands: { ...(st.ci.bands || {}), [id]: value } } }));
   useEffect(() => {
-    if (!ciValid || ci.bound === "none") return undefined;
+    if (!ciValid || bound === "none") return undefined;
     const timers = banded.map((s) => {
-      const wantKey = `${active}|${ciAlpha}|${ci.bound}|${xLoNum}|${xHiNum}|${hasCov ? JSON.stringify(s.values) : ""}`;
+      const wantKey = `${active}|${ciAlpha}|${bound}|${xLoNum}|${xHiNum}|${hasCov ? JSON.stringify(s.values) : ""}`;
       const have = bands[s.id];
       if (have?.key === wantKey && (have.data || have.error)) return null; // already have this band
       // Debounced so typing a level (or a covariate) doesn't spam the backend.
       return setTimeout(() => {
         confidenceAt(confidencePath, {
-          on: active, alpha_ci: ciAlpha, bound: ci.bound, ...(hasCov ? { values: s.values } : {}),
+          on: active, alpha_ci: ciAlpha, bound, ...(hasCov ? { values: s.values } : {}),
         }, evalRange)
           .then((res) => setBand(s.id, { key: wantKey, data: res, error: null }))
           .catch((err) => setBand(s.id, { key: wantKey, data: null, error: err.message }));
@@ -305,7 +309,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
     });
     return () => timers.forEach((id) => id && clearTimeout(id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ciValid, active, ciAlpha, ci.bound, confidencePath, xLoNum, xHiNum, bandValues]);
+  }, [ciValid, active, ciAlpha, bound, confidencePath, xLoNum, xHiNum, bandValues]);
   // No error left over from a level that has since been changed to a bad one.
   const bandError = ciValid ? banded.map((s) => bands[s.id]?.error).find(Boolean) : null;
 
@@ -315,7 +319,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const lifePath = functions.life_path;
   const rValid = pcts.checks.reliability.state === "ok";
   const rNum = rValid ? pcts.checks.reliability.percent : Number(rTarget);
-  const tarBound = ci.bound === "none" ? "lower" : ci.bound;
+  const tarBound = ci.bound === "none" ? "lower" : effectiveBound(ci.bound, "time");
   // A regression model's time is the first combination's (#54).
   const tarCovariates = hasCov ? series[0]?.values : null;
   const tarKey = `${rNum}|${ciLevel}|${tarBound}|${tarCovariates ? JSON.stringify(tarCovariates) : ""}`;
@@ -782,12 +786,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                       <Select
                         value={ci.bound}
                         onChange={(v) => setCi({ bound: v })}
-                        options={[
-                          { value: "none", label: "None" },
-                          { value: "two-sided", label: "Two-sided" },
-                          { value: "lower", label: "Lower" },
-                          { value: "upper", label: "Upper" },
-                        ]}
+                        options={boundOptions(timeMode ? "time" : active)}
                       />
                     </label>
                     {ci.bound !== "none" && (

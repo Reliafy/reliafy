@@ -122,10 +122,11 @@ rate**: per +1 of the covariate, the failure rate rises by this amount per unit
 of time, whatever the age. It is not a ratio, so a negative number means the
 covariate lowers the failure rate.
 
-An AFT model reports a **time ratio** instead. For the same data, **Weibull
-AFT** gives temp_C a time ratio of 1.025: each extra degree makes the seal age
-2.5% faster. The two views agree. For a Weibull, the hazard ratio is the time
-ratio raised to the shape β: 1.025^5.58 ≈ 1.148.
+An AFT model reports a **time ratio** instead: what the life is multiplied by.
+For the same data, **Weibull AFT** gives temp_C a time ratio of 0.976: each
+extra degree makes the seal age 2.5% faster, so its life is 2.4% shorter. The
+two views agree. For a Weibull, the hazard ratio is how much faster it ages
+raised to the shape β: 1.025^5.58 ≈ 1.148.
 
 ## Ask about one operating condition
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import { excelToCsvFile, inspectExcel, isSpreadsheetFile } from "../api.js";
+import { nextSheet, rememberSheet, usedSheets } from "../sheetChoice.js";
 
 // Choose a sheet of an Excel workbook and the row holding its column headers.
 // ``inspection`` is the /api/excel/inspect response; ``value`` = { sheet,
@@ -145,11 +146,13 @@ function SheetModal({ file, confirmLabel, onDone, convert }) {
   const [busy, setBusy] = useState(false);
   const [convError, setConvError] = useState(null);
   useEffect(() => {
-    const first = inspection?.sheets?.find((s) => s.rows > 0) || inspection?.sheets?.[0];
+    // A sheet not used yet from this workbook (its readings after its life data).
+    const first = nextSheet(inspection?.sheets, usedSheets(file));
     if (first) setValue({ sheet: first.name, headerRow: first.guessed_header_row });
-  }, [inspection]);
+  }, [inspection, file]);
 
   const confirm = async () => {
+    rememberSheet(file, value?.sheet);
     if (!convert) return onDone(value);
     setBusy(true);
     setConvError(null);

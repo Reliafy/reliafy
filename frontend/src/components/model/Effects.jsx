@@ -6,7 +6,7 @@ import Plot from "../Plot.jsx";
 import CiNote from "../CiNote.jsx";
 import { paramView } from "../LifeSummary.jsx";
 import { PlotCard, PlotPanel, ScrollCard } from "./ModelLayouts.jsx";
-import { ACCENT, DATA_INK, referenceShape } from "../../plotTheme.js";
+import { ACCENT, DATA_INK, logTicks, referenceShape } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { dataWords, effectText, forestRows } from "../../modelFrame.js";
 import { fmtP } from "../RegressionChecks.jsx";
@@ -14,11 +14,19 @@ import { LEVEL_TEXT, ciPct, levelPct } from "../../levels.js";
 
 const sentence = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
+// What the ratio multiplies, on the axis: below 1 a shorter life for a time
+// ratio, a lower failure rate for a hazard ratio.
+const AXIS_TITLE = {
+  "time ratio": "Time ratio: the life ×",
+  "odds ratio": "Odds ratio: the odds of having failed ×",
+  "hazard ratio": "Hazard ratio: the failure rate ×",
+};
+
 export function ForestChart({ rows, ratioLabel, name, download }) {
   const additive = rows.some((r) => r.additive);
   const shown = rows.filter((r) => (additive ? r.value != null : r.ratio != null && r.ratio > 0));
   if (!shown.length) return <p className="muted-line">No covariate effects to chart.</p>;
-  const label = (r) => (r.unit ? `${r.name} (per ${r.unit})` : r.name);
+  const label = (r) => (r.unit ? `${r.label || r.name} (per ${r.unit})` : r.label || r.name);
   const point = (r) => (additive ? r.value : r.ratio);
   const hasCi = (r) => r.lo != null && r.hi != null && (additive || (r.lo > 0 && r.hi > 0));
   const trace = {
@@ -40,6 +48,8 @@ export function ForestChart({ rows, ratioLabel, name, download }) {
   const hi = additive ? 0 : Math.max(1, ...values);
   const span = additive ? 0 : Math.log10(hi) - Math.log10(lo);
   const pad = Math.max(0.08, span * 0.12);
+  // Labelled in full (0.4, not Plotly's "4" between decades).
+  const ticks = additive ? null : logTicks(10 ** (Math.log10(lo) - pad), 10 ** (Math.log10(hi) + pad));
   const layout = {
     showlegend: false,
     margin: { t: 10, r: 16, b: 46, l: 12 },
@@ -47,11 +57,9 @@ export function ForestChart({ rows, ratioLabel, name, download }) {
       ? { title: { text: "Coefficient (0 = no effect)" }, zeroline: false }
       : {
           type: "log",
-          title: { text: `${sentence(ratioLabel || "ratio")} (1 = no effect)` },
+          title: { text: `${AXIS_TITLE[ratioLabel] || sentence(ratioLabel || "ratio")} (1 = no effect)` },
           range: [Math.log10(lo) - pad, Math.log10(hi) + pad],
-          // Over a decade or more, powers of ten only: the 2s and 5s between
-          // them crowd the axis.
-          ...(span >= 1.2 ? { dtick: 1 } : {}),
+          ...(ticks ? { tickmode: "array", tickvals: ticks.tickvals, ticktext: ticks.ticktext } : {}),
         },
     yaxis: { type: "category", autorange: "reversed", automargin: true, showgrid: false, ticks: "" },
     shapes: [referenceShape(additive ? { x: 0, line: { dash: "dot" } } : { x: 1, line: { dash: "dot" } })],
@@ -128,10 +136,10 @@ function EffectsPanel({ result, split }) {
       )}
       <CiNote params={params} note={result.ci_note} level={ciPct(result)} />
       <p className="life-method">
-        {result.effect === "aft"
-          ? "A time ratio of 2 doubles the life; 0.5 halves it."
+        {result.effect === "aft" || result.ratio_label === "time ratio"
+          ? "A time ratio of 2 doubles the life; 0.5 halves it (the item ages twice as fast)."
           : result.ratio_label === "odds ratio"
-          ? "An odds ratio of 2 doubles the odds of failing by any time."
+          ? "An odds ratio of 2 doubles the odds of having failed by any age; 0.5 halves them."
           : result.ratio_label
           ? "A hazard ratio of 2 doubles the failure rate at any moment; 0.5 halves it."
           : "Additive effects: each coefficient adds to the failure rate."}

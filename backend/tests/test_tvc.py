@@ -127,7 +127,8 @@ def test_formula_with_a_categorical_covariate():
     ref = sp.WeibullPH.fit_tvc_from_df(df, "pump", "start_h", "stop_h", "censored", formula="duty + load_pct")
     assert [c["name"] for c in r["coefficients"]] == list(ref.feature_names)
     reading = next(x["text"] for x in r["tvc"]["readings"] if x["name"].startswith("duty"))
-    assert reading.startswith("duty = normal (against its base level) multiplies the hazard by")
+    assert reading.startswith("duty = normal (against high, the base level) multiplies the hazard by")
+    assert r["base_levels"] == {"duty": "high"}
     # A schedule of categorical levels is encoded as the fit's design.
     live = _live(r)
     sched = [{"t": 0, "values": {"duty": "normal", "load_pct": 60}},
@@ -231,10 +232,13 @@ def test_readings_by_family():
     hazard = tvc.readings(coef, "hazard", fields)[0]["text"]
     assert hazard == ("Every +10% in load multiplies the hazard by 1.65 (90% interval 1.11 to 2.46).")
     assert math.exp(0.5) == pytest.approx(1.6487, rel=1e-4)
+    # SurPyval's AFT β speeds the clock: a positive one shortens the life.
     aft = tvc.readings(coef, "aft", fields)[0]["text"]
-    assert "makes the item age 1.65× as fast" in aft
+    assert aft == ("Every +10% in load multiplies the life by 0.607 (90% interval 0.407 to 0.905): "
+                   "the item ages 1.65× as fast.")
+    # Its PO β multiplies the odds of surviving: a negative one means more failures.
     po = tvc.readings([{**coef[0], "value": -0.05, "ci": [-0.09, -0.01]}], "odds", fields)[0]["text"]
-    assert "multiplies the odds of surviving by 0.607 (90% interval 0.407 to 0.905)" in po
+    assert "multiplies the odds of having failed by 1.65 (90% interval 1.11 to 2.46)" in po
     ah = tvc.readings([{"name": "load", "value": 2e-5, "ci": None}], "additive", fields)[0]["text"]
     assert ah == "Every +10 in load adds 2.00e-04 to the hazard rate."
 
@@ -425,3 +429,70 @@ def test_a_saved_start_stop_dataset_is_tagged_and_fits_with_changing_covariates(
     assert out.status_code == 200, out.text
     ref = sp.WeibullPH.fit_tvc_from_df(_pumps(), "pump", "start_h", "stop_h", "censored", Z_cols=["load_pct"])
     assert out.json()["curves"]["sf"] == pytest.approx(ref.sf_tvc(np.asarray(out.json()["curves"]["x"]), _sched()))
+
+
+# ---- Given survived to, exact values, time at reliability ---------------------
+
+def test_given_survived_to_and_exact_point():
+    """A unit that has run to 3,000 h: its chance of surviving to 6,000 h is
+    exp(-(H(6000) - H(3000))) along the schedule, exactly at that age."""
+    live = _live(fit("weibull_ph", _pumps(), INTERVALS, ["load_pct"]))
+    m, sched = live["model"], tvc.step_schedule(live["model"], *tvc.parse_schedule(SCHEDULE, live["fields"])[:2])
+    H = np.asarray(m.Hf_tvc(np.array([3000.0, 6000.0]), sched), dtype=float)
+    out = tvc.evaluate(m, live["fields"], SCHEDULE, live["grid"], on="ff", alpha_ci=0.1, bound="upper",
+                       given=3000, at=6000)
+    p = out["point"]
+    assert p["sf"] == pytest.approx(math.exp(-(H[1] - H[0])), rel=1e-9)
+    assert p["ff"] == pytest.approx(1 - p["sf"], rel=1e-12)
+    assert p["Hf"] == pytest.approx(H[1] - H[0], rel=1e-9)
+    # The failure probability's 90% bound is the upper one: at most, never at least.
+    assert p["bound"] == "upper" and p["upper"] > p["ff"] and p.get("lower") is None
+    ref = float(np.ravel(m.cb_tvc(np.array([6000.0]), sched, given=3000.0, on="ff", alpha_ci=0.1,
+                                  bound="upper"))[0])
+    assert p["upper"] == pytest.approx(ref, rel=1e-9)
+    # The curve is the conditional one: 1 up to the age survived.
+    x = np.asarray(out["curves"]["x"])
+    assert all(v == pytest.approx(1.0) for v, t in zip(out["curves"]["sf"], x) if t <= 3000)
+    with pytest.raises(FitError, match="after the one it has survived to"):
+        tvc.evaluate(m, live["fields"], SCHEDULE, live["grid"], given=3000, at=2000)
+    with pytest.raises(FitError, match="0 or more"):
+        tvc.evaluate(m, live["fields"], SCHEDULE, live["grid"], given=-1)
+
+
+def test_time_at_reliability_with_its_lower_bound():
+    live = _live(fit("weibull_ph", _pumps(), INTERVALS, ["load_pct"]))
+    m, fields = live["model"], live["fields"]
+    sched = tvc.step_schedule(m, *tvc.parse_schedule(SCHEDULE, fields)[:2])
+    out = tvc.evaluate(m, fields, SCHEDULE, live["grid"], on="sf", alpha_ci=0.1, bound="lower",
+                       reliability=[0.9, 0.5])
+    b10, b50 = out["life"]
+    assert float(np.ravel(m.sf_tvc(np.array([b10["time"]]), sched))[0]) == pytest.approx(0.9, abs=1e-7)
+    assert float(np.ravel(m.sf_tvc(np.array([b50["time"]]), sched))[0]) == pytest.approx(0.5, abs=1e-7)
+    # The lower bound on the life is where the lower bound on reliability falls to 90%.
+    assert b10["bound"] == "lower" and b10["lower"] < b10["time"]
+    lo = float(np.ravel(m.cb_tvc(np.array([b10["lower"]]), sched, on="sf", alpha_ci=0.1, bound="lower"))[0])
+    assert lo == pytest.approx(0.9, abs=1e-6)
+    # Given survived to an age: the age at which the chance of surviving from it falls to 90%.
+    g = tvc.evaluate(m, fields, SCHEDULE, live["grid"], alpha_ci=0.1, bound="lower", given=4000,
+                     reliability=0.9)["life"][0]
+    assert g["time"] > 4000 and g["further"] == pytest.approx(g["time"] - 4000)
+    cond = float(np.ravel(m.sf_tvc(np.array([g["time"]]), sched, given=4000.0))[0])
+    assert cond == pytest.approx(0.9, abs=1e-7)
+
+
+def test_schedule_route_takes_given_at_and_reliability(client):
+    r = client.post("/api/fit/weibull_ph", data={**INTERVALS, "z": ["load_pct"], "unit": "hours"},
+                    files={"file": ("pumps.csv", io.BytesIO(_csv(_pumps())), "text/csv")}).json()
+    res = client.post(f"/api/tvc/{r['functions']['model_id']}", json={
+        "schedule": SCHEDULE, "on": "sf", "alpha_ci": 0.1, "bound": "lower", "given": 2000, "at": 5000,
+        "reliability": 0.9})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["given"] == 2000 and body["point"]["t"] == 5000 and body["life"][0]["time"] > 2000
+
+
+def test_a_ticked_text_column_is_a_category():
+    df = _pumps().assign(duty=lambda d: np.where(d["load_pct"] >= 90, "high", "normal"))
+    r = fit("weibull_ph", df, INTERVALS, ["duty", "load_pct"])
+    assert [c["name"] for c in r["coefficients"]] == ["duty[T.normal]", "load_pct"]
+    assert r["base_levels"] == {"duty": "high"}

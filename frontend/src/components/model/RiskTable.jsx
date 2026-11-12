@@ -2,7 +2,7 @@ import Plot from "../Plot.jsx";
 import Chip from "../ui/Chip.jsx";
 import { formatNumber } from "../../format.js";
 import { bandPair, dataPoints, fitLine, referenceShape } from "../../plotTheme.js";
-import { bandLevel, medianText, riskText, riskTone, sortColumn, sortRiskRows } from "../../joint.js";
+import { bandLevel, medianLowerText, medianText, riskText, riskTone, riskUpperText, sortColumn, sortRiskRows } from "../../joint.js";
 import { PlotCard } from "./ModelLayouts.jsx";
 import ChartPair from "./ChartPair.jsx";
 import "./ModelFrame.css";
@@ -51,12 +51,17 @@ export function MarkerChart({ pred, results, name, fill = false }) {
   return <Plot fill={fill} data={traces} layout={layout} download={`${name || "Model"} — reading trajectory`} />;
 }
 
+// Each chance, with its 90% one-sided upper bound under it where the row has one.
 function RiskCells({ row, n = 3 }) {
-  return Array.from({ length: n }, (_, i) => (
-    <td key={i} className="num">
-      <Chip tone={riskTone(row.risk?.[i])}>{riskText(row.risk?.[i])}</Chip>
-    </td>
-  ));
+  return Array.from({ length: n }, (_, i) => {
+    const up = riskUpperText(row.risk_upper?.[i]);
+    return (
+      <td key={i} className="num">
+        <Chip tone={riskTone(row.risk?.[i])}>{riskText(row.risk?.[i])}</Chip>
+        {up && <span className="joint-risk-up" title="90% upper bound: at most this">{up}</span>}
+      </td>
+    );
+  });
 }
 
 export { sortColumn };
@@ -102,7 +107,12 @@ export function RiskTable({
               {r.risk ? (
                 <>
                   <RiskCells row={r} n={labels.length} />
-                  <td className="num">{medianText(r, unit)}</td>
+                  <td className="num">
+                    {medianText({ ...r, life_level: null }, unit)}
+                    {medianLowerText(r, unit) && (
+                      <span className="joint-risk-up" title="90% lower bound: at least this">{medianLowerText(r, unit)}</span>
+                    )}
+                  </td>
                 </>
               ) : why ? (
                 <td colSpan={labels.length + 1} className="joint-risk-why">{why}</td>
@@ -136,7 +146,8 @@ export function UnitSummary({ view, results, what = "Unit" }) {
     <p className="joint-unit-sum" role="status">
       {view.unit_id ? <>{what} <b>{view.unit_id}</b>, </> : "This unit, "}
       age {n3(view.age)}{unit ? ` ${unit.toLowerCase()}` : ""}, {view.markers.length} reading{view.markers.length === 1 ? "" : "s"}.{" "}
-      {(results.horizons?.labels || []).map((l, i) => `${riskText(view.risk?.[i])} chance of failing in the next ${l}`).join("; ")}.
+      {(results.horizons?.labels || []).map((l, i) => `${riskText(view.risk?.[i])} chance of failing in the next ${l}`
+        + (view.risk_upper?.[i] != null ? ` (at most ${riskText(view.risk_upper[i])}, 90%)` : "")).join("; ")}.
       {" "}Median life left: {medianText(view, unit)}.
     </p>
   );

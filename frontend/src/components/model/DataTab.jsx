@@ -11,7 +11,7 @@ import { ScrollCard, TablePanel } from "./ModelLayouts.jsx";
 import { getDataset } from "../../api.js";
 import { formatNumber, formatPercent } from "../../format.js";
 import { bestFitSentence, compareRows } from "../../lifeResults.js";
-import { dataWords, intervalLevel } from "../../modelFrame.js";
+import { dataWords, intervalLevel, ratioSign } from "../../modelFrame.js";
 import { ciPct, levelPct } from "../../levels.js";
 import { unitInText } from "../unitText.js";
 import { fmtP } from "../RegressionChecks.jsx";
@@ -219,6 +219,9 @@ function Parameters({ result }) {
     const parts = [...new Set(table.map((r) => r.part))];
     const ratio = result.ratio_label;
     const showRatio = ratio && table.some((r) => r.exp_value != null);
+    // A time or odds ratio reads exp(-coefficient) (see ratioSign).
+    const sign = ratioSign(result);
+    const ratioOf = (r) => (r.part === "coefficients" && sign < 0 && r.value != null ? Math.exp(-r.value) : r.exp_value);
     const showP = table.some((r) => r.p != null);
     return (
       <ScrollCard title="Every parameter" sub={`with ${ciPct(result)} intervals`}>
@@ -238,7 +241,7 @@ function Parameters({ result }) {
                 <tr key={`${r.part}-${r.name}`}>
                   <td>{parts.length > 1 && <span className="mm-part">{PART[r.part] || r.part} · </span>}{r.name}</td>
                   <td className="mf-num">{formatNumber(r.value, { sig: 4 })}</td>
-                  {showRatio && <td className="mf-num">{r.exp_value != null ? formatNumber(r.exp_value, { sig: 4 }) : "—"}</td>}
+                  {showRatio && <td className="mf-num">{ratioOf(r) != null ? formatNumber(ratioOf(r), { sig: 4 }) : "—"}</td>}
                   <td className="mf-num">{fmtCi(ci)}</td>
                   {showP && <td className="mf-num">{fmtP(r.p)}</td>}
                 </tr>

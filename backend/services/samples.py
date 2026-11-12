@@ -1100,12 +1100,21 @@ def _sample_part(csv: bytes):
                        columns=[{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns], data=csv)
 
 
+def _joint_sample_stale(doc: dict) -> bool:
+    """A sample condition and life model saved before its risk table carried
+    the 90% upper bound on each chance: refitted (the same data, the same
+    numbers, plus the bounds)."""
+    rows = ((doc or {}).get("results") or {}).get("risk") or []
+    return bool(rows) and not any(r.get("risk_upper") for r in rows)
+
+
 def _seed_joint_models(db) -> None:
     """Fit and save the sample condition and life models (idempotent: a
-    saved one is left as it is)."""
+    saved one is left as it is, unless it predates the risk bounds)."""
     for spec in SAMPLE_JOINT_MODELS:
         try:
-            if db.models.find_one({"_id": spec["id"]}, {"_id": 1}) is not None:
+            existing = db.models.find_one({"_id": spec["id"]}, {"results.risk": 1})
+            if existing is not None and not _joint_sample_stale(existing):
                 continue
             if db.datasets.find_one({"_id": spec["dataset_id"]}, {"_id": 1}) is None:
                 continue
@@ -1135,6 +1144,10 @@ def _seed_joint_models(db) -> None:
                 surpyval_version=getattr(surpyval, "__version__", None),
                 status="ready",
             )
+            if existing is not None:
+                db.models.replace_one({"_id": spec["id"]}, to_doc(model))
+                logger.info("Refitted sample condition and life model %r.", spec["id"])
+                continue
             db.models.insert_one(to_doc(model))
             logger.info("Seeded sample condition and life model %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot

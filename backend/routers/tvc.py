@@ -7,8 +7,11 @@ only to the account that fitted it) and a saved model (re-fitted on demand).
 
 Body: ``{"schedule": [{"t": 0, "values": {"load_pct": 60}}, ...],
 "on": "sf" | "ff" | "Hf", "alpha_ci": 0.1, "bound": "lower" | "upper" |
-"two-sided", "x_max": 9000}``. ``alpha_ci`` omitted (or null) gives no
-bounds; ``x_max`` extends (or shortens) the time axis.
+"two-sided", "x_max": 9000, "given": 12000, "at": 14160, "reliability": 0.9}``.
+``alpha_ci`` omitted (or null) gives no bounds; ``x_max`` extends (or
+shortens) the time axis; ``given`` conditions on surviving to that age;
+``at`` adds the exact values there (``point``) and ``reliability`` the age
+it falls to (``life``), each with its bound(s).
 """
 
 from __future__ import annotations
@@ -37,6 +40,9 @@ def _answer(entry: dict, body: dict) -> dict:
         on=body.get("on") or "sf",
         alpha_ci=None if alpha in (None, "") else float(alpha),
         bound=body.get("bound") or "lower",
+        given=body.get("given"),
+        at=body.get("at"),
+        reliability=body.get("reliability"),
     )
 
 

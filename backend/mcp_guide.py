@@ -24,8 +24,8 @@ with SurPyval, the way when fitting isn't on the plan): change model_save with t
 and delta to the best, under 2 is a tie, what it skipped and why, and guidance in words: relay it; \
 include_mixtures lets two-mode mixtures compete, decided by BIC); discrete, bounded, spline, regression (with \
 covariates and a dataset: weibull_ph, weibull_aft, loglogistic_aft, weibull_po, weibull_ah, cox_ph, …; \
-id_column for covariates that change over time; the read is a hazard ratio for _ph, a time ratio for _aft, an \
-odds ratio for _po and an added failure rate for _ah; diagnostics.model_checks says whether the model's own \
+id_column for covariates that change over time; the read is a hazard ratio for _ph, a time ratio (the life ×) for \
+_aft, an odds ratio (of having failed) for _po and an added failure rate for _ah; diagnostics.model_checks says whether the model's own \
 assumption holds, with what to try if not), shared frailty (group_column; frailty_family lognormal for a \
 heavier-tailed frailty), competing risks (causes / cause_column: each failure mode's share). method: MLE unless \
 the user asks.

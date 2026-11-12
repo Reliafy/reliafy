@@ -328,7 +328,8 @@ def unit_view(model: Model, unit_id: str) -> dict:
     """A fitted running unit's updating prediction (``joint.unit_view``)."""
     inp = unit_inputs(model, unit_id)
     out = joint.unit_view(live(model), inp.get("covariates"), inp.get("markers"), inp.get("age"),
-                          (model.results or {}).get("unit") or "", (model.results or {}).get("horizons"))
+                          (model.results or {}).get("unit") or "", (model.results or {}).get("horizons"),
+                          life_bound=True)
     return {"unit_id": str(unit_id), "source": "fitted", **out}
 
 
@@ -342,7 +343,8 @@ def predict(model: Model, body: dict) -> dict:
     except (TypeError, ValueError) as exc:
         raise FitError("The unit's age must be a number (since new).") from exc
     out = joint.unit_view(live(model), body.get("covariates") or {}, body.get("markers") or [], age,
-                          (model.results or {}).get("unit") or "", (model.results or {}).get("horizons"))
+                          (model.results or {}).get("unit") or "", (model.results or {}).get("horizons"),
+                          life_bound=True)
     return {"unit_id": None, "source": "entered", **out}
 
 

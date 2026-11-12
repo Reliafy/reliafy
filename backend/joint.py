@@ -30,7 +30,7 @@ import pandas as pd
 
 from backend.fitting import FitError
 from backend.units import canonical_unit, normalize_unit, unit_in_text
-from backend.warn_capture import collect_warnings
+from backend.warn_capture import collect_warnings, ignore_warnings
 
 #: The path models offered, by id: (SurPyval's class name, label, formula,
 #: a plain description). Linear first: the default.
@@ -61,6 +61,8 @@ ALPHA_CI = 0.10
 # life left (the workspace rule for B-lives and other life bounds), and 90% two-sided bands
 # on the curves.
 LIFE_ALPHA = 0.10
+# The time the risk table may spend on its bounds (each unit about 0.05 s).
+BOUNDS_SECONDS = 20.0
 #: The risk table's horizons in days, for a calendar time unit.
 HORIZON_DAYS = (30, 90, 365)
 _DAYS_PER = {"second": 1 / 86400, "minute": 1 / 1440, "hour": 1 / 24, "day": 1.0, "week": 7.0,
@@ -631,6 +633,22 @@ def risk_row(pred, h: list[float]) -> dict:
     }
 
 
+def risk_upper(pred, h: list[float], alpha: float = LIFE_ALPHA) -> Optional[list]:
+    """A one-sided ``1 - alpha`` upper bound on the unit's chance of failing over
+    each horizon: one less the lower bound on its survival from now (Wald, for
+    the parameters' uncertainty; the reading's own noise is in the estimate).
+    None where the bounds can't be worked out (never a made-up number)."""
+    try:
+        with np.errstate(all="ignore"), ignore_warnings():
+            lower = np.ravel(np.asarray(pred.cb(pred.age + np.asarray(h, dtype=float), on="sf",
+                                                alpha_ci=float(alpha), bound="lower"), dtype=float))
+    except (ValueError, TypeError, NotImplementedError, np.linalg.LinAlgError, ArithmeticError):
+        return None
+    if lower.size != len(h) or not np.isfinite(lower).all():
+        return None
+    return [_f(min(1.0, max(0.0, 1.0 - float(v)))) for v in lower]
+
+
 def median_left_lower(pred, alpha: float = LIFE_ALPHA) -> Optional[float]:
     """A one-sided ``1 - alpha`` lower confidence bound on the unit's median life left:
     where the lower bound on its survival (Wald, for the parameters' uncertainty) falls
@@ -668,9 +686,16 @@ def median_left_lower(pred, alpha: float = LIFE_ALPHA) -> Optional[float]:
     return _f(max(0.0, float(x) - pred.age))
 
 
-def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS) -> tuple[list[dict], list[str]]:
-    """The running units' risk, highest first over the middle horizon."""
+def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS,
+               bounds_seconds: float = BOUNDS_SECONDS) -> tuple[list[dict], list[str]]:
+    """The running units' risk, highest first over the middle horizon. Each
+    row has the 90% one-sided upper bound on each chance (``risk_upper``) and
+    lower bound on its median life left (``median_lower``, ``life_level``),
+    worked out for as many units as ``bounds_seconds`` allows."""
+    import time
+
     rows, notes = [], []
+    started, cut = time.monotonic(), False
     for k, (uid, inp) in enumerate(inputs.items()):
         if k >= limit:
             notes.append(f"Risk is listed for the first {limit} running units; open any other in the unit view.")
@@ -681,6 +706,14 @@ def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS)
         except FitError as exc:
             notes.append(f"Unit {uid}: {exc}")
             continue
+        if time.monotonic() - started <= bounds_seconds:
+            row["risk_upper"] = risk_upper(pred, h)
+            row["median_lower"] = median_left_lower(pred)
+            row["life_level"] = 1 - LIFE_ALPHA
+        elif not cut:
+            cut = True
+            notes.append("The 90% bounds are worked out for the units listed first; open any other in the unit "
+                         "view for its own.")
         last = (inp.get("markers") or [None])[-1]
         rows.append({"id": uid, "age": inp.get("age"), "covariates": inp.get("covariates") or {},
                      "n_readings": len(inp.get("markers") or []), "last_reading": last, **row})
@@ -767,7 +800,8 @@ def unit_view(model, covariates: Optional[dict], markers, age: Optional[float], 
         d = pred.to_dict(alpha_ci=float(alpha_ci))
     row = risk_row(pred, h["values"])
     if life_bound:
-        row = {**row, "median_lower": median_left_lower(pred), "life_level": 1 - LIFE_ALPHA}
+        row = {**row, "median_lower": median_left_lower(pred), "life_level": 1 - LIFE_ALPHA,
+               "risk_upper": risk_upper(pred, h["values"])}
     return {
         "age": pred.age,
         "covariates": _covariate_dict(model, pred.covariates),

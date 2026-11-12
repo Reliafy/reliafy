@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  DOWNLOAD_OVER, DOWNLOAD_ROW, MIN_PLOT_AREA, PLOTLY_HEIGHT, downloadCorner, minPlotSize, ownHeight, reachesCorner, shorterBy, themedLayout,
+  DOWNLOAD_OVER, DOWNLOAD_ROW, MIN_PLOT_AREA, PLOTLY_HEIGHT, downloadCorner, logTicks, minPlotSize, ownHeight, reachesCorner, shorterBy, themedLayout,
 } from "./plotTheme.js";
 
 const box = (left, top, width, height = 14) => ({ left, top, right: left + width, bottom: top + height });
@@ -114,4 +114,28 @@ test("minPlotSize: a squeezed box still leaves the chart a plot area", () => {
     const m = minPlotSize(lay);
     assert.ok(Number.isFinite(m.width) && Number.isFinite(m.height) && m.width >= MIN_PLOT_AREA && m.height >= MIN_PLOT_AREA);
   }
+});
+
+test("a log axis labels values under 1 in full: 0.4, not 4", () => {
+  // Hazard ratios from 0.44 to 3.0 (North 0.59, dusty 2.28).
+  const t = logTicks(0.37, 3.6);
+  assert.ok(t.tickvals.length >= 3 && t.tickvals.length <= 9);
+  assert.ok(t.ticktext.includes("1"));
+  t.tickvals.filter((v) => v < 1).forEach((v, i) => assert.ok(t.ticktext[t.tickvals.indexOf(v)].startsWith("0."), `${v}`));
+  assert.ok(!t.ticktext.some((s) => /^[2-9]$/.test(s) && Number(s) < 1));
+  // Every label is its own value.
+  t.tickvals.forEach((v, i) => assert.equal(Number(t.ticktext[i]), v));
+  // Above 1 too: a time ratio of 1.32 sits between labelled ticks.
+  assert.deepEqual(logTicks(0.45, 1.7).ticktext, ["0.5", "0.6", "0.7", "0.8", "0.9", "1", "1.2", "1.5"]);
+  // A short span: 0.6 to 0.95 gets each tenth.
+  assert.deepEqual(logTicks(0.55, 0.97).ticktext, ["0.6", "0.7", "0.8", "0.9"]);
+  // A wide span thins to powers of ten (and their 2s and 5s while they fit).
+  const wide = logTicks(0.01, 1000);
+  assert.ok(wide.tickvals.length <= 9);
+  assert.ok(wide.ticktext.includes("0.01") && wide.ticktext.includes("1,000"));
+  // A very short span gets evenly spaced ticks.
+  const narrow = logTicks(0.97, 1.04);
+  assert.ok(narrow.tickvals.length >= 3);
+  narrow.tickvals.forEach((v, i) => assert.equal(Number(narrow.ticktext[i]), v));
+  assert.equal(logTicks(0, 2), null);
 });

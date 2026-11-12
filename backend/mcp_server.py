@@ -2932,7 +2932,10 @@ def _joint_report(r: dict, top: int = 10) -> dict:
         risk.append({
             "unit_id": u.get("id"), "age": u.get("age"),
             "risk": dict(zip(h.get("labels") or [], u.get("risk") or [])),
+            # 90% one-sided: the chance of failing is at most this.
+            **({"risk_upper_90": dict(zip(h.get("labels") or [], u["risk_upper"]))} if u.get("risk_upper") else {}),
             "median_remaining_life": u.get("median_remaining") if u.get("median_reached") else "not reached",
+            **({"median_remaining_life_lower_90": u["median_lower"]} if u.get("median_lower") is not None else {}),
         })
     return {
         "fit_ok": r.get("fit_ok"), "maximum": r.get("maximum"), "unit": r.get("unit"),

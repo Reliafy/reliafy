@@ -46,7 +46,8 @@ AGE_UNIT = "Days"
 #: Model time units an item's calendar age can be put in. Hours and smaller
 #: are left out: a model in hours counts running hours, not the calendar.
 CALENDAR = ("day", "week", "month", "year")
-RISK_KEYS = ("survival", "risk", "median_remaining", "median_reached", "marker_now", "median_lower", "life_level")
+RISK_KEYS = ("survival", "risk", "median_remaining", "median_reached", "marker_now", "median_lower", "life_level",
+             "risk_upper")
 
 
 def _sv():
@@ -303,6 +304,7 @@ def _scorer(m, db, owners, hidden):
             else:
                 pred = joint.predict(model, values, markers, age)
                 risk = {**joint.risk_row(pred, h), "median_lower": joint.median_left_lower(pred) if bound else None,
+                        "risk_upper": joint.risk_upper(pred, h) if bound else None,
                         "life_level": 1 - joint.LIFE_ALPHA}
         except (FitError, ValueError, ArithmeticError) as err:
             row["why"] = f"The model couldn't work out its risk: {err}"
@@ -363,8 +365,8 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
         notes.append(f"{which} condition and life model. To see risk, link one to the position on its Modelling "
                      "tab.")
     if len(rows) > MAX_BOUNDED:
-        notes.append(f"The lower bound on median life left is worked out for the first {MAX_BOUNDED} members by "
-                     "name; open any other for its own.")
+        notes.append(f"The 90% bounds (each chance at most, median life left at least) are worked out for the "
+                     f"first {MAX_BOUNDED} members by name; open any other for its own.")
     if len(rows) > MAX_SCORED:
         notes.append(f"Risk is worked out for the first {MAX_SCORED} members by name; open any other for its own.")
     out["note"] = " ".join(notes) or None

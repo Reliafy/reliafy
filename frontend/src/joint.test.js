@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   covariateParts, fleetAnswer, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
-  paramGroups, parseReadings, positionFacts, positionRisk, readingsText, riskTone, sortColumn,
+  paramGroups, parseReadings, positionFacts, positionRisk, medianLowerText, readingsText, riskBoundNote, riskTone, riskUpperText, sortColumn,
 } from "./joint.js";
 
 const col = (name, dtype = "float64", values = null) => ({ name, dtype, values });
@@ -197,4 +197,15 @@ test("a model links to the Explorer only where a position uses it", async () => 
   assert.equal(usedOnPositions(links, "m3"), false); // fitted from a dataset only
   assert.equal(usedOnPositions(null, "m1"), false);
   assert.equal(usedOnPositions(links, ""), false);
+});
+
+test("each chance of failing carries its 90% upper bound, or the table says why not", () => {
+  assert.equal(riskUpperText(0.7953), "≤ 80%");
+  assert.equal(riskUpperText(null), "");
+  assert.equal(riskUpperText(0.99995), "≤ 100%");
+  assert.equal(medianLowerText({ median_remaining: 10.9, median_lower: 6.6 }, "Days"), "≥ 6.6 days");
+  assert.equal(medianLowerText({ median_remaining: null, median_reached: false, median_lower: 6.6 }), "");
+  assert.match(riskBoundNote([{ risk: [0.2, 0.6], risk_upper: [0.3, 0.8] }]), /90% upper bound.*at most/);
+  assert.match(riskBoundNote([{ risk: [0.2, 0.6] }]), /^No 90% bounds.*saved before.*Fit a new model/);
+  assert.equal(riskBoundNote([]), "");
 });

@@ -35,3 +35,23 @@ export const ciLevelOf = (result, fallback = 0.95) => {
   return Number.isFinite(v) && v > 0 && v < 1 ? v : fallback;
 };
 export const ciPct = (result, fallback = 0.95) => levelPct(ciLevelOf(result, fallback));
+
+// The side a one-sided bound goes on for each function, by the rule: a
+// reliability (and a life read off it) gets the lower bound, a chance of
+// failing and the cumulative hazard the upper one (the pessimistic side
+// either way); the hazard rate and the density a two-sided interval.
+// ``"time"`` is a time at a reliability.
+const RULE_BOUND = { sf: "lower", time: "lower", ff: "upper", Hf: "upper" };
+export const ruleBound = (fn) => RULE_BOUND[fn] || "two-sided";
+// A calculator's bound setting: "auto" (the default) follows the rule for
+// the function shown; anything else is the user's own choice.
+export const AUTO_BOUND = "auto";
+export const effectiveBound = (setting, fn) => (setting === AUTO_BOUND || !setting ? ruleBound(fn) : setting);
+// The bound menu's choices, the first naming the side the rule picks.
+export const boundOptions = (fn) => [
+  { value: AUTO_BOUND, label: `Safe side (${ruleBound(fn)})` },
+  { value: "none", label: "None" },
+  { value: "two-sided", label: "Two-sided" },
+  { value: "lower", label: "Lower" },
+  { value: "upper", label: "Upper" },
+];

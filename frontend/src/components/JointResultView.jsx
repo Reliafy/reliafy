@@ -4,7 +4,7 @@ import Plot from "./Plot.jsx";
 import { getJointUnit, predictJointUnit } from "../api.js";
 import { formatNumber } from "../format.js";
 import { bandPair, fitLine } from "../plotTheme.js";
-import { medianText, paramGroups, parseReadings, readingsText, sortRiskRows } from "../joint.js";
+import { medianText, paramGroups, parseReadings, readingsText, riskBoundNote, sortRiskRows } from "../joint.js";
 import { ModelTabs } from "./model/ModelFrame.jsx";
 import { PlotCard, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { RiskTable, SurvivalChart, UnitCharts, UnitSummary, sortColumn } from "./model/RiskTable.jsx";
@@ -120,6 +120,7 @@ function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
             moves the curve: a unit whose {results.marker || "reading"} climbs faster than the fleet's carries more risk.
             {" "}“&gt; 99.9%” means very likely, not certain.
           </p>
+          {riskBoundNote(results.risk) && <p className="hint">{riskBoundNote(results.risk)}</p>}
           {!modelId && <p className="muted-line">{SIGN_IN}</p>}
           {error && <div className="card error" role="alert">{error}</div>}
           {busy && !shown && <p className="hint">Working…</p>}

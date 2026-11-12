@@ -197,9 +197,103 @@ def best_candidates() -> dict:
     return {k: v for k, v in DISTRIBUTIONS.items() if not v.get("bounded")}
 
 
-# What exp(coefficient) means per regression effect (None = no natural ratio;
-# additive-hazards coefficients are additive, shown as the coefficient only).
+# What a coefficient's ratio means per regression effect (None = no natural
+# ratio; additive-hazards coefficients are additive, shown as the coefficient
+# only).
 _RATIO_LABELS = {"hazard": "hazard ratio", "aft": "time ratio", "odds": "odds ratio"}
+# SurPyval's sign: an AFT coefficient β accelerates the clock (the item ages
+# exp(β) times as fast, so its life is multiplied by exp(-β)), and a PO
+# coefficient multiplies the odds of *surviving* by exp(β). The ratio we show
+# reads the same way as a hazard ratio's words: the time ratio is what the life
+# is multiplied by, the odds ratio what the odds of having failed are
+# multiplied by. Both are exp(-β); a hazard ratio is exp(β).
+_RATIO_SIGN = {"hazard": 1.0, "aft": -1.0, "odds": -1.0}
+
+
+def coefficient_ratio(effect: str, value: float, ci=None) -> tuple[float, Optional[list]]:
+    """The ratio a coefficient shows and its interval, in the direction the
+    words read (see ``_RATIO_SIGN``): ``(ratio, [lo, hi] or None)``."""
+    sign = _RATIO_SIGN.get(effect, 1.0)
+    ratio = float(np.exp(sign * float(value)))
+    if not ci or ci[0] is None or ci[1] is None:
+        return ratio, None
+    ends = sorted(float(np.exp(sign * float(v))) for v in ci)
+    return ratio, ends
+
+
+# A text column with more levels than this isn't a category (an id, a note).
+MAX_CATEGORY_LEVELS = 30
+
+
+def covariates_as_formula(df: pd.DataFrame, covariates) -> tuple[pd.DataFrame, Optional[str]]:
+    """Ticked covariate columns, ready to fit: a text column of numbers is
+    read as numbers, and a text column of labels (a site, a supplier) as a
+    category, each level against a base level (the first in A–Z order, named
+    on the Effects tab). Returns ``(df, formula)``: ``formula`` is None when
+    every column is numeric (fit with ``Z_cols``), else the columns joined
+    with ``+``, which SurPyval expands into one term per level. Raises
+    :class:`FitError` for a column that can't be a covariate."""
+    cols = [str(c) for c in covariates or []]
+    if not cols:
+        return df, None
+    df = df.copy()
+    categorical = []
+    for col in cols:
+        if col not in df.columns:
+            raise FitError(f"The data has no column named '{col}'.")
+        series = df[col]
+        if pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
+            continue
+        text = series.dropna().astype(str).str.strip()
+        text = text[text != ""]
+        numbers = pd.to_numeric(text, errors="coerce")
+        if len(text) and numbers.notna().all():
+            df[col] = pd.to_numeric(series.astype(str).str.strip().replace("", np.nan), errors="coerce")
+            continue
+        levels = text.unique()
+        if len(levels) < 2:
+            raise FitError(f"“{col}” has the same value in every row, so it can't explain any difference "
+                           "in life: untick it.")
+        if len(levels) > MAX_CATEGORY_LEVELS:
+            raise FitError(f"“{col}” holds text with {len(levels):,} different values, too many to compare "
+                           f"as groups (up to {MAX_CATEGORY_LEVELS}). If it names each item, untick it; if "
+                           "it holds numbers, fix the rows that aren't.")
+        if series.isna().any() or (series.astype(str).str.strip() == "").any():
+            raise FitError(f"Some rows have no “{col}”. Fill them in, or untick it.")
+        df[col] = series.astype(str).str.strip()
+        categorical.append(col)
+    if not categorical:
+        return df, None
+
+    def term(c: str) -> str:
+        return c if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", c) else f"`{c}`"
+
+    return df, " + ".join(term(c) for c in cols)
+
+
+_LEVEL_TERM = re.compile(r"^(?P<var>.+)\[T\.(?P<level>.+)\]$")
+
+
+def base_levels(names, fields) -> dict:
+    """The base level each categorical covariate's effects are against: the
+    one of its levels (from the calculator ``fields``) with no coefficient of
+    its own. ``{"site": "East"}``; a variable whose base can't be told
+    (several levels without a term, or none) is left out."""
+    from backend.tvc import level_variable
+
+    seen: dict = {}
+    for n in names or []:
+        m = _LEVEL_TERM.match(str(n))
+        if m:
+            seen.setdefault(level_variable(m["var"]), set()).add(m["level"])
+    out = {}
+    for f in fields or []:
+        if f.get("type") != "category" or f["name"] not in seen:
+            continue
+        rest = [str(o) for o in f.get("options") or [] if str(o) not in seen[f["name"]]]
+        if len(rest) == 1:
+            out[f["name"]] = rest[0]
+    return out
 
 # Probabilities are clipped away from 0/1 before the y-transform, which would
 # otherwise map them to +/- infinity.
@@ -883,7 +977,8 @@ def without_intervals(params: list) -> list:
     """Parameters with their standard errors and intervals dropped: with no
     finite maximum they are meaningless (SurPyval says so), and a CI would
     read as an estimate's."""
-    return [{**p, "se": None, "ci": None} if "se" in p else {**p, "ci": None} for p in params]
+    out = [{**p, "se": None, "ci": None} if "se" in p else {**p, "ci": None} for p in params]
+    return [{**p, "ratio_ci": None} if "ratio_ci" in p else p for p in out]
 
 
 def no_maximum_reason(notice: dict) -> str:
@@ -3173,7 +3268,12 @@ def _fit_regression(
         except FormulaRejected as exc:
             raise FitError(str(exc)) from exc
     elif covariates:
-        fit_kwargs["Z_cols"] = list(covariates)
+        # A ticked text column is a category: fit it as one.
+        df, auto = covariates_as_formula(df, covariates)
+        if auto:
+            fit_kwargs["formula"] = check_formula(auto, df.columns)
+        else:
+            fit_kwargs["Z_cols"] = list(covariates)
     cox_kwargs = regression_diagnostics.cox_fit_kwargs(cox_opts)
     fit_kwargs = more_models.regression_fit_kwargs(distribution, mapping, fit_kwargs)
 
@@ -3227,9 +3327,11 @@ def _fit_regression(
         for i, name in enumerate(base_names)
     ]
 
-    # Regression coefficients with a 90% CI. exp(coefficient) is a hazard ratio
-    # (PH), time ratio (AFT) or odds ratio (PO); additive-hazards coefficients
-    # have no natural ratio, so ``ratio``/``ratio_label`` are omitted for AH.
+    # Regression coefficients with a 90% CI. The ratio is a hazard ratio (PH,
+    # exp(β)), a time ratio (AFT: what the life is multiplied by, exp(-β)) or
+    # an odds ratio (PO: what the odds of having failed are multiplied by,
+    # exp(-β)), with ``ratio_ci``; additive-hazards coefficients have no
+    # natural ratio, so ``ratio``/``ratio_label`` are omitted for AH.
     # ``ratio_label`` in the payload tells the UI which; ``hazard_ratio`` is kept
     # for backward compatibility with saved models.
     effect = entry.get("effect", "hazard")
@@ -3242,7 +3344,7 @@ def _fit_regression(
         value = float(params_arr[k_dist + j])
         coef = {"name": name, "value": value, "ci": _ci(k_dist + j)}
         if ratio_label is not None:
-            coef["ratio"] = float(np.exp(value))
+            coef["ratio"], coef["ratio_ci"] = coefficient_ratio(effect, value, coef["ci"])
             coef["hazard_ratio"] = coef["ratio"]  # backward compat
         coefficients.append(coef)
 
@@ -3322,6 +3424,9 @@ def _fit_regression(
             extra["at_covariate_means"] = at_means
     if units:
         extra["covariate_units"] = units
+    bases = base_levels(feature_names, fields)
+    if bases:
+        extra["base_levels"] = bases
     if cox_opts:
         extra["options"] = {regression_diagnostics.COX_KEY: cox_opts}
     if frailty_family:
