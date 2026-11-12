@@ -71,7 +71,7 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   // The menu: Focus › (the four levels beside it), before Pin this branch and Delete.
   await row(page, `Works line A ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Works line A ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Export this branch…", "Focus", "Pin this branch", "Delete…"]);
   await expect(menu.getByRole("menuitem", { name: "Focus" })).toHaveAttribute("aria-haspopup", "menu");
   await menu.getByRole("menuitem", { name: "Focus" }).hover();
   const sub = page.getByRole("menu", { name: "Focus" });
