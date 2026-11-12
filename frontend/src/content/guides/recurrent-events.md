@@ -192,6 +192,11 @@ budget.
   repairing or overhaul, the cost-optimal overhaul interval from the cost of a
   repair and of an overhaul, with its 90% range.
 
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits a repairable model with
+SurPyval from its data and prints the numbers on the page. It's free for everyone who can open the model.
+
 ## Where to go next
 
 If the same equipment also has a wear-out story at the component level, fit those

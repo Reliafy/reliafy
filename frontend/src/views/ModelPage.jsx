@@ -6,7 +6,8 @@ import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { compareModel, getModel, deleteModel } from "../api.js";
+import { compareModel, getModel, deleteModel, downloadModelPython } from "../api.js";
+import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
@@ -94,6 +95,7 @@ export default function ModelPage() {
       id={model?.id}
       menu={model && (
         <>
+          <DownloadPythonItem download={() => downloadModelPython("life", model.id)} onError={setError} />
           {canEdit && <button className="ovm-item" onClick={() => setEditing(true)}>Edit fit</button>}
           {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to a library…</button>}
           <button className="ovm-item danger" onClick={onDelete}>

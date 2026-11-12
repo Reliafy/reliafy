@@ -172,6 +172,11 @@ Plans take one stress, a Weibull or lognormal distribution, and the Arrhenius,
 Eyring or inverse power law model. Without a fit, open the tab directly and type
 planning values from a similar part.
 
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits an accelerated-life model with
+SurPyval from its data and prints the numbers on the page. It's free for everyone who can open the model.
+
 ## Where to go next
 
 The relationships, the activation-energy interpretation, and a worked

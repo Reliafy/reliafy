@@ -251,6 +251,29 @@ def get_model(
     })
 
 
+@router.get("/degradation/models/{model_id}/export.py")
+def export_python(
+    model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+):
+    """Download as Python: a script that refits the model with SurPyval from
+    the readings it was fitted to (embedded) and prints the page's numbers.
+    Free for anyone who can view the model."""
+    from backend.routers.rbds import python_download
+    from backend.services import degradation_export
+
+    doc, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        filename, source = degradation_export.export_python(session, doc, [*ctx.read_owners, doc.owner_id])
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export degradation model %s as Python", model_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to export. The error has been logged."})
+    return python_download(filename, source)
+
+
 @router.get("/degradation/models/{model_id}/reliability")
 def reliability(
     model_id: str,

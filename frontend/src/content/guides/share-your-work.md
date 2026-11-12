@@ -56,6 +56,10 @@ and it flags any figure it can't find in the saved results.
 press **New report** to start one there), your saved analyses, and every live
 share link with what it shows, so you can see at a glance what's out there.
 
+A public link to a model or a diagram also offers **Download as Python** (in the **⋯** menu on a
+model), so the person you share it with can rerun it without an account.
+
+
 ## Sharing with a named person — for a specific colleague
 
 In the same dialog, **Share with (email)** shares that one artifact with someone

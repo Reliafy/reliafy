@@ -124,6 +124,11 @@ Treat early predictions as *ordering information* — which assets are ahead of 
 pack — rather than dates to put in a plan. As readings accumulate the predictions
 tighten, and that's when they're worth scheduling against.
 
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits a degradation model with
+SurPyval from its data and prints the numbers on the page. It's free for everyone who can open the model.
+
 ## Where to go next
 
 The modelling approaches and worked examples are covered in the blog post on
