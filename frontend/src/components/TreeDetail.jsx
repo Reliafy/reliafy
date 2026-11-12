@@ -6,7 +6,7 @@ import FailureReportsPanel from "./FailureReportsPanel.jsx";
 import SignalsPanel from "./SignalsPanel.jsx";
 import OverflowMenu from "./OverflowMenu.jsx";
 import RowMenu from "./RowMenu.jsx";
-import { ancestorsOf } from "../assetTree.js";
+import { ancestorsOf, structuralRow } from "../assetTree.js";
 import { branchOf, classesInBranch, hasTabBar, isDesignRow, isProductRow, rowKind, shownTab, tabsFor } from "../explorerTabs.js";
 import TreeSummary from "./TreeSummary.jsx";
 import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
@@ -108,7 +108,9 @@ export function usePosition(id, version) {
   return SEEN.get(seenKey(id, version)) || { id, data: null, error: null };
 }
 
-function Summary({ row, display, today, onSelect, version, actions }) {
+function Summary({ row: picked, display: shownIn, structure, today, onSelect, version, actions }) {
+  // By Classes, a position's facts and counts come from its place in the Positions tree.
+  const { row, display } = structuralRow(structure, picked, shownIn);
   const position = usePosition(row.type === "pos" ? row.key : null, version);
   const props = {
     row, display, today, onSelect, position, fullPage: fullPagePath(row), actions,
@@ -298,7 +300,7 @@ export function HeaderTabs({ row, tab, onTab }) {
 // for the heading here on a phone; on a wide screen the page draws the heading.
 const TreeDetail = forwardRef(function TreeDetail({
   display, row, today, onSelect, onCrumb, above, back, version, empty, tab, onTab, fullScreenButton, headless = false, actions = [],
-  reports = null, heading = 1, menu = [], onMenu = null, within = null,
+  reports = null, heading = 1, menu = [], onMenu = null, within = null, structure = null,
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
   const tabbed = hasTabBar(row);
@@ -341,7 +343,7 @@ const TreeDetail = forwardRef(function TreeDetail({
           // the one asset on show, its top position's id: only the positions inside it).
           : shown === "condition"
           ? <Suspense fallback={loading}><ClassFleet row={row} version={version} onSelect={onSelect} within={within} /></Suspense>
-          : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} actions={actions} />}
+          : <Summary row={row} display={display} structure={structure} today={today} onSelect={onSelect} version={version} actions={actions} />}
       </div>
     </div>
   );

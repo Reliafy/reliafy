@@ -53,6 +53,21 @@ test("median remaining life: never infinite", () => {
   assert.equal(riskTone(0.01), "success");
 });
 
+test("a position's median life left carries its 90% one-sided lower bound; bands name their level", async () => {
+  const { bandLevel } = await import("./joint.js");
+  const row = { median_reached: true, median_remaining: 531, median_lower: 402.4, life_level: 0.9 };
+  assert.equal(medianText(row, "Days"), "531 days (at least 402 days, 90%)");
+  // A bound that couldn't be worked out says so, never a blank.
+  assert.equal(medianText({ ...row, median_lower: null }, "Days"), "531 days (no 90% bound here)");
+  // Not reached: no bound either way.
+  assert.equal(medianText({ ...row, median_reached: false, median_remaining: null }, "Days"), "not reached");
+  // A row without a life level (the model page's own units): as before.
+  assert.equal(medianText({ median_reached: true, median_remaining: 531 }, "Days"), "531 days");
+  assert.equal(bandLevel(0.1), "90%");
+  assert.equal(bandLevel(0.05), "95%");
+  assert.equal(bandLevel(undefined), "95%");
+});
+
 test("block model and line", () => {
   const m = jointBlockModel({ id: "m1", name: "Pumps", unit: "Days" }, { id: "P3" });
   assert.equal(m.kind, "joint");

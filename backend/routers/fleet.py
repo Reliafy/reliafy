@@ -371,7 +371,9 @@ def get_tracked_fleet(
             "id": it.id, "model_id": it.model_id, "fleet_id": it.fleet_id,
             "name": it.name, "meta": it.meta or {},
             "n_measurements": len(it.measurements),
-            "measurements": it.measurements, "prediction": it.prediction,
+            "measurements": it.measurements,
+            # At the life-bound level (90% one-sided lower bound), whenever it was stored.
+            "prediction": degradation_service.at_life_level(session, it, owners),
             "is_sample": samples_service.is_sample(it.owner_id),
             "read_only": not access_service.can_write(ctx, it.owner_id),
             "created_at": it.created_at.isoformat(),

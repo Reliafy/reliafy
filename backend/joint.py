@@ -57,6 +57,10 @@ MAX_UNITS_QUADRATIC = 600
 MAX_RISK_UNITS = 500
 #: The confidence level of every interval shown.
 ALPHA_CI = 0.05
+# Life bounds shown with a position's risk (the Explorer): 90% one-sided, a lower bound on
+# life left (the workspace rule for B-lives and other life bounds), and 90% two-sided bands
+# on the curves.
+LIFE_ALPHA = 0.10
 #: The risk table's horizons in days, for a calendar time unit.
 HORIZON_DAYS = (30, 90, 365)
 _DAYS_PER = {"second": 1 / 86400, "minute": 1 / 1440, "hour": 1 / 24, "day": 1.0, "week": 7.0,
@@ -597,6 +601,43 @@ def risk_row(pred, h: list[float]) -> dict:
     }
 
 
+def median_left_lower(pred, alpha: float = LIFE_ALPHA) -> Optional[float]:
+    """A one-sided ``1 - alpha`` lower confidence bound on the unit's median life left:
+    where the lower bound on its survival (Wald, for the parameters' uncertainty) falls
+    to a half, less its age. None where the median isn't reached or the bounds can't be
+    worked out (never a made-up number). Found on a 9-point grid, then twice more on one
+    inside the step that crosses a half (to about 1/500 of the median)."""
+    with np.errstate(all="ignore"):
+        median = float(pred.remaining_life(0.5))
+    if not math.isfinite(median) or median <= 0:
+        return None
+
+    def lower(xs):
+        with np.errstate(all="ignore"):
+            out = np.ravel(np.asarray(pred.cb(xs, on="sf", alpha_ci=float(alpha), bound="lower"), dtype=float))
+        if out.size != xs.size or not np.isfinite(out).all():
+            raise ValueError("no bounds")
+        return out
+
+    try:
+        lo, hi = pred.age, pred.age + median
+        for _ in range(3):
+            grid = np.linspace(lo, hi, 9)
+            sf = lower(grid)
+            below = np.nonzero(sf <= 0.5)[0]
+            if not below.size:
+                return median  # the bound never falls below a half before the median: as the median
+            i = int(below[0])
+            if i == 0:
+                return 0.0
+            lo, hi, y0, y1 = grid[i - 1], grid[i], sf[i - 1], sf[i]
+    except (ValueError, NotImplementedError, np.linalg.LinAlgError, ArithmeticError):
+        return None
+    # Straight-line between the fine grid's points either side of a half.
+    x = hi if y0 == y1 else lo + (y0 - 0.5) * (hi - lo) / (y0 - y1)
+    return _f(max(0.0, float(x) - pred.age))
+
+
 def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS) -> tuple[list[dict], list[str]]:
     """The running units' risk, highest first over the middle horizon."""
     rows, notes = [], []
@@ -681,17 +722,21 @@ def results_payload(model, items: list[dict], covariates: list[str], *, path_mod
 
 
 def unit_view(model, covariates: Optional[dict], markers, age: Optional[float], unit: str,
-              h: Optional[dict] = None) -> dict:
+              h: Optional[dict] = None, alpha_ci: float = ALPHA_CI, life_bound: bool = False) -> dict:
     """One unit's updating prediction: its survival curve from its age now
     with bounds, its remaining-life quantiles, and its marker's smoothed and
-    projected path with an interval (``DynamicPrediction.to_dict``)."""
+    projected path with an interval (``DynamicPrediction.to_dict``), the bands
+    two-sided at ``1 - alpha_ci``. ``life_bound``: also the median life left's
+    one-sided 90% lower bound (``median_lower``, ``life_level``)."""
     pred = predict(model, covariates, markers, age)
     if h is None:
         alpha = float(model.params[model.parameter_names.index("alpha")])
         h = horizons(unit, alpha)
     with np.errstate(all="ignore"):
-        d = pred.to_dict(alpha_ci=ALPHA_CI)
+        d = pred.to_dict(alpha_ci=float(alpha_ci))
     row = risk_row(pred, h["values"])
+    if life_bound:
+        row = {**row, "median_lower": median_left_lower(pred), "life_level": 1 - LIFE_ALPHA}
     return {
         "age": pred.age,
         "covariates": _covariate_dict(model, pred.covariates),

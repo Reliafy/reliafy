@@ -37,6 +37,8 @@ from datetime import date
 #: The most members scored in one read (each a prediction); the rest are
 #: listed with their age and reading, and the answer says so.
 MAX_SCORED = 200
+#: The members whose median life left gets its lower bound in the table (each a little work).
+MAX_BOUNDED = 50
 #: The most readings of one member a prediction takes (its latest).
 MAX_READINGS_EACH = 500
 #: The table's time unit and the stretches its risk columns look ahead.
@@ -44,7 +46,7 @@ AGE_UNIT = "Days"
 #: Model time units an item's calendar age can be put in. Hours and smaller
 #: are left out: a model in hours counts running hours, not the calendar.
 CALENDAR = ("day", "week", "month", "year")
-RISK_KEYS = ("survival", "risk", "median_remaining", "median_reached", "marker_now")
+RISK_KEYS = ("survival", "risk", "median_remaining", "median_reached", "marker_now", "median_lower", "life_level")
 
 
 def _sv():
@@ -238,7 +240,7 @@ def _scorer(m, db, owners, hidden):
                     live[doc.id] = f"“{doc.name}” can't be used: {err}"
         return live[doc.id]
 
-    def row_for(x, with_curves: bool = False, score: bool = True) -> dict:
+    def row_for(x, with_curves: bool = False, score: bool = True, bound: bool = True) -> dict:
         p, f, item, cls = x
         since = _since(m, item, f)
         age_days = max(_days(since, today), 0)
@@ -294,11 +296,14 @@ def _scorer(m, db, owners, hidden):
         try:
             if with_curves:
                 own = {"values": h, "labels": horizons["labels"], "basis": horizons["basis"]}
-                view = joint.unit_view(model, values, markers, age, unit, own)
+                # Life bounds 90% one-sided (median life left at least ...), bands 90% two-sided.
+                view = joint.unit_view(model, values, markers, age, unit, own, alpha_ci=joint.LIFE_ALPHA, life_bound=True)
                 row["unit"] = {"unit_id": p.get("name") or "", "source": "position", **view}
                 risk = {k: view[k] for k in RISK_KEYS}
             else:
-                risk = joint.risk_row(joint.predict(model, values, markers, age), h)
+                pred = joint.predict(model, values, markers, age)
+                risk = {**joint.risk_row(pred, h), "median_lower": joint.median_left_lower(pred) if bound else None,
+                        "life_level": 1 - joint.LIFE_ALPHA}
         except (FitError, ValueError, ArithmeticError) as err:
             row["why"] = f"The model couldn't work out its risk: {err}"
             return row
@@ -307,8 +312,9 @@ def _scorer(m, db, owners, hidden):
             row["why"] = "The model gave no number for this item at its age: check its readings and in-service date."
             return row
         # The table reads in days whatever the model's own unit.
-        left = risk["median_remaining"]
-        row.update(risk, median_remaining=None if left is None else _round(left * per), scored=True)
+        left, low = risk["median_remaining"], risk.get("median_lower")
+        row.update(risk, median_remaining=None if left is None else _round(left * per),
+                   median_lower=None if low is None else _round(low * per), scored=True)
         return row
 
     return row_for, models, fetch, today, horizons
@@ -341,7 +347,7 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
         doc = position_model(m, fetch, position_id)
         out["model"] = doc and _model_view(doc)
         return out
-    rows = [row_for(x, score=k < MAX_SCORED) for k, x in enumerate(members)]
+    rows = [row_for(x, score=k < MAX_SCORED, bound=k < MAX_BOUNDED) for k, x in enumerate(members)]
     rows.sort(key=lambda r: (not r["scored"], -(r["risk"][1] if r["scored"] else 0.0), r["model"] is None,
                              r["position"]["name"].lower(), r["position"]["id"]))
     scored = sum(1 for r in rows if r["scored"])
@@ -356,6 +362,9 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
                  f"{no_model} of these positions {'has' if no_model == 1 else 'have'} no")
         notes.append(f"{which} condition and life model. To see risk, link one to the position on its Modelling "
                      "tab.")
+    if len(rows) > MAX_BOUNDED:
+        notes.append(f"The lower bound on median life left is worked out for the first {MAX_BOUNDED} members by "
+                     "name; open any other for its own.")
     if len(rows) > MAX_SCORED:
         notes.append(f"Risk is worked out for the first {MAX_SCORED} members by name; open any other for its own.")
     out["note"] = " ".join(notes) or None

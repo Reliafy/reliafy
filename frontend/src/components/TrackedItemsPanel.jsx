@@ -2,6 +2,7 @@ import { useState } from "react";
 import Modal from "./Modal.jsx";
 import { createTrackedItem, addTrackedMeasurement } from "../api.js";
 import { unitInText } from "./unitText.js";
+import { rulBoundText } from "../lifeBound.js";
 import Chip from "./ui/Chip.jsx";
 import { CardHeader } from "./ui/Card.jsx";
 import { PlusIcon } from "./LibRows.jsx";
@@ -22,14 +23,8 @@ export function healthBadge(pred) {
 }
 
 export function rulText(pred, unit) {
-  if (!pred || pred.method === "error") return "—";
-  if (pred.rul === null || pred.rul === undefined) return "—";
-  const u = unit ? ` ${unitInText(unit)}` : "";
-  const base = `${fmt(pred.rul)}${u}`;
-  const [lo, hi] = pred.rul_interval || [null, null];
-  if (lo === null && hi === null) return base;
-  if (hi === null) return `${base} (≥ ${fmt(lo)})`;
-  return `${base} (${fmt(lo)}–${fmt(hi)})`;
+  // Life left with its 90% one-sided lower bound (lifeBound.js), never a two-sided range.
+  return rulBoundText(pred, unit ? unitInText(unit) : "");
 }
 
 // Fleet table for a degradation model's tracked items, plus the register-item

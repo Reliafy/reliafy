@@ -52,7 +52,8 @@ export default function PositionRisk({ positionId, version, onModelling = null, 
           <p className="hint pr-note">
             Worked out from the item fitted here, {item}: its age since {member.in_service} and its readings
             {member.point?.name ? <> of {member.point.name}</> : ""}, with the condition and life model {model}.
-            {" "}“&gt; 99.9%” means very likely, not certain.
+            {" "}The bands on the charts are 90%; “at least” on the median life left is a 90% lower bound
+            (one-sided), from the model's uncertainty. “&gt; 99.9%” means very likely, not certain.
           </p>
         )}
       </section>

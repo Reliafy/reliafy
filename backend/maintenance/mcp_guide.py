@@ -400,7 +400,8 @@ append_note for a finding, check to tick a checklist line.
 - What it took: labour (hours, who, rate), part_used (pick part_id from maintenance get.work_order's \
 suggested_parts; from_location_id issues it from stock there), cost (a contractor, hire, call-out).
 - close, with the actions in order: replace (it failed: name failure_mode_id, or failure_mode_text when none \
-fits; none named = a planned replacement; new_item, item_id or part_id is what went in), repair, inspect (finding \
+fits; reason 'failure' when it failed and the mode isn't known; none named and no reason = a planned \
+replacement; new_item, item_id or part_id is what went in), repair, inspect (finding \
 ok, degraded or found_failed), other; plus readings taken (readings [{point_id, value}]: get.work_order's \
 reading_points lists what it asks for: its tasks' tools' points, a trigger's point, a counter, the settings \
 there). Example: the seasonal change-over work order records the new chlorinator output, {action: \

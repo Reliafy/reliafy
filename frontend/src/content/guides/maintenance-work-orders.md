@@ -64,7 +64,11 @@ work order came from:
 Change it to what really happened: **Replaced it**, **Repaired it**,
 **Inspected it** (with what you found: OK, degraded or found failed) or
 **Other work**. Only a replacement asks for the new item and whether the old
-one failed, and it ends the old item's time at the position. Add another
+one failed, and it ends the old item's time at the position. On a corrective
+(breakdown) work order **Did it fail?** starts at **Yes, it failed**; on planned
+work it starts at **No, a planned replacement**. A line under the action says
+what closing will record: a failure (counted as failed in life fits) or a
+planned replacement (counted as still running). Add another
 action when you did more than one thing. Values filled in under **Readings and
 settings** are recorded when you close it.
 

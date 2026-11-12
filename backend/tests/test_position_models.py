@@ -490,7 +490,11 @@ def test_an_rbd_built_from_whats_inside_with_placeholders_then_rebuilt(m, db):
     assert row["source_text"] == "Built from 2 positions inside · 1 placeholder"
     assert row["model"]["kind"] == "RBD" and row["model"]["quality"]["word"] == "1 placeholder"
     nums = {n["id"]: n for n in row["model"]["numbers"]}
-    assert nums["mtbf"]["value"] > 0 and nums["reference"]["text"].startswith("reliability ")
+    assert nums["mean"]["value"] > 0 and nums["reference"]["text"].startswith("reliability ")
+    # Non-repairable: a mean life, never an MTBF; no bounds, and the note says why.
+    assert "mtbf" not in nums and nums["mean"]["label"] == "Mean life"
+    assert nums["b10"]["value"] > 0 and nums["b10"]["lower"] is None
+    assert nums["b10"]["note"] == nums["mean"]["note"] == "no bounds: the system curve is exact from the blocks' point models"
     full = pm.detail(m, db, OWNERS, set(), link["id"])
     assert {b["label"]: b["position"]["name"] for b in full["blocks"]} == {"Pump A": "Pump A", "Pump B": "Pump B"}
     assert next(b for b in full["blocks"] if b["label"] == "Pump B")["placeholder"] is True
@@ -606,3 +610,18 @@ def test_a_parent_rbd_takes_a_childs_rbd_as_a_sub_system(m, db):
     linked = pm.link_rbd(m, db, OWNERS, set(), top, "sample-rbd-pump-station")
     [row] = [r for r in pm.describe(m, db, OWNERS, set(), m.position_models(top)) if r["id"] == linked["id"]]
     assert row["source_text"].startswith("Linked: ")
+
+
+def test_a_non_repairable_rbd_never_shows_an_infinite_mean_life(db, monkeypatch):
+    """A system that may never fail (its mean is infinite) says so in words, not as a number."""
+    from types import SimpleNamespace
+
+    from backend.services import rbds as rbds_service
+
+    monkeypatch.setattr(rbds_service, "analyze_graph",
+                        lambda *a, **k: {"mttf": float("inf"), "blife": {"b10": 441.0}, "time": [], "system": {}})
+    doc = SimpleNamespace(id="r1", name="Cured", graph={"unit": "Hours", "nodes": [], "edges": []})
+    nums = {n["id"]: n for n in pm.rbd_summary(db, OWNERS, doc)["numbers"]}
+    assert "mtbf" not in nums
+    assert nums["mean"]["value"] is None and nums["mean"]["text"] == "not finite (the system may never fail)"
+    assert nums["b10"]["value"] == 441.0 and nums["b10"]["note"].startswith("no bounds")

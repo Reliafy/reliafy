@@ -8072,6 +8072,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if kind == "replace":
                 self._not_a_design(at)
             fm = at and self._mode_ref(at, a.get("failure_mode_id") or None, a.get("failure_mode_text"))
+            # A replacement says why the old item came out: reason failure (its mode named or
+            # not known), planned or other. Not given: a failure if a mode is named, else planned.
+            if kind == "replace":
+                a = {**a, "reason": _end_reason(a.get("reason"), fm)}
+            elif a.get("reason") not in (None, ""):
+                raise Invalid("Only a replacement takes a reason (failure, planned or other).")
             finding = a.get("finding") or None
             if kind == "inspect" and finding not in FINDINGS:
                 raise Invalid("An inspection's finding is ok, degraded or found_failed.")
@@ -8118,7 +8124,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 current = self.current_fitment(at)
                 if current:
                     self._emit("item.removed", {"fitment_id": current["id"], "on": day,
-                                                "reason": "failure" if fm else "planned",
+                                                "reason": a["reason"],
                                                 "failure_mode_id": fm})
                     ends = current["id"]
                 if a.get("item_id") or (a.get("new_item") or {}).get("name"):

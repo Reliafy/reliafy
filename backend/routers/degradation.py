@@ -60,7 +60,9 @@ def _model_summary(doc, ctx: AccessCtx, n_items: int = 0) -> dict:
     }
 
 
-def _item_summary(item, ctx: AccessCtx) -> dict:
+def _item_summary(item, ctx: AccessCtx, session=None, owners=None) -> dict:
+    """An item for a read. With ``session``: its prediction at the life-bound level (a 90%
+    one-sided lower bound), worked out again for the read if stored at another."""
     last = item.measurements[-1] if item.measurements else {}
     return {
         "id": item.id,
@@ -71,7 +73,8 @@ def _item_summary(item, ctx: AccessCtx) -> dict:
         "last_t": last.get("t"),
         "last_y": last.get("y"),
         "measurements": item.measurements,
-        "prediction": item.prediction,
+        "prediction": degradation_service.at_life_level(session, item, owners) if session is not None
+        else item.prediction,
         "is_sample": samples_service.is_sample(item.owner_id),
         "read_only": not access_service.can_write(ctx, item.owner_id),
         "created_at": item.created_at.isoformat(),
@@ -238,12 +241,13 @@ def get_model(
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     # The owner's tracked items ride along with a shared model (read-only).
-    items = degradation_service.list_items(session, model_id, [*ctx.read_owners, doc.owner_id], ctx.hidden)
+    owners = [*ctx.read_owners, doc.owner_id]
+    items = degradation_service.list_items(session, model_id, owners, ctx.hidden)
     return JSONResponse(content={
         **_model_summary(doc, ctx, len(items)),
         "spec": doc.spec,
         "results": doc.results,
-        "items": [_item_summary(it, ctx) for it in items],
+        "items": [_item_summary(it, ctx, session, owners) for it in items],
     })
 
 
@@ -346,8 +350,9 @@ def list_items(
     doc, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
     if doc is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    items = degradation_service.list_items(session, model_id, [*ctx.read_owners, doc.owner_id], ctx.hidden)
-    return JSONResponse(content={"items": [_item_summary(it, ctx) for it in items]})
+    owners = [*ctx.read_owners, doc.owner_id]
+    items = degradation_service.list_items(session, model_id, owners, ctx.hidden)
+    return JSONResponse(content={"items": [_item_summary(it, ctx, session, owners) for it in items]})
 
 
 @router.get("/degradation/models/{model_id}/items/{item_id}")
@@ -367,7 +372,7 @@ def get_item(
     if not item.prediction or item.prediction.get("method") == "error":
         # A model refit may have fixed it (e.g. dataset was briefly missing).
         item = degradation_service.refresh_prediction(session, model_id, item, owners)
-    return JSONResponse(content=_item_summary(item, ctx))
+    return JSONResponse(content=_item_summary(item, ctx, session, owners))
 
 
 @router.get("/degradation/models/{model_id}/items/{item_id}/prediction")

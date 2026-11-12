@@ -233,3 +233,18 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   assert.ok(attachGroups({ viewOnly: "View only" }).every((grp) => grp.items.every((x) => x.disabled)));
   assert.deepEqual(MODEL_POSITION_ITEMS, ["tree-rename"]);
 });
+
+test("a non-repairable RBD's headline is its mean life, never an MTBF; B10 says why it has no bounds", () => {
+  const note = "no bounds: the system curve is exact from the blocks' point models";
+  const rbd = { family: "rbd", kind: "RBD", unit: "Hours", numbers: [
+    { id: "mean", label: "Mean life", value: 964.2, lower: null, upper: null, unit: "Hours", bound: "", note },
+    { id: "b10", label: "B10 life", value: 441.3, lower: null, upper: null, unit: "Hours", bound: "", note },
+    { id: "reference", label: "", text: "reliability 61.2% at 500 hours" },
+  ] };
+  assert.equal(headline(rbd), "Mean life 964 hours · reliability 61.2% at 500 hours");
+  assert.doesNotMatch(headline(rbd), /MTBF/);
+  assert.equal(b10Text(rbd), "441 hours");
+  // A system that may never fail: words, not a number.
+  const never = { ...rbd, numbers: [{ id: "mean", label: "Mean life", value: null, text: "not finite (the system may never fail)" }] };
+  assert.equal(headline(never), "Mean life not finite (the system may never fail)");
+});

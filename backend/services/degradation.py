@@ -279,7 +279,7 @@ def refresh_prediction(db, model_id: str, item: TrackedItem, owner_id: str) -> T
 
 
 def _predict(db, model_id: str, owner_id: str, measurements: list[dict],
-             alpha_ci: float = 0.05) -> dict:
+             alpha_ci: float = degradation_fit.LIFE_ALPHA_CI) -> dict:
     """Compute the prediction blob; fit problems become method="error" blobs so
     a measurement append never fails."""
     try:
@@ -294,6 +294,18 @@ def _predict(db, model_id: str, owner_id: str, measurements: list[dict],
     t = [m["t"] for m in measurements]
     y = [m["y"] for m in measurements]
     return degradation_fit.predict_item(live, t, y, alpha_ci=alpha_ci)
+
+
+def at_life_level(db, item: TrackedItem, owner_id) -> dict | None:
+    """An item's prediction at the life-bound level (degradation.LIFE_ALPHA_CI), for a
+    read: one stored before that level (a 95% interval) is worked out again, view-only
+    (the stored prediction is unchanged); anything else is as stored."""
+    pred = item.prediction
+    if not pred or pred.get("method") != "bayesian" \
+            or abs(float(pred.get("alpha_ci") or 0) - degradation_fit.LIFE_ALPHA_CI) < 1e-9:
+        return pred
+    again = _predict(db, item.model_id, owner_id, item.measurements)
+    return again if again.get("method") == "bayesian" else pred
 
 
 def predict_item_at(db, model_id: str, item_id: str, confidence: float,

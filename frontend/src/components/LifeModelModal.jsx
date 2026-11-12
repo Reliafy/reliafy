@@ -1,5 +1,7 @@
 import BoundBlockFields from "./BoundBlockFields.jsx";
 import { useContext, useState } from "react";
+import { Link } from "react-router-dom";
+import { treeBlockPlan } from "../rbdTreePlan.js";
 import Modal from "./Modal.jsx";
 import ModelPicker from "./ModelPicker.jsx";
 import { openGuide } from "./HelpButton.jsx";
@@ -63,7 +65,7 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // costs stay folded. Pre-filled with the node's current models.
 export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false,
                                          safety = false, capacity = false, jointBlock = false, conditions = [],
-                                         nodeId = null, onEditPlan = null }) {
+                                         nodeId = null, onEditPlan = null, tree = null, onTreeLink = null }) {
   // A block whose model's covariates were left open at its position (covariate_binding.py): its
   // covariates are set here (or from the diagram's values) unless another model is chosen.
   const wasBound = initial?.model?.kind === "bound";
@@ -133,7 +135,21 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
     hasDuty(initial || {}) && initial.duty < 1 ? dutyWords(initial.duty, unit) : null,
     initial?.maintenance_group ? `Maintenance group “${initial.maintenance_group}”` : null,
   ].filter(Boolean);
-  const maintenance = (
+  // A block standing for a position (a repairable diagram): its planned work is the position's
+  // task in the tree, the same the Maintenance plan and the Calculator use; shown, not edited, here.
+  const fromTree = repairable && tree ? treeBlockPlan(initial || {}, tree, unit) : null;
+  const maintenance = fromTree ? (
+    <section className="rbd-dlg-sec rbd-dlg-plan">
+      <h3>{safety ? "Proof test" : "Maintenance"}</h3>
+      <p className="rbd-dlg-plan-sum">
+        {[fromTree.summary, ...planLines.slice(1)].join(" · ")}
+      </p>
+      <p className="muted">{fromTree.source}.</p>
+      <Link to={fromTree.editPath} onClick={(e) => { onTreeLink?.(e, fromTree.editPath); onClose?.(); }}>
+        {fromTree.editLabel}
+      </Link>
+    </section>
+  ) : (
     <section className="rbd-dlg-sec rbd-dlg-plan">
       <h3>{safety ? "Proof test" : "Maintenance"}</h3>
       <p className="rbd-dlg-plan-sum">

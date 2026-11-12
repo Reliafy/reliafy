@@ -4,7 +4,7 @@ import {
   assetOf, nextGutter,
   ARRANGEMENTS, CHIPS, CHIP_MARK, chipsFor, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, TREE_ROW_MARKERS, pinnedRows, saveTreeState,
-  classKey, scopedArrangeQuery, scopedArrangements, statusWords, windowOf,
+  classKey, scopedArrangeQuery, scopedArrangements, statusWords, structuralRow, windowOf,
 } from "./assetTree.js";
 import { scopeHasClasses, scopeTree } from "./products.js";
 import { addressTab } from "./explorerTabs.js";
@@ -410,6 +410,24 @@ test("Classes: the item-class taxonomy, each class opening to its sub-classes an
   // Searching keeps the path to each match.
   const f = computeFilter(d, { query: "pump 2" });
   assert.ok(f.match.has("p2") && f.keep.has("cls:cf") && f.keep.has("cls:rot"));
+});
+
+test("Classes: a position's Summary counts what's inside it, as in Positions", () => {
+  const classes = buildDisplay(CLASSED, "classes");
+  const structure = buildDisplay(CLASSED, "positions");
+  const listed = classes.rows.get("station");
+  // Listed flat under No class, the station has no rows under it in this tree...
+  assert.equal(listed.kids.length, 0);
+  // ...but its Summary reads its row in the Positions tree: 6 positions inside, 1 overdue inside.
+  const { row, display } = structuralRow(structure, listed, classes);
+  assert.equal(display, structure);
+  assert.equal(row.kids.length, 5);
+  assert.equal(insideWords(row), "6 positions · 1 empty");
+  assert.deepEqual(statusWords(row).map((w) => w.text), ["1 overdue inside"]);
+  // A class's row, or no structure (another arrangement): as it is.
+  const cls = classes.rows.get("cls:cf");
+  assert.equal(structuralRow(structure, cls, classes).row, cls);
+  assert.equal(structuralRow(null, listed, classes).row, listed);
 });
 
 test("Classes with no taxonomy loaded or nothing classed: everything is in No class", () => {

@@ -86,9 +86,23 @@ export const readingsText = (markers) => (markers || []).map(([a, v]) => `${a} $
 
 // "not reached" for a median remaining life the curve never falls to; never a
 // mean (it can be infinite).
+// Where the row carries its life bound (the Explorer's positions: `life_level`, 0.9), the
+// one-sided lower bound follows: "531 days (at least 402 days, 90%)"; one that couldn't be
+// worked out says so rather than showing nothing.
 export function medianText(row, unit = "") {
   if (!row || row.median_reached === false || row.median_remaining == null) return "not reached";
-  return `${lifeLeftNumber(row.median_remaining)}${unit ? ` ${unit.toLowerCase()}` : ""}`;
+  const u = unit ? ` ${unit.toLowerCase()}` : "";
+  const text = `${lifeLeftNumber(row.median_remaining)}${u}`;
+  if (row.life_level == null) return text;
+  const level = `${Math.round(Number(row.life_level) * 100)}%`;
+  return row.median_lower == null ? `${text} (no ${level} bound here)`
+    : `${text} (at least ${lifeLeftNumber(row.median_lower)}${u}, ${level})`;
+}
+
+// A band's name from the two-sided level it was drawn at (alpha_ci: 0.1 → "90%").
+export function bandLevel(alpha, fallback = 0.05) {
+  const a = Number(alpha);
+  return `${Math.round((1 - (Number.isFinite(a) && a > 0 && a < 1 ? a : fallback)) * 100)}%`;
 }
 
 // A remaining life with the same decimals across a column: one decimal under
