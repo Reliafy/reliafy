@@ -59,7 +59,10 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
           e: "optional: each failure's mode (the state entered)",
           s: "optional: the state the unit was in during this row (multi-state data)",
         }}
-        none={{ x: "— pick a column —", c: range ? "— none: read from the values —" : "— pick a column —" }}
+        none={{
+          x: "— pick a column —", c: range ? "— none: read from the values —" : "— pick a column —",
+          i: "— none —", m: "— none —", e: "— none —", s: "— none —",
+        }}
         issues={issues}
         asides={{ c: failedTick ? [failedTick] : [] }}
       />

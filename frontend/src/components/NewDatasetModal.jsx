@@ -401,7 +401,8 @@ export default function NewDatasetModal({
                          onChange={(e) => setName(e.target.value)} />
                 </label>
               )}
-              {filePreview && <PreviewTable columns={filePreview.columns} rows={filePreview.preview} />}
+              {filePreview ? <PreviewTable columns={filePreview.columns} rows={filePreview.preview} />
+                : up.cols ? <PreviewTable columns={up.cols.columns} rows={(up.cols.preview || []).slice(0, 5)} /> : null}
               {picked.text != null && noHeaderBox(false)}
               {split.picker}
               {split.summary}

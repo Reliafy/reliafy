@@ -247,8 +247,9 @@ async function uploadAndFit(page) {
   const count = page.getByRole("option", { name: /^col 2/ });
   await expect(count).toBeDisabled();
   await expect(count).toContainText("has decimals");
-  // Close the list by keeping n as none (Escape would close the dialog too).
-  await page.getByRole("option", { name: "— none —" }).click();
+  // Close the list (only the list: Escape with none open would close the dialog).
+  if (await count.isVisible()) await page.keyboard.press("Escape");
+  await expect(count).toBeHidden();
 
   // c is required: a status column, or "every row failed" said on purpose.
   await expect(dialog.getByRole("button", { name: "Create dataset" })).toBeDisabled();
