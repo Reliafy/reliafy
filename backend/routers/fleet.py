@@ -13,6 +13,7 @@ from backend.services import billing as billing_service
 from backend.services import degradation as degradation_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
+from backend.services import fleet_items as fleet_items_service
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
 from backend.services import workspace_changes
@@ -179,6 +180,57 @@ def put_items(
                                      spares_opts=(fleet.settings or {}).get("spares"))
     workspace_changes.note_forecast(session, fleet, forecast)
     return JSONResponse(content={**_summary(fleet, ctx, forecast), "items": fleet.items, "forecast": forecast})
+
+
+@router.get("/fleets/{fleet_id}/running-units")
+def running_units(
+    fleet_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """The units still running in the fleet's model's data (a repairable
+    model: its systems), as items to add: nothing is saved."""
+    fleet, _ = access_service.fetch_readable(session, "fleets", Fleet, fleet_id, ctx)
+    if fleet is None or fleet.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Fleet not found."})
+    try:
+        out = fleet_items_service.running_units(session, fleet, [*ctx.read_owners, fleet.owner_id])
+    except fleet_items_service.NoModelData as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    return JSONResponse(content=out)
+
+
+@router.post("/fleets/{fleet_id}/duplicate")
+def duplicate_fleet(
+    fleet_id: str,
+    name: str | None = Body(default=None, embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A copy of a forecast (its items and settings) to change for another
+    scenario, side by side with the first. Counts as a new forecast."""
+    source, _ = access_service.fetch_readable(session, "fleets", Fleet, fleet_id, ctx)
+    if source is None or source.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Fleet not found."})
+    if not access_service.can_write(ctx, source.owner_id) and not samples_service.is_sample(source.owner_id):
+        # A forecast shared with you reads its model through the share; a copy wouldn't.
+        status, payload = access_service.write_denial(ctx, source.owner_id) or (
+            403, {"detail": "Only a forecast in your workspace (or a sample) can be duplicated."})
+        return JSONResponse(status_code=status, content=payload)
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
+    if (
+        ctx.is_personal
+        and not billing_service.is_admin_user(ctx.user)
+        and billing_service.would_exceed_cap(session, ctx.uid, "fleets")
+    ):
+        return JSONResponse(status_code=402, content={"detail": billing_service.cap_message(session, ctx.uid, "fleets"), "code": "cap", "upgrade": True})
+    try:
+        fleet = fleet_service.duplicate_fleet(session, source, ctx.write_owner, name)
+    except fleet_service.FleetValidationError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    access_service.stamp_editor(session, "fleets", fleet.id, ctx)
+    return JSONResponse(content=_summary(fleet, ctx))
 
 
 # ---- Alerts on a fleet's expected failures ------------------------------------------

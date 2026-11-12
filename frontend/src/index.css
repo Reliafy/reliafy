@@ -9952,3 +9952,39 @@ main.content:focus { outline: none; }
 .rbd-compare-chosen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-13); }
 .rbd-compare-chosen li { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
 .rbd-importance-why { margin: 2px 0 6px; }
+
+/* Bulk items on a fleet forecast (FleetItemsImport.jsx): a pane in the Items card. */
+.fleet-import { margin: var(--sp-3) 0; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surf-2); }
+.fleet-import-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.fleet-import-paste { width: 100%; }
+.fleet-import-paste textarea { width: 100%; font-family: var(--mono, ui-monospace, monospace); font-size: var(--fs-13);
+  box-sizing: border-box; }
+.fleet-import-file { display: flex; flex-direction: column; gap: var(--sp-2); }
+.fleet-import-drop { padding: 22px 16px; }
+.fleet-import-map { margin-top: var(--sp-2); }
+.fleet-import-map .alt-map-k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-import-preview { margin-top: var(--sp-3); }
+.fleet-import-sum { margin: 0 0 var(--sp-1); font-size: var(--fs-14); }
+.fleet-import-skipped { margin: 0 0 var(--sp-2); padding-left: 1.2rem; font-size: var(--fs-13); color: var(--warn); }
+.fleet-import-acts { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-3); }
+.fleet-import-acts .muted-line { margin: 0; }
+.fleet-items-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
+.fleet-bulk-bar { display: flex; align-items: flex-end; gap: var(--sp-2); flex-wrap: wrap; margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--acc-t); font-size: var(--fs-14); }
+.fleet-bulk-bar .login-field { width: 150px; margin: 0; }
+.fleet-bulk-bar b { align-self: center; }
+.fleet-items .fleet-items-sel { width: 36px; text-align: center; }
+.fleet-compare { margin-top: var(--sp-4); }
+.fleet-compare table { min-width: 560px; }
+.fleet-compare td.num, .fleet-compare th.num { text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) {
+  .fleet-import-map .alt-map-row { flex-wrap: wrap; }
+  .fleet-import-map .alt-map-k { flex: 1 1 100%; }
+  .fleet-bulk-bar .login-field { width: calc(50% - var(--sp-2)); }
+}
+.fleet-items tr.selected td { background: var(--acc-t); }
+.lib-table .fleet-items-sel { width: 36px; text-align: center; }
+.fleet-compare .mini-table th[scope="row"] { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.fleet-items-tools button { white-space: normal; text-align: left; max-width: 100%; }

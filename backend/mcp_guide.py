@@ -354,7 +354,8 @@ simulated from its state), and the range carries the fit's uncertainty; covariat
 - Strategy (renewals fleets): strategy = {strategy: run_to_failure or age, replace_at (model units), failure_cost, \
 planned_cost} (or the fleet's saved one) adds forecast.strategy: total, per_period and yearly, each with failures, \
 planned replacements, parts and (priced) cost, with 90% ranges. Items already past replace_at are replaced in period \
-1 (catch_up). Spares then count planned replacements too. Compare run to failure and age with two calls.
+1 (catch_up). Spares then count planned replacements too. Compare run to failure and age with two calls. First-failures and recurrent fleets carry forecast.strategy too (kind first_failures or repairable): failures and, with the fleet's failure_cost, cost, per period and per year with their 90% ranges.
+- use_model_data=true forecasts the units still running in the model's own data (its suspensions at their ages; a repairable model's systems at the end of their records) instead of the saved items; nothing is saved.
 - Spares: fleet_forecast with spares = {lead_time (in the fleet's periods), service_level (default 0.95), review, \
 per_failure, stock, unit_cost} (or the fleet's saved spares settings) adds spares: hold (the stock for that chance \
 of no stock-out over the lead time plus review), reorder_at, risk_at_stock, hold_cost, the same per period, and \

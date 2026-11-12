@@ -55,10 +55,93 @@ export function FleetStrategyFields({ settings, unit, readOnly, onSetting }) {
   );
 }
 
+// The cost of a failure alone, for forecasts with no strategy to choose
+// (first failures, repairable): with it the forecast adds what failures cost.
+export function FailureCostField({ settings, readOnly, onSetting }) {
+  const label = costLabel("Cost of a failure", workspaceCurrency());
+  return (
+    <label className="login-field" style={{ width: 190 }}>
+      <span>{label}</span>
+      {readOnly ? <span>{blank(settings.failure_cost) ? "—" : formatNumber(settings.failure_cost, { sig: 6 })}</span> : (
+        <input type="number" inputMode="decimal" min="0" step="any" value={settings.failure_cost ?? ""}
+               placeholder="optional" title="With it, the forecast adds what failures cost each year."
+               onChange={(e) => onSetting("failure_cost", e.target.value === "" ? null : e.target.value)} />
+      )}
+    </label>
+  );
+}
+
+// A forecast that counts failures only (first failures, or every failure of
+// repairable items): its years and, with the cost of a failure, the cost.
+function CountsByYear({ forecast, st }) {
+  const currency = workspaceCurrency();
+  const priced = !!st.total.cost;
+  const years = (st.yearly || []).filter((y) => y);
+  const word = String(forecast.period_label || "periods").replace(/s$/, "");
+  const horizon = `${forecast.periods} ${Number(forecast.periods) === 1 ? word : forecast.period_label}`;
+  const level = rangeLevelText(forecast.interval_level);
+  const count = (b) => formatNumber(b.expected, { sig: 3 });
+  const countRange = (b) => rangeText(b, (v) => formatNumber(v, { sig: 3 }));
+  const cost = (b) => (b ? formatCost(b.expected, currency, { sig: 3 }) : "—");
+  const costRange = (b) => (b ? rangeText(b, (v) => formatCost(v, currency, { sig: 3 })) : null);
+  if (years.length < 2 && !priced) return null;
+  const repairable = st.kind === "repairable";
+  return (
+    <div className="card" style={{ marginTop: "1rem" }} data-testid="fleet-strategy">
+      <CardHeader
+        title={priced ? "Cost and failures by year" : "Failures by year"}
+        subtitle={repairable ? "Every failure, repeats after repair included." : "Each item fails at most once."}
+      />
+      {priced && (
+        <ResultSummary
+          sentence={<>Failures in the next <b>{horizon}</b> cost about <b>{cost(st.total.cost)}</b>.</>}
+          stats={[{ label: `Cost (${level})`, value: costRange(st.total.cost) }]}
+        />
+      )}
+      {years.length > 0 && (
+        <ScrollCue className="table-scroll">
+          <table className="mini-table" data-testid="fleet-strategy-years">
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th className="num">Failures</th>
+                <th className="num">Likely range ({level})</th>
+                {priced && <th className="num">Cost</th>}
+                {priced && <th className="num">Cost range</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {years.map((y) => (
+                <tr key={y.year}>
+                  <td>
+                    Year {y.year}
+                    <span className="hint"> ({word}s {y.from_period}–{y.to_period}{y.complete ? "" : ", part year"})</span>
+                  </td>
+                  <td className="num">{count(y.failures)}</td>
+                  <td className="num">{countRange(y.failures)}</td>
+                  {priced && <td className="num">{cost(y.cost)}</td>}
+                  {priced && <td className="num">{costRange(y.cost)}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollCue>
+      )}
+      <p className="rs-note">
+        {repairable
+          ? `Each year's count from the same model as the forecast. Ranges are ${level}.`
+          : `Exact, given the model: each item's chance of failing in that year. Ranges are ${level}.`}
+        {priced ? " Cost is the failures times the cost of a failure." : ""}
+      </p>
+    </div>
+  );
+}
+
 // The strategy's answer: failures, planned replacements, parts and cost, by year.
 export default function FleetStrategyCard({ forecast }) {
   const st = forecast?.strategy;
   if (!st || !st.total) return null;
+  if (st.kind === "first_failures" || st.kind === "repairable") return <CountsByYear forecast={forecast} st={st} />;
   const currency = workspaceCurrency();
   const age = st.kind === "age";
   const unit = unitInText(forecast.unit || "");
