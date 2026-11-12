@@ -52,7 +52,7 @@ test("Time to the limit: a date and a range, and the two ways on", async ({ page
 
   // Use in a degradation model: the trend becomes a dataset and the model flow opens on it.
   await panel.getByRole("button", { name: "Use in a degradation model" }).click();
-  await expect(page).toHaveURL(/\/models\/degradation\?dataset=/);
+  await expect(page).toHaveURL(/\/models\/degradation\/new\?dataset=/);
   await expectHealthy(page, problems, { label: "time to the limit" });
 });
 

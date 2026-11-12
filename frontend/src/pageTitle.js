@@ -30,6 +30,7 @@ const PAGES = [
   ["/models/new", "New model"],
   ["/models/recurrent/new", "New model"],
   ["/models/alt/new", "New model"],
+  ["/models/degradation/new", "New model"],
   ["/models/joint/new", "New model"],
   ["/maintainability/new", "New prediction"],
   ["/systems/b", "New diagram"],
