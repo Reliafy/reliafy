@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   answerParts, baseLevels, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
-  intervalLevel, listN, nextTabIndex, oddUnits, ppSummary, ratioSign, resolveTab, termName,
+  intervalLevel, listN, nextTabIndex, oddUnits, plainAnswer, ppSummary, ratioSign, resolveTab, termName,
 } from "./modelFrame.js";
 
 const labels = (tabs) => tabs.map((t) => t.label);
@@ -276,4 +276,26 @@ test("a category's base level is named, from the payload or the calculator's lev
   assert.deepEqual(baseLevels({ base_levels: { site: "Mine" } }), { site: "Mine" });
   assert.deepEqual(termName("C(site)[T.B]"), { label: "site = B", categorical: true, variable: "site", level: "B" });
   assert.equal(termName("`belt site`[T.B]").variable, "belt site");
+});
+
+test("a share page's plain answer: one in ten, its bound in words, then the pattern", () => {
+  assert.equal(plainAnswer(weibull),
+    "One in ten is expected to have failed by about 582 hours (at least 467 hours with 90% confidence); "
+    + "failures become more likely with age.");
+  // No bound with this fit: no bound said.
+  const noBound = { ...weibull, life: { ...weibull.life, b_lives: [{ label: "B10", value: 582.37 }] } };
+  assert.equal(plainAnswer(noBound), "One in ten is expected to have failed by about 582 hours; failures become more likely with age.");
+  // Inspection data: the interval, never one end.
+  const between = { ...weibull, randomness: { verdict: "random" },
+    life: { confidence: 0.9, b_lives: [{ label: "B10", between: [400, 600] }] } };
+  assert.equal(plainAnswer(between),
+    "One in ten is expected to have failed between 400 and 600 hours; failures are about as likely at any age.");
+  // A Bayesian update's bound is credible, not confidence.
+  const bayes = { ...weibull, method: "bayesian_update", credible_level: 0.9 };
+  assert.match(plainAnswer(bayes), /with 90% credibility/);
+  // Per demand: the share of demands, and "one in N".
+  assert.equal(plainAnswer({ kind: "per_demand", per_demand: { p: 0.015 } }), "About 1.5% of demands fail (about one in 67).");
+  // Kinds whose answer isn't one B-life say nothing here.
+  for (const kind of ["regression", "competing_risks", "joint"]) assert.equal(plainAnswer({ ...weibull, kind }), null);
+  assert.equal(plainAnswer({}), null);
 });

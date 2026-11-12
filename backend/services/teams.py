@@ -26,7 +26,7 @@ ARTIFACT_COLLECTIONS = (
     "tracked_items", "tracked_fleets", "strategy_analyses", "rcm_studies", "fleets",
     "outage_logs", "recurrent_models", "alt_models", "model_refits",
     "reliability_predictions", "fault_trees", "maintainability_predictions",
-    "libraries", "library_records",
+    "libraries", "library_records", "reports",
 )
 
 # Records kept by the id of a team artifact rather than by owner: deleted

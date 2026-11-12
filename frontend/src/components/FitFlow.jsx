@@ -14,6 +14,8 @@ import ColumnMapper from "./ColumnMapper.jsx";
 import ColumnRoles from "./ColumnRoles.jsx";
 import HeaderNote, { detectHeader } from "./HeaderNote.jsx";
 import { useUnsavedFitScope } from "./UnsavedFitReminder.jsx";
+import { useAskText } from "./ConfirmProvider.jsx";
+import { PASTED_FILE, dataName, defaultFitName } from "../fitName.js";
 import { forgetUnsavedFit, rememberUnsavedFit, unsavedFitRecord } from "../unsavedFit.js";
 import Covariates from "./Covariates.jsx";
 import CoxOptions from "./CoxOptions.jsx";
@@ -55,7 +57,7 @@ const SOURCES = [
   { value: "paste", label: "Paste or type" },
   { value: "upload", label: "Upload a file" },
 ];
-const PASTED = "pasted-values.csv";
+const PASTED = PASTED_FILE;
 
 // A saved dataset's detail in the shape /api/columns gives.
 const datasetColumns = (full) => ({
@@ -131,7 +133,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Step 4 (Result): the fit, a name, and the save action.
   const [result, setResult] = useState(null);
   const [split, setSplit] = useState(null);
-  const [name, setName] = useState("");
+  const [name, setNameRaw] = useState("");
+  // Whether the user has typed a name: until they have, Save asks for one,
+  // starting from the default (the distribution and the data's name).
+  const [nameTyped, setNameTyped] = useState(false);
+  const setName = (value) => { setNameRaw(value); setNameTyped(false); };
+  const typeName = (value) => { setNameRaw(value); setNameTyped(true); };
+  const askText = useAskText();
   const [saving, setSaving] = useState(false);
   const [fitMethods, setFitMethods] = useState([]);
 
@@ -335,7 +343,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
           const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId, unit: guessedUnit });
           setSplit(null);
           setResult(res);
-          setName(`${res.distribution} — ${(full.name || "dataset").replace(/\s*\(sample\)\s*$/i, "")}`);
+          setName(defaultFitName(res.distribution, { sourceName: full.name }));
           setStep(4);
         } else {
           setStep(2);
@@ -484,8 +492,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       }
       setPriorResult(res);
       setResult(null);
-      const src = file?.name === PASTED ? "pasted values" : file?.name || sourceName || "dataset";
-      setName(`${res.distribution_label || res.distribution} with a prior — ${src.replace(/\.csv$/i, "")}`);
+      setName(defaultFitName(res.distribution_label || res.distribution,
+                             { fileName: file?.name, sourceName }, { prior: true }));
       setStep(4);
     } catch (err) {
       setError(err.message);
@@ -520,8 +528,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       const res = await fitModel(distribution, file, fitMapping, opts);
       setSplit((await dataSplit(file, mapping).catch(() => null)) || res.split || null);
       setResult(res);
-      const src = file?.name || sourceName || "dataset";
-      setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
+      setName(defaultFitName(res.distribution, { fileName: file?.name, sourceName }));
       setStep(4);
     } catch (err) {
       setError(err.message);
@@ -548,8 +555,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       setDistribution(id);
       setFitOpts({});
       setResult(res);
-      const src = file?.name || sourceName || "dataset";
-      setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
+      setName(defaultFitName(res.distribution, { fileName: file?.name, sourceName }));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -569,8 +575,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
       : byMode ? {} : { fitOptions: fitOpts }),
   };
-  const persist = async () => {
-    const model = await saveModel(name.trim(), distribution, file, fitMapping, {
+  const persist = async (as = name) => {
+    // Pasted values are saved as a dataset named for them and the day, not "pasted-values".
+    const upload = file?.name === PASTED
+      ? new File([file], `${dataName({ fileName: PASTED })}.csv`, { type: file.type || "text/csv" })
+      : file;
+    const model = await saveModel(as.trim(), distribution, upload, fitMapping, {
       ...saveOpts, datasetId: datasetId || undefined,
     });
     forgetUnsavedFit(fitScope);
@@ -592,18 +602,33 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   const onSave = async () => {
     if (!name.trim()) return;
+    // Not named yet: ask, starting from the default, so a model never ends up
+    // called "pasted-values" by accident (it's what goes in a report).
+    let as = name.trim();
+    if (!nameTyped) {
+      const answer = await askText({
+        title: "Name this model",
+        body: "Give it a name you'll recognise later, in lists and reports. You can rename it any time.",
+        label: "Model name",
+        value: as,
+        confirmLabel: file ? "Save model and data" : "Save model",
+      });
+      if (answer == null || !String(answer).trim()) return;
+      as = String(answer).trim();
+      typeName(as);
+    }
     remembered.current += 1; // a remember still reading the file is stale now
     setSaving(true);
     setError(null);
     try {
       if (priorResult) {
         // Saved as a Bayesian model: its prior (what it was, how far it was trusted) kept with it.
-        const saved = await askPrior({ save: true, name: name.trim() });
+        const saved = await askPrior({ save: true, name: as });
         if (saved.refused) throw new Error(refusalWords(saved.refused));
         onSaved?.(saved);
         return;
       }
-      onSaved?.(await persist());
+      onSaved?.(await persist(as));
     } catch (err) {
       setError(err);
       setSaving(false);
@@ -1111,7 +1136,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 title="Model name"
                 value={name}
                 placeholder="Model name"
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => typeName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onSave()}
               />
               <button type="button" onClick={onSave} disabled={!name.trim() || saving}

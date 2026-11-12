@@ -63,3 +63,48 @@ export function pickerGroups(items, sections) {
   const samples = groups.has("Samples") ? [["Samples", groups.get("Samples")]] : [];
   return [...own, ...samples];
 }
+
+// ---- The item picker: search, a kind filter, and each item's kind and date ----
+
+const norm = (text) => String(text || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+
+// The kinds there are to filter by, in the order the server lists them.
+export function pickerKinds(items) {
+  const out = [];
+  for (const it of items || []) if (it.kind && !out.includes(it.kind)) out.push(it.kind);
+  return out;
+}
+
+// The items the picker shows: not already in the report, of the chosen kind
+// ("" for all), whose name or kind holds every word typed; the workspace's
+// own first (newest first, as the server sends them), then the samples.
+export function pickerRows(items, sections, { query = "", kind = "" } = {}) {
+  const words = norm(query).split(/\s+/).filter(Boolean);
+  const rows = (items || []).filter((it) => {
+    if (sections.some((s) => sameItem(s, it))) return false;
+    if (kind && it.kind !== kind) return false;
+    const text = norm(`${it.name} ${it.kind}`);
+    return words.every((w) => text.includes(w));
+  });
+  return [...rows.filter((r) => !r.is_sample), ...rows.filter((r) => r.is_sample)];
+}
+
+// Items whose name another item shares: the picker then says when each was
+// saved, so two "Weibull — pasted values" can be told apart.
+export function duplicateNames(items) {
+  const seen = new Map();
+  for (const it of items || []) seen.set(norm(it.name), (seen.get(norm(it.name)) || 0) + 1);
+  return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([name]) => name));
+}
+export const isDuplicate = (dupes, item) => dupes.has(norm(item.name));
+
+// A renamed item, everywhere the composer shows it.
+export function renameItem(list, item, name) {
+  return (list || []).map((x) => (sameItem(x, item) ? { ...x, name } : x));
+}
+
+// Collections a report's items come from that can be renamed from the picker.
+export const RENAMABLE = new Set([
+  "models", "recurrent_models", "alt_models", "degradation_models", "rbds", "fault_trees",
+  "reliability_predictions", "strategy_analyses", "fleets", "datasets",
+]);

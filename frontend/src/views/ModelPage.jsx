@@ -6,7 +6,7 @@ import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { compareModel, getModel, deleteModel, downloadModelPython } from "../api.js";
+import { compareModel, getModel, deleteModel, downloadModelPython, renameModel } from "../api.js";
 import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -17,8 +17,8 @@ import ModelNextSteps from "../components/ModelNextSteps.jsx";
 import { rememberModel } from "../modelNext.js";
 import { otherModelPage } from "../modelRoute.js";
 import { answerParts, modelTabs } from "../modelFrame.js";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
-import { deleteOrRemoveConfirm } from "../confirm.js";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 
 const CRUMBS = [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
@@ -54,6 +54,15 @@ export default function ModelPage() {
   }, [id, navigate]);
 
   const confirm = useConfirm();
+  const askText = useAskText();
+  const onRename = async () => {
+    const name = changedText(await askText(renamePrompt({ kind: "model", name: model.name })), model.name);
+    if (!name) return;
+    try {
+      const renamed = await renameModel(id, name);
+      setModel((m) => ({ ...m, name: renamed?.name || name }));
+    } catch (e) { setError(e.message); }
+  };
   const onDelete = async () => {
     if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     await deleteModel(id);
@@ -96,6 +105,7 @@ export default function ModelPage() {
       menu={model && (
         <>
           <DownloadPythonItem download={() => downloadModelPython("life", model.id)} onError={setError} />
+          {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           {canEdit && <button className="ovm-item" onClick={() => setEditing(true)}>Edit fit</button>}
           {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to a library…</button>}
           <button className="ovm-item danger" onClick={onDelete}>

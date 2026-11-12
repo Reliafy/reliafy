@@ -7,6 +7,7 @@ import { itemPath } from "../navigation.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { PlusIcon, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { useWorkspace } from "../WorkspaceProvider.jsx";
 
 const ReportComposer = lazy(() => import("../components/ReportComposer.jsx"));
 
@@ -25,6 +26,8 @@ const LINK_KIND = {
   models: "Non-repairable model",
   recurrent_models: "Repairable model",
   alt_models: "Accelerated life model",
+  fault_trees: "Fault tree",
+  reliability_predictions: "Reliability prediction",
   degradation_models: "Degradation model",
   rbds: "Block diagram",
   strategy_analyses: "Strategy analysis",
@@ -47,18 +50,19 @@ function Panel({ id, title, all, children }) {
   );
 }
 
-// The user's own reports: several saved items on one page with a title and
+// The workspace's reports: several saved items on one page with a title and
 // notes, ready to print or share (made here, or from any item's Share dialog).
-function YourReports({ rows, error, onOpen, onNew }) {
+// A team's reports are the team's: every member sees them.
+function YourReports({ rows, error, onOpen, onNew, team }) {
   return (
-    <Panel id="reports-own" title="Your reports">
+    <Panel id="reports-own" title={team ? `${team}'s reports` : "Your reports"}>
       {error ? <div className="card error">{error}</div> : rows === null ? (
         <div className="card empty">Loading…</div>
       ) : rows.length === 0 ? (
         <div className="card empty">
           <p>
             No reports yet. A report puts several models, diagrams, forecasts or analyses on one page, with
-            your notes, to print or share as one link.
+            your notes, {team ? "for the team to read and print." : "to print or share as one link."}
           </p>
           <button type="button" onClick={onNew}><PlusIcon /> New report</button>
         </div>
@@ -139,8 +143,9 @@ function SavedAnalyses() {
   );
 }
 
-// Every live share link the user has made, with what it shows.
-function SharedLinks({ reports }) {
+// Every live share link the user has made to this workspace's items, with
+// what it shows. Public links are for Personal-workspace items for now.
+function SharedLinks({ reports, inTeam }) {
   const [links, setLinks] = useState(null);
   const [names, setNames] = useState({});
   const [error, setError] = useState(null);
@@ -161,7 +166,14 @@ function SharedLinks({ reports }) {
         <div className="card empty">Loading…</div>
       ) : links.length === 0 ? (
         <div className="card empty">
-          <p>No shared links yet. Use the Share button on a model, diagram, forecast, analysis or report to get a link anyone can open.</p>
+          {inTeam ? (
+            <p>
+              Public links are for items in your Personal workspace for now, so this team has none.
+              The team's reports are read here, by its members.
+            </p>
+          ) : (
+            <p>No shared links yet. Use the Share button on a model, diagram, forecast, analysis or report to get a link anyone can open.</p>
+          )}
         </div>
       ) : (
         <div className="lib maint-scroll">
@@ -207,6 +219,8 @@ function SharedLinks({ reports }) {
 // reports (several items on one page), their saved analyses, and every live
 // share link. ?open=<id> opens that report (an RCM decision's evidence links here).
 export default function ReportsPage() {
+  const { workspace, activeTeam } = useWorkspace() || {};
+  const inTeam = Boolean(workspace && workspace !== "personal");
   const [params, setParams] = useSearchParams();
   const [reports, setReports] = useState(null);
   const [error, setError] = useState(null);
@@ -224,14 +238,16 @@ export default function ReportsPage() {
     <div className="app">
       <SectionHeader
         title="Reports"
-        purpose="Your reports, saved analyses and everything you've shared."
+        purpose={inTeam
+          ? "This team's reports and saved analyses, for every member."
+          : "Your reports, saved analyses and everything you've shared."}
         help={HELP}
         primary={<button onClick={() => setComposer({ openId: "" })}><PlusIcon /> New report</button>}
       />
       <YourReports rows={reports} error={error} onOpen={(id) => setComposer({ openId: id })}
-                   onNew={() => setComposer({ openId: "" })} />
+                   onNew={() => setComposer({ openId: "" })} team={inTeam ? activeTeam?.name || "This team" : null} />
       <SavedAnalyses />
-      <SharedLinks reports={reports} />
+      <SharedLinks reports={reports} inTeam={inTeam} />
       {composer && (
         <Suspense fallback={null}>
           <ReportComposer openId={composer.openId} onClose={close} />

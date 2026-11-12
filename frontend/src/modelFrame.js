@@ -286,6 +286,44 @@ export function answerParts(result, { split = null, saved = null } = {}) {
   return parts.filter(Boolean);
 }
 
+// ---- The answer in one sentence (share pages) ---------------------------------
+
+// What the failure pattern means, in words a manager reads.
+const PATTERN_WORDS = {
+  wear_out: "failures become more likely with age",
+  infant_mortality: "failures are most likely early in life",
+  random: "failures are about as likely at any age",
+};
+
+// A share page leads with this, before any parameter: the usual B-life as
+// "one in ten", its bound in words, and the failure pattern. Null when the
+// model has no such answer (a regression, competing risks, condition and
+// life): the answer line above the tabs then stands alone.
+export function plainAnswer(result) {
+  const r = result || {};
+  if (r.kind === "per_demand") {
+    const p = r.per_demand?.p;
+    if (!Number.isFinite(Number(p)) || p <= 0) return null;
+    const oneIn = Math.round(1 / p);
+    return `About ${formatPercent(p, { sig: 2 })} of demands fail${oneIn >= 2 ? ` (about one in ${oneIn.toLocaleString("en-US")})` : ""}.`;
+  }
+  if (["regression", "competing_risks", "joint"].includes(r.kind)) return null;
+  const b = (r.life?.b_lives || []).find((x) => x.label === "B10");
+  const pattern = PATTERN_WORDS[r.randomness?.verdict];
+  let lead = null;
+  if (b?.between) {
+    lead = `One in ten is expected to have failed between ${formatNumber(b.between[0])} and ${withUnit(b.between[1], r.unit)}`;
+  } else if (b && Number.isFinite(Number(b.value))) {
+    const lower = Number(b.lower);
+    const bound = b.lower != null && Number.isFinite(lower) && r.life?.confidence
+      ? ` (at least ${withUnit(lower, r.unit)} with ${Math.round(r.life.confidence * 100)}% ${intervalLevel(r).credible ? "credibility" : "confidence"})`
+      : "";
+    lead = `One in ten is expected to have failed by about ${withUnit(b.value, r.unit)}${bound}`;
+  }
+  if (!lead) return pattern ? `${pattern.charAt(0).toUpperCase()}${pattern.slice(1)}.` : null;
+  return `${lead}${pattern ? `; ${pattern}` : ""}.`;
+}
+
 // ---- Effects ---------------------------------------------------------------
 
 const RATIO_VERB = {

@@ -2,8 +2,9 @@ import { useEffect, useRef } from "react";
 import { renderMarkdown } from "../guides.js";
 import { AUTH_DISABLED, publicUrl } from "../firebase.js";
 
-// Marketing sections that only exist in the public build.
-const PUBLIC_PREFIXES = ["/guides", "/learn", "/blog"];
+// Marketing sections that only exist in the public build (guides are routed
+// in every build).
+const PUBLIC_PREFIXES = ["/learn", "/blog", "/reference", "/whats-new"];
 
 // Renders one guide's header + step body. Shared by the public /guides page and
 // the in-app Help drawer. Screenshots that haven't been captured yet (the
@@ -15,9 +16,9 @@ export default function GuideBody({ guide, compact = false }) {
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
-    // Guides cross-link to /guides, /learn and /blog. Those routes don't exist
-    // in an auth-disabled build, where they'd fall through to the app shell and
-    // bounce to /home — so send them to the public site instead.
+    // Guides cross-link to /learn, /blog and /reference. Those routes don't
+    // exist in an auth-disabled build, where they'd fall through to the app
+    // shell and bounce to /home — so send them to the public site instead.
     if (AUTH_DISABLED) {
       root.querySelectorAll("a[href^='/']").forEach((a) => {
         const href = a.getAttribute("href") || "";

@@ -6,8 +6,12 @@ import Logo from "../components/Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 import ResultView from "../components/ResultView.jsx";
 import JointResultView from "../components/JointResultView.jsx";
-import ModelFrame from "../components/model/ModelFrame.jsx";
-import { answerParts } from "../modelFrame.js";
+import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
+import { answerParts, plainAnswer } from "../modelFrame.js";
+import AltResultView from "../components/AltResultView.jsx";
+import FaultTreeResult from "../components/FaultTreeResult.jsx";
+import PredictionResult from "../components/PredictionResult.jsx";
+import { AUTH_DISABLED } from "../firebase.js";
 import { degradationAnswer } from "../degradationFrame.js";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
@@ -25,6 +29,7 @@ import { downloadPublicModelPython, getPublicArtifact, unlockPublicLink } from "
 import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import { installPrintFit } from "../printFit.js";
 import { rangeLevelText } from "../levels.js";
+import "./Predictions.css";
 import "./PublicPage.css";
 
 // Public, read-only view of a shared artifact (/p/:token) — no account
@@ -34,7 +39,9 @@ import "./PublicPage.css";
 // deliberately bare — just the brand bar and the content, no marketing nav
 // or footer — because it's what an owner (or their agent) hands to a client
 // or colleague. The one prompt is "Create free account" at the bar's right,
-// for visitors who aren't signed in. A report (#30) is several items on one
+// for visitors who aren't signed in (never with sign-in off: the self-hosted
+// app has no accounts to create). A model leads with its answer in one plain
+// sentence, for a manager, before any parameter. A report (#30) is several items on one
 // page, each rendered by the same Body. Every share page prints cleanly
 // (PublicPage.css, printFit.js).
 
@@ -46,8 +53,22 @@ const KIND_LABEL = {
   fleets: "Fleet failure forecast",
   rbds: "Reliability block diagram",
   recurrent_models: "Repairable model",
+  alt_models: "Accelerated life model",
+  fault_trees: "Fault tree",
+  reliability_predictions: "Reliability prediction",
   reports: "Report",
 };
+
+// The answer in a sentence, then the answer line (its figures and bounds).
+function ModelAnswer({ result, split = null }) {
+  const sentence = plainAnswer(result);
+  return (
+    <>
+      {sentence && <p className="share-plain" data-testid="plain-answer">{sentence}</p>}
+      <AnswerLine parts={answerParts(result, { split })} />
+    </>
+  );
+}
 
 const art = (data) => data.artifact || {};
 
@@ -132,9 +153,28 @@ function Body({ collection, a, token, unlock, framed = false }) {
         ? <JointResultView results={a.results} name={a.name} />
         : <ResultView result={a.results} name={a.name} split={a.results?.split || null} />;
       if (framed) return view;
-      // A model in a report: the same tabs, in a card of their own height.
-      return <div className="card mf-card mf-standalone">{view}</div>;
+      // A model in a report: its answer in a sentence, then the same tabs, in
+      // a card of their own height.
+      const sentence = a.kind === "joint" ? null : plainAnswer(a.results);
+      return (
+        <>
+          {sentence && <p className="share-plain">{sentence}</p>}
+          <div className="card mf-card mf-standalone">{view}</div>
+        </>
+      );
     }
+    case "alt_models":
+      // In a report only: the model's tabs (no Calculator: it asks the server).
+      return <div className="card mf-card mf-standalone"><AltResultView results={a.results} name={a.name} /></div>;
+    case "fault_trees":
+      return (
+        <div className="card">
+          {a.analysis ? <FaultTreeResult result={a.analysis} name={a.name} />
+            : <p className="muted-line">{a.analysis_error || "This fault tree couldn't be analysed."}</p>}
+        </div>
+      );
+    case "reliability_predictions":
+      return <div className="card"><PredictionResult results={a.results} name={a.name} /></div>;
     case "degradation_models": {
       const view = <DegradationResultView results={a.results} name={a.name} />;
       // A shared page: the model frame's tabs; a model in a report: the same
@@ -324,7 +364,7 @@ export default function PublicArtifact() {
           <span className="brand-name">Reliafy</span>
         </Link>
         {/* Only once auth has settled, so a signed-in viewer never sees it flash. */}
-        {!loading && !user && (
+        {!AUTH_DISABLED && !loading && !user && (
           <Link className="cta cta-solid" to="/login?signup">Create free account</Link>
         )}
       </header>
@@ -350,8 +390,8 @@ export default function PublicArtifact() {
             className="public-app"
             crumbs={[{ label: `${art(data).kind === "joint" ? "Condition and life model" : KIND_LABEL.models} · shared by ${data.shared_by}` }]}
             title={data.artifact.name}
-            answer={answerParts(art(data).kind === "joint" ? { ...art(data).results, kind: "joint" } : art(data).results,
-                                { split: art(data).results?.split || null })}
+            answer={<ModelAnswer result={art(data).kind === "joint" ? { ...art(data).results, kind: "joint" } : art(data).results}
+                                 split={art(data).results?.split || null} />}
             menu={<DownloadPythonItem download={() => downloadPublicModelPython(token, unlock)} />}
           >
             <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />

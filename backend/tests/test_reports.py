@@ -36,6 +36,12 @@ SAMPLES = {
     "fleets": "sample-fleet-trucks",
     "datasets": "sample-ds-bearings",
 }
+# Kinds a report holds that have no link of their own (yet).
+REPORT_ONLY = {
+    "alt_models": "sample-alt-fluid",
+    "fault_trees": "sample-fault-tree-quadcopter",
+    "reliability_predictions": "sample-prediction-quadcopter",
+}
 
 
 @pytest.fixture()
@@ -168,7 +174,13 @@ def test_items_picker_lists_own_items_first_then_samples(client):
     assert items[:len(own)] == own  # own items first, then the samples
     assert "Bob's model" not in {i["name"] for i in items}
     assert SAMPLES["fleets"] not in {i["artifact_id"] for i in items}  # hidden
-    assert {i["collection"] for i in items} == set(SAMPLES) - {"fleets"}  # its one sample is hidden
+    # Every kind's samples, but the fleets' one sample, which is hidden.
+    assert {i["collection"] for i in items} == (set(SAMPLES) | set(REPORT_ONLY)) - {"fleets"}
+    # Each item says what it is and when it was saved, so two with one name can be told apart.
+    mine = next(i for i in own if i["artifact_id"] == model_id)
+    assert mine["kind"] == "Non-repairable model" and mine["created_at"] and mine["updated_at"]
+    rec = next(i for i in items if i["collection"] == "recurrent_models")
+    assert rec["kind"] == "Repairable model"
 
 
 # ---- access ---------------------------------------------------------------------
@@ -193,11 +205,11 @@ def test_a_report_is_its_owner_s_alone(client):
     assert client.get(f"/api/reports/{rep['id']}").json()["title"] == "Pump reliability review"
 
 
-def test_team_items_cant_go_in_a_report(client):
+def test_team_items_cant_go_in_a_personal_report(client):
     client.act_as(A)
     _own_copy(client.db, "models", SAMPLES["models"], owner="team:t1")
     r = _report(client, [{"collection": "models", "artifact_id": "team:t1-models"}])
-    assert r.status_code == 400 and "Team" in r.json()["detail"]
+    assert r.status_code == 400 and "team's workspace" in r.json()["detail"]
 
 
 def test_public_report_page_and_revoked_link(client):
@@ -276,7 +288,7 @@ def test_every_item_kind_renders_in_a_report(client):
     gets: compared field by field with a single-item link to the same item."""
     from backend.services import reports
 
-    assert set(SAMPLES) == set(reports.ITEM_KINDS)
+    assert set(SAMPLES) | set(REPORT_ONLY) == set(reports.ITEM_KINDS)
     client.act_as(A)
     ids = {coll: _own_copy(client.db, coll, sid) for coll, sid in SAMPLES.items()}
     rep = _report(client, [{"collection": c, "artifact_id": i} for c, i in ids.items()]).json()
@@ -300,6 +312,36 @@ def test_every_item_kind_renders_in_a_report(client):
     assert by_coll["recurrent_models"]["artifact"]["results"]["mtbf"] > 0
     assert by_coll["degradation_models"]["artifact"]["results"]["threshold"] == 8.0
     assert by_coll["datasets"]["artifact"]["preview"]
+
+
+def test_report_only_kinds_render_in_a_report(client):
+    """Accelerated life models, fault trees and predictions go in a report
+    (no link of their own yet): each section carries what its view needs, a
+    fault tree with its analysis worked out now, and no identities."""
+    from backend.services import public_links
+
+    assert not set(REPORT_ONLY) & public_links.PUBLIC_COLLECTIONS
+    client.act_as(A)
+    ids = {coll: _own_copy(client.db, coll, sid) for coll, sid in REPORT_ONLY.items()}
+    rep = _report(client, [{"collection": c, "artifact_id": i} for c, i in ids.items()])
+    assert rep.status_code == 200, rep.text
+    assert [s["kind"] for s in rep.json()["sections"]] == [
+        "Accelerated life model", "Fault tree", "Reliability prediction"]
+    page = _view(client, _link(client, rep.json()["id"])["token"]).json()["artifact"]
+    by_coll = {s["collection"]: s for s in page["sections"]}
+    for coll in REPORT_ONLY:
+        assert by_coll[coll]["unavailable"] is None and by_coll[coll]["artifact"], coll
+    assert by_coll["alt_models"]["artifact"]["results"]
+    tree = by_coll["fault_trees"]["artifact"]
+    assert tree["analysis_error"] is None and 0 < tree["analysis"]["top_event_probability"] < 1
+    assert tree["analysis"]["cut_sets"]["count"] > 0 and "tree" not in tree
+    assert by_coll["reliability_predictions"]["artifact"]["results"]
+    assert "owner_id" not in set(_strings(page))
+
+    # Still no link of their own.
+    client.act_as(A)
+    r = client.post("/api/public-links", json={"collection": "fault_trees", "artifact_id": ids["fault_trees"]})
+    assert r.status_code == 400
 
 
 def test_a_repairable_diagram_in_a_report_shows_only_the_saved_result(client):

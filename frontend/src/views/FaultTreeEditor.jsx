@@ -14,11 +14,11 @@ import LoadFailed from "../components/LoadFailed.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { CutSetTable, ImportanceTable, TreeCanvas } from "../components/RbdFaultTree.jsx";
+import { topEventAnswer } from "../components/FaultTreeResult.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import useMenuDismiss from "../components/useMenuDismiss.js";
 import { fitLine } from "../plotTheme.js";
-import { formatNumber, formatPercent } from "../format.js";
 import { itemName } from "../components/LibRows.jsx";
 import { FAULT_TREES_PATH, FAULT_TREES_TITLE, RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import {
@@ -249,38 +249,6 @@ function TopCurve({ result }) {
       />
     </div>
   );
-}
-
-// A share as a percentage with one decimal where it matters: 0.1025 → "10.3%".
-const pct = (x) => `${formatNumber(x * 100, { sig: 3 })}%`;
-
-// The answer first (as the prediction pages give it): one sentence, then
-// three tiles — the top event's probability, the reliability and the cut sets.
-function topEventAnswer(result, unitWord) {
-  const p = result.top_event_probability;
-  const timed = result.kind === "reliability";
-  const when = timed ? `${formatNumber(result.t)}${unitWord ? ` ${unitWord}` : ""}` : "";
-  const events = Object.fromEntries((result.events || []).map((e) => [e.id, e]));
-  const cuts = result.cut_sets || {};
-  const lead = cuts.basis !== "low_order" ? cuts.listed?.[0] : null;
-  const leadLabel = lead ? lead.events.map((id) => events[id]?.label || id).join(" + ") : null;
-  const sentence = p == null ? (
-    <>The top event's probability couldn't be worked out.</>
-  ) : (
-    <>
-      {timed ? <>By {when}, the top event has a <b>{pct(p)}</b> chance of having occurred (reliability <b>{pct(1 - p)}</b>).</>
-             : <>The top event has a <b>{pct(p)}</b> chance of occurring (<b>{pct(1 - p)}</b> that it doesn't). Every basic event is a fixed probability, so time doesn't enter.</>}
-      {lead && lead.share != null && <> The most likely cause is <b>{leadLabel}</b>, {formatPercent(lead.share)} of that.</>}
-    </>
-  );
-  const tiles = [
-    { label: timed ? `Top event probability by ${when}` : "Top event probability",
-      value: formatNumber(p, { sig: 4 }), hint: timed ? "chance it has occurred by then" : "chance it occurs" },
-    { label: "Reliability", value: p == null ? "—" : formatNumber(1 - p, { sig: 4 }), hint: "1 − the top event probability" },
-    { label: "Minimal cut sets", value: formatNumber(cuts.count), hint: "smallest groups of failures that cause it" },
-  ];
-  const guessed = (result.events || []).some((e) => e.placeholder);
-  return { sentence, tiles, tone: guessed || result.notes?.length ? "caveat" : "neutral" };
 }
 
 // System models › Fault trees › one tree: the outline editor, the selected

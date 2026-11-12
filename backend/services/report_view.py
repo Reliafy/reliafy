@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 
+from backend.errors import client_message
 from backend.services import public_links as links_service
 from backend.services import reports as reports_service
 
@@ -22,15 +23,16 @@ logger = logging.getLogger(__name__)
 UNAVAILABLE = "This item is no longer available."
 
 
-def item_payload(session, collection: str, artifact_id: str, grantor_uid: str) -> dict | None:
-    """One item's public payload, read as ``grantor_uid``'s share link would
-    read it; None when the grantor can't publish it (any more)."""
+def item_payload(session, collection: str, artifact_id: str, grantor: str) -> dict | None:
+    """One item's public payload, read as a share link of ``grantor`` (the
+    report's workspace: a uid, or ``team:<id>`` for the notes' draft in a
+    team) would read it; None when the item isn't the grantor's (any more)."""
     from backend.routers import public as public_router
 
     doc = session[collection].find_one({"_id": artifact_id})
-    if not reports_service.item_allowed(doc, grantor_uid):
+    if not reports_service.item_allowed(doc, grantor):
         return None
-    ctx = links_service.guest_ctx(doc["owner_id"], grantor_uid)
+    ctx = links_service.guest_ctx(doc["owner_id"], grantor)
     try:
         response = public_router._detail_handler(collection)(artifact_id, session, ctx)
     except Exception:  # pragma: no cover - defensive: one bad section mustn't sink the page
@@ -41,7 +43,28 @@ def item_payload(session, collection: str, artifact_id: str, grantor_uid: str) -
     payload = json.loads(response.body)
     if collection == "rbds":
         payload = public_router._with_rbd_analysis(session, payload, artifact_id, doc["owner_id"], ctx)
+    if collection == "fault_trees":
+        payload = _with_fault_tree_analysis(session, payload, doc["owner_id"], ctx)
     return links_service.sanitize(payload)
+
+
+def _with_fault_tree_analysis(session, payload: dict, owner_id: str, ctx) -> dict:
+    """A fault tree's section: its top event, drawn tree and cut sets, worked
+    out now (exact and quick, as the editor's own analysis), with saved models
+    resolved in the grantor's scope. A tree that can't be analysed yet (an
+    event with no data) says why instead."""
+    from backend.services import fault_trees as ft_service
+    from backend.services.rbd_analysis import AnalysisError
+
+    tree = payload.pop("tree", None) or {}
+    try:
+        analysis, error = ft_service.analyse_for_owner(session, tree, [*ctx.read_owners, owner_id]), None
+    except (ft_service.FaultTreeError, AnalysisError) as exc:
+        analysis, error = None, client_message(exc)
+    except Exception:  # pragma: no cover - defensive: one bad section mustn't sink the page
+        logger.exception("Fault tree section failed")
+        analysis, error = None, "This fault tree couldn't be analysed."
+    return {**payload, "analysis": analysis, "analysis_error": error}
 
 
 def build(session, report: dict, grantor_uid: str) -> dict:
