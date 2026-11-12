@@ -170,7 +170,7 @@ test("rectInView keeps the sheet's inset clear", () => {
 });
 
 test("stepFunnel: runs reaching each step, in order, zeros included", () => {
-  assert.deepEqual(stepFunnel({ steps: { 1: 5, 2: 4, 4: 1 } }, "fit"), [5, 4, 0, 1]);
+  assert.deepEqual(stepFunnel({ steps: { 1: 5, 2: 4, 4: 1 } }, "fit"), [5, 4, 0]);
   assert.deepEqual(stepFunnel({ steps: {} }, "fleet"), [0, 0, 0, 0]);
   assert.deepEqual(stepFunnel({ steps: { 1: 2, 2: 1 } }, "unknown"), [2, 1]);
 });

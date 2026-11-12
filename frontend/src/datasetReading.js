@@ -169,6 +169,8 @@ export function datasetReading(detail, cols) {
   }
   const start = startingMapping(detail.last_mapping, columns, facts, cols.n_rows);
   const reading = complete(start.mapping, start.unit, columns, facts, cols.n_rows);
+  // As fits read it before readings: no status column is every row failed.
+  if (!reading.c && !reading.xl && !reading.m) reading.all_failed = true;
   return { reading, source: "guessed", from: start.from };
 }
 
@@ -336,4 +338,24 @@ export function withoutColumn(r, column, facts = {}, nRows = 0, back = "") {
     (notUsedReason(back, facts[back], nRows) ? out.not_used : out.z).push(back);
   }
   return out;
+}
+
+// What a life fit takes from a dataset's reading (datasetReading.js):
+// { mapping, unit, itemTimeline, z }. ``mapping``: the life roles in the Data
+// step's shape (the same fit request as the Data step made for the same
+// columns). Start and stop rows that follow items over time (an item column
+// whose values repeat, each row a stretch xl to xr) keep the item and their
+// times: a regression fits the covariates over time; a plain life model reads
+// one life per item (item_lives: its last time, its status then). An item
+// column on any other table is left out of a life fit, as before.
+export function fitFromReading(reading, facts, nRows) {
+  const mapping = lifeMapping(reading);
+  const itemTimeline = itemRows(reading, facts, nRows) && !!(reading.xl && reading.xr) && !reading.x && !reading.e;
+  if (itemTimeline) {
+    mapping.i = reading.i;
+    mapping.n = "";
+    mapping.tl = "";
+    mapping.tr = "";
+  }
+  return { mapping, unit: reading.unit || "", itemTimeline, z: reading.z || [] };
 }

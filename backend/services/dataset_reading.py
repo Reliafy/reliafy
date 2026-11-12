@@ -652,8 +652,16 @@ def _main_reading(dataset, last_mapping, preview) -> tuple[dict, str]:
         preview = datasets_service.preview_rows(dataset, distinct=True)
     if last_mapping:
         columns, facts, n_rows = facts_of(preview)
-        return from_last_mapping(last_mapping, columns, facts, n_rows), "last_model"
-    return guess(preview), "guessed"
+        return _as_before(from_last_mapping(last_mapping, columns, facts, n_rows)), "last_model"
+    return _as_before(guess(preview)), "guessed"
+
+
+def _as_before(reading: dict) -> dict:
+    """A derived reading reads as fits did before readings: no status column
+    (and no range or readings) is every row failed."""
+    if not (reading.get("c") or reading.get("xl") or reading.get("m")):
+        reading["all_failed"] = True
+    return reading
 
 
 def guess_for_bytes(csv_bytes: bytes) -> dict:

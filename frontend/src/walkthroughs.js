@@ -24,13 +24,8 @@ export const WALKTHROUGHS = {
     route: "/models/new?dataset=sample-ds-bearings",
     steps: [
       {
-        target: ['[data-wt="fit-data"] .ds-summary', '[data-wt="fit-data"]'],
-        text: "This is the bearing sample: 30 failure times in hours, and with no column for units still running, every row counts as a failure.",
-      },
-      {
-        target: '[data-wt="fit-next"]',
-        text: "Next moves on to the model, where you choose the distribution to fit.",
-        next: "click",
+        target: ['[data-wt="reading-summary"]', '[data-wt="fit-data"]'],
+        text: "This is the bearing sample, read as it was saved: 30 failure times in hours, and with no column for units still running, every row counts as a failure.",
       },
       {
         target: '[data-wt="fit-run"]',
