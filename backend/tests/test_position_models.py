@@ -128,6 +128,23 @@ def test_from_class_needs_a_class_model(m, db):
     assert pm.source_text(link) == "From the class Duty pump"
 
 
+def test_class_models_say_which_classes_have_one_and_new_failures_since(m, db):
+    from backend.maintenance import loop
+
+    pump = m.create_position("Pump A", position_class="Duty pump")["id"]
+    m.create_position("Pump B", position_class="Spare pump")
+    assert m.class_models() == {}
+    _history(m, pump, [300, 420, 380])
+    loop.fit_class_model(m, db, "Duty pump")
+    cm = m.class_models()
+    assert list(cm) == ["Duty pump"]
+    assert cm["Duty pump"]["failures"] == 3 and cm["Duty pump"]["failures_now"] == 3 and cm["Duty pump"]["unit"] == "days"
+    # A fourth failure after the fit: the class model is now fitted before 1 new failure.
+    m.fit(pump, new_item={"name": "Unit 4"}, on="2019-06-01")
+    m.remove(pump, on="2020-01-01", reason="failure")
+    assert m.class_models()["Duty pump"]["failures_now"] == 4
+
+
 def test_a_built_item_inherits_its_designs_models(m, db):
     product = m.create_product("Drone", part_number="DR-1")["id"]
     motor = m.create_position("Motor", parent_id=product)["id"]

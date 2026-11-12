@@ -456,7 +456,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
             scroll and the tree column slid out of sight. */}
         {!table.cols.length ? null : span != null && span !== false && r.type !== "meas" && r.type !== "pmodel" ? (
           <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
-            {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={span}>{span}</span>}
+            {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={typeof span === "string" ? span : undefined}>{span}</span>}
           </div>
         ) : table.cols.map((c) => (
           <div key={c.id} role="gridcell" className={"rw-c" + (c.num ? " num" : "") + ` mt-c-${c.id}`} style={{ width: table.widths[c.id] }}>

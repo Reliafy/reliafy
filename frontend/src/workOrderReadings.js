@@ -27,11 +27,36 @@ export function readingRows(wo) {
     range: [p.range_min, p.range_max],
   }));
   const seen = new Set(asked.map((r) => r.id));
-  const other = (wo?.measurements || []).filter((m) => !seen.has(m.id)).map((m) => ({
-    id: m.id, name: m.name, unit: m.unit || "", kind: m.kind, last: m.reading, taskId: null, task: "", why: "",
-    recorded: null, group: "other", range: [null, null],
-  }));
+  // A point here whose name the task's own words name (a "Vibration check" and the pump's
+  // "Vibration" point) is what the check reads: asked for, next to the task's own points,
+  // not folded under "Other measurements here".
+  const words = taskWords([wo?.task?.name, ...(wo?.lines || []).map((l) => l.name || l.task?.name)]);
+  const other = [];
+  for (const m of (wo?.measurements || []).filter((x) => !seen.has(x.id))) {
+    const named = words.size > 0 && [...nameWords(m.name)].some((w) => words.has(w));
+    const row = {
+      id: m.id, name: m.name, unit: m.unit || "", kind: m.kind, last: m.reading, taskId: null, task: named ? wo?.task?.name || "" : "",
+      why: named ? "the task names it" : "", recorded: null, group: named ? "asked" : "other", range: [null, null],
+    };
+    if (named) asked.push(row);
+    else other.push(row);
+  }
   return [...asked, ...other];
+}
+
+// Words that say what a task does, not what it reads: never enough to tie a point to it.
+const COMMON = new Set([
+  "check", "checks", "inspect", "inspection", "replace", "replacement", "test", "service", "clean", "weekly",
+  "monthly", "yearly", "annual", "daily", "quarterly", "routine", "record", "reading", "readings", "take",
+  "measure", "level", "the", "and", "with", "from", "pump", "motor", "drive",
+]);
+function nameWords(text) {
+  return new Set(String(text || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !COMMON.has(w)));
+}
+function taskWords(names) {
+  const out = new Set();
+  for (const n of names) for (const w of nameWords(n)) out.add(w);
+  return out;
 }
 
 // A row's value box to start with: a setting's current value (it's what's
@@ -100,4 +125,20 @@ export function takenText(r) {
     return `${r.point.name} set to ${withUnit(numberText(r.value), u)}${r.from != null ? ` (from ${withUnit(numberText(r.from), u)})` : ""}`;
   }
   return `${r.point?.name || "Reading"} ${withUnit(numberText(r.value), u)}`;
+}
+
+// What's wrong with a value as typed, before anything is sent ("" when nothing): a
+// counter only goes up, so a value below its last reading is refused (the server would
+// refuse it at Close); one outside the point's range says so.
+export function boxProblem(r, raw) {
+  if (raw == null || String(raw).trim() === "") return "";
+  const v = Number(raw);
+  if (!Number.isFinite(v)) return "Enter a number.";
+  if (r?.kind === "counter" && r.last != null && v < Number(r.last)) {
+    return `A counter only goes up: the last reading was ${r.last}${r.unit ? ` ${r.unit}` : ""}. If the counter was replaced, add a new one.`;
+  }
+  const [lo, hi] = r?.range || [];
+  if (lo != null && v < lo) return `Below its range (at least ${lo}).`;
+  if (hi != null && v > hi) return `Above its range (at most ${hi}).`;
+  return "";
 }

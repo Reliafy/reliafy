@@ -13,17 +13,30 @@ export { MISSION_COLUMNS, MISSION_TREE_HEAD } from "../explorerMissions.js";
 // reads can be out at once (a mission saved, then its result worked out): the one asked for last
 // is the one shown, whichever answers first.
 export function useTreeMissions({ on }) {
-  const [state, setState] = useState({ links: null, hasModel: [], error: null });
+  const [state, setState] = useState({ links: null, hasModel: [], otherModel: [], error: null });
   const asked = useRef(null);
   if (!asked.current) asked.current = latestOnly();
   const load = useCallback(() => {
     const latest = asked.current();
     return listPositionMissions()
-      .then((d) => latest() && setState({ links: d.links || [], hasModel: d.has_model || [], error: null }))
+      .then((d) => latest() && setState({ links: d.links || [], hasModel: d.has_model || [], otherModel: d.other_model || [], error: null }))
       .catch((e) => latest() && setState((s) => ({ ...s, error: e.message })));
   }, []);
   useEffect(() => { if (on) load(); }, [on, load]);
-  return { links: state.links, hasModel: state.hasModel, error: state.error, load };
+  return { links: state.links, hasModel: state.hasModel, otherModel: state.otherModel, error: state.error, load };
+}
+
+// A position's roll-up on the Missions tab, with "Add a mission" a real button wherever one can be
+// added (it was plain words, the action only in the row's menu). `text`: rollupText's words.
+export function MissionRollup({ text, onAdd = null }) {
+  const tail = " · Add a mission";
+  if (!onAdd || !String(text || "").endsWith(tail)) return text || "";
+  return (
+    <>
+      {text.slice(0, -tail.length)}{" · "}
+      <button type="button" className="link mt-add-mission" onClick={(e) => { e.stopPropagation(); onAdd(); }}>Add a mission</button>
+    </>
+  );
 }
 
 // One cell of a mission row (r.ref: {mission, rbd}); a phase row (r.ref.phase: {index, of,

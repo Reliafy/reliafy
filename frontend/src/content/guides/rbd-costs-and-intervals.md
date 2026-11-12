@@ -26,8 +26,8 @@ Lost production costs 2,000 an hour. Costs are in whatever currency you use.
 On a repairable diagram, press **Maintenance plan** in the toolbar (on a phone,
 **⋯ → Maintenance plan**). A table opens under the diagram, the diagram still in
 view, with a row for every block. This is the one place a block's planned work
-is set. Select blocks on the canvas to show just their rows; **Show all** brings
-the rest back. Changes apply as you type; save the diagram to keep them.
+is set. It opens on every block; with blocks selected on the canvas, **Show only
+them** narrows it to their rows and **Show all** brings the rest back. Changes apply as you type; save the diagram to keep them.
 
 ![The maintenance plan: how much of the time each block runs, its task, interval, time off-line, cost and group](/guides/img/costs-00-plan.png)
 
@@ -35,7 +35,8 @@ Each row has:
 
 - **Runs**: the share of the time the block runs ("Runs 25% of the time"), as a
   percentage. Blank means
-  it runs all the time. Set it when the block's life was measured in running
+  it runs all the time, so a task counted in running hours is the same number of
+  calendar hours. Set it when the block's life was measured in running
   hours: a pump that runs 25% of the time lasts four times as long in calendar
   time, and the diagram takes that into account. Leave it blank when the life
   came from calendar dates.

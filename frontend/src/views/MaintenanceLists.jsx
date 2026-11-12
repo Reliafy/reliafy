@@ -11,6 +11,7 @@ import {
   setClassCosts,
   setClassReplacementCost,
   getMaintenanceLocation,
+  getMaintenanceOverview,
   getPositionClasses,
   adjustMaintenanceStock,
   getSparesCover,
@@ -25,8 +26,9 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, Field, FormModal, LifeTable, Proposals, fmtDate,
+  DocumentsCard, Field, FormModal, LifeTable, Proposals, flatten, fmtDate,
 } from "../components/MaintenanceParts.jsx";
+import { NewPositionModal } from "./MaintenanceHome.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
 import { countsText, inheritedText } from "../maintenanceLocations.js";
@@ -154,6 +156,10 @@ export function MaintenanceLocation() {
     if (loc === null) return;
     listMaintenanceLocations(owner).then((d) => setAll(d.locations)).catch(() => {});
   }, [owner, loc === null]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A place you look after (not a product's design layout, nor one an item carries) holds
+  // positions: adding one here is its main action, and the new position is at this place.
+  const canHoldPositions = !!loc && !loc.design_of && !loc.carried_by;
+  const addPosition = () => setModal("position");
   if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={explorerPath("locations")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
@@ -167,8 +173,15 @@ export function MaintenanceLocation() {
         meta={[loc.description, countsText({ ...loc.counts, open_work_orders: 0 })].filter(Boolean).join(" · ")
           || (loc.path.length ? "Location" : "Asset")}
         actions={<button className="secondary" onClick={() => setModal("child")}><PlusIcon /> Location inside</button>}
-        primary={<button onClick={() => setModal("rename")}>Rename</button>}
-        menu={<button className="ovm-item danger" onClick={() => setModal("delete")}>Delete…</button>}
+        primary={canHoldPositions
+          ? <button onClick={() => setModal("position")}><PlusIcon /> Add a position here</button>
+          : <button onClick={() => setModal("rename")}>Rename</button>}
+        menu={(
+          <>
+            {canHoldPositions && <button className="ovm-item" onClick={() => setModal("rename")}>Rename…</button>}
+            <button className="ovm-item danger" onClick={() => setModal("delete")}>Delete…</button>
+          </>
+        )}
       />
       {loc.design_of && (
         <p className="card lib-date">
@@ -196,7 +209,7 @@ export function MaintenanceLocation() {
         </section>
       )}
       {!loc.design_of && <OpenWorkHere loc={loc} />}
-      <LocationPositions loc={loc} />
+      <LocationPositions loc={loc} onAdd={canHoldPositions ? addPosition : null} />
       {!loc.design_of && <section className="card">
         <div className="maint-head"><h2>Items placed here</h2></div>
         {loc.items.length === 0 ? (
@@ -222,6 +235,10 @@ export function MaintenanceLocation() {
       {loc.coordinates && <p className="lib-date">Coordinates: {loc.coordinates.lat}, {loc.coordinates.lon}</p>}
       {modal === "child" && <NewLocationModal locations={all} parentId={loc.id} onClose={() => setModal(null)}
                                               onDone={(l) => { setModal(null); navigate(`/asset-register/locations/${l.id}`); }} />}
+      {modal === "position" && (
+        <NewPositionFromPlace loc={loc} locations={all} onClose={() => setModal(null)}
+                              onCreated={() => { setModal(null); refresh(); }} />
+      )}
       {modal === "rename" && <RenameLocation loc={loc} onClose={() => setModal(null)} onDone={(d) => { setLoc(d); setModal(null); }} />}
       {modal === "delete" && (
         // Gone with the places inside and the positions there: the Explorer shows the toast with Undo.
@@ -272,13 +289,22 @@ function OpenWorkHere({ loc }) {
 
 // The positions at a location (set on them or inherited, here or inside it), by the
 // system each belongs to, with what's fitted to each.
-function LocationPositions({ loc }) {
+function LocationPositions({ loc, onAdd = null }) {
   return (
     <section className="card">
-      <div className="maint-head"><h2>Positions here</h2></div>
+      <div className="maint-head">
+        <h2>Positions here</h2>
+        {onAdd && loc.systems.length > 0 && (
+          <button type="button" className="secondary sm" onClick={onAdd}><PlusIcon /> Add a position here</button>
+        )}
+      </div>
       {loc.systems.length === 0 ? (
-        <p className="lib-date">No positions here yet. Set a position's location on its page: the positions inside it
-          follow, and so does whatever is fitted.</p>
+        <div className="maint-empty-add">
+          <p className="lib-date">No positions here yet. Add one here (a pump, a boiler, a pump set with its motor
+            inside), or set an existing position's location on its page: the positions inside it follow, and so does
+            whatever is fitted.</p>
+          {onAdd && <button type="button" onClick={onAdd}><PlusIcon /> Add a position here</button>}
+        </div>
       ) : loc.systems.map((g) => (
         <div key={g.system.id} className="maint-group">
           <h3>
@@ -308,6 +334,20 @@ function LocationPositions({ loc }) {
           {loc.counts.positions} positions.</p>
       )}
     </section>
+  );
+}
+
+// New position at a place: the shared form, its Location filled with this place.
+function NewPositionFromPlace({ loc, locations, onClose, onCreated }) {
+  const [positions, setPositions] = useState([]);
+  useEffect(() => {
+    getMaintenanceOverview().then((d) => setPositions(flatten(d.tree))).catch(() => {});
+  }, []);
+  // The place itself is always a choice, even before its layout's list has come back.
+  const places = locations.some((l) => l.id === loc.id) ? locations : [...locations, { id: loc.id, name: loc.name }];
+  return (
+    <NewPositionModal positions={positions} locations={places} locationId={loc.id}
+                      onClose={onClose} onCreated={onCreated} />
   );
 }
 

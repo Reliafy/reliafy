@@ -12,7 +12,7 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
   DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
-  kindText, lateText, lsaColumns, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
+  kindText, lateText, lsaColumns, taskOnText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
   renameRow, rollupLines, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
   MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money, tasksHere,
 } from "../lsaTab.js";
@@ -259,7 +259,7 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
                canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
       <p className="lib-date">
         {tasks.length
-          ? <>A package {where}, done on one visit: {tasks.map((t) => t.name).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
+          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
           : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
       </p>
       {tasks.some((t) => t.overdue) && (
@@ -360,7 +360,7 @@ function AddTasksDialog({ pkg, onClose, onDone }) {
             <li key={t.id}>
               <label className="pk-check">
                 <input type="checkbox" checked={picked.has(t.id)} onChange={() => flip(t.id)} />
-                <span>{t.name} <span className="lib-date">· {t.subject?.name} · every {t.interval} {t.unit}</span></span>
+                <span>{t.name} <span className="lib-date">· {[t.subject?.within, t.subject?.name].filter(Boolean).join(" › ")} · every {t.interval} {t.unit}</span></span>
               </label>
             </li>
           ))}

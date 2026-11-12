@@ -98,6 +98,8 @@ export default function MaintenancePosition() {
         }
         actions={
           <>
+            {/* Back to the tree, this position picked (its tabs: RCM, Modelling, Failure reports…). */}
+            <button className="secondary" onClick={() => navigate(explorerPath("positions", { sel: p.id }))}>Open in the Explorer</button>
             <button className="secondary" onClick={openChild}><PlusIcon /> Position inside</button>
           </>
         }

@@ -28,3 +28,20 @@ test("the list's summary line", () => {
   assert.equal(assetsSummary({ places: [{ positions: 2 }, { positions: 1 }], not_placed: { positions: 0 } }),
     "2 assets · 3 positions");
 });
+
+test("locationChoices: every place depth first, A to Z, labelled with its path", async () => {
+  const { locationChoices } = await import("./maintenanceAssets.js");
+  const out = locationChoices([
+    { id: "b", name: "Pump hall", parent_id: "a" },
+    { id: "a", name: "Riverside" },
+    { id: "c", name: "Annex" },
+    { id: "d", name: "Store", parent: { id: "c", name: "Annex" } },
+  ]);
+  assert.deepEqual(out, [
+    { id: "c", label: "Annex" },
+    { id: "d", label: "Annex › Store" },
+    { id: "a", label: "Riverside" },
+    { id: "b", label: "Riverside › Pump hall" },
+  ]);
+  assert.deepEqual(locationChoices(null), []);
+});

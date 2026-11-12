@@ -70,7 +70,8 @@ test("settings and what's left to set", () => {
   assert.match(treeRowProblems({}, cond)[0], /threshold/);
   assert.deepEqual(treeRowProblems({ tree_settings: { threshold: 0.1 } }, cond), []);
   const running = row({ ...AGE, interval: null, operating_interval: 500 });
-  assert.match(treeRowProblems({}, running)[0], /Runs %/);
+  // Runs blank: the block runs all the time, so running hours are calendar hours.
+  assert.deepEqual(treeRowProblems({}, running), []);
   assert.deepEqual(treeRowProblems({ duty: 0.25 }, running), []);
 });
 
@@ -119,4 +120,11 @@ test("restoration and a shutdown reach the block only when the server's plan car
   assert.equal(next.preventive.older_than, 13149);
   assert.equal(next.preventive.interval, undefined); // the shut gives its calendar and time off-line
   assert.equal(next.preventive.duration, undefined);
+});
+
+test("blocks whose positions have gone are named", async () => {
+  const { goneText } = await import("./rbdTreePlan.js");
+  assert.equal(goneText([]), "");
+  assert.match(goneText([{ id: "p1", label: "Pump 3" }], "Station"), /“Pump 3” stands for a position no longer inside Station/);
+  assert.match(goneText([{ label: "A" }, { label: "B" }], "S"), /They're kept in the diagram/);
 });

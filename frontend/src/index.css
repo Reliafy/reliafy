@@ -9988,3 +9988,15 @@ main.content:focus { outline: none; }
 .lib-table .fleet-items-sel { width: 36px; text-align: center; }
 .fleet-compare .mini-table th[scope="row"] { color: var(--muted); font-weight: 600; white-space: nowrap; }
 .fleet-items-tools button { white-space: normal; text-align: left; max-width: 100%; }
+
+/* The same task on identical positions, offered after an interval change (TaskTwins.jsx). */
+.task-twins { margin-top: 8px; padding: 10px 12px; }
+.task-twins p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.task-twins .maint-row { flex-wrap: wrap; gap: 8px; }
+/* The Decide dialog's cost row and a failure mode's own restoration (RCM). */
+.decision-cost { align-items: center; flex-wrap: wrap; gap: 8px; }
+.rim-restore { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rim-restore .rw-fhelp { flex-basis: 100%; margin: 0; }
+.rcm-on-tree { margin-bottom: 16px; }
+.rcm-on-tree-list { margin: 8px 0 0; padding-left: 18px; }
+.rcm-on-tree-list li { margin: 4px 0; overflow-wrap: anywhere; }

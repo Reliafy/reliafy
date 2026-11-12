@@ -204,6 +204,27 @@ class PositionModelOps:
         model = node.get("model")
         return {"position_class": node.get("name") or name, **model} if model and model.get("model_id") else None
 
+    def class_models(self) -> dict:
+        """Each position class with a fitted model: {class name: {model_id, fitted_on,
+        failures (pooled when it was fitted), failures_now (pooled today), unit}}. A
+        position of the class can take it (From the class…), and failures_now above
+        failures says the class has had new failures since the fit."""
+        out: dict[str, dict] = {}
+        for node in self.s.nodes(self.org, "PositionClass"):
+            model = node.get("model") or {}
+            name = node.get("name")
+            if not name or not model.get("model_id"):
+                continue
+            try:
+                # Counted as the class fit counts them (a life above 0), so a fit made today reads 0 new.
+                rows = self.class_life_data(name)["rows"]
+                now = sum(1 for r in rows if r["c"] != 1 and (r["xr"] if r["c"] == 2 else r["x"]) > 0)
+            except _sv().NotFound:  # a class with no positions left: nothing pooled now
+                now = None
+            out[name] = {"model_id": model["model_id"], "fitted_on": model.get("fitted_on"),
+                         "failures": model.get("failures"), "failures_now": now, "unit": model.get("unit")}
+        return out
+
     def _mode_ids_on(self, position_id: str, failure_mode_ids) -> list[str]:
         sv = _sv()
         ids = []
@@ -1621,6 +1642,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         if old_link is None or old_link["model_type"] != "rbd":
             raise sv.Invalid("Rebuild names this position's RBD row (replace_link_id).")
     built = rbd_derive.build(m, position_id, block_model=block, unit=unit)
+    kept_gone: list = []
     resolve = lambda mid: fetch("model", mid)  # noqa: E731
     try:
         graph = normalize_graph(built["graph"], resolve_saved_model=resolve)
@@ -1636,11 +1658,23 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
                                       + ", ".join(g["name"] for g in built["redundancy"]) + ").")
             elif existing is not None:
                 graph = _add_new_blocks(existing.graph or {}, built["graph"], resolve)
+            if existing is not None:
+                # Blocks for positions deleted or moved out since: kept (every edit is), but said.
+                from backend.maintenance import rbd_tree_plan
+
+                had_ids = (old_link.get("source") or {}).get("position_ids") or []
+                gone = rbd_tree_plan.gone_blocks(m, position_id, graph, had_ids)
+                kept_gone = [g["position"]["id"] for g in gone]
+                said = rbd_tree_plan.gone_note(gone, p["name"])
+                if said:
+                    built["notes"].append(said)
         name = existing.name if existing is not None else f"{p['name']} (from the tree)"
         rbd = rbds_service.save_rbd(db, name, graph, owner_id or m.org, rbd_id=existing.id if existing else None)
     except GraphError as err:
         raise sv.Invalid(f"The diagram couldn't be made: {err}") from None
-    source = {"built_from": len(children), "position_ids": [c["id"] for c in children], "notes": built["notes"][:20]}
+    # Positions gone since but whose blocks the diagram still has stay listed, so the plan keeps naming them.
+    source = {"built_from": len(children), "position_ids": [c["id"] for c in children] + kept_gone,
+              "notes": built["notes"][:20]}
     # A rebuilt row stays the one in use if it was set to be.
     was_in_use = bool(replace_link_id and (m.s.node(m.org, replace_link_id) or {}).get("in_use"))
     link = m.link_position_model(position_id, "rbd", rbd.id, "rbd", None, rbd.name, note, source, replace_link_id)

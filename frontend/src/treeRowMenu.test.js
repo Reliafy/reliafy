@@ -65,10 +65,13 @@ test("a team that's view only: every change greyed with the reason; Pin still wo
   assert.equal(withPinned.find((i) => i.id === "pin").disabled, undefined);
 });
 
-test("locations: new inside, rename, move, delete; items: rename (never delete); headings: nothing", () => {
+test("locations: new position here, new inside, rename, move, delete; items: rename (never delete); headings: nothing", () => {
   const d = buildDisplay(DATA, "locations");
   assert.deepEqual(summaryActions(d.rows.get("shed"), opts("locations")).map((i) => i.label),
-    ["New location inside", "Rename…", "Move to…", "Delete…"]);
+    ["New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
+  // A product's layout or a place an item carries holds no positions of its own.
+  const design = { key: "lay", type: "loc", ref: { name: "Arm", design_of: { id: "p1" } }, kids: [] };
+  assert.equal(summaryActions(design, opts("locations"))[0].id, "tree-new");
   // An item row (a spare, or one with no home yet).
   assert.deepEqual(ids(summaryActions(ITEM_ROW, opts("locations"))), ["tree-rename"]);
   assert.deepEqual(summaryActions({ key: "G:nohome", type: "group", ref: { name: "No home yet" }, kids: [] }, opts("locations")), []);
@@ -155,7 +158,7 @@ test("the LSA tab: Package the tasks here… leads a position's and a place's me
   // A place has packages too.
   const shed = buildDisplay(DATA, "locations").rows.get("shed");
   assert.deepEqual(tabMenu("lsa", summaryActions(shed, opts("locations")), { lead: lsaLead(shed), pin }).map((i) => i.label || "---"),
-    ["Package the tasks here…", "---", "New location inside", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
+    ["Package the tasks here…", "---", "New position here", "New location inside", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
   // View only: greyed with the reason, like every change.
   const off = lsaLead(row, { viewOnly: "View only: the team's Pro plan has lapsed." })[0];
   assert.equal(off.disabled, true);
@@ -180,13 +183,13 @@ test("a tab with nothing of its own for a row: the changes to the tree go last, 
     ["Build an item…", "Focus", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
   // A place on Failure reports has no report to add (a report sits at a position).
   const shed = summaryActions(buildDisplay(DATA, "locations").rows.get("shed"), opts("locations"));
-  assert.deepEqual(labels(tabMenu("reports", shed, { pin })), ["Focus", "Pin this branch", "---", "New location inside", "Rename…", "Move to…", "Delete…"]);
+  assert.deepEqual(labels(tabMenu("reports", shed, { pin })), ["Focus", "Pin this branch", "---", "New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
   // Any other plain-tree tab (Parts and stock, Classes, when they're switched on): the same rule.
-  assert.deepEqual(labels(tabMenu("parts", shed, { pin })), ["Focus", "Pin this branch", "---", "New location inside", "Rename…", "Move to…", "Delete…"]);
+  assert.deepEqual(labels(tabMenu("parts", shed, { pin })), ["Focus", "Pin this branch", "---", "New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
   assert.deepEqual(labels(tabMenu("classes", summaryActions(d.rows.get("skim"), opts("positions")), { pin })),
     ["Add failure report…", "Log an event…", "Focus", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
   // No line with nothing on one side of it; an item's Rename… goes last as well.
-  assert.deepEqual(labels(tabMenu("reports", shed)), ["New location inside", "Rename…", "Move to…", "Delete…"]);
+  assert.deepEqual(labels(tabMenu("reports", shed)), ["New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
   assert.deepEqual(labels(tabMenu("reports", summaryActions(ITEM_ROW, opts("locations")), { pin })), ["Focus", "Pin this branch", "---", "Rename…"]);
 });
 

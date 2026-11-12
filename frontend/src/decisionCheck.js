@@ -233,6 +233,24 @@ export function checkDecision({ outcome, rtfBasis, task = "", interval = "", int
   return { blockers, intervalError, notice, extraErrors };
 }
 
+// The Explorer's decision dialog asks two more things of the first task: an existing
+// task picked (when "Existing task" is chosen) and, for a new one, an optional cost each
+// time. `check` is checkDecision's answer; the same shape comes back with their blockers.
+export function decisionExtrasCheck(check, { existingTask = false, picked = "", cost = "" } = {}) {
+  const blockers = [...check.blockers];
+  let costError = null;
+  if (existingTask && !picked) blockers.push("Choose the existing task.");
+  const raw = String(cost ?? "").trim();
+  if (raw !== "") {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) {
+      costError = "The cost is an amount of 0 or more (or leave it blank).";
+      blockers.push("Fix the cost.");
+    }
+  }
+  return { ...check, blockers, costError };
+}
+
 // ---- the interval's unit, remembered on this device ---------------------------
 // The decision dialog's unit starts at the one chosen last (most RCMs have
 // their tasks in weeks or months, not hours), else hours as before. A decision

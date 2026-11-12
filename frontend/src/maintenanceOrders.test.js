@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  createDetail, createLabel, createPlan, daysLate, doneText, dueWindow, groupDue, lateText, linesText,
+  createDetail, createLabel, createPlan, dueSearchText, inArea, daysLate, doneText, dueWindow, groupDue, lateText, linesText,
   orderKind, orderTab, ordersPath, ordersSummary, packageMatches, packagePath, packageStatusText, splitOpen,
 } from "./maintenanceOrders.js";
 
@@ -113,4 +113,24 @@ test("packageStatusText and packageMatches", () => {
   assert.ok(packageMatches(p, "SATURDAY"));
   assert.ok(packageMatches(p, ""));
   assert.ok(!packageMatches(p, "fan"));
+});
+
+test("inArea: a due task is in a site when its place is the site or inside it", () => {
+  const row = { location: { id: "L3", path: [{ id: "L1" }, { id: "L2" }], display: "Riverside › Pump hall › Bay 3" } };
+  assert.equal(inArea(row, ""), true);
+  assert.equal(inArea(row, "L3"), true);
+  assert.equal(inArea(row, "L1"), true);
+  assert.equal(inArea(row, "L9"), false);
+  assert.equal(inArea({ location: null }, "L1"), false);
+  // An item's task: where the item is now.
+  assert.equal(inArea({ at: { location: { id: "L1", path: [] } } }, "L1"), true);
+});
+
+test("dueSearchText: a due task is found by its site and what its position sits in", () => {
+  const words = dueSearchText({
+    name: "Check motor", subject: { name: "Drive motor 75 kW", within: "Riverside › Pump 3" },
+    location: { name: "Bay 3", display: "Riverside › Bay 3" },
+  });
+  assert.ok(words.includes("Riverside › Pump 3"));
+  assert.ok(words.includes("Riverside › Bay 3"));
 });

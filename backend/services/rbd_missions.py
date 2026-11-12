@@ -253,6 +253,20 @@ def save(graph: dict, mission_id: Optional[str] = None, name: Optional[str] = No
     return graph, {**mission, "own": False}
 
 
+def rbd_name_after(rbd_name: str, before: dict, after: dict) -> str:
+    """A mission's own RBD is saved as "<position> — <mission>": renamed with the mission, so the
+    RBDs list doesn't keep "— Mission 1". A diagram renamed by hand (no longer ending in the old
+    mission name), or any other diagram, keeps its name."""
+    if not mission_of(after):
+        return rbd_name
+    old = " ".join(str((before or {}).get("mission_name") or "").split())
+    new = " ".join(str((after or {}).get("mission_name") or "").split())
+    tail = f" — {old}"
+    if not old or not new or old == new or not str(rbd_name or "").endswith(tail):
+        return rbd_name
+    return f"{rbd_name[:-len(tail)]} — {new}"[:200]
+
+
 def remove(graph: dict, mission_id: str) -> dict:
     """The graph without that mission. Raises :class:`MissionError`."""
     graph = dict(graph or {})

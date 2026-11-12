@@ -224,18 +224,14 @@ def duty_fraction(data: dict, label: str) -> Optional[float]:
 def calendar_interval(pm: dict, data: dict, label: str) -> Optional[float]:
     """A replacement's interval on the diagram's clock: its ``interval``, or,
     when it is given in operating time (``operating_interval``), that over the
-    block's duty. Refused, saying what to set, when the block has no duty."""
+    block's duty. A blank Runs share means the block runs all the time (the plan says "all the time",
+    and 100% is stored as blank), so running time is calendar time."""
     operating = pm.get("operating_interval")
     if _blank(operating):
         return _number(pm.get("interval"), "preventive-maintenance interval", label, positive=True)
     hours = _number(operating, "interval in operating time", label, positive=True)
     duty = duty_fraction(data, label)
-    if duty is None:
-        raise AnalysisError(
-            f"“{label}”: its scheduled maintenance is every {hours:g} in operating time, but the block "
-            "has no Runs share (duty), so there is no way to turn that into calendar time. Set how much of the "
-            "time it runs (Runs %) in the Maintenance plan, or give the interval in calendar time.")
-    return hours / duty
+    return hours / (1.0 if duty is None else duty)
 
 
 def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict]:

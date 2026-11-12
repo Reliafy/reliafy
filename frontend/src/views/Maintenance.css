@@ -669,3 +669,7 @@ tr.field-report-open {
 
 /* A package group's "Raise this visit" in Due soon: beside its name, wrapping on a phone. */
 .maint-group-btn { margin-left: 0.6rem; vertical-align: middle; }
+
+/* A place with no positions yet: the sentence, then its main action under it. */
+.maint-empty-add { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.maint-head { flex-wrap: wrap; gap: 8px; }
