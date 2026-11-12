@@ -9,7 +9,9 @@ import {
   saveDegradationModel,
   SPREADSHEET_ACCEPT,
 } from "../api.js";
-import { TIME_UNITS, distinctCount, guessMeasurementUnit, guessTimeUnit, usableForDegradation } from "../degradation.js";
+import {
+  TIME_UNITS, distinctCount, guessDegradationColumns, guessMeasurementUnit, guessTimeUnit, usableForDegradation,
+} from "../degradation.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
@@ -94,7 +96,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
     try {
       const cols = await getColumns(f);
       setCsv(cols);
-      setMapping({ i: cols.columns[0] || "", x: cols.columns[1] || "", y: cols.columns[2] || "" });
+      setMapping(guessDegradationColumns(cols.columns));
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -118,7 +120,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
       const table = full.measurements || full;
       const columns = table.preview_columns || [];
       setCsv({ columns, preview: table.preview || [], n_rows: table.n_rows, n_unique: table.n_unique });
-      setMapping({ i: columns[0] || "", x: columns[1] || "", y: columns[2] || "" });
+      setMapping(guessDegradationColumns(columns));
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -191,7 +193,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
   // The stepper sits under the title; the footer holds only the next step.
   let footer;
   if (step === 1) {
-    footer = <span className="hint">Pick a saved dataset, or upload a CSV or Excel file, to continue</span>;
+    footer = <span className="hint">Pick a dataset and press <b>Use this dataset</b>, or upload a CSV or Excel file</span>;
   } else if (step === 2) {
     footer = (
       <div className="row" style={{ margin: "0 0 0 auto" }}>

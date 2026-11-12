@@ -62,8 +62,8 @@ export default function DegradationModelPage() {
       answer={model ? degradationAnswer(model.results, { saved: `saved ${relativeTime(model.updated_at || model.created_at)}` }) : null}
       id={model?.id}
       primary={model && (
-        <button type="button" onClick={() => navigate("/risk")}
-                title="The items you track on this model, under Risk">
+        <button type="button" onClick={() => navigate(`/risk?model=${encodeURIComponent(model.id)}`)}
+                title="Track items in service against this model: its fleet, or a new one">
           Track items{nItems > 0 ? ` (${nItems})` : ""}
         </button>
       )}

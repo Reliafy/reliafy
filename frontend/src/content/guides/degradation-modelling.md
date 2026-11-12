@@ -98,7 +98,7 @@ The page has five tabs:
 
 The population model is useful, but the real payoff is per-asset.
 
-Under **Decisions → Risk →** [Condition monitoring](/risk) (or **Track items** on the model's page),
+Under **Decisions → Risk →** [Condition monitoring](/risk) (or **Track items** on the model's page, which opens the model's fleet, or a new one on that model),
 register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much

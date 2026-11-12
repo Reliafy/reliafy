@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   cvmCheck, duanePoints, fittedToData, growingCheck, logSlope, mtbfWords, planViews, recurrentAnswer, recurrentTabs,
-  resolveRecurrentTab, systemsCheck, trendCheck,
+  resolveRecurrentTab, systemsCheck, trendCheck, poissonUpperTail, scaledParam,
   dataText, effectTone, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle,
 } from "./recurrentResults.js";
 
@@ -175,7 +175,32 @@ test("cvmCheck and systemsCheck", () => {
   assert.equal(cvmCheck({ gof_test: { p_value: null, reason: "Skipped" } }).words, "Skipped");
   assert.equal(cvmCheck({}), null);
   const rows = [{ system: "P-06", failures: 13, expected: 8.84, excess: 4.16 }, { system: "P-01", failures: 4, expected: 3.5, excess: 0.5 }];
-  assert.match(systemsCheck({ system_residuals: rows }).words, /^P-06 fails most beyond the model: 13 failures where it expects 8\.8/);
+  // 13 against 8.8 is within chance across two systems; 30 against 12 isn't.
+  assert.match(systemsCheck({ system_residuals: rows }).words, /^P-06 has the most failures beyond the model \(13 failures where it expects 8\.8\), but no more than chance/);
+  const bad = [{ system: "HT-11", failures: 30, expected: 12, excess: 18 }, rows[1]];
+  assert.match(systemsCheck({ system_residuals: bad, n_systems: 12 }).words, /^HT-11 fails most beyond the model: 30 failures where it expects 12\. Worth a look as a bad actor\./);
+  // 27 against 24.4 is never a bad actor.
+  const w16 = [{ system: "C-3", failures: 27, expected: 24.4, excess: 2.6 }, rows[1]];
+  assert.doesNotMatch(systemsCheck({ system_residuals: w16, n_systems: 8 }).words, /bad actor/);
   assert.match(systemsCheck({ system_residuals: [{ ...rows[1] }, rows[1]] }).words, /^No system stands out/);
   assert.equal(systemsCheck({ system_residuals: [rows[0]] }), null);
+});
+
+test("poissonUpperTail", () => {
+  assert.ok(Math.abs(poissonUpperTail(1, 2) - (1 - Math.exp(-2))) < 1e-12);
+  assert.equal(poissonUpperTail(0, 3), 1);
+  assert.ok(poissonUpperTail(30, 12) < 1e-4);
+});
+
+test("scaledParam: a small rate reads per 1,000 units, never in scientific notation", () => {
+  const hpp = { model: { id: "hpp" }, unit: "Hours" };
+  const d = scaledParam(hpp, { name: "lambda", value: 9.81e-4, ci: [8e-4, 1.2e-3] });
+  assert.equal(d.label, "Failure rate λ (per 1,000 hours)");
+  assert.ok(Math.abs(d.value - 0.981) < 1e-9);
+  assert.ok(Math.abs(d.ci[0] - 0.8) < 1e-9);
+  const cl = scaledParam({ model: { id: "cox_lewis" }, unit: "hours" }, { name: "beta", value: 8.65e-5 });
+  assert.equal(cl.label, "Log-linear slope β (per 10,000 hours)");
+  // A rate that isn't small, and a parameter that isn't a rate, stay as they are.
+  assert.equal(scaledParam(hpp, { name: "lambda", value: 0.5 }).scale, 1);
+  assert.equal(scaledParam({ model: { id: "crow_amsaa" } }, { name: "beta", value: 1e-5 }).scale, 1);
 });

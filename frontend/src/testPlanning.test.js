@@ -76,3 +76,10 @@ test("models a plan can't use give no prefill", () => {
   assert.equal(altPrefill({ ...ALT, stresses: [{}, {}] }), null);
   assert.equal(altPrefill({ ...ALT, coefficients: [{ name: "a", value: 1 }] }), null);
 });
+
+test("logTicks: whole numbers on a log axis, within the data", async () => {
+  const { logTicks } = await import("./testPlanning.js");
+  assert.deepEqual(logTicks([5, 8, 13, 20, 40, 80]).tickvals, [5, 10, 20, 50]);
+  assert.deepEqual(logTicks([10, 100, 1000]).ticktext, ["10", "20", "50", "100", "200", "500", "1,000"]);
+  assert.deepEqual(logTicks([]), {});
+});

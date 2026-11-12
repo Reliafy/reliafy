@@ -7,15 +7,16 @@ import { CANCELLED_TEXT } from "../jobCancel.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { PlotCard } from "./model/ModelLayouts.jsx";
-import { enteredUnit, fromKelvin, inputStressName, kelvinWords, toKelvin, useForModel } from "../altFrame.js";
+import { enteredUnit, fromKelvin, inputStressName, kelvinWords, toKelvin, useForModel, useRangeWarning } from "../altFrame.js";
 import ProTag from "./ProTag.jsx";
+import { formatReadable } from "../format.js";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
     ? "—"
     : Math.abs(v) >= 1e-4 || v === 0
       ? Number(v).toLocaleString(undefined, { maximumSignificantDigits: 4 })
-      : Number(v).toExponential(3);
+      : formatReadable(v, { sig: 3 });
 const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toPrecision(4).replace(/\.?0+$/, "")}%`);
 
 const FUNCS = [
@@ -213,6 +214,11 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
   // The answer on screen is for another use stress than the one entered now.
   const stale = res && JSON.stringify(useForModel(results, use)) !== JSON.stringify(res.use_stress);
   const inKelvin = kelvinWords(results, use);
+  // The range on the life at the use stress (two-sided), where the bounds give one.
+  const lifeCi = Array.isArray(bounds?.characteristic_life?.ci) && bounds.characteristic_life.ci.every(Number.isFinite)
+    ? bounds.characteristic_life.ci : null;
+  // Far outside the tested stresses: said in words beside the answer.
+  const farWarning = res ? useRangeWarning(results, res.use_stress, af) : null;
 
   return (
     <div className="alt-calc mf-alt-calc">
@@ -220,7 +226,10 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
         {res ? (
           <>
             <div className="alt-metrics" role="status" aria-live="polite">
-              <div className="alt-metric"><span className="k">Characteristic life</span><span className="v">{fmt(m.characteristic_life)}{u}</span></div>
+              <div className="alt-metric">
+                <span className="k">Characteristic life</span><span className="v">{fmt(m.characteristic_life)}{u}</span>
+                {lifeCi && <small className="alt-lower">{levelText} {fmt(lifeCi[0])}–{fmt(lifeCi[1])}</small>}
+              </div>
               <div className="alt-metric"><span className="k">Mean life</span><span className="v">{fmt(m.mean_life)}{u}</span></div>
               <div className="alt-metric"><span className="k">B10 life</span><span className="v">{fmt(m.b10)}{u}</span>{lower(bl.b10)}</div>
               <div className="alt-metric"><span className="k">B1 life</span><span className="v">{fmt(m.b1)}{u}</span>{lower(bl.b1)}</div>
@@ -240,6 +249,7 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
               )}
             </div>
             {stale && <p className="hint alt-calc-note">You changed the use stress: press Compute to update.</p>}
+            {farWarning && <div className="calc-warn" role="note">{farWarning}</div>}
             {res.no_finite_maximum && <div className="calc-warn">{res.no_finite_maximum.message || "This fit has no finite maximum: the extrapolation means nothing."}</div>}
             {boundsBusy && (
               <p className="hint alt-calc-note" role="status" aria-live="polite">

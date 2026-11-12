@@ -289,4 +289,36 @@ export function distanceWords(r) {
   return `${formatNumber(r.distance, { sig: 2 })}× the range`;
 }
 
+// A plain warning beside the Calculator's answer when the use stress is far
+// outside the tested stresses (more than one tested range's width beyond
+// them, or outside a single tested level): "20 kV is well below the tested
+// 30–36 kV …". ``useModel``: the use stress in the model's units (kelvin for
+// a temperature); ``af``: the acceleration factor against the reference.
+// null when the use stress is close.
+export function useRangeWarning(results, useModel, af = null) {
+  const ss = results?.stresses || [];
+  const levels = results?.levels || [];
+  if (!useModel || !levels.length) return null;
+  const parts = [];
+  ss.forEach((s, j) => {
+    const vals = levels.map((l) => Number(l.stress?.[j])).filter(Number.isFinite);
+    const u = Number(useModel[j]);
+    if (!vals.length || !Number.isFinite(u)) return;
+    const lo = Math.min(...vals);
+    const hi = Math.max(...vals);
+    const width = hi - lo;
+    const beyond = u < lo ? lo - u : u > hi ? u - hi : 0;
+    if (beyond === 0 || (width > 0 && beyond <= width)) return;
+    const unit = enteredUnit(s) || s?.unit || "";
+    const show = (v) => `${formatNumber(fromKelvin(v, enteredUnit(s)), { sig: 4 })}${unit ? ` ${unit}` : ""}`;
+    const tested = width > 0 ? `${formatNumber(fromKelvin(lo, enteredUnit(s)), { sig: 4 })}–${show(hi)}` : show(lo);
+    parts.push(`${show(u)} is well ${u < lo ? "below" : "above"} the tested ${tested}`);
+  });
+  if (!parts.length) return null;
+  const factor = af?.value != null && Number.isFinite(af.value)
+    ? ` (an acceleration factor of ${formatNumber(af.value, { sig: 4 })}×)` : "";
+  return `${parts.join("; ")}${factor}. The life here is an extrapolation that rests on the life-stress relationship `
+    + "holding that far: treat it as a rough guide, and test nearer the use stress if the decision depends on it.";
+}
+
 export { stressName };

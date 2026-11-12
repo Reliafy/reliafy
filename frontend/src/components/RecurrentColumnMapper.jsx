@@ -1,30 +1,33 @@
 import { useState } from "react";
 import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
-// Column-mapping UI for recurrent-event (repairable-system) data — the same
-// grouped look as the life-data ColumnMapper. Required: i (system id) and x
-// (event time). Optional modifiers mirror SurPyval's surface: c/n/tl/tr, where
-// tr is each system's observation window (right truncation). Then, each
-// optional (#65): the cause of each failure, covariates (site, duty, ...) and
-// observation gaps — window columns, or windows typed in.
-const FIELD_INFO = {
-  i: { label: "System", code: "i", help: "System / unit id — groups events by machine", req: true },
-  x: { label: "Failure time", code: "x", help: "Event time (failure / repair)", req: true },
-  c: { label: "Censor flag", code: "c", help: "Censor flag: 0 event, 1 right, -1 left" },
-  n: { label: "Count", code: "n", help: "Count of events per row" },
-  tl: { label: "Start of record", code: "tl", help: "Left truncation — observation start / left entry" },
-  tr: { label: "End of record", code: "tr", help: "How far each system's records go (its observation end): without it each record is taken to end at its last failure" },
-};
+// Column mapping for recurrent-event (repairable-system) data, in plain words
+// like the life-data ColumnMapper. Required: the system (i) and the time of
+// each failure (x). Optional: a censor flag (c), a count (n), the start (tl)
+// and end (tr) of each system's record. Then, each optional (#65): the cause
+// of each failure, covariates (site, duty, ...) and observation gaps — window
+// columns, or windows typed in.
+const FIELDS = [
+  { key: "i", label: "System or unit", none: "— pick a column —",
+    hint: "Which machine each failure belongs to." },
+  { key: "x", label: "Time of each failure", none: "— pick a column —",
+    hint: "Its age or running time at the failure, counted from new." },
+];
+const OPTIONAL = [
+  { key: "tr", label: "End of record (optional)", none: "— none: each record ends at its last failure —",
+    hint: "How far each system's history goes: its age now, or when it left service. Without it the time "
+      + "since the last failure is lost and the rate reads too high." },
+  { key: "tl", label: "Start of record (optional)", none: "— none: watched from new —",
+    hint: "For a system already in service when records began: its age then." },
+  { key: "c", label: "Failure or end of record? (optional)", none: "— none: every row is a failure —",
+    hint: "A flag column: 0 a failure, 1 the end of the record." },
+  { key: "n", label: "Count (optional)", none: "— none: one failure per row —",
+    hint: "Failures at that time on that row." },
+];
 
 const COMMON_UNITS = [
   "Hours", "Days", "Weeks", "Months", "Years",
   "Cycles", "Kilometres", "Miles", "Operations", "Rounds",
-];
-
-const GROUPS = [
-  { title: "Event — system (i) and failure time (x)", fields: ["i", "x"], cols: 2 },
-  { title: "Modifiers (optional) — censor flag (c), count (n), start of record (tl), end of record (tr)",
-    fields: ["c", "n", "tl", "tr"], cols: 4 },
 ];
 
 const NONE = { value: "", label: "— none —" };
@@ -39,61 +42,40 @@ export default function RecurrentColumnMapper({ columns, mapping, onChange, unit
   const covariateCols = columns.filter((c) => !used.has(c));
   const toggleZ = (col) => onChange({ ...mapping, z: z.includes(col) ? z.filter((c) => c !== col) : [...z, col] });
 
+  const field = (f) => (
+    <div className="ds-field" key={f.key}>
+      <span className="ds-label" id={`recmap-${f.key}`}>{f.label}</span>
+      <Select value={mapping[f.key] || ""} onChange={(v) => setField(f.key, v)} ariaLabel={f.label}
+              options={[{ value: "", label: f.none }, ...columns]} />
+      {f.hint && <span className="ds-hint">{f.hint}</span>}
+    </div>
+  );
+
   return (
-    <div className="mapper">
-      {GROUPS.map((group) => {
-        // The unit of the time axis sits inline with the required i/x row.
-        const withUnit = group.fields.includes("x") && !!onUnitChange;
-        return (
-          <div className="map-group" key={group.title}>
-            <div className="map-group-title">
-              <span>{group.title}</span>
-            </div>
-            <div className="map-fields" data-cols={withUnit ? group.cols + 1 : group.cols}>
-              {group.fields.map((field) => {
-                const info = FIELD_INFO[field];
-                const selected = !!mapping[field];
-                return (
-                  <label
-                    className={"map-field" + (selected ? " selected" : "")}
-                    key={field}
-                    htmlFor={`recmap-${field}`}
-                    title={`${info.label} (${info.code})${info.req ? " (required)" : ""} — ${info.help}`}
-                  >
-                    <span className="map-badge">
-                      {info.code}
-                      {info.req && <i className="req">*</i>}
-                    </span>
-                    <Select
-                      className="sel-embedded"
-                      value={mapping[field] || ""}
-                      onChange={(v) => setField(field, v)}
-                      options={[NONE, ...columns]}
-                    />
-                  </label>
-                );
-              })}
-              {withUnit && (
-                <label className="map-field map-unit" title="Unit of the time axis (optional)">
-                  <span className="map-badge">unit</span>
-                  <input
-                    className="map-unit-input"
-                    list="rec-units"
-                    value={unit || ""}
-                    placeholder="e.g. Hours"
-                    onChange={(e) => onUnitChange(e.target.value)}
-                  />
-                  <datalist id="rec-units">
-                    {COMMON_UNITS.map((u) => (
-                      <option value={u} key={u} />
-                    ))}
-                  </datalist>
-                </label>
-              )}
-            </div>
-          </div>
-        );
-      })}
+    <div className="mapper ds-mapper">
+      <div className="ds-row">
+        {FIELDS.map(field)}
+        {onUnitChange && (
+          <label className="ds-field ds-unit">
+            <span className="ds-label">Unit</span>
+            <input
+              className="units-input"
+              list="rec-units"
+              value={unit || ""}
+              placeholder="e.g. Hours"
+              onChange={(e) => onUnitChange(e.target.value)}
+            />
+            <datalist id="rec-units">
+              {COMMON_UNITS.map((u) => (
+                <option value={u} key={u} />
+              ))}
+            </datalist>
+          </label>
+        )}
+      </div>
+      <div className="ds-row">
+        {OPTIONAL.map(field)}
+      </div>
 
       <div className="map-group">
         <div className="map-group-title"><span>Cause, covariates and gaps (optional)</span></div>
@@ -101,15 +83,18 @@ export default function RecurrentColumnMapper({ columns, mapping, onChange, unit
           <div className="ds-field">
             <span className="ds-label">Cause of each failure</span>
             <Select value={mapping.mode || ""} onChange={(v) => setField("mode", v)} options={[NONE, ...columns]}
+                    ariaLabel="Cause of each failure"
                     title="The failure mode or cause: the MCF of each cause, and a growth projection" />
           </div>
           <div className="ds-field">
             <span className="ds-label">Observation windows</span>
             <div className="rec-map-pair">
               <Select value={mapping.ws || ""} onChange={(v) => setField("ws", v)}
-                      options={[{ value: "", label: "Start: none" }, ...columns]} title="Each window's start" />
+                      options={[{ value: "", label: "Start: none" }, ...columns]} title="Each window's start"
+                      ariaLabel="Observation window start" />
               <Select value={mapping.we || ""} onChange={(v) => setField("we", v)}
-                      options={[{ value: "", label: "End: none" }, ...columns]} title="Each window's end" />
+                      options={[{ value: "", label: "End: none" }, ...columns]} title="Each window's end"
+                      ariaLabel="Observation window end" />
             </div>
           </div>
         </div>

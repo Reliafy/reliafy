@@ -6,7 +6,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Assumptions, Choice, ComputeButton, Field, PlanAnswer, SimulationCheck, usePlan } from "./TestPlanShared.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
 import { optimumMarker, fitLine } from "../plotTheme.js";
-import { PLAN_DISTRIBUTIONS, num } from "../testPlanning.js";
+import { PLAN_DISTRIBUTIONS, logTicks, num } from "../testPlanning.js";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
 import { unitInText } from "./unitText.js";
@@ -39,7 +39,8 @@ function PrecisionCurve({ result }) {
       </p>
       <Plot
         data={traces}
-        layout={{ height: 300, showlegend: false, xaxis: { title: { text: c.x_label }, type: "log" },
+        layout={{ height: 300, showlegend: false,
+          xaxis: { title: { text: c.x_label }, type: "log", ...logTicks(c.x) },
           yaxis: { title: { text: "Precision factor (lower is better)" } } }}
       />
     </>
@@ -93,7 +94,8 @@ export default function LifeTestPlan() {
       ? { label: "Stop at failure", value: String(result.failures) }
       : { label: "Test length", value: "Until all fail" },
     { label: "Expected failures", value: formatNumber(result.expected_failures) },
-    { label: "Precision", value: `±${formatNumber((result.precision - 1) * 100, { sig: 2 })}%` },
+    // A factor either way: ÷1.74 to ×1.74 (not "±74%": the interval isn't symmetric).
+    { label: "Precision", value: `÷${formatNumber(result.precision, { sig: 3 })} to ×${formatNumber(result.precision, { sig: 3 })}` },
   ];
 
   return (
