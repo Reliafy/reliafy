@@ -24,7 +24,7 @@ async function headPick(page, group, item) {
 test("the NSWC-11 library source, a bearing's record and Try it past a limit", async ({ page, problems }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, "/libraries");
-  await page.getByRole("link", { name: SOURCE }).click();
+  await page.getByRole("link", { name: /^NSWC-11/ }).click();
   await expect(page).toHaveURL(/\/libraries\/nswc-11$/);
   await expect(page.getByRole("heading", { name: "Covariate models: base rate × condition factors" })).toBeVisible();
   await expect(page.locator(".lib-disclaimer")).toContainText("did not take part");

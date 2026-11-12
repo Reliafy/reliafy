@@ -24,7 +24,7 @@ test("the library's three levels, then a record used as a model", async ({ page,
   await expect(page.getByRole("heading", { name: "Public", exact: true })).toBeVisible();
 
   // A source: its records, filtered and sorted.
-  await page.getByRole("link", { name: NRC }).click();
+  await page.getByRole("link", { name: /^NRC\/INL 2020/ }).click();
   await expect(page).toHaveURL(/\/libraries\/nrc-inl-2020$/);
   await page.getByRole("searchbox", { name: "Search this library" }).fill("Motor-operated valve");
   const table = page.locator(".lib-table");

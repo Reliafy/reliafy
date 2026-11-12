@@ -330,7 +330,7 @@ def test_the_free_cap_over_mcp_and_rest(env, monkeypatch):  # noqa: F811
     free = env.oauth[FREE]
     assert _ok(_call(free, "change", {"action": "library_create", "args": {"name": "One"}}))["saved"]
     msg = _err(_call(free, "change", {"action": "library_create", "args": {"name": "Two"}}))
-    assert "limit of 1 librar" in msg and UPGRADE in msg
+    assert "limit of 1 saved librar" in msg and UPGRADE in msg
     assert _ok(_call(free, "get", {"kind": "account"}))["storage"]["libraries"] == {"used": 1, "limit": 1}
     # REST is the MCP action.
     monkeypatch.setattr(billing, "api_access_allowed", lambda db, user: True)
@@ -340,6 +340,6 @@ def test_the_free_cap_over_mcp_and_rest(env, monkeypatch):  # noqa: F811
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {token}"}
     r = client.post("/api/v1/change/library_create", json={"name": "Three"}, headers=headers)
-    assert r.status_code >= 400 and "limit of 1 librar" in r.text
+    assert r.status_code >= 400 and "limit of 1 saved librar" in r.text
     r = client.post("/api/v1/list/libraries", json={}, headers=headers)
     assert r.status_code == 200 and [x["name"] for x in r.json()["libraries"] if not x["builtin"]] == ["One"]

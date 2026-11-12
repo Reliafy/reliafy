@@ -45,7 +45,7 @@ export default function PublicLibraryPage({ id, preview = false }) {
           <Link className="cta cta-solid" to="/login?signup">Create free account</Link>
         )}
       </header>
-      <div className="public-artifact">
+      <main className="public-artifact">
         <div className="public-app app">
           {preview && user && (
             <p className="card note lib-preview-note" role="status">
@@ -80,7 +80,7 @@ export default function PublicLibraryPage({ id, preview = false }) {
             </>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

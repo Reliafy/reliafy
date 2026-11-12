@@ -173,7 +173,10 @@ export function expectsChart(path, record = {}) {
 // query or #hash) goes to its new page with the same id, query and hash.
 export function landing(route, id, suffix = "") {
   const params = {};
-  for (const name of route.path.match(/:\w+/g) || []) params[name.slice(1)] = encodeURIComponent(id);
+  const names = route.path.match(/:\w+/g) || [];
+  // Two parameters take an id "a/b", one part each (as fill does).
+  const parts = names.length < 2 ? [String(id)] : String(id).split("/");
+  names.forEach((name, i) => { params[name.slice(1)] = encodeURIComponent(parts[Math.min(i, parts.length - 1)]); });
   // The path only: a target's own query (?arrange=items) isn't part of it.
   return fillMoved(route.target, params).split("?")[0] + suffix;
 }
