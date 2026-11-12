@@ -112,14 +112,15 @@ test("repairable, accelerated, degradation and condition-and-life flows share th
   await page.getByRole("searchbox", { name: "Search datasets" }).fill("compressor fleet");
   await page.getByRole("radio", { name: /Compressor fleet/ }).click();
   await page.getByRole("button", { name: "Use this dataset" }).click();
-  await expect(page.getByText(/Compressor fleet — repair history \(sample\) · 30 rows/)).toBeVisible();
+  // No column step: the dataset's reading in one line, then the model.
+  await expect(page.locator('[data-wt="reading-summary"]')).toBeVisible();
+  await expect(page.getByText(/Choose how repairs work/)).toBeVisible();
 
   await open(page, "/models/alt/new");
   await page.getByRole("radio", { name: /Insulating fluid/ }).click();
   await page.getByRole("button", { name: "Use this dataset" }).click();
-  // The Data step: the life selectors; the stresses are the Model step's.
-  await expect(page.getByRole("combobox", { name: "x", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Next" }).click();
+  // No column step: the dataset's reading in one line; the stresses are the Model step's.
+  await expect(page.locator('[data-wt="reading-summary"]')).toBeVisible();
   await expect(page.getByText("Life-stress relationship", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Stress 1 column" })).toBeVisible();
   // The upload tab still takes a file.
