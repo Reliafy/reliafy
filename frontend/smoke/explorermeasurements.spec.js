@@ -163,12 +163,12 @@ test("roll-ups, the search, Needs attention, a reading in place, the row's ⋯",
   await page.getByRole("button", { name: /^Tree options/ }).click();
   await options.getByRole("menuitemcheckbox", { name: "Needs attention" }).click();
   await options.getByRole("menuitem", { name: "Done" }).click();
-  // A reading typed in place.
+  // A reading typed in place. The tree's rows are virtualised: with Needs attention off and
+  // a full workspace (the whole smoke run's positions), the filter's rows can be off screen
+  // and not in the page at all, so the search brings the gauge's row up.
   const r = row(page, `M:${gauge.id}`);
-  // Wait for the filter's row to be back (Needs attention off) before asking whether it is
-  // open: asked before the tree re-rendered, the count was 0 and its chevron not there yet.
-  await expect(row(page, filter.id)).toBeVisible();
-  if (!(await r.count())) await row(page, filter.id).locator(".tp-chev").click();
+  await search.fill(`pt-${tag}`);
+  await expect(r).toBeVisible();
   const box = r.getByRole("textbox", { name: `New reading for Filter pressure ${tag} (kPa)` });
   await box.fill("130");
   await box.press("Enter");
