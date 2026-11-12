@@ -22,8 +22,11 @@ const pick = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => !blan
 
 // A tree-linked block's data for calculation: its own plan replaced by its position's task (none:
 // it runs to failure), with the diagram's own settings for it. The same rule as rbd_tree_plan.merge.
+// tree_settings stay on the result: the server merges the data it's sent once more, so dropping
+// them here lost every on-condition, proof-test and early-renewal setting.
 export function mergeTreeData(data = {}, row) {
-  const { preventive: _p, inspection: _i, tree_settings: settings = {}, ...out } = data;
+  const { preventive: _p, inspection: _i, ...out } = data;
+  const settings = data.tree_settings || {};
   out.tree_plan = { position_id: row.position.id, task_id: row.used ?? null };
   const plan = row.plan;
   if (!plan) return out;

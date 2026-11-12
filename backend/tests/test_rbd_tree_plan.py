@@ -118,7 +118,8 @@ def test_merge_reads_the_task_and_keeps_only_the_diagrams_own_settings(m, db):
     out = tp.apply(graph, tp.plans_for_graph(m, rbd, graph))
     da, dbb = _block_of(out, "Pump A")["data"], _block_of(out, "Pump B")["data"]
     assert da["preventive"] == {"policy": "age", "interval": 4383.0, "opportunity": 2000}
-    assert da["duty"] == 0.5 and da["crew_priority"] == 2 and "tree_settings" not in da
+    assert da["duty"] == 0.5 and da["crew_priority"] == 2
+    assert da["tree_settings"] == {"opportunity": 2000, "threshold": 0.1}  # kept: merging again is the same
     assert da["tree_plan"]["position_id"] == a
     assert "preventive" not in dbb and dbb["tree_plan"] == {"position_id": b, "task_id": None}  # no tasks: run to failure
     # The diagram itself is untouched.
@@ -198,6 +199,37 @@ def test_rest_plan_and_calculation_read_the_tasks(api):
     res = api.post("/api/rbds/analyze", json={"graph": graph, "rbd_id": rbd_id, "simulate": False})
     assert res.status_code == 200, res.text
     assert res.json()["tree_plan"]["tasks"].keys() == {task["id"]}
+
+
+@pytest.mark.parametrize("outcome,settings,where", [
+    ("on_condition", {"threshold": 0.05, "cost": 4500, "duration": 8}, "preventive"),
+    ("failure_finding", {"offset": 100, "coverage": 0.9, "full_test": 8766}, "inspection"),
+    ("fixed_interval", {"opportunity": 2000}, "preventive"),
+])
+def test_the_diagrams_own_settings_survive_save_and_calculate(api, outcome, settings, where):
+    """The browser calculates the diagram merged with the tree (rbdTreePlan.js) and the server
+    merges what it's sent once more: the diagram's own settings for a tree-linked block (an
+    on-condition threshold, a proof test's coverage, an early-renewal age) must survive both, or
+    Calculate refuses ("set the replacement threshold") though they're saved."""
+    _, a, rbd_id, graph = _rest_station(api)
+    api.post(f"{M}/positions/{a}/tasks", json={"name": "The task", "interval": 6, "unit": "months",
+                                               "outcome": outcome, "cost": 500})
+    block = _block_of(graph, "Pump A")
+    block["data"]["tree_settings"] = settings
+    if outcome == "fixed_interval":
+        block["data"]["maintenance_group"] = "Shut"
+    assert api.post("/api/rbds", json={"id": rbd_id, "name": "Station", "graph": graph}).status_code == 200
+    saved = api.get(f"/api/rbds/{rbd_id}").json()["graph"]
+    assert _block_of(saved, "Pump A")["data"]["tree_settings"] == settings
+    plan = api.post(f"{M}/rbd-tree-plan", json={"rbd_id": rbd_id}).json()
+    sent = tp.apply(saved, plan)  # what the browser sends: already merged
+    server = tp.apply(sent, plan)  # what the server then calculates
+    got = _block_of(server, "Pump A")["data"][where]
+    assert {k: got.get(k) for k in settings} == settings
+    assert server == sent
+    res = api.post("/api/rbds/analyze", json={"graph": sent, "rbd_id": rbd_id, "simulate": False})
+    assert res.status_code == 200, res.text
+    assert "set the replacement threshold" not in res.text.lower()
 
 
 def test_a_saved_simulation_says_when_the_tasks_it_used_have_changed(api):

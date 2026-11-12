@@ -270,8 +270,12 @@ def plans_for_graph(m: Maintenance, rbd_id: str, graph: dict) -> dict:
 def merge(data: dict, row: dict) -> dict:
     """A tree-linked block's data for calculation: its own plan replaced by its position's task
     (none: it runs to failure), with the diagram's own settings for it (``tree_settings``), and
-    ``tree_plan`` naming where it came from. The same rule as frontend/src/rbdTreePlan.js."""
-    out = {k: v for k, v in copy.deepcopy(data or {}).items() if k not in ("preventive", "inspection", "tree_settings")}
+    ``tree_plan`` naming where it came from. The same rule as frontend/src/rbdTreePlan.js.
+
+    ``tree_settings`` stays on the result, so merging again gives the same data: the browser sends
+    the diagram as it calculates it (already merged), and the server reads the tree once more.
+    Dropping them there lost every on-condition, proof-test and early-renewal setting."""
+    out = {k: v for k, v in copy.deepcopy(data or {}).items() if k not in ("preventive", "inspection")}
     plan = (row or {}).get("plan")
     out["tree_plan"] = {"position_id": row["position"]["id"], "task_id": row.get("used")}
     if not plan:
