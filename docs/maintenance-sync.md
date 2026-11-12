@@ -123,3 +123,30 @@ longer exist.
 `mark` counts the workspace's changes. Send it back as `if_mark`: when nothing
 has changed the answer is `{"unchanged": true, …}` and the device keeps what
 it has.
+
+### The asset trees, to browse offline
+
+```
+POST /api/v1/maintenance/sync/pack     {"tree": true, "keep": [...]?, "if_mark": N?}
+```
+
+With `tree`, the pack also carries what the phone's Assets screen shows with no
+signal:
+
+- `tree`: the whole register, lean and flat, the same read as the app's tree
+  pane. `positions` (id, name, parent_id; when set: tag, position_class,
+  location_id, carried_by, the item fitted `{id, name, serial}`, open_work),
+  `locations` (id, name, parent_id), `spares` (items placed at a location) and
+  `unhomed` (items neither fitted nor placed). Empty fields are left out. At the
+  workspace's cap of 20,000 positions it is 3 to 4 MB of JSON.
+- `assets`: `{id: …}` in full for the positions, items and locations named in
+  `keep` (at most 200: what the user marked "keep on phone") and then where each
+  open work order in the pack is. A position: its path, class, location, the
+  item fitted (with its item class), its points with the latest five readings,
+  and its photos and the item's; an item: where it is and is fitted, its
+  readings and photos; a location: its path and photos. Ids that are gone are
+  left out.
+
+An answer over 32 KB goes gzipped when the request accepts gzip (phones ask for
+it themselves and unpack it). A photo taken on a position offline goes through
+`/sync/photo` like any other, with the position's id as its `target_id`.

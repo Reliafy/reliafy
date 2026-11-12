@@ -150,3 +150,37 @@ def test_a_pack_is_the_open_work_orders_in_full_in_one_answer(maint):
     assert maint.client.post(PACK, json={}).status_code == 401
     assert maint.post(PACK, {}, uid=B).status_code == 404
     assert maint.post(PACK, {}, token=maint.read_only).status_code == 200     # a read
+
+
+def test_a_pack_with_the_tree_and_a_photo_taken_on_a_position(maint, monkeypatch):
+    from backend.routers import maintenance_sync
+
+    PACK = "/api/v1/maintenance/sync/pack"
+    pos, wo = _job(maint)
+    spare_pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump B", "tag": "P-B"}).json()
+    # A photo taken offline on the position itself (not the job), sent twice: one photo.
+    op = _op("photos.add", {"target_id": pos["id"], "caption": "Nameplate"}, device_id="phone-1")
+    hdr = {**_auth(maint.token[A]), "Content-Type": "image/jpeg"}
+    for _ in range(2):
+        r = maint.client.post(PHOTO, params={"op": json.dumps(op)}, content=_jpeg(), headers=hdr)
+        assert r.status_code == 200 and r.json()["op"]["status"] in ("applied", "duplicate"), r.text
+
+    out = maint.post(PACK, {"tree": True, "keep": [spare_pos["id"]]}).json()
+    names = {p["name"]: p for p in out["tree"]["positions"]}
+    assert set(names) == {"Pump A", "Pump B"} and names["Pump A"]["open_work"] == 1
+    assert set(out["assets"]) == {pos["id"], spare_pos["id"]} and out["work_orders"][0]["id"] == wo["id"]
+    assert [p["caption"] for p in out["assets"][pos["id"]]["photos"]] == ["Nameplate"]
+    assert maint.post(PACK, {"tree": True, "keep": [1, 2]}).status_code == 422
+    # Small answers go as they are; a phone that takes gzip gets a big one compressed.
+    plain = maint.client.post(PACK, json={"tree": True}, headers={**_auth(maint.token[A]), "Accept-Encoding": "gzip"})
+    assert plain.status_code == 200 and "content-encoding" not in plain.headers
+    monkeypatch.setattr(maintenance_sync, "GZIP_OVER", 200)                # (a real tree is MBs)
+    big = maint.client.post(PACK, json={"tree": True}, headers={**_auth(maint.token[A]), "Accept-Encoding": "gzip"})
+    assert big.status_code == 200 and big.headers["content-encoding"] == "gzip"
+    assert big.json()["tree"] == plain.json()["tree"]                      # unpacked by the client, as a phone does
+    as_is = maint.client.post(PACK, json={"tree": True},
+                              headers={**_auth(maint.token[A]), "Accept-Encoding": "identity"})
+    assert "content-encoding" not in as_is.headers
+    spec = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
+    assert {"tree", "keep"} <= set(spec["paths"][PACK]["post"]["requestBody"]["content"]["application/json"]
+                                   ["schema"]["properties"])

@@ -12,10 +12,11 @@ access token, or the signed-in session), for Reliafy Maintenance's users.
 
 from __future__ import annotations
 
+import gzip
 import json
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from backend.errors import client_message
@@ -38,7 +39,8 @@ REST_ONLY = {
     "maintenance_sync.pack": {
         "method": "POST", "path": "/api/v1/maintenance/sync/pack",
         "summary": "Everything a device needs to work with no connection, in one answer: the open work orders in "
-                   "full (or the ones named), their list rows and the parts catalogue. Read scope.",
+                   "full (or the ones named), their list rows and the parts catalogue; with tree, the asset trees "
+                   "and the positions, items and locations to open offline. Read scope.",
     },
 }
 
@@ -94,9 +96,16 @@ def spec_paths(_ERROR: dict) -> dict:
             "requestBody": {"required": False, "content": {"application/json": {"schema": {
                 "type": "object", "properties": {
                     "work_order_ids": {"type": "array", "maxItems": 200, "items": {"type": "string"}},
-                    "if_mark": {"type": "integer", "description": "The mark of the pack the device has."}}}}}},
+                    "if_mark": {"type": "integer", "description": "The mark of the pack the device has."},
+                    "tree": {"type": "boolean", "description": "Also the asset trees (every position, location, "
+                             "spare and unhomed item, lean) and, in full, where the open work is and what keep "
+                             "names."},
+                    "keep": {"type": "array", "maxItems": 200, "items": {"type": "string"},
+                             "description": "Positions, items or locations the device keeps in full (with tree)."}}}}}},
             "responses": {"200": {"description": "{unchanged, briefs, work_orders, gone, more, parts, mark, "
-                                                 "server_time, today, time_zone}."}, **errors},
+                                                 "server_time, today, time_zone}; with tree, also tree "
+                                                 "{positions, locations, spares, unhomed} and assets {id: …}."},
+                          **errors},
             "x-reliafy-rest-only": True, "x-reliafy-scope": "read"}},
     }
 
@@ -152,7 +161,9 @@ async def push(request: Request) -> JSONResponse:
 async def pack(request: Request) -> JSONResponse:
     """What a device needs to work with no signal: every open work order in full (or
     the ones named), their list rows and the parts catalogue, in one answer. With
-    if_mark (the mark of the pack it has), {unchanged: true} when nothing has changed."""
+    if_mark (the mark of the pack it has), {unchanged: true} when nothing has changed.
+    With tree, the asset trees and the things to open offline (sync.device_tree,
+    sync.device_details)."""
     from backend.maintenance import sync
     from backend.maintenance.service import Invalid
     from backend.routers import api_tools
@@ -160,13 +171,30 @@ async def pack(request: Request) -> JSONResponse:
     m = await _maintenance(request, "read")
     body = await api_tools._body(request)
 
+    gzip_ok = "gzip" in request.headers.get("accept-encoding", "").lower()
+
     def run():
         try:
-            return JSONResponse(content=sync.pack(m, body))
+            return _packed(sync.pack(m, body), gzip_ok)
         except Invalid as err:
             return JSONResponse(status_code=422, content={"detail": client_message(err)})
 
     return await run_in_threadpool(run)
+
+
+#: A pack bigger than this goes compressed to a device that takes gzip (a whole asset
+#: tree is a few MB of JSON and about a fifth of that compressed).
+GZIP_OVER = 32 * 1024
+
+
+def _packed(content: dict, gzip_ok: bool) -> Response:
+    """The pack as JSON, gzipped when it's big and the device takes it. Phones (iOS's URL
+    loading, OkHttp) ask for gzip themselves and unpack it before the app sees it."""
+    raw = JSONResponse(content=content).body
+    if not gzip_ok or len(raw) <= GZIP_OVER:
+        return Response(content=raw, media_type="application/json")
+    return Response(content=gzip.compress(raw, 6), media_type="application/json",
+                    headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
 
 
 @router.post("/photo")
