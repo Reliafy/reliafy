@@ -399,7 +399,22 @@ def analyse(tree: dict, resolve_model=None, t: Optional[float] = None, t_max: Op
         notes.append(f"Placeholder (guessed) data on {_names(placeholders)}: these results are illustrative "
                      "until the guesses are replaced.")
     out["placeholders"] = placeholders
+    notes.extend(vote_notes(tree))
     out["notes"] = notes
+    return out
+
+
+def vote_notes(tree: dict) -> list[str]:
+    """Vote gates that are likely set wrong, in words: a vote of 1 is an OR
+    gate (any one input sets it off) — what switching a gate to Vote once
+    left behind, so each pump counted as a single point of failure."""
+    out = []
+    for n in tree.get("nodes") or []:
+        if n.get("type") == "gate" and n.get("gate") == "vote" and n.get("k") == 1 \
+                and len(n.get("inputs") or []) > 1:
+            size = len(n["inputs"])
+            out.append(f"Vote gate “{n['label']}” is 1 of {size}: that's an OR gate, so any one of its inputs "
+                       f"sets it off. Set k (e.g. 2 of {size}) if more must occur.")
     return out
 
 

@@ -44,6 +44,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from backend.fitting import DISTRIBUTIONS
+from backend.levels import LIFE_BOUND
 from backend.services import rbd_analysis as ra
 from repyability import UncertaintyResult
 from repyability.rbd.helper_classes import PerfectReliability
@@ -432,15 +433,24 @@ def _b_lives(grid: np.ndarray, sf: np.ndarray, frac: float) -> np.ndarray:
     return out
 
 
-def _interval(values: np.ndarray, level: float) -> dict:
-    """Equal-tailed interval over draws; an end beyond the grid is None."""
+def _interval(values: np.ndarray, level: float, life: bool = False) -> dict:
+    """Equal-tailed interval over draws; an end beyond the grid is None.
+
+    A life (``life``: the MTTF, a B-life, the design life) also gets
+    ``bound``: its one-sided lower bound at ``level`` — the draws' lower
+    ``1 - level`` quantile, so "at least this long, 90% sure" — the rule
+    every life in the app follows (:mod:`backend.levels`)."""
     tail = 50.0 * (1.0 - level)
     lo, hi = np.percentile(values, [tail, 100.0 - tail], method="inverted_cdf")
 
     def clean(v):
         return float(v) if np.isfinite(v) else None
 
-    return {"lower": clean(lo), "upper": clean(hi)}
+    out = {"lower": clean(lo), "upper": clean(hi)}
+    if life:
+        out["bound"] = clean(np.percentile(values, 100.0 * (1.0 - level), method="inverted_cdf"))
+        out["bound_side"] = LIFE_BOUND
+    return out
 
 
 def system_band(
@@ -514,16 +524,16 @@ def system_band(
     life_sf = _conditional(drawn, life, s, n)
     trapezoid = getattr(np, "trapezoid", None) or np.trapz
     mttf = trapezoid(life_sf, life, axis=1)
-    out["mttf"] = _interval(mttf, level)
+    out["mttf"] = _interval(mttf, level, life=True)
     out["blife"] = {
-        "b10": _interval(_b_lives(life, life_sf, 0.10), level),
-        "b50": _interval(_b_lives(life, life_sf, 0.50), level),
+        "b10": _interval(_b_lives(life, life_sf, 0.10), level, life=True),
+        "b50": _interval(_b_lives(life, life_sf, 0.50), level, life=True),
     }
     if target is not None:
-        out["design_life"] = _interval(_b_lives(life, life_sf, 1.0 - target), level)
+        out["design_life"] = _interval(_b_lives(life, life_sf, 1.0 - target), level, life=True)
     if fractions or times:
         out["targets"] = {
-            "b_lives": [{"fraction": float(f), **_interval(_b_lives(life, life_sf, float(f)), level)}
+            "b_lives": [{"fraction": float(f), **_interval(_b_lives(life, life_sf, float(f)), level, life=True)}
                         for f in fractions or []],
             "reliability": [],
         }

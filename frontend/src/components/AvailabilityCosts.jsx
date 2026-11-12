@@ -313,7 +313,7 @@ export default function AvailabilityCosts({ result, unit }) {
         {noPv
           ? <>, undiscounted. {c.present_value_note}</>
           : disc
-          ? <>, as a present value at {disc}% a year: the purchases at the start and the running costs discounted ({fmtMoney(c.undiscounted_total_cost)} undiscounted at the long-run rate).{sim ? " The window's cost isn't discounted." : ""}</>
+          ? <>, as a present value at {disc}% a year: the purchases at the start and the running costs discounted ({fmtMoney(c.undiscounted_total_cost)} undiscounted at the long-run rate).{c.present_value_note ? ` ${c.present_value_note}` : ""}{sim ? " The window's cost isn't discounted." : ""}</>
           : ", undiscounted."}
         {sim && sim.lower != null && (simMeanExact
           ? ` A ${fmtT(sim.t_simulation)}${u} window from new costs ${fmtMoney(sim.mean)} on average (exact; the simulation's ${Math.round((sim.confidence || 0.95) * 100)}% CI ${fmtMoney(sim.lower)} to ${fmtMoney(sim.upper)}); 1 simulated window in 10 costs more than ${fmtMoney(sim.percentiles?.["90"])}.`

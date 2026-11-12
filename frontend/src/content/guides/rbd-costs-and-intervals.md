@@ -184,10 +184,11 @@ numerical or simulated). Two tools add the spread:
 - **Run simulation** under Details gives the range of outcomes: the chance
   of no outage, percentiles and a confidence band. Runs are kept under **Run
   history**. See [model system availability](/guides/repairable-availability).
-- **Compare with…**, also under Details, puts this diagram against a saved
+- **Compare with…**, under the answer, puts this diagram against a saved
   copy with one change (a faster repair, a spare unit). Where both allow
   it, the difference is exact; otherwise both are simulated with the same
-  random numbers, so the interval measures the change itself.
+  random numbers, so the interval measures the change itself. It compares
+  over the window you calculated (1 year, say).
 
 For a non-repairable diagram, the **Confidence band** on the Calculator
 carries the fitted blocks' uncertainty through to the system: see
@@ -201,7 +202,9 @@ often that event happens in the long run. The lost-production cost is the
 system downtime cost times the system's unavailability. The total cost of
 ownership is the purchase prices plus the running cost over the horizon.
 With a discount rate, the purchases count at the start and the running
-costs are discounted continuously, so it is a present value. "From new"
+costs are discounted continuously, so it is a present value. A diagram with
+no exact long-run cost rate (cold standby with limited crews, say) is
+discounted the same way at its simulated running cost, and says so. "From new"
 uses the expected costs year by year, since a new system fails less (or
 more) than in the long run.
 

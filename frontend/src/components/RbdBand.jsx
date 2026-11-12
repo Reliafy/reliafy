@@ -3,6 +3,7 @@ import Select from "./Select.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber } from "../format.js";
 import { BAND_FILL } from "../plotTheme.js";
+import { lifeBoundText } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Confidence band on a non-repairable RBD's reliability (#103): the spread of
@@ -15,7 +16,7 @@ const LEVELS = [0.8, 0.9, 0.95, 0.99];
 const pct = (level) => `${Math.round(level * 100)}%`;
 
 const fmtLife = (v) =>
-  v == null ? "beyond the axis" : Math.abs(v) >= 1e-4 || v === 0 ? Number(v.toPrecision(4)).toString() : v.toExponential(2);
+  v == null ? "beyond the axis" : Math.abs(v) >= 1e-4 || v === 0 ? Number(v.toPrecision(4)).toLocaleString("en-US") : v.toExponential(2);
 
 // Toggle + level, shown with the calculator's other inputs.
 export function BandControls({ value, onChange }) {
@@ -63,9 +64,18 @@ export function bandTraces(band, x, active) {
   ];
 }
 
-// "95%: 115 – 168" under a headline figure.
-export function BandInterval({ band, interval }) {
+// "90%: 115 – 168" under a headline figure; a life (``life``: the MTTF, a
+// B-life) its one-sided lower bound instead, "≥ 115 at 90%" (the app's rule).
+export function BandInterval({ band, interval, life = false }) {
   if (!band || !interval || (interval.lower == null && interval.upper == null)) return null;
+  if (life) {
+    const text = lifeBoundText(interval, band.level);
+    return text ? (
+      <div className="rbd-band-iv" title="One-sided lower bound from the fitted models' uncertainty: at least this long, at this confidence">
+        {text}
+      </div>
+    ) : null;
+  }
   return (
     <div className="rbd-band-iv" title={`${pct(band.level)} confidence interval from the fitted models' uncertainty`}>
       {pct(band.level)}: {fmtLife(interval.lower)} – {fmtLife(interval.upper)}
@@ -135,7 +145,8 @@ export function BandTargets({ band, unit, onChange }) {
     ...(targets?.b_lives || []).map((r) => ({
       key: `b${r.fraction}`, label: `B${Number((r.fraction * 100).toPrecision(3))} life`,
       value: r.value == null ? "—" : `${formatNumber(r.value)}${u}`,
-      iv: `${formatNumber(r.lower)} – ${r.upper == null ? "beyond" : formatNumber(r.upper)}`,
+      // A life: its one-sided lower bound (the app's rule), not a two-sided interval.
+      iv: lifeBoundText(r, band.level) || "—",
     })),
     ...(targets?.reliability || []).map((r) => ({
       key: `t${r.t}`, label: `R(${formatNumber(r.t)}${u})`,
@@ -148,7 +159,7 @@ export function BandTargets({ band, unit, onChange }) {
       {rows.length > 0 && (
         <ScrollCue className="rbd-avail-imp-scroll">
           <table className="calc-table rbd-band-targets">
-            <thead><tr><th>Target</th><th>Best estimate</th><th>{pct(band.level)} interval</th></tr></thead>
+            <thead><tr><th>Target</th><th>Best estimate</th><th title="B-lives: the one-sided lower bound. Reliability: the two-sided interval.">{pct(band.level)} bound or interval</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.key}><td className="calc-row-label">{r.label}</td><td>{r.value}</td><td>{r.iv}</td></tr>
@@ -175,7 +186,9 @@ export function BandTargets({ band, unit, onChange }) {
         </div>
       )}
       <p className="muted-line" style={{ margin: 0 }}>
-        Every interval comes from the same {band.n_draws?.toLocaleString()} draws of the fitted models, in one run.
+        Every bound and interval comes from the same {band.n_draws?.toLocaleString()} draws of the fitted models, in
+        one run. A B-life gets a lower bound (at least this long, {pct(band.level)} sure); a reliability its
+        two-sided {pct(band.level)} interval.
       </p>
     </ResultDetails>
   );

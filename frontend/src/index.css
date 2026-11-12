@@ -9933,3 +9933,6 @@ main.content:focus { outline: none; }
   .sidebar.drawer .side-signout { min-width: 44px; min-height: 44px; }
   .navbar .brand { min-height: 44px; }
 }
+.rbd-compare-chosen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-13); }
+.rbd-compare-chosen li { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.rbd-importance-why { margin: 2px 0 6px; }

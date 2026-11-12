@@ -23,8 +23,9 @@ def test_several_b_lives_and_times_in_one_run():
     targets = res["band"]["targets"]
     assert [r["fraction"] for r in targets["b_lives"]] == [0.01, 0.1, 0.5]
     # The B10 and B50 intervals are the band's own (the same draws).
-    assert {k: targets["b_lives"][1][k] for k in ("lower", "upper")} == res["band"]["blife"]["b10"]
-    assert {k: targets["b_lives"][2][k] for k in ("lower", "upper")} == res["band"]["blife"]["b50"]
+    keys = ("lower", "upper", "bound", "bound_side")
+    assert {k: targets["b_lives"][1][k] for k in keys} == res["band"]["blife"]["b10"]
+    assert {k: targets["b_lives"][2][k] for k in keys} == res["band"]["blife"]["b50"]
     for row in targets["b_lives"]:
         assert row["lower"] < row["value"] < row["upper"]
     assert targets["b_lives"][1]["value"] == pytest.approx(res["blife"]["b10"], rel=1e-3)

@@ -59,6 +59,18 @@
   cursor: pointer;
 }
 .ft-row-main:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+/* Long names wrap inside the row (buttons don't wrap by default), so a
+   phone-width outline never scrolls the page sideways. */
+.ft-row-main { white-space: normal; overflow-wrap: anywhere; }
+.ft-row-main .chip { flex: none; }
+@media (max-width: 480px) {
+  /* Shallower indents on a phone: deep branches keep room for their names. */
+  .ft-row { padding-left: calc(var(--depth) * 10px); }
+  .ft-row::before { left: calc(var(--depth) * 10px - 6px); }
+  .ft-row-main { gap: 6px; padding: 6px 4px; }
+  .ft-mark { min-width: 30px; }
+}
+.ft-warn { color: var(--warn); margin: 0; }
 .ft-row-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .ft-row-label { font-weight: 600; overflow-wrap: anywhere; }
 .ft-row-top { font-weight: 400; color: var(--muted); font-size: var(--fs-12); }

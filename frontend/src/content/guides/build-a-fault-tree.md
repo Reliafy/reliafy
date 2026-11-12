@@ -29,7 +29,10 @@ turn a tree into a diagram at any time.
   - an **AND** gate occurs only when **all** of its inputs occur (both pumps
     must fail before there's no flow);
   - a **vote** gate occurs when **at least k** of its inputs occur (two of
-    three sensors failing, say).
+    three sensors failing, say). Switching a gate to vote starts k at a
+    majority of its inputs (2 of 3), or at what its name says ("2 of 3 pumps
+    down"); a vote of 1 is an OR, and the editor says so. A name that states
+    the vote follows k when you change it.
 - The **top event** is the gate at the very top.
 
 A basic event can sit under more than one gate: a shared power supply that
@@ -56,7 +59,8 @@ gate's inputs indented beneath it.
    - **Not yet**: you can save a tree that isn't finished.
 4. If a number is a guess, tick **This is a guess (placeholder)**. Every result
    then says which events are guesses, so nobody mistakes them for data.
-5. Set the **Time unit** your rates and models are in, and press **Save**.
+5. Set the **Time unit** your rates and models are in, and press **Save**. The
+   first save asks for the tree's name, starting from the top event's.
 
 The sample [quadcopter tree](/systems/fault-trees/sample-fault-tree-quadcopter)
 is a worked example: loss of thrust on any of four arms (each a motor or its

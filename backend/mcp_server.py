@@ -4229,6 +4229,7 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None,
         "curve": _downsample(t, sf),
         "importance": {
             **({"time": importance["time"]} if "time" in importance else {}),
+            **({"time_basis": importance["time_basis"]} if "time_basis" in importance else {}),
             **{k: _labelled(v, labels) for k, v in importance.items() if isinstance(v, dict)},
         },
         "structure": result.get("structure"),
@@ -4264,6 +4265,8 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
     if band:
         out["confidence"] = {
             "level": band.get("level"), "n_draws": band.get("n_draws"),
+            # Lives (MTTF, B-lives, design life): quote `bound`, the one-sided lower bound at `level`.
+            "lives": "quote bound (one-sided lower at level); lower-upper is the two-sided interval",
             "mttf": band.get("mttf"), "b_life": band.get("blife"),
             **({"design_life": band["design_life"]} if "design_life" in band else {}),
             # Several targets from the same draws (#325): B-lives and reliability at times.
@@ -4615,6 +4618,10 @@ def analyze_rbd(
     target_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description=(
         "Non-repairable: the design life at this reliability, e.g. 0.9 — the time the system reliability "
         "falls to it (from now with current_state)."))] = None,
+    evaluate_at: Annotated[Optional[float], Field(gt=0, description=(
+        "Non-repairable: the time (diagram unit) to rank importance at, e.g. the mission the user asks about. "
+        "Default: where the system reliability falls to 90% (importance.time_basis says which). The ranking "
+        "can change with time."))] = None,
     confidence: Annotated[Optional[float], Field(ge=0.5, lt=1, description=(
         "Non-repairable: also give confidence intervals at this level (e.g. 0.9) on the MTTF, B-lives and "
         "design life, from the parameter uncertainty of blocks that use saved fitted models; with `times` "
@@ -4666,9 +4673,10 @@ def analyze_rbd(
         raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
                         "(analysed for availability). Drop them — t_max sets the window (and the simulated "
                         "horizon); current_state starts it from now.")
-    if graph.get("repairable") and (target_reliability is not None or confidence is not None):
-        raise ToolError("target_reliability and confidence apply to non-repairable diagrams; this one is "
-                        "repairable (analysed for availability).")
+    if graph.get("repairable") and (target_reliability is not None or confidence is not None
+                                    or evaluate_at is not None):
+        raise ToolError("target_reliability, confidence and evaluate_at apply to non-repairable diagrams; this "
+                        "one is repairable (analysed for availability).")
     if discount_rate is not None and not graph.get("repairable"):
         raise ToolError("discount_rate prices a repairable diagram's total cost of ownership; this diagram is "
                         "non-repairable (analysed for reliability) and has no costs.")
@@ -4687,9 +4695,10 @@ def analyze_rbd(
         head["warnings"] = design
 
     if rbd_network.is_network(graph):  # #160: two-terminal reliability of an undirected network
-        if conditional_age is not None or current_state or target_reliability is not None or confidence is not None:
-            raise ToolError("conditional_age, current_state, target_reliability and confidence apply to block "
-                            "diagrams; this one is a network (its terminals' connection reliability). Drop them.")
+        if (conditional_age is not None or current_state or target_reliability is not None or confidence is not None
+                or evaluate_at is not None):
+            raise ToolError("conditional_age, current_state, target_reliability, confidence and evaluate_at apply "
+                            "to block diagrams; this one is a network (its terminals' connection reliability). Drop them.")
         result = rbd_network.analyze_for_owner(db, graph, owners, t_max=t_max, at_times=times)
         out = {**head, "available": True, **rbd_network.agent_summary(result)}
         if summary_only:
@@ -4777,7 +4786,7 @@ def analyze_rbd(
                  if current_state else None)
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
                                             at_times=times, current_state=state,
-                                            target_reliability=target_reliability,
+                                            target_reliability=target_reliability, evaluate_at=evaluate_at,
                                             band=({"level": confidence, "b_lives": b_lives,
                                                    "times": [t for t in times or [] if t > 0][:8] or None}
                                                   if confidence is not None else None))

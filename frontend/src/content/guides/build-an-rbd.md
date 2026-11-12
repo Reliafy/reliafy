@@ -36,8 +36,10 @@ branch from the same predecessor and both feed the same successor.
 
 **+ Add block** can also do the wiring for you. Select a block first and it offers
 **Add after (in series)**, which puts the new block between that block and
-whatever it fed, and **Add alongside (in parallel)**, which gives the new block
-the same connections and merges the pair through a junction. Select a line of
+whatever it fed, and **Add alongside (in parallel)**, which adds a copy of the
+selected block (its model and settings, named "Pump 2") with the same
+connections and merges the pair through a junction. Change the copy's model if
+the redundant unit differs. Select a line of
 blocks joined one after another and **Add alongside the selection** bypasses the
 whole line. Select a connection and **Insert on this line** splits it. A
 connection never fails, so there's nothing to put alongside one.
@@ -98,8 +100,8 @@ has block types for the common cases:
 
 - **Voting node (MooN)** — k-out-of-n voting: the system needs at least *k* of the *n* branches
   feeding the gate. Three sensors where any two must agree is a 2-of-3.
-- **Standby group** — spares that sit dormant (cold) or lightly loaded (hot) until
-  switched in. The risk here is the *switching*: a cold spare's chance of
+- **Standby group** — spares that sit dormant (cold, the default) or lightly
+  loaded (warm), or run all the time (hot), until switched in. The risk here is the *switching*: a cold spare's chance of
   starting is 1 (a perfect switch-over) until you set it, and 0.95–0.99 is
   typical for generators and pumps.
 - **Series (n identical)** and **Parallel (n identical)** — a shorthand for *n* identical units, so you
@@ -141,7 +143,18 @@ matters to system reliability. This is not the same as which component is least
 reliable — a weak component behind good redundancy may matter far less than a
 mediocre one sitting alone in series. Importance tells you where an improvement
 would actually move the system, which is the question you're usually trying to
-answer.
+answer. The ranking can change with time — wear-out blocks overtake
+constant-rate ones later on — so it's worked out at the time you type in
+**Evaluate at t** (a one-year mission, say), or, with none typed, where the
+system reliability falls to 90%. The table's heading says which.
+
+With **Confidence band** on, the MTTF, B-lives and design life each get a
+one-sided lower bound ("≥ 1,240 at 90%": at least that long, 90% sure), as on a
+model's page.
+
+**Compare with other designs**, under the results, puts this diagram beside
+other saved non-repairable designs: the reliability at your **Evaluate at t**,
+MTTF, B10, B50 and single points of failure for each, side by side.
 
 **Minimal cut sets** are the smallest groups of components whose combined failure
 takes the system down. A cut set of size one is a single point of failure, and
@@ -152,7 +165,9 @@ whole exercise.
 
 The other tabs ask other questions of the same diagram: **Fault tree** draws it
 as a fault tree, **Design** works out how many copies of each block give the most
-reliability within a budget or reach a target at the least cost, **Targets** sets a reliability target for the
+reliability within a budget (the total cost of the whole design; it shows what
+the diagram as drawn costs and how much more the budget allows) or reach a
+target at the least cost, **Targets** sets a reliability target for the
 whole system and works out what each block needs to meet it, and **Outage
 history** checks the diagram against the outages it really had (see
 [checking a diagram against its outage history](/guides/outage-history)).

@@ -84,8 +84,10 @@ Targets assumes the structure stays as drawn. Often the cheaper answer is a
 second unit. On a non-repairable diagram the **Design** tab works this out.
 
 1. Set the **Mission time**.
-2. Choose a **Goal**: **Most reliable within a budget** (and a **Cost
-   budget**), or **Cheapest to reach a target** (and a **Target R(t)**, as
+2. Choose a **Goal**: **Most reliable within a budget** (and the **Total
+   cost of the design**: the blocks as drawn plus any copies, so to spend
+   $120,000 more on a design that costs $265,000 now, enter 385,000; the
+   field shows both), or **Cheapest to reach a target** (and a **Target R(t)**, as
    a fraction such as 0.99).
 3. In the table, give each block its **Unit cost**, the **Max copies** to
    consider and how many copies **Must work** (2 for a 2-out-of-3).

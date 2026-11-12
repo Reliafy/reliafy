@@ -20,8 +20,10 @@ a calendar unit, and endless when discounted).
 
 A running cost the library can't work out exactly (limited repair crews for
 wear-out lives, say: the simulated rate stands in) can't be discounted by it
-either: its present values are left out, with the reason
-(:data:`NO_PRESENT_VALUE`), and only the undiscounted total is given.
+either. Its present values are worked out here the way ``total_cost`` works
+out the exact rate's: the purchases at the start and the simulated rate spent
+steadily, discounted continuously (:func:`present_horizon`), with a note
+(:data:`SIMULATED_PRESENT_VALUE`) that the rate is simulated.
 """
 
 from __future__ import annotations
@@ -50,9 +52,9 @@ FROM_NEW_BUDGET_S = 1.5
 #: script still works it out.
 MAX_CONDITION_CHECKS = 25
 
-NO_PRESENT_VALUE = (
-    "No present value: this diagram has no exact long-run cost rate (the simulated one stands in), "
-    "and RePyability discounts only its own exact costs. The totals are undiscounted.")
+SIMULATED_PRESENT_VALUE = (
+    "Present values at the simulated running cost: this diagram has no exact long-run cost rate, so the "
+    "simulated one is spent steadily over each horizon and discounted, as for an exact rate.")
 NO_FROM_NEW = "RePyability has no exact cost over time for this diagram"
 
 
@@ -116,15 +118,28 @@ def _quiet(fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
 
+def present_horizon(times: np.ndarray, rate: float) -> np.ndarray:
+    """What each horizon counts for when a steady running cost over it is
+    discounted continuously at ``rate`` per unit time — ``(1 - exp(-r t)) /
+    r``, ``1 / r`` for an endless one, ``t`` undiscounted — the factor
+    RePyability's ``total_cost`` puts on its exact long-run rate."""
+    t = np.asarray(times, dtype=float)
+    if not rate:
+        return t
+    with np.errstate(over="ignore", invalid="ignore"):
+        return np.where(np.isfinite(t), -np.expm1(-rate * t) / rate, 1.0 / rate)
+
+
 def long_run(rbd, overrides: dict, rows: list[dict], rate: Optional[float], basis: Optional[str],
              disc: Optional[dict]) -> tuple[list[Optional[float]], list[Optional[float]], Optional[str]]:
     """``(totals, undiscounted, note)`` for ``rows``: the total cost of
     ownership at the long-run rate over each (``total_cost``: a present value
     when discounted, the endless one the net present cost) and, discounted,
     the undiscounted total beside it (None for an endless horizon). With a
-    simulated ``rate`` the library can't price the horizons: the undiscounted
-    totals are the purchases plus that rate over each, and the present values
-    are left out (``note`` says why)."""
+    simulated ``rate`` the library can't price the horizons: the totals are
+    the purchases plus that rate over each, discounted as ``total_cost``
+    discounts an exact rate (:func:`present_horizon`; ``note`` says the rate
+    is simulated)."""
     n = len(rows)
     if rate is None:
         return [None] * n, [None] * n, None
@@ -135,7 +150,8 @@ def long_run(rbd, overrides: dict, rows: list[dict], rate: Optional[float], basi
         acquisition = float(rbd.acquisition_cost)
         plain = [ra._f(acquisition + rate * t) if np.isfinite(t) else None for t in times]
         if disc:
-            return [None] * n, plain, NO_PRESENT_VALUE
+            present = present_horizon(times, r)
+            return [ra._f(acquisition + rate * p) for p in present], plain, SIMULATED_PRESENT_VALUE
         return plain, [None] * n, None
     # An endless horizon only comes with a rate (horizons()).
     totals = np.atleast_1d(_quiet(rbd.total_cost, times, discount_rate=r, **overrides))

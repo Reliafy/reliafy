@@ -913,7 +913,7 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 export function analyzeRbd(
   graph, tMax, covariates, conditionalAge,
   { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
-    targetReliability = null, quick = false, runToken = null } = {}
+    targetReliability = null, quick = false, runToken = null, evaluateAt = null } = {}
 ) {
   return request("/api/rbds/analyze", {
     method: "POST",
@@ -930,6 +930,7 @@ export function analyzeRbd(
       ...(currentState ? { current_state: currentState } : {}),
       ...(exact ? { exact: true } : {}),
       ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
+      ...(evaluateAt != null ? { evaluate_at: evaluateAt } : {}),
       ...(quick ? { quick: true } : {}),
       ...(runToken ? { run_token: runToken } : {}),
     }),

@@ -57,7 +57,7 @@ import Chip from "./ui/Chip.jsx";
 import Switch from "./ui/Switch.jsx";
 import { formatPercent } from "../format.js";
 import {
-  allInstant, chainPairs, clearSpot, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
+  allInstant, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
 } from "../rbdBuilderOps.js";
 // Phased missions and undirected networks (#160).
 import RbdPhasesModal from "./RbdPhasesModal.jsx";
@@ -872,7 +872,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         Object.assign(data, {
           model: null,
           spares: 1,
-          cold: false,
+          // Cold: a duty unit with a spare that starts when it's switched in,
+          // the usual standby (a hot one is plain active redundancy). The
+          // chance it starts shows on the block and in its dialog.
+          cold: true,
+          dormancy: 0,
           startProb: 1,
           standbyModel: null,
         });
@@ -1428,7 +1432,10 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     const item = choice?.items.find((i) => i.key === key);
     if (!item || item.reason) return;
     const n = idRef.current++;
-    const block = {
+    // Alongside one block: a copy of it (model and all), the usual "another
+    // of these" redundancy; anything else starts as an empty component.
+    const copy = key === "alongside" ? copyForAlongside(nodes, choice.ids[0], newId(nodes.find((x) => x.id === choice.ids[0])?.type || "component")) : null;
+    const block = copy ? { ...copy, ...HORIZONTAL } : {
       id: `c${n}`,
       type: "component",
       data: { label: `Component ${n}`, model: null, ...(repairable && allInstant(nodes) ? { instant_repair: true } : {}) },
@@ -1447,7 +1454,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     setConnectHint(
       key === "after" ? `Added ${block.data.label} after ${name(choice.ids[0])}, in series.`
         : key === "split" ? `Added ${block.data.label} on the line, in series.`
-        : key === "alongside" ? `Added ${block.data.label} alongside ${name(choice.ids[0])}, in parallel.`
+        : key === "alongside" ? `Added ${block.data.label}, a copy of ${name(choice.ids[0])}, alongside it in parallel. Change its model if it differs.`
         : `Added ${block.data.label} alongside the ${choice.ids.length} selected blocks, in parallel.`
     );
   }, [nodes, edges, repairable, network, newId, setNodes, setEdges, fitWhenMeasured]);
