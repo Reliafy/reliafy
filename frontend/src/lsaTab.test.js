@@ -229,3 +229,10 @@ test("a design's LSA table leaves out Next due and Package: they belong to the b
   assert.ok(!design.includes("due") && !design.includes("package"));
   assert.deepEqual(design, TASK_COLUMNS.map((c) => c.id).filter((id) => id !== "due" && id !== "package"));
 });
+
+test("taskOnText: a task named with the position it's on and what that sits in", async () => {
+  const { taskOnText } = await import("./lsaTab.js");
+  assert.equal(taskOnText({ name: "Check", subject: { name: "Drive motor", within: "Pump 3" } }), "Check (Pump 3 › Drive motor)");
+  assert.equal(taskOnText({ name: "Check", subject: { name: "Pump 3" } }), "Check (Pump 3)");
+  assert.equal(taskOnText({ name: "Check" }), "Check");
+});

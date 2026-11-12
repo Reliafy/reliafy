@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, listMaintenanceLocations,
-  listMaintenanceParts, logLabour, removeWorkEntry,
+  listMaintenanceParts, logLabour, openWorkOrder, removeWorkEntry,
   setWorkStatus, updateWorkOrder,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -16,13 +16,14 @@ import { closeBlocker, closePayload, unanswered } from "../packageLines.js";
 import { mergeValues, progressText, readingRows, readingsToSend } from "../workOrderReadings.js";
 import { partChoices, stockText } from "../maintenanceSpares.js";
 import {
-  actionKinds, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, foundFailedText, itemAtText, newItemBody,
+  actionKinds, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, followUps, foundFailedText, itemAtText, newItemBody,
   replaceReason, replaceRecordText, subjectPath,
 } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { ORDERS_LABEL, ORDERS_PATH } from "../navigation.js";
+import { workOrderPath } from "../maintenanceOrders.js";
 import { reportLink } from "../failureReports.js";
 
 const STATUS_LABELS = {
@@ -168,10 +169,45 @@ export default function MaintenanceWorkOrder() {
             </ul>
           )}
           {wo.close_notes && <p className="maint-notes">{wo.close_notes}</p>}
+          <FollowUps wo={wo} />
         </section>
       ) : (
         <CloseForm wo={wo} onClosed={setWo} readings={readingsToSend(readingRows(wo), values)} />
       )}
+    </div>
+  );
+}
+
+// A check that found something failed and nothing was fixed on this order: the
+// corrective work order to raise next, one click, on the position where it was found.
+function FollowUps({ wo }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(null);
+  const [failed, setFailed] = useState(null);
+  const todo = followUps(wo);
+  if (!todo.length) return null;
+  const raise = async (f) => {
+    setBusy(f.key);
+    setFailed(null);
+    try {
+      const made = await openWorkOrder(f.body);
+      navigate(workOrderPath(made.id));
+    } catch (e) {
+      setFailed(e.message);
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="maint-followups" role="group" aria-label="Follow-up work">
+      {todo.map((f) => (
+        <p key={f.key} className="maint-row" style={{ flexWrap: "wrap", gap: "0.5rem" }}>
+          <span>{f.finding === "found_failed" ? "Found failed" : "Found degraded"}{f.position.name ? ` on ${f.position.name}` : ""}, and nothing was fixed here.</span>
+          <button type="button" className="sm" disabled={busy != null} onClick={() => raise(f)}>
+            {busy === f.key ? "Raising…" : "Raise a corrective work order"}
+          </button>
+        </p>
+      ))}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
     </div>
   );
 }

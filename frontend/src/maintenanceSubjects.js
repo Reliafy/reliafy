@@ -141,3 +141,33 @@ export function foundFailedText(target) {
   return `Records ${item || "the fitted item"}${where} as failed some time between its last good check and this ` +
     "finding. Life fits count it as a failure in that interval.";
 }
+
+// A closed work order's findings that still need work: each inspection that found
+// something failed (or degraded) at a position where nothing was replaced or repaired on
+// the same order. Each gives the corrective work order to raise: on that position, its
+// title from the failure mode, the notes saying where it came from. [] when none.
+export function followUps(wo) {
+  if (!wo || wo.status !== "closed") return [];
+  const acts = wo.actions || [];
+  const posOf = (a) => a.position?.id || wo.position?.id || null;
+  const fixed = new Set(acts.filter((a) => a.kind === "replace" || a.kind === "repair").map(posOf));
+  const out = [];
+  const seen = new Set();
+  for (const a of acts) {
+    if (a.kind !== "inspect" || !["found_failed", "degraded"].includes(a.finding)) continue;
+    const pid = posOf(a);
+    if (!pid || fixed.has(pid) || seen.has(pid)) continue;
+    seen.add(pid);
+    const what = a.failure_mode?.text || (a.finding === "found_failed" ? "found failed" : "found degraded");
+    const name = a.position?.name || wo.position?.name || "";
+    out.push({
+      key: pid, position: { id: pid, name }, finding: a.finding,
+      body: {
+        position_id: pid, type: "corrective",
+        title: `Fix ${name ? `${name}: ` : ""}${what}`.slice(0, 200),
+        notes: `Raised from work order #${wo.number}, closed ${wo.closed || ""}: ${a.finding === "found_failed" ? "found failed" : "found degraded"}${a.notes ? `. ${a.notes}` : "."}`,
+      },
+    });
+  }
+  return out;
+}
