@@ -188,3 +188,13 @@ test("a member's facts: numbers to three figures with their units, never NaN", (
   const odd = positionFacts({ item: { name: "Unit" }, age: NaN, last_reading: { on: "2026-10-30", value: Infinity, unit: "mm" } });
   assert.ok(!/NaN|Infinity/.test(odd));
 });
+
+test("a model links to the Explorer only where a position uses it", async () => {
+  const { usedOnPositions } = await import("./joint.js");
+  const links = [{ model_type: "model", model_id: "m1" }, { model_type: "rbd", model_id: "m2" }];
+  assert.equal(usedOnPositions(links, "m1"), true);
+  assert.equal(usedOnPositions(links, "m2"), false); // an RBD link with the same id isn't this model
+  assert.equal(usedOnPositions(links, "m3"), false); // fitted from a dataset only
+  assert.equal(usedOnPositions(null, "m1"), false);
+  assert.equal(usedOnPositions(links, ""), false);
+});

@@ -4,7 +4,7 @@ import ModelPicker from "./ModelPicker.jsx";
 import ReplacementResult from "./ReplacementResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { ComputeReason } from "./StrategyTool.jsx";
-import { replacementMissing } from "../strategyTools.js";
+import { replacementMissing, strategyUnit } from "../strategyTools.js";
 import { optimalReplacement } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
 import StrategyUnit from "./StrategyUnit.jsx";
@@ -31,15 +31,13 @@ export default function OptimalReplacement() {
   const currency = useCurrency();
   // Opened from a model's "Use this model" (#294): that model, chosen.
   const wanted = modelFromSearch(useLocation().search);
-  // A saved model brings its unit.
-  const pickModel = (m) => {
-    setModel(m);
-    if (m?.unit) setUnit(m.unit);
-  };
+  // A saved model brings its unit (shown, not copied: a unit carried over
+  // from the saved model picked first must not label typed parameters).
+  const pickModel = (m) => setModel(m);
 
   const isRegression = model?.kind === "regression";
   // Why Compute is greyed out, said beside it (null when ready).
-  const missing = replacementMissing({ model, planned: cp, unplanned: cu });
+  const missing = replacementMissing({ model, planned: cp, unplanned: cu, unit });
   const canRun = !missing;
 
   const run = async () => {
@@ -51,7 +49,7 @@ export default function OptimalReplacement() {
         params: model.params,
         planned_cost: Number(cp),
         unplanned_cost: Number(cu),
-        unit: model.unit || unit.trim() || null,
+        unit: strategyUnit(model, unit),
         extras: model.extras || null,
       };
       const res = await optimalReplacement(

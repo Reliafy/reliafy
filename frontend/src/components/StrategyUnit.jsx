@@ -2,7 +2,9 @@ import { unitInText } from "./unitText.js";
 
 // The time unit of a Strategy tool's model: shown, not asked for, when the
 // model has one (a saved model brings its unit); a field only when it hasn't
-// (parameters typed in), so results always carry the model's unit.
+// (parameters typed in), so results always carry the model's unit. The field
+// starts empty and is required: no default, since a model fitted in days read
+// as hours gives an answer 24 times too short.
 export default function StrategyUnit({ model, unit, onUnit }) {
   if (model?.unit) {
     return (
@@ -15,7 +17,8 @@ export default function StrategyUnit({ model, unit, onUnit }) {
   return (
     <label className="calc-t">
       <span>Unit of the model's times</span>
-      <input type="text" placeholder="e.g. hours" value={unit} onChange={(e) => onUnit(e.target.value)} />
+      <input type="text" placeholder="e.g. days" required aria-required="true" value={unit}
+             onChange={(e) => onUnit(e.target.value)} />
     </label>
   );
 }

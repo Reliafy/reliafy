@@ -1034,8 +1034,8 @@ async function main() {
         await page.getByLabel("load changes the path").check();
         await wait(800);
       } },
-    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000, noTree: true },
-    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000, noTree: true,
+    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000 },
+    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000,
       async act(page) {
         // Risk now shows the riskiest unit beside the table (no scrolling: the tab fits the screen).
         await page.locator(".joint-unit-sum").waitFor({ timeout: 20000 }); await wait(2000);
@@ -1179,9 +1179,8 @@ async function main() {
   const failed = [];
   const skipped = [];
 
-  // The model page keeps its Risk now tab only where the account has no asset
-  // tree (with one, risk now is in the Explorer by Classes): those shots answer
-  // the access check as such an account would get it.
+  // A shot of what an account without the asset tree sees answers the access
+  // check as such an account would get it (`noTree`).
   const NO_TREE = "**/api/maintenance/access";
   const noTree = (route) => route.fulfill({ json: { allowed: false } });
 

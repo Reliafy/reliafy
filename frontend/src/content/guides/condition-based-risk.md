@@ -119,7 +119,9 @@ few seconds to about a minute.
 
 The model opens on its answer, in the line under its name: how many units it
 learnt from, and the running unit at the highest risk now. Its tabs are **Risk
-now**, **Calculator**, **Effects**, **Diagnostics** and **Data**.
+now**, **Calculator**, **Effects**, **Diagnostics** and **Data**. **Risk now**
+is always there: it scores the running units in the data the model was fitted
+to.
 
 On **Risk now**, **Running units' risk** lists every unit still in service, highest risk first,
 with its chance of failing in the next **30, 90 and 365 days** (for a model in

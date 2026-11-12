@@ -91,7 +91,9 @@ the answer is **Hold 11: a 95% chance of no stock-out over the lead time
 (2 months). Order one for one: replace each as it's used.** With 5 in stock now,
 it says the chance of running out is close to 100%, and to order 6. The figures
 come from simulating the fleet, so they count replacements that fail again.
-**Export spares plan (CSV)** downloads the plan.
+When items wearing out need more stock in a later period, the answer says so
+("Hold 2 now, rising to 3 from quarter 2"), and **Stock to hold by month** (or
+quarter) lists each period. **Export spares plan (CSV)** downloads the plan.
 
 **Export CSV** downloads the forecast for a purchasing system or a budget sheet:
 each item's expected failures and chance of failing, the fleet's expectation and

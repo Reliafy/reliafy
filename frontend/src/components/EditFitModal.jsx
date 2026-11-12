@@ -20,9 +20,10 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   // The censor inversion and status-word map are stored with the fit options
   // (spec.options) but edited alongside the column they apply to, so they
   // ride on the mapping here.
-  const { c_invert: savedInvert, c_map: savedMap, cox: savedCox, ...savedOptions } = spec.options || {};
+  // So does the column of per-row units (``u_col``).
+  const { c_invert: savedInvert, c_map: savedMap, cox: savedCox, u_col: savedUnits, ...savedOptions } = spec.options || {};
   const [mapping, setMapping] = useState({
-    ...EMPTY_MAPPING, ...(spec.mapping || {}), c_invert: !!savedInvert, c_map: savedMap || null,
+    ...EMPTY_MAPPING, ...(spec.mapping || {}), c_invert: !!savedInvert, c_map: savedMap || null, u: savedUnits || "",
   });
   const [facts, setFacts] = useState({});
   // Covariates that change over time (#60): the saved item column says so.
@@ -62,7 +63,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   const groupBlock = groupProblem(selectedOpt, mapping.group);
   // The Data step's checks, in plain words (#291).
   const problems = !columns ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0)
-    : dataStepProblems(mapping, facts, nRows);
+    : dataStepProblems(mapping, facts, nRows, unit);
   const mappingValid = problems.length === 0;
 
   // Keep the selection valid when toggling between plain/covariate modes.

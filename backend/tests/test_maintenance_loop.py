@@ -115,3 +115,22 @@ def test_one_failure_fits_an_exponential_but_nothing_with_two_parameters(setup):
         loop.fit_class_model(m, db, "Single-failure pump")  # weibull needs two
     out = loop.fit_class_model(m, db, "Single-failure pump", distribution="exponential")
     assert out["model"]["distribution"] == "exponential" and out["model"]["failures"] == 1
+
+
+def test_a_class_model_is_a_saved_model_in_days_for_the_strategy_tools(setup):
+    """The class's fitted model is offered in the Strategy tools' "Saved model"
+    list (the owner's models), and carries its unit, days, so the replacement
+    answer is in days (12 Nov review: it was retyped and read as hours)."""
+    from backend.services import models as models_service
+    from backend.services import strategy as strategy_service
+
+    m, db = setup
+    out = loop.fit_class_model(m, db, "Centrifugal pump")
+    listed = {x.id: x for x in models_service.list_models(db, ORG)}
+    model = listed[out["model"]["model_id"]]
+    assert model.kind == "distribution"
+    unit = model.results.get("unit") or (model.spec or {}).get("unit")
+    assert str(unit).lower() == "days"
+    params = [{"name": p["name"], "value": p["value"]} for p in model.results["params"]]
+    res = strategy_service.optimal_replacement(model.distribution_id, params, 400, 4000, unit=unit)
+    assert res["beneficial"] and " days" in res["recommendation"] and "hours" not in res["recommendation"]

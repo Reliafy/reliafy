@@ -635,9 +635,11 @@ def compare(db, model: Model) -> dict:
     if dataset is None:
         raise ModelNotFound(model.id)
     spec = _spec(model)
-    # Only the options Best fit applies to every candidate (and the censor flip).
+    # Only the options Best fit applies to every candidate, and how the fit read
+    # the censor column (the flip, or a status column's words: "F"/"S" mapped to
+    # 0/1). Without the mapping a status column isn't numbers and nothing fits.
     options = {k: v for k, v in (spec.get("options") or {}).items()
-               if k in ("offset", "zi", "lfp", fitting.CENSOR_INVERT_KEY)}
+               if k in ("offset", "zi", "lfp", fitting.CENSOR_INVERT_KEY, fitting.CENSOR_MAP_KEY)}
     result = fitting.fit(fitting.BEST_ID, datasets_service.load_dataframe(dataset),
                          spec.get("mapping", {}), unit=spec.get("unit"), options=options)
     selection = result.get("selection") or {}

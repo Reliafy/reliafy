@@ -28,3 +28,14 @@ test("quoting still applies after the prefix", () => {
 test("rows join into CSV text", () => {
   assert.equal(toCsv([["item", "n"], ["=x", 3]]), "item,n\n'=x,3");
 });
+
+test("export numbers are rounded to 4 significant figures, like the screen", async () => {
+  const { csvNumber } = await import("./csv.js");
+  assert.equal(csvNumber(0.9999999999999997), 1);
+  assert.equal(csvNumber(3.8812345678), 3.881);
+  assert.equal(csvNumber(0.000123456), 0.0001235);
+  assert.equal(csvNumber(12345.678), 12350);
+  assert.equal(csvNumber(""), "");
+  assert.equal(csvNumber(null), null);
+  assert.equal(csvNumber("Pump 1"), "Pump 1");
+});

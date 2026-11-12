@@ -360,3 +360,39 @@ def test_fleet_spares_over_mcp(env):
     bad = _call(env.token[A], "analyse", {"action": "fleet_forecast", "fleet_id": fid,
                                            "spares": {"lead_time": -1}})
     assert "lead time" in _err(bad)
+
+
+def _belts():
+    # 12 Nov review: 8 drive belts (Weibull β 3, η 17,520 h) at ages 0 to 14,000 h,
+    # 2,190 h of use a quarter, a 1-quarter lead time, 95%.
+    return surpyval.Weibull.from_params([17520.0, 3.0]), np.arange(0, 16000, 2000.0), np.full(8, 2190.0)
+
+
+def test_the_headline_says_when_later_periods_need_more_stock():
+    """The headline answered only for a window starting now ("Hold 2") while the
+    table by quarter said 3 for quarters 2-4. Both were right for their windows
+    (by hand, Poisson-binomial of first failures: P(N <= 2) is 0.972 now but
+    0.949 from quarter 2, under 95%), so the headline now says the rise."""
+    dist, ages, rates = _belts()
+    out = fleet_service.spares_answer({"lead_time": 1}, "single", dist, ages, rates, 4, "quarters")
+    assert [p["hold"] for p in out["per_period"]] == [2, 3, 3, 3]
+    assert out["hold"] == 2 and out["hold_rising"] == {"hold": 3, "from_period": 2, "peak_period": 2}
+    assert out["summary"].startswith(
+        "Hold 2 now, rising to 3 from quarter 2: a 95% chance of no stock-out over the lead time (1 quarter).")
+    # The simulated (renewals) forecast the review used says the same.
+    sim = fleet_service.spares_answer({"lead_time": 1}, "renewals", dist, ages, rates, 4, "quarters")
+    assert sim["hold"] == 2 and max(p["hold"] for p in sim["per_period"]) == 3
+    assert "Hold 2 now, rising to 3 from quarter " in sim["summary"]
+
+
+def test_a_flat_need_keeps_the_plain_headline_and_steps_say_by():
+    dist, ages, rates = _belts()
+    # Only the first quarter: nothing later to rise to.
+    one = fleet_service.spares_answer({"lead_time": 1}, "single", dist, ages, rates, 1, "quarters")
+    assert one["summary"].startswith("Hold 2: a 95%") and "hold_rising" not in one
+    # Eight belts all at 2,000 h: the need climbs in steps (1, 2, then 3 from quarter 5)
+    # then falls as they fail; the headline gives the peak "by" the quarter it starts.
+    many = fleet_service.spares_answer({"lead_time": 1}, "single", dist, np.full(8, 2000.0), rates, 12, "quarters")
+    holds = [p["hold"] for p in many["per_period"]]
+    assert holds[:5] == [1, 1, 2, 2, 3] and many["hold"] == 1
+    assert many["summary"].startswith("Hold 1 now, rising to 3 by quarter 5: a 95% chance")

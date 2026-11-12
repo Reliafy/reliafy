@@ -14,6 +14,7 @@ export function priorBlocked(mapping = {}, { hasCovariates = false, tvc = null }
   if (mapping.xl || mapping.xr) return "A fit with a prior takes one time column, not the earliest and latest possible failure times.";
   if (mapping.n) return "A fit with a prior takes one row per unit, not a count column.";
   if (mapping.tl || mapping.tr) return "A fit with a prior doesn't take truncation (observed from / until) yet.";
+  if (mapping.u) return "A fit with a prior reads every time in one unit and can't convert each row's unit yet: fit without a prior, or put the times in one unit in your sheet.";
   if (!mapping.x) return "Pick the time column on the Data step first.";
   return null;
 }
