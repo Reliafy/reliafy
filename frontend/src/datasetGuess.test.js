@@ -190,3 +190,22 @@ test("a unit from the time column's name", () => {
   assert.equal(guessUnit("cycles"), "Cycles");
   assert.equal(guessUnit("reading"), "");
 });
+
+test("guessLifeColumns: a state at detection on a failure log is never the status column", () => {
+  // One row per failure; "Operating" is the equipment's state when the failure was found.
+  const cols = [
+    { name: "Equipment State at Detection", dtype: "object", values: { Operating: 4 } },
+    { name: "Operating Age at Failure (h)", dtype: "int64", values: null },
+    { name: "Failure Classification", dtype: "object", values: { "Critical failure": 4 } },
+    { name: "Event Status", dtype: "object", values: { Closed: 4 } },
+  ];
+  assert.deepEqual(guessLifeColumns(cols), { x: "Operating Age at Failure (h)", c: "", n: "", unit: "Hours" });
+  // A plain "state" column needs values that say both failed and still running…
+  const state = (values) => guessLifeColumns([{ name: "Hours", dtype: "int64", values: null },
+    { name: "Equipment state", dtype: "object", values }]).c;
+  assert.equal(state({ Failed: 2, Running: 1 }), "Equipment state");
+  assert.equal(state({ Operating: 3 }), "");
+  // …a header that plainly says status doesn't.
+  assert.equal(guessLifeColumns([{ name: "Hours", dtype: "int64", values: null },
+    { name: "Status", dtype: "object", values: { Running: 3 } }]).c, "Status");
+});

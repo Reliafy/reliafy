@@ -112,7 +112,12 @@ export const unitlessTimeName = (name) => TIME_WORDS.test(words(name)) && !guess
 // A failed / still-running flag: status, failed, censor, event, suspended…
 const STATUS_WORDS = /\b(status|state|fail|failed|failure|failures|censor|censored|censoring|cens|event|events|suspend|suspended|suspension|suspensions|running|outcome|survived|alive|dead)\b/i;
 // …but not a failure *mode*, cause or date.
-const NOT_STATUS = /\b(mode|modes|cause|causes|type|code|description|desc|reason|date|time|hours?|comment|comments|notes?)\b/i;
+const NOT_STATUS = /\b(mode|modes|cause|causes|type|code|description|desc|reason|date|time|hours?|comment|comments|notes?|detection|detected|classification|severity|criticality|quality)\b/i;
+// A header that plainly names a failed / still-running flag. Any other name
+// ("Equipment state", "Operating condition") is a status column only when its
+// values say both failed and still running: a column that reads every row one
+// way ("Operating" on every failure) is a state, not a flag.
+const PLAIN_STATUS = /\b(status|fail|failed|failure|failures|censor|censored|censoring|cens|event|events|suspend|suspended|suspension|suspensions|running|outcome|survived|alive|dead)\b/i;
 // An identifier: never the time, however numeric.
 const ID_WORDS = /\b(id|ids|no|number|serial|sn|s n|tag|asset|unit|item|equipment|code|row|index)\b/i;
 const CENSOR_WORDS = /\b(censor|censored|censoring|cens)\b/i;
@@ -215,9 +220,10 @@ export function guessLifeColumns(columns) {
     if (!c.values) return false;
     const vals = Object.keys(c.values);
     if (!vals.length) return false;
-    if (isNumeric(c.dtype)) return vals.every((v) => ["0", "1", "-1", "2"].includes(String(v)));
-    const known = vals.filter((v) => guessStatusMeaning(v, c.name) !== null).length;
-    return known * 2 >= vals.length;
+    const meanings = vals.map((v) => guessStatusMeaning(v, c.name)).filter((m) => m !== null);
+    const ok = isNumeric(c.dtype) ? vals.every((v) => ["0", "1", "-1", "2"].includes(String(v)))
+      : meanings.length * 2 >= vals.length;
+    return ok && (new Set(meanings).size >= 2 || PLAIN_STATUS.test(words(c.name)));
   };
   const status =
     columns.find((c) => STATUS_WORDS.test(words(c.name)) && !NOT_STATUS.test(words(c.name)) && looksLikeStatus(c)) ||
