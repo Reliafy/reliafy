@@ -1,9 +1,18 @@
-/* The report composer (#30): a form in a modal, then the share links. */
+/* The report composer (#30): a section of the Reports page, then the share links. */
 
-.modal.report-modal { max-width: 640px; }
-.report-modal .modal-body { display: flex; flex-direction: column; gap: var(--sp-4); }
-.report-modal .rc-lede { margin: 0; font-size: var(--fs-13); }
-.report-modal textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.report-composer { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 760px; min-width: 0; }
+.report-composer .rc-heading { margin: 0; font-size: var(--fs-16); }
+.report-composer .rc-lede { margin: 0; font-size: var(--fs-13); }
+.report-composer textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.rc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
 
 .rc-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .rc-title { flex: 3 1 240px; min-width: 0; }
@@ -85,7 +94,6 @@
 .rc-publish .pl-section { margin-top: 0; }
 .rc-hint { margin: 0 0 var(--sp-2); font-size: var(--fs-13); }
 
-.report-modal .modal-foot { flex-wrap: wrap; }
 .rc-foot-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
 .rc-confirm { font-size: var(--fs-13); color: var(--muted); }
 
@@ -133,3 +141,31 @@
 .rc-pick-meta { font-size: var(--fs-12); color: var(--muted); }
 .rc-pick-acts { display: flex; flex: none; gap: 4px; }
 .rc-pick-acts button { min-height: 32px; }
+
+/* Reports › a report: View | Edit and the way back, above the report. */
+.rc-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.rc-bar .rc-bar-title { margin: 0; font-size: var(--fs-18); min-width: 0; overflow-wrap: anywhere; flex: 1 1 200px; }
+.rc-bar-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.rc-view { min-width: 0; }
+.rc-view .report { max-width: 900px; }
+
+/* Printing a report read in the app: the report alone. */
+@media print {
+  body.printing-report .navbar,
+  body.printing-report aside,
+  body.printing-report .sidebar-backdrop,
+  body.printing-report .skip-link,
+  body.printing-report .rc-bar,
+  body.printing-report .section-header,
+  body.printing-report .plot-dl,
+  body.printing-report .modebar-container { display: none !important; }
+  body.printing-report .layout,
+  body.printing-report .content { display: block; margin: 0; padding: 0; }
+  @page { margin: 14mm 12mm; }
+}

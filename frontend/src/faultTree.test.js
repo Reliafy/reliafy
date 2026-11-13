@@ -83,7 +83,9 @@ test("rename and the one-line summaries", () => {
   assert.equal(rename(t, a, "Pump A fails").nodes.find((n) => n.id === a).label, "Pump A fails");
   assert.equal(eventSummary({ probability: 0.01 }), "Fixed probability 0.01");
   assert.equal(eventSummary({ model: { distribution_id: "exponential", params: [{ name: "failure_rate", value: 2e-5 }] } }, "Hours"),
-    "Failure rate 2e-5 per hour");
+    "Failure rate 20 per million hours");
+  assert.equal(eventSummary({ model: { distribution_id: "exponential", params: [{ name: "failure_rate", value: 0.02 }] } }, "Days"),
+    "Failure rate 0.02 per day");
   assert.equal(plainUnit("Hours"), "hours");
   assert.equal(plainUnit("km"), "km");
   assert.equal(plainUnit("Flight hours"), "Flight hours");

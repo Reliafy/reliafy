@@ -346,7 +346,7 @@ class _Inputs:
         if failure_cost is None or failure_cost == "":
             raise StrategyError("Enter what a failure (an unplanned replacement) costs.")
         self.failure_cost = _number(failure_cost, "The failure cost", strict=True)
-        self.anytime_cost = None if anytime_cost in (None, "") else _number(anytime_cost, "The any-day cost")
+        self.anytime_cost = None if anytime_cost in (None, "") else _number(anytime_cost, "The cost of replacing between shuts")
         self.method = str(method or "dp").strip().lower()
         if self.method == "auto":
             self.method = "dp"
@@ -442,7 +442,7 @@ def _comparisons(inp: _Inputs, policy) -> list[dict]:
             interval, rate = None, None
         if interval is not None and rate is not None:
             out.append({"policy": "age", "label": f"Age replacement at {fmt_num(interval)} "
-                        f"{unit_in_text(inp.unit)}, ignoring the shuts", "age": interval, "cost_rate": rate})
+                        f"{unit_in_text(inp.unit)} at the between-shuts price, ignoring the shuts", "age": interval, "cost_rate": rate})
     for s in inp.specs:
         rate = _rule_cost(part, cal, {s["name"]: 0.0}, inp.max_age)
         out.append({"policy": "every", "kind": s["name"], "label": f"Replace at every {s['name']}",

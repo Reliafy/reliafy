@@ -25,9 +25,10 @@ export const strategyListFor = (kind) => `/strategy?kind=${encodeURIComponent(ki
 const blank = (v) => v === "" || v === null || v === undefined;
 
 // What a model-based tool still needs before Compute can run: a model, and a
-// plain distribution (not a proportional-hazards fit).
-function modelMissing(model) {
-  if (!model) return "Choose a non-repairable model first.";
+// plain distribution (not a proportional-hazards fit). ``source`` is what the
+// picker shows: with "Parameters" open, the parameters are what's missing.
+function modelMissing(model, source) {
+  if (!model) return source === "params" ? "Enter the model's parameters." : "Choose a non-repairable model first.";
   if (model.kind === "regression" || !model.distribution_id) return "Choose a plain distribution model.";
   return null;
 }
@@ -49,8 +50,8 @@ function unitMissing(model, unit) {
 }
 
 // Optimal replacement: the model, both costs and the model's time unit. null when ready.
-export function replacementMissing({ model, planned, unplanned, unit }) {
-  const m = modelMissing(model);
+export function replacementMissing({ model, planned, unplanned, unit, source }) {
+  const m = modelMissing(model, source);
   if (m) return m;
   if (blank(planned) && blank(unplanned)) return "Enter both costs.";
   if (blank(planned)) return "Enter the planned replacement cost.";
@@ -61,8 +62,8 @@ export function replacementMissing({ model, planned, unplanned, unit }) {
 // Failure finding: the model and a usable target availability (``availCheck``
 // is percent.js's checkPercent of the field; the field itself says what's
 // wrong with a value). null when ready.
-export function failureFindingMissing({ model, availability, availCheck, unit }) {
-  const m = modelMissing(model);
+export function failureFindingMissing({ model, availability, availCheck, unit, source }) {
+  const m = modelMissing(model, source);
   if (m) return m;
   if (blank(String(availability ?? "").trim())) return "Enter a target availability.";
   if (availCheck && availCheck.state !== "ok") return "Check the target availability.";

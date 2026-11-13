@@ -6,9 +6,9 @@ import { ACCENT, INK, sentence } from "../plotTheme.js";
 import Select from "../components/Select.jsx";
 import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { useAskText } from "../components/ConfirmProvider.jsx";
-import { changedText, renamePrompt } from "../confirm.js";
-import { duplicateFleet, getFleet, putFleetItems, renameFleet } from "../api.js";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { deleteFleet, duplicateFleet, getFleet, putFleetItems, renameFleet } from "../api.js";
 import { fleetForecastCsv } from "../fleetCsv.js";
 import { rangeLevelText } from "../levels.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -225,6 +225,18 @@ export default function FleetForecastPage() {
     }
   };
 
+  const confirm = useConfirm();
+  // Delete (or, for a sample or a shared forecast, remove from the list), then back to Forecasts.
+  const onDelete = async () => {
+    if (!(await confirm(deleteOrRemoveConfirm(fleet, "forecast", { name: itemName(fleet) })))) return;
+    try {
+      await deleteFleet(id);
+      navigate("/forecasts");
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const onRename = async () => {
     const name = changedText(await askText(renamePrompt({ kind: "forecast", name: fleet.name })), fleet.name);
     if (!name) return;
@@ -341,6 +353,9 @@ export default function FleetForecastPage() {
                 Duplicate
               </button>
             )}
+            <button className="ovm-item danger" onClick={onDelete}>
+              {fleet.is_sample ? "Remove sample" : readOnly ? "Remove from view" : "Delete"}
+            </button>
           </>
         }
       >

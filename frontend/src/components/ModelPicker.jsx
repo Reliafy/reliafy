@@ -6,7 +6,7 @@ import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
 import { formatNumber } from "../format.js";
-import { latestOnly, preferredModel, recentModel, rememberModel, savedModelRef } from "../modelNext.js";
+import { latestOnly, savedModelRef } from "../modelNext.js";
 
 // The shape or spread a mean leaves open, in the words the Mean entry uses
 // (#299): a lognormal "takes mean + spread".
@@ -25,17 +25,19 @@ const GIVEN_LABEL = {
 // given — plus the shape or spread it leaves open; the server turns it into
 // SurPyval's parameters. ``unit`` (the diagram's) puts the unit on the labels.
 //
-// ``preferSaved`` (the Strategy tools, #294) opens on "Saved model" with one
-// chosen: ``wanted`` (a link's ?model=), else the one used last, else the
-// newest; with no saved models it falls back to Parameters. ``autoPick``
-// false opens on "Saved model" with none chosen.
+// ``preferSaved`` (the Strategy tools, #294) opens on "Saved model": with
+// ``wanted`` (a link's ?model=, "Use this model") chosen, else none chosen
+// ("— choose —"), so Compute never runs on a model nobody picked; with no
+// saved models it falls back to Parameters. ``autoPick`` false never picks,
+// even ``wanted``. ``onSource`` hears which source is showing ("saved",
+// "params", ...), so a tool can say what's missing in the right words.
 // ``initialSavedId`` opens on that saved model and emits it (a link's preset).
 // ``wt`` is a guided walkthrough's anchor (walkthroughs.js).
 // ``joint`` (an RBD block's non-repairable model: ``{repairable}``) adds "Condition-based":
 // one unit of a condition and life model, given its readings.
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
                                       preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt,
-                                      joint = null }) {
+                                      joint = null, onSource = null }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
     joint && value?.kind === "joint" ? "joint" : value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
@@ -168,7 +170,6 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     const current = pickSeq.current();
     setSavedId(id);
     if (!id) return onChange(null);
-    rememberModel(id);
     try {
       const m = await getModel(id);
       if (current()) onChange(savedModelRef({ ...m, id }));
@@ -184,14 +185,18 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
   useEffect(() => {
     if (!preferSaved || initialSavedId || !savedLoaded || autoRef.current || value || source !== "saved") return;
     autoRef.current = true;
-    const plain = saved.filter((m) => m.kind === "distribution");
-    const id = !autoPick ? null : wanted && saved.some((m) => m.id === wanted)
-      ? wanted : preferredModel(plain, { recent: recentModel() });
+    // Only the model a link asked for: the newest or last-used model was
+    // often an unrelated one, and Compute ran on it unnoticed.
+    const id = autoPick && wanted && saved.some((m) => m.id === wanted) ? wanted : null;
     if (id) onPickSaved(id);
     else if (!saved.length) setSource("params");
     // onPickSaved is this render's; the pick runs once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preferSaved, savedLoaded, saved, wanted, value, source]);
+
+  useEffect(() => {
+    onSource?.(source);
+  }, [source, onSource]);
 
   useEffect(() => {
     if (initialSavedId) onPickSaved(initialSavedId);
@@ -320,6 +325,8 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
           <Select
             value={savedId}
             onChange={onPickSaved}
+            searchable={saved.length > 8}
+            ariaLabel={label ? `${label}: saved model` : "Saved model"}
             placeholder="— choose —"
             options={[
               { value: "", label: "— choose —" },

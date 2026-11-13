@@ -78,8 +78,8 @@ diagram just as you left it. The results tabs stay on the page.
 
 Double-click a block to open it. **Name** comes first: call the block what your
 report will call it (a tag, or "Feed pump A"), because every result names the
-block by it. To rename without opening the block, double-click its name on the
-canvas, or select it and press F2.
+block by it. To rename without opening the block, select it on the canvas and
+press F2, or right-click it and choose **Rename**.
 
 Then set its non-repairable model, as a **Mean** life, as **Parameters** or as a **Saved
 model**. The two sources are both legitimate:

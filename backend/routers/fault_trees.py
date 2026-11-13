@@ -3,6 +3,10 @@ analyse, open as an RBD, export to Open-PSA and import from Open-PSA / Galileo."
 
 from __future__ import annotations
 
+import re
+import unicodedata
+from urllib.parse import quote
+
 import logging
 import os
 
@@ -158,9 +162,20 @@ def export_openpsa(
             name, clean, lambda mid: models_service.get_live_model(session, mid, ctx.read_owners), t=t)
     except (ft_service.FaultTreeError, AnalysisError) as exc:
         return _err(422, client_message(exc))
-    safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in (name or "fault-tree"))[:60].strip() or "fault-tree"
     return Response(content=xml, media_type="application/xml",
-                    headers={"Content-Disposition": f'attachment; filename="{safe}.xml"', "Cache-Control": "no-store"})
+                    headers={"Content-Disposition": xml_disposition(name), "Cache-Control": "no-store"})
+
+
+def xml_disposition(name: str) -> str:
+    """The download's name, as the tree is called: an ASCII fallback with the
+    other characters dropped (not each turned into "_", which mangled names
+    such as "Loss of treated water – UV & dosing") and the real name
+    percent-encoded for browsers that read it (RFC 6266 / 5987)."""
+    real = " ".join(str(name or "").split())[:80].strip(" .") or "fault-tree"
+    ascii_name = unicodedata.normalize("NFKD", real).encode("ascii", "ignore").decode()
+    ascii_name = re.sub(r"[^A-Za-z0-9._ ()-]+", " ", ascii_name)
+    ascii_name = re.sub(r"\s+", " ", ascii_name).strip(" .") or "fault-tree"
+    return f"attachment; filename=\"{ascii_name}.xml\"; filename*=UTF-8''{quote(real + '.xml', safe='')}"
 
 
 @router.post("/fault-trees/import")

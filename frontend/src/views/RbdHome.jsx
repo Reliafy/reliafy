@@ -203,6 +203,9 @@ export default function RbdHome() {
       <SectionList
         rows={rbds}
         noun={["diagram", "diagrams"]}
+        // Missions add a diagram each: a filter keeps them apart (shown once both kinds are there).
+        types={[{ value: "diagram", label: "Diagrams" }, { value: "mission", label: "Missions" }]}
+        typeOf={(r) => (r.mission ? "mission" : "diagram")}
         help={HELP}
         empty={{
           title: "No diagrams yet",

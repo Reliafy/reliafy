@@ -34,7 +34,8 @@ import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { formatDate } from "../dates.js";
 import { hoursPerUnit } from "./rbdModelText.js";
-import { answerAtTime, formatReliability, importanceHeading, lifeBoundText } from "../rbdCalcText.js";
+import { RBD_EVALUATE_AT_EVENT } from "../rbdBuilderOps.js";
+import { answerAtTime, formatProbability, formatReliability, importanceHeading, lifeBoundText } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
@@ -129,10 +130,17 @@ function AnswerAtTime({ result, t, now, survived }) {
       <span>
         <b className="rbd-answer-value">{a.reliability}</b>
         {lo != null && hi != null && band.level && (
-          <span className="muted"> ({Math.round(band.level * 100)}% CI {formatReliability(lo)}–{formatReliability(hi)})</span>
+          <span className="muted"> ({Math.round(band.level * 100)}% interval {formatReliability(lo)} to {formatReliability(hi)})</span>
         )}
       </span>
-      <span className="rbd-answer-words">{a.failure}</span>
+      <span className="rbd-answer-words">
+        {a.failure}
+        {/* The failure probability's range too, from the same band (it was shown without one). */}
+        {lo != null && hi != null && band.level && 1 - lo >= 1e-6 && (
+          <span className="muted"> {Math.round(band.level * 100)}% interval for the failure probability:{" "}
+            {formatProbability(1 - hi)} to {formatProbability(1 - lo)}.</span>
+        )}
+      </span>
     </div>
   );
 }
@@ -965,6 +973,11 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
     over = "in the long run";
   }
   const downYear = a != null && hpu ? hoursText((1 - a) * 8760) : null;
+  // A simulated headline carries its range (the simulation's own interval), beside it, not only in Details.
+  const prec = simulatedOnly && hasSim ? result.precision : null;
+  const simRange = prec && prec.lower != null && prec.upper != null
+    ? `${Math.round((prec.confidence || 0.9) * 100)}% range ${availabilityPct(prec.lower)} to ${availabilityPct(prec.upper)}`
+    : null;
 
   const weakest = weakestLink(result);
   let best = null;
@@ -1014,7 +1027,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
             <span className="rbd-answer-big">
               <b>{pctOf(a)}</b>
               <span className="rbd-answer-sub">
-                {over}{downYear && <> · ≈ {downYear} down per year</>}
+                {over}{simRange && <> · {simRange}</>}{downYear && <> · ≈ {downYear} down per year</>}
               </span>
               {result.quick && <QuickTag />}
             </span>
@@ -1566,6 +1579,10 @@ export default function RbdCalculator({
   // "Evaluate at t" (non-repairable); none typed, the backend's default (the
   // 90%-reliability time). An automatic value filled in by a calculation isn't sent.
   const atSent = !graph.repairable && !evalTAuto && evalT !== "" && Number(evalT) > 0 ? Number(evalT) : null;
+  // Download as Python (in the builder's Save menu) uses the same time.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(RBD_EVALUATE_AT_EVENT, { detail: atSent }));
+  }, [atSent]);
   const inputSig = JSON.stringify({
     t: tSent, s: asOf && !graph.repairable ? "" : condAge, cov: covPayload(), band: bandSig,
     now: statePayload(), target, at: atSent,

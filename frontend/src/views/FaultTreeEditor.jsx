@@ -275,7 +275,6 @@ export default function FaultTreeEditor() {
   const [result, setResult] = useState(null);
   const [analysis, setAnalysis] = useState({ phase: "idle", error: null, sig: null });
   const [tInput, setTInput] = useState("");
-  const [rbdNotes, setRbdNotes] = useState(null);
 
   useEffect(() => {
     if (isNew) return;
@@ -412,8 +411,8 @@ export default function FaultTreeEditor() {
     setError(null);
     try {
       const made = await faultTreeToRbd(doc.id);
-      setRbdNotes(made);
-      setDoc((d) => ({ ...d, rbd_id: d.read_only ? d.rbd_id : made.rbd_id }));
+      // Saved: open it, with what the conversion noted above the diagram.
+      navigate(`/systems/b/${made.rbd_id}`, { state: { fromFaultTree: { tree: name, notes: made.notes || [] } } });
     } catch (err) {
       setError(err); // the RBD limit refuses it too
     }
@@ -495,13 +494,7 @@ export default function FaultTreeEditor() {
           <ul>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
         </div>
       )}
-      {rbdNotes && (
-        <div className="card ft-notes">
-          <b>RBD saved: </b><a href={`/systems/b/${rbdNotes.rbd_id}`} onClick={(e) => { e.preventDefault(); navigate(`/systems/b/${rbdNotes.rbd_id}`); }}>{rbdNotes.name}</a>
-          {rbdNotes.notes?.length > 0 && <ul>{rbdNotes.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
-        </div>
-      )}
-      {doc?.rbd_id && !rbdNotes && (
+      {doc?.rbd_id && (
         <p className="hint">An RBD was made from this tree: <a href={`/systems/b/${doc.rbd_id}`} onClick={(e) => { e.preventDefault(); navigate(`/systems/b/${doc.rbd_id}`); }}>open it</a>. It doesn't follow later edits to the tree.</p>
       )}
       <ErrorNotice error={error} className="card error" role="alert" />

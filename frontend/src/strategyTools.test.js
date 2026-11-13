@@ -49,3 +49,10 @@ test("every tool has a guide and a saved kind", () => {
   }
   assert.equal(strategyListFor("failure_finding"), "/strategy?kind=failure_finding");
 });
+
+test("with Parameters open and nothing typed, the parameters are what's missing", () => {
+  assert.equal(replacementMissing({ model: null, planned: "1", unplanned: "2", unit: "", source: "params" }),
+    "Enter the model's parameters.");
+  assert.equal(replacementMissing({ model: null, planned: "1", unplanned: "2", unit: "", source: "saved" }),
+    "Choose a non-repairable model first.");
+});

@@ -192,7 +192,7 @@ export default function FleetForecasts() {
 
   const confirm = useConfirm();
   const onDelete = async (f) => {
-    if (!(await confirm(deleteOrRemoveConfirm(f, "fleet", { name: itemName(f) })))) return;
+    if (!(await confirm(deleteOrRemoveConfirm(f, "forecast", { name: itemName(f) })))) return;
     try {
       await deleteFleet(f.id);
       refresh();

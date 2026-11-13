@@ -26,7 +26,7 @@ export default function ReportView({ report, sharedBy, Item }) {
       <header className="report-head">
         <h1>{report.name}</h1>
         <div className="report-meta">
-          {report.author ? <span>{report.author}</span> : <span>Shared by {sharedBy}</span>}
+          {report.author ? <span>{report.author}</span> : sharedBy ? <span>Shared by {sharedBy}</span> : null}
           {date && <span>{date}</span>}
         </div>
       </header>

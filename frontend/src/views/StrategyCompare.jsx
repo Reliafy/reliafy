@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { SavedOfKind } from "../components/StrategyTool.jsx";
 import { STRATEGY_TOOLS } from "../strategyTools.js";
@@ -16,6 +17,10 @@ export default function StrategyCompare() {
         help={TOOL.help}
         purpose="Put two items head-to-head — a fitted distribution or raw (non-parametric) data on each side — to see which is more reliable."
       />
+      <p className="hint">
+        One file with a column saying which group each unit is in? Open it in <Link to="/data">Data</Link> and
+        use Compare groups: it tests every group at once.
+      </p>
       <Card>
         <CompareTwoModels />
       </Card>

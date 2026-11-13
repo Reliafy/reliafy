@@ -176,6 +176,13 @@ def delete_analysis(db, analysis_id: str, owner_id: str) -> None:
         raise AnalysisNotFound(analysis_id)
 
 
+def _about(value) -> str:
+    """An interval for a list row, rounded as the result page shows it (3
+    significant figures) before it is written: "~2,000 hours", not the
+    "~1,999" that 1,999.4 gave beside the page's "2,000"."""
+    return strategy_service.fmt_num(float(f"{float(value):.3g}"))
+
+
 def headline(doc: StrategyAnalysis) -> str:
     """One-line summary for list rows."""
     r = doc.results or {}
@@ -183,14 +190,14 @@ def headline(doc: StrategyAnalysis) -> str:
         if r.get("beneficial"):
             unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
             t = r.get("optimal_time")
-            return f"Replace at ~{strategy_service.fmt_num(t)}{unit}" if t is not None else "Beneficial"
+            return f"Replace at ~{_about(t)}{unit}" if t is not None else "Beneficial"
         return "Run-to-failure is optimal (no beneficial interval)"
     if doc.kind == "compare_two":
         return (r.get("verdict") or {}).get("text") or "Comparison"
     if doc.kind == "failure_finding":
         unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
         i = r.get("interval")
-        return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure finding"
+        return f"Check every ~{_about(i)}{unit}" if i is not None else "Failure finding"
     if doc.kind == "demonstration_test":
         return demonstration_headline(r)
     if doc.kind == "calendar_replacement":

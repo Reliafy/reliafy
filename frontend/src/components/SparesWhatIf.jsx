@@ -15,7 +15,7 @@ export default function SparesWhatIf({ curve, unit, over, initial, idPrefix }) {
              style={{ width: "5rem" }} onChange={(e) => setStock(e.target.value)} />
       {unit && unit !== "each" && <span>{unit}</span>}
       <span data-testid="spares-whatif">
-        {p == null ? "" : <>→ <b>{riskText(p)}</b> chance of running out over {over}.</>}
+        {p == null ? "" : <>, the chance of running out over {over} is <b>{riskText(p)}</b>.</>}
       </span>
     </p>
   );

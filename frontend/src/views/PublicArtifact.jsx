@@ -145,7 +145,8 @@ function FleetView({ a }) {
   );
 }
 
-function Body({ collection, a, token, unlock, framed = false }) {
+// Exported for Reports' View (a report read inside the app), which renders sections the same way.
+export function Body({ collection, a, token, unlock, framed = false }) {
   switch (collection) {
     case "models": {
       // A condition and life model is shared from the models collection too.

@@ -217,8 +217,13 @@ export default function FleetStrategyCard({ forecast }) {
         </ScrollCue>
       )}
       <p className="rs-note">
-        From the forecast's simulation: each item's remaining life given its use, then new ones' lives
-        {age ? `, each cut short at ${formatWithUnit(st.replace_at, unit)}` : ""}. Ranges are {level}.
+        {forecast.interval_method === "exact" && !age ? (
+          <>Exact for a constant failure rate: each item fails, on average, once per mean life of use, whatever
+            its age, and the counts follow a Poisson distribution. Ranges are {level}.</>
+        ) : (
+          <>From the forecast's simulation: each item's remaining life given its use, then new ones' lives
+            {age ? `, each cut short at ${formatWithUnit(st.replace_at, unit)}` : ""}. Ranges are {level}.</>
+        )}
         {!priced && " Add the cost of a failure (and of a planned replacement) under Change settings for a budget."}
       </p>
     </div>

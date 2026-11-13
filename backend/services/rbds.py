@@ -308,7 +308,7 @@ def export_json(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
     return rbd_json.filename(name), rbd_json.to_json(doc)
 
 
-def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
+def export_python(db, name: str, graph: dict, owner_id, evaluate_at=None) -> tuple[str, str]:
     """Render a diagram as a standalone SurPyval + RePyability script.
 
     Returns ``(filename, source)``. Sub-systems and saved-model references
@@ -326,6 +326,7 @@ def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
         name,
         resolve_model=resolve_model,
         resolve_subsystem=resolve_subsystem,
+        evaluate_at=evaluate_at,
     )
     return rbd_export.filename(name), source
 

@@ -241,7 +241,7 @@ export default function CalendarReplacement() {
       {cancelNote && !loading && <p className="hint" role="status">{cancelNote}</p>}
       {loading && job && (
         <p className="hint" role="status" aria-live="polite">
-          {job.status === "running" ? "Sampling the calendar…"
+          {job.status === "running" ? "Sampling the calendar: this usually takes about a minute…"
             : job.queue_position ? `Queued for the calculation service (${job.queue_position} ahead)…`
               : "Queued for the calculation service…"}
         </p>

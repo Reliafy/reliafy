@@ -216,11 +216,25 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             meanEntry="Mean repair time, MTTR"
           />
           <MeanEcho model={repair} unit={unit} label="MTTR" />
-          <label className="rbd-instant-repair"
-                 title="The group has its own repairer, who repairs one failed unit at a time; otherwise each failed unit is a job for the diagram's repair crews.">
-            <input type="checkbox" checked={oneAtATime} onChange={(e) => setOneAtATime(e.target.checked)} />
-            Repaired one unit at a time <span className="muted">— its own repairer, not the diagram's crews</span>
-          </label>
+          {/* Who repairs is a choice that changes the answer, so it's asked as one, not a small tick-box. */}
+          <div className="picker">
+            <div className="picker-label">Who repairs a failed unit</div>
+            <SegmentedControl
+              label="Who repairs a failed unit"
+              value={oneAtATime ? "own" : "crews"}
+              onChange={(v) => setOneAtATime(v === "own")}
+              options={[
+                { value: "crews", label: "The diagram's crews", title: "Each failed unit is a job for the diagram's repair crews, waiting when they're busy." },
+                { value: "own", label: "Its own repairer", title: "The group has its own repairer, who repairs one failed unit at a time." },
+              ]}
+            />
+            <p className="hint" style={{ margin: "4px 0 0" }}>
+              {oneAtATime
+                ? "One failed unit at a time, by the group's own repairer; the diagram's crews aren't used."
+                : crews ? "Each failed unit joins the queue for the diagram's repair crews."
+                  : "Each failed unit is repaired at once (the diagram has no crew limit)."}
+            </p>
+          </div>
         </section>
       )}
       {repairable && (

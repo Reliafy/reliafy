@@ -5,6 +5,7 @@ import {
   MAX_SECTIONS, addSection, applyDraft, duplicateNames, isDuplicate, moveSection, pickerGroups, pickerKinds,
   pickerRows, removeSection, renameItem, reportBody, setNote,
 } from "./reportComposer.js";
+import { parseAdd, reportHref } from "./reportComposer.js";
 import { printZoom } from "./printFit.js";
 
 const item = (id, extra = {}) => ({ collection: "models", artifact_id: id, name: `M${id}`, kind: "Non-repairable model", ...extra });
@@ -79,4 +80,18 @@ test("the picker finds items by words in their name or kind, of one kind, own fi
   // A rename shows wherever the item is listed.
   assert.equal(renameItem(items, items[1], "Pump seals, site A")[1].name, "Pump seals, site A");
   assert.equal(renameItem(items, items[1], "x")[0].name, "Weibull — pasted values");
+});
+
+test("a report's address: view, edit, or a new one with an item in it", () => {
+  assert.equal(reportHref({ open: "r1" }), "/reports?open=r1");
+  assert.equal(reportHref({ open: "r1", edit: true }), "/reports?open=r1&edit=1");
+  assert.equal(reportHref({ add: { collection: "models", artifact_id: "m1" } }), "/reports?new=1&add=models%3Am1");
+  assert.equal(reportHref(), "/reports?new=1");
+});
+
+test("an item to add is read only from a well-formed value", () => {
+  assert.deepEqual(parseAdd("models:m1"), { collection: "models", artifact_id: "m1" });
+  assert.equal(parseAdd("models"), null);
+  assert.equal(parseAdd("<x>:y"), null);
+  assert.equal(parseAdd(null), null);
 });

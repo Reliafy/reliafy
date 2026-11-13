@@ -1,4 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { reportHref } from "../reportComposer.js";
 import Modal from "./Modal.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import {
@@ -9,8 +11,6 @@ import Chip from "./ui/Chip.jsx";
 import { formatDate } from "../dates.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 
-// The report composer (#30) loads only when someone opens it.
-const ReportComposer = lazy(() => import("./ReportComposer.jsx"));
 
 // Collections with a public read-only renderer at /p/:token.
 const PUBLIC_LINKABLE = new Set([
@@ -280,7 +280,7 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
-  const [composing, setComposing] = useState(false);
+  const navigate = useNavigate();
 
   const linkable = PUBLIC_LINKABLE.has(collection);
 
@@ -318,15 +318,6 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
     refresh();
   };
 
-  // "Add to a report…" swaps this dialog for the report composer (#30).
-  if (composing) {
-    return (
-      <Suspense fallback={null}>
-        <ReportComposer initial={{ collection, artifact_id: artifactId, name }} onClose={onClose} />
-      </Suspense>
-    );
-  }
-
   return (
     <Modal
       title={`Share — ${name}`}
@@ -336,7 +327,9 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
       footer={
         <>
           {linkable ? (
-            <button type="button" className="link" onClick={() => setComposing(true)}
+            // "Add to a report…" opens Reports with a new report holding this item (#30).
+            <button type="button" className="link"
+              onClick={() => { onClose(); navigate(reportHref({ add: { collection, artifact_id: artifactId } })); }}
               title="Put this and other items on one page, with a title and notes, ready to print">
               Add to a report…
             </button>

@@ -42,6 +42,7 @@ from backend.services import recurrent as recurrent_service
 from backend.services import fleet_strategy
 from backend.services import spares
 from backend.services.strategy import _model_from_params, StrategyError
+from backend.fitting import surpyval_extras
 from backend.units import unit_in_text
 from backend.errors import client_message, client_reason
 from backend.warn_capture import ignore_warnings
@@ -485,6 +486,9 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
                                                      _forecast_renewals, period_days(base["period_label"]))}
         except fleet_strategy.StrategyInputError as exc:
             return {"status": "stale", "reason": str(exc)}
+        if (results.get("distribution_id") == "exponential" and not surpyval_extras(results.get("extras"))
+                and (out.get("strategy") or {}).get("kind") == "run_to_failure"):
+            _exact_constant_rate(out, dist, uses, rates, periods, settings.get("failure_cost"))
     for row, (rate, basis) in zip(out["per_item"], chosen):
         row["rate_used"] = rate
         row["rate_basis"] = basis  # "estimated" | "manual" | "default"
@@ -494,6 +498,46 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
         opts = {**spares_opts, "_replace_at": replace_at} if replace_at else spares_opts
         out["spares"] = _spares_or_reason(opts, method, dist, ages, rates, periods, base["period_label"])
     return out
+
+
+def _exact_constant_rate(out: dict, dist, uses, rates, periods: int, failure_cost) -> None:
+    """A constant failure rate (an exponential model, run to failure): the
+    count is Poisson with mean use / MTBF, whatever each item's age, so the
+    expected failures and their 90% ranges are exact, not simulated. A
+    simulation gave 9.96 for an exact 10 and monthly bars that wobbled
+    (0.79 to 0.88) for a flat 0.83. The spares answer keeps its own runs."""
+    mtbf = float(np.atleast_1d(dist.mean())[0])
+    if not np.isfinite(mtbf) or mtbf <= 0:
+        return
+    uses = np.asarray(uses, dtype=float)
+    per_period_mean = float(np.sum(np.asarray(rates, dtype=float))) / mtbf
+    total = float(np.sum(uses)) / mtbf
+
+    def spread(mean: float) -> dict:
+        lo, hi = _poisson_interval(mean)[0]
+        return {"expected": float(mean), "interval": [float(lo), float(hi)]}
+
+    def block(mean: float) -> dict:
+        failures = spread(mean)
+        row = {"failures": failures, "planned": {"expected": 0.0, "interval": [0.0, 0.0]}, "parts": dict(failures)}
+        if failure_cost is not None:
+            row["cost"] = {"expected": failures["expected"] * failure_cost,
+                           "interval": [v * failure_cost for v in failures["interval"]]}
+        return row
+
+    t = spread(total)
+    out["expected"], out["interval"] = t["expected"], t["interval"]
+    out["per_period"] = [per_period_mean] * periods
+    for row, u in zip(out.get("per_item") or [], uses):
+        row["expected"] = float(u) / mtbf
+    out["interval_method"] = "exact"
+    st = out.get("strategy")
+    if st:
+        st["total"] = block(total)
+        st["per_period"] = [{"period": k + 1, **block(per_period_mean)} for k in range(periods)]
+        if st.get("yearly"):
+            st["yearly"] = [{**y, **block(per_period_mean * (y["to_period"] - y["from_period"] + 1))}
+                            for y in st["yearly"]]
 
 
 def _add_count_years(out: dict, kind: str, groups, settings: dict) -> None:
