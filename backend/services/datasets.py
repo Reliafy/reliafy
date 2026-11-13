@@ -921,8 +921,11 @@ def detect_tags(df: pd.DataFrame) -> dict:
         df[censor].notna().sum() < len(df) and df[censor].notna().groupby(df[unit]).sum().max() <= 1)
     for c in extra:
         varies = bool(unit) and bool((df.groupby(unit)[c].nunique(dropna=True) > 1).any())
-        if varies and repeat and not pd.api.types.is_numeric_dtype(df[c]):
-            continue  # an event's own detail (its cause or failure mode)
+        if varies and not start_stop and not pd.api.types.is_numeric_dtype(df[c]):
+            # Text that changes along a unit's rows outside start/stop periods
+            # is an event's or a life's own detail (its cause or failure mode),
+            # not a covariate: several lives per item aren't changing covariates.
+            continue
         if not varies:
             tags.add("Covariates")
         elif censor and not (outcome_once and pd.api.types.is_numeric_dtype(df[c])):
@@ -1266,18 +1269,23 @@ _TAG_CACHE: dict[str, dict] = {}
 
 
 def with_reading_covariates(detected: dict, z: list[str]) -> dict:
-    """The tags with "Covariates" as the dataset's reading says: only when the
-    reading includes covariates (its ``z``). The columns alone can't tell an
-    id marked not used, or a failure mode read as ``e``, from a covariate."""
+    """The tags with "Covariates" (and "Time-varying covariates") as the
+    dataset's reading says: only when the reading includes covariates (its
+    ``z``). The columns alone can't tell an id marked not used, or a failure
+    mode read as ``e``, from a covariate."""
     tags = set(detected.get("tags") or [])
     has = bool(z)
     if has and "Time-varying covariates" not in tags:
         tags.add("Covariates")
     elif not has:
+        # No covariates in the reading: nothing changes over time either.
         tags.discard("Covariates")
+        tags.discard("Time-varying covariates")
     suffix = " with covariates"
     use_for = []
     for u in detected.get("use_for") or []:
+        if u == "Non-repairable model with time-varying covariates" and not has:
+            u = "Non-repairable model"
         if u in ("Non-repairable model", "Repairable model", "Non-repairable model" + suffix,
                  "Repairable model" + suffix):
             u = u.removesuffix(suffix) + (suffix if "Covariates" in tags else "")
