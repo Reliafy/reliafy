@@ -111,7 +111,15 @@ CREATE TABLE IF NOT EXISTS events (
     payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_org ON events (org, seq);
+CREATE TABLE IF NOT EXISTS events_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
+
+# An erased event (see ``purge.py``): its sequence number stays, so the log has
+# no gap, and nothing else does. Its projector does nothing.
+PURGED = "event.purged"
 
 
 def new_id() -> str:
@@ -137,6 +145,11 @@ def _now() -> str:
 
 class UnknownEvent(ValueError):
     """An event type with no projector."""
+
+
+def tombstone(on: str) -> dict:
+    """The payload an erased event is left with: no content, only when."""
+    return {"purged": True, "on": on}
 
 
 # ---- event logs ----------------------------------------------------------------------
@@ -170,6 +183,35 @@ class SqliteEventLog:
     def count(self, org: str) -> int:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) FROM events WHERE org = ?", (org,)).fetchone()[0])
+
+    def purge_epoch(self) -> int:
+        """How many times events have been erased from this log (``purge``): a
+        graph built at another count is rebuilt."""
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM events_meta WHERE key = 'purged'").fetchone()
+        return int(row[0]) if row else 0
+
+    def purge(self, org: str, seqs: list[int], on: str) -> int:
+        """Erase these events of the organisation in place (see ``purge.py``): each
+        keeps its id, sequence number, organisation, time and actor, and becomes
+        ``event.purged`` with a tombstone payload. Then the purge count goes up,
+        so every graph built from the log rebuilds. Returns how many changed."""
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                changed = 0
+                for seq in seqs:
+                    cur = self._conn.execute("UPDATE events SET type = ?, payload = ? WHERE org = ? AND seq = ?",
+                                             (PURGED, json.dumps(tombstone(on)), org, int(seq)))
+                    changed += cur.rowcount
+                self._conn.execute(
+                    "INSERT INTO events_meta (key, value) VALUES ('purged', '1') ON CONFLICT(key) "
+                    "DO UPDATE SET value = CAST(value AS INTEGER) + 1")
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+        return changed
 
     def recent(self, org: str, limit: int, since: int | None = None, type: str | None = None) -> list[dict]:
         """The organisation's newest events (``since``: only those after that
@@ -208,6 +250,7 @@ class MongoEventLog:
         # catching up after its own write then needs no range query (one per event
         # otherwise, and a scan of the whole log on the in-memory simulator).
         self._own: dict[int, dict] = {}
+        self._epoch: int | None = None  # the purge count, as the counter last read said
 
     def append(self, event: dict) -> int:
         from pymongo import ReturnDocument
@@ -231,6 +274,7 @@ class MongoEventLog:
         for old in [k for k in self._own if k <= seq]:
             del self._own[old]
         top = self._counters.find_one({"_id": self._counter_id})
+        self._epoch = int((top or {}).get("purged") or 0)
         top = int(top["seq"]) if top else 0
         if top <= seq:
             return []
@@ -244,6 +288,31 @@ class MongoEventLog:
 
     def count(self, org: str) -> int:
         return int(self._events.count_documents({"org": org}))
+
+    def purge_epoch(self) -> int:
+        """See ``SqliteEventLog.purge_epoch`` (as of the last read of the log: a
+        sync reads it with the events, at no extra round trip)."""
+        if self._epoch is None:
+            top = self._counters.find_one({"_id": self._counter_id})
+            self._epoch = int((top or {}).get("purged") or 0)
+        return self._epoch
+
+    def purge(self, org: str, seqs: list[int], on: str) -> int:
+        """See ``SqliteEventLog.purge``. The events are rewritten first and the
+        count raised after, so a process that sees the new count reads them
+        erased."""
+        seqs = [int(x) for x in seqs]
+        changed = 0
+        for at in range(0, len(seqs), 1000):
+            part = seqs[at:at + 1000]
+            changed += self._events.update_many(
+                {"org": org, "seq": {"$in": part}},
+                {"$set": {"type": PURGED, "payload": tombstone(on)}}).modified_count
+        for seq in seqs:
+            self._own.pop(seq, None)
+        self._counters.update_one({"_id": self._counter_id}, {"$inc": {"purged": 1}})
+        self._epoch = None
+        return changed
 
     def recent(self, org: str, limit: int, since: int | None = None, type: str | None = None) -> list[dict]:
         query: dict = {"org": org}
@@ -392,6 +461,12 @@ class GraphStore:
             while True:
                 applied = self._applied()
                 events = self.log.since(applied, SYNC_BATCH)
+                if self._purged_since_built():
+                    logger.warning("maintenance log: events were erased since this graph was built; rebuilding")
+                    done = self.rebuild()
+                    if self.mirror is not None:
+                        self.mirror.resync_full()
+                    return done
                 if not events:
                     return done
                 now_at = self._apply_run(applied, events)
@@ -457,12 +532,30 @@ class GraphStore:
         """How many nodes of ``label`` the organisation has."""
         return int(self._all("SELECT COUNT(*) AS n FROM nodes WHERE org = ? AND label = ?", (org, label))[0]["n"])
 
+    def _log_epoch(self) -> int:
+        epoch = getattr(self.log, "purge_epoch", None)
+        return int(epoch()) if epoch is not None else 0
+
+    def _purged_since_built(self) -> bool:
+        """Whether events were erased from the log (``purge.py``) after this graph
+        was built from it: the graph still holds what they wrote, so it must be
+        rebuilt. A graph with nothing applied yet just notes the count."""
+        epoch = self._log_epoch()
+        rows = self._all("SELECT value FROM meta WHERE key = 'purge_epoch'", ())
+        if rows and int(rows[0]["value"]) == epoch:
+            return False
+        if not rows and (epoch == 0 or self._applied() == 0):
+            self._set_meta("purge_epoch", str(epoch))
+            return False
+        return True
+
     def rebuild(self) -> int:
         """Clear the graph and replay the whole log. Returns the events replayed.
 
         The tables are dropped and made again, so a graph stored with an older
         table layout comes back in the current one."""
         with self._lock:
+            self._set_meta("purge_epoch", str(self._log_epoch()))
             self._conn.execute("DROP TABLE IF EXISTS nodes")
             self._conn.execute("DROP TABLE IF EXISTS edges")
             self._conn.execute("DROP TABLE IF EXISTS changes")

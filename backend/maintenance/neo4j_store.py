@@ -355,6 +355,7 @@ class Neo4jGraphStore:
         self._local = threading.local()  # the event being projected, per thread
         self._gap: tuple[int, float] | None = None
         self._event_counts: dict[str, int] = {}
+        self._epoch_ok: int | None = None  # the log's purge count this graph was last found built at
         self.write_windows: dict = {}
         self.series_days: dict = {}
         self.listeners: list = []
@@ -466,6 +467,9 @@ class Neo4jGraphStore:
             while True:
                 applied = self._known = self._meta()[0]
                 events = self.log.since(applied, _store.SYNC_BATCH)
+                if self._purged_since_built(applied):
+                    logger.warning("maintenance log: events were erased since this graph was built; rebuilding")
+                    return self.rebuild()
                 if not events:
                     return done
                 raced = False
@@ -532,6 +536,28 @@ class Neo4jGraphStore:
                              {"ns": self.ns, "org": org, "label": label})
         return int(rows[0]["n"])
 
+    def _log_epoch(self) -> int:
+        epoch = getattr(self.log, "purge_epoch", None)
+        return int(epoch()) if epoch is not None else 0
+
+    def _purged_since_built(self, applied: int) -> bool:
+        """See ``GraphStore._purged_since_built``; the count the graph was built
+        at is kept on its bookkeeping node, shared by every process."""
+        epoch = self._log_epoch()
+        if epoch == self._epoch_ok:
+            return False  # checked already (no round trip)
+        rows = self.conn.run("MATCH (m:MaintenanceGraph {ns: $ns}) RETURN m.purged AS purged", {"ns": self.ns})
+        built = rows[0]["purged"] if rows else None
+        if built is not None and int(built) == epoch:
+            self._epoch_ok = epoch
+            return False
+        if built is None and (epoch == 0 or applied == 0):
+            self.conn.run("MATCH (m:MaintenanceGraph {ns: $ns}) SET m.purged = $epoch",
+                          {"ns": self.ns, "epoch": epoch}, write=True)
+            self._epoch_ok = epoch
+            return False
+        return True
+
     def rebuild(self) -> int:
         """Clear the graph and replay the whole log. Returns the events replayed.
         Readers see the graph empty and refilling meanwhile: for a projection
@@ -540,7 +566,9 @@ class Neo4jGraphStore:
             self.conn.run("MATCH (n:Node {ns: $ns}) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 5000 ROWS",
                           {"ns": self.ns}, write=True)
             self.conn.run("MERGE (m:MaintenanceGraph {ns: $ns}) SET m.applied = 0, m.version = $version, "
-                          "m.skipped = []", {"ns": self.ns, "version": self.version}, write=True)
+                          "m.skipped = [], m.purged = $epoch",
+                          {"ns": self.ns, "version": self.version, "epoch": self._log_epoch()}, write=True)
+            self._epoch_ok = self._log_epoch()
             self._known = 0
             self._gap = None
             self._event_counts.clear()
