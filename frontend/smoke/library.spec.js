@@ -283,13 +283,11 @@ test("an upload split into datasets goes into a library, from Data and from the 
   await expectHealthy(page, problems, { label: "a library filled by a split upload" });
 
   // From the library: Add… (the owner's primary) › Upload data…, this library chosen; back on the page
-  // with the new entry. The menu stays open when the mouse moves off it, until a choice, a click outside or Escape.
+  // with the new entry. The menu closes like every other menu (useMenuDismiss).
   const addButton = page.getByRole("button", { name: "Add…" });
   await expect(addButton).not.toHaveClass(/secondary/);
   await expect(page.getByRole("button", { name: "Sharing…" })).toHaveClass(/secondary/);
   await addButton.click();
-  const at = await addButton.boundingBox();
-  await page.mouse.move(at.x - 300, at.y + 300, { steps: 5 });
   await expect(page.getByRole("menuitem", { name: "Upload data…" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Upload data…" }).click();
   const up = page.getByRole("dialog");

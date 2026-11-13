@@ -275,9 +275,7 @@ function AddMenu({ onUpload, onOpen }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
-  // It holds a line to read and links: it stays open until a choice, a click outside or Escape,
-  // not closing as the mouse moves off it.
-  useMenuDismiss(open, close, ref, { leavePx: Infinity });
+  useMenuDismiss(open, close, ref);
   return (
     <div className="lib-add" ref={ref}>
       <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => { onOpen?.(); setOpen((o) => !o); }}>
