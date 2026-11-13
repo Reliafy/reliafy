@@ -33,12 +33,22 @@ export function showsPublicLibrary(pathname, search, signedIn) {
 
 export const VISIBILITY_LABEL = { private: "Private", workspaces: "Shared", public: "Public" };
 export const VISIBILITY_WORDS = {
-  private: "Private: your workspace only.",
-  workspaces: "Shared with the workspaces you name. They can view and copy; only you can change it.",
-  public: "Public: anyone, signed out too, can view it; anyone signed in can copy from it.",
+  private: "Only your workspace can see it.",
+  workspaces: "The workspaces you name can view and copy it; only you can change it.",
+  public: "Anyone, signed out too, can view it; anyone signed in can copy from it.",
 };
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+// The line under an entry's data preview. The table shows about five rows and scrolls inside its
+// card, so a longer preview says so rather than "All 14 rows" beside five.
+export const PREVIEW_ROWS_SHOWN = 5;
+export function previewRowsText(shown, total) {
+  const all = !(total > shown);
+  const lead = all ? `${plural(shown, "row")}` : `The first ${shown} of ${total} rows`;
+  if (shown <= PREVIEW_ROWS_SHOWN) return `${lead}.`;
+  return `${lead}: scroll the table to see ${all ? "them all" : "them"}.`;
+}
 
 // "3 datasets · 2 models"; a handbook's records are its models.
 export function countsText(card) {

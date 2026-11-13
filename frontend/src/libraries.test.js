@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addWorkspaceId, countsText, dataLine, entryAnchor, entryPath, entryTags, filterEntries, groupLibraries, libraryMatches,
-  libraryPath, modelBasis, modelHeadline, publicLibraryId, sharingProblems, showsPublicLibrary, usedLinks, visibilityBody,
+  libraryPath, modelBasis, modelHeadline, previewRowsText, publicLibraryId, sharingProblems, showsPublicLibrary, usedLinks, visibilityBody,
 } from "./libraries.js";
 
 test("a library's address, and which addresses the public page answers", () => {
@@ -118,4 +118,11 @@ test("one dataset saved: its page is told it was reused and which library it wen
   const library = { id: "L", name: "Pumps", added: ["L:1"], already: [] };
   assert.deepEqual(createdState({ id: "d1", library }), { state: { library } });
   assert.deepEqual(createdState({ id: "d1", reused: true }, "Bearings"), { state: { reused: true, name: "Bearings" } });
+});
+
+test("an entry's preview line matches what the table shows", () => {
+  assert.equal(previewRowsText(1, 1), "1 row.");
+  assert.equal(previewRowsText(4, 4), "4 rows.");
+  assert.equal(previewRowsText(14, 14), "14 rows: scroll the table to see them all.");
+  assert.equal(previewRowsText(50, 120), "The first 50 of 120 rows: scroll the table to see them.");
 });

@@ -282,8 +282,13 @@ test("an upload split into datasets goes into a library, from Data and from the 
   await expect(page.getByText("3 datasets · 0 models").first()).toBeVisible();
   await expectHealthy(page, problems, { label: "a library filled by a split upload" });
 
-  // From the library: Add… › Upload data…, this library chosen; back on the page with the new entry.
-  await page.getByRole("button", { name: "Add…" }).click();
+  // From the library: Add… (the owner's primary) › Upload data…, this library chosen; back on the page
+  // with the new entry. The menu closes like every other menu (useMenuDismiss).
+  const addButton = page.getByRole("button", { name: "Add…" });
+  await expect(addButton).not.toHaveClass(/secondary/);
+  await expect(page.getByRole("button", { name: "Sharing…" })).toHaveClass(/secondary/);
+  await addButton.click();
+  await expect(page.getByRole("menuitem", { name: "Upload data…" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Upload data…" }).click();
   const up = page.getByRole("dialog");
   await expect(up.getByRole("heading", { name: `Upload data to Sites ${tag}` })).toBeVisible();
@@ -297,6 +302,11 @@ test("an upload split into datasets goes into a library, from Data and from the 
   await expect(page.getByRole("status").filter({ hasText: "Added it to" })).toBeVisible();
   await expect(page.getByText("4 datasets · 0 models").first()).toBeVisible();
   await expect(page.getByText(`west ${tag}`)).toBeVisible();
+  // The "Added it to …" line goes with the next thing done on the page.
+  await page.getByRole("button", { name: "Sharing…" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Added it to" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Sharing" }).getByRole("radio", { name: /^Private/ })).toBeChecked();
+  await page.getByRole("region", { name: "Sharing" }).getByRole("button", { name: "Close" }).click();
   // On a phone: opened at 400 px, nothing scrolls sideways.
   const here = new URL(page.url()).pathname;
   await page.setViewportSize({ width: 400, height: 860 });

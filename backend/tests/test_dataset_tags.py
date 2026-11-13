@@ -156,3 +156,26 @@ def test_summary_does_not_say_all_failed_when_it_cannot_tell():
     # Times with a group column and nothing that could be a status: every row failed.
     rows = [["A" if i % 2 else "B", 400 + 10 * i] for i in range(12)]
     assert tags(rows, ["design", "cycles"])["summary"] == "12 units · all failed"
+
+
+def test_covariates_tag_follows_the_reading():
+    """A split of a plant sheet: an id marked not used and a failure mode read
+    as ``e`` are not covariates, so the saved reading (z empty) drops the tag
+    the columns alone suggest; a reading that includes a covariate keeps it."""
+    from backend.schema import Dataset
+    from backend.services.datasets import dataset_tags
+
+    rows = [[f"R{i:03d}", f"U1-BFP-{i:02d}", "Failed" if i % 3 else "Right-censored", 4000 + 517 * i,
+             ["Seal leak", "Bearing wear"][i % 2] if i % 3 else ""] for i in range(14)]
+    cols = ["ID", "Equipment Tag", "Status", "Age (h)", "Failure Mode"]
+    csv = pd.DataFrame(rows, columns=cols).to_csv(index=False).encode()
+    reading = {"x": "Age (h)", "c": "Status", "i": "Equipment Tag", "e": "Failure Mode", "z": [], "not_used": ["ID"]}
+    ds = Dataset(id="split-1", name="Boiler feed pump", checksum="tags-reading-test", data=csv, reading=reading)
+    out = dataset_tags(ds)
+    assert out["tags"] == ["Non-repairable"]
+    assert out["use_for"][0] == "Non-repairable model"
+
+    with_z = ds.model_copy(update={"reading": {**reading, "z": ["Failure Mode"], "e": ""}})
+    out = dataset_tags(with_z)
+    assert out["tags"] == ["Non-repairable", "Covariates"]
+    assert out["use_for"][0] == "Non-repairable model with covariates"

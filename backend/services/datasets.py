@@ -1265,15 +1265,39 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
 _TAG_CACHE: dict[str, dict] = {}
 
 
+def with_reading_covariates(detected: dict, z: list[str]) -> dict:
+    """The tags with "Covariates" as the dataset's reading says: only when the
+    reading includes covariates (its ``z``). The columns alone can't tell an
+    id marked not used, or a failure mode read as ``e``, from a covariate."""
+    tags = set(detected.get("tags") or [])
+    has = bool(z)
+    if has and "Time-varying covariates" not in tags:
+        tags.add("Covariates")
+    elif not has:
+        tags.discard("Covariates")
+    suffix = " with covariates"
+    use_for = []
+    for u in detected.get("use_for") or []:
+        if u in ("Non-repairable model", "Repairable model", "Non-repairable model" + suffix,
+                 "Repairable model" + suffix):
+            u = u.removesuffix(suffix) + (suffix if "Covariates" in tags else "")
+        use_for.append(u)
+    return {**detected, "tags": [t for t in TAGS if t in tags], "use_for": use_for}
+
+
 def dataset_tags(dataset: Dataset) -> dict:
     """``detect_tags`` for a saved dataset (with its measurements part folded
     in), cached by its content (datasets are content-addressed, so the
     checksums name the tables)."""
     part = dataset.measurements
-    key = (dataset.checksum or dataset.id) + (f"|{part.checksum}" if part is not None else "")
+    z = None if not isinstance(dataset.reading, dict) else sorted(str(c) for c in dataset.reading.get("z") or [])
+    key = ((dataset.checksum or dataset.id) + (f"|{part.checksum}" if part is not None else "")
+           + ("" if z is None else "|z:" + "\x1f".join(z)))
     if key not in _TAG_CACHE:
         try:
             out = detect_tags(load_dataframe(dataset))
+            if z is not None:
+                out = with_reading_covariates(out, z)
             if part is not None:
                 readings = None
                 if not out.get("time_unit"):
