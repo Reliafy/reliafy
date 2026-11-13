@@ -253,3 +253,41 @@ def test_summary_adds_the_unit_only_when_the_column_name_lacks_one():
     assert dr.summary({"x": "Age", "unit": "Hours"}).startswith("x = Age (Hours)")
     assert dr.summary({"x": "Age (h)", "unit": "Hours"}).startswith("x = Age (h)")
     assert "(Hours)" not in dr.summary({"x": "Age (h)", "unit": "Hours"})
+
+
+# One row per failure, logged with the equipment's state when the failure was
+# found: "Operating" on every row is that state, not "still running" (#status-guess).
+FAILURE_LOG = (
+    "Equipment Unit ID,Failure Event ID,Equipment State at Detection,Operating Age at Failure (h),"
+    "Failure Classification,Failure Mode,Event Status,Data Quality Status\n"
+    "P-01,FE-1,Operating,11292,Critical failure,Vibration,Closed,Estimated\n"
+    "P-02,FE-2,Operating,12514,Critical failure,Seal leak,Closed,Estimated\n"
+    "P-02,FE-3,Operating,33960,Critical failure,Vibration,Closed,Estimated\n"
+    "P-03,FE-4,Operating,21744,Critical failure,Bearing failure,Closed,Estimated\n"
+)
+
+
+def test_a_state_at_detection_is_never_read_as_still_running():
+    from backend.services import dataset_reading as dr
+
+    r = dr.guess_for_bytes(FAILURE_LOG.encode())
+    assert r["x"] == "Operating Age at Failure (h)"
+    # No column says which rows failed: c is left for the person (or "every row failed").
+    assert (r["c"], r["c_map"], r["all_failed"]) == ("", None, False)
+
+
+def test_a_status_column_needs_both_meanings_unless_its_header_says_status():
+    from backend.services import dataset_reading as dr
+
+    def c_of(header, values):
+        rows = "".join(f"{100 * (k + 1)},{v}\n" for k, v in enumerate(values))
+        return dr.guess_for_bytes(f"Hours,{header}\n{rows}".encode())["c"]
+
+    # A plain "state" column that reads both ways is still the status.
+    assert c_of("Equipment state", ["Failed", "Running", "Failed"]) == "Equipment state"
+    # …but one that reads every row the same way is a state, not a flag.
+    assert c_of("Equipment state", ["Operating", "Operating"]) == ""
+    assert c_of("Operating state", ["Running", "Running"]) == ""
+    # A header that plainly says status keeps a one-sided column.
+    assert c_of("Status", ["Failed", "Failed"]) == "Status"
+    assert c_of("Status", ["Running", "Running"]) == "Status"

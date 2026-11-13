@@ -200,8 +200,16 @@ _STATUS_WORDS = re.compile(
     r"\b(status|state|fail|failed|failure|failures|censor|censored|censoring|cens|event|events|suspend|suspended"
     r"|suspension|suspensions|running|outcome|survived|alive|dead)\b", re.IGNORECASE)
 _NOT_STATUS = re.compile(
-    r"\b(mode|modes|cause|causes|type|code|description|desc|reason|date|time|hours?|comment|comments|notes?)\b",
+    r"\b(mode|modes|cause|causes|type|code|description|desc|reason|date|time|hours?|comment|comments|notes?"
+    r"|detection|detected|classification|severity|criticality|quality)\b",
     re.IGNORECASE)
+# A header that plainly names a failed / still-running flag. Any other name
+# ("Equipment state", "Operating condition") is a status column only when its
+# values say both failed and still running: a column that reads every row one
+# way ("Operating" on every failure) is a state, not a flag.
+_PLAIN_STATUS = re.compile(
+    r"\b(status|fail|failed|failure|failures|censor|censored|censoring|cens|event|events|suspend|suspended"
+    r"|suspension|suspensions|running|outcome|survived|alive|dead)\b", re.IGNORECASE)
 _ID_WORDS = re.compile(r"\b(id|ids|no|number|serial|sn|s n|tag|asset|unit|item|equipment|code|row|index)\b",
                        re.IGNORECASE)
 _CENSOR_WORDS = re.compile(r"\b(censor|censored|censoring|cens)\b", re.IGNORECASE)
@@ -340,10 +348,12 @@ def _looks_like_status(f: dict) -> bool:
     if not values:
         return False
     keys = list(values)
+    meanings = [_status_meaning(v, f["name"]) for v in keys]
     if _numeric(f.get("dtype")):
-        return all(str(v) in ("0", "1", "-1", "2") for v in keys)
-    known = sum(1 for v in keys if _status_meaning(v, f["name"]) is not None)
-    return known * 2 >= len(keys)
+        ok = all(str(v) in ("0", "1", "-1", "2") for v in keys)
+    else:
+        ok = sum(1 for m in meanings if m is not None) * 2 >= len(keys)
+    return ok and (len({m for m in meanings if m is not None}) >= 2 or bool(_PLAIN_STATUS.search(_words(f["name"]))))
 
 
 def _life_columns(cols: list[dict]) -> dict:
