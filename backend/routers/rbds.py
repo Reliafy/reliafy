@@ -786,7 +786,7 @@ def export_rbd_json(
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     try:
         filename, text = rbds_service.export_json(
-            session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id], evaluate_at=t
+            session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
         )
     except rbd_json.ExportError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})

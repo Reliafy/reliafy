@@ -142,3 +142,15 @@ def test_a_report_can_be_read_in_the_app(client):
     assert body["sections"][0]["note"] == "The main finding."
     client.act_as("user-b")
     assert client.get(f"/api/reports/{rep['id']}/view").status_code == 404
+
+
+def test_rbd_downloads_both_work_with_and_without_a_time(client):
+    """Download as Python takes the Calculator's time; the JSON download takes none."""
+    client.act_as(A)
+    saved = client.post("/api/rbds", json={"name": "Treatment train", "graph": _diagram()})
+    assert saved.status_code == 200, saved.text
+    rid = saved.json()["id"]
+    py = client.get(f"/api/rbds/{rid}/export.py?t=500")
+    assert py.status_code == 200, py.text
+    assert "EVALUATE_AT = 500" in py.text
+    assert client.get(f"/api/rbds/{rid}/export.json").status_code == 200
