@@ -12,22 +12,22 @@
 .ms-rec { display: flex; flex-direction: column; gap: 1px; width: 100%; min-width: 0; }
 input.ms-rec-input {
   width: 100%; min-width: 0; padding: 2px 6px; font-size: var(--fs-13); font-variant-numeric: tabular-nums;
-  border: 1px solid transparent; background: transparent; border-radius: var(--r-sm);
+  border: 1px solid transparent; background: transparent; border-radius: var(--radius-md);
 }
-.tt-meas:hover input.ms-rec-input, input.ms-rec-input:focus { border-color: var(--line); background: var(--surf); }
-input.ms-rec-input::placeholder { color: var(--muted); }
+.tt-meas:hover input.ms-rec-input, input.ms-rec-input:focus { border-color: var(--border); background: var(--bg-surface); }
+input.ms-rec-input::placeholder { color: var(--text-secondary); }
 .ms-rec-said { font-size: var(--fs-12); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ms-rec-said.ok { color: var(--success, #15803d); }
-.ms-rec-said.bad { color: var(--danger); }
+.ms-rec-said.bad { color: var(--danger-text); }
 .ms-rec-none { padding-left: 6px; }
 /* No hover on a touch screen: the box shows its outline. */
 @media (hover: none) {
-  input.ms-rec-input { border-color: var(--line); background: var(--surf); }
+  input.ms-rec-input { border-color: var(--border); background: var(--bg-surface); }
 }
 
 .ms-trend { display: block; }
 .ms-no-trend { display: inline-block; width: 120px; }
-.tp-ic-meas { color: var(--muted); }
+.tp-ic-meas { color: var(--text-secondary); }
 
 /* The details beside the table carry their own title: the view's is hidden. */
 .mt-pbody .mv-name { display: none; }

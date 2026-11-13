@@ -16,12 +16,12 @@
   max-width: min(640px, calc(100vw - 32px));
   padding: 8px 8px 8px 14px;
   border-radius: 8px;
-  background: var(--surf);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-overlay);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
   font-size: 13.5px;
 }
-.undo-toast.error { border-color: var(--danger); color: var(--danger); }
+.undo-toast.error { border-color: var(--danger); color: var(--danger-text); }
 .undo-toast > span { flex: 1 1 auto; min-width: 0; }
 .undo-toast button { flex: none; }
 .undo-toast-x { background: none; border: 0; color: inherit; padding: 4px 8px; min-height: 32px; cursor: pointer; }

@@ -5,10 +5,10 @@
 }
 
 .wc-card {
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  box-shadow: var(--shadow-card);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -17,7 +17,7 @@
   padding: 12px 16px;
   font-size: var(--fs-14);
   line-height: 1.5;
-  color: var(--ink);
+  color: var(--text);
 }
 
 .wc-sentence b {
@@ -33,7 +33,7 @@
 
 .wc-sentence + .wc-list,
 .wc-list li + li {
-  border-top: 1px solid var(--line2);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .wc-row {
@@ -41,19 +41,19 @@
   align-items: baseline;
   gap: 16px;
   padding: 12px 16px;
-  color: var(--ink);
+  color: var(--text);
   text-decoration: none;
   font-size: var(--fs-14);
 }
 
 .wc-row:hover,
 .wc-row:focus-visible {
-  background: var(--acc-t);
+  background: var(--accent-subtle);
 }
 
 .wc-kind {
   flex: 0 0 168px;
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: var(--fs-13);
 }
 
@@ -77,14 +77,14 @@
 }
 
 .wc-detail {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: var(--fs-13);
   font-variant-numeric: tabular-nums;
 }
 
 .wc-when {
   flex: none;
-  color: var(--subtle);
+  color: var(--text-tertiary);
   font-size: var(--fs-13);
 }
 
@@ -106,7 +106,7 @@
   margin: 0;
   padding-left: 18px;
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -115,7 +115,7 @@
 }
 
 .wc-not-compared b {
-  color: var(--ink);
+  color: var(--text);
   font-weight: 500;
 }
 

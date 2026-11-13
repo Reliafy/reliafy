@@ -7,28 +7,28 @@
 .fit-pane .fit2 { flex: 1 1 auto; min-height: 0; }
 .fit2 { display: grid; grid-template-columns: minmax(340px, 440px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; width: 100%; min-height: 0; }
 .fit2-in, .fit2-out { overflow: auto; padding: 12px 18px; min-height: 0; }
-.fit2-in { grid-row: 1 / span 2; border-right: 1px solid var(--line2); }
+.fit2-in { grid-row: 1 / span 2; border-right: 1px solid var(--border-subtle); }
 .fit2-out { display: flex; flex-direction: column; gap: 10px; }
 .fit2-grid.rw-sg { grid-template-columns: 96px minmax(0, 1fr); }
 .fit2-grid .rw-sc { gap: 6px; }
-.fit2-sum { margin: 0; font-size: var(--fs-12); color: var(--muted); }
-.fit2-hist { max-height: 220px; overflow: auto; border: 1px solid var(--line2); border-radius: var(--r-sm); }
+.fit2-sum { margin: 0; font-size: var(--fs-12); color: var(--text-secondary); }
+.fit2-hist { max-height: 220px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
 .fit2-hist .ml-params { font-size: var(--fs-12); }
 .fit2-hist .ml-params th, .fit2-hist .ml-params td { padding: 3px 6px; white-space: nowrap; }
-.fit2-hist tr.off td { color: var(--muted); text-decoration: line-through; }
+.fit2-hist tr.off td { color: var(--text-secondary); text-decoration: line-through; }
 .fit2-hist tr.off td:last-child { text-decoration: none; }
 .fit2-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .fit2-for { position: relative; }
 .fit2-for-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fit2-for-list { margin-top: 6px; padding: 8px; border: 1px solid var(--line2); border-radius: var(--r-sm); background: var(--surf);
+.fit2-for-list { margin-top: 6px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface);
   display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow: auto; }
-.fit2-sub { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.fit2-sub { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
 .fit2-age { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--fs-13); }
 .fit2-age input { width: 8rem; }
 .fit2-age-r { font-weight: 600; }
 .fit2-how { font-size: var(--fs-12); margin: 0; }
-.fit2-foot { grid-column: 2; background: var(--surf); display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;
-  padding: 10px 18px 14px; border-top: 1px solid var(--line2); }
+.fit2-foot { grid-column: 2; background: var(--bg-surface); display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;
+  padding: 10px 18px 14px; border-top: 1px solid var(--border-subtle); }
 .fit2-failed { flex: 1 1 100%; margin: 0; }
 /* Stacked: a column that scrolls as one. Neither part may shrink (as a grid's rows they were
    squeezed into the pane's height and their contents drawn over each other), and the bar sticks
@@ -36,20 +36,20 @@
 @container tablepane (max-width: 760px) {
   .fit-pane .fit2 { display: flex; flex-direction: column; overflow: auto; }
   .fit2-in, .fit2-out { flex: none; overflow: visible; }
-  .fit2-in { border-right: 0; border-bottom: 1px solid var(--line2); }
+  .fit2-in { border-right: 0; border-bottom: 1px solid var(--border-subtle); }
   .fit2-foot { flex: none; position: sticky; bottom: 0; z-index: 2; margin-top: auto; }
   .fit2-grid.rw-sg { grid-template-columns: minmax(0, 1fr); }
 }
 /* A phone: the pane itself scrolls (TablePane.css), the heading kept at its top and the bar at its foot. */
 .fit-pane.table-pane-phone .fit2 { display: flex; flex-direction: column; overflow: visible; flex: 1 0 auto; min-height: auto; }
 .table-pane-phone :is(.fit2-in, .fit2-out) { flex: none; overflow: visible; padding: 12px 16px; }
-.table-pane-phone .fit2-in { border-right: 0; border-bottom: 1px solid var(--line2); }
+.table-pane-phone .fit2-in { border-right: 0; border-bottom: 1px solid var(--border-subtle); }
 .table-pane-phone .fit2-grid.rw-sg { grid-template-columns: minmax(0, 1fr); }
 .table-pane-phone .fit2-foot { flex: none; position: sticky; bottom: 0; z-index: 2; margin-top: auto;
   padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
 .fit2-around { display: flex; flex-direction: column; gap: 4px; }
 .fit2-around-head, .fit2-around-row { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
-.fit2-around-head { font-size: var(--fs-12); color: var(--muted); }
+.fit2-around-head { font-size: var(--fs-12); color: var(--text-secondary); }
 .fit2-around-name { font-size: var(--fs-13); }
 .fit2-around .field-select, .fit2-around select { max-width: 10rem; }
 /* Nothing in the result column shrinks (the chart chips to nothing, the numbers table to its header
@@ -59,11 +59,11 @@
 /* New model's Model step (FitFlow.jsx): the Method choice, and the prior asked as the Explorer asks it. */
 .fit-method { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
 .fit-method-l { font-weight: 600; font-size: var(--fs-13); }
-.fit-method-note { color: var(--muted); font-size: var(--fs-13); flex: 1 1 260px; min-width: 0; }
+.fit-method-note { color: var(--text-secondary); font-size: var(--fs-13); flex: 1 1 260px; min-width: 0; }
 .fit-prior.fit2-grid.rw-sg { max-width: 760px; }
 .fit-prior-wanting { grid-column: 1 / -1; margin: 8px 0 0; }
 .fit-prior-out { overflow: visible; padding: 0; }
-.fit2-unit-fixed { align-self: center; color: var(--muted); font-size: var(--fs-13); }
+.fit2-unit-fixed { align-self: center; color: var(--text-secondary); font-size: var(--fs-13); }
 @media (max-width: 640px) {
   .fit-prior.fit2-grid.rw-sg { grid-template-columns: minmax(0, 1fr); }
 }

@@ -1,6 +1,6 @@
 /* The report composer (#30): a section of the Reports page, then the share links. */
 
-.report-composer { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 760px; min-width: 0; }
+.report-composer { display: flex; flex-direction: column; gap: var(--space-4); max-width: 760px; min-width: 0; }
 .report-composer .rc-heading { margin: 0; font-size: var(--fs-16); }
 .report-composer .rc-lede { margin: 0; font-size: var(--fs-13); }
 .report-composer textarea { width: 100%; box-sizing: border-box; resize: vertical; }
@@ -9,12 +9,12 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--line);
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
 }
 
-.rc-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.rc-row { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .rc-title { flex: 3 1 240px; min-width: 0; }
 .rc-author { flex: 2 1 200px; min-width: 0; }
 
@@ -22,80 +22,80 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  gap: var(--space-2);
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 .rc-draft {
-  margin-top: calc(-1 * var(--sp-2));
+  margin-top: calc(-1 * var(--space-2));
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 .rc-draft-warn {
-  color: var(--warn);
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--r-sm);
-  padding: var(--sp-2) var(--sp-3);
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
 }
 .rc-draft .link { font-size: inherit; }
 
 .rc-sections ol {
   list-style: none;
-  margin: 0 0 var(--sp-2);
+  margin: 0 0 var(--space-2);
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: var(--space-2);
 }
-.rc-empty { margin: 0 0 var(--sp-2); font-size: var(--fs-13); }
+.rc-empty { margin: 0 0 var(--space-2); font-size: var(--fs-13); }
 .rc-section {
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: var(--sp-2) var(--sp-3) var(--sp-3);
-  background: var(--surf);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  background: var(--bg-surface);
 }
 .rc-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 .rc-section-name {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px var(--sp-2);
+  gap: 2px var(--space-2);
   min-width: 0;
   font-size: var(--fs-14);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
-.rc-section-kind { font-size: var(--fs-12); font-weight: 400; color: var(--muted); }
+.rc-section-kind { font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); }
 .rc-section-acts { display: flex; flex: none; gap: 2px; }
 .rc-section-acts button { padding: 6px; min-width: 30px; justify-content: center; }
 .rc-section textarea {
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 8px 12px;
   font: inherit;
   font-size: var(--fs-13);
-  color: var(--ink);
-  background: var(--bg);
+  color: var(--text);
+  background: var(--bg-canvas);
 }
-.rc-section textarea:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+.rc-section textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 
 .rc-error { margin: 0; }
 .rc-error a { color: inherit; font-weight: 600; }
 .rc-publish .pl-section { margin-top: 0; }
-.rc-hint { margin: 0 0 var(--sp-2); font-size: var(--fs-13); }
+.rc-hint { margin: 0 0 var(--space-2); font-size: var(--fs-13); }
 
-.rc-foot-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
-.rc-confirm { font-size: var(--fs-13); color: var(--muted); }
+.rc-foot-actions { display: flex; gap: var(--space-2); margin-left: auto; }
+.rc-confirm { font-size: var(--fs-13); color: var(--text-secondary); }
 
 @media (max-width: 700px) {
   .rc-section-acts button { min-width: 40px; min-height: 40px; }
@@ -103,9 +103,9 @@
 
 /* The item picker: search and a kind filter over one short list; each row
    says its kind and when it was saved, with Add (and Rename for your own). */
-.rc-add-label { display: block; margin-top: var(--sp-2); }
-.rc-picker { display: flex; flex-direction: column; gap: var(--sp-2); }
-.rc-picker-tools { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.rc-add-label { display: block; margin-top: var(--space-2); }
+.rc-picker { display: flex; flex-direction: column; gap: var(--space-2); }
+.rc-picker-tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .rc-picker-search { flex: 3 1 220px; min-width: 0; }
 .rc-picker-kind { flex: 1 1 160px; min-width: 0; }
 .rc-picker-tools input,
@@ -116,16 +116,16 @@
   padding: 0;
   max-height: 260px;
   overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 .rc-pick {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  gap: var(--space-2);
   padding: 8px 12px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
 }
 .rc-pick:first-child { border-top: 0; }
 .rc-pick-text { display: flex; flex-direction: column; min-width: 0; }
@@ -133,12 +133,12 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px var(--sp-2);
+  gap: 2px var(--space-2);
   font-size: var(--fs-14);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
-.rc-pick-meta { font-size: var(--fs-12); color: var(--muted); }
+.rc-pick-meta { font-size: var(--fs-12); color: var(--text-secondary); }
 .rc-pick-acts { display: flex; flex: none; gap: 4px; }
 .rc-pick-acts button { min-height: 32px; }
 
@@ -147,11 +147,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-2) var(--sp-3);
-  margin-bottom: var(--sp-4);
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
 }
 .rc-bar .rc-bar-title { margin: 0; font-size: var(--fs-18); min-width: 0; overflow-wrap: anywhere; flex: 1 1 200px; }
-.rc-bar-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.rc-bar-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .rc-view { min-width: 0; }
 .rc-view .report { max-width: 900px; }
 

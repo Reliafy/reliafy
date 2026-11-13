@@ -10,41 +10,41 @@
 
 .report-head {
   display: block;
-  padding-bottom: var(--sp-4);
-  border-bottom: 1px solid var(--line);
-  margin-bottom: var(--sp-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-6);
 }
 .report-head h1 {
-  margin: 0 0 var(--sp-2);
-  font-size: var(--fs-28);
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-24);
   font-weight: 600;
   line-height: 1.2;
 }
 .report-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-1) var(--sp-4);
-  color: var(--muted);
+  gap: var(--space-1) var(--space-4);
+  color: var(--text-secondary);
   font-size: var(--fs-14);
 }
 .report-text p {
-  margin: 0 0 var(--sp-3);
+  margin: 0 0 var(--space-3);
   max-width: 75ch;
   font-size: var(--fs-14);
   line-height: 1.6;
   white-space: pre-line;
 }
 .report-text p:last-child { margin-bottom: 0; }
-.report-intro { margin-bottom: var(--sp-6); }
-.report-section + .report-section { margin-top: var(--sp-7); }
-.report-section-head { margin-bottom: var(--sp-4); }
+.report-intro { margin-bottom: var(--space-8); }
+.report-section + .report-section { margin-top: var(--space-12); }
+.report-section-head { margin-bottom: var(--space-4); }
 .report-section-kind {
   font-size: var(--fs-13);
-  color: var(--muted);
-  margin-bottom: var(--sp-1);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
 }
 .report-section-head h2 {
-  margin: 0 0 var(--sp-2);
+  margin: 0 0 var(--space-2);
   font-size: var(--fs-20);
   font-weight: 600;
 }
@@ -59,7 +59,7 @@ html.print-layout .public-page {
   min-height: 0;
   background: #fff;
 }
-html.print-layout .public-artifact { min-height: 0; padding: var(--sp-4) 0 0; }
+html.print-layout .public-artifact { min-height: 0; padding: var(--space-4) 0 0; }
 html.print-layout .public-app { max-width: none; margin: 0; padding: 0; }
 html.print-layout .public-page .card { box-shadow: none; }
 
@@ -71,7 +71,7 @@ html.print-layout .public-page .card { box-shadow: none; }
   font-size: var(--fs-16, 16px);
   line-height: 1.5;
   font-weight: 500;
-  color: var(--ink);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 .report-section .share-plain { margin: 0 0 10px; }
@@ -91,7 +91,7 @@ html.print-layout .public-page .card { box-shadow: none; }
   /* The brand bar stays as the page's letterhead; nothing to click on paper. */
   .public-page .share-bar {
     position: static;
-    padding: 0 0 var(--sp-3);
+    padding: 0 0 var(--space-3);
     background: none;
   }
   .public-page .share-bar .cta,

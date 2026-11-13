@@ -30,12 +30,12 @@
   height: 30px;
   padding: 0 7px;
   justify-content: center;
-  border: 1px solid var(--line);
-  background: var(--surf);
-  color: var(--muted);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
   box-shadow: none;
 }
-.rw button.tp-icon-btn:hover:not(:disabled) { background: var(--surf-2); color: var(--ink); }
+.rw button.tp-icon-btn:hover:not(:disabled) { background: var(--bg-subtle); color: var(--text); }
 
 .rw-chips {
   display: flex;
@@ -46,17 +46,17 @@
   flex: none;
   min-height: 26px;
   padding: 1px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--surf);
-  color: var(--ink);
+  background: var(--bg-surface);
+  color: var(--text);
   box-shadow: none;
   font-size: var(--fs-12);
   font-weight: 500;
 }
-.rw button.rw-chip:hover:not(:disabled) { border-color: var(--acc); background: var(--acc-hover); }
-.rw button.rw-chip.on { background: var(--acc-t); border-color: var(--acc-line); color: var(--acc-d); font-weight: 600; }
-.rw-chip-n { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 2px; }
+.rw button.rw-chip:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-wash); }
+.rw button.rw-chip.on { background: var(--accent-subtle); border-color: var(--accent-border); color: var(--accent-text); font-weight: 600; }
+.rw-chip-n { color: var(--text-secondary); font-variant-numeric: tabular-nums; margin-left: 2px; }
 .rw-chip.on .rw-chip-n { color: inherit; }
 
 .rw-sub {
@@ -69,14 +69,14 @@
 .rw-legend, .rw-status {
   margin: 0;
   font-size: var(--fs-12);
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 .rw-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .rw-legend > span { display: inline-flex; align-items: center; gap: 4px; }
 .rw-legend .rw-ic { margin: 0; }
 .rw-status { font-variant-numeric: tabular-nums; }
-.rw-msg.ok { color: var(--ok); }
-.rw-msg.error { color: var(--danger); font-weight: 600; }
+.rw-msg.ok { color: var(--success-text); }
+.rw-msg.error { color: var(--danger-text); font-weight: 600; }
 
 /* The column chooser. */
 .rw-cols { position: relative; }
@@ -89,10 +89,10 @@
   max-height: 60vh;
   overflow: auto;
   padding: 8px;
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  box-shadow: var(--shadow-overlay);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -106,10 +106,10 @@
   font-size: var(--fs-13);
   cursor: pointer;
 }
-.rw-pop-item:hover { background: var(--acc-hover); }
+.rw-pop-item:hover { background: var(--accent-wash); }
 .rw-pop-item input { margin: 0; }
 .rw button.rw-pop-reset { align-self: flex-start; margin: 6px 6px 2px; font-size: var(--fs-13); }
-.rw-sig { color: var(--faint); font-weight: 500; }
+.rw-sig { color: var(--text-disabled); font-weight: 500; }
 
 /* The grid and the panel beside it. */
 .rw-main {
@@ -125,9 +125,9 @@
   min-height: 0;
   position: relative;
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surf);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
   overscroll-behavior: contain;
 }
 
@@ -137,8 +137,8 @@
   z-index: 6;
   display: flex;
   min-width: 100%;
-  background: var(--surf-2);
-  border-bottom: 1px solid var(--line);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
 }
 .rw-h {
   position: relative;
@@ -148,11 +148,11 @@
   padding: 0 6px 0 8px;
   font-size: var(--fs-12);
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text-secondary);
   min-width: 0;
 }
 .rw-h.num { justify-content: flex-end; }
-.rw-h.rw-name { position: sticky; left: 0; z-index: 2; background: var(--surf-2); padding-left: 12px; border-right: 1px solid var(--line); }
+.rw-h.rw-name { position: sticky; left: 0; z-index: 2; background: var(--bg-subtle); padding-left: 12px; border-right: 1px solid var(--border); }
 .rw button.rw-hs {
   border: 0;
   background: none;
@@ -166,8 +166,8 @@
   text-overflow: ellipsis;
   max-width: 100%;
 }
-.rw button.rw-hs:hover { color: var(--ink); background: none; }
-.rw-h[aria-sort] { color: var(--ink); }
+.rw button.rw-hs:hover { color: var(--text); background: none; }
+.rw-h[aria-sort] { color: var(--text); }
 .rw-rz {
   position: absolute;
   right: -4px;
@@ -176,10 +176,10 @@
   width: 8px;
   cursor: col-resize;
   z-index: 3;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--border);
   outline: none;
 }
-.rw-rz:hover, .rw-rz:focus-visible { border-right: 2px solid var(--acc); }
+.rw-rz:hover, .rw-rz:focus-visible { border-right: 2px solid var(--accent); }
 .rw-h.rw-name .rw-rz { right: -5px; border-right-color: transparent; }
 
 .rw-pins { position: sticky; z-index: 5; height: 0; overflow: visible; }
@@ -192,25 +192,25 @@
   min-width: 100%;
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid var(--line2);
-  background: var(--surf);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
   font-size: var(--fs-14);
   cursor: pointer;
   outline: none;
 }
-.rw-row.pin { position: relative; background: var(--surf-2); border-bottom-color: var(--line); }
+.rw-row.pin { position: relative; background: var(--bg-subtle); border-bottom-color: var(--border); }
 .rw-pins-in .rw-row:last-child { box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14); }
 /* The name cell is sticky and pinned rows cover the rows under them: both
    need an opaque fill, so the hover tint goes over the row's solid colour. */
-.rw-row:hover, .rw-row:hover .rw-name { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
-.rw-row.rw-fn, .rw-row.rw-fn .rw-name { background: var(--surf-2); }
+.rw-row:hover, .rw-row:hover .rw-name { background: linear-gradient(var(--accent-wash), var(--accent-wash)), var(--bg-surface); }
+.rw-row.rw-fn, .rw-row.rw-fn .rw-name { background: var(--bg-subtle); }
 .rw-row.rw-fn .rw-nm { font-weight: 600; }
 .rw-row.rw-fail .rw-nm { font-weight: 500; }
-.rw-row.focus, .rw-row.focus .rw-name { background: linear-gradient(var(--acc-t), var(--acc-t)), var(--surf); }
-.rw-row.focus { box-shadow: inset 3px 0 0 var(--acc); }
-.rw-row:focus-visible { box-shadow: inset 0 0 0 2px var(--acc); z-index: 1; }
-.rw-row.dim .rw-nm { color: var(--muted); }
-.rw-row.pin .rw-name { background: var(--surf-2); }
+.rw-row.focus, .rw-row.focus .rw-name { background: linear-gradient(var(--accent-subtle), var(--accent-subtle)), var(--bg-surface); }
+.rw-row.focus { box-shadow: inset 3px 0 0 var(--accent); }
+.rw-row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); z-index: 1; }
+.rw-row.dim .rw-nm { color: var(--text-secondary); }
+.rw-row.pin .rw-name { background: var(--bg-subtle); }
 
 .rw-c {
   flex: none;
@@ -223,27 +223,27 @@
   white-space: nowrap;
 }
 .rw-c.num { justify-content: flex-end; font-variant-numeric: tabular-nums; }
-.rw-c.can:hover { box-shadow: inset 0 0 0 1px var(--line); cursor: text; }
+.rw-c.can:hover { box-shadow: inset 0 0 0 1px var(--border); cursor: text; }
 .rw-fill { flex: 1 0 0; }
 .rw-name {
   position: sticky;
   left: 0;
   z-index: 1;
-  background: var(--surf);
+  background: var(--bg-surface);
   padding-left: 8px;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--border);
   gap: 2px;
 }
 .rw-indent { flex: none; }
 .rw-chev { cursor: pointer; }
-.rw-ic { flex: none; color: var(--muted); margin: 0 4px 0 1px; }
-.rw-fn .rw-ic { color: var(--acc-d); }
-.rw-fail .rw-ic { color: var(--warn); }
+.rw-ic { flex: none; color: var(--text-secondary); margin: 0 4px 0 1px; }
+.rw-fn .rw-ic { color: var(--accent-text); }
+.rw-fail .rw-ic { color: var(--warning-text); }
 .rw-ic-task { margin: 0 2px 0 0; }
 /* The performance standard's glyph is teal wherever it is drawn (tree rows,
    the details header, a function's list); a missing standard row keeps its
    muted colour (.tt-nostd, which is more specific). */
-.rw-ic.rw-ic-std, .rw-klist li > .rw-ic.rw-ic-std, .tp-ic.rw-ic-std { color: var(--std); }
+.rw-ic.rw-ic-std, .rw-klist li > .rw-ic.rw-ic-std, .tp-ic.rw-ic-std { color: var(--icon-standard); }
 .rw-nm, .rw-txt {
   min-width: 0;
   overflow: hidden;
@@ -253,17 +253,17 @@
 .rw-nm { flex: 0 1 auto; }
 .rw-task { display: inline-flex; align-items: center; max-width: 100%; }
 .rw-task-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rw-task .rw-more { flex: none; margin-left: 4px; white-space: nowrap; color: var(--muted); }
-.rw-blank { color: var(--muted); font-style: italic; }
-.rw-sum { color: var(--muted); font-size: var(--fs-12); overflow: hidden; text-overflow: ellipsis; }
+.rw-task .rw-more { flex: none; margin-left: 4px; white-space: nowrap; color: var(--text-secondary); }
+.rw-blank { color: var(--text-secondary); font-style: italic; }
+.rw-sum { color: var(--text-secondary); font-size: var(--fs-12); overflow: hidden; text-overflow: ellipsis; }
 .rw-todo {
   display: inline-flex;
   align-items: center;
   padding: 0 7px;
-  border: 1px dashed var(--warn-line);
+  border: 1px dashed var(--warning-border);
   border-radius: 999px;
-  color: var(--warn);
-  background: var(--warn-bg);
+  color: var(--warning-text);
+  background: var(--warning-bg);
   font-size: var(--fs-12);
   font-weight: 500;
   line-height: 18px;
@@ -271,15 +271,15 @@
 }
 .rw button.rw-todo-btn { min-height: 0; box-shadow: none; cursor: pointer; }
 .rw button.rw-todo-btn:hover { border-style: solid; }
-.rw-done { color: var(--ok); }
+.rw-done { color: var(--success-text); }
 .rw-checks { display: inline-flex; gap: 6px; font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
 .rw-ck { font-weight: 600; white-space: nowrap; }
-.rw-ck.contradicted { color: var(--danger); }
-.rw-ck.unsure { color: var(--warn); }
-.rw-ck.stale { color: var(--muted); }
-.rw-ck.supported { color: var(--ok); }
+.rw-ck.contradicted { color: var(--danger-text); }
+.rw-ck.unsure { color: var(--warning-text); }
+.rw-ck.stale { color: var(--text-secondary); }
+.rw-ck.supported { color: var(--success-text); }
 /* A decision with no evidence linked: quiet, not a warning. */
-.rw-quiet { color: var(--muted); }
+.rw-quiet { color: var(--text-secondary); }
 .rw-c .chip { flex: none; }
 
 /* A cell being edited. */
@@ -287,19 +287,19 @@
 .rw .rw-edit {
   flex: 1;
   font-family: inherit;
-  color: var(--ink);
-  background: var(--surf);
+  color: var(--text);
+  background: var(--bg-surface);
   min-width: 0;
   width: 100%;
   height: calc(100% - 6px);
   min-height: 22px;
   padding: 0 6px;
   font-size: var(--fs-13);
-  border: 1px solid var(--acc);
-  border-radius: var(--r-sm);
-  box-shadow: var(--focus);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--focus-ring);
 }
-.rw-unit { color: var(--muted); font-size: var(--fs-12); flex: none; }
+.rw-unit { color: var(--text-secondary); font-size: var(--fs-12); flex: none; }
 /* A function's text being typed in its cell: the counter at its end. */
 .rw-count { font-size: var(--fs-12); margin-left: 0; }
 .rw-flabel-count { display: flex; align-items: baseline; gap: 8px; }
@@ -314,7 +314,7 @@
   top: 64px;
   padding: 24px;
   text-align: center;
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 .rw-empty p { margin: 0 0 10px; }
 
@@ -329,35 +329,35 @@
   width: 340px;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surf);
-  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  padding: var(--space-3) var(--space-4) var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--space-3);
   font-size: var(--fs-14);
 }
 .rw-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.rw-panel-kind { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-13); color: var(--muted); font-weight: 600; }
+.rw-panel-kind { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-13); color: var(--text-secondary); font-weight: 600; }
 /* Expand / Back to table and Close: icon buttons, the word in the label and tooltip. */
-.rw button.rw-x { width: 30px; height: 30px; min-height: 0; padding: 0; justify-content: center; color: var(--muted); }
-.rw button.rw-x:hover:not(:disabled) { color: var(--ink); }
-.rw button.rw-x:focus-visible { outline: none; box-shadow: var(--focus); }
+.rw button.rw-x { width: 30px; height: 30px; min-height: 0; padding: 0; justify-content: center; color: var(--text-secondary); }
+.rw button.rw-x:hover:not(:disabled) { color: var(--text); }
+.rw button.rw-x:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .rw button.rw-x svg { width: 16px; height: 16px; }
 /* The way up: one muted line, the nearest kept and those above folded into
    "…" when they don't fit (Crumbs); each cut short with an ellipsis if need be. */
-.rw-crumbs { flex: none; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-size: var(--fs-13); color: var(--muted); }
+.rw-crumbs { flex: none; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-size: var(--fs-13); color: var(--text-secondary); }
 .rw-crumbs.all { flex-wrap: wrap; }
 .rw-crumbs button.link {
   display: block; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
-  color: var(--muted); font-weight: 400; text-decoration: none;
+  color: var(--text-secondary); font-weight: 400; text-decoration: none;
 }
 .rw-crumbs button.link:last-child { flex: 0 1 auto; min-width: min(100%, 8em); }
 .rw-crumbs.all button.link { flex: 0 1 auto; min-width: 0; }
-.rw-crumbs button.link:hover:not(:disabled) { color: var(--acc); text-decoration: underline; }
-.rw-crumbs button.link:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
-.rw-crumbs button + button::before { content: "›"; color: var(--subtle); margin-right: 6px; }
+.rw-crumbs button.link:hover:not(:disabled) { color: var(--accent-text); text-decoration: underline; }
+.rw-crumbs button.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rw-crumbs button + button::before { content: "›"; color: var(--text-tertiary); margin-right: 6px; }
 /* A long description: two lines at most (the whole of it is in the tooltip,
    and in the Description field below). */
 .rw-panel-title {
@@ -365,13 +365,13 @@
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
   flex: none; /* clipped, it would otherwise shrink to nothing in the panel's column */
 }
-.rw-inside { margin: 0; font-size: var(--fs-13); color: var(--muted); }
-.rw-fields { display: flex; flex-direction: column; gap: var(--sp-3); }
-.rw-field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.rw-inside { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
+.rw-fields { display: flex; flex-direction: column; gap: var(--space-3); }
+.rw-field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 /* One label style (as the model and RBD dialogs): 13 px, 500, muted;
    "optional" quieter beside it, not in brackets. */
-.rw-flabel { font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
-.rw-opt { font-weight: 400; color: var(--subtle); margin-left: 4px; }
+.rw-flabel { font-size: var(--fs-13); font-weight: 500; color: var(--text-secondary); }
+.rw-opt { font-weight: 400; color: var(--text-tertiary); margin-left: 4px; }
 .rw-fin { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .rw-fin input, .rw-fin textarea { flex: 1; min-width: 0; width: 100%; }
 /* One control style for every input, textarea and select in the panel (and
@@ -383,45 +383,45 @@
   min-width: 0;
   max-width: 100%;
   min-height: 34px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 6px 10px;
   font-family: inherit;
   font-size: var(--fs-14);
   line-height: 1.4;
-  color: var(--ink);
-  background: var(--surf);
+  color: var(--text);
+  background: var(--bg-surface);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .rw-panel select { box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 34px; font-size: var(--fs-14); padding: 6px 30px 6px 10px; line-height: 1.4; }
-.rw-panel :is(input, textarea)::placeholder { color: var(--subtle); }
-:where(.rw-panel) :where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea):hover:not(:focus, [readonly]) { border-color: var(--faint); }
-.rw-panel :is(input, textarea, select):focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+.rw-panel :is(input, textarea)::placeholder { color: var(--text-tertiary); }
+:where(.rw-panel) :where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea):hover:not(:focus, [readonly]) { border-color: var(--text-disabled); }
+.rw-panel :is(input, textarea, select):focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .rw-panel :is(input, textarea, select)[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
 /* Textareas start at one line and grow with their text (useAutoGrow where
    the browser can't size them itself); no resize handle. */
 :where(.rw-panel) :where(textarea) { resize: none; field-sizing: content; overflow: hidden; display: block; width: 100%; }
 .rw-field select { max-width: 100%; }
 .rw-fval { font-size: var(--fs-14); overflow-wrap: anywhere; }
-.rw-fhelp { font-size: var(--fs-12); color: var(--muted); }
+.rw-fhelp { font-size: var(--fs-12); color: var(--text-secondary); }
 /* One error style: 12 px, 500, red, a round "!" before it (so it isn't told
    by colour alone). */
 .rw-ferr, .rw-panel .tm-err {
   display: flex; align-items: flex-start; gap: 6px;
-  font-size: var(--fs-12); color: var(--danger); font-weight: 500; line-height: 1.4; margin: 0;
+  font-size: var(--fs-12); color: var(--danger-text); font-weight: 500; line-height: 1.4; margin: 0;
 }
 .rw-ferr::before, .rw-panel .tm-err::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: 50%; background: var(--danger); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: 50%; background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
 }
-.rw-decision { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rw-decision { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
 .rw-decision h3 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
 .rw-dline { margin: 0; font-size: var(--fs-14); }
 .rw-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-13); }
-.rw-evidence p { margin: 0; flex-basis: 100%; color: var(--muted); }
-p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
+.rw-evidence p { margin: 0; flex-basis: 100%; color: var(--text-secondary); }
+p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-secondary); }
 .rw-decision > button { align-self: flex-start; }
-.rw-panel-acts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rw-panel-acts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
 
 /* The panel's head: its kind, then Expand (or Back to table) and Close. */
 .rw-panel-btns { display: flex; gap: 6px; flex: none; }
@@ -430,8 +430,8 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
    its own "+ Add"), then this level's own fields, then the quieter things at
    the foot, smaller and muted. Each block opens on a hairline. */
 .rw-pbody { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.rw-own, .rw-foot { border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
-.rw-foot { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rw-own, .rw-foot { border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
+.rw-foot { display: flex; flex-direction: column; gap: var(--space-3); }
 .rw-foot-note { margin: 0; }
 .rw-foot .rw-checkable { margin: 0; padding-top: 0; border-top: 0; }
 .rw-foot > .rw-limit { border-top: 0; padding-top: 0; }
@@ -444,17 +444,17 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 760px; box-sizing: border-box; }
 .rw-panel.is-expanded > .rw-pbody { gap: 16px; }
 .rw-panel.is-expanded .rw-panel-title { font-size: var(--fs-20); -webkit-line-clamp: 3; line-clamp: 3; }
-.rw-fstatus { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.rw-fstatus { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
 /* A performance standard's structured limit, when it applies and its source. */
 .rw-limit { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .rw-limit legend { padding: 0; margin-bottom: 2px; }
 /* "Limit" heads its own group of fields: a small section heading, not a label. */
-.rw-legend-h { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
+.rw-legend-h { font-size: var(--fs-14); font-weight: 600; color: var(--text); }
 .rw-limit-row { display: flex; flex-wrap: wrap; gap: 8px 12px; }
 .rw-limit-row > .rw-field { flex: 1 1 120px; min-width: 0; }
 .rw-limit-row select { width: 100%; }
 /* What's inside the row, each a link that shows it in the panel. */
-.rw-kids { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rw-kids { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
 .rw-kids h3 { margin: 0; font-size: var(--fs-14); }
 .rw-klist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .rw-klist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
@@ -468,12 +468,12 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
    and the edit form in place. */
 .rw-dsum { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .rw-dwords { margin: 0; font-size: var(--fs-14); overflow-wrap: anywhere; }
-.rw-dsum .rw-evlabel { color: var(--muted); }
+.rw-dsum .rw-evlabel { color: var(--text-secondary); }
 .rw-members { margin: 0; padding-left: 1.1em; font-size: var(--fs-13); }
 .rim-tasks { display: flex; flex-direction: column; gap: 8px; }
-.rim-tasks h4.rim-before { margin: 0; font-size: var(--fs-13); font-weight: 600; color: var(--muted); }
+.rim-tasks h4.rim-before { margin: 0; font-size: var(--fs-13); font-weight: 600; color: var(--text-secondary); }
 .rim-tkind { font-weight: 600; }
-.rim-tev { margin: 0; padding-left: 20px; font-size: var(--fs-13); color: var(--muted); overflow-wrap: anywhere; }
+.rim-tev { margin: 0; padding-left: 20px; font-size: var(--fs-13); color: var(--text-secondary); overflow-wrap: anywhere; }
 .rim-addform { border: 0; padding: 0; }
 .rim-addform .rim-use { align-self: flex-start; font-size: var(--fs-13); }
 .rim-addform .ctl-group > input[type="number"] { width: 6.5rem; }
@@ -482,21 +482,21 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rim-tmain { display: flex; align-items: flex-start; gap: 6px; min-width: 0; font-size: var(--fs-14); }
 .rim-tmain .rw-ic { flex: none; margin-top: 3px; }
 .rim-tbody { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
-.rim-tinst { font-size: var(--fs-13); color: var(--muted); white-space: pre-wrap; }
+.rim-tinst { font-size: var(--fs-13); color: var(--text-secondary); white-space: pre-wrap; }
 /* Two lines, "Show all" for the rest. */
 .rim-tinst.clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .rim-tmore { align-self: flex-start; font-size: var(--fs-13); }
 .rim-tacts { display: flex; gap: 10px; flex: none; }
 .rim-tacts .link { font-size: var(--fs-13); min-height: 28px; }
 .rim-tadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.rim-tform { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-sm); min-width: 0; }
+.rim-tform { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); min-width: 0; }
 .rim-tform h4 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
 .rim-tform .rw-fhelp { margin: 0; }
-.rim-thint { color: var(--warn); }
-.rim-trow { display: flex; flex-wrap: wrap; gap: var(--sp-3); min-width: 0; }
+.rim-thint { color: var(--warning-text); }
+.rim-trow { display: flex; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
 /* A task's trigger (When an event happens): its fields grouped, the checkbox on one line. */
-.rim-trigger { display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; padding: 0; border: 0; min-width: 0; }
-.rim-trigger .rim-check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-14); }
+.rim-trigger { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; padding: 0; border: 0; min-width: 0; }
+.rim-trigger .rim-check { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-14); }
 .rim-trow > .rw-field { flex: 1 1 140px; }
 .rim-trow .rw-fin { display: flex; gap: 6px; }
 .rim-trow input[type="number"] { width: 6.5rem; flex: 1 1 5rem; }
@@ -516,7 +516,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   .rw-legend { display: none; }
 }
 
-.rw.phone .rw-grid { border-radius: var(--r-sm); }
+.rw.phone .rw-grid { border-radius: var(--radius-md); }
 .rw.phone .rw-row {
   right: 0;
   flex-direction: column;
@@ -532,7 +532,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   height: 20px;
   padding-right: 10px;
   font-size: var(--fs-12);
-  color: var(--muted);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -550,8 +550,8 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   width: auto;
   max-height: 78dvh;
   z-index: 90;
-  border-radius: var(--r) var(--r) 0 0;
-  box-shadow: var(--shadow-overlay);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-lg);
   padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .rw-scrim { position: fixed; inset: 0; z-index: 89; background: var(--scrim); }
@@ -562,13 +562,13 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-fpdfs p { margin: 0; }
 .rw-basis-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-13); }
 .rw-basis-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.rw-basis-attach { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2); }
+.rw-basis-attach { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-subtle); }
 .rw-basis-file { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rw-basis-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 .rw-pdfs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .rw-pdf { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: var(--fs-13); }
-.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--on-fill); background: var(--danger); border-radius: 3px; padding: 2px 4px; }
+.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-on-fill); background: var(--danger); border-radius: 3px; padding: 2px 4px; }
 .rw-pdf-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; flex: 0 1 auto; }
 .rw-pdf-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rw-pdf .ovm { margin-left: auto; }
@@ -582,12 +582,12 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-md h1, .rw-md h2, .rw-md h3, .rw-md h4, .rw-md h5, .rw-md h6 { font-size: var(--fs-13); margin: 10px 0 4px; }
 .rw-md p, .rw-md ul, .rw-md ol, .rw-md blockquote { margin: 0 0 8px; }
 .rw-md ul, .rw-md ol { padding-left: 20px; }
-.rw-md blockquote { padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
-.rw-md pre { margin: 0 0 8px; padding: 8px; overflow-x: auto; background: var(--surf-2); border-radius: var(--r-sm); max-width: 100%; }
+.rw-md blockquote { padding-left: 10px; border-left: 3px solid var(--border); color: var(--text-secondary); }
+.rw-md pre { margin: 0 0 8px; padding: 8px; overflow-x: auto; background: var(--bg-subtle); border-radius: var(--radius-md); max-width: 100%; }
 .rw-md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
 .rw-md table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 8px; }
-.rw-md th, .rw-md td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; white-space: nowrap; }
-.rw-md th { background: var(--surf-2); }
+.rw-md th, .rw-md td { border: 1px solid var(--border); padding: 3px 7px; text-align: left; white-space: nowrap; }
+.rw-md th { background: var(--bg-subtle); }
 
 /* A failure mode's tasks in the Details (its decision's own first). */
 .rw-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); }
@@ -596,7 +596,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 
 /* A function's performance standards as a list (RcmFunctionStandards.jsx), in
    the function's Details. */
-.rfs { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rfs { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
 .rfs h3 { margin: 0; font-size: var(--fs-14); }
 .rfs-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-14); }
 .rfs-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
@@ -605,7 +605,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rfs-acts .link { font-size: var(--fs-13); min-height: 28px; }
 .rfs-hint { margin: 0; }
 .rfs-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.rfs-form { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-sm); min-width: 0; }
+.rfs-form { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); min-width: 0; }
 .rfs-form h4 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
 .rfs-form .rw-fhelp { margin: 0; }
 .rfs-fold { align-self: flex-start; font-size: var(--fs-13); }
@@ -614,9 +614,9 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rfs-split { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 6px; }
 .rfs-split li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rfs-split li input { flex: 1 1 200px; min-width: 0; }
-.rfs-split li.dropped input { text-decoration: line-through; color: var(--muted); }
+.rfs-split li.dropped input { text-decoration: line-through; color: var(--text-secondary); }
 .rfs .rim-tform-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-.rfs .rim-trow { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.rfs .rim-trow { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 @media (max-width: 600px) {
   .rfs-list li { flex-wrap: wrap; }
   .rfs-acts .link { min-height: 36px; }
@@ -628,54 +628,54 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
    description, a click edits it); the status chips. */
 .rw-panel-top { display: flex; flex-direction: column; gap: 6px; flex: none; }
 .rw-panel.is-expanded > .rw-panel-top { width: 100%; max-width: 760px; box-sizing: border-box; }
-.rw-grab { align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: -4px 0 2px; flex: none; }
-.rw-in { flex: none; color: var(--muted); }
+.rw-grab { align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: -4px 0 2px; flex: none; }
+.rw-in { flex: none; color: var(--text-secondary); }
 .rw-crumbs .rw-in + button::before { content: none; }
 .rw-title-btn {
-  all: unset; box-sizing: border-box; display: block; width: 100%; cursor: text; border-radius: var(--r-sm);
+  all: unset; box-sizing: border-box; display: block; width: 100%; cursor: text; border-radius: var(--radius-md);
   margin: -2px -6px; padding: 2px 6px; width: calc(100% + 12px);
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
 }
 .rw-panel.is-expanded .rw-title-btn { -webkit-line-clamp: 3; line-clamp: 3; }
-.rw-title-btn:hover { background: var(--acc-hover); box-shadow: inset 0 0 0 1px var(--line); }
-.rw-title-btn:focus-visible { box-shadow: var(--focus); }
+.rw-title-btn:hover { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--border); }
+.rw-title-btn:focus-visible { box-shadow: var(--focus-ring); }
 .rw-panel-title:has(> .rw-title-btn) { display: block; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible; }
 .rw-title-edit .ctl.rw-title-box { font-size: var(--fs-16); font-weight: 600; line-height: 1.35; }
 .rw-title-edit .ctl.rw-title-box.big { font-size: var(--fs-20); }
 .rw-chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
 .rw-sec-note { margin: -4px 0 0; }
-.rw-limit { border-top: 1px solid var(--line2); padding-top: var(--sp-4); }
+.rw-limit { border-top: 1px solid var(--border-subtle); padding-top: var(--space-4); }
 .rw-fields > .field + .rw-limit, .rw-fields > .rw-limit:first-child { border-top: 0; padding-top: 0; }
 
 /* The decision as label/value rows, as on the model page's cards. */
-.rw-card { margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 12px; background: var(--surf); }
+.rw-card { margin: 0; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 12px; background: var(--bg-surface); }
 .rw-dcard > div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 8px; padding: 3px 0; font-size: var(--fs-13); }
-.rw-dcard dt { color: var(--muted); }
+.rw-dcard dt { color: var(--text-secondary); }
 .rw-dcard dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .rw-dcard .rw-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--fs-13); }
-.rw-dwhy { margin: 4px 0 0; font-size: var(--fs-12); color: var(--muted); }
+.rw-dwhy { margin: 4px 0 0; font-size: var(--fs-12); color: var(--text-secondary); }
 
 /* What's inside: one row each, the icon, the name (a link) and a meta line. */
 .rw-klist li { flex-wrap: nowrap; align-items: flex-start; gap: 6px; }
-.rw-klist li > .rw-ic { flex: none; margin-top: 3px; color: var(--muted); }
+.rw-klist li > .rw-ic { flex: none; margin-top: 3px; color: var(--text-secondary); }
 .rw-kbody { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rw-kgo { font-size: var(--fs-14); }
 
 /* The footer: add inside (left), delete as red text (right; it asks first). */
 .rw-panel-acts { justify-content: space-between; align-items: center; }
 .rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 760px; box-sizing: border-box; }
-.rw-panel-acts button.rw-del { margin-left: auto; color: var(--danger); }
-.rw-panel-acts button.rw-del:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); }
-.rw-panel-acts button.rw-del:focus-visible { outline: none; box-shadow: var(--focus); }
+.rw-panel-acts button.rw-del { margin-left: auto; color: var(--danger-text); }
+.rw-panel-acts button.rw-del:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger-text); }
+.rw-panel-acts button.rw-del:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 /* A task card: the name, chips for its interval and kind, its instructions
    folded to two lines, ⋯ for Edit and Remove; Edit opens the form in the
    card, with an accent border. */
-.rim-tlist { gap: var(--sp-2); }
+.rim-tlist { gap: var(--space-2); }
 .rim-tlist li.rim-card { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
-.rim-card { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; background: var(--surf); min-width: 0; }
-.rim-card.editing { border-color: var(--acc-line); box-shadow: 0 0 0 1px var(--acc-line); padding: 0; }
+.rim-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; background: var(--bg-surface); min-width: 0; }
+.rim-card.editing { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); padding: 0; }
 .rim-card.editing > .rim-tform { border: 0; }
 .rim-chead { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
 .rim-chead .rw-ic { flex: none; margin-top: 3px; }
@@ -686,23 +686,23 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rim-card .rim-tmore { margin-left: 20px; }
 .rim-tadd { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .rim-tform-acts { align-items: center; }
-.rim-why { margin: 0 auto 0 0; font-size: var(--fs-12); color: var(--muted); min-width: 0; flex: 1 1 10rem; }
+.rim-why { margin: 0 auto 0 0; font-size: var(--fs-12); color: var(--text-secondary); min-width: 0; flex: 1 1 10rem; }
 .rim-trow > .field { flex: 1 1 140px; min-width: 0; }
 
 /* A performance standard's row: a grip to drag it, the text and its limit,
    ⋯ for Edit, Move up / down and Remove. */
 .rfs-list { gap: 0; }
-.rfs-list li.rfs-row { display: flex; align-items: flex-start; gap: 6px; padding: 6px 4px; border-bottom: 1px solid var(--line2); border-radius: var(--r-sm); position: relative; }
+.rfs-list li.rfs-row { display: flex; align-items: flex-start; gap: 6px; padding: 6px 4px; border-bottom: 1px solid var(--border-subtle); border-radius: var(--radius-md); position: relative; }
 .rfs-list li.rfs-row:last-child { border-bottom: 0; }
-.rfs-list li.rfs-row:hover { background: var(--acc-hover); }
+.rfs-list li.rfs-row:hover { background: var(--accent-wash); }
 .rfs-list li.rfs-row.editing { display: block; padding: 0; border: 0; background: none; }
 .rfs-list li.rfs-row.dragging { opacity: 0.5; }
 .rfs-list li.rfs-row.drop-before::before, .rfs-list li.rfs-row.drop-after::after {
-  content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--acc);
+  content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--accent);
 }
 .rfs-list li.rfs-row.drop-before::before { top: -2px; }
 .rfs-list li.rfs-row.drop-after::after { bottom: -2px; }
-.rfs-grip { flex: none; display: inline-flex; align-items: center; color: var(--faint); cursor: grab; margin-top: 2px; }
+.rfs-grip { flex: none; display: inline-flex; align-items: center; color: var(--text-disabled); cursor: grab; margin-top: 2px; }
 .rfs-grip svg { width: 14px; height: 14px; }
 .rfs-main { flex: 1 1 auto; }
 .rfs-text { font-size: var(--fs-14); }
@@ -721,19 +721,19 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 /* Under a cell being edited: the consequence chips, or why a value wasn't kept. */
 .rw-pop-under {
   position: fixed; z-index: 95; max-width: min(320px, calc(100vw - 16px));
-  display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--r-sm);
-  background: var(--surf); border: 1px solid var(--line); box-shadow: var(--shadow-overlay);
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--radius-md);
+  background: var(--bg-surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
 }
 .rw-pop-under:has(> .rw-cell-why:only-child) { border-color: var(--danger); }
 .rw-cell-why {
-  display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-12); font-weight: 500; line-height: 1.4; color: var(--danger);
+  display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-12); font-weight: 500; line-height: 1.4; color: var(--danger-text);
   white-space: normal; overflow-wrap: anywhere;
 }
 .rw-cell-why::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: 50%; background: var(--danger); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: 50%; background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
 }
-.rw .rw-edit[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-line); }
+.rw .rw-edit[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-border); }
 .rw-edit-chips { outline: none; }
 /* The limit's comparator: as wide as "between (between)" needs, no wider. */
 .ctl-group > select.ctl.rw-cmp, .rfs-limit .ctl-group > select.ctl { flex: 0 0 6.5rem; width: 6.5rem; }
@@ -750,14 +750,14 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
    it and the card takes the focus ring), the icon in line with the text, and
    on a wide panel "name ........ every [ 6 ] [hours]" on one line. */
 .rim-tlist li.rim-card.rim-new { flex-direction: row; flex-wrap: nowrap; align-items: flex-start; gap: 8px; padding: 6px 10px; }
-.rim-tlist li.rim-card.rim-new:has(.ia-box:focus) { border-color: var(--acc); box-shadow: var(--focus); }
+.rim-tlist li.rim-card.rim-new:has(.ia-box:focus) { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .rim-tlist li.rim-new > .rw-ic { flex: none; margin: 7px 0 0; }
 .rim-tlist li.rim-new > .ia-main { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .rim-tlist li.rim-new .ctl.ia-box, .rim-tlist li.rim-new .ctl.ia-box:focus {
   flex: 1 1 12rem; width: auto; min-width: 0; padding-left: 0; border-color: transparent; border-radius: 0; box-shadow: none; background: transparent;
 }
 .rim-tlist li.rim-new .ia-main > .field-error, .rim-tlist li.rim-new .ia-main > .field-help { flex: 0 0 100%; }
-.rim-every { display: flex; flex: none; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-13); color: var(--muted); }
+.rim-every { display: flex; flex: none; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-13); color: var(--text-secondary); }
 .rim-every .ctl-group { flex: none; min-width: 0; }
 .rim-every .ctl-group > input[type="number"] { flex: none; width: 4.5ch; min-width: 0; padding-left: 8px; padding-right: 4px; text-align: right; -moz-appearance: textfield; appearance: textfield; }
 .rim-every input[type="number"]::-webkit-inner-spin-button, .rim-every input[type="number"]::-webkit-outer-spin-button { display: none; -webkit-appearance: none; margin: 0; }
@@ -769,7 +769,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   .rim-every .ctl-group > input[type="number"] { width: 5ch; }
 }
 /* A performance standard's limit as data, folded: one quiet line at the panel's foot. */
-.rw-checkable { margin: var(--sp-4) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--line2); font-size: var(--fs-13); color: var(--muted); overflow-wrap: anywhere; }
+.rw-checkable { margin: var(--space-4) 0 0; padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); font-size: var(--fs-13); color: var(--text-secondary); overflow-wrap: anywhere; }
 .rw-checkable button.link { min-height: 32px; }
 
 /* ---- notes and rationale ------------------------------------------------------------ */
@@ -777,12 +777,12 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 /* The note mark after a row's name (NotesMark): quiet, fixed size, never shrunk. */
 .rw-note-mark {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; margin-left: 4px; color: var(--muted);
+  width: 16px; height: 16px; margin-left: 4px; color: var(--text-secondary);
 }
 .tt-tree .rw-note-mark { margin-left: 6px; }
 /* The section in the details (RcmNotes.jsx): the first section, directly below the title's chips,
    with the shared heading; empty, its prompt and the dashed add row. */
-.rw-notes { min-width: 0; margin-top: var(--sp-2); }
+.rw-notes { min-width: 0; margin-top: var(--space-2); }
 .rw-notes-prompt { margin: 0; line-height: 1.4; }
 /* A function's notes (Markdown, as they hold the working): about six lines folded, Show all for the rest. */
 .rw-notes-md:not(.open) { max-height: 9em; overflow: hidden; }
@@ -791,8 +791,8 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 /* A failure mode's three steps (Derryn, 9 Nov 2026): "1. Failure effects", "2. Failure consequences",
    "3. Proactive task or default action", each compact, each opening on a hairline. Step 3 is edited in place:
    its chip rows, the task cards (Edit, Remove), a dashed add row, then the evidence and notes, open. */
-.rw-step { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); min-width: 0; }
-.rw-stepn { color: var(--acc); font-variant-numeric: tabular-nums; }
+.rw-step { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); min-width: 0; }
+.rw-stepn { color: var(--accent-text); font-variant-numeric: tabular-nums; }
 .rw-step .psec-head { min-height: 24px; }
 .rw-step .field-saved { margin-left: auto; }
 .rw-howbad { gap: 8px; }
@@ -811,13 +811,13 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rim-dcard .rim-chips { padding-left: 0; }
 .rim-dcard .rim-tinst { padding-left: 0; }
 .rim-dcard .rim-tmore { margin-left: 0; }
-.rim-dcard h4.rim-before { margin: 2px 0 0; font-size: var(--fs-13); font-weight: 600; color: var(--muted); }
+.rim-dcard h4.rim-before { margin: 2px 0 0; font-size: var(--fs-13); font-weight: 600; color: var(--text-secondary); }
 .rim-own { display: flex; flex-direction: column; gap: 8px; }
 .rim-done { align-self: flex-start; font-size: var(--fs-13); }
 .rim-whybtn { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-13); }
 .rim-chev { flex: none; transition: transform 0.15s; }
 .rim-chev.open { transform: rotate(90deg); }
-.rim-whybody { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: 8px; min-width: 0; }
+.rim-whybody { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-subtle); padding-top: 8px; min-width: 0; }
 .rim-whybody .rw-dwhy { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .rim-chev { transition: none; } }
 .rim-step { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -827,16 +827,16 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rim-step .task-choice .field-help { margin: 0; }
 .rim-cards .rim-chead { align-items: baseline; }
 .rim-cards .rim-tacts { margin-left: auto; }
-.rim-step .rim-tform { background: var(--surf); }
+.rim-step .rim-tform { background: var(--bg-surface); }
 .rim-adding { padding: 0; }
 .rim-adding > .rim-tform { border: 0; }
 button.rim-addrow {
-  align-self: stretch; justify-content: flex-start; min-height: 36px; padding: 0 12px; border: 1px dashed var(--line);
-  border-radius: var(--r-sm); background: transparent; color: var(--acc); font-weight: 500; box-shadow: none;
+  align-self: stretch; justify-content: flex-start; min-height: 36px; padding: 0 12px; border: 1px dashed var(--border);
+  border-radius: var(--radius-md); background: transparent; color: var(--accent-text); font-weight: 500; box-shadow: none;
 }
-button.rim-addrow:hover:not(:disabled) { border-color: var(--acc); background: transparent; color: var(--acc); }
-.rim-whyopen { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: 8px; min-width: 0; }
-.rim-whyopen h4.rim-before { margin: 0; font-size: var(--fs-13); font-weight: 600; color: var(--muted); }
+button.rim-addrow:hover:not(:disabled) { border-color: var(--accent); background: transparent; color: var(--accent-text); }
+.rim-whyopen { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-subtle); padding-top: 8px; min-width: 0; }
+.rim-whyopen h4.rim-before { margin: 0; font-size: var(--fs-13); font-weight: 600; color: var(--text-secondary); }
 .rim-whyopen .rw-dwhy { margin: 0; }
 .decision-modal .task-choice { display: flex; flex-direction: column; gap: 10px; }
 @media (max-width: 600px) {
@@ -849,7 +849,7 @@ button.rim-addrow:hover:not(:disabled) { border-color: var(--acc); background: t
    card, and a check's "Then, if found:" line says what's done when it finds it. */
 .rim-trole { font-weight: 600; }
 .rim-tname .rim-trole { margin-right: 0; }
-.rim-empty { color: var(--muted); font-weight: 400; font-style: italic; }
+.rim-empty { color: var(--text-secondary); font-weight: 400; font-style: italic; }
 .rim-found { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; padding-left: 20px; font-size: var(--fs-14); min-width: 0; overflow-wrap: anywhere; }
 .rim-found > .ctl { flex: 1 1 12rem; min-width: 0; }
 .rim-found > .field-error { flex-basis: 100%; margin: 0; }
@@ -858,8 +858,8 @@ button.rim-addrow:hover:not(:disabled) { border-color: var(--acc); background: t
    (inputs in the same places while it's changed or made), row 2 a check's "Then, if
    found:", row 3 quiet (instructions' first line, chips; the other fields while it's
    changed). A thin accent border on the left: the card hangs off the chip row. */
-.rim-step .rim-card.rim-one { border-left: 3px solid var(--acc); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
-.rim-step .rim-card.rim-one.editing { box-shadow: none; border-color: var(--line); border-left-color: var(--acc); padding: 10px 12px; }
+.rim-step .rim-card.rim-one { border-left: 3px solid var(--accent); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.rim-step .rim-card.rim-one.editing { box-shadow: none; border-color: var(--border); border-left-color: var(--accent); padding: 10px 12px; }
 .rim-onecard { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; background: none; min-width: 0; }
 .rim-r1 { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; min-width: 0; }
 .rim-r1-body { flex: 1 1 16rem; min-width: 0; display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; overflow-wrap: anywhere; }
@@ -868,7 +868,7 @@ span.rim-tname.rim-r1-body { display: block; }
 .rim-r1 .rim-in-name { flex: 1 1 12rem; min-width: 0; }
 .rim-every { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; }
 .rim-every .ctl-group > input[type="number"] { width: 5.5rem; }
-.rim-every-word { color: var(--muted); }
+.rim-every-word { color: var(--text-secondary); }
 .rim-r2 { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: var(--fs-14); min-width: 0; overflow-wrap: anywhere; }
 .rim-r2 > .ctl { flex: 1 1 12rem; min-width: 0; }
 .rim-r2 > .field-error { flex-basis: 100%; margin: 0; }
@@ -906,12 +906,12 @@ span.rim-tname.rim-r1-body { display: block; }
 /* With the Interval column shown, how often is there (.rw-task-iv), not here as well. */
 .tp-row:has(.rw-task-iv) .rw-taskrow > .rw-task-t { display: none; }
 .tp-row.tt.tt-task .tp-nm { font-weight: 400; }
-.tt-task .tp-ic { color: var(--muted); }
+.tt-task .tp-ic { color: var(--text-secondary); }
 .rim-tasklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .rim-tasklist li { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
-.rim-tasklist li > .rw-ic { flex: none; margin-top: 3px; color: var(--muted); }
+.rim-tasklist li > .rw-ic { flex: none; margin-top: 3px; color: var(--text-secondary); }
 .rim-tl-body { min-width: 0; overflow-wrap: anywhere; }
-.rim-tmeta { color: var(--muted); }
+.rim-tmeta { color: var(--text-secondary); }
 .rim-tkind { margin: 0; font-weight: 600; }
 .rim-tevery-line { margin: 4px 0 0; overflow-wrap: anywhere; }
 .rim-ivform { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; min-width: 0; }
@@ -927,11 +927,11 @@ span.rim-tname.rim-r1-body { display: block; }
    same columns, so the rows line up. At phone width one column, the label above. */
 .rw-sg, .rw-sgwrap > .rw-sg { display: grid; grid-template-columns: 170px minmax(0, 1fr); column-gap: 12px; min-width: 0; }
 .rw-sgwrap { min-width: 0; }
-.rw-sg > .rw-sl, .rw-sg > .rw-sc { border-top: 1px solid var(--line2); padding: 7px 0; min-width: 0; }
+.rw-sg > .rw-sl, .rw-sg > .rw-sc { border-top: 1px solid var(--border-subtle); padding: 7px 0; min-width: 0; }
 .rw-steps-first > .rw-sl:first-child, .rw-steps-first > .rw-sc:nth-child(2),
-.rw-steps-first > .rw-sg > .rw-sl:first-child, .rw-steps-first > .rw-sg > .rw-sc:nth-child(2) { border-top-color: var(--line); }
-.rw-sl { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; font-size: var(--fs-12); font-weight: 600; color: var(--muted); line-height: 1.3; padding-top: 10px !important; }
-.rw-sl .rw-stepn { color: var(--acc); }
+.rw-steps-first > .rw-sg > .rw-sl:first-child, .rw-steps-first > .rw-sg > .rw-sc:nth-child(2) { border-top-color: var(--border); }
+.rw-sl { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); line-height: 1.3; padding-top: 10px !important; }
+.rw-sl .rw-stepn { color: var(--accent-text); }
 .rw-sl .field-saved { font-weight: 400; }
 .rw-sc { display: flex; flex-direction: column; gap: 4px; }
 .rw-sc .field { margin: 0; }
@@ -940,11 +940,11 @@ span.rim-tname.rim-r1-body { display: block; }
 .rim-step.rw-sg { gap: 0 12px; }
 .rim-tasks-cell { gap: 6px; }
 .rim-tasks-cell button.rim-addrow { align-self: flex-start; min-height: 28px; padding: 0 10px; font-size: var(--fs-13); }
-.rw-sc.rim-whyopen { border-top: 1px solid var(--line2); padding-top: 7px; }
+.rw-sc.rim-whyopen { border-top: 1px solid var(--border-subtle); padding-top: 7px; }
 .task-choice.bare { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.task-choice.bare .tc-line { margin: 0; font-size: var(--fs-12); color: var(--muted); }
+.task-choice.bare .tc-line { margin: 0; font-size: var(--fs-12); color: var(--text-secondary); }
 .task-choice.bare .tc-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
-.task-choice.bare .tc-sublabel { font-size: var(--fs-12); color: var(--muted); }
+.task-choice.bare .tc-sublabel { font-size: var(--fs-12); color: var(--text-secondary); }
 .choice-chips.sm { gap: 4px; }
 .choice-chips.sm .choice-chip { min-height: 26px; padding: 2px 9px; font-size: var(--fs-13); }
 @media (max-width: 600px) {
@@ -960,17 +960,17 @@ span.rim-tname.rim-r1-body { display: block; }
 .rw-basedon { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: var(--fs-13); min-width: 0; }
 .rw-basedon-lead { font-weight: 600; }
 .rw-basedon-cites { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.rw-basedon-none { color: var(--muted); }
+.rw-basedon-none { color: var(--text-secondary); }
 .rw-basedon-status { margin-left: auto; flex: none; }
-.rw-basedon-wrap .rw-dwhy, .rw-basedon-wrap .rw-members { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.rw-basedon-wrap .rw-dwhy, .rw-basedon-wrap .rw-members { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
 .rw-notes-foot { display: flex; align-items: center; gap: 8px; }
 .rw-notes-foot .rw-notes-act { font-size: var(--fs-13); }
 /* A task's kind in the Tasks row and its panel: a small chip that changes it. */
 select.rim-kindchip {
-  appearance: auto; height: 24px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px;
-  background: var(--surf); color: inherit; font: inherit; font-size: var(--fs-12); max-width: 100%;
+  appearance: auto; height: 24px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg-surface); color: inherit; font: inherit; font-size: var(--fs-12); max-width: 100%;
 }
-select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
+select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 @media (max-width: 600px) { select.rim-kindchip { height: 32px; } }
 /* The Tasks row's list (Derryn, 9 Nov 2026): one line per task, columns aligned across the
    tasks (kind · name · how often · chips) through a subgrid; at phone width a block per task. */
@@ -980,7 +980,7 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
 }
 .rim-tasklist li {
   display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center;
-  min-height: 30px; padding: 2px 0; border-bottom: 1px solid var(--line2); gap: 0 10px;
+  min-height: 30px; padding: 2px 0; border-bottom: 1px solid var(--border-subtle); gap: 0 10px;
 }
 .rim-tasklist li:last-child { border-bottom: 0; }
 .rim-tl-kind, .rim-tl-when, .rim-tl-chips { display: inline-flex; align-items: center; min-width: 0; }
@@ -988,25 +988,25 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
 .rim-tl-name .rim-tgo, .rim-tl-name > span {
   display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
 }
-.rim-tl-when { color: var(--muted); font-size: var(--fs-13); white-space: nowrap; }
+.rim-tl-when { color: var(--text-secondary); font-size: var(--fs-13); white-space: nowrap; }
 .rim-tl-chips { gap: 4px; justify-content: flex-end; flex-wrap: nowrap; }
 .rim-tl-chips .chip { white-space: nowrap; }
 /* The kind: a compact chip-styled picker, no visible border or chevron until hover or focus. */
 select.rim-kindchip, .rim-kindtext {
-  height: 20px; padding: 0 7px; border: 1px solid transparent; border-radius: var(--r-sm);
-  background-color: var(--surf-2); color: inherit; font: inherit; font-size: var(--fs-12); line-height: 18px;
+  height: 20px; padding: 0 7px; border: 1px solid transparent; border-radius: var(--radius-md);
+  background-color: var(--bg-subtle); color: inherit; font: inherit; font-size: var(--fs-12); line-height: 18px;
 }
 select.rim-kindchip {
   appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 7px;
   background-repeat: no-repeat; background-position: right 6px center; background-size: 10px 10px;
 }
 select.rim-kindchip:hover, select.rim-kindchip:focus-visible {
-  border-color: var(--line); padding-right: 20px;
+  border-color: var(--border); padding-right: 20px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.4'/%3E%3C/svg%3E");
 }
-select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
+select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .rim-kindtext { display: inline-flex; align-items: center; }
-.rim-tasks-cell button.add-row.rim-addrow { align-self: stretch; width: 100%; min-height: var(--ctl-h); padding: 0 12px; }
+.rim-tasks-cell button.add-row.rim-addrow { align-self: stretch; width: 100%; min-height: var(--control-md); padding: 0 12px; }
 /* Narrow (a phone, or the details beside the table at 1280 px): a block per task, the name
    over kind · interval, judged by the cell's own width. The steps grid stacks too when the
    details are narrow, the label above its control, so no column is squeezed to nothing. */
@@ -1045,7 +1045,7 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
 /* A task's panel in the same "step | choice" grid (Derryn, 9 Nov 2026): one line per row,
    quiet words in the muted colour, the edits where the words are. */
 .rim-tcell { gap: 4px; font-size: var(--fs-13); }
-.rim-tquiet { margin: 0; color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
+.rim-tquiet { margin: 0; color: var(--text-secondary); font-size: var(--fs-13); overflow-wrap: anywhere; }
 button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
 .rim-tline { margin: 0; overflow-wrap: anywhere; }
 .rim-ivline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
@@ -1059,7 +1059,7 @@ button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
 .rim-eventform .rim-trigger { margin: 0; }
 .rim-counts:empty { display: none; }
 .rw-servelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
-.rw-servelist li { display: flex; align-items: center; gap: 6px; min-height: 26px; border-bottom: 1px solid var(--line2); min-width: 0; }
+.rw-servelist li { display: flex; align-items: center; gap: 6px; min-height: 26px; border-bottom: 1px solid var(--border-subtle); min-width: 0; }
 .rw-servelist li:last-child { border-bottom: 0; }
 .rw-servelist .rw-kgo { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .rw-servelist .rw-serves-rm { margin-left: auto; flex: none; }
@@ -1070,10 +1070,10 @@ button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
 /* A saved decision that breaks the decision rules: "Needs review" beside it in the Decision
    cell, and the advice under a failure mode's chips in its panel (the reason in words). */
 .rw .rw-review-note { border: 0; padding: 0; background: none; font-weight: 600; }
-.rw-advice { margin: 6px 0 0; font-size: var(--fs-12); line-height: 1.4; color: var(--muted); }
-.rw-advice-review { color: var(--warn); border-left: 3px solid var(--warn-line); padding-left: 8px; }
+.rw-advice { margin: 6px 0 0; font-size: var(--fs-12); line-height: 1.4; color: var(--text-secondary); }
+.rw-advice-review { color: var(--warning-text); border-left: 3px solid var(--warning-border); padding-left: 8px; }
 /* "2 failure reports · Open" under a failure mode's chips. */
-.rw-mode-reports { margin: 6px 0 0; font-size: var(--fs-12); color: var(--muted); }
+.rw-mode-reports { margin: 6px 0 0; font-size: var(--fs-12); color: var(--text-secondary); }
 
 /* Step 3's task costs (RcmModeTasks TaskCosts): read from each task on its position. */
 .rim-costs { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; min-width: 0; }

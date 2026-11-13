@@ -7,12 +7,12 @@
   align-items: center;
   gap: 4px 12px;
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .rbd-run-quote a,
 .rbd-runs-history a {
-  color: var(--acc);
+  color: var(--accent-text);
   text-decoration: none;
 }
 .rbd-run-quote a:hover,
@@ -32,7 +32,7 @@
 
 .rbd-runs-ci,
 .rbd-runs-via {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: var(--fs-13);
 }
 
@@ -50,12 +50,12 @@
 
 .rbd-runs-note {
   margin: 8px 0 0;
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: var(--fs-13);
 }
 
 .rbd-runs-pending {
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .rbd-runs .card + .card {
@@ -80,8 +80,8 @@
 .rbd-runs-kept {
   margin: 12px 0 0;
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 .rbd-runs-kept a {
-  color: var(--acc);
+  color: var(--accent-text);
 }

@@ -7,20 +7,20 @@
 .ft-head {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  margin: 0 0 var(--sp-2);
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
 }
 .ft-controls {
   display: flex;
   align-items: flex-end;
-  gap: var(--sp-2);
+  gap: var(--space-2);
 }
 .stats.ft-stats {
   margin: 0;
 }
 
 .ft-note {
-  margin: 0 0 var(--sp-2);
+  margin: 0 0 var(--space-2);
   font-size: var(--fs-13);
 }
 
@@ -29,17 +29,17 @@
    tree is fitted (zoom ~0.6). */
 .ft-canvas-wrap {
   --ft-scale: 1.3;
-  margin-bottom: var(--sp-4);
+  margin-bottom: var(--space-4);
 }
 
 .ft-canvas-tools {
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--space-1);
   flex-wrap: wrap;
 }
 .ft-canvas-tools .hint {
-  margin: 0 0 0 var(--sp-2);
+  margin: 0 0 0 var(--space-2);
   font-size: var(--fs-13);
 }
 
@@ -66,7 +66,7 @@
   border: none;
 }
 .ft-canvas .ft-edge .react-flow__edge-path {
-  stroke: var(--faint);
+  stroke: var(--text-disabled);
   stroke-width: 1.4;
 }
 
@@ -88,22 +88,22 @@
   justify-content: center;
   align-items: center;
   text-align: center;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--line);
-  background: var(--surf);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
   padding: 0.45rem 0.6rem;
 }
 .ft-gate:hover .ft-box {
-  border-color: var(--acc);
+  border-color: var(--accent);
 }
 /* The top event: the same box, set off by an ink border, not a solid fill. */
 .ft-box-top {
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--text);
 }
 .ft-box-ccf {
-  border-color: var(--cat-amber-line);
-  background: var(--cat-amber-t);
+  border-color: var(--cat-pink-border);
+  background: var(--cat-pink-bg);
 }
 
 .ft-box-title {
@@ -121,7 +121,7 @@
 .ft-box-sub {
   margin-top: 2px;
   font-size: calc(var(--fs-12) * var(--ft-scale));
-  color: var(--muted);
+  color: var(--text-secondary);
   line-height: 1.2;
 }
 
@@ -132,11 +132,11 @@
   align-items: baseline;
   font-variant-numeric: tabular-nums;
   font-size: calc(var(--fs-13) * var(--ft-scale));
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 .ft-code {
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .ft-tag {
@@ -145,33 +145,33 @@
   right: 8px;
   font-size: calc(var(--fs-12) * var(--ft-scale));
   font-weight: 500;
-  color: var(--muted);
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 0 5px;
   line-height: 1.3;
 }
 .ft-tag-pin {
-  background: var(--surf-2);
+  background: var(--bg-subtle);
 }
 
 .ft-stem {
   width: 1.4px;
   height: 8px;
-  background: var(--faint);
+  background: var(--text-disabled);
 }
 
 /* Gate symbols in one neutral style: their shapes say OR, AND and VOTE. */
 .ft-symbol path {
-  fill: var(--surf-2);
-  stroke: var(--muted);
+  fill: var(--bg-subtle);
+  stroke: var(--text-secondary);
   stroke-width: 1.6;
 }
 .ft-symbol text {
   font-size: 10px;
   font-weight: 600;
-  fill: var(--ink);
+  fill: var(--text);
 }
 .ft-gate.collapsed .ft-symbol path {
   stroke-dasharray: 3 2;
@@ -181,9 +181,9 @@
   margin-top: 3px;
   font-size: calc(var(--fs-12) * var(--ft-scale));
   font-weight: 600;
-  color: var(--acc-d);
-  background: var(--acc-t);
-  border-radius: var(--r-sm);
+  color: var(--accent-text);
+  background: var(--accent-subtle);
+  border-radius: var(--radius-md);
   padding: 1px 7px;
 }
 
@@ -191,28 +191,28 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  border: 1.6px solid var(--muted);
-  background: var(--surf-2);
+  border: 1.6px solid var(--text-secondary);
+  background: var(--bg-subtle);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: var(--fs-12);
   font-weight: 600;
-  color: var(--warn);
+  color: var(--warning-text);
 }
 .ft-circle-ccf {
-  border-color: var(--cat-amber);
-  background: var(--cat-amber-t);
+  border-color: var(--cat-pink);
+  background: var(--cat-pink-bg);
 }
 /* The shared cause of a common-cause group, in the cut sets and summary (#229). */
 .ft-cc-badge {
   display: inline-block;
   font-size: var(--fs-12);
   font-weight: 600;
-  color: var(--warn);
-  background: var(--cat-amber-t);
-  border: 1px solid var(--cat-amber);
-  border-radius: var(--r-sm);
+  color: var(--warning-text);
+  background: var(--cat-pink-bg);
+  border: 1px solid var(--cat-pink);
+  border-radius: var(--radius-md);
   padding: 0 5px;
   margin-right: 5px;
   line-height: 15px;
@@ -237,28 +237,28 @@
   flex: none;
 }
 .ft-event.pinned .ft-box {
-  background: var(--surf-2);
+  background: var(--bg-subtle);
   border-style: dashed;
 }
 .ft-event.pinned .ft-circle {
-  border-color: var(--faint);
-  background: var(--surf-2);
+  border-color: var(--text-disabled);
+  background: var(--bg-subtle);
 }
 
 .ft-more-node {
   width: 184px;
   box-sizing: border-box;
-  border: 1px dashed var(--acc-line);
-  border-radius: var(--r-sm);
-  background: var(--acc-t);
-  color: var(--acc-d);
+  border: 1px dashed var(--accent-border);
+  border-radius: var(--radius-md);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
   font-size: calc(var(--fs-14) * var(--ft-scale));
   font-weight: 600;
   text-align: center;
   padding: 0.7rem 0.5rem;
 }
 .ft-more-node:hover {
-  border-color: var(--acc);
+  border-color: var(--accent);
 }
 
 .ft-section {
@@ -285,7 +285,7 @@
 }
 .ft-table .ft-rank {
   text-align: left;
-  color: var(--muted);
+  color: var(--text-secondary);
   width: 2.5rem;
 }
 .ft-table .ft-cut {
@@ -296,7 +296,7 @@
   display: table-cell;
 }
 .ft-and {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-weight: 400;
 }
 .ft-share {
@@ -308,12 +308,12 @@
 .ft-share-bar {
   width: 70px;
   height: 6px;
-  border-radius: var(--r-sm);
-  background: var(--line2);
+  border-radius: var(--radius-md);
+  background: var(--border-subtle);
   overflow: hidden;
 }
 .ft-share-bar span {
   display: block;
   height: 100%;
-  background: var(--acc);
+  background: var(--accent);
 }

@@ -23,7 +23,7 @@
   gap: 14px;
   min-width: 0;
   padding-top: 14px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
 }
 
 .sg-fitted-head + .sg-meta {
@@ -33,7 +33,7 @@
 .sg-empty p {
   margin: 8px 0 12px;
   max-width: 60ch;
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .sg-actions {
@@ -70,7 +70,7 @@
   flex-direction: column;
   gap: 3px;
   font-size: var(--fs-12);
-  color: var(--muted);
+  color: var(--text-secondary);
   min-width: 0;
 }
 
@@ -98,7 +98,7 @@
 .sg-note {
   margin: 0;
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .sg-hint {
@@ -107,7 +107,7 @@
 }
 
 .sg-bad {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .sg-legend {
@@ -124,23 +124,23 @@
   align-items: center;
   gap: 6px;
   padding: 3px 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 999px;
   font-size: var(--fs-12);
-  background: var(--surf);
-  color: var(--ink);
+  background: var(--bg-surface);
+  color: var(--text);
   cursor: default;
 }
 
 .sg-chip:hover,
 .sg-chip:focus-visible {
-  border-color: var(--acc);
-  background: var(--acc-hover);
+  border-color: var(--accent);
+  background: var(--accent-wash);
 }
 
 .sg-chip-now {
-  border-color: var(--acc-line);
-  background: var(--acc-t);
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
 }
 
 .sg-swatch {
@@ -154,14 +154,14 @@
   all: unset;
   cursor: pointer;
   padding: 0 2px;
-  color: var(--muted);
+  color: var(--text-secondary);
   line-height: 1;
 }
 
 .sg-x:hover,
 .sg-x:focus-visible {
-  color: var(--danger);
-  outline: 2px solid var(--acc);
+  color: var(--danger-text);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -172,7 +172,7 @@
   gap: 8px 12px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
 }
 
 .sg-band input[type="number"] {
@@ -191,7 +191,7 @@
   gap: 8px 12px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
 }
 
 .sg-player input[type="range"] {
@@ -207,7 +207,7 @@
 .sg-date {
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-13);
-  color: var(--ink);
+  color: var(--text);
   min-width: 11ch;
 }
 
@@ -220,7 +220,7 @@
 
 .sg-cue {
   font-size: var(--fs-12);
-  color: var(--acc);
+  color: var(--accent-text);
   animation: sg-cue 0.45s ease-out;
 }
 
@@ -243,7 +243,7 @@
 .sg-table td {
   text-align: left;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
 
@@ -267,15 +267,15 @@
   align-items: center;
   gap: 4px 12px;
   padding: 8px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .sg-over {
-  border-color: var(--warn, #b45309);
-  color: var(--ink);
+  border-color: var(--warning, #b45309);
+  color: var(--text);
 }
 
 .sg-results {
@@ -287,7 +287,7 @@
 .sg-edit {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
 }
 
 .sg-edit h4 {
@@ -305,7 +305,7 @@
 
 .sg-seg {
   display: inline-flex;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -314,14 +314,14 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--text);
   padding: 4px 10px;
   min-height: 30px;
   font-size: var(--fs-13);
 }
 
 .sg-seg button[aria-pressed="true"] {
-  background: var(--acc);
+  background: var(--accent);
   color: #fff;
 }
 
@@ -332,7 +332,7 @@
 
 .sg-settings summary {
   cursor: pointer;
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 @media (max-width: 720px) {

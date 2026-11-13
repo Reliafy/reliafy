@@ -1,11 +1,11 @@
 /* The demonstration test's β from a saved model (DemoShapeSource.jsx). */
 .demo-beta { margin-top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.demo-beta-line { margin: 0; font-size: var(--fs-14); color: var(--muted); }
-.demo-beta-line b { color: var(--ink); font-weight: 600; }
+.demo-beta-line { margin: 0; font-size: var(--fs-14); color: var(--text-secondary); }
+.demo-beta-line b { color: var(--text); font-weight: 600; }
 .demo-beta-clear { margin-left: 10px; font-size: var(--fs-13); }
 .demo-beta-pick { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .demo-beta-pick .sel-trigger { min-width: 240px; max-width: 100%; }
 .demo-beta .seg { max-width: 100%; }
 .demo-beta .seg-btn { white-space: normal; }
 /* The plan's warning when β is poorly known (DemoTestResult.jsx). */
-.demo-shape-warn { display: block; margin-top: 6px; color: var(--warn); }
+.demo-shape-warn { display: block; margin-top: 6px; color: var(--warning-text); }

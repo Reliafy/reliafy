@@ -10,7 +10,7 @@
 .rt-table th.rt-num { text-align: right; }
 .rt-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid var(--line2);
+  border-bottom: 1px solid var(--border-subtle);
   vertical-align: top;
 }
 .rt-date { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -21,11 +21,11 @@
 .rt-detail { display: block; font-size: var(--fs-12); margin-top: 2px; }
 .rt-unit { display: none; }
 .rt-struck .rt-date, .rt-struck .rt-value-text, .rt-struck .rt-unit, .rt-struck .rt-note-text {
-  color: var(--muted);
+  color: var(--text-secondary);
   text-decoration: line-through;
 }
-.rt-row.rt-picked td { background: var(--acc-t); }
-.rt-edit-row td { padding: 0 0 8px; border-bottom: 1px solid var(--line2); }
+.rt-row.rt-picked td { background: var(--accent-subtle); }
+.rt-edit-row td { padding: 0 0 8px; border-bottom: 1px solid var(--border-subtle); }
 .rt-edit { margin: 8px 0 0; }
 .rt-edit-title { margin: 0 0 8px; font-weight: 600; }
 .rt-edit-hint { margin: 4px 0 0; }
@@ -38,12 +38,12 @@ button.rt-more {
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   box-shadow: none;
-  color: var(--muted);
+  color: var(--text-secondary);
 }
-button.rt-more:hover:not(:disabled), button.rt-more.open { background: var(--acc-t); color: var(--acc); }
+button.rt-more:hover:not(:disabled), button.rt-more.open { background: var(--accent-subtle); color: var(--accent-text); }
 
 /* Narrow (a phone, a narrow dialog): each reading is a block, nothing wider
    than the screen. Date, value and ⋯ on top; the note under them. */
@@ -59,15 +59,15 @@ button.rt-more:hover:not(:disabled), button.rt-more.open { background: var(--acc
     align-items: center;
     column-gap: 10px;
     padding: 8px 0;
-    border-bottom: 1px solid var(--line2);
+    border-bottom: 1px solid var(--border-subtle);
   }
   .rt-table.rt-no-menu tr.rt-row { grid-template-areas: "date value value" "note note note"; }
   .rt-table td { display: block; padding: 0; border: 0; min-width: 0; }
   .rt-row.rt-picked td { background: none; }
-  .rt-row.rt-picked { background: var(--acc-t); }
+  .rt-row.rt-picked { background: var(--accent-subtle); }
   .rt-date { grid-area: date; }
   .rt-value { grid-area: value; font-weight: 600; }
-  .rt-unit { display: inline; font-weight: 400; color: var(--muted); }
+  .rt-unit { display: inline; font-weight: 400; color: var(--text-secondary); }
   .rt-note { grid-area: note; padding-top: 2px !important; }
   .rt-note .rt-none { display: none; }
   .rt-menu-cell { grid-area: menu; padding: 0 !important; }

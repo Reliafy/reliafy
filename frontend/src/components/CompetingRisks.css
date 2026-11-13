@@ -7,7 +7,7 @@
 /* Failure modes: each mode's row, its name and counts under it, its share. */
 .detail-panel .gofr.cr-mode-row { align-items: center; }
 .detail-panel .cr-mode-row .gk { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.cr-mode-sub { padding-left: 16px; font-size: var(--fs-12); color: var(--muted); font-variant-numeric: tabular-nums; }
+.cr-mode-sub { padding-left: 16px; font-size: var(--fs-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .detail-panel .cr-mode-row .gv { font-size: var(--fs-16); }
 .detail-panel .mf-note.cr-share-note { padding-top: 6px; padding-bottom: 8px; font-size: var(--fs-12); }
 .detail-panel .aside.mf-side.cr-side { width: 288px; display: flex; flex-direction: column; gap: 12px; }
@@ -23,8 +23,8 @@
 
 .cr-table th:not(:first-child), .cr-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .cr-coef-table th:nth-child(2), .cr-coef-table td:nth-child(2) { text-align: left; }
-.cr-table tr.cr-sig td { background: var(--acc-t); }
-.cr-few { color: var(--warn, #b45309); font-size: var(--fs-12); }
+.cr-table tr.cr-sig td { background: var(--accent-subtle); }
+.cr-few { color: var(--warning, #b45309); font-size: var(--fs-12); }
 .cr-table-wrap { overflow-x: auto; }
 .cr-table-wrap .mini-table { width: 100%; }
 .gof-card .cr-table-wrap .mini-table th:first-child,
@@ -41,9 +41,9 @@
 }
 
 .detail-panel .gofr.cr-mode-head { padding-top: 8px; padding-bottom: 6px; }
-.detail-panel .gofr.cr-mode-head .gk { font-size: var(--fs-12); color: var(--muted); }
+.detail-panel .gofr.cr-mode-head .gk { font-size: var(--fs-12); color: var(--text-secondary); }
 .cr-calc .calc-table th:first-child, .cr-calc .calc-table td.cr-left { text-align: left; }
-.cr-calc .calc-table tr.cr-any-row td { color: var(--muted); }
+.cr-calc .calc-table tr.cr-any-row td { color: var(--text-secondary); }
 
 /* Diagnostics: two columns; with three checks the bands chart takes the
    right column's full height. */

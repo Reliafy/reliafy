@@ -723,7 +723,7 @@ function Sparkline({ point }) {
     <svg width={W} height={H} role="img" aria-label={`${point.name} readings`}>
       {point.alarm_above != null && <line x1="0" x2={W} y1={y(point.alarm_above)} y2={y(point.alarm_above)} stroke="var(--danger)" strokeDasharray="3 3" />}
       {point.alarm_below != null && <line x1="0" x2={W} y1={y(point.alarm_below)} y2={y(point.alarm_below)} stroke="var(--danger)" strokeDasharray="3 3" />}
-      <path d={d} fill="none" stroke="var(--acc)" strokeWidth="1.5" />
+      <path d={d} fill="none" stroke="var(--accent)" strokeWidth="1.5" />
     </svg>
   );
 }

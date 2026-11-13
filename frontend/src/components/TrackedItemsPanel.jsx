@@ -265,7 +265,7 @@ function RegisterItemModal({ model, fleetId, onClose, onCreated }) {
       <button
         type="button"
         className="secondary sm"
-        style={{ marginTop: "var(--sp-3)" }}
+        style={{ marginTop: "var(--space-3)" }}
         onClick={() => setRows((rs) => [...rs, { t: "", y: "" }])}
       >
         <PlusIcon /> Add measurement

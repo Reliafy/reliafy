@@ -32,7 +32,7 @@
 
 /* Assets' last row, the positions at no place. */
 .reg-table .maint-not-placed td {
-  border-top: 2px solid var(--line);
+  border-top: 2px solid var(--border);
 }
 
 .reg-table .maint-not-placed td:first-child > a {
@@ -52,7 +52,7 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 0.35rem 0.75rem;
     padding: 0.75rem 0.25rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--border);
   }
 
   .reg-table td {
@@ -88,11 +88,11 @@
     content: attr(data-label);
     display: block;
     font-size: 0.75rem;
-    color: var(--muted);
+    color: var(--text-secondary);
   }
 
   .reg-table .maint-not-placed {
-    border-top: 2px solid var(--line);
+    border-top: 2px solid var(--border);
   }
 
   .reg-table .maint-not-placed td {

@@ -1,6 +1,6 @@
 /* A class's fleet beside the Explorer's tree (ClassFleet.jsx). */
 .cf { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.cf-answer { margin: 0; font-size: var(--fs-14); color: var(--ink); }
+.cf-answer { margin: 0; font-size: var(--fs-14); color: var(--text); }
 .cf-card { margin: 0; padding: 12px 14px; min-width: 0; }
 .cf-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
 .cf-title { margin: 0; font-size: var(--fs-15, 15px); font-weight: 600; }
@@ -8,7 +8,7 @@
 .cf .joint-risk { width: 100%; }
 .cf .joint-risk tbody td { white-space: nowrap; }
 .cf .joint-risk tbody tr:not(.no-risk) { cursor: pointer; }
-.cf .joint-risk tr.is-selected td { background: var(--acc-t); }
+.cf .joint-risk tr.is-selected td { background: var(--accent-subtle); }
 .cf .joint-risk td.joint-risk-why { white-space: normal; min-width: 240px; color: var(--mute); font-size: var(--fs-13, 13px); text-align: left; }
 .cf .joint-risk th:not(.num), .cf .joint-risk td:not(.num) { text-align: left; }
 .cf .joint-risk th { vertical-align: bottom; }

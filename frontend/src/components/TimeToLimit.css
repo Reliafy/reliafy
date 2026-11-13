@@ -7,7 +7,7 @@
 }
 
 .ttl-plain {
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .ttl-warn {
@@ -27,7 +27,7 @@
 .ttl-assume {
   margin-top: 8px;
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .ttl-assume p {

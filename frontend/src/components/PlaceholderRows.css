@@ -10,14 +10,14 @@
 }
 
 .wait-row + .wait-row {
-  border-top: 1px solid var(--line2);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .wait-bar {
   display: block;
   height: 10px;
   border-radius: 5px;
-  background: var(--line);
+  background: var(--border);
   animation: wait-pulse 1.6s ease-in-out infinite;
 }
 
@@ -40,7 +40,7 @@
 
 .wait-detail {
   width: min(180px, 40%);
-  background: var(--line2);
+  background: var(--border-subtle);
 }
 
 /* Rows of differing length read as a list, not a block. */

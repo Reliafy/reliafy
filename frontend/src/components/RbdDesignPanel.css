@@ -37,7 +37,7 @@
   gap: 1.1rem;
   margin: 0 0 0.9rem;
   font-size: var(--fs-14);
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .rbd-design-toggles label {
@@ -88,16 +88,16 @@
 }
 
 .rbd-design-block small {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: var(--fs-12);
 }
 
 .rbd-design-num {
   width: 6rem;
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  color: var(--ink);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
   padding: 0.3rem 0.45rem;
   font-size: var(--fs-14);
   text-align: right;
@@ -108,7 +108,7 @@
 }
 
 .rbd-design-num:disabled {
-  background: var(--surf-2);
+  background: var(--bg-subtle);
 }
 
 .rbd-design-strategy {
@@ -124,11 +124,11 @@
   align-items: center;
   gap: 0.3rem;
   font-size: var(--fs-12);
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .rbd-design-type td {
-  background: var(--surf-2);
+  background: var(--bg-subtle);
 }
 
 .rbd-design-type-name {
@@ -140,15 +140,15 @@
 
 .rbd-design-type-name input {
   width: 8rem;
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 0.3rem 0.45rem;
   font-size: var(--fs-14);
 }
 
 .rbd-design-type-note {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: var(--fs-13);
   text-align: left !important;
 }

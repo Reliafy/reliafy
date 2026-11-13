@@ -1,18 +1,18 @@
 /* The interval calculator on an RCM task card, and a saved calculation (IntervalCalculator.jsx, IntervalAnalysisResult.jsx). */
 .ivc-dialog { width: min(640px, calc(100vw - 32px)); }
-.ivc-what { margin: 0 0 12px; color: var(--muted); }
+.ivc-what { margin: 0 0 12px; color: var(--text-secondary); }
 .ivc-form { display: flex; flex-direction: column; gap: 10px; }
 .ivc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .ivc-model { margin: 0; }
 .ivc-go { display: flex; justify-content: flex-start; }
-.ivc-result { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.ivc-result { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .ivc-answer { margin: 0 0 8px; font-weight: 600; }
 .ivc-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: var(--fs-13); }
-.ivc-facts dt { color: var(--muted); }
+.ivc-facts dt { color: var(--text-secondary); }
 .ivc-facts dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 480px) {
   .ivc-facts { grid-template-columns: 1fr; }
   .ivc-facts dd { margin-bottom: 6px; }
 }
 .ivc-saved .ivc-fact { display: contents; }
-.ivc-costs { margin: 4px 0 0; color: var(--muted); font-size: var(--fs-13); }
+.ivc-costs { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--fs-13); }

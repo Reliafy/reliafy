@@ -7,8 +7,8 @@
 .mission-on { margin: 0; }
 .mission-wait { margin: 0; }
 .mission-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.mission-phase { border: 1px solid var(--line); border-radius: var(--r-sm, 8px); padding: 8px 10px; min-width: 0; background: var(--surf); }
-.mission-phase.is-open { border-color: var(--line2, var(--line)); box-shadow: 0 1px 0 var(--line); }
+.mission-phase { border: 1px solid var(--border); border-radius: var(--radius-md, 8px); padding: 8px 10px; min-width: 0; background: var(--bg-surface); }
+.mission-phase.is-open { border-color: var(--border-subtle, var(--border)); box-shadow: 0 1px 0 var(--border); }
 .mission-phase-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .mission-phase-toggle { min-width: 44px; min-height: 36px; font-variant-numeric: tabular-nums; }
 .mission-phase-n { font-weight: 600; }
@@ -19,14 +19,14 @@
 .mission-phase-result { flex: 1 1 12rem; font-size: var(--fs-13); font-variant-numeric: tabular-nums; min-width: 0; }
 .mission-phase-tools { display: inline-flex; gap: 2px; margin-left: auto; }
 .mission-phase-tools button { min-width: 36px; min-height: 36px; }
-.mission-phase-line { margin: 4px 0 0; font-size: var(--fs-12, 12px); color: var(--muted); overflow-wrap: anywhere; }
-.mission-sub { color: var(--muted); font-weight: 400; }
+.mission-phase-line { margin: 4px 0 0; font-size: var(--fs-12, 12px); color: var(--text-secondary); overflow-wrap: anywhere; }
+.mission-sub { color: var(--text-secondary); font-weight: 400; }
 .mission-phase-body { margin-top: 10px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; }
 .mission-phase-body > * { max-width: 100%; }
 .mission-phase-body > section { width: 100%; }
 .mission-k { margin: 0 0 6px; font-size: var(--fs-13); font-weight: 600; }
 .mission-feeds { font-size: var(--fs-12, 12px); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.mission-feeds-what { color: var(--muted); }
+.mission-feeds-what { color: var(--text-secondary); }
 .mission-feeds ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .mission-feeds li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .mission-feed-label { font-weight: 600; overflow-wrap: anywhere; }
@@ -36,7 +36,7 @@
 .cov-bare .cov-group { border: 0; padding: 0; }
 .cov-bare .cov-grid { grid-template-columns: minmax(0, 18rem); }
 .mission-rbd { margin: 0; width: 100%; }
-.mission-rbd .rbd-diagram-view { height: 280px; border: 1px solid var(--line); border-radius: var(--r-sm, 8px); }
+.mission-rbd .rbd-diagram-view { height: 280px; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); }
 .mission-rbd figcaption { margin-top: 4px; }
 .react-flow__node.rbd-node-dim { opacity: 0.32; filter: grayscale(1); }
 .mission-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -47,21 +47,21 @@
 .mission-grid { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .mission-grid-scroll { max-width: 100%; }
 .mission-grid-table { border-collapse: collapse; font-size: var(--fs-13); min-width: 100%; }
-.mission-grid-table th, .mission-grid-table td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: middle; }
+.mission-grid-table th, .mission-grid-table td { border-bottom: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: middle; }
 .mission-grid-table thead th { font-weight: 600; white-space: nowrap; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
 .mission-grid-table tbody th { font-weight: 600; max-width: 14rem; overflow-wrap: anywhere; }
-.mission-grid-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.mission-grid-n { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .mission-grid-table select { min-height: 36px; font-size: var(--fs-13); }
 .mission-grid-table td.is-standby select { font-style: italic; }
-.mission-grid-table td.is-off select { color: var(--muted); }
-.mission-grid-key { margin: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-12, 12px); color: var(--muted); }
+.mission-grid-table td.is-off select { color: var(--text-secondary); }
+.mission-grid-key { margin: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-12, 12px); color: var(--text-secondary); }
 .mission-grid-key > div { display: flex; flex-wrap: wrap; gap: 0 6px; }
 .mission-grid-key dt { font-weight: 600; color: var(--text, inherit); }
 .mission-grid-key dd { margin: 0; }
 /* The blocks with no model (a placeholder stands in), under the answer. */
-.mission-ph { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--r-sm, 8px); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-13); min-width: 0; overflow-wrap: anywhere; }
+.mission-ph { border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: var(--radius-md, 8px); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-13); min-width: 0; overflow-wrap: anywhere; }
 .mission-ph p { margin: 0; }
 .mission-ph-do { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .mission-ph-do button { min-height: 32px; vertical-align: baseline; }
-.mission-ph-also, .mission-ph-out { margin: 0; color: var(--muted); }
+.mission-ph-also, .mission-ph-out { margin: 0; color: var(--text-secondary); }
 .mission-grid-table tbody th .chip { margin-left: 4px; font-weight: 400; }
