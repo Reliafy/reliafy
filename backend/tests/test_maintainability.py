@@ -342,41 +342,14 @@ def api(monkeypatch):
         app.dependency_overrides.clear()
 
 
-def test_the_sample_is_seeded_and_listed_as_a_sample(api):
+def test_no_sample_is_seeded(api):
+    """The survey quadcopter's prediction was withdrawn (Nov 2026): nothing is listed, and its
+    old address answers not found."""
     from backend.services import samples
 
-    rows = api.get("/api/maintainability/predictions").json()["predictions"]
-    [sample] = rows
-    assert sample["id"] == "sample-maintainability-quadcopter" and sample["is_sample"] and sample["read_only"]
-    assert sample["headline"].startswith("Mct ") and "M_max" in sample["headline"] and "A 99" in sample["headline"]
-    assert sample["lines"] == 11
-    full = api.get(f"/api/maintainability/predictions/{sample['id']}").json()
-    assert full["results"]["unit"] == "minutes" and full["results"]["m_max"] > full["results"]["mct"]
-    assert {a["path"] for a in full["results"]["assemblies"]} == {
-        "Airframe", "Propulsion", "Flight control", "Power", "Comms", "Payload gimbal"}
-    assert full["results"]["pareto"][0]["ref"] == "SQ-P1045"  # four propellers, replaced often
-    # Its electronics and motor rates are the sample parts count's, to four figures, and it says
-    # why its MTBF is the lower one. Seeding again changes nothing.
-    w = full["results"]["weights"]
-    count = samples.sample_maintainability_parts_count(api.db)
-    typed = {ln["ref"].lower(): ln["failure_rate"] for ln in samples.SAMPLE_MAINTAINABILITY_INPUTS["lines"]}
-    assert len(count["rates"]) == 7
-    for ref, rate in count["rates"].items():
-        assert typed[ref] == pytest.approx(rate, rel=5e-4), ref
-    assert w["parts_count"]["id"] == samples.SAMPLE_PREDICTION["id"] and len(w["parts_count"]["typed_same"]) == 7
-    assert len(w["parts_count"]["not_in"]) == 4 and w["parts_count"]["typed_over"] == []
-    assert "has a rate for 7 of these 11 lines, and the rates typed here are the same." in w["note"]
-    assert not w["compare"]["agree"] and "4 lines have a rate typed here and none in the parts count" in w["compare"]["note"]
-    assert w["compare"]["parts_count_mtbf_hours"] == pytest.approx(count["mtbf_hours"])
-    stored = api.db.maintainability_predictions.find_one({"_id": sample["id"]})
-    samples._seed_maintainability_predictions(api.db)
-    assert api.db.maintainability_predictions.find_one({"_id": sample["id"]}) == stored
-    assert sample["id"] in samples.all_sample_ids(api.db)
-    # "Deleting" a sample hides it for this user only.
-    assert api.delete(f"/api/maintainability/predictions/{sample['id']}").json() == {"ok": True}
     assert api.get("/api/maintainability/predictions").json()["predictions"] == []
-    assert api.get(f"/api/maintainability/predictions/{sample['id']}").status_code == 404
-    assert api.db.maintainability_predictions.count_documents({}) == 1
+    assert api.get("/api/maintainability/predictions/sample-maintainability-quadcopter").status_code == 404
+    assert "sample-maintainability-quadcopter" not in samples.all_sample_ids(api.db)
 
 
 def test_analyse_save_rename_update_and_delete_over_the_routes(api):
@@ -391,7 +364,7 @@ def test_analyse_save_rename_update_and_delete_over_the_routes(api):
     pid = saved["id"]
     assert api.post("/api/maintainability/predictions", json={"name": "", "inputs": TWO}).status_code == 422
     rows = api.get("/api/maintainability/predictions").json()["predictions"]
-    assert [x["name"] for x in rows] == ["Two lines", "Survey quadcopter — maintainability prediction (sample)"]
+    assert [x["name"] for x in rows] == ["Two lines"]
     assert api.patch(f"/api/maintainability/predictions/{pid}", json={"name": "Renamed"}).json()["name"] == "Renamed"
     # New inputs: the results are recomputed on the server.
     r = api.patch(f"/api/maintainability/predictions/{pid}", json={"inputs": {**TWO, "mtbf": 1000}})
@@ -402,24 +375,24 @@ def test_analyse_save_rename_update_and_delete_over_the_routes(api):
     assert api.patch("/api/maintainability/predictions/nope", json={"name": "x"}).status_code == 404
     assert api.delete(f"/api/maintainability/predictions/{pid}").json() == {"ok": True}
     assert api.get(f"/api/maintainability/predictions/{pid}").status_code == 404
-    # The sample can't be renamed by anyone but its owner.
-    assert api.patch("/api/maintainability/predictions/sample-maintainability-quadcopter",
-                     json={"name": "Mine"}).status_code in (403, 404)
 
 
 def test_a_products_parts_list_as_lines(api):
-    from backend.maintenance import templates
     from backend.routers import maintenance as router
     from backend.maintenance.service import Maintenance
 
-    made = api.post("/api/maintenance/sample-product").json()
-    pid = made["product"]["id"]
+    m = Maintenance(router.get_store(), A, A)
+    part = m.create_part("SQ-4", "Survey rig")
+    for number, name, qty in (("SQ-M2210", "Brushless motor 2210", 4), ("SQ-ESC30", "Speed controller 30 A", 4),
+                              ("SQ-P1045", "Propeller 10x4.5", 4), ("SQ-IMU9", "Inertial measurement unit", 2)):
+        m.add_component(part["id"], m.create_part(number, name)["id"], quantity=qty)
+    pid = m.create_product("Survey rig", part_id=part["id"])["id"]
     r = api.get(f"/api/maintainability/products/{pid}/lines")
     assert r.status_code == 200, r.text
     out = r.json()
-    assert out["product"]["name"] == templates.SAMPLE_PRODUCT_NAME and out["part"]["part_number"] == "SQ-4"
+    assert out["product"]["name"] == "Survey rig" and out["part"]["part_number"] == "SQ-4"
     lines = {ln["ref"]: ln for ln in out["lines"]}
-    assert len(lines) == 11 and lines["SQ-M2210"]["quantity"] == 4 and lines["SQ-IMU9"]["quantity"] == 2
+    assert len(lines) == 4 and lines["SQ-M2210"]["quantity"] == 4 and lines["SQ-IMU9"]["quantity"] == 2
     assert lines["SQ-M2210"]["name"] == "Brushless motor 2210" and lines["SQ-M2210"]["assembly"] == ""
     assert out["rates"] == {"source": None} and out["note"] is None
     # With a reliability prediction saved for the product, its rates come along.
@@ -433,7 +406,6 @@ def test_a_products_parts_list_as_lines(api):
     assert after["SQ-ESC30"]["parts_count_rate"] == 120 and after["SQ-P1045"].get("parts_count_rate") is None
     assert api.get("/api/maintainability/products/nope/lines").status_code == 404
     # A product with no part: no lines, and why.
-    m = Maintenance(router.get_store(), A, A)
     bare = m.create_product("Bare design")
     out = api.get(f"/api/maintainability/products/{bare['id']}/lines").json()
     assert out["lines"] == [] and "no part yet" in out["note"]
@@ -483,7 +455,7 @@ def test_the_mcp_actions_analyse_save_read_update_and_delete(env):  # noqa: F811
     pid = saved["prediction_id"]
     listed = _ok(_mcp(token, "list", {"kind": "maintainability_predictions"}))
     assert "data_notice" in listed
-    assert {p["name"] for p in listed["predictions"]} == {"Two lines", "Survey quadcopter — maintainability prediction (sample)"}
+    assert {p["name"] for p in listed["predictions"]} == {"Two lines"}
     got = _ok(_mcp(token, "get", {"kind": "maintainability_prediction", "id": pid}))
     assert got["inputs"]["lines"][1]["sigma"] == 0.5 and got["results"]["mct"] == pytest.approx(2.5)
     assert "data_notice" in got
@@ -494,17 +466,11 @@ def test_the_mcp_actions_analyse_save_read_update_and_delete(env):  # noqa: F811
                                        "lines": lines[:1], "unit": "hours"}))
     assert again["results"]["mct"] == pytest.approx(1.0) and again["results"]["counts"]["lines"] == 1
     assert "Nothing to change" in _err(_mcp(token, "change", {"action": "maintainability_update", "prediction_id": pid}))
-    # The sample: read by everyone, changed or deleted by no one.
-    sample = "sample-maintainability-quadcopter"
-    assert _ok(_mcp(token, "get", {"kind": "maintainability_prediction", "id": sample}))["is_sample"]
-    assert "shared sample" in _err(_mcp(token, "change", {"action": "maintainability_update", "prediction_id": sample,
-                                                           "name": "x"}))
-    assert "shared sample" in _err(_mcp(token, "change", {"action": "maintainability_delete", "prediction_id": sample}))
     assert _ok(_mcp(token, "change", {"action": "maintainability_delete", "prediction_id": pid}))["deleted"]
     assert "Prediction not found" in _err(_mcp(token, "change", {"action": "maintainability_delete", "prediction_id": pid}))
     # Another user can't see it.
     other = _ok(_mcp(env.oauth[PRO], "list", {"kind": "maintainability_predictions"}))
-    assert {p["name"] for p in other["predictions"]} == {"Survey quadcopter — maintainability prediction (sample)"}
+    assert other["predictions"] == []
 
 
 def test_the_guide_and_the_schema_cover_it(env):  # noqa: F811

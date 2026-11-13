@@ -5,7 +5,6 @@
 
 export const MAINTAINABILITY_PATH = "/maintainability";
 export const MAINTAINABILITY_GUIDE = "maintainability-prediction";
-export const MAINTAINABILITY_SAMPLE = "sample-maintainability-quadcopter";
 
 // The elements of a repair, in the order they happen: the key the server
 // takes, the column heading, and the plain words.

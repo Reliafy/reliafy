@@ -1019,10 +1019,10 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
   await expectHealthy(page, problems, { label: "adding and removing prediction lines" });
 });
 
-test("a product's Modelling tab: Add a prediction… in the table area, on the Survey quadcopter", async ({ page, request, problems }) => {
+test("a product's Modelling tab: Add a prediction… in the table area, on the seeded product", async ({ page, request, problems }) => {
   const { products } = await (await request.get(`${M}/products`)).json();
-  const quad = products.find((p) => /^Survey quadcopter/.test(p.name));
-  expect(quad, "the seeded Survey quadcopter").toBeTruthy();
+  const quad = products.find((p) => p.name === "Smoke test pump skid");
+  expect(quad, "the seeded smoke test pump skid").toBeTruthy();
   for (const [width, height] of [[1920, 1080], [1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     // The address alone opens it (a link, or a reload).
@@ -1030,18 +1030,18 @@ test("a product's Modelling tab: Add a prediction… in the table area, on the S
     const pane = page.getByRole("region", { name: /^(Add a prediction|Refresh the prediction)$/ });
     await expect(pane).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(pane.locator(".table-pane-title")).toContainText("Survey quadcopter");
+    await expect(pane.locator(".table-pane-title")).toContainText("Smoke test pump skid");
     await expect(pane.locator(".pred2-table tbody tr").first()).toBeVisible();
     await expect(pane.getByRole("status")).toBeVisible();
     // A few parts given their types, the mechanical ones left out, the battery a rate of its own.
-    for (const [part, words] of [["Flight controller", "microprocessor"], ["Brushless motor 2210", "motor"]]) {
+    for (const [part, words] of [["Controller board", "microprocessor"], ["Motor 30 kW", "motor"]]) {
       await pane.getByRole("combobox", { name: `Handbook part type of ${part}` }).fill(words);
       await page.getByRole("listbox", { name: `Handbook part type of ${part} matches` }).getByRole("option").first().click();
     }
-    for (const part of ["Airframe kit, carbon arms", "Propeller 10x4.5"]) {
+    for (const part of ["Base frame", "Mechanical seal"]) {
       await pane.getByRole("checkbox", { name: `${part} is not electronic: leave it out` }).check();
     }
-    await pane.getByLabel("Your own failure rate for Battery pack 6S 10 Ah, per million hours").fill("5");
+    await pane.getByLabel("Your own failure rate for Backup battery, per million hours").fill("5");
     await pane.getByLabel("Mission time (hours)").fill("100");
     await expect(pane.getByRole("status")).toContainText("chance of no failure in 100 hours");
     await pane.locator(".table-pane-title").scrollIntoViewIfNeeded();
@@ -1052,10 +1052,10 @@ test("a product's Modelling tab: Add a prediction… in the table area, on the S
       const outBox = await pane.locator(".pred2-out").boundingBox();
       expect(outBox.x).toBeGreaterThan(inBox.x + inBox.width - 2);
     }
-    await shot(page, `${width}-quadcopter-prediction`);
+    await shot(page, `${width}-product-prediction`);
     if (width < 600) {
       await pane.getByRole("region", { name: "The prediction" }).scrollIntoViewIfNeeded();
-      await shot(page, `${width}-quadcopter-prediction-result`);
+      await shot(page, `${width}-product-prediction-result`);
     }
     if (width < 600) {
       await pane.getByRole("button", { name: "Back to the table" }).click();
@@ -1070,16 +1070,19 @@ test("a product's Modelling tab: Add a prediction… in the table area, on the S
   await expectHealthy(page, problems, { label: "a product's prediction pane" });
 });
 
-// A long diagram built from the tree (the Survey quadcopter's Propulsion: twelve like blocks in
-// series) opens with every block in view, and its "like blocks in series" hints are one line on
-// the Calculator that opens to the list, under the answer.
+// A long diagram built from the tree (a product's Propulsion: twelve like blocks in series, four
+// each of motors, speed controllers and propellers) opens with every block in view, and its "like
+// blocks in series" hints are one line on the Calculator that opens to the list, under the answer.
 test("a built RBD opens whole, and its like-blocks hints fold into one line", async ({ page, request, problems }) => {
-  const { products } = await (await request.get(`${M}/products`)).json();
-  const quad = products.find((p) => /^Survey quadcopter/.test(p.name));
-  expect(quad, "the seeded Survey quadcopter").toBeTruthy();
-  const { positions } = await (await request.get(`${M}/tree`)).json();
-  const prop = positions.find((p) => p.name === "Propulsion" && p.parent_id === quad.id);
-  expect(prop, "the Survey quadcopter's Propulsion").toBeTruthy();
+  const tag = `lb${Date.now()}`;
+  const quad = await postOk(request, `${M}/products`, { name: `Like blocks ${tag}`, part_number: `LB-${tag}` });
+  const prop = await postOk(request, `${M}/positions`, { name: "Propulsion", parent_id: quad.id });
+  for (const kind of ["Motor", "ESC", "Propeller"]) {
+    for (let i = 1; i <= 4; i += 1) {
+      const at = await postOk(request, `${M}/positions`, { name: `${kind} ${i}`, parent_id: prop.id });
+      await postOk(request, `${M}/positions/${at.id}/models`, { model_id: "sample-model-bearings-weibull" });
+    }
+  }
   const built = await postOk(request, `${M}/positions/${prop.id}/models`, { build_rbd: true });
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });

@@ -146,7 +146,7 @@ test("the CSV of the lines", () => {
   assert.equal(rows[0].split(",")[0], "Part");
   assert.equal(rows[1], "D1,D-1,Power,2,Diode,r1,0.0038,6,1,0.0456,4.56e-8,1");
   assert.equal(rows[2], "Motor,,,4,,,,,,,,");
-  assert.equal(csvFileName("Survey quadcopter"), "survey-quadcopter-parts-count.csv");
+  assert.equal(csvFileName("Pump skid"), "pump-skid-parts-count.csv");
   assert.equal(csvFileName(""), "prediction-parts-count.csv");
 });
 

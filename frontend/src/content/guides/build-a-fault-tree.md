@@ -9,7 +9,7 @@ order: 12
 ---
 
 A fault tree starts from the thing that must not happen, the **top event**
-("loss of thrust in flight", "no water to the tank"), and works down to its
+("loss of cooling to the reactor", "no water to the tank"), and works down to its
 causes. The answer it gives first is **how likely the top event is**. Then it
 tells you **which combinations of failures cause it** and **which failures
 matter most**.
@@ -24,8 +24,8 @@ turn a tree into a diagram at any time.
 - **Basic events** are the failures at the bottom of the tree: "Motor 1 fails",
   "Pump seal leaks". Each one needs its failure data.
 - **Gates** combine them:
-  - an **OR** gate occurs when **any** of its inputs occurs (one motor failing
-    brings a quadcopter down);
+  - an **OR** gate occurs when **any** of its inputs occurs (the pump stops if
+    its motor fails or its seal leaks);
   - an **AND** gate occurs only when **all** of its inputs occur (both pumps
     must fail before there's no flow);
   - a **vote** gate occurs when **at least k** of its inputs occur (two of
@@ -46,7 +46,7 @@ Open [Fault trees](/systems/fault-trees) under System models and press
 gate's inputs indented beneath it.
 
 1. Select the top event and give it a name that says what must not happen
-   ("Loss of thrust in flight"). Choose its gate: OR, AND or vote.
+   ("No water to the tank"). Choose its gate: OR, AND or vote.
 2. Use **Add gate** and **Add basic event** to build the tree downwards. Every
    row has a **⋯** menu (or right-click the row) to add, rename, change the
    gate, move a row up or down, move it into the gate above or out of its
@@ -61,13 +61,6 @@ gate's inputs indented beneath it.
    then says which events are guesses, so nobody mistakes them for data.
 5. Set the **Time unit** your rates and models are in, and press **Save**. The
    first save asks for the tree's name, starting from the top event's.
-
-The sample [quadcopter tree](/systems/fault-trees/sample-fault-tree-quadcopter)
-is a worked example: loss of thrust on any of four arms (each a motor or its
-speed controller), a battery that wears out, and a flight controller that
-carries on with either of its two IMUs, so it loses attitude only when both
-fail.
-Open it, change anything, and **Save a copy** to keep your version.
 
 ## Read the results
 

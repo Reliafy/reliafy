@@ -455,11 +455,6 @@ PRODUCTS: Table = {
     "build": ("product_id serial", "rev name dry_run", """Build an item from a product: a copy of its design tree
         named by the serial, the item (its part, this serial) fitted at the top, every position linked to its
         design position. dry_run (default true) lists the paths it would make."""),
-    "add_sample": ("", "again make_own product_id", """Add the Survey quadcopter, a ready-made product with
-        invented numbers (design with its RCM, evidence linked, and a scored FME(C)A, part and BOM, three items
-        built, two failure reports, an RBD with placeholder rates; its life models and analyses saved as the
-        workspace's own); once unless again is true. make_own: for a copy added earlier as "… (sample)"
-        (product_id, default the only one): bring it to the same, in place."""),
 }
 
 TASKS: Table = {
@@ -2057,12 +2052,7 @@ def register() -> None:
                 "A product's id: its design's top position (maintenance list.products)."))] = None,
             serial: str | None = None,
             dry_run: Annotated[bool | None, Field(description="build: only list what it would make (default true).")]
-            = None, again: bool | None = None,
-            make_own: Annotated[bool | None, Field(description=(
-                "add_sample: instead of adding, rename the copy product_id added earlier as \"… (sample)\": "
-                "the word leaves its name and its part's, items', RBD's, maintainability prediction's and "
-                "life-model links' names, and its life models and analyses are saved as the workspace's own "
-                "with its positions and decisions pointed at them (ids stay)."))] = None) -> dict[str, Any]:
+            = None) -> dict[str, Any]:
         """Products (what the user designs and builds): a product is a design tree (its functional
         hierarchy) with its part (the bill of materials); items are built from it by serial. Read with
         maintenance get.product / get.design_rollup and list.products / product_items / items_overview.
@@ -2074,12 +2064,6 @@ def register() -> None:
             return run(m.declare_design, position_id, part_id, rev)
         if action == "clear":
             return run(m.clear_design, product_id)
-        if action == "add_sample":
-            from backend.maintenance import templates
-
-            if make_own:
-                return run(templates.make_sample_own, m, _db(), product_id)
-            return run(templates.add_sample_product, m, _db(), bool(again))
         return run(m.build_item, product_id, serial, rev, name, _d(dry_run, True))
 
     PackageTasks = Annotated[list[dict[str, Any] | str] | None, Field(description=(

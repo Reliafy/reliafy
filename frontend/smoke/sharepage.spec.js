@@ -25,14 +25,18 @@ test.beforeAll(async ({ request }) => {
   expect(res.ok(), `fit: ${await res.text()}`).toBeTruthy();
   const model = await res.json();
   modelToken = await linkTo(request, "models", model.id);
+  // smoke/seed.js saves a fault tree and a reliability prediction (no shared sample of either).
+  const firstId = async (path, key) => (await (await request.get(path)).json())[key][0].id;
+  const treeId = await firstId("/api/fault-trees", "fault_trees");
+  const predictionId = await firstId("/api/predictions", "predictions");
   const report = await request.post("/api/reports", {
     data: {
       title: "Smoke share — November review", author: "Smoke test",
       sections: [
         { collection: "models", artifact_id: model.id, note: "The seals wear out." },
         { collection: "alt_models", artifact_id: "sample-alt-fluid" },
-        { collection: "fault_trees", artifact_id: "sample-fault-tree-quadcopter" },
-        { collection: "reliability_predictions", artifact_id: "sample-prediction-quadcopter" },
+        { collection: "fault_trees", artifact_id: treeId },
+        { collection: "reliability_predictions", artifact_id: predictionId },
       ],
     },
   });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { addSampleProduct, listMaintenancePlaces, listProductItems } from "../api.js";
+import { listMaintenancePlaces } from "../api.js";
 import RegisterList, { CountCell } from "../components/RegisterList.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
@@ -9,7 +9,6 @@ import { NewLocationModal } from "./MaintenanceLists.jsx";
 import {
   NOT_PLACED_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
-import { OPEN_SAMPLE_UNITS_LABEL, sampleUnitsPath } from "../sampleProduct.js";
 import "./Maintenance.css";
 
 const HELP = { guide: "build-your-asset-tree" };
@@ -25,7 +24,6 @@ export default function MaintenanceAssets() {
   const [view, setView] = useState(null);
   const [modal, setModal] = useState(false);
   const [error, setError] = useState(null);
-  const [adding, setAdding] = useState(false);
   const reload = useCallback(() => {
     listMaintenancePlaces().then(setView).catch((e) => setError(e.message));
   }, []);
@@ -42,19 +40,6 @@ export default function MaintenanceAssets() {
   const rest = view?.not_placed;
   const horizon = view?.horizon_days ?? 30;
   const newAsset = <button onClick={() => setModal(true)}><PlusIcon /> New asset</button>;
-  // A Survey quadcopter: the first of the three items built from the ready-made
-  // product, on its own tree (the product is added first when there's none).
-  const openSample = () => {
-    if (adding) return;
-    setAdding(true);
-    setError(null);
-    sampleUnitsPath(addSampleProduct, listProductItems)
-      .then((path) => navigate(path))
-      .catch((e) => { setError(`The Survey quadcopter didn't open: ${e.message}`); setAdding(false); });
-  };
-  const sampleButton = (
-    <button type="button" className="secondary" onClick={openSample} disabled={adding}>{adding ? "Opening…" : OPEN_SAMPLE_UNITS_LABEL}</button>
-  );
   const columns = [
     { key: "positions", label: "Positions", num: true, cell: (p) => p.positions },
     { key: "items", label: "Items", num: true, cell: (p) => p.items },
@@ -84,15 +69,13 @@ export default function MaintenanceAssets() {
       <RegisterList
         title="Assets" purpose="The places you look after, and everything at each one."
         help={HELP} primary={newAsset}
-        menu={<button type="button" className="ovm-item" onClick={openSample} disabled={adding}>{OPEN_SAMPLE_UNITS_LABEL}</button>}
         error={error} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
         count={assetsSummary(view)} search={(p) => [p.name, p.description]}
         name={(p) => ({ to: assetPath(p.id), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
         columns={columns} after={notPlaced || null} onDelete={setDeleting}
         empty={{
           title: "No assets yet",
-          text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is. Or open a Survey quadcopter: one of three built from a ready-made product, with its flight hours and failure reports. Its numbers are invented.",
-          sample: sampleButton,
+          text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is.",
           guide: "How the asset tree works",
         }}
       />

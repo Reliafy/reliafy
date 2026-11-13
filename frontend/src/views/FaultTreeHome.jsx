@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { deleteFaultTree, importFaultTreeFile, listFaultTrees, renameFaultTree } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -11,7 +11,6 @@ import { FAULT_TREES_PATH, FAULT_TREES_TITLE } from "../navigation.js";
 import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "build-a-fault-tree" };
-const SAMPLE_PATH = `${FAULT_TREES_PATH}/sample-fault-tree-quadcopter`;
 
 const PencilIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -128,7 +127,7 @@ export default function FaultTreeHome() {
           body: (
             <>
               Start from the top event (what must not happen) and add the gates and basic events beneath it, or import
-              one from Open-PSA or Galileo. The <Link to={SAMPLE_PATH}>sample quadcopter tree</Link> is a worked example.
+              one from Open-PSA or Galileo.
             </>
           ),
           action: newTree,

@@ -36,11 +36,12 @@ SAMPLES = {
     "fleets": "sample-fleet-trucks",
     "datasets": "sample-ds-bearings",
 }
-# Kinds a report holds that have no link of their own (yet).
+# Kinds a report holds that have no link of their own (yet), with their sample (None: no
+# shared sample of that kind since the survey quadcopter's were withdrawn, Nov 2026).
 REPORT_ONLY = {
     "alt_models": "sample-alt-fluid",
-    "fault_trees": "sample-fault-tree-quadcopter",
-    "reliability_predictions": "sample-prediction-quadcopter",
+    "fault_trees": None,
+    "reliability_predictions": None,
 }
 
 
@@ -176,7 +177,7 @@ def test_items_picker_lists_own_items_first_then_samples(client):
     assert "Bob's model" not in {i["name"] for i in items}
     assert SAMPLES["fleets"] not in {i["artifact_id"] for i in items}  # hidden
     # Every kind's samples, but the fleets' one sample, which is hidden.
-    assert {i["collection"] for i in items} == (set(SAMPLES) | set(REPORT_ONLY)) - {"fleets"}
+    assert {i["collection"] for i in items} == (set(SAMPLES) | {c for c, sid in REPORT_ONLY.items() if sid}) - {"fleets"}
     # Each item says what it is and when it was saved, so two with one name can be told apart.
     mine = next(i for i in own if i["artifact_id"] == model_id)
     assert mine["kind"] == "Non-repairable model" and mine["created_at"] and mine["updated_at"]
@@ -323,7 +324,25 @@ def test_report_only_kinds_render_in_a_report(client):
 
     assert not set(REPORT_ONLY) & public_links.PUBLIC_COLLECTIONS
     client.act_as(A)
-    ids = {coll: _own_copy(client.db, coll, sid) for coll, sid in REPORT_ONLY.items()}
+    # The kinds with no shared sample to copy are made here.
+    tree = {"unit": "hours", "top": "top", "nodes": [
+        {"id": "top", "type": "gate", "gate": "or", "label": "No water", "inputs": ["a", "b"]},
+        {"id": "a", "type": "event", "label": "Pump A fails", "probability": 0.1},
+        {"id": "b", "type": "event", "label": "Pump B fails", "probability": 0.2}]}
+    lines = [{"name": "D1", "record_id": "mil-hdbk-217f-n2:6-1-general-purpose-analog", "quantity": 2}]
+    made = {
+        "fault_trees": lambda: client.post("/api/fault-trees", json={"name": "Water supply", "tree": tree}),
+        "reliability_predictions": lambda: client.post("/api/predictions", json={
+            "name": "Box", "inputs": {"lines": lines, "environment": "GF"}}),
+    }
+    ids = {}
+    for coll, sid in REPORT_ONLY.items():
+        if sid:
+            ids[coll] = _own_copy(client.db, coll, sid)
+        else:
+            r = made[coll]()
+            assert r.status_code == 200, r.text
+            ids[coll] = r.json()["id"]
     rep = _report(client, [{"collection": c, "artifact_id": i} for c, i in ids.items()])
     assert rep.status_code == 200, rep.text
     assert [s["kind"] for s in rep.json()["sections"]] == [

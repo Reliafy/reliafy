@@ -55,7 +55,10 @@ def web(monkeypatch):
     test_db = mongomock.MongoClient()["prediction_caps"]
     monkeypatch.setattr(db, "_db", test_db)
     monkeypatch.setattr(db, "_simulated", True)
-    samples.seed_samples(test_db)  # a sample of each kind, which must not count
+    samples.seed_samples(test_db)
+    # A shared sample of each kind, which must not count (there's no seeded one since Nov 2026).
+    for kind in KINDS:
+        test_db[kind].insert_one({"_id": f"sample-{kind}", "owner_id": samples.SAMPLE_OWNER, "name": "Sample"})
     test_db.users.insert_many([
         {"_id": FREE, "email": "free@example.org", "name": "Free", "email_verified": True},
         {"_id": PRO, "email": "pro@example.org", "name": "Pro", "plan": "pro", "email_verified": True},

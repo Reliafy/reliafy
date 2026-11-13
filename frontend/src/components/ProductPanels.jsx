@@ -85,7 +85,7 @@ export function NewProductModal({ onClose, onDone }) {
                onSubmit={async () => onDone(await createProduct({ name: name.trim(), part_number: number.trim(), rev: rev.trim() }))}>
       <Field label="Name" text={name}><input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>
       <Field label="Part number (optional)" hint="A new part in the catalogue: its bill of materials is the product's parts list.">
-        <input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="e.g. SQ-4" />
+        <input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="e.g. PS-200" />
       </Field>
       <Field label="Revision"><input value={rev} onChange={(e) => setRev(e.target.value)} placeholder="e.g. A" /></Field>
       <p className="lib-date">Then add its functional structure (what each part of it does) on its page, and build items from it.</p>

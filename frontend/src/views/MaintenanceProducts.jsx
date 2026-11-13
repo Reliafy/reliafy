@@ -11,37 +11,18 @@
 // item picked by serial (FailureReportsPanel).
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { addSampleProduct, getProduct, listProducts } from "../api.js";
+import { getProduct, listProducts } from "../api.js";
 import RegisterList, { CountCell } from "../components/RegisterList.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { NewProductModal } from "../components/ProductPanels.jsx";
 import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
 import AssetExplorer from "./AssetExplorer.jsx";
-import { SAMPLES, addSample, addedNote, hasCopy } from "../sampleProduct.js";
 import { PRODUCTS_GUIDE, PRODUCTS_PATH, productPath, productTab } from "../products.js";
 import "./Maintenance.css";
 import "./MaintenanceProducts.css";
 
 const HELP = { guide: PRODUCTS_GUIDE };
-
-// "Add the Survey quadcopter": once; with a copy there, asked whether to add another.
-function useSampleProduct(onAdded) {
-  const confirm = useConfirm();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const add = () => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    addSample(addSampleProduct, confirm, "product")
-      .then((r) => onAdded(r))
-      .catch((e) => setError(`The Survey quadcopter wasn't added: ${e.message}`))
-      .finally(() => setBusy(false));
-  };
-  return { add, busy, error };
-}
 
 export default function MaintenanceProducts() {
   const navigate = useNavigate();
@@ -62,13 +43,7 @@ export default function MaintenanceProducts() {
     // Shown once: a reload of the page doesn't bring the toast back.
     if (location.state?.deleted) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const sample = useSampleProduct((r) => navigate(productPath(r.product?.id || r.position.id), { state: { note: addedNote(r) } }));
   const newProduct = <button onClick={() => setModal(true)}><PlusIcon /> New product</button>;
-  const sampleButton = (
-    <button type="button" className="secondary" onClick={sample.add} disabled={sample.busy}>
-      {sample.busy ? "Adding…" : SAMPLES.product.label}
-    </button>
-  );
   const n = (rows || []).length;
   const columns = [
     { key: "rev", label: "Revision", cell: (p) => p.rev || <span className="lib-date">—</span> },
@@ -87,9 +62,7 @@ export default function MaintenanceProducts() {
       <RegisterList
         title="Products" purpose="What you design and build: each product's structure, and the items built from it."
         help={HELP} primary={newProduct}
-        actions={rows?.length && !hasCopy(rows) ? sampleButton : null}
-        menu={<button type="button" className="ovm-item" onClick={sample.add} disabled={sample.busy}>{SAMPLES.product.label}</button>}
-        error={error || sample.error} rows={rows} noun={["product", "products"]}
+        error={error} rows={rows} noun={["product", "products"]}
         count={`${n} ${n === 1 ? "product" : "products"}`}
         search={(p) => [p.name, p.description, p.part?.part_number]}
         name={(p) => ({
@@ -101,7 +74,6 @@ export default function MaintenanceProducts() {
         empty={{
           title: "No products yet",
           text: "A product is a design: what each part of it does (its functional structure, with its FME(C)A and RCM) and the part it is, with its bill of materials. Build items from it by serial number; their failures roll up to the design.",
-          sample: sampleButton,
           guide: "How products and items work",
         }}
       />
@@ -156,8 +128,7 @@ export function ProductDetail() {
   return (
     <>
       <PageTitle name={product.name} />
-      <AssetExplorer key={id} root={product.id} tabKey="view" title={product.name} heading={1}
-                     onProductChanged={() => getProduct(id).then(setProduct).catch(() => {})} />
+      <AssetExplorer key={id} root={product.id} tabKey="view" title={product.name} heading={1} />
     </>
   );
 }

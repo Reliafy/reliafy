@@ -2,14 +2,14 @@
 title: "Products and the items built from them"
 task: "How do I keep a product's design (its structure, FME(C)A and parts list) and see what happens to every item built from it?"
 category: "Maintenance strategy"
-prerequisites: "Reliafy Maintenance, or the Survey quadcopter."
+prerequisites: "Reliafy Maintenance."
 order: 28
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
 # Products and Items pages and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
-A **product** is something you design and build: a quadcopter, a pump skid, a
+A **product** is something you design and build: a pump skid, a gearbox, a
 control panel. In Reliafy a product is its design: the **functional
 structure** (what each part of it does, with its FME(C)A and RCM) and the
 **part** it is, whose bill of materials is the product's parts list.
@@ -19,31 +19,12 @@ item copies the product's functional structure into the item's own tree and
 fits the item at its top, so each item keeps its own fitments, readings and
 failure reports.
 
-## Start with the Survey quadcopter
+## Make a product
 
-On **Products**, press **Add the Survey quadcopter**. The Survey quadcopter is
-a made-up product: its numbers are invented. It adds a small
-inspection quadcopter: its design with a complete RCM
-study and every failure mode scored, its part with a short bill of materials,
-three items built from it, each with its flight hours and flights counted, a
-motor replaced on one of them, two failure reports, a flight-critical RBD
-whose failure rates are placeholders, and a
-[maintainability prediction](/guides/maintainability-prediction) for the
-product, saved with your own predictions under the product's name (its repair
-times and failure rates are invented too).
-
-It is yours from the moment it's added, a product like any you make: rename
-it, change it, build on it. Its life models and strategy analyses are saved in
-your workspace as your own, so they count towards your plan's storage; any
-there was no room for stay linked to the shared library's records, and the
-product says which. It isn't added again beside the one you have unless you
-ask for another copy (the **⋯** menu on **Products**).
-
-A copy added earlier may still have "(sample)" in its name. Pick **Make this
-my own…** in the **⋯** menu of its own row (the top of its tree): it stays
-exactly as it is, the word leaves its name and the names of its part, items,
-RBD and maintainability prediction, and its life models are saved as your
-own.
+On **Products**, press **New product**: give it a name and, if you have one,
+its part number (a new part in the catalogue) or a part already there. Then
+build its functional structure under it, one position at a time, as on the
+asset tree. A top-level tree with no items fitted can become a product too.
 
 ## A product's page
 
@@ -78,10 +59,7 @@ the design itself. Its tabs:
 - **LSA**: every task in the design with what it needs to be done (labour,
   tools, spares, consumables, method), added up. Its tasks are packaged into
   visits on the items built from it, not on the design. An item built later
-  carries copies of the tasks with what they need. In the Survey quadcopter every
-  programme task has its record, and item 0007 has its calendar tasks (the
-  failsafe tests, the battery storage check and the annual inspection) in one
-  monthly work package.
+  carries copies of the tasks with what they need.
 
 **Delete…** (in the product's row menu in its tree, or the bin on its row in
 Products) deletes the design and everything inside it. Items built from it stay. Its
@@ -90,7 +68,7 @@ history stays, and **Undo** in the message that follows brings it back.
 ## Physical layout
 
 A product has a physical layout as well as a functional structure: where each
-part of it sits (the forward left arm, the battery bay). On the product's page,
+part of it sits (the motor end, the control cabinet). On the product's page,
 switch the tree from **Positions** to **Locations** to see it.
 
 - **New location inside** the product (the tree's last row) adds a place at the
@@ -107,10 +85,6 @@ A product's locations are part of its design, never assets: they don't show on
 **Assets**. An item built from the product carries a copy of the layout, its
 positions placed the same way. The copy is wherever the item is kept, and moves
 with it.
-
-The Survey quadcopter's layout has four arms (each with its arm structure,
-motor, speed controller and propeller), the centre body with its battery bay,
-and the payload bay.
 
 ## Items
 
