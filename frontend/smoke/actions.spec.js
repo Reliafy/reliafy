@@ -243,8 +243,12 @@ async function uploadAndFit(page) {
   await expect(dialog.getByRole("combobox", { name: "x", exact: true })).toContainText("col 1");
 
   // The column of decimals is offered as n (a count) only with the reason, and can't be picked.
-  await dialog.getByRole("combobox", { name: "n", exact: true }).click();
   const count = page.getByRole("option", { name: /^col 2/ });
+  // Open the list once the dialog has read the file (CI can be slower than the click).
+  await expect(async () => {
+    await dialog.getByRole("combobox", { name: "n", exact: true }).click();
+    await expect(count).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   await expect(count).toBeDisabled();
   await expect(count).toContainText("has decimals");
   // Close the list by clicking the dialog's own text (Escape would close the dialog too).
