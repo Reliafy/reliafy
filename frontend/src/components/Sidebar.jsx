@@ -71,6 +71,8 @@ const ICONS = {
   assets: icon(<><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>),
   maintenance: icon(<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />),
   modelling: icon(<path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />),
+  // Libraries of data and models: an open book.
+  libraries: icon(<><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5z" /><path d="M12 6.5v13" /></>),
   decisions: icon(<><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4-2.5M12 12v4.5" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></>),
   reports: icon(<><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4M10 12h5M10 16h5" /></>),
   agent: icon(<><rect x="4" y="7" width="16" height="12" rx="2" /><path d="M12 7V4M9 12h.01M15 12h.01M9 16h6" /></>),

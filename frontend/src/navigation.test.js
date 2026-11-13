@@ -571,3 +571,11 @@ test("every placeholder page has its text; Requests is in the preview menu, the 
   assert.ok(links.has("/maintenance/inbox"));
   assert.deepEqual(Object.keys(PLANNED).sort(), ["failures", "fleets", "inbox", "requirements"]);
 });
+
+test("every top-level menu entry has a sidebar icon", () => {
+  const src = readFileSync(new URL("./components/Sidebar.jsx", import.meta.url), "utf8");
+  const table = src.slice(src.indexOf("const ICONS = {"), src.indexOf("};", src.indexOf("const ICONS = {")));
+  const topLevel = [...new Set(ROLES.flatMap((r) => r.entries || []))];
+  const missing = topLevel.filter((id) => !new RegExp(`\\n\\s*${id}:`).test(table));
+  assert.deepEqual(missing, []);
+});
