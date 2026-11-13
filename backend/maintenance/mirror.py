@@ -95,6 +95,7 @@ class Neo4jMirror:
         self._newer_noted: set[str] = set()
         self.last_error: str | None = None
         self.last_sync: dict | None = None
+        self._full_next = False  # the store was rebuilt after a purge: copy whole once
 
     @property
     def scope(self) -> frozenset:
@@ -136,6 +137,13 @@ class Neo4jMirror:
             self._wake.put_nowait(org)
         except queue.Full:
             pass  # a sync is already asked for: it will take this write too
+
+    def resync_full(self) -> None:
+        """The store's graph was rebuilt because events were erased from the log
+        (``purge.py``): what they wrote is gone, which a sync of what changed
+        can't see, so the next sync copies every workspace whole."""
+        self._full_next = True
+        self.notify()
 
     def _run(self) -> None:
         delay = 1.0
@@ -186,6 +194,10 @@ class Neo4jMirror:
         scope only: any other is counted in ``out_of_scope`` and never sent.
         ``full``: copy them whole whatever their position. Returns what was sent."""
         with self._sync_lock:
+            full_next = self._full_next and orgs is None  # owed to every workspace: only a sync of all pays it
+            if full_next:
+                self._full_next = False
+            full = full or full_next
             _, marks = self.store.change_marks()
             asked = sorted(orgs if orgs is not None else marks)
             wanted = [o for o in asked if self.in_scope(o)]
@@ -194,8 +206,12 @@ class Neo4jMirror:
             if wanted:
                 self.remote_marks(refresh=self._remote is None)
                 changes_from = self.store.changes_from()
-            for org in wanted:
-                self._sync_org(org, marks.get(org, 0), changes_from, result, full)
+            try:
+                for org in wanted:
+                    self._sync_org(org, marks.get(org, 0), changes_from, result, full)
+            except BaseException:
+                self._full_next = self._full_next or full_next  # still owed
+                raise
             self.last_sync = {**result, "at": _now()}
             self.last_error = None
             return result
