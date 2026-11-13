@@ -431,70 +431,8 @@ async function scrollTo(locator, offset = 80) {
   await wait(600);
 }
 
-// RCM and FME(C)A guides: the Survey quadcopter (the one worked example for both tabs), its
-// design with its RCM (some decisions linked to the evidence saved with it) and every failure
-// mode scored. When this run added it, the cleanup retires its design and items and
-// deletes its RBD, its maintainability prediction and the records the add saved with it;
-// one already there is left alone. null when Reliafy Maintenance is
-// off on this server (then those shots are skipped, out loud, and keep their images).
 // Teams guide: a team with one pending invitation (single-user mode can create one:
 // no billing).
-async function seedSampleProduct(config) {
-  if (!config.maintenance) return null;
-  const before = await savedIds();
-  const made = await api("/maintenance/sample-product", {});
-  // What the add saved in the workspace as its own (its life models, the analyses behind
-  // its decisions, their datasets): only the ones that weren't there before, so the
-  // cleanup deletes those and nothing a workspace already had.
-  const after = made.added ? await savedIds() : before;
-  const saved = SAVED_KINDS.flatMap((kind) => after[kind].filter((x) => !before[kind].includes(x)).map((x) => `${kind}/${x}`));
-  const id = made.product?.id || made.position.id;
-  const items = made.items || (await api(`/maintenance/products/${id}/items`)).items;
-  // The design's positions by name (Motor 1, Propeller 1, ...), for the shots that pick one.
-  const sheet = await api(`/maintenance/positions/${id}/rcm?scope=below`);
-  const at = Object.fromEntries(sheet.positions.map((p) => [p.name, p.id]));
-  return {
-    id, added: !!made.added, tops: items.map((it) => it.top_position_id), rbdId: made.rbd?.id, at, saved,
-    predictionId: made.maintainability?.added ? made.maintainability.id : null,
-  };
-}
-// The ids of every saved model, degradation model, strategy analysis and dataset the
-// workspace lists (models and analyses before the datasets they were fitted to).
-const SAVED_KINDS = ["/models", "/degradation/models", "/strategy/analyses", "/datasets"];
-async function savedIds() {
-  const out = {};
-  for (const kind of SAVED_KINDS) {
-    const got = await api(kind).catch(() => ({}));
-    out[kind] = (Object.values(got).find(Array.isArray) || []).map((row) => row.id);
-  }
-  return out;
-}
-// Failure reports guide: a report filed on the first quadcopter built from that
-// product (serial 0007, which has the product's own report on its Motor 1) and taken
-// part way round the loop (investigated, one corrective action), so the list and the
-// report have something to show. Reports are never deleted (rejected at most); when
-// this run added the product, retiring its items in the cleanup takes it out of the
-// tree. null without the product.
-async function seedUavReport(uav) {
-  if (!uav?.tops?.length) return null;
-  const top = uav.tops[0];
-  const report = await api("/maintenance/failure-reports", {
-    position_id: top, title: "Drifted and landed hard in a gust",
-    description: "The aircraft yawed and dropped about a metre in a gust on the return leg, then landed hard on its failsafe. One landing leg cracked.",
-    found_by: "Sam (pilot)", consequence: "operational", failure_mode_text: "Loses sync with the motor on a rapid throttle change",
-  });
-  await api(`/maintenance/failure-reports/${report.id}/status`, { status: "investigating" });
-  await api(`/maintenance/failure-reports/${report.id}/investigation`, {
-    notes: "Flight log shows an RPM dropout on ESC 3 at the moment of the yaw; the motor batch was changed last month.",
-    root_cause_category: "design", root_cause: "Controller timing not retuned for the new motor batch",
-    whys: ["The aircraft dropped in a gust", "Motor 3 lost thrust for a moment", "ESC 3 lost sync on a rapid throttle change", "Its timing wasn't retuned for the new motor batch"],
-  }, "PUT");
-  await api(`/maintenance/failure-reports/${report.id}/actions`, {
-    what: "Retune the controller timing for each motor batch and add RPM dropouts to the log review", owner: "Flight test", work_order_ref: "WO-2041",
-  });
-  await api(`/maintenance/failure-reports/${report.id}/status`, { status: "corrective_action" });
-  return { id: report.id, top };
-}
 // Signals guide: a pump with a vibration channel, six snapshots over 40 days with
 // a 50 Hz tone growing (null when Reliafy Maintenance is off on this server).
 async function seedSignals(config) {
@@ -517,6 +455,25 @@ async function seedSignals(config) {
 }
 // RCM study guide: a study of the user's own (the sample is read-only, so its
 // decision dialog can't open), with one mode still to decide.
+// Maintainability guide: a pump skid's saved prediction, its repair times invented
+// (a few lines in assemblies, so the result has a Pareto and a by-assembly table).
+async function seedMaintainability() {
+  const line = (ref, name, assembly, quantity, rate, isolation, access, replace, restore, checkout, maximum) => ({
+    ref, name, assembly, quantity, failure_rate: rate, maximum,
+    elements: { isolation, access, replace, restore, checkout },
+  });
+  const saved = await api("/maintainability/predictions", { name: "Pump skid — maintainability", inputs: {
+    unit: "minutes", failure_rate_unit: "per_million_hours", percentile: 0.95, lines: [
+      line("PS-M30", "Motor 30 kW", "Drive", 1, 45, 20, 30, 90, 20, 30, 360),
+      line("PS-CPL", "Flexible coupling", "Drive", 1, 60, 10, 15, 30, 10, 15, 120),
+      line("PS-MS", "Mechanical seal", "Pump", 1, 180, 15, 40, 60, 20, 20, 240),
+      line("PS-BRG", "Bearing set", "Pump", 1, 90, 20, 45, 90, 20, 30, 300),
+      line("PS-IMP", "Impeller", "Pump", 1, 25, 20, 60, 45, 20, 30, 300),
+      line("PS-VSD", "Variable speed drive", "Controls", 1, 70, 30, 10, 30, 10, 20, 180),
+      line("PS-PT", "Pressure transmitter", "Controls", 2, 40, 15, 5, 10, 5, 15, 90),
+    ] } });
+  return saved.id;
+}
 async function seedRcmStudy() {
   const study = await api("/rcm/studies", { name: "Conveyor drive — RCM", system: "Conveyor line 2", description: "" });
   const res = await fetch(`${BASE}/api/rcm/studies/${study.id}/tree`, {
@@ -775,8 +732,6 @@ async function main() {
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
     { file: "sif-02-results.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
-    // --- Maintainability prediction: the sample quadcopter's saved prediction ---
-    { file: "mp-01-result.png", url: "/maintainability/sample-maintainability-quadcopter", settle: 1500 },
     // --- RCM study (guides/rcm-study.md): the sample, with its evidence statuses ---
     { file: "rcm-study-01.png", url: "/maintenance/rcm/sample-rcm-truck", settle: 2000,
       async act(page) { await page.getByRole("treegrid", { name: "RCM worksheet" }).waitFor({ timeout: 20000 }); await wait(400); } },
@@ -889,76 +844,8 @@ async function main() {
         await m.getByPlaceholder("Interval").fill("580");
         await m.locator(".evidence-option", { hasText: /Bearing preventive replacement/ }).click(); await wait(500);
       } },
-    // --- RCM on the asset tree: the RCM tab of the Survey quadcopter's functional
-    // structure (the same Explorer, on the design), its top picked: its function top
-    // down, failures explained below, with the evidence checks; then the decision
-    // dialog on one of its modes (Propeller 1's blade fatigue: a fixed interval, 130
-    // hours, linked to the sample replacement analysis). Without MAINTENANCE_ENABLED on
-    // the server there is no product (fx.uav null) and both are skipped.
-    { file: "rcm-01-explorer.png", url: `/products/${fx.uav?.id}?view=rcm&sel=${fx.uav?.id}`, settle: 2500,
-      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
-      async act(page) {
-        await page.getByRole("treegrid", { name: /and their RCM/ }).waitFor({ timeout: 20000 });
-        await page.getByText("Aircraft lost or crashes").first().waitFor({ timeout: 20000 });
-        // At this width the Evidence check column may be off by default: show it.
-        // Columns… is in the panel heading's "…" menu.
-        await page.locator(".tt-headslot").getByRole("button", { name: "More actions" }).click();
-        await page.locator(".tt-headslot").getByRole("button", { name: "Columns…" }).click(); await wait(300);
-        const check = page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Evidence check" });
-        if (!(await check.isChecked())) await check.check();
-        await page.keyboard.press("Escape"); await wait(300);
-        await page.getByText(/inconclusive/i).first().waitFor({ timeout: 20000 }); await wait(600);
-      } },
-    { file: "rcm-02-decision.png", url: `/products/${fx.uav?.id}?view=rcm&sel=${fx.uav?.at?.["Propeller 1"]}`, settle: 2500,
-      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
-      async act(page) {
-        const table = page.getByRole("treegrid", { name: /and their RCM/ });
-        await table.waitFor({ timeout: 20000 });
-        // The row menu's Change the decision… (the Details edit step 3 in place and never open the dialog).
-        await table.getByRole("row", { name: /^Failure mode: Blade fatigue crack at the hub/ }).first().locator(".tt-tree, .tt-l1").first().click({ button: "right" }); await wait(400);
-        await page.getByRole("menu").getByRole("menuitem", { name: "Change the decision…" }).click();
-        await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
-      } },
-    // --- FME(C)A: the FME(C)A tab of the Survey quadcopter's functional
-    // structure (the same Explorer, on the design; its motor picked, so the worksheet columns show scored rows),
-    // then the root picked for the criticality matrix in its Details. Skipped,
-    // like the RCM shots, without Maintenance.
-    { file: "fmea-01-worksheet.png", url: `/products/${fx.uav?.id}?view=fmea&sel=${fx.uav?.id}`, settle: 2500,
-      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=fmea on a server that has it."),
-      async act(page) {
-        const table = page.getByRole("treegrid");
-        await table.waitFor({ timeout: 20000 });
-        await table.getByRole("row", { name: /^Motor/ }).first().locator(".tt-tree").click(); await wait(600);
-        await page.getByText("Bearing seizure").first().waitFor({ timeout: 20000 }); await wait(600);
-      } },
-    { file: "fmea-02-matrix.png", url: `/products/${fx.uav?.id}?view=fmea&sel=${fx.uav?.id}`, settle: 2500,
-      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=fmea on a server that has it."),
-      async act(page) {
-        await page.getByRole("treegrid").waitFor({ timeout: 20000 });
-        await page.getByRole("complementary", { name: "Details" }).getByText(/matrix/i).first().waitFor({ timeout: 20000 }); await wait(600);
-      } },
-    // --- Failure reports on the asset tree: the Explorer's Failure reports tab on
-    // a quadcopter built from the Survey quadcopter product (its tree, serial 0007, with a
-    // report filed on it in the fixture step, part way round the loop), then the
-    // report itself: its stage, facts, investigation and corrective action.
-    // Skipped, like the RCM shots, without Maintenance.
-    { file: "reports-01-list.png", url: `/asset-register/explorer?arrange=positions&root=${fx.report?.top}&tab=reports&sel=${fx.report?.top}`, settle: 2500,
-      skip: () => (fx.report ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
-      async act(page) {
-        await page.getByRole("list", { name: "Failure reports" }).getByRole("button", { name: /Drifted and landed hard/ }).waitFor({ timeout: 20000 });
-        await wait(600);
-      } },
-    { file: "reports-02-report.png", url: `/asset-register/explorer?arrange=positions&root=${fx.report?.top}&tab=reports&sel=${fx.report?.top}&report=${fx.report?.id}`, settle: 2500,
-      skip: () => (fx.report ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
-      async act(page) {
-        await page.getByRole("heading", { name: /Drifted and landed hard/ }).waitFor({ timeout: 20000 });
-        // The investigation beside the open corrective action: both cards open.
-        const fold = page.getByRole("button", { name: /^Investigation$/ });
-        if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
-        await fold.evaluate((el) => el.blur());
-        await page.mouse.move(0, 0);
-        await wait(600);
-      } },
+    // --- Maintainability prediction: a saved one (the fixture's pump skid) ---
+    { file: "mp-01-result.png", url: `/maintainability/${fx.maintainabilityId}`, settle: 1500 },
     // --- Signal channels (a channel's own page): the spectrum, adding a snapshot from a file, editing a band.
     { file: "signals-01-spectrum.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
       skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
@@ -1245,11 +1132,10 @@ async function main() {
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
       rcmStudyId: await seedRcmStudy(),
-      uav: await seedSampleProduct(config),
+      maintainabilityId: await seedMaintainability(),
       signals: await seedSignals(config),
       teamId: await seedTeam(),
     };
-    fx.report = await seedUavReport(fx.uav);
     try {
       await shoot(pick(fixtureShots(fx)));
     } finally {
@@ -1263,17 +1149,7 @@ async function main() {
         await fetch(`${BASE}/api/models/${id}`, { method: "DELETE" }).catch(() => {});
       }
       await fetch(`${BASE}/api/joint/models/${fx.joint.modelId}`, { method: "DELETE" }).catch(() => {});
-      if (fx.uav?.added) {
-        for (const id of [...fx.uav.tops, fx.uav.id]) {
-          await fetch(`${BASE}/api/maintenance/positions/${id}/retire`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: "guide capture", cascade: true }),
-          }).catch(() => {});
-        }
-        if (fx.uav.rbdId) await fetch(`${BASE}/api/rbds/${fx.uav.rbdId}`, { method: "DELETE" }).catch(() => {});
-        if (fx.uav.predictionId) await fetch(`${BASE}/api/maintainability/predictions/${fx.uav.predictionId}`, { method: "DELETE" }).catch(() => {});
-        for (const path of fx.uav.saved) await fetch(`${BASE}/api${path}`, { method: "DELETE" }).catch(() => {});
-      }
+      await fetch(`${BASE}/api/maintainability/predictions/${fx.maintainabilityId}`, { method: "DELETE" }).catch(() => {});
       if (fx.signals) {
         await fetch(`${BASE}/api/maintenance/signals/channels/${fx.signals.channelId}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: "" }),

@@ -294,17 +294,18 @@ def test_the_guide_walks_an_agent_through_the_rcm(env, topic):
 def test_rcm_gaps_say_why_evidence_needs_a_look(env):
     from backend.services import samples
 
-    samples.seed_samples(env["db"])  # the sample product's decisions link sample models and analyses
+    samples.seed_samples(env["db"])  # the decision below cites the sample bearing model
 
     async def flow(client):
-        made = _ok(await _do(client, "maintenance", "products.add_sample"))
-        return _ok(await _list(client, "rcm_gaps", target_id=made["product"]["id"]))
+        ids = await _pump_rcm(client)
+        # Run to failure as "random", on a model that shows wear-out: contradicted.
+        _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=ids["impeller"], decision={
+            "outcome": "rtf", "rtf_basis": "random",
+            "evidence": {"type": "model", "id": "sample-model-bearings-weibull"}}))
+        return ids, _ok(await _list(client, "rcm_gaps", target_id=ids["sys"]))
 
-    gaps = _session(env["token"], flow)
+    ids, gaps = _session(env["token"], flow)
     rows = gaps["evidence_to_check"]
-    contradicted = [r for r in rows if r["status"] == "contradicted"]
-    assert len(contradicted) == 4 and all("wear-out" in r["reason"] for r in contradicted)
-    assert {r["position"]["name"] for r in contradicted} == {"Motor 1", "Motor 2", "Motor 3", "Motor 4"}
-    assert all(r["functional_failure"]["text"] for r in rows)
-    [unclear] = [r for r in rows if r["status"] == "inconclusive"]
-    assert unclear["text"] == "Cell capacity fade" and "Unit mismatch" in unclear["reason"]
+    [contradicted] = [r for r in rows if r["status"] == "contradicted"]
+    assert "wear-out" in contradicted["reason"] and contradicted["position"]["name"] == "Pump A"
+    assert contradicted["functional_failure"]["text"] == "Flow below 40 L/s"

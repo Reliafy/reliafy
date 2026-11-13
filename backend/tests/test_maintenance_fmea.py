@@ -7,10 +7,9 @@ them."""
 
 import io
 
-import mongomock
 import pytest
 
-from backend.maintenance import fmea, fmea_sheet, rcm_graph, rcm_sheet, templates
+from backend.maintenance import fmea, fmea_sheet, rcm_graph, rcm_sheet
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore
 from backend.tests.test_maintenance_mcp import _do, _get, _list, _ok, _session
@@ -272,51 +271,6 @@ def test_direct_modes_move_copy_restore_and_reorder(m):
     _rebuilds_the_same(m)
 
 
-# ---- the samples ----------------------------------------------------------------------------
-
-def test_the_sample_product_design_is_scored(m):
-    """The one sample for the RCM and FME(C)A tabs is the sample product: its design (on
-    Products, not in the asset tree) carries the sample modes on every position they
-    belong to (four arms, motors, ESCs and propellers, two IMUs), all scored over a year's
-    150 flight hours, each under a functional failure."""
-    out = templates.add_sample_product(m, mongomock.MongoClient()["fmea_sample"])
-    assert out["added"] and out["product"]["name"] == "Survey quadcopter"
-    assert {k: out[k] for k in ("positions", "functions", "failure_modes", "scored")} == {
-        "positions": 33, "functions": 47, "failure_modes": 84, "scored": 84}
-    assert "84 failure modes, each scored as an FME(C)A and all but 2 decided" in out["message"]
-    assert [p["id"] for p in templates.sample_products(m)] == [out["product"]["id"]]  # a design, not an asset
-    sheet = m.rcm_worksheet(out["product"]["id"], "below")
-    modes = _all_modes(sheet)
-    assert len(modes) == 84 and all(mo["rpn"] is not None for mo in modes)
-    summaries = [p["fmea"] for p in sheet["positions"]]
-    assert sum(s["high"] for s in summaries) == 16 and sum(s["medium"] for s in summaries) == 29
-    assert sum(s["low"] for s in summaries) == 39 and max(s["max_rpn"] or 0 for s in summaries) == 240
-    assert sum(len(fn["modes"]) for p in sheet["positions"] for fn in p["functions"]) == 0  # none directly under
-    assert sum(len(p["unassigned"]) for p in sheet["positions"]) == 0
-    motor = next(p for p in sheet["positions"] if p["name"] == "Motor 1")
-    assert motor["fmea"]["cr"] == pytest.approx(1.2e-2) and motor["fmea"]["cr_by_class"] == {"I": pytest.approx(1.2e-2)}
-    assert motor["analysed"] is True
-    battery = next(p for p in sheet["positions"] if p["name"] == "Battery pack")
-    assert battery["analysed"] is False  # the thermal-runaway mode has no decision on purpose
-    assert all(mo["operating_time"] == 150 and mo["time_unit"] == "hours" for mo in modes)
-    by_text = {mo["text"]: mo for mo in modes}
-    assert by_text["Bearing seizure"]["rpn"] == 216 and by_text["Bearing seizure"]["ap"] == "H"
-    assert by_text["Bearing seizure"]["decision"]["outcome"] == "rtf"
-    assert by_text["Blade fatigue crack at the hub"]["ap"] == "H"
-    assert by_text["State-of-charge estimate drifts as the pack ages"]["rpn"] == 240
-    assert by_text["Antenna connector works loose"]["ap"] == "L"
-    assert by_text["Gimbal motor stalls on a snagged cable"]["consequence"] == "non_operational"
-    assert by_text["Internal cell short (thermal runaway)"]["decision"] is None
-    stored = by_text["Stored pack self-discharges below its safe voltage"]
-    assert stored["rpn"] == 63 and stored["ap"] == "L" and stored["decision"]["outcome"] == "on_condition"
-
-    assert not hasattr(templates, "add_sample_uav")  # no asset-tree copy any more
-    assert not hasattr(templates, "add_sample_truck")  # nor the sample truck
-    assert templates.sample_uav_rcm() == templates.SAMPLE_UAV_RCM
-    assert templates.sample_uav_rcm() is not templates.SAMPLE_UAV_RCM
-    _rebuilds_the_same(m)
-
-
 # ---- the worksheet import ------------------------------------------------------------------
 
 FMEA_HEADER = ["Function", "Failure mode", "Cause", "Local effect", "End effect", "Current controls", "Severity",
@@ -443,21 +397,9 @@ def test_over_the_routes_with_the_excel_export(api):  # noqa: F811
     assert api.get(f"{M}/positions/nope/fmea.xlsx").status_code == 404
     assert api.get(f"{M}/positions/{plant['id']}/fmea.xlsx?scope=nope").status_code == 422
 
-    # The sample quadcopter is the sample product; the asset-tree copy's route is gone.
+    # No ready-made product: the sample routes are gone.
     assert api.post(f"{M}/sample-uav", json={}).status_code in (404, 405)
-    made = api.post(f"{M}/sample-product", json={}).json()
-    assert made["added"] and made["failure_modes"] == 84
-    # The FME(C)A of a design position (the product's top), exported like any other.
-    uav = api.get(f"{M}/positions/{made['product']['id']}/fmea.xlsx").content
-    ws = load_workbook(io.BytesIO(uav))["FMECA"]
-    # The header, a row per performance standard (63), one per mode and one per functional failure
-    # explained by those below it (the product's, its groups' and the gimbal's picture: 19).
-    assert ws.max_row == 1 + 63 + 84 + 19
-    assert 'filename="Survey quadcopter FMECA.xlsx"' in \
-        api.get(f"{M}/positions/{made['product']['id']}/fmea.xlsx").headers["content-disposition"]
-    sheet = api.get(f"{M}/positions/{made['product']['id']}/rcm?scope=below")
-    assert sheet.status_code == 200 and len(_all_modes(sheet.json())) == 84
-
+    assert api.post(f"{M}/sample-product", json={}).status_code in (404, 405)
 
 def test_over_mcp(env):  # noqa: F811
     async def flow(client):
@@ -486,11 +428,10 @@ def test_over_mcp(env):  # noqa: F811
                                  functional_failure_id=ff["id"]))
         back = _ok(await _do(client, "maintenance", "failure_modes.assign", failure_mode_id=mode["id"],
                              function_id=fn["id"]))
-        uav = _ok(await _do(client, "maintenance", "products.add_sample"))
-        twice = _ok(await _do(client, "maintenance", "products.add_sample"))
-        return mode, both, scored, bad, wrong_clear, cleared, read, rcm, gaps, assigned, back, uav, twice
+        gone = await _do(client, "maintenance", "products.add_sample")
+        return mode, both, scored, bad, wrong_clear, cleared, read, rcm, gaps, assigned, back, gone
 
-    mode, both, scored, bad, wrong_clear, cleared, read, rcm, gaps, assigned, back, uav, twice = _session(env["token"], flow)
+    mode, both, scored, bad, wrong_clear, cleared, read, rcm, gaps, assigned, back, gone = _session(env["token"], flow)
     assert both.is_error and "not both" in both.content[0].text
     assert scored["rpn"] == 216 and scored["ap"] == "H" and scored["cm"] == pytest.approx(1.2e-3)
     assert scored["action"] == "Sealed bearings" and scored["effects"] == "Pump stops"
@@ -503,4 +444,4 @@ def test_over_mcp(env):  # noqa: F811
     assert rcm["positions"][0]["fmea"]["modes"] == 1 and rcm["positions"][0]["analysed"] is False
     assert [g["id"] for g in gaps["no_functional_failure"]] == [mode["id"]] and gaps["counts"]["no_functional_failure"] == 1
     assert assigned["from_function_id"] == fn_read["id"] and back["from_functional_failure_id"] == fn_read["failures"][0]["id"]
-    assert uav["added"] and uav["failure_modes"] == 84 and twice["added"] is False
+    assert gone.is_error  # no ready-made product any more

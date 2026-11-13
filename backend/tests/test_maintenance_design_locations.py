@@ -3,13 +3,11 @@ and the copies a built unit carries. Making them (design_of, and inside one), a
 rebuilt graph; kept off the Assets page, the asset tree's locations and the location
 lists; placing the design's positions there (inherited down the tree) and what's
 refused; building an item copies them, its positions placed at the copies, wherever
-the unit is kept; deleting one keeps the positions placed there; the sample
-quadcopter's layout; the routes and the MCP actions."""
+the unit is kept; deleting one keeps the positions placed there; the routes and the
+MCP actions."""
 
-import mongomock
 import pytest
 
-from backend.maintenance import templates
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore
 from backend.tests.test_maintenance_mcp import _do, _list, _ok, _session
@@ -201,34 +199,6 @@ def test_deleting_a_design_location_keeps_the_positions_placed_there(m):
     assert m.locations(of=q["root"]) == []
     m.restore_deletion(q["root"])
     assert not m.s.node(ORG, q["arm"]).get("retired")
-    _rebuilt_matches(m)
-
-
-def test_the_sample_quadcopter_has_a_layout_and_its_units_carry_it(m):
-    db = mongomock.MongoClient()["design_locations"]
-    added = templates.add_sample_product(m, db)
-    pid = added["product"]["id"]
-    assert added["locations"] == 7
-    tree = m.location_tree(of=pid)
-    assert [x["name"] for x in tree] == ["Centre body", "Forward left arm", "Forward right arm", "Payload bay",
-                                         "Rear left arm", "Rear right arm"]
-    centre = next(x for x in tree if x["name"] == "Centre body")
-    assert [x["name"] for x in centre["children"]] == ["Battery bay"]
-    design = {p["name"]: p["id"] for p in m.s.nodes(ORG, "Position")
-              if m._design_root_of(p["id"]) and m._design_root_of(p["id"])["id"] == pid}
-    where = lambda pos: m.position(pos)["location"]["display"]  # noqa: E731
-    assert where(design["Motor 1"]) == where(design["ESC 1"]) == where(design["Propeller 1"]) == "Forward left arm"
-    assert where(design["Propeller 4"]) == "Rear right arm"
-    assert where(design["IMU 2"]) == where(design["GPS"]) == "Centre body"
-    assert where(design["BMS"]) == "Centre body › Battery bay"
-    assert where(design["Payload gimbal"]) == "Payload bay"
-    assert m.position(design["Propulsion"])["location"] is None
-    for unit in added["items"]:
-        carried = m.locations(of=unit["top_position_id"])
-        assert len(carried) == 7
-        motor = next(p for p in m._tree_positions(unit["top_position_id"]) if p["name"] == "Motor 1")
-        assert m.position(motor["id"])["location"]["display"] == "Forward left arm"
-    assert m.locations() == []
     _rebuilt_matches(m)
 
 

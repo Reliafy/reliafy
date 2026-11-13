@@ -91,13 +91,13 @@ export const DETAIL_IDS = {
   "/models/joint/:id": ["/api/joint/models", list("models")],
   "/systems/b/:id": ["/api/rbds", list("rbds")],
   "/systems/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
-  // A fault tree: the sample quadcopter tree is seeded.
+  // A fault tree: smoke/seed.js saves one.
   "/systems/fault-trees/:id": ["/api/fault-trees", list("fault_trees")],
   "/data/:id": ["/api/datasets", list("datasets")],
   // An RCM study (the sample delivery truck is seeded).
   "/maintenance/rcm/:id": ["/api/rcm/studies", list("studies")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
-  // A reliability prediction (the sample parts count).
+  // A reliability prediction: smoke/seed.js saves one.
   "/predictions/:id": ["/api/predictions", list("predictions")],
   // Libraries: one library (yours, shared, public or a built-in handbook, whose page lists its records).
   "/libraries/:id": ["/api/libraries", list("libraries")],
@@ -107,7 +107,7 @@ export const DETAIL_IDS = {
   // An NRC/INL component (its id "source:component:slug").
   "/libraries/:source/components/:component": ["/api/library/components?source=nrc-inl-2020",
     (body) => (body.components || []).map((c) => ({ ...c, id: `${c.source}/${c.id.split(":").pop()}` }))],
-  // A maintainability prediction: the sample quadcopter's.
+  // A maintainability prediction: smoke/seed.js saves one.
   "/maintainability/:id": ["/api/maintainability/predictions", list("predictions")],
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],
   "/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
@@ -118,7 +118,7 @@ export const DETAIL_IDS = {
   // A work package: smoke/seed.js packages the smoke test position's weekly check.
   "/maintenance/packages/:id": ["/api/maintenance/packages", list("packages")],
   "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
-  // A product: smoke/seed.js adds the Survey quadcopter.
+  // A product: smoke/seed.js adds the smoke test pump skid.
   "/products/:id": ["/api/maintenance/products", list("products")],
   "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],
   // A class's old addresses (they open the Explorer's Classes tab on that
@@ -127,7 +127,7 @@ export const DETAIL_IDS = {
   "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
   // A measuring point's earlier own page (it now redirects into the Explorer's
-  // Measurements tab, &point=): every one added (the Survey quadcopter's items' hour meters, and the
+  // Measurements tab, &point=): every one added (the
   // smoke test position's condition point that smoke/seed.js adds), from the event log.
   "/asset-register/points/:id": ["/api/maintenance/events?type=point.added&limit=500",
     (body) => (body.events || []).map((e) => ({ id: e.payload?.id })).filter((x) => x.id)],

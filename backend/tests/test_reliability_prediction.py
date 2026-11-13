@@ -255,8 +255,7 @@ def test_compute_save_list_get_rename_and_delete_over_the_app(client):
     assert client.post("/api/predictions", json={"name": "", "inputs": {"lines": LINES}}).status_code == 422
 
     rows = client.get("/api/predictions").json()["predictions"]
-    assert [x["name"] for x in rows] == ["Box", "Survey quadcopter electronics (sample)"]
-    assert rows[1]["is_sample"] is True and rows[1]["read_only"] is True and rows[0]["is_sample"] is False
+    assert [x["name"] for x in rows] == ["Box"] and rows[0]["is_sample"] is False
     got = client.get(f"/api/predictions/{pid}").json()
     assert got["results"]["lines"][0]["name"] == "D1" and got["inputs"]["mission_time"] == 200
     assert client.get("/api/predictions/nope").status_code == 404
@@ -269,49 +268,22 @@ def test_compute_save_list_get_rename_and_delete_over_the_app(client):
     assert r.json()["name"] == "Box A" and r.json()["lines"] == 1
     assert client.patch(f"/api/predictions/{pid}", json={"inputs": {"lines": [], "environment": "GF"}}).status_code == 422
 
-    # A sample can't be renamed; deleting it hides it for this user only.
+    # The withdrawn sample's address answers not found, like any missing one.
     sample = "sample-prediction-quadcopter"
-    assert client.patch(f"/api/predictions/{sample}", json={"name": "Mine"}).status_code in (403, 404)
-    assert client.delete(f"/api/predictions/{sample}").json() == {"ok": True}
-    assert [x["id"] for x in client.get("/api/predictions").json()["predictions"]] == [pid]
     assert client.get(f"/api/predictions/{sample}").status_code == 404
+    assert client.patch(f"/api/predictions/{sample}", json={"name": "Mine"}).status_code in (403, 404)
     assert client.delete(f"/api/predictions/{pid}").json() == {"ok": True}
     assert client.get("/api/predictions").json()["predictions"] == []
     assert client.delete(f"/api/predictions/{pid}").status_code == 404
 
 
-def test_the_sample_is_seeded_from_the_sample_products_electronics(client):
+def test_no_sample_prediction_is_seeded(client):
+    """The survey quadcopter's parts count was withdrawn (Nov 2026): no sample prediction is listed."""
+    from backend.db import get_db
     from backend.services import samples
 
-    doc = client.get("/api/predictions/sample-prediction-quadcopter").json()
-    assert doc["is_sample"] and doc["product"]["name"] == "Survey quadcopter (sample)"
-    r = doc["results"]
-    assert r["environment"]["code"] == "ARW" and r["mission_time_hours"] == 100
-    assert 300 < r["failure_rate_per_million_hours"] < 420 and 0.95 < r["reliability_at_mission"] < 0.975
-    # Every line counts but the propellers (not electronic, in neither handbook): the microcircuits on
-    # MIL-HDBK-217F's parts-count rates, the motors on NSWC-11's electric motor under their conditions.
-    assert r["counts"]["unassigned"] == 0 and r["counts"]["excluded"] == 1 and r["warnings"] == []
-    by_name = {line["name"]: line for line in r["lines"]}
-    assert by_name["Propeller 10x4.5"]["excluded"]
-    motors = by_name["Brushless motor 2210"]
-    assert motors["handbook"] == "NSWC-11" and not motors["needs_conditions"] and motors["rate_per_million_hours"] > 0
-    micro = [line for line in r["lines"] if (line["part_type"] or "").startswith("Microcircuit")]
-    assert len(micro) == 10 and all(line["quality_factor"] == 10 for line in micro)
-    labels = [a["label"] for a in r["assemblies"]]
-    assert "Power › BMS board" in labels and labels.index("Power") < labels.index("Power › BMS board")
-    assert [c["name"] for c in r["pareto"]["by_category"][:2]] == [
-        "Electric motors", "Microcircuits (integrated circuits, memories, SAW devices)"]
-    # The library's record names the product as backend/maintenance/templates.py spells it, with the
-    # library's own "(sample)" (a copy added to a workspace is plain "Survey quadcopter").
-    from backend.maintenance import templates
-
-    product = samples.SAMPLE_PREDICTION["inputs"]["product"]
-    assert product["name"] == f"{templates.SAMPLE_PRODUCT_NAME} (sample)"
-    assert product["part_number"] == templates.SAMPLE_PRODUCT_PART
-    assert product["rev"] == templates.SAMPLE_PRODUCT_REV
-    from backend.db import get_db
-
-    assert "sample-prediction-quadcopter" in samples.all_sample_ids(get_db())
+    assert client.get("/api/predictions").json()["predictions"] == []
+    assert "sample-prediction-quadcopter" not in samples.all_sample_ids(get_db())
 
 
 def test_a_products_parts_list_over_the_app(monkeypatch):
@@ -320,7 +292,6 @@ def test_a_products_parts_list_over_the_app(monkeypatch):
     from backend import config, db
     from backend.auth import get_current_user
     from backend.main import app
-    from backend.maintenance import templates
     from backend.maintenance.service import PROJECTORS, Maintenance
     from backend.maintenance.store import GraphStore
     from backend.routers import maintenance as router
@@ -339,14 +310,18 @@ def test_a_products_parts_list_over_the_app(monkeypatch):
                                                           "email_verified": True}
     try:
         tc = TestClient(app)
-        added = templates.add_sample_product(Maintenance(store, OWNER, OWNER), test_db)
-        r = tc.get(f"/api/predictions/from-product/{added['product']['id']}")
+        m = Maintenance(store, OWNER, OWNER)
+        top = m.create_part("IR-1", "Inspection rover")["id"]
+        for number, name, qty in (("IR-M1", "Drive motor", 4), ("IR-FC", "Controller board", 1)):
+            m.add_component(top, m.create_part(number, name)["id"], quantity=qty)
+        product = m.create_product("Inspection rover", part_id=top)
+        r = tc.get(f"/api/predictions/from-product/{product['id']}")
         assert r.status_code == 200, r.text
         out = r.json()
-        assert out["product"]["name"] == "Survey quadcopter" and out["product"]["part_number"] == "SQ-4"
+        assert out["product"]["name"] == "Inspection rover" and out["product"]["part_number"] == "IR-1"
         by_ref = {ln["reference"]: ln for ln in out["lines"]}
-        assert by_ref["SQ-M2210"]["quantity"] == 4 and by_ref["SQ-M2210"]["name"] == "Brushless motor 2210"
-        assert len(out["lines"]) == 11 and out["assemblies"] == 0  # the sample's bill of materials is one level
+        assert by_ref["IR-M1"]["quantity"] == 4 and by_ref["IR-M1"]["name"] == "Drive motor"
+        assert len(out["lines"]) == 2 and out["assemblies"] == 0  # a one-level bill of materials
         assert tc.get("/api/predictions/from-product/nope").status_code == 404
         # Not a product: refused in the service's words.
         plant = Maintenance(store, OWNER, OWNER).create_position("Plant")
@@ -384,8 +359,7 @@ def test_the_actions_over_mcp(env):  # noqa: F811
     pid = saved["prediction_id"]
     listed = _ok(_call(token, "list", {"kind": "predictions"}))
     assert listed["data_notice"] == DATA_NOTICE
-    assert {p["id"]: p["is_sample"] for p in listed["predictions"]} == {pid: False,
-                                                                        "sample-prediction-quadcopter": True}
+    assert {p["id"]: p["is_sample"] for p in listed["predictions"]} == {pid: False}
     got = _ok(_call(token, "get", {"kind": "prediction", "id": pid}))
     assert got["inputs"]["notes"] == "first pass" and got["results"]["environment"]["code"] == "GM"
     assert "not found" in _err(_call(token, "get", {"kind": "prediction", "id": "nope"})).lower()
@@ -397,15 +371,9 @@ def test_the_actions_over_mcp(env):  # noqa: F811
     up = _ok(_call(token, "change", {"action": "prediction_update", "prediction_id": pid, "name": "Box B"}))
     assert up["updated"] == ["name"] and up["name"] == "Box B"
     assert "Nothing to change" in _err(_call(token, "change", {"action": "prediction_update", "prediction_id": pid}))
-    assert "shared sample" in _err(_call(token, "change", {"action": "prediction_update",
-                                                           "prediction_id": "sample-prediction-quadcopter",
-                                                           "name": "Mine"}))
-    assert "shared sample" in _err(_call(token, "change", {"action": "prediction_delete",
-                                                           "prediction_id": "sample-prediction-quadcopter"}))
     gone = _ok(_call(token, "change", {"action": "prediction_delete", "prediction_id": pid}))
     assert gone == {"deleted": True, "prediction_id": pid, "name": "Box B"}
-    assert [p["id"] for p in _ok(_call(token, "list", {"kind": "predictions"}))["predictions"]] == [
-        "sample-prediction-quadcopter"]
+    assert _ok(_call(token, "list", {"kind": "predictions"}))["predictions"] == []
     # The guide has the topic, and the action's full schema.
     guide = _ok(_call(token, "guide", {"topic": "prediction", "action": "analyse.prediction"}))
     assert "λb × πE × πQ" in guide["guide"] and guide["action"]["takes"].startswith("lines?")

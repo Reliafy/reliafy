@@ -68,10 +68,9 @@ def test_refusals(seeded):
                                              {"id": "a", "type": "event", "probability": 0.1}]))
     assert "XOR gate" in msg
     assert "give name and nodes" in _err(_save(env, name="Nothing"))
-    sample = "sample-fault-tree-quadcopter"
-    assert "shared sample" in _err(_save(env, fault_tree_id=sample, unit="Hours"))
-    assert "shared sample" in _err(_call(env.token[A], "change", {"action": "fault_tree_delete",
-                                                                    "args": {"fault_tree_id": sample}}))
+    gone = "sample-fault-tree-quadcopter"  # withdrawn (Nov 2026)
+    assert "not found" in _err(_call(env.token[A], "change", {"action": "fault_tree_delete",
+                                                                "args": {"fault_tree_id": gone}})).lower()
 
 
 def test_make_rbd_and_update(env):
@@ -82,13 +81,6 @@ def test_make_rbd_and_update(env):
     assert any("fixed probability" in n for n in saved["rbd"]["notes"])
     renamed = _ok(_save(env, fault_tree_id=saved["id"], unit="Hours"))
     assert renamed["unit"] == "Hours" and renamed["n_events"] == 3
-
-
-def test_sample_analyses(seeded):
-    env = seeded
-    res = _ok(_call(env.token[A], "analyse", {"action": "fault_tree", "args": {
-        "fault_tree_id": "sample-fault-tree-quadcopter", "t": 100.0}}))
-    assert res["unit"] == "Hours" and 0 < res["top_event_probability"] < 0.2 and "placeholders" not in res
 
 
 def test_import_as_fault_tree(env):

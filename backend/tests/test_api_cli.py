@@ -318,31 +318,12 @@ def test_cli_moves_rcm_between_positions(server, capsys):
     assert rf.call("maintenance", "get.rcm", id=a, scope="this")["positions"][0]["unassigned"][0]["id"] == mode["id"]
 
 
-def test_cli_adds_the_sample_product_and_the_truck_action_is_gone(server, capsys):
-    """maintenance products.add_sample from the command line: once, then --again for another copy. The sample
-    truck's action is gone (no alias)."""
-    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
-    made = json.loads(out)
-    assert code == 0 and made["added"] and made["failure_modes"] == 84 and made["decisions"] == 82
-    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
-    assert code == 0 and json.loads(out)["added"] is False
-    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--again", "--json")
-    assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter 2"
-    sheet = Client().call("maintenance", "get.rcm", id=made["product"]["id"], scope="below")
-    assert sheet["rollup"]["modes"] == 84
-    code, _, err = run(capsys, "maintenance", "positions.add_sample_truck", "--json")
-    assert code != 0
-
-
-def test_cli_adds_the_sample_product(server, capsys):
-    """maintenance products.add_sample from the command line: once, then --again for another copy."""
-    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
-    made = json.loads(out)
-    assert code == 0 and made["added"] and [i["serial"] for i in made["items"]] == ["0007", "0008", "0009"]
-    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
-    assert code == 0 and json.loads(out)["added"] is False
-    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--again", "--json")
-    assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter 2"
+def test_cli_has_no_sample_product_actions(server, capsys):
+    """No ready-made product from the command line: the sample product's and the sample truck's actions are
+    gone (no alias)."""
+    for action in ("products.add_sample", "positions.add_sample_truck"):
+        code, _, _ = run(capsys, "maintenance", action, "--json")
+        assert code != 0, action
 
 
 def test_cli_and_client_add_a_worksheet_to_a_position(server, capsys):

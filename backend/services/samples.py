@@ -16,7 +16,6 @@ on every startup and against either real Atlas or the in-memory simulator.
 
 from __future__ import annotations
 
-import copy
 import logging
 
 from backend import config, fitting, storage
@@ -64,37 +63,6 @@ _BRAKE_WEAR_CSV = (
     "pad-05,2700,3.80\npad-05,3250,4.47\npad-05,3800,5.19\npad-05,4350,5.80\n"
     "pad-06,500,0.75\npad-06,1050,1.35\npad-06,1600,1.75\npad-06,2150,2.41\n"
     "pad-06,2700,2.97\npad-06,3250,3.53\npad-06,3800,4.13\npad-06,4350,4.85\n"
-).encode()
-
-# The sample quadcopter's speed controllers (backend/maintenance/templates.py):
-# each controller's temperature rise above ambient in the hover, read from the
-# flight log every 25 flight hours. The thermal pad to the arm dries out, so the
-# rise climbs about 0.1 °C an hour toward the 45 °C limit the controller derates
-# at. Six controllers, invented.
-_QUAD_ESC_TEMP_CSV = (
-    "esc,hours,temp_rise_c\n"
-    "esc-01,25,17.8\nesc-01,50,20.1\nesc-01,75,23.0\nesc-01,100,24.8\n"
-    "esc-01,125,27.8\nesc-01,150,29.9\nesc-01,175,32.4\nesc-01,200,34.8\n"
-    "esc-02,25,18.4\nesc-02,50,20.2\nesc-02,75,22.6\nesc-02,100,24.8\n"
-    "esc-02,125,28.0\nesc-02,150,29.5\nesc-02,175,31.8\nesc-02,200,34.1\n"
-    "esc-03,25,17.1\nesc-03,50,20.3\nesc-03,75,22.6\nesc-03,100,25.5\n"
-    "esc-03,125,28.5\nesc-03,150,31.1\nesc-03,175,33.8\nesc-03,200,35.8\n"
-    "esc-04,25,18.8\nesc-04,50,21.7\nesc-04,75,24.2\nesc-04,100,27.6\n"
-    "esc-04,125,29.7\nesc-04,150,33.0\nesc-04,175,35.9\nesc-04,200,38.7\n"
-    "esc-05,25,18.2\nesc-05,50,21.2\nesc-05,75,22.5\nesc-05,100,25.0\n"
-    "esc-05,125,27.6\nesc-05,150,29.5\nesc-05,175,31.7\nesc-05,200,34.1\n"
-    "esc-06,25,17.5\nesc-06,50,20.3\nesc-06,75,22.6\nesc-06,100,24.8\n"
-    "esc-06,125,26.8\nesc-06,150,29.1\nesc-06,175,32.0\nesc-06,200,34.0\n"
-).encode()
-
-# The sample quadcopter's avionics boards (radios and flight controllers) in the
-# field: flight hours to an electronic failure, the boards still working at the
-# review on a 1. Random failures (no wear-out), so an exponential fits: the
-# evidence behind the radio's run-to-failure decision. Invented.
-_QUAD_AVIONICS_CSV = (
-    "hours,censored\n"
-    "140,0\n310,0\n480,0\n620,0\n790,0\n950,0\n1180,0\n1420,0\n1690,0\n2050,0\n"
-    "350,1\n400,1\n450,1\n520,1\n580,1\n640,1\n700,1\n760,1\n820,1\n900,1\n960,1\n1050,1\n1150,1\n1250,1\n"
 ).encode()
 
 # Accelerated life test with covariates: valve seals run at combinations of
@@ -360,16 +328,6 @@ SAMPLE_DATASETS = [
         "name": "Pump failures by mode (sample)",
         "csv": _PUMP_MODES_CSV,
     },
-    {
-        "id": "sample-ds-quad-esc-temperature",
-        "name": "Quadcopter speed controller temperature rise (sample)",
-        "csv": _QUAD_ESC_TEMP_CSV,
-    },
-    {
-        "id": "sample-ds-quad-avionics",
-        "name": "Quadcopter avionics boards — field failures (sample)",
-        "csv": _QUAD_AVIONICS_CSV,
-    },
 ]
 
 # A condition and life (joint) model on the feed pumps: each running pump's
@@ -409,22 +367,6 @@ SAMPLE_DEGRADATION_MODELS = [
             "population_method": "moments",
             "unit": "hours",
             "measurement_unit": "mm",
-        },
-    },
-    {
-        # The sample quadcopter's speed controllers: the evidence behind the
-        # on-condition check of their temperature rise (templates.py).
-        "id": "sample-deg-quad-esc-temperature",
-        "name": "Quadcopter speed controller — temperature rise (sample)",
-        "dataset_id": "sample-ds-quad-esc-temperature",
-        "spec": {
-            "mapping": {"i": "esc", "x": "hours", "y": "temp_rise_c"},
-            "threshold": 45.0,
-            "path": "linear",
-            "distribution_id": "weibull",
-            "population_method": "moments",
-            "unit": "hours",
-            "measurement_unit": "°C",
         },
     },
 ]
@@ -579,39 +521,6 @@ SAMPLE_MODELS = [
         "distribution": "competing_risks",
         "mapping": {"x": "hours", "e": "failure_mode", "g": "site"},
         "unit": "hours",
-    },
-    {
-        # The sample quadcopter's avionics: an exponential fit (memoryless, so
-        # random failures), the evidence behind the radio's run-to-failure
-        # decision (backend/maintenance/templates.py).
-        "id": "sample-model-quad-avionics-exponential",
-        "name": "Quadcopter avionics — Exponential (sample)",
-        "dataset_id": "sample-ds-quad-avionics",
-        "distribution": "exponential",
-        "mapping": {"x": "hours", "c": "censored"},
-        "unit": "hours",
-    },
-    # The sample quadcopter's propellers and battery packs: models from parameters
-    # alone (no data behind them), the life models on those positions of the sample
-    # product. Invented, with the same parameters as the propeller replacement and
-    # battery retirement analyses below; each says so in its notes.
-    {
-        "id": "sample-model-quad-propeller-weibull",
-        "name": "Quadcopter propeller — Weibull (sample)",
-        "distribution": "weibull",
-        "params": [{"name": "alpha", "value": 400.0}, {"name": "beta", "value": 3.0}],
-        "unit": "hours",
-        "notes": "Sample values, not field data: invented for the sample quadcopter (flight hours to a blade "
-                 "fatigue crack), the same as the propeller replacement analysis.",
-    },
-    {
-        "id": "sample-model-quad-battery-weibull",
-        "name": "Quadcopter battery pack — Weibull (sample)",
-        "distribution": "weibull",
-        "params": [{"name": "alpha", "value": 600.0}, {"name": "beta", "value": 3.0}],
-        "unit": "hours",
-        "notes": "Sample values, not field data: invented for the sample quadcopter (flight hours until the pack "
-                 "no longer gives a 25-minute flight), the same as the battery retirement analysis.",
     },
 ]
 
@@ -1195,14 +1104,49 @@ def is_sample(owner_id: str | None) -> bool:
 # Seeding (idempotent)
 # ---------------------------------------------------------------------------
 
+# Shared samples since withdrawn (Nov 2026: the survey quadcopter's, which was
+# never meant to be a shared sample), by collection. Seeding deletes them from a
+# database that still has them: only these ids, and only while the shared
+# sample owner owns them, so nothing of a user's is ever touched.
+REMOVED_SAMPLES = {
+    "datasets": ("sample-ds-quad-avionics", "sample-ds-quad-esc-temperature"),
+    "degradation_models": ("sample-deg-quad-esc-temperature",),
+    "models": ("sample-model-quad-avionics-exponential", "sample-model-quad-propeller-weibull",
+               "sample-model-quad-battery-weibull"),
+    "strategy_analyses": ("sample-strategy-quad-gimbal-replacement", "sample-strategy-quad-propeller-replacement",
+                          "sample-strategy-quad-battery-retirement", "sample-strategy-quad-bms-failure-finding"),
+    "reliability_predictions": ("sample-prediction-quadcopter",),
+    "maintainability_predictions": ("sample-maintainability-quadcopter",),
+    "fault_trees": ("sample-fault-tree-quadcopter",),
+}
+
+
+def remove_withdrawn_samples(db) -> int:
+    """Delete the withdrawn shared samples (REMOVED_SAMPLES) still in ``db``.
+    Idempotent: a second run finds nothing. Returns how many went. Never raises."""
+    gone = 0
+    for coll, ids in REMOVED_SAMPLES.items():
+        try:
+            n = db[coll].delete_many({"_id": {"$in": list(ids)}, "owner_id": SAMPLE_OWNER}).deleted_count
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to remove withdrawn samples from %s: %s", coll, exc)
+            continue
+        if n:
+            logger.info("Removed %d withdrawn sample(s) from %s.", n, coll)
+            gone += n
+    return gone
+
+
 def seed_samples(db) -> None:
-    """Ensure the shared sample datasets and models exist. Safe to re-run.
+    """Ensure the shared sample datasets and models exist, and that withdrawn
+    ones (REMOVED_SAMPLES) are gone. Safe to re-run.
 
     Never raises: a sample that fails to fit is logged and skipped so it can
     never block application startup.
     """
     if not config.SEED_SAMPLES:
         return
+    remove_withdrawn_samples(db)
 
     for spec in SAMPLE_DATASETS:
         try:
@@ -1294,8 +1238,6 @@ def seed_samples(db) -> None:
 
     _seed_strategy_analyses(db)
     _seed_rcm_study(db)
-    _seed_reliability_prediction(db)
-    _seed_maintainability_predictions(db)
     _seed_fleet(db)
 
     for spec in SAMPLE_RBDS:
@@ -1314,9 +1256,6 @@ def seed_samples(db) -> None:
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample RBD %r: %s", spec["id"], exc)
     _seed_availability_results(db)
-    from backend.services import fault_trees  # local: it imports the RBD analysis
-
-    fault_trees.seed_samples(db, SAMPLE_OWNER)
 
     for spec in SAMPLE_DEGRADATION_MODELS:
         try:
@@ -1514,10 +1453,9 @@ def _seed_rcm_study(db) -> None:
 
 
 def _seed_strategy_analyses(db) -> None:
-    """Sample saved strategy analyses: the evidence the sample quadcopter's RCM
-    decisions link (backend/maintenance/templates.py), and the bearing
-    replacement and brake-circuit ones (still linked by copies of the earlier
-    sample truck some workspaces keep).
+    """Sample saved strategy analyses: the bearing replacement and
+    brake-circuit ones (still linked by copies of the earlier sample truck
+    some workspaces keep).
 
     The bearing replacement analysis reads the just-seeded bearing model's
     fitted parameters, so this runs after the SAMPLE_MODELS loop.
@@ -1557,61 +1495,6 @@ def _seed_strategy_analyses(db) -> None:
         },
     })
 
-    # The sample quadcopter's (all invented, in flight hours): propeller fatigue
-    # and pack retirement as age-based replacements, the BMS cut-off's
-    # failure-finding test interval, and the gimbal motor's replacement analysis,
-    # which finds no worthwhile interval (its failures are random), so the
-    # run-to-failure decision it supports reads as supported.
-    specs += [
-        {
-            "id": "sample-strategy-quad-gimbal-replacement",
-            "name": "Quadcopter gimbal motor — preventive replacement (sample)",
-            "kind": "optimal_replacement",
-            "inputs": {
-                "distribution_id": "exponential",
-                "params": [{"name": "failure_rate", "value": 1e-4}],
-                "planned_cost": 80.0,
-                "unplanned_cost": 300.0,
-                "unit": "hours",
-            },
-        },
-        {
-            "id": "sample-strategy-quad-propeller-replacement",
-            "name": "Quadcopter propeller — preventive replacement (sample)",
-            "kind": "optimal_replacement",
-            "inputs": {
-                "distribution_id": "weibull",
-                "params": [{"name": "alpha", "value": 400.0}, {"name": "beta", "value": 3.0}],
-                "planned_cost": 60.0,
-                "unplanned_cost": 900.0,
-                "unit": "hours",
-            },
-        },
-        {
-            "id": "sample-strategy-quad-battery-retirement",
-            "name": "Quadcopter battery pack — retirement age (sample)",
-            "kind": "optimal_replacement",
-            "inputs": {
-                "distribution_id": "weibull",
-                "params": [{"name": "alpha", "value": 600.0}, {"name": "beta", "value": 3.0}],
-                "planned_cost": 150.0,
-                "unplanned_cost": 1200.0,
-                "unit": "hours",
-            },
-        },
-        {
-            "id": "sample-strategy-quad-bms-failure-finding",
-            "name": "Quadcopter BMS cut-off — failure finding (sample)",
-            "kind": "failure_finding",
-            "inputs": {
-                "distribution_id": "exponential",
-                "params": [{"name": "failure_rate", "value": 2.5e-5}],
-                "target_availability": 0.998,
-                "unit": "hours",
-            },
-        },
-    ]
-
     for spec in specs:
         try:
             if db.strategy_analyses.find_one({"_id": spec["id"]}) is not None:
@@ -1625,268 +1508,6 @@ def _seed_strategy_analyses(db) -> None:
             logger.info("Seeded sample strategy analysis %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample analysis %r: %s", spec["id"], exc)
-
-
-# The sample reliability prediction: a parts count for the sample product's
-# electronics (backend/maintenance/templates.py: "Survey quadcopter (sample)",
-# part SQ-4, rev C), at part level as a design team's parts lists would be.
-# Entirely invented, like the product. Airborne, rotary winged (ARW); a
-# 100-hour season of flights. The electronics are MIL-HDBK-217F part types
-# (the microcircuits from its parts-count tables, Appendix A); the motors are
-# NSWC-11's electric motor under the conditions a 2210 motor runs at; the
-# propellers aren't electronic and neither handbook has them, so they're left
-# out and the result says so.
-_R = "mil-hdbk-217f-n2:"
-_MICRO = "a-5-1-microprocessors-mos-up-to-32-bits"
-_LINEAR_SMALL = "a-5-1-mos-linear-101-to-300-transistors"
-_LINEAR_LARGE = "a-5-1-mos-linear-1-001-to-10-000-transistors"
-_MMIC = "a-5-4-gaas-mmic-1-to-100-active-elements"
-# NSWC-11 Eq. 14-1 conditions for the sample's 2210 motor in the hover: brushless, two
-# small ball bearings (a 3 mm bore, catalogue rating about 0.56 kN), a 3 mm steel shaft.
-# The bearings' thrust load is folded into an equivalent radial load, which the
-# handbook's bearing model expects. Invented design figures, like the product. A prediction
-# made on the sample product itself starts its motor line from the same ones
-# (backend/maintenance/templates.py: sample_part_conditions).
-SAMPLE_MOTOR_MODEL = "nswc-11:electric-motor"
-SAMPLE_MOTOR_CONDITIONS = {
-    "motor_type": "dc_brushless", "n": 9000, "load": "light_impact", "T_O": 40, "n_BE": 2,
-    "bearings.L_S": 126, "bearings.F_R": 1.0,
-    "shaft.N_cycles": 1e9, "shaft.F": 0.2, "shaft.E": 30e6, "shaft.len_X": 1.2, "shaft.D_X": 0.118,
-    "shaft.r": 0.01, "shaft.D_big": 0.157, "shaft.d_small": 0.118,
-}
-SAMPLE_PREDICTION = {
-    "id": "sample-prediction-quadcopter",
-    "name": "Survey quadcopter electronics (sample)",
-    "inputs": {
-        "environment": "ARW",
-        "mission_time": 100.0,
-        "product": {"id": None, "name": "Survey quadcopter (sample)", "rev": "C", "part_number": "SQ-4"},
-        "notes": (
-            "An invented part-level parts list for the sample quadcopter's electronics and motors, as a design "
-            "team's parts lists would be. The microcircuits (the processors, the sensor, receiver and radio chips, "
-            "the gate drivers and regulators) use MIL-HDBK-217F's parts-count rates for their complexity band, at "
-            "the handbook's commercial grade (πQ 10). The motors use NSWC-11's electric motor under the conditions "
-            "a 2210 motor runs at in the hover (invented design figures, in the line's conditions). The propellers "
-            "aren't electronic and neither handbook has them, so they're left out. Other quality factors are 1 "
-            "except where the design uses commercial plastic parts (πQ 5.5) or commercial connectors (πQ 2)."
-        ),
-        "lines": [
-            # name, record, quantity, assembly path, πQ (None: the record's default grade), reference,
-            # and optionally the line's other fields (conditions, excluded, notes)
-            ("Microcontroller, 32-bit", _MICRO, 1, ["Flight controller"], None, ""),
-            ("Voltage regulators", _LINEAR_SMALL, 2, ["Flight controller"], None, ""),
-            ("Decoupling capacitors, 0.1 µF ceramic", "10-1-ck-11015", 48, ["Flight controller"], 1, ""),
-            ("Chip resistors", "9-1-rm-55342", 62, ["Flight controller"], 1, ""),
-            ("Schottky diodes, power input", "6-1-power-rectifier-schottky-power-diode", 3, ["Flight controller"],
-             5.5, ""),
-            ("MOSFETs, power switching", "6-4-mosfet", 2, ["Flight controller"], 5.5, ""),
-            ("Rectangular connectors (sensors, radio)", "15-1-rectangular", 4, ["Flight controller"], 2, ""),
-            ("Reflow solder joints", "17-1-reflow-solder", 620, ["Flight controller"], 1, ""),
-            ("Microcontrollers, 32-bit (1 per ESC)", _MICRO, 4, ["Speed controllers (4)"], None, ""),
-            ("Gate drivers, three-phase (1 per ESC)", _LINEAR_SMALL, 4, ["Speed controllers (4)"], None, ""),
-            ("MOSFETs, motor drive (6 per ESC)", "6-4-mosfet", 24, ["Speed controllers (4)"], 5.5, ""),
-            ("Ceramic capacitors", "10-1-ck-11015", 32, ["Speed controllers (4)"], 1, ""),
-            ("Electrolytic capacitors, aluminium", "10-1-cu-39018", 8, ["Speed controllers (4)"], 1, ""),
-            ("Chip resistors", "9-1-rm-55342", 80, ["Speed controllers (4)"], 1, ""),
-            ("Power connectors", "15-1-power", 4, ["Speed controllers (4)"], 2, ""),
-            ("Reflow solder joints", "17-1-reflow-solder", 1200, ["Speed controllers (4)"], 1, ""),
-            ("Cell monitor and balancing IC", _LINEAR_LARGE, 1, ["Power", "BMS board"], None, ""),
-            ("MOSFETs, charge and discharge switch", "6-4-mosfet", 4, ["Power", "BMS board"], 5.5, ""),
-            ("Thermistors, cell temperature", "9-1-rth-23648", 2, ["Power", "BMS board"], 1, ""),
-            ("Chip resistors", "9-1-rm-55342", 24, ["Power", "BMS board"], 1, ""),
-            ("Ceramic capacitors", "10-1-ck-11015", 16, ["Power", "BMS board"], 1, ""),
-            ("Power connectors, battery and load", "15-1-power", 2, ["Power"], 2, ""),
-            ("Inertial sensor ICs (1 per IMU)", _LINEAR_LARGE, 2, ["IMUs (2)"], None, "",
-             {"notes": "Counted as a MOS linear microcircuit in its complexity band; the handbook has no type for "
-                       "the sensing element itself."}),
-            ("Ceramic capacitors", "10-1-ck-11015", 12, ["IMUs (2)"], 1, ""),
-            ("Chip resistors", "9-1-rm-55342", 8, ["IMUs (2)"], 1, ""),
-            ("GNSS receiver chip", _MICRO, 1, ["GPS module"], None, ""),
-            ("Low-noise amplifier", _MMIC, 1, ["GPS module"], None, ""),
-            ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["GPS module"], 2, ""),
-            ("Ceramic capacitors", "10-1-ck-11015", 10, ["GPS module"], 1, ""),
-            ("Chip resistors", "9-1-rm-55342", 6, ["GPS module"], 1, ""),
-            ("Radio transceiver chip", _MICRO, 1, ["Telemetry radio"], None, ""),
-            ("RF power amplifier", _MMIC, 1, ["Telemetry radio"], None, ""),
-            ("RF transformer (balun)", "11-1-rf-10k-10m-hz", 1, ["Telemetry radio"], 1, ""),
-            ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["Telemetry radio"], 2, ""),
-            ("Ceramic capacitors", "10-1-ck-11015", 14, ["Telemetry radio"], 1, ""),
-            ("Chip resistors", "9-1-rm-55342", 10, ["Telemetry radio"], 1, ""),
-            ("Brushless motor 2210", SAMPLE_MOTOR_MODEL, 4, ["Propulsion"], None, "SQ-M2210",
-             {"conditions": SAMPLE_MOTOR_CONDITIONS,
-              "notes": "NSWC-11 conditions for a 2210 motor in the hover: 9,000 rpm, 40 °C, two ball bearings, a 3 "
-                       "mm steel shaft. Invented design figures, like the product."}),
-            ("Propeller 10x4.5", None, 4, ["Propulsion"], None, "SQ-P1045", {"excluded": True}),
-        ],
-    },
-}
-
-
-def sample_prediction_inputs() -> dict:
-    """The sample prediction's inputs as the service takes them."""
-    spec = SAMPLE_PREDICTION["inputs"]
-    lines = []
-    for name, rec, qty, path, q, ref, *more in spec["lines"]:
-        record_id = (rec if ":" in rec else _R + rec) if rec else None
-        lines.append({"name": name, "record_id": record_id, "quantity": qty, "assembly": list(path),
-                      "quality_factor": q, "reference": ref, **(more[0] if more else {})})
-    return {**spec, "lines": lines}
-
-
-def _seed_reliability_prediction(db) -> None:
-    """The sample reliability prediction (the parts count of the sample
-    product's electronics), computed from the library's handbook records."""
-    from backend.schema import ReliabilityPrediction
-    from backend.services import reliability_prediction as prediction_service
-
-    spec = SAMPLE_PREDICTION
-    try:
-        if db.reliability_predictions.find_one({"_id": spec["id"]}) is not None:
-            return
-        inputs = prediction_service.normalise_inputs(sample_prediction_inputs())
-        results = prediction_service.results_for(inputs)
-        doc = ReliabilityPrediction(id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER, inputs=inputs,
-                                    results=results)
-        db.reliability_predictions.insert_one(to_doc(doc))
-        logger.info("Seeded sample reliability prediction %r.", spec["id"])
-    except Exception as exc:  # pragma: no cover - defensive; never block boot
-        logger.warning("Failed to seed sample reliability prediction %r: %s", spec["id"], exc)
-
-
-def _seed_maintainability_predictions(db) -> None:
-    """The shared sample maintainability prediction: the sample survey
-    quadcopter's parts list (backend/maintenance/templates.py,
-    SAMPLE_PRODUCT_BOM) with invented repair times. Its electronics and motor
-    lines carry the failure rates of the sample parts count (SAMPLE_PREDICTION),
-    and its results say how the two MTBFs compare. It is the example for every
-    account, so it names no product: a workspace that adds the sample product
-    gets its own prediction beside it, from the same lines and attached to that
-    product (templates.add_sample_product). A copy seeded with earlier lines or
-    results is brought up to date."""
-    from datetime import datetime, timezone
-
-    from backend.schema import MaintainabilityPrediction
-    from backend.services import maintainability
-
-    spec = {
-        "id": "sample-maintainability-quadcopter",
-        "name": "Survey quadcopter — maintainability prediction (sample)",
-        "inputs": sample_maintainability_inputs(),
-    }
-    try:
-        results = maintainability.compute(spec["inputs"], sample_maintainability_parts_count(db))
-        existing = db.maintainability_predictions.find_one({"_id": spec["id"]})
-        if existing is not None:
-            if existing.get("inputs") != spec["inputs"] or existing.get("results") != results:
-                db.maintainability_predictions.update_one({"_id": spec["id"]}, {"$set": {
-                    "inputs": spec["inputs"], "results": results, "updated_at": datetime.now(timezone.utc)}})
-                logger.info("Refreshed sample maintainability prediction %r.", spec["id"])
-            return
-        doc = MaintainabilityPrediction(id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
-                                        inputs=spec["inputs"], results=results)
-        db.maintainability_predictions.insert_one(to_doc(doc))
-        logger.info("Seeded sample maintainability prediction %r.", spec["id"])
-    except Exception as exc:  # pragma: no cover - defensive; never block boot
-        logger.warning("Failed to seed sample maintainability prediction %r: %s", spec["id"], exc)
-
-
-# The sample quadcopter's lines: the bill of materials' lowest-level parts with
-# the assembly each sits in, a failure rate per million flight hours, and
-# repair times in minutes split into the handbook's elements, with the time
-# 95% of that line's repairs are done by. The repair times are invented.
-#
-# The failure rates of the electronics and the motor are the sample parts
-# count's (SAMPLE_PREDICTION, to four figures: one board's or one motor's
-# rate there), so the two samples agree line for line;
-# SAMPLE_MAINTAINABILITY_FROM says which of its lines make up each line here,
-# and a test holds the figures to it. The airframe, propellers, battery pack
-# and gimbal aren't electronic parts, so that parts count has no rate for them:
-# theirs are invented, and are why this prediction's MTBF is the lower one.
-def _mline(ref, name, assembly, quantity, rate, isolation, access, replace, restore, checkout, maximum):
-    return {"ref": ref, "name": name, "assembly": assembly, "quantity": quantity, "failure_rate": rate,
-            "elements": {"isolation": isolation, "access": access, "replace": replace, "restore": restore,
-                         "checkout": checkout}, "maximum": maximum}
-
-
-SAMPLE_MAINTAINABILITY_INPUTS = {
-    "unit": "minutes",
-    "failure_rate_unit": "per_million_hours",
-    "percentile": 0.95,
-    "lines": [
-        _mline("SQ-AF", "Airframe kit, carbon arms", "Airframe", 1, 40, 10, 20, 45, 25, 15, 220),
-        _mline("SQ-M2210", "Brushless motor 2210", "Propulsion", 4, 42.90, 10, 5, 15, 5, 10, 90),
-        _mline("SQ-ESC30", "Speed controller 30 A", "Propulsion", 4, 24.59, 15, 10, 15, 10, 10, 120),
-        _mline("SQ-P1045", "Propeller 10x4.5", "Propulsion", 4, 600, 2, 1, 3, 1, 3, 20),
-        _mline("SQ-FC7", "Flight controller", "Flight control", 1, 39.19, 20, 10, 10, 10, 30, 160),
-        _mline("SQ-IMU9", "Inertial measurement unit", "Flight control", 2, 4.67, 25, 10, 10, 10, 25, 160),
-        _mline("SQ-GPS8", "GPS module", "Flight control", 1, 10.22, 15, 5, 5, 5, 15, 90),
-        _mline("SQ-BP6S", "Battery pack 6S 10 Ah", "Power", 1, 250, 5, 2, 3, 2, 5, 35),
-        _mline("SQ-BMS6", "Battery management board", "Power", 1, 16.30, 20, 15, 10, 15, 10, 140),
-        _mline("SQ-RL24", "Telemetry radio 2.4 GHz", "Comms", 1, 14.43, 15, 5, 5, 5, 15, 90),
-        _mline("SQ-GB2", "Camera gimbal, 2 axis", "Payload gimbal", 1, 150, 15, 10, 20, 10, 15, 140),
-    ],
-}
-
-#: Which lines of the sample parts count make up each line above: the lines in
-#: one assembly of it (its path), or the line with that part number.
-SAMPLE_MAINTAINABILITY_FROM = {
-    "SQ-M2210": {"reference": "SQ-M2210"},
-    "SQ-ESC30": {"assembly": ["Speed controllers (4)"]},
-    "SQ-FC7": {"assembly": ["Flight controller"]},
-    "SQ-IMU9": {"assembly": ["IMUs (2)"]},
-    "SQ-GPS8": {"assembly": ["GPS module"]},
-    "SQ-BMS6": {"assembly": ["Power", "BMS board"]},
-    "SQ-RL24": {"assembly": ["Telemetry radio"]},
-}
-
-
-def sample_maintainability_parts_count(db) -> dict | None:
-    """The sample parts count as the sample maintainability prediction's lines
-    see it (the shape of maintainability.prediction_rates): one board's or
-    motor's rate per line above, by SAMPLE_MAINTAINABILITY_FROM, and the parts
-    count's lines that are in none of them. None before that sample is seeded."""
-    doc = db.reliability_predictions.find_one({"_id": SAMPLE_PREDICTION["id"]})
-    results = (doc or {}).get("results") or {}
-    rows = [r for r in results.get("lines") or [] if isinstance(r, dict)]
-    if not rows:
-        return None
-    quantity = {ln["ref"]: float(ln["quantity"]) for ln in SAMPLE_MAINTAINABILITY_INPUTS["lines"]}
-    names = {ln["ref"]: ln["name"] for ln in SAMPLE_MAINTAINABILITY_INPUTS["lines"]}
-    totals = {ref: 0.0 for ref in SAMPLE_MAINTAINABILITY_FROM}
-    others, unrated = [], []
-    for row in rows:
-        rate = row.get("rate_per_million_hours")
-        if row.get("excluded") or not isinstance(rate, (int, float)):
-            unrated.append(row.get("name") or "")
-            continue
-        ref = next((ref for ref, part in SAMPLE_MAINTAINABILITY_FROM.items()
-                    if (part.get("reference") and part["reference"] == row.get("reference"))
-                    or (part.get("assembly") and part["assembly"] == row.get("assembly"))), None)
-        if ref is None:
-            others.append({"key": "", "label": row.get("name") or "", "total": float(rate)})
-        else:
-            totals[ref] += float(rate)
-    return {
-        "id": doc["_id"], "name": doc.get("name"), "stamp": str(doc.get("updated_at") or ""),
-        "unit": "per_million_hours",
-        "rates": {ref.lower(): totals[ref] / quantity[ref] for ref in totals},
-        "quantities": {ref.lower(): quantity[ref] for ref in totals},
-        "lines": [{"key": ref.lower(), "label": names[ref], "total": totals[ref]} for ref in totals] + others,
-        "unrated": unrated,
-        "failure_rate": results.get("failure_rate_per_million_hours"),
-        "mtbf_hours": results.get("mtbf_hours"),
-    }
-
-
-def sample_maintainability_inputs(product: dict | None = None) -> dict:
-    """The sample quadcopter's maintainability inputs, a fresh copy each time:
-    as the shared sample has them, or for a workspace's copy of the sample
-    product (``product``: its {id, name}), attached to it. One set of lines for
-    both, so their numbers agree."""
-    inputs = copy.deepcopy(SAMPLE_MAINTAINABILITY_INPUTS)
-    if product:
-        inputs |= {"product_id": product["id"], "product_name": product["name"]}
-    return inputs
 
 
 # ---------------------------------------------------------------------------

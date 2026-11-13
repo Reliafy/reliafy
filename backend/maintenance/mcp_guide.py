@@ -97,8 +97,8 @@ Building the register.
 2. Positions: maintenance positions.create, top down (parent_id), with position_class for like duties, \
 operating_context for how it's used (load, environment, hours; the description stays one line on what it is) and \
 location_id where it physically is (set it on a system's top position; the ones inside inherit it). Many alike: \
-build one, then maintenance positions.copy (failure modes, tasks and parts lists come too). A worked example to \
-start from: maintenance products.add_sample (the Survey quadcopter, its RCM on its design). RCM: see the plan topic.
+build one, then maintenance positions.copy (failure modes, tasks and parts lists come too). RCM: see the plan \
+topic.
 3. Items: maintenance fitments.fit (position_id, plus a new item by item_name / serial / manufacturer, or by \
 part_id, or an existing item_id), with on = the date it went in ('2022' if that's all that's known). Earlier \
 items: maintenance fitments.add_past. A spare that isn't fitted anywhere: maintenance items.create (with \
@@ -215,8 +215,7 @@ severity_class I-IV give cm = β × α × λ × t. A position's fmea in maintena
 cm, and by class), the H / M / L counts and max_rpn.
 - An FMEA row before its RCM: add (or assign, move) with function_id and no functional_failure_id puts a mode \
 directly under the function; the position isn't analysed until the functional failure is written and the mode \
-assigned to it (same id, scores kept). maintenance products.add_sample adds the Survey quadcopter product, its design \
-fully scored (three such modes on purpose).
+assigned to it (same id, scores kept).
 - A worksheet the user has (an FMEA or RCM sheet, one row per failure mode): see below.
 - Directly (a maker's manual, a regulation, own practice): maintenance tasks.create, on exactly one subject:
   - position_id, the usual one: the job, whatever does it. 'Lubricate the pump', 'test the protection relay'. \
@@ -266,10 +265,6 @@ in the function's notes (Markdown is fine; a function's notes take up to 25,000 
 the old argument for it, still accepted: it's added to the notes under a "Working" line. Reads keep \
 standard_basis / has_basis as the notes, for older callers.
 - A functional failure caused by others: maintenance failure_modes.link_cause (functional_failure_id: the effect; cause_id: another functional failure on the same tree, usually on a position inside it, but one beside it (the pool's 'no free chlorine' from the chlorinator next to it) or on the same position counts too; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance apply batch). Refused: a failure causing itself, a loop, another tree. A failure explained by its causes needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further on), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects (each with its position), covered and explained_below. Deleting or retiring the cause, or moving either end to another tree, drops the link and says so.
-- To see one built first: maintenance products.add_sample adds the Survey quadcopter product (invented numbers), its RCM on its \
-design (decisions linked to evidence: supported, one contradicted on purpose, one inconclusive; two modes \
-undecided on purpose). Once only: a second call says it's there; again true adds another copy. It's the user's \
-to change or retire.
 - An FMEA / RCM worksheet the user has (Excel or CSV, one row per failure mode): change upload_create (purpose excel), \
 then change import_excel target=rcm position_id=… dry_run=true: a preview (counts, functions, errors, warnings and \
 unmapped_values: consequence or decision words it didn't recognise). Fix those with mapping {consequence_map, \
@@ -597,7 +592,7 @@ maintenance apply: a list of the write actions you already know, run in order as
 tool maintenance_<area> (positions, fitments, items, failure_modes, tasks, proposals, work_orders, \
 measurements, locations, parts, topology, item_classes, manufacturers, attachments); args exactly as that \
 action takes them. Not in a batch (single calls): fit_class_model, generate_rbd, the imports, link_by_name, \
-adopt_placements, add_sample, photo_link, workspace, a PDF by upload_id.
+adopt_placements, photo_link, workspace, a PDF by upload_id.
 - Refs: ref names an operation's result; '@p' in any later argument is its id, '@p.fitted.item.id' another \
 field (nested lists and objects too). Refs point backwards only.
 - Checked first: every operation runs on a throwaway copy of the workspace; with any failure nothing is \
@@ -771,18 +766,6 @@ class_life_data), and the failure reports there and below with the item's serial
 item with its product, item class, position path, status and open reports; product_id, item_class_id, q, limit, \
 offset). get.item and get.position say which product an item or position belongs to.
 - products.clear: the tree is a plain tree again; refused while items built from it are in use.
-- products.add_sample: the Survey quadcopter, a ready-made product to explore, named and worded like the user's own \
-(every number in it is invented: say so when asked what it is; its design with a scored FME(C)A, its \
-maintenance programme with each task's LSA record, life models on its motors, propellers, battery pack and \
-radio, its part and BOM, three items built (the first with a monthly work package of its calendar tasks), a \
-replaced motor, two failure reports, a maintainability prediction and an RBD whose rates are placeholders). Its life \
-models and the analyses behind its decisions are saved in the workspace as its own records (own_records; a second copy \
-uses the first one's); any the plan's storage has no room for stay linked to the shared library's (kept_shared names \
-them: tell the user). Once unless again is true. products.add_sample make_own=true (product_id: the copy, \
-default the only one) is for a copy added earlier under the name "… (sample)": the word leaves its name and its \
-part's, built items', RBD's, maintainability prediction's and life-model links', its life models and analyses are \
-saved as the workspace's own with its positions and decisions pointed at them, ids stay, and it isn't added again \
-beside this copy unless asked.
 - A design's tasks are its maintenance programme, with their LSA records (tasks.set_resources): they never fall \
 due, raise no work orders and join no work packages (list.task_table says why_not). Items built later carry \
 copies, resources included, which do."""),

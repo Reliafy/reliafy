@@ -13,8 +13,8 @@
 // and pins it (?pin=), so its rows start at the top of the tree whatever else
 // the shared workspace holds (rows below the fold aren't drawn).
 //
-// With SMOKE_SHOTS_DIR set, it also saves screenshots at 1280 and 400 px: the
-// Survey quadcopter, and a function with three standards (for the pull request).
+// With SMOKE_SHOTS_DIR set, it also saves screenshots at 1280 and 400 px: a
+// product's RCM, and a function with three standards (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { frameOf, movedBetween } from "./explorer.js";
 
@@ -491,19 +491,19 @@ test("at 400 px the rows held at the top while scrolling are the first row's own
   expect(await overflow(page)).toBe(0);
 });
 
-test("screenshots: the Survey quadcopter, and a function with three standards (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
+test("screenshots: a product's RCM, and a function with three standards (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
   test.skip(!SHOTS, "only when saving screenshots");
   const tag = "shot";
   const p = await plant(request, tag);
-  // smoke/seed.js added the Survey quadcopter: once, so this adds nothing.
-  const sample = await postOk(request, `${M}/sample-product`, {});
-  const sampleId = sample.product?.id || sample.position.id;
+  // smoke/seed.js added the smoke test pump skid.
+  const { products } = await (await request.get(`${M}/products`)).json();
+  const sampleId = products.find((x) => x.name === "Smoke test pump skid").id;
   for (const [w, h] of [[1280, 800], [400, 860]]) {
     await page.setViewportSize({ width: w, height: h });
     await open(page, `/products/${sampleId}?view=rcm&sel=${sampleId}`);
-    await expect(trow(page, "^Function: Fly the planned inspection sortie").first()).toBeVisible();
+    await expect(trow(page, "^Function: Drive the pump at 1,480 rpm").first()).toBeVisible();
     await page.waitForTimeout(300);
-    await page.screenshot({ path: `${SHOTS}/rcm-standards-tree-sample-product-${w}.png` });
+    await page.screenshot({ path: `${SHOTS}/rcm-standards-tree-product-${w}.png` });
     await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
     await expect(trow(page, `^Performance standard: Calcium hardness 200-400 ppm ${tag}`).first()).toBeVisible();
     await page.waitForTimeout(300);

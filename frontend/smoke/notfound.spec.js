@@ -31,3 +31,19 @@ test("a detail page that can't load links back to its list", async ({ page }) =>
   await open(page, "/forecasts/no-such-forecast");
   await expect(page.getByRole("link", { name: "See all forecasts" })).toBeVisible();
 });
+
+// The survey quadcopter's shared samples were withdrawn (Nov 2026): their old addresses
+// show the page's own not-found state with a link back, never the error page.
+test("a withdrawn sample's address says it isn't there and links back", async ({ page }) => {
+  for (const [path, link] of [
+    ["/maintainability/sample-maintainability-quadcopter", "See all predictions"],
+    ["/predictions/sample-prediction-quadcopter", "See all predictions"],
+    ["/systems/fault-trees/sample-fault-tree-quadcopter", "See all fault trees"],
+    ["/models/m/sample-model-quad-propeller-weibull", "All models"],
+    ["/models/degradation/sample-deg-quad-esc-temperature", "All models"],
+  ]) {
+    await open(page, path);
+    await expect(page.getByRole("link", { name: link }).first(), path).toBeVisible();
+    await expect(page.locator(".error-boundary"), path).toHaveCount(0);
+  }
+});

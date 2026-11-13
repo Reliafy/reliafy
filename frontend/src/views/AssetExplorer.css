@@ -1262,23 +1262,6 @@ button.rw-cklink {
 .tp-row button.tp-unpin:hover { background: var(--acc-t); }
 .tp-mk + .tp-unpin, .tt-st + .tp-unpin, .tp-unpin + .tt-more { margin-left: 2px; }
 
-/* The empty tree's "New here? Open the Survey quadcopter" card. */
-.ae-sample {
-  margin: 1.25rem auto 0;
-  max-width: 34rem;
-  padding: 0.75rem 1rem;
-  border: 1px dashed var(--line);
-  border-radius: var(--r-sm);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem 0.75rem;
-}
-.ae-sample p { margin: 0; }
-/* The two samples' buttons side by side (one under the other on a phone). */
-.ae-sample-btns { display: flex; flex-wrap: wrap; gap: 8px; }
-
 /* A functional failure caused by lower ones: its reference rows and the ↑ n marker. */
 .tp-row.tt.tt-cause .tp-nm { font-weight: 400; }
 .tt-cause .tp-ic { color: var(--acc); }
