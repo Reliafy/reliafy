@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildRequest, dearer, formatDate, localToday, newShut, parseDates, timeUnit, visibleSchedule,
 } from "./calendarReplacement.js";
+import { everyUnitText } from "./calendarReplacement.js";
 
 const MODEL = { distribution_id: "weibull", params: [{ name: "alpha", value: 365 }, { name: "beta", value: 2 }] };
 
@@ -68,4 +69,10 @@ test("how much dearer a rule is", () => {
   assert.equal(dearer(0.994), "+99%");
   assert.equal(dearer(0), "the same");
   assert.equal(dearer(null), "—");
+});
+
+test("a shut's every-unit reads with its count", () => {
+  assert.equal(everyUnitText(4, "week"), "weeks");
+  assert.equal(everyUnitText(1, "month"), "month");
+  assert.equal(everyUnitText(2, "months"), "months");
 });

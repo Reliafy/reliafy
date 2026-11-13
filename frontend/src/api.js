@@ -1988,6 +1988,8 @@ export const createReport = (report) => request("/api/reports", jsonBody("POST",
 export const updateReport = (id, report) =>
   request(`/api/reports/${encodeURIComponent(id)}`, jsonBody("PUT", report));
 export const deleteReport = (id) => request(`/api/reports/${encodeURIComponent(id)}`, { method: "DELETE" });
+// The report as readers see it (each section as its share page shows it), for Reports' View.
+export const viewReport = (id) => request(`/api/reports/${encodeURIComponent(id)}/view`);
 // The assistant words the items' stored figures; nothing is saved (#41).
 export const draftReportNotes = (title, sections) =>
   request("/api/reports/draft", jsonBody("POST", { title, sections }));
@@ -2064,9 +2066,11 @@ export const PYTHON_EXPORT_TIP =
 // "Download as Python": a standalone SurPyval + RePyability script that
 // rebuilds a saved RBD and runs the same calculation locally. Free for every
 // viewer of the diagram.
-export function downloadRbdPython(id) {
+// ``t``: the Calculator's "Evaluate at t", for the script to rank importance at.
+export function downloadRbdPython(id, t = null) {
+  const at = t != null && Number(t) > 0 ? `?t=${encodeURIComponent(Number(t))}` : "";
   return withEvent(
-    downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.py`, "rbd.py"),
+    downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.py${at}`, "rbd.py"),
     "rbd_export_python"
   );
 }

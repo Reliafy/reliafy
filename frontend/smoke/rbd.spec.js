@@ -132,8 +132,7 @@ test("full screen: edit, open dialogs and save without leaving it", async ({ pag
   await page.getByRole("option", { name: "Non-repairable" }).click();
 
   // Save: the name dialog shows, and the first save keeps full screen and the canvas.
-  await page.getByRole("button", { name: /^Save/ }).first().click();
-  await page.locator(".ovm-item", { hasText: /^Save…$/ }).click();
+  await page.locator(".rbd-save-main").click(); // the first save asks for a name
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   expect(await inFull(page, ".overlay")).toBe(true);

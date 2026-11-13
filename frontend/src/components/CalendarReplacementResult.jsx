@@ -5,7 +5,7 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { ACCENT, REFERENCE } from "../plotTheme.js";
 import { unitInText } from "./unitText.js";
-import { calendarCsv, dearer, formatDate, visibleSchedule } from "../calendarReplacement.js";
+import { calendarCsv, dearer, everyUnitText, formatDate, visibleSchedule } from "../calendarReplacement.js";
 import { saveText } from "../sparesPlan.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 import { formatCost, formatCostRate, labelCostsInText } from "../money.js";
@@ -16,6 +16,21 @@ import "./CalendarReplacement.css";
 // table), where the cost goes, and the next months' shuts by date.
 // ``actions`` (the live tool's Save) sits with the answer; Export CSV is
 // always there.
+// The z for a 90% two-sided range (the app's level for everything but life bounds).
+const SAMPLING_Z90 = 1.645;
+
+// A long rule name on a narrow chart: broken over lines at spaces, so it
+// isn't clipped at phone width.
+function wrapLabel(text, width = 24) {
+  const out = [];
+  let line = "";
+  for (const w of String(text).split(" ")) {
+    if (line && (line + " " + w).length > width) { out.push(line); line = w; } else line = line ? `${line} ${w}` : w;
+  }
+  if (line) out.push(line);
+  return out.join("<br>");
+}
+
 export default function CalendarReplacementResult({ result, wt, actions = null, name = "" }) {
   const [showAll, setShowAll] = useState(false);
   const unit = unitInText(result.unit);
@@ -35,14 +50,16 @@ export default function CalendarReplacementResult({ result, wt, actions = null, 
   const chart = {
     data: [{
       type: "bar", orientation: "h",
-      y: rules.map((r) => r.label), x: rules.map((r) => r.cost),
+      y: rules.map((r) => wrapLabel(r.label)), x: rules.map((r) => r.cost),
       marker: { color: rules.map((r) => (r.best ? ACCENT : REFERENCE)) },
-      hovertemplate: `%{y}: ${currency}%{x:,.4g} a year<extra></extra>`,
+      customdata: rules.map((r) => r.label),
+      hovertemplate: `%{customdata}: ${currency}%{x:,.4g} a year<extra></extra>`,
     }],
     layout: {
-      height: 90 + 34 * rules.length,
+      height: 90 + 44 * rules.length,
       margin: { l: 10, r: 20, t: 10, b: 40 },
-      xaxis: { title: { text: `Long-run cost a year (${currency})` }, rangemode: "tozero" },
+      // Few, short ticks ("12k"), so they don't run into each other at phone width.
+      xaxis: { title: { text: `Long-run cost a year (${currency})` }, rangemode: "tozero", nticks: 5, tickformat: "~s" },
       yaxis: { automargin: true, autorange: "reversed" },
       showlegend: false,
     },
@@ -57,8 +74,9 @@ export default function CalendarReplacementResult({ result, wt, actions = null, 
         wt={wt}
         sentence={labelCostsInText(result.recommendation, currency)}
         stats={[
-          { label: "Cost a year", value: se ? `${year(result.cost_per_year)} ± ${year(se)}` : year(result.cost_per_year),
-            hint: "long-run average" },
+          // A sampled cost's ± is its 90% sampling range (1.645 standard errors).
+          { label: "Cost a year", value: se ? `${year(result.cost_per_year)} ± ${year(SAMPLING_Z90 * se)}` : year(result.cost_per_year),
+            hint: se ? "long-run average · ± is the 90% sampling range" : "long-run average" },
           rtf != null && rtf > 0 && { label: "vs run to failure", value: `−${formatPercent(rtf)}` },
           age != null && { label: "vs age replacement", value: age > 0 ? `−${formatPercent(age)}` : "no saving",
                            hint: result.age_rule ? `at ${formatNumber(result.age_rule.age)} ${unit}` : undefined },
@@ -175,7 +193,7 @@ export default function CalendarReplacementResult({ result, wt, actions = null, 
               <b>{o.name}</b>{" "}
               {o.kind === "dates"
                 ? `on ${o.dates.map(formatDate).join(", ")}: model times ${o.times.map((t) => formatNumber(t, { sig: 5 })).join(", ")} ${unit}`
-                : `every ${formatNumber(o.every)} ${o.every_unit} from ${formatDate(o.start)}: every ${formatNumber(o.period, { sig: 6 })} ${unit}, one at ${formatNumber(o.offset, { sig: 6 })} ${unit}`}
+                : `every ${formatNumber(o.every)} ${everyUnitText(o.every, o.every_unit)} from ${formatDate(o.start)}: every ${formatNumber(o.period, { sig: 6 })} ${unit}, one at ${formatNumber(o.offset, { sig: 6 })} ${unit}`}
             </li>
           ))}
         </ul>

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import Modal from "./Modal.jsx";
 import Chip from "./ui/Chip.jsx";
 import { PublicLinks } from "./ShareDialog.jsx";
-import { useAskText } from "./ConfirmProvider.jsx";
+import { useAskText, useConfirm } from "./ConfirmProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import {
@@ -104,8 +103,9 @@ function ItemPicker({ items, sections, full, onAdd, onRename, disabled }) {
   );
 }
 
-// The report composer (#30), opened from an item's Share dialog ("Add to a
-// report…"): pick saved items, give the report a title, an author line and
+// The report composer (#30): a section of the Reports page (not a dialog),
+// opened by New report, a report's Edit, or an item's Share › "Add to a
+// report…": pick saved items, give the report a title, an author line and
 // notes, save it, then publish it with a public link like any other share.
 // "Draft notes" (#41) asks the assistant to word the items' saved figures;
 // the draft only fills the boxes, for the owner to edit. Saving publishes
@@ -135,13 +135,16 @@ function fromReport(r) {
   };
 }
 
-// `initial`: the item it was opened from (none from Reports); `openId`: a
-// report of the user's to open (Reports' Edit).
-export default function ReportComposer({ initial = null, openId = "", onClose }) {
+// `initial`: the item it was opened from (Share › Add to a report…); `openId`:
+// a report of the workspace's to edit. `onClose` goes back (asking first if
+// there are unsaved changes), `onSaved(id)` hears each save and `onDeleted`
+// the delete.
+export default function ReportComposer({ initial = null, openId = "", onClose, onSaved = null, onDeleted = null }) {
   const { ai } = useAppConfig();
   const { workspace, activeTeam } = useWorkspace() || {};
   const inTeam = Boolean(workspace && workspace !== "personal");
   const askText = useAskText();
+  const confirm = useConfirm();
   const [reports, setReports] = useState(null);
   const [items, setItems] = useState(null);
   const [reportId, setReportId] = useState(""); // "" = a new report
@@ -199,6 +202,7 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
       setReportId(saved.id);
       setReports((rs) => [saved, ...(rs || []).filter((r) => r.id !== saved.id)]);
       setDirty(false);
+      onSaved?.(saved.id);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -230,7 +234,7 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
     setBusy("delete");
     try {
       await deleteReport(reportId);
-      onClose();
+      (onDeleted || onClose)();
     } catch (e) {
       setError(e.message);
       setBusy(null);
@@ -256,14 +260,20 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
   const readOnly = Boolean(current?.read_only);
   const canSave = form.title.trim() && form.sections.length > 0 && dirty && !busy && !readOnly;
   const saved = reportId && !dirty;
+  // Nothing typed yet is nothing to lose.
+  const blankNew = !reportId && !form.title.trim() && !form.introduction.trim() && form.sections.length <= (initial ? 1 : 0);
+  const leave = async () => {
+    if (busy) return;
+    if (dirty && !blankNew && !readOnly && !(await confirm({
+      title: "Leave without saving?",
+      body: "Your changes to this report aren't saved yet.",
+      confirmLabel: "Leave without saving",
+      destructive: true,
+    }))) return;
+    onClose();
+  };
 
-  return (
-    <Modal
-      title="Report"
-      className="report-modal"
-      locked={!!busy}
-      onClose={onClose}
-      footer={
+  const footer = (
         <>
           <div>
             {reportId && !readOnly && !confirmDelete && (
@@ -283,16 +293,21 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
             )}
           </div>
           <div className="rc-foot-actions">
-            <button type="button" className="secondary" onClick={onClose} disabled={!!busy}>
-              {saved ? "Done" : "Cancel"}
+            <button type="button" className="secondary" onClick={leave} disabled={!!busy}>
+              {saved || readOnly ? "Done" : "Cancel"}
             </button>
-            <button type="button" onClick={onSave} disabled={!canSave}>
-              {busy === "save" ? "Saving…" : reportId ? (dirty ? "Save changes" : "Saved") : "Save report"}
-            </button>
+            {!readOnly && (
+              <button type="button" onClick={onSave} disabled={!canSave}>
+                {busy === "save" ? "Saving…" : reportId ? (dirty ? "Save changes" : "Saved") : "Save report"}
+              </button>
+            )}
           </div>
         </>
-      }
-    >
+  );
+
+  return (
+    <section className="card report-composer" aria-labelledby="rc-heading">
+      <h2 id="rc-heading" className="sr-only">{reportId ? "Edit the report" : "New report"}</h2>
       <p className="muted-line rc-lede">
         Put several items on one page with a title and notes, ready to print.{" "}
         {inTeam
@@ -305,9 +320,9 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
         </p>
       )}
 
-      {reports?.length > 0 && (
+      {initial && reports?.length > 0 && (
         <label className="login-field">
-          <span>Report</span>
+          <span>Add it to</span>
           <select value={reportId} onChange={(e) => choose(e.target.value)} disabled={!!busy}>
             <option value="">New report</option>
             {reports.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
@@ -407,7 +422,7 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
       {error && (
         <div className="error rc-error" role="alert">
           {error.credits ? (
-            <>{error.credits} <Link to="/billing" onClick={onClose}>Top up credits</Link></>
+            <>{error.credits} <Link to="/billing">Top up credits</Link></>
           ) : error}
         </div>
       )}
@@ -424,6 +439,7 @@ export default function ReportComposer({ initial = null, openId = "", onClose })
           Reliafy by the team's members.
         </p>
       )}
-    </Modal>
+      <div className="rc-foot">{footer}</div>
+    </section>
   );
 }

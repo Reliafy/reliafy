@@ -276,7 +276,15 @@ export function eventSummary(node, unit = "") {
   if (m.source === "saved" || m.modelId) return m.name ? `Saved model: ${m.name}` : "Saved model";
   const p = Object.fromEntries((m.params || []).map((x) => [x.name, x.value]));
   const u = unit ? ` per ${plainUnit(unit).replace(/s$/, "")}` : "";
-  if (m.distribution_id === "exponential" && p.failure_rate != null) return `Failure rate ${short(p.failure_rate)}${u}`;
+  if (m.distribution_id === "exponential" && p.failure_rate != null) {
+    // A small hourly rate reads as failures per million hours ("80 per million hours", not "8e-5 per hour"),
+    // the prediction pages' convention.
+    const word = plainUnit(unit).replace(/s$/, "").toLowerCase();
+    if (word === "hour" && p.failure_rate > 0 && p.failure_rate < 1e-3) {
+      return `Failure rate ${short(p.failure_rate * 1e6)} per million hours`;
+    }
+    return `Failure rate ${short(p.failure_rate)}${u}`;
+  }
   if (m.distribution_id === "weibull" && p.alpha != null) return `Weibull α = ${short(p.alpha)}, β = ${short(p.beta)}`;
   return m.distribution || m.distribution_id || "Model";
 }

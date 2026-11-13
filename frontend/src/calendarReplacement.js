@@ -135,3 +135,10 @@ export function calendarCsv(result) {
   ];
   return toCsv(rows);
 }
+
+// "4 weeks", "1 month": a shut's "every" unit (stored singular) with its count.
+export function everyUnitText(every, unit) {
+  const u = String(unit || "").trim().replace(/s$/i, "");
+  if (!u) return "";
+  return Number(every) === 1 ? u : `${u}s`;
+}

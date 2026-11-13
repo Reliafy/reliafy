@@ -41,9 +41,11 @@ export const RbdRenameContext = createContext(null);
 // "2oo3": a vote of M out of N branches, as IEC 61508 / 61511 write it (#298).
 export const moonText = (m, n) => `${m || "M"}oo${n || "N"}`;
 
-// A block's name: double-click it (or select the block and press F2) to
-// rename it in place. Enter or leaving the field keeps the new name; Escape
-// keeps the old one.
+// A block's name: select the block and press F2 (or More › Rename) to rename
+// it in place. Enter or leaving the field keeps the new name; Escape keeps the
+// old one. A double-click anywhere on a block, its name too, opens the block
+// (the name is also in there): double-clicking the name used to rename it,
+// so the block's settings looked unreachable.
 function NodeTitle({ nodeId, label, className, children }) {
   const ctx = useContext(RbdRenameContext);
   const ref = useRef(null);
@@ -72,9 +74,8 @@ function NodeTitle({ nodeId, label, className, children }) {
   return (
     <div
       className={className}
-      onDoubleClick={ctx ? (e) => { e.stopPropagation(); ctx.start(nodeId); } : undefined}
       // The full name, which the block may clamp to two lines.
-      title={ctx ? `${label ? `${label}\n` : ""}Double-click to rename` : undefined}
+      title={ctx ? `${label ? `${label}\n` : ""}Double-click to open · F2 to rename` : undefined}
     >
       {children}
     </div>

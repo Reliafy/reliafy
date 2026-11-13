@@ -134,6 +134,19 @@ def get_report(report_id: str, session=Depends(get_session),
     return JSONResponse(content=_with_access(ctx, reports_service.public(session, doc)))
 
 
+@router.get("/{report_id}/view")
+def view_report(report_id: str, session=Depends(get_session),
+                ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """The report as its readers see it, inside the app (Reports › a report ›
+    View): each section rendered from its item exactly as the report's share
+    page renders it, read in this workspace. A team's report is read here by
+    its members, since team items have no public link yet."""
+    doc = reports_service.get_owned(session, ctx.write_owner, report_id)
+    if doc is None:
+        return JSONResponse(status_code=404, content=_NOT_FOUND)
+    return JSONResponse(content=_with_access(ctx, report_view.build(session, doc, ctx.write_owner)))
+
+
 @router.put("/{report_id}")
 def update_report(report_id: str, body: dict = Body(...), session=Depends(get_session),
                   ctx: AccessCtx = Depends(get_access)) -> JSONResponse:

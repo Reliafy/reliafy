@@ -88,12 +88,12 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
           <SparesWhatIf curve={answer.risk_curve} over={over} initial={answer.hold} idPrefix="fleet" />
           <details>
             <summary className="lib-date">Stock to hold by {label.replace(/s$/i, "")}</summary>
-            <div className="maint-scroll"><table className="lib-table">
+            <div className="maint-scroll"><table className="mini-table spares-by-period">
               <thead><tr><th>{label[0].toUpperCase() + label.slice(1).replace(/s$/i, "")}</th><th>Expected use over {over}</th><th>Hold</th><th>Reorder at</th></tr></thead>
               <tbody>
                 {answer.per_period.map((p) => (
-                  <tr key={p.period}><td>{p.period}</td><td className="lib-date">{useText(p.expected_demand)}</td>
-                    <td>{formatNumber(p.hold)}</td><td>{p.reorder_at == null ? "—" : formatNumber(p.reorder_at)}</td></tr>
+                  <tr key={p.period}><td className="num">{p.period}</td><td className="num">{useText(p.expected_demand)}</td>
+                    <td className="num">{formatNumber(p.hold)}</td><td className="num">{p.reorder_at == null ? "—" : formatNumber(p.reorder_at)}</td></tr>
                 ))}
               </tbody>
             </table></div>

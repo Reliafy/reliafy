@@ -29,6 +29,7 @@ export default function FailureFinding() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [ranWith, setRanWith] = useState(null); // the model the result is for
+  const [source, setSource] = useState("saved"); // what the model picker shows
   const [duration, setDuration] = useState("");
   const [testCost, setTestCost] = useState("");
   const [renewed, setRenewed] = useState(true);
@@ -45,7 +46,7 @@ export default function FailureFinding() {
   const pcts = readPercents("failureFinding", { availability });
   const availCheck = pcts.checks.availability;
   // Why Compute is greyed out, said beside it (null when ready).
-  const missing = failureFindingMissing({ model, availability, availCheck, unit });
+  const missing = failureFindingMissing({ model, availability, availCheck, unit, source });
   const canRun = !missing && !isRegression && pcts.ready;
 
   const num = (v) => (String(v ?? "").trim() === "" ? null : Number(v));
@@ -88,7 +89,8 @@ export default function FailureFinding() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker label="Non-repairable model of the hidden function" value={model} onChange={pickModel} preferSaved wanted={wanted} />
+        <ModelPicker label="Non-repairable model of the hidden function" value={model} onChange={pickModel} preferSaved wanted={wanted}
+                     onSource={setSource} />
         {isRegression && (
           <p className="hint">Pick a plain distribution — proportional-hazards models aren't supported here.</p>
         )}

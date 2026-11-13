@@ -340,8 +340,7 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await expect(pane).toBeVisible();
 
   // Saved the same way as the RBD's page: the diagram has the new block.
-  await pane.locator(".rbd-tb-trigger", { hasText: "Save" }).click();
-  await pane.locator(".ovm-item", { hasText: /^Save$/ }).click();
+  await pane.locator(".rbd-save-main").click(); // Save saves in one click
   await expect(pane.locator(".rbd-full-status")).toContainText("Saved");
   await expect.poll(async () => ((await (await request.get(`/api/rbds/${built.model_id}`)).json()).graph.nodes || []).length).toBe(count + 1);
   // Saved: × closes without asking, the position picked.
@@ -405,7 +404,7 @@ test("an RBD at 400 px takes the screen: the builder fits, nothing sideways, Bac
   await expect(pane.locator(".rbd-builder")).toHaveClass(/is-narrow/);
   await expect(pane.locator(".rbd-tb-settings")).toBeHidden();
   const add = await pane.getByRole("button", { name: "Add block" }).boundingBox();
-  const save = await pane.locator(".rbd-tb-trigger", { hasText: "Save" }).boundingBox();
+  const save = await pane.locator(".rbd-save-main").boundingBox();
   expect(Math.abs(add.y - save.y)).toBeLessThan(4);
   const canvas = await pane.locator(".rbd-canvas").boundingBox();
   expect(canvas.height).toBeGreaterThan(300);

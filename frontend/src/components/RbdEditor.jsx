@@ -57,7 +57,7 @@ import Chip from "./ui/Chip.jsx";
 import Switch from "./ui/Switch.jsx";
 import { formatPercent } from "../format.js";
 import {
-  allInstant, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
+  RBD_EVALUATE_AT_EVENT, STEP_Y, allInstant, bridgeEdges, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
 } from "../rbdBuilderOps.js";
 // Phased missions and undirected networks (#160).
 import RbdPhasesModal from "./RbdPhasesModal.jsx";
@@ -777,6 +777,12 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // RePyability's to_json document, which Reliafy's Import also reads back.
   const [exporting, setExporting] = useState(null); // "python" | "json" while downloading
   const exportingRef = useRef(false);
+  const evaluateAtRef = useRef(null); // the Calculator's "Evaluate at t"
+  useEffect(() => {
+    const onAt = (e) => { evaluateAtRef.current = e.detail ?? null; };
+    window.addEventListener(RBD_EVALUATE_AT_EVENT, onAt);
+    return () => window.removeEventListener(RBD_EVALUATE_AT_EVENT, onAt);
+  }, []);
   const exportAs = useCallback(async (kind) => {
     const python = kind === "python";
     if (!savedRbdId) {
@@ -787,7 +793,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     exportingRef.current = true;
     setExporting(kind);
     try {
-      const file = await (python ? downloadRbdPython : downloadRbdJson)(savedRbdId);
+      const file = await (python ? downloadRbdPython(savedRbdId, evaluateAtRef.current) : downloadRbdJson(savedRbdId));
       setConnectHint(`Downloaded ${file} (the last saved version).`);
     } catch (e) {
       setConnectHint(e.message || `Couldn't download the ${python ? "script" : "file"}.`);
@@ -837,7 +843,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             label: `Component ${n}`, model: null,
             ...(repairable && allInstant(nds) ? { instant_repair: true } : {}),
           },
-          position: flowPos || { x: 240, y: 40 + ((n * 70) % 200) },
+          position: clearSpot(nds, flowPos || { x: 240, y: 40 + ((n * 70) % 200) }),
           ...HORIZONTAL,
         })
       );
@@ -853,7 +859,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           id: `k${i}`,
           type: "knode",
           data: { n, k, ...(label ? { label } : {}) },
-          position: flowPos || { x: 240, y: 40 + ((i * 70) % 200) },
+          position: clearSpot(nds, flowPos || { x: 240, y: 40 + ((i * 70) % 200) }),
         })
       );
     },
@@ -890,7 +896,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           id,
           type: kind,
           data,
-          position: flowPos || { x: 240, y: 40 + ((idRef.current * 70) % 200) },
+          // Clear of the blocks already there: a vote or a standby group dropped on a neighbour hid it.
+          position: clearSpot(nds, flowPos || { x: 240, y: 40 + ((idRef.current * 70) % 200) }),
           ...HORIZONTAL,
         })
       );
@@ -904,10 +911,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       setNodes((nds) => {
         const node = nds.find((n) => n.id === id);
         if (!node) return nds;
+        // Below the original, clear of every block (a copy dropped on top of it looked like nothing happened).
         return nds.concat({
           ...node,
           id: newId(node.type),
-          position: { x: node.position.x + 40, y: node.position.y + 40 },
+          position: clearSpot(nds, { x: node.position.x, y: node.position.y + STEP_Y }),
           selected: false,
           data: JSON.parse(JSON.stringify(node.data)),
         });
@@ -934,10 +942,15 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   const handleNodesChange = useCallback(
     (changes) => {
       const removed = changes.filter((c) => c.type === "remove").map((c) => c.id);
-      if (removed.length) setNodes((nds) => promoteRepeats(nds, removed));
+      if (removed.length) {
+        setNodes((nds) => promoteRepeats(nds, removed));
+        // A series block deleted with the keyboard leaves its line joined up.
+        const bridges = bridgeEdges(getEdges(), removed);
+        if (bridges.length) setEdges((eds) => [...eds, ...bridges]);
+      }
       onNodesChange(changes);
     },
-    [setNodes, onNodesChange]
+    [setNodes, setEdges, getEdges, onNodesChange]
   );
 
   // Apply the n/k from the modal: add a new node or update the edited one.
@@ -1331,7 +1344,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   const deleteNode = useCallback(
     (id) => {
       setNodes((nds) => promoteRepeats(nds, [id]).filter((n) => n.id !== id));
-      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+      // A block in a series line: the line joins up again across the gap.
+      setEdges((eds) => [...eds.filter((e) => e.source !== id && e.target !== id), ...bridgeEdges(eds, [id])]);
     },
     [setNodes, setEdges]
   );
@@ -1341,7 +1355,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     [setEdges]
   );
 
-  // Inline rename (#289): double-click a block's name, or select it and
+  // Inline rename (#289): the block's right-click Rename, or select it and
   // press F2. A repeated block renames the block it repeats.
   const [renaming, setRenaming] = useState(null);
   const rename = useMemo(() => ({
@@ -1614,14 +1628,16 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           Voting node (MooN)…
         </button>
         <button className="ovm-item" onClick={() => addBlock("standby", centrePos())}>Standby group</button>
-        {!repairable && (
-          <>
-            <button className="ovm-item" onClick={() => addBlock("loadshare", centrePos())}>Load-sharing</button>
-            <button className="ovm-item" onClick={() => addBlock("series", centrePos())}>Series (n identical)</button>
-            <button className="ovm-item" onClick={() => addBlock("parallel", centrePos())}>Parallel (n identical)</button>
-            <button className="ovm-item" onClick={() => addBlock("subsystem", centrePos())}>Sub-system</button>
-          </>
-        )}
+        {/* On a repairable diagram these are shown greyed, with why, rather than vanishing. */}
+        {[["loadshare", "Load-sharing"], ["series", "Series (n identical)"], ["parallel", "Parallel (n identical)"],
+          ["subsystem", "Sub-system"]].map(([kind, text]) => (
+          <button key={kind} className="ovm-item" disabled={repairable}
+                  title={repairable ? "Not on repairable diagrams yet: use components, a standby group or a voting node" : undefined}
+                  onClick={() => addBlock(kind, centrePos())}>
+            {text}
+          </button>
+        ))}
+        {repairable && <p className="rbd-menu-note">Greyed: not on repairable diagrams yet.</p>}
       </ToolbarMenu>
       <div className="rbd-toolbar-row rbd-tb-settings">
         <label className="rbd-unit-field">
@@ -1636,6 +1652,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         </label>
         <Select
           className="rbd-mode-select"
+          ariaLabel="Diagram kind"
           value={repairable ? "repairable" : network ? "network" : "non"}
           onChange={setMode}
           title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time. A network's connections work both ways: it analyses whether two points stay connected."
@@ -1661,10 +1678,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           </Chip>
         )}
         {repairable && (
-          <Chip tone={planOpen ? "accent" : "neutral"} onClick={() => togglePlan()} aria-pressed={planOpen}
-                title="Every block's planned work and running share in one table, under the diagram" data-wt="rbd-plan-chip">
-            Maintenance plan
-          </Chip>
+          <button type="button" className={"secondary sm rbd-plan-btn" + (planOpen ? " is-on" : "")} onClick={() => togglePlan()}
+                  aria-pressed={planOpen} data-wt="rbd-plan-chip"
+                  title="Every block's planned work and running share in one table, under the diagram">
+            Maintenance plan {planOpen ? "▾" : "▸"}
+          </button>
         )}
         {/* Common-cause groups: a chip that drops the list beneath it. */}
         {ccfGroups.length > 0 && (
@@ -1715,10 +1733,13 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           validating={validating}
           onValidate={runValidate}
         />
-        <ToolbarMenu label="Save" title="Save, or download the saved diagram">
-          <button className="ovm-item" onClick={quickSave}>
+        {/* Save saves in one click; the arrow beside it holds Save as new and the downloads. */}
+        <div className="rbd-save-split">
+          <button type="button" className="secondary sm rbd-save-main" onClick={quickSave}>
             {savedRbdId && !savedRbdReadOnly && savedRbdName.trim() ? "Save" : "Save…"}
           </button>
+        <ToolbarMenu label="" title="Save as new, or download the saved diagram" aria="More ways to save"
+                     className="rbd-save-more">
           {savedRbdId && (
             <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
           )}
@@ -1739,6 +1760,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             {exporting === "json" ? "Preparing…" : "Download as RePyability JSON"}
           </button>
         </ToolbarMenu>
+        </div>
         <ToolbarMenu label={<MoreIcon />} title="More" aria="More diagram settings" caret={false}>
           {/* On a phone the toolbar's settings live here (#301). */}
           <div className="rbd-ovm-settings">
@@ -2116,9 +2138,15 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
                     cloneNode(menu.id);
                     closeMenu();
                   }}
-                  title={menu.repeat ? "Another linked copy of the same component" : "An independent copy with its own model"}
+                  title={menu.repeat ? "Another linked copy of the same component, not wired in" : "An independent copy with its own model, placed below and not wired in: drag lines to it, or use Add alongside to copy it in parallel"}
                 >
-                  Clone
+                  Copy (not wired in)
+                </button>
+                <button
+                  onClick={() => rename.start(menu.id)}
+                  title="Rename the block (F2)"
+                >
+                  Rename
                 </button>
                 <button
                   onClick={() => {

@@ -77,13 +77,8 @@ export function latestOnly() {
 }
 
 // The model id a link carries (``?model=``), or null.
-export function modelFromSearch(search) {
-  const id = new URLSearchParams(search || "").get("model");
-  return id && /^[\w.:-]{1,200}$/.test(id) ? id : null;
-}
-
-// The most recently used model, remembered per browser. Storage can be
-// missing or throw (a private window): then nothing is remembered.
+// The model opened last, remembered per browser (a model page notes it).
+// Storage can be missing or throw (a private window): then nothing is kept.
 const RECENT_KEY = "reliafy:recent-model";
 
 export function rememberModel(id) {
@@ -95,25 +90,9 @@ export function rememberModel(id) {
   }
 }
 
-export function recentModel() {
-  try {
-    return window.localStorage.getItem(RECENT_KEY) || null;
-  } catch {
-    return null;
-  }
-}
-
-// The model a Strategy tool starts on, from the models it can use: the one
-// the link asked for, else the one used most recently, else the newest of
-// the user's own (a shared sample only when they have none).
-export function preferredModel(models, { wanted = null, recent = null } = {}) {
-  const list = models || [];
-  const has = (id) => id && list.some((m) => m.id === id);
-  if (has(wanted)) return wanted;
-  if (has(recent)) return recent;
-  const newest = (rows) => [...rows].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
-  const own = list.filter((m) => !m.is_sample);
-  return (newest(own.length ? own : list) || {}).id || null;
+export function modelFromSearch(search) {
+  const id = new URLSearchParams(search || "").get("model");
+  return id && /^[\w.:-]{1,200}$/.test(id) ? id : null;
 }
 
 // A saved model (``getModel``'s answer) as the value a model picker emits and
