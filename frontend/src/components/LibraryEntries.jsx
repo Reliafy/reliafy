@@ -9,7 +9,8 @@ import { ErrorNotice } from "./StorageCap.jsx";
 import { isCapRefusal } from "../plan.js";
 import { sig } from "../libraryModels.js";
 import {
-  VISIBILITY_LABEL, countsText, dataLine, entryAnchor, entryTags, filterEntries, modelBasis, modelHeadline, usedLinks,
+  VISIBILITY_LABEL, countsText, dataLine, entryAnchor, entryTags, filterEntries, modelBasis, modelHeadline, previewRowsText,
+  usedLinks,
 } from "../libraries.js";
 import "../views/LibraryPages.css";
 
@@ -103,7 +104,7 @@ function EntryDetail({ libraryId, entry }) {
           <>
             <div className="maint-scroll lib-scroll"><PreviewTable columns={preview.columns} rows={preview.rows} /></div>
             <p className="lib-quiet">
-              {d.data.n_rows > preview.rows.length ? `The first ${preview.rows.length} of ${d.data.n_rows} rows.` : `All ${preview.rows.length} rows.`}
+              {previewRowsText(preview.rows.length, d.data.n_rows)}
             </p>
           </>
         ) : <p className="lib-quiet">No rows to show.</p>}

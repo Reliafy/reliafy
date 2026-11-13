@@ -26,7 +26,9 @@ export default function ReadingSummary({
           {parts.map((p, i) => (
             <span key={p.key} className={"reading-part" + (used(p.key) ? "" : " unused")}>
               {i > 0 && <span className="reading-sep" aria-hidden="true"> · </span>}
-              <code>{p.label}</code>{p.list ? ": " : " = "}{p.value}
+              {/* A role's letter (x, c, i, Z) in mono; a word ("failure mode", "range") as plain text. */}
+              {/^[A-Za-z]{1,2}$/.test(p.label) ? <code>{p.label}</code> : <span className="reading-word">{p.label}</span>}
+              {p.list ? ": " : " = "}{p.value}
             </span>
           ))}
         </span>

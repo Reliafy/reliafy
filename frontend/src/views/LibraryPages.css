@@ -72,7 +72,8 @@
 
 /* The library page's Add… menu (Upload data…, and where to add something already saved). */
 .lib-add { position: relative; display: inline-flex; }
-.lib-add .ds-menu { left: 0; right: auto; min-width: 240px; max-width: min(320px, calc(100vw - 32px)); }
+/* Add… is the header's primary, on the right: its menu opens leftwards, narrow enough for a phone. */
+.lib-add .ds-menu { left: auto; right: 0; min-width: 0; width: 240px; max-width: calc(100vw - 32px); }
 .lib-add .ds-menu-h { white-space: normal; }
 .lib-add .lib-add-link { display: block; padding: 7px 18px; font-size: 13px; border-radius: 6px; }
 .lib-add .lib-add-link:hover, .lib-add .lib-add-link:focus { background: var(--surf-2); }

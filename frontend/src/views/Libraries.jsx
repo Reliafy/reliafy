@@ -211,7 +211,7 @@ function SharingPanel({ lib, onSaved, onClose }) {
       <h2 id="lib-share-h" className="lib-h">Sharing</h2>
       <fieldset>
         <legend className="sr-only">Who can see this library</legend>
-        {choice("private", "Private (your workspace)", VISIBILITY_WORDS.private)}
+        {choice("private", "Private", VISIBILITY_WORDS.private)}
         {choice("workspaces", "Shared with workspaces", VISIBILITY_WORDS.workspaces)}
         {choice("public", "Public", VISIBILITY_WORDS.public)}
       </fieldset>
@@ -271,14 +271,14 @@ function SharingPanel({ lib, onSaved, onClose }) {
 // shows what it is, its entries, and the owner's Edit…, Sharing… and Delete….
 // The owner's Add…: upload data straight into the library (New dataset, this library chosen), or the
 // way to add something already saved.
-function AddMenu({ onUpload }) {
+function AddMenu({ onUpload, onOpen }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
   useMenuDismiss(open, close, ref);
   return (
     <div className="lib-add" ref={ref}>
-      <button type="button" className="secondary" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => { onOpen?.(); setOpen((o) => !o); }}>
         Add…
       </button>
       {open && (
@@ -305,7 +305,11 @@ export function LibraryPage() {
   const [sharing, setSharing] = useState(false);
   // Upload data…: New dataset over the page, this library chosen; then the page shows the new entries.
   const [uploading, setUploading] = useState(false);
+  // "Added all 3 to …" after an upload: shown until the next thing the user does here. Cleared on
+  // click, not pointer-down: clearing on the press moved the list up under the pointer, so the
+  // first click on an entry missed it.
   const [added, setAdded] = useState(null);
+  const clearAdded = () => setAdded(null);
   const [tick, setTick] = useState(0);
   const uploaded = (library) => {
     setUploading(false);
@@ -328,6 +332,12 @@ export function LibraryPage() {
     return () => { live = false; };
   }, [id, tick]);
   useEffect(() => setAdded(null), [id]);
+  useEffect(() => {
+    if (!added) return undefined;
+    const next = (e) => { if (!e.target.closest?.(".ds-added-lib")) setAdded(null); };
+    document.addEventListener("click", next);
+    return () => document.removeEventListener("click", next);
+  }, [added]);
   useRobots(!!lib?.indexable);
   if (lib?.builtin) return <LibrarySource sourceId={lib.id} />;
   if (missing) {
@@ -367,14 +377,17 @@ export function LibraryPage() {
       <PageTitle name={lib?.name} />
       <PageHeader crumbs={CRUMBS} title={lib?.name || "Library"} badges={<LibraryChips lib={lib} />}
                   meta={lib && [lib.description, countsText(lib)].filter(Boolean).join(" · ")}
-                  primary={canEdit && <button type="button" onClick={() => setSharing((s) => !s)} aria-expanded={sharing}>Sharing…</button>}
+                  primary={canEdit && <AddMenu onOpen={clearAdded} onUpload={() => setUploading(true)} />}
                   actions={lib && (
                     <>
                       {canEdit && lib.visibility === "public" && (
                         <Link className="lib-signin" to={`${libraryPath(lib.id)}?as=public`}>Preview as public</Link>
                       )}
-                      {canEdit && <AddMenu onUpload={() => setUploading(true)} />}
-                      {canEdit && <button type="button" className="secondary" onClick={() => setEditing(true)}>Edit…</button>}
+                      {canEdit && <button type="button" className="secondary" onClick={() => { clearAdded(); setEditing(true); }}>Edit…</button>}
+                      {canEdit && (
+                        <button type="button" className="secondary" onClick={() => { clearAdded(); setSharing((s) => !s); }}
+                                aria-expanded={sharing}>Sharing…</button>
+                      )}
                     </>
                   )}
                   menu={canEdit && <button type="button" className="ovm-item danger" onClick={onDelete}>Delete…</button>}
