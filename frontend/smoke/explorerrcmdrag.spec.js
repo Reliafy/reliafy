@@ -139,10 +139,14 @@ test("a functional failure onto another function's standard, and before a siblin
     const fn = (await rcmOf(request, p.a.id)).functions[0];
     return fn.failures.map((f) => [f.text, f.standard?.text]);
   }).toEqual([[`Low pressure ${tag}`, `At least 50 L/s ${tag}`], [`No flow ${tag}`, `At least 50 L/s ${tag}`]]);
+  // Close the first move's toast, so the one read next is the second move's
+  // (on a slow runner the first can still be showing when the second lands).
+  await toast(page).getByRole("button", { name: "Dismiss" }).click();
+  await expect(toast(page)).toBeHidden();
   await dragTo(page, trow(page, `^Functional failure: Low pressure ${tag}`), trow(page, `^Performance standard: At least 20 L/s ${tag}`));
-  await expect(toast(page)).toContainText(`under “Pump more water ${tag}”`);
-  await expect.poll(async () => (await rcmOf(request, p.b.id)).functions[0].failures.map((f) => [f.text, f.standard?.text]))
+  await expect.poll(async () => (await rcmOf(request, p.b.id)).functions[0].failures.map((f) => [f.text, f.standard?.text]), { timeout: 20_000 })
     .toContainEqual([`Low pressure ${tag}`, `At least 20 L/s ${tag}`]);
+  await expect(toast(page)).toContainText(`under “Pump more water ${tag}”`);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/drag-toast-undo-1280.png` });
 });
 
