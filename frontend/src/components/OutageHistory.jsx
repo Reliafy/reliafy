@@ -44,7 +44,7 @@ function unitSeconds(unit) {
 }
 
 const FAIL = DANGER;
-const PLANNED = CATEGORY.amber;
+const PLANNED = CATEGORY.pink;
 
 function fmt(v, digits = 4) {
   if (v == null || !Number.isFinite(Number(v))) return "—";

@@ -79,7 +79,7 @@ export async function loadAllModels() {
     ...common(m),
     type: "recurrent",
     detail: m.model || "—",
-    color: CATEGORY.amber,
+    color: CATEGORY.pink,
     created_at: m.created_at,
     to: `/models/recurrent/${m.id}`,
   }));

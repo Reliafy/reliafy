@@ -16,7 +16,7 @@ input.ms-rec-input {
 }
 .tt-meas:hover input.ms-rec-input, input.ms-rec-input:focus { border-color: var(--border); background: var(--bg-surface); }
 input.ms-rec-input::placeholder { color: var(--text-secondary); }
-.ms-rec-said { font-size: var(--fs-12); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-rec-said { font-size: var(--fs-12); line-height: var(--lh-12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ms-rec-said.ok { color: var(--success, #15803d); }
 .ms-rec-said.bad { color: var(--danger-text); }
 .ms-rec-none { padding-left: 6px; }

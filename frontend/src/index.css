@@ -94,7 +94,7 @@ h6 {
 /* API token scope checkboxes (Settings → API access). */
 .token-scopes { border: 0; padding: 0; margin: 0.8rem 0 0; }
 .token-scopes legend { font-size: var(--fs-12); color: var(--text-secondary); padding: 0; margin-bottom: 4px; }
-.token-scope { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-13); line-height: 1.45; margin: 4px 0; }
+.token-scope { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-13); line-height: var(--lh-13); margin: 4px 0; }
 .token-scope input { margin-top: 3px; }
 
 /* Unverified-email reminder above the app layout. */
@@ -108,7 +108,7 @@ h6 {
   border-bottom: 1px solid var(--warning-border);
   color: var(--text);
   font-size: var(--fs-13);
-  line-height: 1.45;
+  line-height: var(--lh-13);
 }
 .verify-banner-text { flex: 1 1 320px; min-width: 0; }
 .verify-banner-note { color: var(--warning-text); }
@@ -691,8 +691,8 @@ h6 {
 .rs-answer {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
@@ -719,11 +719,11 @@ h6 {
 .rs-sentence {
   margin: 0;
   font-size: var(--fs-16);
-  line-height: 1.5;
+  line-height: var(--lh-16);
   color: var(--text);
 }
 .rs-sentence b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.rs-note { margin: 4px 0 0; font-size: var(--fs-13); line-height: 1.45; color: var(--text-secondary); }
+.rs-note { margin: 4px 0 0; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .stats.rs-stats { margin: var(--space-3) 0 0; }
 .rs-hint { margin-top: 2px; font-size: var(--fs-12); color: var(--text-secondary); }
 
@@ -836,7 +836,7 @@ h6 {
   padding-left: 1.2rem;
   color: var(--text-secondary);
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
 }
 
 /* A tool's inputs sit directly on its card (#310): no nested grey panel. */
@@ -902,7 +902,7 @@ h6 {
 
 .strategy-costs input[type="text"] {
   background: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   color: var(--text);
   padding: 0.45rem 0.6rem;
@@ -1297,7 +1297,7 @@ h6 {
 .param-field input {
   width: 150px;
   background: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   color: var(--text);
   padding: 0.45rem 0.6rem;
@@ -1644,7 +1644,7 @@ h6 {
 
 .stats .stat {
   flex: 1;
-  padding: 15px 18px;
+  padding: var(--space-4) var(--space-5);
   border-right: 1px solid var(--border-subtle);
 }
 
@@ -1891,15 +1891,16 @@ header {
 header h1 {
   margin: 0;
   font-size: var(--fs-24);
+  line-height: var(--lh-24);
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 header p {
   color: var(--text-secondary);
   margin: 8px 0 0;
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
   max-width: 56ch;
 }
 
@@ -1910,14 +1911,14 @@ header p {
 .ph-meta {
   margin-top: 6px;
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
   color: var(--text-secondary);
   max-width: 72ch;
 }
 .ph-meta a { color: var(--accent-text); }
 /* A page's description under its meta line (a position's): folded, with Show all. */
 .page-header .ph-desc { margin-top: 6px; max-width: 72ch; }
-.page-header .ph-desc .clampl-text { font-size: var(--fs-14); line-height: 1.5; color: var(--text-secondary); }
+.page-header .ph-desc .clampl-text { font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text-secondary); }
 .crumb-sep { color: var(--text-tertiary); }
 .ph-chips { margin-top: var(--space-2); }
 
@@ -1925,7 +1926,7 @@ header p {
 .crumb {
   font-size: var(--fs-13);
   color: var(--text-secondary);
-  margin-bottom: 9px;
+  margin-bottom: var(--space-2);
   font-weight: 500;
 }
 
@@ -1975,15 +1976,15 @@ header p {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 1.5rem;
-  margin-top: 1.5rem;
+  padding: var(--space-6);
+  margin-top: var(--space-6);
   box-shadow: var(--shadow-sm);
 }
 
 /* A card's title: 16px semibold, not the browser's 24px h2. */
 .card h2 {
   font-size: var(--fs-16);
-  line-height: 1.35;
+  line-height: var(--lh-16);
   margin: var(--space-6) 0 var(--space-3);
 }
 .card h2:first-child {
@@ -2006,13 +2007,13 @@ header p {
   margin: 0;
   font-size: var(--fs-16);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: var(--lh-16);
   letter-spacing: normal;
 }
 .card-sub {
   margin: 4px 0 0;
   font-size: var(--fs-13);
-  line-height: 1.45;
+  line-height: var(--lh-13);
   color: var(--text-secondary);
   max-width: 68ch;
 }
@@ -2029,7 +2030,8 @@ button {
   color: var(--text-on-fill);
   border: none;
   border-radius: var(--radius-md);
-  padding: 11px 17px;
+  padding: 6px var(--space-4);
+  line-height: var(--lh-14);
   font-family: inherit;
   font-size: var(--fs-14);
   font-weight: 600;
@@ -2043,8 +2045,12 @@ button {
 }
 
 button svg {
-  width: 15px;
-  height: 15px;
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+button.sm svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 /* The darker hover belongs to the bare primary only. It's written at no
@@ -2066,9 +2072,11 @@ button:disabled {
    primary; .secondary, .ghost, .danger (with .secondary) and .link are the
    others, and .sm is the compact size for toolbars, rows and cards. */
 button.secondary {
+  padding-top: 5px;
+  padding-bottom: 5px;
   background: var(--bg-surface);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   box-shadow: none;
   font-weight: 500;
 }
@@ -2092,6 +2100,8 @@ button.secondary.danger:hover:not(:disabled) {
 }
 
 button.ghost {
+  padding-top: 5px;
+  padding-bottom: 5px;
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid transparent;
@@ -2103,6 +2113,12 @@ button.ghost:hover:not(:disabled) {
   color: var(--text);
 }
 
+/* Outlined buttons lose the 1px their border adds, so every variant is control-md (32px), or control-sm (28px) small. */
+button.secondary.sm,
+button.ghost.sm {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
 /* An inline text link that runs an action. */
 button.link {
   background: none;
@@ -2123,7 +2139,8 @@ button.link:hover:not(:disabled) {
 }
 
 button.sm {
-  padding: 6px 11px;
+  padding: 4px var(--space-3);
+  line-height: var(--lh-13);
   font-size: var(--fs-13);
   gap: 6px;
 }
@@ -2141,7 +2158,7 @@ button.link.sm {
   font-size: var(--fs-14);
   color: var(--text);
   background-color: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   padding: 6px 10px;
 }
@@ -2156,18 +2173,18 @@ button.link.sm {
   min-width: 0;
   max-width: 100%;
   min-height: var(--control-md);
-  padding: 6px 10px;
+  padding: 5px var(--space-3);
   font-family: inherit;
   font-size: var(--fs-14);
-  line-height: 1.4;
+  line-height: var(--lh-14);
   color: var(--text);
   background-color: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 select.ctl { padding-right: 30px; }
-.ctl:hover:not(:focus):not(:disabled):not([readonly]) { border-color: var(--text-disabled); }
+.ctl:hover:not(:focus):not(:disabled):not([readonly]) { border-color: var(--border-control-hover); }
 .ctl:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .ctl[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
 .ctl:disabled { background-color: var(--bg-subtle); color: var(--text-secondary); cursor: not-allowed; }
@@ -2184,11 +2201,11 @@ select.ctl { padding-right: 30px; }
 .field-opt { font-size: var(--fs-13); font-weight: 400; color: var(--text-tertiary); }
 .field-aside { display: inline-flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-12); color: var(--text-secondary); flex: none; }
 .field-saved { color: var(--success-text); font-weight: 500; }
-.field-help { margin: 0; font-size: var(--fs-12); line-height: 1.4; color: var(--text-secondary); }
+.field-help { margin: 0; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); }
 /* One error style: 12 px, 500, red, a round "!" before it. */
 .field-error {
   display: flex; align-items: flex-start; gap: 6px; margin: 0;
-  font-size: var(--fs-12); font-weight: 500; line-height: 1.4; color: var(--danger-text);
+  font-size: var(--fs-12); font-weight: 500; line-height: var(--lh-12); color: var(--danger-text);
 }
 .field-error::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
@@ -2198,7 +2215,7 @@ select.ctl { padding-right: 30px; }
 /* A value that's allowed but probably not what was meant: the same shape as an error, amber. */
 .field-warning {
   display: flex; align-items: flex-start; gap: 6px; margin: 0;
-  font-size: var(--fs-12); font-weight: 500; line-height: 1.4; color: var(--warning-text);
+  font-size: var(--fs-12); font-weight: 500; line-height: var(--lh-12); color: var(--warning-text);
 }
 .field-warning::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
@@ -2208,10 +2225,10 @@ select.ctl { padding-right: 30px; }
 /* Controls joined into one: comparator + value + unit, interval + unit. */
 .ctl-group {
   display: flex; align-items: stretch; min-width: 0; max-width: 100%;
-  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface);
+  border: 1px solid var(--border-control); border-radius: var(--radius-md); background: var(--bg-surface);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.ctl-group:hover:not(:focus-within) { border-color: var(--text-disabled); }
+.ctl-group:hover:not(:focus-within) { border-color: var(--border-control-hover); }
 .ctl-group:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .ctl-group:has([aria-invalid="true"]) { border-color: var(--danger); }
 .ctl-group > .ctl {
@@ -2226,20 +2243,20 @@ select.ctl { padding-right: 30px; }
 .ctl-group > .ctl:not(select) { min-width: 3.5rem; }
 .ctl-group > .ctl-unit { flex: 0 1 4.5rem; background-color: var(--bg-subtle); color: var(--text); }
 .ctl-addon {
-  flex: none; display: inline-flex; align-items: center; padding: 0 10px;
+  flex: none; display: inline-flex; align-items: center; padding: 0 var(--space-3);
   background: var(--bg-subtle); color: var(--text-secondary); font-size: var(--fs-14); border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 .reads-as {
-  margin: 0; padding: 8px 10px; border-radius: var(--radius-md); background: var(--bg-subtle);
-  font-size: var(--fs-13); line-height: 1.4; color: var(--text-secondary); overflow-wrap: anywhere;
+  margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--bg-subtle);
+  font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); overflow-wrap: anywhere;
 }
 .reads-as b { color: var(--text); font-weight: 600; }
 
 /* One choice from a few, as chips: the Decision dialog's tiles, smaller. */
 .choice-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 button.choice-chip {
-  display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-sm); padding: 0 12px;
-  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface); color: var(--text);
+  display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-sm); padding: 0 var(--space-3);
+  border: 1px solid var(--border-control); border-radius: var(--radius-md); background: var(--bg-surface); color: var(--text);
   font-size: var(--fs-13); font-weight: 500; box-shadow: none;
 }
 button.choice-chip:hover:not(:disabled) { background: var(--bg-surface); border-color: var(--accent); color: var(--text); }
@@ -2249,7 +2266,7 @@ button.choice-chip.on:hover:not(:disabled) { border-color: var(--accent); backgr
 button.choice-chip.on:focus-visible { box-shadow: inset 0 0 0 1px var(--accent), var(--focus-ring); }
 .choice-tick { font-weight: 600; }
 @media (max-width: 600px) {
-  button.choice-chip { min-height: 40px; font-size: var(--fs-14); }
+  button.choice-chip { min-height: var(--control-lg); font-size: var(--fs-14); }
 }
 
 /* A section of a panel: heading, count, one small action at the right. */
@@ -2308,7 +2325,7 @@ button.more-btn svg { width: 16px; height: 16px; }
   font-family: inherit;
   font-size: var(--fs-12);
   font-weight: 500;
-  line-height: 18px;
+  line-height: var(--lh-12);
   letter-spacing: normal;
   text-transform: none;
   padding: 0 7px;
@@ -2530,7 +2547,7 @@ h1 .chip,
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: var(--fs-14);
@@ -2542,7 +2559,7 @@ h1 .chip,
   margin: 10px 0 0;
   font-size: var(--fs-13);
   color: var(--danger-text);
-  line-height: 1.4;
+  line-height: var(--lh-13);
 }
 .confirm-field input:focus {
   outline: none;
@@ -2558,7 +2575,7 @@ h1 .chip,
   gap: 12px;
   margin-top: 6px;
   font-size: var(--fs-12);
-  line-height: 1.4;
+  line-height: var(--lh-12);
 }
 .confirm-nudge { color: var(--text-secondary); min-width: 0; }
 .char-count {
@@ -2908,13 +2925,13 @@ h1 .chip,
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   font-size: var(--fs-13);
-  line-height: 1.45;
+  line-height: var(--lh-13);
   color: var(--text-secondary);
 }
 .detail-panel .life-reading.caveat { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); }
 .detail-panel .life-reading-title { font-size: var(--fs-14); font-weight: 600; color: var(--text); margin-bottom: 2px; }
 .detail-panel .life-reading b { color: var(--text); font-weight: 600; }
-.detail-panel .life-method { margin: 0; font-size: var(--fs-12); line-height: 1.45; color: var(--text-secondary); }
+.detail-panel .life-method { margin: 0; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); }
 /* The calculator's two questions, across its inputs card (#288). */
 .calc-eval-body .calc-mode { display: flex; width: 100%; }
 .calc-eval-body .calc-mode .seg-btn { flex: 1 1 auto; }
@@ -2928,7 +2945,7 @@ h1 .chip,
 .model-chars-input .calc-t { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
 .model-chars-input .calc-t span { color: var(--text-secondary); }
 .model-chars-input .calc-t input { width: 8em; }
-.model-chars-what { padding: 12px 16px 14px; font-size: var(--fs-13); line-height: 1.5; color: var(--text-secondary); }
+.model-chars-what { padding: 12px 16px 14px; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .model-chars-what p { margin: 0; }
 .model-chars-what p + p { margin-top: 8px; }
 .model-chars-what b { color: var(--text); font-weight: 600; }
@@ -3016,7 +3033,7 @@ h1 .chip,
 .rec-map-row { margin-bottom: var(--space-3); }
 .rec-map-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .rec-map-cov { margin-bottom: var(--space-3); }
-.rec-map-windows textarea { width: 100%; font: inherit; font-size: var(--fs-13); padding: 8px 10px; border: 1px solid var(--border);
+.rec-map-windows textarea { width: 100%; font: inherit; font-size: var(--fs-13); padding: 8px 10px; border: 1px solid var(--border-control);
   border-radius: var(--radius-md); resize: vertical; box-sizing: border-box; }
 .mapper button.link.rec-map-link { font-size: var(--fs-13); padding: 0; align-self: flex-start; min-height: 0; }
 .rec-map-note { margin: var(--space-2) 0 0; font-size: var(--fs-12); }
@@ -3031,7 +3048,7 @@ h1 .chip,
 .compare-dists { margin-top: 20px; }
 .compare-dists .gofh { font-size: var(--fs-14); font-weight: 600; color: var(--text); padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--border-subtle); }
 .compare-dists .muted-line { margin: 8px 0 0; }
-.compare-sentence { margin: 0; font-size: var(--fs-14); line-height: 1.5; color: var(--text); }
+.compare-sentence { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); }
 .compare-table { margin-top: 10px; }
 .compare-table th:not(:first-child), .compare-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .compare-table tr.current td { background: var(--accent-subtle); }
@@ -3125,7 +3142,7 @@ h1 .chip,
 .validation-card .vread {
   margin: 6px 0 0;
   font-size: var(--fs-13);
-  line-height: 1.5;
+  line-height: var(--lh-13);
   color: var(--text-secondary);
 }
 .validation-card .vrow-head + .vread,
@@ -3135,7 +3152,7 @@ h1 .chip,
 .validation-card .vfoot {
   padding: 10px 16px 12px;
   font-size: var(--fs-12);
-  line-height: 1.5;
+  line-height: var(--lh-12);
   color: var(--text-secondary);
 }
 
@@ -3146,7 +3163,7 @@ h1 .chip,
   padding: 14px 16px;
   font-size: var(--fs-13);
   color: var(--text);
-  line-height: 1.5;
+  line-height: var(--lh-13);
 }
 
 .detail-note b {
@@ -3187,7 +3204,7 @@ h1 .chip,
 /* The distribution select gets a visible border (unlike the mapper selects,
    which sit inside a bordered group). */
 .dist-field .select-wrap select {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   padding: 0.55rem 2rem 0.55rem 0.7rem;
   font-size: var(--fs-16);
@@ -3238,7 +3255,7 @@ h1 .chip,
   border: none;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  padding: 11px 15px;
+  padding: var(--space-3) var(--space-4);
   font-size: var(--fs-14);
   font-weight: 500;
   cursor: pointer;
@@ -3426,7 +3443,7 @@ h1 .chip,
 
 .rbd-sched input {
   background-color: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   color: var(--text);
   padding: 0.4rem 0.6rem;
@@ -3647,7 +3664,7 @@ h1 .chip,
 .rbd-check-icon {
   font-weight: 600;
   font-size: var(--fs-16);
-  line-height: 1.35;
+  line-height: var(--lh-16);
 }
 
 .rbd-check-list {
@@ -3683,10 +3700,10 @@ h1 .chip,
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
-.rbd-empty h3 { margin: 0.9rem 0 0.4rem; font-size: var(--fs-16); line-height: 1.35; }
+.rbd-empty h3 { margin: 0.9rem 0 0.4rem; font-size: var(--fs-16); line-height: var(--lh-16); }
 .rbd-empty-tab { max-width: 42rem; }
 .rbd-empty-tab h3 { margin-top: 0; }
-.rbd-empty p { margin: 0 0 1rem; color: var(--text-secondary); font-size: var(--fs-14); line-height: 1.5; }
+.rbd-empty p { margin: 0 0 1rem; color: var(--text-secondary); font-size: var(--fs-14); line-height: var(--lh-14); }
 .rbd-empty p:last-child { margin-bottom: 0; }
 .rbd-empty kbd {
   font-family: inherit; font-size: var(--fs-12); font-weight: 600;
@@ -3795,7 +3812,7 @@ h1 .chip,
 .calc-cov .select-wrap select {
   width: 150px;
   background-color: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   color: var(--text);
   padding: 0.4rem 0.6rem;
@@ -4169,7 +4186,7 @@ h1 .chip,
    button competing with the primary action. */
 .seg {
   display: inline-flex;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-surface);
@@ -4182,7 +4199,8 @@ h1 .chip,
   border-radius: 0;
   border-right: 1px solid var(--border);
   box-shadow: none;
-  padding: 0.45rem 0.8rem;
+  min-height: calc(var(--control-md) - 2px);
+  padding: 0 var(--space-3);
   font-family: inherit;
   font-size: var(--fs-14);
   font-weight: 500;
@@ -4213,7 +4231,8 @@ h1 .chip,
 }
 
 .seg-sm .seg-btn {
-  padding: 5px 10px;
+  min-height: calc(var(--control-sm) - 2px);
+  padding: 0 var(--space-3);
   font-size: var(--fs-13);
 }
 
@@ -4241,7 +4260,7 @@ h1 .chip,
 
 .calc-t input {
   background: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   color: var(--text);
   padding: 0.45rem 0.6rem;
@@ -4294,7 +4313,7 @@ h1 .chip,
    over the browser's own datalist arrow (kept, invisible, so it still opens
    the list). */
 .units-input[list] {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c727c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c6a64' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 9px center;
   background-size: 13px;
@@ -4393,7 +4412,7 @@ h1 .chip,
 .cov-formula input {
   width: 100%;
   background: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   color: var(--text);
   padding: 0.5rem 0.65rem;
@@ -4410,11 +4429,11 @@ h1 .chip,
 
 /* Optional covariate units (#265) */
 .cov-units { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; align-items: center; margin-top: 0.6rem; }
-.map-help { font-size: var(--fs-12); line-height: 1.4; color: var(--text-secondary); }
+.map-help { font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); }
 .cov-units .map-help { flex: 1 0 100%; }
 .cov-unit { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-14); color: var(--text); }
 .cov-unit input {
-  width: 6.5rem; max-width: 100%; background: var(--bg-surface); border: 1px solid var(--border);
+  width: 6.5rem; max-width: 100%; background: var(--bg-surface); border: 1px solid var(--border-control);
   border-radius: var(--radius-md); color: var(--text); padding: 0.3rem 0.5rem; font-size: var(--fs-14); font-family: inherit;
 }
 
@@ -4485,7 +4504,7 @@ h1 .chip,
   background: var(--accent-subtle);
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
 }
 
 .result-dist {
@@ -4560,7 +4579,7 @@ h1 .chip,
 .sample-picks .recent-row { margin-bottom: 6px; padding: 8px 10px; }
 .sample-picks .recent-row:last-child { margin-bottom: 0; }
 .sample-pick-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.sample-pick-blurb { font-size: var(--fs-12); color: var(--text-secondary); line-height: 1.3; }
+.sample-pick-blurb { font-size: var(--fs-12); color: var(--text-secondary); line-height: var(--lh-12); }
 
 /* Fit-flow source step: switch between the CSV dropzone and pasted values. */
 .source-toggle {
@@ -4646,7 +4665,7 @@ h1 .chip,
   resize: vertical;
   font-family: var(--font-mono);
   font-size: var(--fs-13);
-  line-height: 1.5;
+  line-height: var(--lh-13);
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -4789,7 +4808,7 @@ h1 .chip,
 }
 .ds-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ds-label { font-size: var(--fs-13); font-weight: 500; color: var(--text); }
-.ds-hint { font-size: var(--fs-12); line-height: 1.4; color: var(--text-secondary); }
+.ds-hint { font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); }
 .ds-unit .units-input { width: 100%; max-width: 240px; padding: 7px 10px; }
 .ds-unit .units-input[list] { padding-right: 30px; }
 .ds-status {
@@ -4827,7 +4846,7 @@ h1 .chip,
   border-radius: var(--radius-md);
   color: var(--warning-text);
   font-size: var(--fs-13);
-  line-height: 1.5;
+  line-height: var(--lh-13);
 }
 .fit-step .ds-change { align-self: flex-start; font-size: var(--fs-14); }
 /* Most units still running: the flags may be the other way round. */
@@ -4843,7 +4862,7 @@ h1 .chip,
   border-radius: var(--radius-md);
   color: var(--warning-text);
   font-size: var(--fs-13);
-  line-height: 1.5;
+  line-height: var(--lh-13);
 }
 .ds-flag-notice > span { flex: 1 1 260px; min-width: 0; }
 .ds-flag-notice .link { font-size: inherit; }
@@ -4863,7 +4882,7 @@ h1 .chip,
 .xcn-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .xcn-key { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .xcn-key code, .xcn-pair code, .xcn-fields > code { font-weight: 600; color: var(--text); font-size: var(--fs-14); white-space: nowrap; }
-.xcn-words { color: var(--text-secondary); font-size: var(--fs-13); line-height: 1.4; }
+.xcn-words { color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
 .xcn-fields { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; }
 .xcn-pick { min-width: 0; width: 15rem; max-width: 100%; }
 .xcn-sub, .xcn-below, .xcn-row > .xcn-warning, .xcn-note-line { grid-column: 2; min-width: 0; }
@@ -4885,7 +4904,7 @@ h1 .chip,
   border-radius: var(--radius-md);
   color: var(--warning-text);
   font-size: var(--fs-13);
-  line-height: 1.45;
+  line-height: var(--lh-13);
 }
 .xcn-issue.xcn-note { background: var(--bg-subtle); border-color: var(--border); color: var(--text); }
 .xcn-below .ds-flag-notice { margin: 0; }
@@ -4901,7 +4920,7 @@ h1 .chip,
   border-radius: var(--radius-md);
   color: var(--warning-text);
   font-size: var(--fs-13);
-  line-height: 1.45;
+  line-height: var(--lh-13);
 }
 .xcn-warning summary { cursor: pointer; }
 .ds-status-compact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); min-width: 0; }
@@ -4999,19 +5018,19 @@ select {
   font-size: var(--fs-13);
   color: var(--text);
   background-color: var(--bg-surface);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c727c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c6a64' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 9px center;
   background-size: 13px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
-  padding: 7px 30px 7px 10px;
+  padding: 6px 30px 6px var(--space-3);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 select:hover {
-  border-color: var(--text-disabled);
+  border-color: var(--border-control-hover);
 }
 
 select:focus {
@@ -5176,7 +5195,7 @@ select:disabled {
   margin: 7px 0 22px;
   color: var(--text-secondary);
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
 }
 
 .google-btn {
@@ -5237,7 +5256,7 @@ select:disabled {
 }
 
 .login-field input {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: var(--fs-14);
@@ -5428,7 +5447,7 @@ select:disabled {
 .landing-hero h1 {
   margin: 0;
   font-size: var(--fs-40);
-  line-height: 1.1;
+  line-height: var(--lh-40);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -5437,7 +5456,7 @@ select:disabled {
   margin: 18px 0 0;
   max-width: 52ch;
   font-size: var(--fs-16);
-  line-height: 1.6;
+  line-height: var(--lh-16);
   color: var(--text-secondary);
 }
 
@@ -5531,7 +5550,7 @@ select:disabled {
 .landing-card p {
   margin: 0;
   font-size: var(--fs-14);
-  line-height: 1.6;
+  line-height: var(--lh-14);
   color: var(--text-secondary);
 }
 
@@ -5675,7 +5694,7 @@ select:disabled {
 .api-code code {
   font-family: var(--font-mono);
   font-size: var(--fs-13);
-  line-height: 1.55;
+  line-height: var(--lh-13);
   color: var(--text);
   white-space: pre;
 }
@@ -5844,7 +5863,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .pl-link-url input {
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   padding: 7px 10px;
   font-size: var(--fs-13);
@@ -5870,7 +5889,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   word-break: break-all;
 }
 .pl-phrase-row button { padding: 5px 10px; font-size: var(--fs-12); margin-left: auto; }
-.pl-phrase p { margin: 6px 0 0; font-size: var(--fs-13); color: var(--text-secondary); line-height: 1.45; }
+.pl-phrase p { margin: 6px 0 0; font-size: var(--fs-13); color: var(--text-secondary); line-height: var(--lh-13); }
 .pl-new {
   display: flex;
   flex-direction: column;
@@ -6067,7 +6086,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 
 .first-run-start-body span {
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
   color: var(--text-secondary);
 }
 
@@ -6555,7 +6574,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   margin: 0 0 12px;
   color: var(--text-secondary);
   font-size: var(--fs-14);
-  line-height: 1.6;
+  line-height: var(--lh-14);
 }
 
 .blog-more {
@@ -6633,7 +6652,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .api-docs-card:hover { border-color: var(--accent-border); background: var(--accent-wash); }
 .api-docs-card b { color: var(--accent-text); font-size: var(--fs-14); }
-.api-docs-card span { color: var(--text-secondary); font-size: var(--fs-13); line-height: 1.45; }
+.api-docs-card span { color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
 .api-docs-pager {
   display: flex;
   justify-content: space-between;
@@ -6684,7 +6703,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .blog-article-head h1 {
   margin: 12px 0 0;
   font-size: var(--fs-32);
-  line-height: 1.15;
+  line-height: var(--lh-32);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -6692,7 +6711,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* Rendered markdown */
 .blog-prose {
   font-size: var(--fs-16);
-  line-height: 1.7;
+  line-height: var(--lh-16);
   color: var(--text);
 }
 
@@ -6781,7 +6800,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   border: none;
   padding: 0;
   font-size: var(--fs-13);
-  line-height: 1.6;
+  line-height: var(--lh-13);
 }
 
 .blog-prose blockquote {
@@ -6895,7 +6914,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .chat-settings input {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   font: inherit;
@@ -6925,7 +6944,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .chat-note {
   margin: 8px 0 0;
   font-size: var(--fs-12);
-  line-height: 1.5;
+  line-height: var(--lh-12);
   color: var(--text-secondary);
 }
 .chat-settings-actions {
@@ -6962,7 +6981,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   margin: 4px 0 14px;
   color: var(--text-secondary);
   font-size: var(--fs-14);
-  line-height: 1.6;
+  line-height: var(--lh-14);
 }
 .chat-suggest { display: flex; flex-direction: column; gap: 8px; }
 .chat-suggest button {
@@ -6983,7 +7002,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   padding: 9px 12px;
   border-radius: var(--radius-lg);
   font-size: var(--fs-14);
-  line-height: 1.6;
+  line-height: var(--lh-14);
   white-space: pre-wrap;
   word-wrap: break-word;
 }
@@ -7122,12 +7141,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   resize: none;
   max-height: 140px;
   padding: 9px 11px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   font: inherit;
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
 }
 .chat-input textarea:focus { outline: none; border-color: var(--accent); }
 .chat-send {
@@ -7238,7 +7257,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   color: var(--warning-text);
   border-radius: var(--radius-md);
   font-size: var(--fs-13);
-  line-height: 1.5;
+  line-height: var(--lh-13);
 }
 
 /* ---- Landing pricing ------------------------------------------------------ */
@@ -7263,7 +7282,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   max-width: 56ch;
   color: var(--text-secondary);
   font-size: var(--fs-16);
-  line-height: 1.6;
+  line-height: var(--lh-16);
 }
 .price-grid {
   display: grid;
@@ -7321,7 +7340,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .price-blurb {
   margin: 0;
   font-size: var(--fs-14);
-  line-height: 1.55;
+  line-height: var(--lh-14);
   color: var(--text-secondary);
 }
 .price-list {
@@ -7338,7 +7357,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   align-items: flex-start;
   gap: 9px;
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
 }
 .price-list svg {
   width: 15px;
@@ -7372,7 +7391,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .plot-caption {
   margin: 6px 0 0;
   font-size: var(--fs-13);
-  line-height: 1.45;
+  line-height: var(--lh-13);
   color: var(--text-secondary);
 }
 /* A "?" that carries an explanation in its tooltip. */
@@ -7415,7 +7434,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .param-ci-note {
   margin: 6px 0 0;
   font-size: var(--fs-12);
-  line-height: 1.4;
+  line-height: var(--lh-12);
   color: var(--text-secondary);
 }
 /* Inside a parameters card it sits under the rows, inset like them. */
@@ -7427,7 +7446,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .verdict-line {
   margin: 0.4rem 0 0;
   font-size: var(--fs-13);
-  line-height: 1.55;
+  line-height: var(--lh-13);
   color: var(--text-secondary);
   background: var(--bg-canvas);
   border: 1px solid var(--border);
@@ -7534,7 +7553,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* Settings > Connected apps, before any app: connect Claude in three steps. */
 .connect-lead { margin: 0 0 4px; font-size: var(--fs-14); }
 .connect-empty .pl-link-url { max-width: 460px; }
-.connect-steps { margin: 0.8rem 0 0; padding-left: 1.2rem; font-size: var(--fs-13); color: var(--text-secondary); line-height: 1.6; }
+.connect-steps { margin: 0.8rem 0 0; padding-left: 1.2rem; font-size: var(--fs-13); color: var(--text-secondary); line-height: var(--lh-13); }
 @media (max-width: 720px) {
   .connect-empty .pl-link-url > *, .token-minted .pl-link-url > * { min-height: 44px; }
 }
@@ -7736,14 +7755,14 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .option-hint {
   font-size: var(--fs-12);
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: var(--lh-12);
   margin: 8px 0 0;
 }
 .field-row { display: flex; gap: 8px; }
 .field-row input[type="text"] { flex: 1; }
 .interval-input { width: 110px; }
 .interval-input[aria-invalid="true"] { border-color: var(--danger); }
-.decision-interval-error { font-size: var(--fs-12); color: var(--danger-text); line-height: 1.5; margin: 6px 0 0; }
+.decision-interval-error { font-size: var(--fs-12); color: var(--danger-text); line-height: var(--lh-12); margin: 6px 0 0; }
 /* A combination of tasks: each further task's name and interval under the choice. */
 .option-tile:disabled { cursor: not-allowed; opacity: 0.5; }
 /* The decision diagram's tasks, in order, each with what makes it worth doing here. */
@@ -7753,16 +7772,16 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .decision-row-gap { margin-top: 6px; }
 .decision-row-indent { margin-left: 16px; }
 .decision-sub { flex-basis: 100%; margin: 0; font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); }
-.decision-line { flex: 1 1 14rem; margin: 0; font-size: var(--fs-12); color: var(--text-secondary); line-height: 1.5; }
+.decision-line { flex: 1 1 14rem; margin: 0; font-size: var(--fs-12); color: var(--text-secondary); line-height: var(--lh-12); }
 .decision-line.refused { font-style: italic; }
 .decision-default { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--bg-surface);
-  font-size: var(--fs-13); line-height: 1.5; }
+  font-size: var(--fs-13); line-height: var(--lh-13); }
 .decision-extra { margin-top: 12px; }
 .decision-extra .field-row { flex-wrap: wrap; }
 .decision-extra .field-row input[type="text"] { min-width: 12rem; }
 /* Apply, and beside it what's missing while it can't be pressed. */
 .decision-apply { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
-.decision-why { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); text-align: right; line-height: 1.4; }
+.decision-why { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); text-align: right; line-height: var(--lh-13); }
 .decision-why.error { color: var(--danger-text); }
 
 /* Evidence picker */
@@ -7785,7 +7804,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 
 .rcm-form { display: flex; flex-direction: column; gap: 14px; }
 .login-field textarea {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   padding: 8px 12px;
   font-size: var(--fs-14);
@@ -7795,12 +7814,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .decision-step input,
 .decision-step textarea {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   padding: 6px 10px;
   min-height: 34px;
   font-size: var(--fs-14);
-  line-height: 1.4;
+  line-height: var(--lh-14);
   font-family: inherit;
   color: var(--text);
   background: var(--bg-surface);
@@ -7810,7 +7829,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   padding: 6px 30px 6px 10px;
   min-height: 34px;
   font-size: var(--fs-14);
-  line-height: 1.4;
+  line-height: var(--lh-14);
   background-color: var(--bg-surface);
 }
 .login-field textarea:focus,
@@ -7872,7 +7891,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .pd-batch-head { font-size: var(--fs-14); color: var(--text); font-weight: 600; }
 .pd-batch input {
   width: 100%; min-width: 0; box-sizing: border-box;
-  border: 1px solid var(--border); border-radius: var(--radius-md); padding: 9px 11px;
+  border: 1px solid var(--border-control); border-radius: var(--radius-md); padding: 9px 11px;
   font-size: var(--fs-14); font-family: inherit; color: var(--text); background: var(--bg-canvas);
 }
 .pd-batch input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
@@ -7957,7 +7976,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .spotlight-text p {
   color: var(--text-secondary);
   font-size: var(--fs-16);
-  line-height: 1.65;
+  line-height: var(--lh-16);
   margin: 0 0 12px;
 }
 .spotlight-shot img {
@@ -7989,7 +8008,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   padding: 26px 24px;
 }
 .trio-card h3 { margin: 0 0 8px; font-size: var(--fs-16); }
-.trio-card p { margin: 0; color: var(--text-secondary); font-size: var(--fs-14); line-height: 1.6; }
+.trio-card p { margin: 0; color: var(--text-secondary); font-size: var(--fs-14); line-height: var(--lh-14); }
 @media (max-width: 860px) {
   .landing-trio { grid-template-columns: 1fr; }
 }
@@ -8331,7 +8350,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: var(--fs-12);
-  line-height: 1.45;
+  line-height: var(--lh-12);
   white-space: pre-wrap;
   border-top: 1px solid var(--border-subtle);
 }
@@ -8404,7 +8423,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   max-height: 160px;
   min-height: 42px;
   padding: 0.6rem 0.7rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   color: var(--text);
@@ -8496,7 +8515,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .agent-sess-row:last-child { border-bottom: none; }
 .agent-sess-row:hover { background: var(--accent-wash); }
 .agent-sess-title {
-  font-size: var(--fs-14); font-weight: 500; line-height: 1.35;
+  font-size: var(--fs-14); font-weight: 500; line-height: var(--lh-14);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 .agent-sess-meta { font-size: var(--fs-12); color: var(--text-secondary); white-space: nowrap; flex-shrink: 0; }
@@ -8507,14 +8526,14 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   border: 1px solid var(--accent); border-radius: var(--radius-lg);
   background: var(--accent-wash);
 }
-.agent-approve-msg { font-size: var(--fs-14); line-height: 1.4; }
+.agent-approve-msg { font-size: var(--fs-14); line-height: var(--lh-14); }
 .agent-approve-done { font-size: var(--fs-13); color: var(--text-secondary); font-style: italic; }
 /* Repairable RBD — component repair line + availability results */
 .rbd-comp-empty.warn { color: var(--warning-text); }
 
 .rbd-avail { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
 .rbd-avail-hero { text-align: center; padding: 10px 0 4px; }
-.rbd-avail-big { font-size: var(--fs-24); font-weight: 600; color: var(--accent-text); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.rbd-avail-big { font-size: var(--fs-24); font-weight: 600; color: var(--accent-text); line-height: var(--lh-24); font-variant-numeric: tabular-nums; }
 .rbd-avail-cap { font-size: var(--fs-13); color: var(--text-secondary); }
 .rbd-avail-metrics { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
 .rbd-avail-nodes { display: flex; flex-direction: column; gap: 6px; }
@@ -8550,7 +8569,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-asof-panel { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
 .rbd-asof-table { margin-bottom: 0; }
 .rbd-asof-table select, .rbd-asof-table input {
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text);
+  background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 3px 6px; font: inherit; font-size: var(--fs-13);
 }
 .rbd-asof-table input { width: 110px; }
@@ -8685,7 +8704,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .guide-cat { padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; }
 .guide-prereq { color: var(--text-secondary); font-size: var(--fs-14); }
 /* Guides read as articles: prose first, screenshots supporting it. */
-.guide-prose { max-width: 720px; line-height: 1.75; font-size: var(--fs-16); }
+.guide-prose { max-width: 720px; line-height: var(--lh-16); font-size: var(--fs-16); }
 .guide-prose h2 { margin: 32px 0 10px; font-size: var(--fs-20); }
 .guide-prose p { margin: 0 0 16px; }
 .guide-prose ul, .guide-prose ol { margin: 0 0 16px; padding-left: 22px; }
@@ -8693,11 +8712,11 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 /* Code, tables and quoted results (#302): each scrolls inside itself, never the drawer. */
 .guide-prose pre {
   overflow-x: auto; margin: 0 0 16px; padding: 12px 14px;
-  background: var(--bg-subtle); border-radius: var(--radius-md); font-size: var(--fs-13); line-height: 1.5;
+  background: var(--bg-subtle); border-radius: var(--radius-md); font-size: var(--fs-13); line-height: var(--lh-13);
 }
 .guide-prose table {
   display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 16px;
-  font-size: var(--fs-14); line-height: 1.5; font-variant-numeric: tabular-nums;
+  font-size: var(--fs-14); line-height: var(--lh-14); font-variant-numeric: tabular-nums;
 }
 .guide-prose th, .guide-prose td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--border); text-align: left; }
 .guide-prose th { font-size: var(--fs-13); font-weight: 500; color: var(--text-secondary); }
@@ -8741,7 +8760,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
    ran a long task line off the drawer's edge. */
 .help-list button { display: block; width: 100%; text-align: left; white-space: normal; background: none; border: none; color: inherit; padding: 10px 12px; border-radius: var(--radius-md); cursor: pointer; }
 .help-list button:hover { background: var(--accent-subtle); }
-.help-list .help-item-task { display: block; font-size: var(--fs-13); line-height: 1.4; color: var(--text-secondary); }
+.help-list .help-item-task { display: block; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 /* The list's filter box: the shared list search, the drawer's full width. */
 .help-filter.tablebar { margin: 0; padding: 12px 20px; border-bottom: 1px solid var(--border); }
 .help-filter .search { flex: 1; width: auto; min-width: 0; }
@@ -8785,7 +8804,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .ref-search { margin: 0 0 18px; }
 .ref-search input {
   width: 100%; max-width: 460px; padding: 9px 13px; font-size: var(--fs-14);
-  border: 1px solid var(--border); border-radius: var(--radius-md);
+  border: 1px solid var(--border-control); border-radius: var(--radius-md);
   background: var(--bg-surface); color: inherit;
 }
 .ref-search input:focus {
@@ -8841,12 +8860,12 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .ref-param code { font-size: var(--fs-14); }
 .ref-bound { color: var(--text-secondary); font-size: var(--fs-13); }
 
-.ref-prose { font-size: var(--fs-16); line-height: 1.65; }
+.ref-prose { font-size: var(--fs-16); line-height: var(--lh-16); }
 .ref-prose p { margin: 0 0 12px; }
 .ref-prose pre {
   background: var(--bg-subtle); border: 1px solid var(--border);
   border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto;
-  font-size: var(--fs-13); line-height: 1.55; margin: 0 0 12px;
+  font-size: var(--fs-13); line-height: var(--lh-13); margin: 0 0 12px;
 }
 .ref-prose h3 { font-size: var(--fs-16); margin: 20px 0 8px; }
 .ref-intro { margin-bottom: 4px; }
@@ -8867,7 +8886,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
    lines at most, so the toolbar doesn't jump. */
 .rbd-tb-flash {
   flex: 1 1 0; min-width: 0; align-self: center;
-  font-size: var(--fs-13); font-weight: 600; color: var(--accent-text); line-height: 1.3; text-align: right;
+  font-size: var(--fs-13); font-weight: 600; color: var(--accent-text); line-height: var(--lh-13); text-align: right;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .rbd-tb-flash:empty { display: none; }
@@ -8942,8 +8961,8 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .consent-redirect-top { margin-top: 4px; }
 .consent-redirect-top .consent-redirect-host { font-size: var(--fs-20); }
 .consent-host-inline { font-family: var(--font-mono); color: var(--text); word-break: break-all; }
-.consent-redirect p { margin: 8px 0 0; font-size: var(--fs-13); line-height: 1.5; }
-.consent-scope { font-size: var(--fs-14); line-height: 1.5; }
+.consent-redirect p { margin: 8px 0 0; font-size: var(--fs-13); line-height: var(--lh-13); }
+.consent-scope { font-size: var(--fs-14); line-height: var(--lh-14); }
 .consent-scope ul { margin: 6px 0 8px; padding-left: 18px; }
 .consent-scope .muted-line { font-size: var(--fs-13); margin: 0 0 14px; }
 .consent-who { font-size: var(--fs-13); color: var(--text-secondary); margin: 0 0 12px; }
@@ -9089,7 +9108,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
   background: var(--bg-subtle);
   color: var(--text-secondary);
   font-size: var(--fs-13);
-  line-height: 1.5;
+  line-height: var(--lh-13);
 }
 .rbd-band-note p { margin: 0; }
 .rbd-band-note p + p { margin-top: 4px; }
@@ -9107,7 +9126,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .rbd-dlg-sec > h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; color: var(--text); }
 /* The block's planned work in words; edited in the Maintenance plan (RbdMaintenancePlan.jsx). */
 .rbd-dlg-plan { align-items: flex-start; }
-.rbd-dlg-plan-sum { margin: 0; font-size: var(--fs-14); line-height: 1.45; }
+.rbd-dlg-plan-sum { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); }
 .rbd-dlg-plan > p.muted { margin: 0; font-size: var(--fs-13); }
 .rbd-dlg-sec .param-fields, .rbd-dlg-fold-body .param-fields { margin-top: 0; }
 .rbd-dlg-sec .hint, .rbd-dlg-fold-body .hint { margin: 0; }
@@ -9170,7 +9189,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .rbd-answer-rows { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .rbd-answer-rows > div { display: grid; grid-template-columns: 136px 1fr; gap: var(--space-3); align-items: baseline; }
 .rbd-answer-rows dt { font-size: var(--fs-13); color: var(--text-secondary); }
-.rbd-answer-rows dd { margin: 0; font-size: var(--fs-14); line-height: 1.5; color: var(--text); min-width: 0; }
+.rbd-answer-rows dd { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); min-width: 0; }
 .rbd-answer-rows dd b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .rbd-answer-big { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .rbd-answer-big > b { font-size: var(--fs-20); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -9184,8 +9203,8 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
   .rbd-answer-gain { white-space: normal; }
 }
 /* Details and the method line under the results (#311, #313). */
-.rbd-details-p { margin: 0; font-size: var(--fs-13); line-height: 1.5; color: var(--text-secondary); }
-.rbd-details-notes { margin: 0; padding-left: 18px; font-size: var(--fs-13); line-height: 1.5; color: var(--text-secondary); }
+.rbd-details-p { margin: 0; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
+.rbd-details-notes { margin: 0; padding-left: 18px; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .rbd-avail .rs-details { margin-top: 0; }
 .rbd-avail .rs-details-body { display: flex; flex-direction: column; gap: var(--space-4); }
 .rbd-avail .rs-dl + * { margin-top: 0; }
@@ -9193,7 +9212,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 /* Custom: one number and its unit, level with the presets. */
 .rbd-window-custom { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-13); color: var(--text-secondary); }
 .rbd-window-custom input {
-  width: 120px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text);
+  width: 120px; background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 0.45rem 0.6rem; font-size: var(--fs-14); font-family: inherit;
 }
 .rbd-window-custom input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
@@ -9226,7 +9245,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .rbd-train-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rbd-train-row input[type="text"] {
   flex: 1 1 160px; min-width: 0; max-width: 320px;
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text);
+  background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 0.45rem 0.6rem; font-size: var(--fs-14); font-family: inherit;
 }
 .rbd-train-row input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
@@ -9387,7 +9406,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 .xl-map-field.dupe { border-color: var(--warning); }
 .xl-map-label { font-size: var(--fs-13); font-weight: 600; color: var(--text); }
 .xl-map-label .req { font-style: normal; color: var(--accent-text); margin-left: 2px; }
-.xl-map-help { font-size: var(--fs-12); color: var(--text-secondary); line-height: 1.3; }
+.xl-map-help { font-size: var(--fs-12); color: var(--text-secondary); line-height: var(--lh-12); }
 .xl-map-field .sel-trigger.sel-embedded { height: auto; padding: 0.25rem 0; }
 .xl-map-more {
   align-self: flex-start;
@@ -9634,7 +9653,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 .rbd-dlg-name { display: flex; flex-direction: column; gap: 4px; margin: 0 0 var(--space-4); font-size: var(--fs-13); font-weight: 500; color: var(--text-secondary); }
 .rbd-dlg-name input {
   width: 100%; max-width: 360px; box-sizing: border-box; padding: 0.45rem 0.6rem; font: inherit; font-size: var(--fs-14);
-  color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  color: var(--text); background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md);
 }
 .rbd-dlg-name input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 input.rbd-rename {
@@ -9703,10 +9722,10 @@ input.rbd-rename {
 .use-model-step:focus-visible { outline: none; box-shadow: var(--focus-ring); border-color: var(--accent); }
 .use-model-step:disabled { cursor: progress; opacity: 0.7; }
 .use-model-step-name { font-size: var(--fs-14); font-weight: 600; color: var(--accent-text); }
-.use-model-step-what { font-size: var(--fs-13); line-height: 1.45; color: var(--text-secondary); }
+.use-model-step-what { font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .use-model-modal .use-model-note { margin: 10px 0 0; font-size: var(--fs-12); }
 /* What the fit says, opened from its row in the parameters card. */
-.reading-modal .reading-text { margin: 0; font-size: var(--fs-14); line-height: 1.5; color: var(--text); }
+.reading-modal .reading-text { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); }
 .reading-modal .reading-text b { font-weight: 600; }
 .reading-modal .life-reading-action { display: inline-block; margin-top: 12px; font-size: var(--fs-14); font-weight: 500; text-align: left; }
 .reading-modal .life-reading-error { display: block; margin-top: 4px; font-size: var(--fs-12); }
@@ -9752,7 +9771,7 @@ input.rbd-rename {
 .joint-result .maint-scroll, .joint-new .maint-scroll { overflow-x: auto; position: relative; max-width: 100%; }
 .joint-result > section, .joint-result > .card { min-width: 0; }
 .joint-fields .dist-field input, .joint-enter .dist-field input, .joint-readings textarea {
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text);
+  background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 0.5rem 0.65rem; font-size: var(--fs-14);
 }
 .joint-fields .dist-field input:focus, .joint-enter .dist-field input:focus, .joint-readings textarea:focus {
@@ -9839,7 +9858,7 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 /* A Pro-only action, marked for users without Pro (ProTag.jsx). */
 .pro-tag {
   display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
-  font-size: var(--fs-12); font-weight: 600; line-height: 18px; vertical-align: middle;
+  font-size: var(--fs-12); font-weight: 600; line-height: var(--lh-12); vertical-align: middle;
   color: var(--cat-violet); background: var(--cat-violet-bg); border: 1px solid var(--cat-violet-border);
 }
 
@@ -10038,3 +10057,6 @@ main.content:focus { outline: none; }
 
 /* A copy made from a library says where it came from (components/FromLibrary.jsx). */
 .from-library { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--fs-13); overflow-wrap: anywhere; }
+
+/* The dark theme (tokens.css) lets native controls follow it. */
+[data-theme="dark"] { color-scheme: dark; }

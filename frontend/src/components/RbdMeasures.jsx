@@ -339,7 +339,7 @@ function Shares({ data }) {
 
 function Joint({ data }) {
   const rows = (data.pairs || []).map((r) => ({
-    label: r.label, value: r.value, color: r.value >= 0 ? CATEGORY.blue : CATEGORY.amber,
+    label: r.label, value: r.value, color: r.value >= 0 ? CATEGORY.blue : CATEGORY.pink,
   }));
   return (
     <>

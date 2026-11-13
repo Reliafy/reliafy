@@ -12,14 +12,14 @@
 .rl-card .rl-lo { text-align: right; font-size: var(--fs-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
 /* Why there's no band (Cox PH), in the inputs card. */
-.calc-note { margin: 0; font-size: var(--fs-12); line-height: 1.45; color: var(--text-secondary); }
+.calc-note { margin: 0; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); }
 
 /* The Validation tab: "How good is this model?" and "Does it hold?" side by side. */
 .validation-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .validation-grid > .validation-card { flex: 1 1 380px; min-width: 0; max-width: 600px; }
 
 .checks-verdict { display: flex; flex-direction: column; gap: 4px; }
-.checks-verdict .vread { margin: 0; font-size: var(--fs-13); line-height: 1.5; color: var(--text-secondary); }
+.checks-verdict .vread { margin: 0; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .checks-section .checks-verdict { margin-bottom: 10px; }
 .checks-verdict .checks-title { font-size: var(--fs-14); font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .checks-actions { padding: 12px 16px 14px; display: flex; gap: 8px; flex-wrap: wrap; }

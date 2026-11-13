@@ -16,7 +16,7 @@
   margin: 0;
   padding: 12px 16px;
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
   color: var(--text);
 }
 
@@ -107,7 +107,7 @@
   padding-left: 18px;
   font-size: var(--fs-13);
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: var(--lh-13);
 }
 
 .wc-not-compared li + li {

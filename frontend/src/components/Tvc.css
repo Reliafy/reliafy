@@ -24,7 +24,7 @@
   padding: 11px 16px;
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }

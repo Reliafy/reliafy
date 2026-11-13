@@ -25,7 +25,7 @@
   margin: 4px 0 0;
   max-width: none;
   font-size: var(--fs-14);
-  line-height: 1.5;
+  line-height: var(--lh-14);
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -161,10 +161,10 @@
   overflow: hidden;
 }
 .mf-check-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.mf-check-q { margin: 0; font-size: var(--fs-14); font-weight: 600; line-height: 1.35; color: var(--text); }
+.mf-check-q { margin: 0; font-size: var(--fs-14); font-weight: 600; line-height: var(--lh-14); color: var(--text); }
 .mf-check-term { font-weight: 400; color: var(--text-secondary); }
 .mf-verdict { flex: none; }
-.mf-check-verdict { flex: none; margin: 6px 0 4px; font-size: var(--fs-13); line-height: 1.45; color: var(--text-secondary); }
+.mf-check-verdict { flex: none; margin: 6px 0 4px; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .mf-check-plot { flex: 1 1 auto; min-height: 140px; display: flex; flex-direction: column; }
 .mf-check-plot .plot-fill { min-height: 130px; }
 .mf-check-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; font-size: var(--fs-13); }
@@ -230,7 +230,7 @@
 .gof-card .mf-scroll .mini-table th:last-child,
 .gof-card .mf-scroll .mini-table td:last-child { padding-right: 16px; }
 .mf-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mf-note { margin: 0; padding: 10px 16px 12px; font-size: var(--fs-13); line-height: 1.5; color: var(--text-secondary); }
+.mf-note { margin: 0; padding: 10px 16px 12px; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .mf-note + .mf-note { padding-top: 0; }
 .mf-flex-none { flex: none; }
 
@@ -271,7 +271,7 @@
 
 /* Effects: the hazard-ratio chart and the effects in words. */
 .mf-effects-words { list-style: none; margin: 0; padding: 0; }
-.mf-effects-words li { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-13); line-height: 1.5; color: var(--text); }
+.mf-effects-words li { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text); }
 .mf-effects-words li:last-child { border-bottom: none; }
 .mf-effects-words .mf-effect-p { color: var(--text-secondary); }
 .mf-l1 .mf-effects-table { flex: 0 1 auto; max-height: 42%; }
@@ -299,7 +299,7 @@
 /* A unit's name and its figures stay on one line, so every row is one line high. */
 .mf-joint-risk .joint-risk tbody td { white-space: nowrap; }
 .mf-unit { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1 1 auto; }
-.joint-unit-sum { flex: none; margin: 0; font-size: var(--fs-14); line-height: 1.5; }
+.joint-unit-sum { flex: none; margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); }
 .detail-panel .model-chars-card .model-chars-blives { display: block; padding: 0 16px 14px; }
 .mf-check .mini-table th, .mf-check .mini-table td { padding-left: 0; }
 .mf-joint-calc { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; }

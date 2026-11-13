@@ -22,7 +22,7 @@ export default function ReplacementResult({ result, name = null, actions = null,
   if (c.block_cost_rate) {
     // Block replacement: every unit at fixed times T apart, failures as they come.
     traces.push({ type: "scatter", mode: "lines", x: c.t, y: c.block_cost_rate, name: "Block replacement",
-                  connectgaps: false, line: { color: CATEGORY.amber, width: 2, dash: "dot" } });
+                  connectgaps: false, line: { color: CATEGORY.pink, width: 2, dash: "dot" } });
   }
   if (result.run_to_failure_cost_rate != null) {
     traces.push(referenceLine({

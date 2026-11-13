@@ -3,7 +3,7 @@
 .td-ctx .td-ctx-text {
   font-size: var(--fs-14);
   color: var(--text);
-  line-height: 1.5;
+  line-height: var(--lh-14);
   max-width: 80ch;
 }
 .td-ctx .td-ctx-note { margin-left: auto; }

@@ -10,5 +10,5 @@
 .pr.pr-none { gap: 8px; margin: 0; padding: 12px 14px; max-width: 72ch; overflow-wrap: anywhere; }
 .pr.pr-none > p { margin: 0; }
 .pr-lead { font-size: var(--fs-14); font-weight: 600; color: var(--text); }
-.pr-why { font-size: var(--fs-14); line-height: 1.5; }
+.pr-why { font-size: var(--fs-14); line-height: var(--lh-14); }
 .pr-go { font-size: var(--fs-14); }

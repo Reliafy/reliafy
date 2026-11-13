@@ -668,7 +668,7 @@ button.rw-cklink {
   min-width: 0;
   margin: 0;
   font-size: var(--fs-12);
-  line-height: 1.3;
+  line-height: var(--lh-12);
   white-space: nowrap;
 }
 .tt-crumb > span { display: flex; flex: 0 4 auto; min-width: 2em; }
@@ -704,7 +704,7 @@ button.rw-cklink {
   margin: 0;
   min-width: 4em;
   font-size: var(--fs-16);
-  line-height: 1.3;
+  line-height: var(--lh-16);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -798,7 +798,7 @@ button.rw-cklink {
   flex: 0 1 auto;
   max-width: 60%;
   margin: 0;
-  line-height: 1.3;
+  line-height: var(--lh-12);
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -991,7 +991,7 @@ button.rw-cklink {
     flex: none;
     margin-top: -2px;
     font-size: var(--fs-12);
-    line-height: 15px;
+    line-height: var(--lh-12);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -1079,7 +1079,7 @@ button.rw-cklink {
 .row-menu-inline { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; }
 .row-menu .ovm-item.row-menu-radio { display: flex; align-items: center; gap: 6px; }
 .row-menu-tick { display: inline-block; width: 1em; color: var(--accent-text); }
-.row-menu-why { display: block; max-width: 260px; margin-top: 2px; font-size: var(--fs-12); color: var(--text-secondary); white-space: normal; line-height: 1.35; }
+.row-menu-why { display: block; max-width: 260px; margin-top: 2px; font-size: var(--fs-12); color: var(--text-secondary); white-space: normal; line-height: var(--lh-12); }
 
 /* The tree's ⋯ menu (TreeControlsMenu), beside the filter box: the levels,
    Close everything, Show only, the pane's other actions; it stays open while you

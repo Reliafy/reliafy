@@ -11,11 +11,11 @@
 .cal-every-row input[type="number"] { width: 80px !important; }
 .cal-dates textarea {
   width: 220px; max-width: 100%; font: inherit; font-size: var(--fs-14); color: var(--text);
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.45rem 0.6rem;
+  background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); padding: 0.45rem 0.6rem;
 }
 .cal-remove { align-self: center; }
 .cal-form .calc-t input[type="date"] {
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text);
+  background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 0.4rem 0.6rem; font: inherit; font-size: var(--fs-14);
 }
 .cal-advanced { margin-top: 1rem; }

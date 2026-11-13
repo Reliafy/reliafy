@@ -13,7 +13,7 @@
 
 /* Duty, prominently: a one-line explanation that opens to the detail. */
 .rbd-plan-duty { margin: 10px 0 6px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--bg-subtle);
-  font-size: var(--fs-13); line-height: 1.45; }
+  font-size: var(--fs-13); line-height: var(--lh-13); }
 .rbd-plan-duty summary { cursor: pointer; }
 .rbd-plan-duty p { margin: 6px 0 2px; max-width: 72ch; }
 
@@ -80,7 +80,7 @@
 }
 
 /* A block standing for a position: its task is read from the tree, shown here, edited there. */
-.rbd-plan-tree { margin: 8px 0 4px; font-size: var(--fs-13); line-height: 1.45; max-width: 80ch; }
+.rbd-plan-tree { margin: 8px 0 4px; font-size: var(--fs-13); line-height: var(--lh-13); max-width: 80ch; }
 .rbd-plan-block.is-tree > tr:first-child > th { box-shadow: inset 3px 0 0 var(--accent); }
 .rbd-plan-from a { font-weight: 400; font-size: var(--fs-12, 0.75rem); }
 .rbd-plan-tree-task span { display: block; }
@@ -100,7 +100,7 @@
 .rbd-plan-proposal { display: block; font-size: var(--fs-12, 0.75rem); color: var(--text-secondary); }
 .rbd-plan-proposal button.link { font-size: inherit; margin-left: 6px; min-height: 24px; }
 /* Shutdowns read from the tree. */
-.rbd-plan-shuts { margin: 8px 0; font-size: var(--fs-13); line-height: 1.45; }
+.rbd-plan-shuts { margin: 8px 0; font-size: var(--fs-13); line-height: var(--lh-13); }
 .rbd-plan-shuts h4 { margin: 0 0 4px; font-size: var(--fs-14, 0.875rem); font-weight: 600; }
 .rbd-plan-shuts ul { margin: 0; padding-left: 1.1rem; }
 .rbd-plan-shuts li { overflow-wrap: anywhere; }

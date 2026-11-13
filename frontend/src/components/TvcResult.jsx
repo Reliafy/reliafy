@@ -210,7 +210,7 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
     ],
     annotations: fields.length <= 2 ? schedule.map((r) => ({
       x: r.t, xanchor: "left", y: 1, yref: "paper", yanchor: "bottom", showarrow: false,
-      text: label(r.values), font: { size: 12, color: "#5f6670" },
+      text: label(r.values), font: { size: 12, color: "#5f5e57" },
     })) : [],
   };
 

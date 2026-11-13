@@ -9,7 +9,7 @@ export const DIST_COLORS = {
   Weibull: CATEGORY.blue,
   Lognormal: CATEGORY.violet,
   Exponential: CATEGORY.teal,
-  Gamma: CATEGORY.amber,
+  Gamma: CATEGORY.pink,
   Normal: CATEGORY.grey,
   Logistic: CATEGORY.violet,
   Gumbel: CATEGORY.teal,
