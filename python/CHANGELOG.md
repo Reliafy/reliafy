@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 (13 Nov 2026)
+
+Needs a server on the same release.
+
+- **No ready-made product**: `maintenance products.add_sample` (and its
+  `make_own`) is gone, with the shared survey quadcopter samples it stood on
+  (its datasets, models, analyses, fault tree and predictions). Copies already
+  in a workspace stay, as your own products.
+
 ## 0.8.0 (13 Nov 2026)
 
 Needs a server on the same release.
@@ -15,10 +24,6 @@ Needs a server on the same release.
 - **Upload into a library**: `change dataset_upload` (and `reliafy upload`)
   takes `library_id`: every dataset made, each part of a split too, is added
   to that library as a snapshot, all or nothing.
-- **No ready-made product**: `maintenance products.add_sample` (and its
-  `make_own`) is gone, with the shared survey quadcopter samples it stood on
-  (its datasets, models, analyses, fault tree and predictions). Copies already
-  in a workspace stay, as your own products.
 
 ## 0.7.0 (14 Nov 2026)
 
