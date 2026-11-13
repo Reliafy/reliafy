@@ -46,6 +46,30 @@ def test_seed_is_idempotent_and_shared(session):
     assert all(samples.is_sample(d.owner_id) for d in ds.list_datasets(session, A))
 
 
+def test_seeding_removes_the_withdrawn_quadcopter_samples_and_nothing_else(session):
+    """The survey quadcopter's samples were withdrawn (Nov 2026): seeding deletes the copies a
+    database still has, by id and only while the sample owner owns them, and adds none back. A
+    user's record that happens to carry one of those ids is never touched. Idempotent."""
+    from backend.services import samples
+
+    for coll, ids in samples.REMOVED_SAMPLES.items():
+        session[coll].insert_many([{"_id": i, "owner_id": samples.SAMPLE_OWNER, "name": i} for i in ids])
+    session.models.insert_one({"_id": "theirs", "owner_id": A, "name": "Quadcopter propeller (mine)"})
+    session.strategy_analyses.delete_one({"_id": "sample-strategy-quad-bms-failure-finding"})
+    session.strategy_analyses.insert_one({"_id": "sample-strategy-quad-bms-failure-finding", "owner_id": A})
+
+    samples.seed_samples(session)
+    samples.seed_samples(session)
+
+    for coll, ids in samples.REMOVED_SAMPLES.items():
+        left = {d["_id"] for d in session[coll].find({"_id": {"$in": list(ids)}})}
+        assert left == ({"sample-strategy-quad-bms-failure-finding"} if coll == "strategy_analyses" else set()), coll
+    assert session.strategy_analyses.find_one({"_id": "sample-strategy-quad-bms-failure-finding"})["owner_id"] == A
+    assert session.models.find_one({"_id": "theirs"}) is not None
+    assert not any("quad" in i for i in samples.all_sample_ids(session))
+    assert samples.remove_withdrawn_samples(session) == 0
+
+
 def test_remove_all_then_restore_all(session):
     from backend.services import datasets as ds
     from backend.services import models as ms

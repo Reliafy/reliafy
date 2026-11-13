@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildProblem, designActions, explorerHere, isSampleRow, madeOwnText, makeOwnConfirm, hoursText, isDesignScope, itemFilters, itemTreePath, productViewPath, productPath,
+  buildProblem, designActions, explorerHere, hoursText, isDesignScope, itemFilters, itemTreePath, productViewPath, productPath,
   productRbds, productTab, productTreeIds, scopeTree, statusText,
 } from "./products.js";
 
@@ -118,34 +118,18 @@ test("a product's layout (design locations) and a built item's copies stay off t
   assert.equal(scopeTree(all).scope, undefined);
 });
 
-test("an earlier copy that still says (sample) offers Make this my own… after Build an item…; a copy added now never does", () => {
+test("a product's own row offers Build an item… first, greyed when view only; never a Make this my own…", () => {
   const actions = [{ id: "tree-new" }];
-  const sample = { type: "pos", key: "d", ref: { name: "Survey quadcopter (sample)", design: { rev: "C", sample: true } } };
-  const own = { type: "pos", key: "d", ref: { name: "Survey quadcopter", design: { rev: "C", sample: false, template: "survey-quadcopter" } } };
-  assert.ok(isSampleRow(sample));
-  assert.ok(!isSampleRow(own));
-  assert.ok(!isSampleRow({ type: "pos", ref: { in_design: true } }));
-  assert.deepEqual(designActions(actions, true, { row: sample }).map((a) => a.id), ["build-item", "make-own", "tree-new"]);
-  assert.equal(designActions(actions, true, { row: sample })[1].label, "Make this my own…");
+  // A copy of the withdrawn sample still flagged (sample) reads like any other product.
+  const flagged = { type: "pos", key: "d", ref: { name: "Survey rig (sample)", design: { rev: "C", sample: true } } };
+  const own = { type: "pos", key: "d", ref: { name: "Survey rig", design: { rev: "C" } } };
+  assert.deepEqual(designActions(actions, true, { row: flagged }).map((a) => a.id), ["build-item", "tree-new"]);
   assert.deepEqual(designActions(actions, true, { row: own }).map((a) => a.id), ["build-item", "tree-new"]);
   // Inside the design (not the product's own row): never.
   assert.deepEqual(designActions(actions, true, { row: { type: "pos", ref: { in_design: true } } }).map((a) => a.id), ["tree-new"]);
-  // A view-only workspace sees it greyed, with the reason.
-  const greyed = designActions(actions, true, { row: sample, viewOnly: "View only" })[1];
+  const greyed = designActions(actions, true, { row: own, viewOnly: "View only" })[0];
   assert.equal(greyed.disabled, true);
   assert.equal(greyed.reason, "View only");
-  const ask = makeOwnConfirm("Survey quadcopter (sample)");
-  assert.match(ask.body, /“Survey quadcopter \(sample\)” becomes your own product/);
-  assert.equal(ask.title, "Make this product your own?");
-  // It says what else is renamed, and that its models become the person's own.
-  assert.match(ask.body, /its part, built items, RBD and maintainability prediction/);
-  assert.match(ask.body, /life models and strategy analyses are saved in your workspace as your own/);
-  assert.equal(ask.destructive, false);
-  // What it did, in the server's words (what it renamed and saved); a plain line without them.
-  assert.equal(madeOwnText({ was: "Survey quadcopter (sample)", name: "Survey quadcopter", message: "“Survey quadcopter (sample)” is “Survey quadcopter” now. Renamed or reworded with it: part SQ-4." }),
-    "“Survey quadcopter (sample)” is “Survey quadcopter” now. Renamed or reworded with it: part SQ-4.");
-  assert.equal(madeOwnText({ was: "Survey quadcopter (sample)", name: "Survey quadcopter" }),
-    "“Survey quadcopter (sample)” is your own product now, as “Survey quadcopter”.");
 });
 
 test("a link to another row or tab stays on the tree being looked at", () => {

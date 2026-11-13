@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 (13 Nov 2026)
+
+Needs a server on the same release.
+
+- **No ready-made product**: `maintenance products.add_sample` (and its
+  `make_own`) is gone, with the shared survey quadcopter samples it stood on
+  (its datasets, models, analyses, fault tree and predictions). Copies already
+  in a workspace stay, as your own products.
+
 ## 0.8.0 (13 Nov 2026)
 
 Needs a server on the same release.

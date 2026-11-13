@@ -70,8 +70,7 @@ rate per assembly too.
    covariates, the same inputs as on its library page.
 5. Press **Calculate**, read the result, then **Save prediction**.
 
-The Free plan keeps **1 saved reliability prediction** (the shared sample
-doesn't count); calculating without saving has no limit. To save another,
+The Free plan keeps **1 saved reliability prediction**; calculating without saving has no limit. To save another,
 delete the one you have or [upgrade to Pro](/billing), which removes the limit.
 
 MIL-HDBK-217F covers electronic parts. For a mechanical part (a bearing, a
@@ -96,11 +95,6 @@ handbook, under its own heading:
 - A line with neither stays in the list with no part type: it's shown and left
   out of the total, and the result says so. Don't give it the nearest
   electronic part type just to get a number.
-
-The sample prediction, the sample quadcopter's electronics and motors, shows a
-finished one with lines in assemblies: microcircuits on the handbook's generic
-rates, the motors on NSWC-11 with their conditions filled in, and the
-propellers left out as not electronic.
 
 ## Read the result honestly
 

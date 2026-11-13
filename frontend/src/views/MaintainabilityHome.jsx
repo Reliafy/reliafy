@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { deleteMaintainabilityPrediction, listMaintainabilityPredictions } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -8,7 +8,7 @@ import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
-import { MAINTAINABILITY_GUIDE, MAINTAINABILITY_PATH, MAINTAINABILITY_SAMPLE, plainHeadline } from "../maintainability.js";
+import { MAINTAINABILITY_GUIDE, MAINTAINABILITY_PATH, plainHeadline } from "../maintainability.js";
 
 const HELP = { guide: MAINTAINABILITY_GUIDE };
 
@@ -62,8 +62,7 @@ export default function MaintainabilityHome() {
         help={HELP}
         empty={{
           title: "No maintainability predictions yet",
-          body: <>Type or paste a parts list, give each line its repair times, and save the result. Or open the{" "}
-            <Link to={pathOf(MAINTAINABILITY_SAMPLE)}>sample quadcopter</Link> to see one.</>,
+          body: "Type or paste a parts list, give each line its repair times, and save the result.",
           action: newPrediction,
         }}
         head={[

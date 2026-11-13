@@ -1163,32 +1163,6 @@ def _left_out_keys(left_out) -> set[str]:
     return {str(k) for k in (left_out or []) if isinstance(k, (str, int)) and str(k)}
 
 
-def _sample_tree(m, position_id: str) -> bool:
-    """Whether the position is in a copy of the sample product: its design, or a unit built from it."""
-    from backend.maintenance import templates
-
-    top, seen = m.s.node(m.org, position_id, "Position"), set()
-    while top and top["id"] not in seen:
-        seen.add(top["id"])
-        parent = m._parent(top["id"])
-        if not parent or parent.get("label") != "Position":
-            break
-        top = parent
-    design = top if not top or top.get("design") else m.s.node(m.org, top.get("design_position_id") or "", "Position")
-    return templates.is_sample_product(design)
-
-
-def _started(a: dict, reference: str, sample: bool) -> dict:
-    """A line's assignment, with the sample's conditions for its part where it has an NSWC-11
-    model and none of its own yet (the sample product only: its motors, templates.py)."""
-    if not sample or not a.get("record_id") or a.get("conditions"):
-        return a
-    from backend.maintenance import templates
-
-    start = templates.sample_part_conditions(reference, a["record_id"])
-    return {**a, "conditions": start} if start else a
-
-
 def prediction_lines(m, position_id: str, assign: dict | None = None, previous: dict | None = None,
                      left_out=None) -> dict:
     """The parts-count lines for a position: {lines (each with part_id, and listing_id and
@@ -1206,7 +1180,6 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
     root = m._get(position_id, "Position")
     previous = previous or {}
     out_keys = _left_out_keys(previous.get("_left_out") if left_out is None else left_out)
-    sample = _sample_tree(m, position_id)
     lines, warnings, n, branch = [], [], 0, []
     for pid, path in _branch(m, position_id):
         n += 1
@@ -1228,7 +1201,6 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
                 if fixed:
                     a = {**a, "conditions": {k: v for k, v in fixed.items() if k != "cycles_per_hour"},
                          **({"cycles_per_hour": fixed["cycles_per_hour"]} if "cycles_per_hour" in fixed else {})}
-            a = _started(a, ref, sample)
             lines.append({"part_id": part["id"], "listing_id": view["id"], "position": dict(here), "role": view["role"],
                           "name": part.get("name") or ref or "Part", "reference": ref,
                           "quantity": view.get("quantity") or 1, "assembly": list(path), **_line_type(a),
@@ -1242,7 +1214,7 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
         if bom.get("lines") or not on_lists:
             warnings += bom.get("warnings") or []
         for ln in bom.get("lines") or []:
-            a = _started(_assigned(assign, previous, None, ln.get("reference")), ln.get("reference") or "", sample)
+            a = _assigned(assign, previous, None, ln.get("reference"))
             lines.append({**ln, "part_id": None, **_line_type(a),
                           "left_out": bool(ln.get("reference")) and ln.get("reference") in out_keys})
         if len(lines) > on_lists or not on_lists:
@@ -1257,9 +1229,7 @@ def _prediction_links(m, position_id: str) -> list[dict]:
 
 def default_environment(m, position_id: str) -> str:
     """The environment a new prediction starts from: this position's last, else the nearest
-    position above with one, else the handbook's default (the sample product: its own,
-    templates.SAMPLE_PRODUCT_ENVIRONMENT)."""
-    from backend.maintenance import templates
+    position above with one, else the handbook's default."""
     from backend.services import reliability_prediction as rp
 
     pid = position_id
@@ -1272,7 +1242,7 @@ def default_environment(m, position_id: str) -> str:
                 return env
         parent = m._parent(pid)
         pid = parent["id"] if parent and parent.get("label") == "Position" else None
-    return templates.SAMPLE_PRODUCT_ENVIRONMENT if _sample_tree(m, position_id) else rp.DEFAULT_ENVIRONMENT
+    return rp.DEFAULT_ENVIRONMENT
 
 
 def _previous_types(db, owners, m, position_id: str) -> dict:

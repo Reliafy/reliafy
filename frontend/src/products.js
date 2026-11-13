@@ -27,7 +27,7 @@ export function productPath(id, tab = null) {
 }
 
 // A product's design on one of its structure's tabs (view: "rcm", "fmea"), the
-// top position picked (the Explorer's way to a Survey quadcopter).
+// top position picked.
 export function productViewPath(id, view = "fmea") {
   return `${productPath(id)}?view=${encodeURIComponent(view)}&sel=${encodeURIComponent(id)}`;
 }
@@ -177,39 +177,15 @@ export function scopeHasClasses(data, { ownPage = false } = {}) {
 // The product's own row (the design's top position, `r`) adds Build an item…
 // first, as its Summary does (greyed with the reason when the workspace is
 // view only).
-// An earlier copy of the Survey quadcopter (still named "(sample)") adds Make
-// this my own… after it on its own row (the copy becomes the user's product in
-// place: "(sample)" leaves its name).
 export const BUILD_ITEM = { id: "build-item", label: "Build an item…" };
-export const MAKE_OWN = { id: "make-own", label: "Make this my own…" };
 export function designActions(actions, design, { row = null, viewOnly = null } = {}) {
   if (!design) return actions;
   // A design's (and a built unit's) tree isn't in the Excel export: it's the product's.
   const out = actions.filter((a) => a.id !== "report-new" && a.id !== "event-log" && a.id !== "pos-here" && a.id !== "tree-export");
   if (row?.type !== "pos" || !row.ref?.design) return out;
   const offer = (a) => (viewOnly ? { ...a, disabled: true, reason: viewOnly } : a);
-  return [offer(BUILD_ITEM), ...(isSampleRow(row) ? [offer(MAKE_OWN)] : []), ...out];
+  return [offer(BUILD_ITEM), ...out];
 }
-
-// Is the row a copy of the Survey quadcopter added before it took a product's own
-// name (it still says "(sample)"), not yet made the user's own? A copy added now
-// reads as the user's own from the start and is never offered this.
-export const isSampleRow = (row) => row?.type === "pos" && !!row.ref?.design?.sample;
-
-// Make this my own…'s question, and what's said once it's done.
-export function makeOwnConfirm(name) {
-  return {
-    title: "Make this product your own?",
-    body: `“${name}” becomes your own product, exactly as it is: its design, RCM, tasks, items and reports stay. “(sample)” leaves its name and the names of its part, built items, RBD and maintainability prediction. Its life models and strategy analyses are saved in your workspace as your own, and its positions and decisions point at those. It won't be added again beside this one unless you ask for a fresh copy.`,
-    confirmLabel: "Make it my own",
-    pendingLabel: "Making it yours…",
-    failedWhat: "make it your own",
-    destructive: false,
-  };
-}
-// What it did, in the server's words when it sent them (what was renamed, what was
-// saved as the user's own, and any record the plan's storage had no room for).
-export const madeOwnText = (out) => out.message || `“${out.was}” is your own product now, as “${out.name}”.`;
 
 // Words.
 const n = (count, one, many = `${one}s`) => `${Number(count || 0).toLocaleString("en-AU")} ${count === 1 ? one : many}`;

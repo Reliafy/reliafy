@@ -31,8 +31,8 @@ import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftMod
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleProduct, createPositionMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
-  hasFmeaExcel, linkPositionModel, makeSampleOwn, restoreRcm, restoreTree,
+  createPositionMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
+  hasFmeaExcel, linkPositionModel, restoreRcm, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
@@ -101,9 +101,8 @@ import { RCM_DELETE_KIND, deletesWithCascade, rcmDeleteId, rcmUndoneText } from 
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import LogEventModal from "../components/LogEventModal.jsx";
 import usePhone from "../usePhone.js";
-import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from "../sampleProduct.js";
 import {
-  MAKE_OWN, PRODUCTS_PATH, designActions, isDesignScope, isSampleRow, madeOwnText, makeOwnConfirm, productViewPath, scopeHasClasses, scopeTree,
+  PRODUCTS_PATH, designActions, isDesignScope, scopeHasClasses, scopeTree,
 } from "../products.js";
 import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
@@ -181,6 +180,7 @@ const TOP = "\u0000top";
 
 const HELP = { guide: "rcm-on-your-asset-tree" };
 const HELP_FMEA = { guide: "fmea-on-your-asset-tree" };
+const HELP_TREE = { guide: "build-your-asset-tree" };
 
 // Every position depth first, for the "Inside" pickers.
 function pickerList(data) {
@@ -206,7 +206,7 @@ const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_ne
 // leaves the products' designs and items' trees out (products.js). `tabKey`:
 // the address's name for its tabs (?view= on a product's page). `heading`: the
 // picked row's heading level (1 where the tree is the page, as a product's is).
-export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null, onProductChanged = null }) {
+export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -1940,23 +1940,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setNewParent(null);
     setNewAt(null);
   };
-  // "Open the Survey quadcopter", the one worked example for the RCM and FME(C)A tabs:
-  // the quadcopter is a design, so it lives on Products; it opens there on its
-  // structure's FME(C)A tab when that's the tab in view, its RCM tab otherwise,
-  // added first when there's none (never a second copy from here).
-  const [addingSample, setAddingSample] = useState(false);
   // The FME(C)A print view; its "Back" returns here (a product's structure
   // tab included: a design isn't in the Explorer's own tree).
   const openPrint = (id) => navigate(`/asset-register/positions/${id}/fmea`,
     { state: { back: `${location.pathname}${location.search}` } });
-  const openSample = () => {
-    if (addingSample) return;
-    setAddingSample(true);
-    addSampleProduct(false) // never a second copy from here: nothing to ask
-      .then((r) => navigate(productViewPath(sampleProductId(r), sampleProductView(tab))),
-        (e) => say(`The Survey quadcopter didn't open: ${e.message}`, "error"))
-      .finally(() => setAddingSample(false));
-  };
   // After a rename, move or retire from the row menu: the tree read again,
   // the row kept picked (moved: shown in its new place; retired: the row it
   // was inside picked instead), and a few words to say so.
@@ -1977,21 +1964,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const buildFrom = (id) => {
     getProduct(id).then(setBuildFor, (e) => say(`The product didn't load: ${e.message}`, "error"));
   };
-  // Make this my own… on a copy of the Survey quadcopter that still says "(sample)":
-  // asked, then done in the dialog; the tree and the page's title read again, and
-  // what it renamed and saved is said in a toast that stays (it is a list to read).
-  const makeOwn = (r) => {
-    confirm({ ...makeOwnConfirm(r.ref.name), run: () => makeSampleOwn(r.key) }).then((out) => {
-      if (!out) return;
-      load();
-      onProductChanged?.(out);
-      setToast({ text: madeOwnText(out), stay: true, at: Date.now() });
-      announce(madeOwnText(out));
-    });
-  };
-  // Such a copy: Make this my own… heads its own row's "…" too.
-  const ownMenu = (r) => (designScope && isSampleRow(r) && !viewOnly
-    ? [{ ...MAKE_OWN, onSelect: () => makeOwn(r) }] : []);
   const built = (out) => {
     setBuildFor(null);
     load();
@@ -2052,17 +2024,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           </>
         )}
       </div>
-      {mode !== "locations" && (
-        <div className="ae-sample">
-          <p><strong>New here?</strong> Open the Survey quadcopter to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.</p>
-          <div className="ae-sample-btns">
-            <button type="button" className="secondary" onClick={openSample} disabled={addingSample}>
-              {addingSample ? "Opening…" : OPEN_SAMPLE_PRODUCT_LABEL}
-            </button>
-          </div>
-        </div>
-      )}
       <p className="section-empty-more">
+        <ShowMe help={HELP_TREE}>How to build your asset tree</ShowMe>
+        {" · "}
         <ShowMe help={HELP}>How to build RCM on your asset tree</ShowMe>
         {" · "}
         <ShowMe help={HELP_FMEA}>How to score an FME(C)A on your asset tree</ShowMe>
@@ -2329,7 +2293,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 menu={rcmMenu} popover={columns} />
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
-                headingRef={headingRef} fullScreenButton={fullButton} heading={heading} menu={[...ownMenu(summaryRow), ...(tabMenu || [])]}
+                headingRef={headingRef} fullScreenButton={fullButton} heading={heading} menu={tabMenu || []}
                 meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null}
                 message={message?.fade ? msg : null} />
   );
@@ -2456,7 +2420,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
                     tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={root} structure={structure}
-                    menu={[...ownMenu(data && !nothing ? row : null), ...(tabMenu || [])]} onMenu={setTabMenu}
+                    menu={tabMenu || []} onMenu={setTabMenu}
                     actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}
     </section>
@@ -2645,7 +2609,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           { id: "tree-import", label: "Import from Excel…", onSelect: () => openSheet("import") },
           { id: "tree-export", label: "Export to Excel…", onSelect: () => openSheet("export") },
           { id: "import", label: "Import a fitment history…", onSelect: () => setModal("import") },
-          { id: "sample-product", label: OPEN_SAMPLE_PRODUCT_LABEL, onSelect: openSample },
         ] : []), ]}
         notice={notice}
         statusText={statusText}

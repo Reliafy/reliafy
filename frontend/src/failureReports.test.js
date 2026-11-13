@@ -116,7 +116,7 @@ test("the built items a report can be filed on from a design, by serial", () => 
   assert.deepEqual(builtItemChoices(null), []);
   assert.equal(builtItemPlace(got[1]), "Motor 1 on serial 0009");
   assert.equal(builtItemPlace(got[0]), "Motor 1 on an item with no serial");
-  assert.equal(builtItemPlace({ id: "t", name: "Survey quadcopter · 0007", serial: "0007" }), "Survey quadcopter · 0007");
+  assert.equal(builtItemPlace({ id: "t", name: "Pump skid · 0007", serial: "0007" }), "Pump skid · 0007");
   assert.equal(builtItemPlace(null), "");
 });
 

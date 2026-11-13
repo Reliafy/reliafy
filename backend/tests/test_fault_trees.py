@@ -251,7 +251,7 @@ def test_save_get_list_rename_delete(client):
     got = client.get(f"/api/fault-trees/{tid}").json()
     assert got["tree"] == F.normalize_tree(SIMPLE) and not got["read_only"]
     listed = client.get("/api/fault-trees").json()["fault_trees"]
-    assert {t["id"] for t in listed} >= {tid, "sample-fault-tree-quadcopter"}
+    assert {t["id"] for t in listed} == {tid}  # no shared sample tree (withdrawn, Nov 2026)
     assert client.patch(f"/api/fault-trees/{tid}", json={"name": "Pump set"}).json()["name"] == "Pump set"
     assert client.delete(f"/api/fault-trees/{tid}").json() == {"ok": True}
     assert client.get(f"/api/fault-trees/{tid}").status_code == 404
@@ -294,18 +294,7 @@ def test_import_endpoint_lands_trees(client):
     assert refused.status_code == 422 and "Open-PSA" in refused.json()["detail"]
 
 
-def test_the_sample_reads_honestly(client):
-    sample = client.get("/api/fault-trees/sample-fault-tree-quadcopter").json()
-    assert sample["is_sample"] and sample["read_only"]
-    r = client.post("/api/fault-trees/analyse", json={"tree": sample["tree"], "t": 100.0}).json()
-    assert r["placeholders"] == [] and r["unit"] == "Hours"
-    # Any one arm down brings a quadcopter down: each motor and speed
-    # controller is a cut set of its own; the two IMUs only together (1-of-2).
-    singles = {c["events"][0] for c in r["cut_sets"]["listed"] if c["order"] == 1}
-    assert {f"motor{i}" for i in range(1, 5)} | {f"esc{i}" for i in range(1, 5)} <= singles
-    assert {"imu_1", "imu_2"}.isdisjoint(singles)
-    assert {("imu_1", "imu_2")} <= {tuple(sorted(c["events"])) for c in r["cut_sets"]["listed"] if c["order"] == 2}
-    assert 0.0 < r["top_event_probability"] < 0.2
-    # A sample is hidden, not deleted.
-    assert client.delete("/api/fault-trees/sample-fault-tree-quadcopter").json() == {"ok": True}
-    assert client.db.fault_trees.find_one({"_id": "sample-fault-tree-quadcopter"}) is not None
+def test_the_withdrawn_sample_is_not_found(client):
+    """The quadcopter sample tree was withdrawn (Nov 2026): its old address answers not found."""
+    assert client.get("/api/fault-trees/sample-fault-tree-quadcopter").status_code == 404
+    assert client.db.fault_trees.find_one({"_id": "sample-fault-tree-quadcopter"}) is None

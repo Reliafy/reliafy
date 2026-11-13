@@ -940,30 +940,14 @@ item. The tree rows carry `design` (a design's top), `design_position_id`
 (a built position) and `built_from` (a built tree's top), so the app can keep
 designs and built items out of the Assets landing.
 
-**The ready-made product** (the Survey quadcopter, `backend/maintenance/templates.py`)
-is added through the same service methods as anything else, so its log is
-ordinary events. Once added it is a product like any other: nothing on it says
-it came from a template. Two things tell a copy apart, neither of them its
-name:
-
-- `design.template_marked {position_id, template}` sets `from_template` on the
-  design's top position (the template's key). The add writes it once; "add it
-  once" and the template's own starting points (its motors' conditions, its
-  missing prediction) go by this mark, so a renamed copy is still known.
-- A copy added before Nov 2026 has no mark: it was named "… (sample)" and is
-  still known by that name (those logs replay unchanged).
-  `position.sample_cleared {id, name, sample_key}` renames such a copy in
-  place and sets `from_sample`; "Make this my own…" writes it, then brings the
-  rest of the copy to how one is added now through events that exist already
-  (position updates, `position.model_relinked` below, `failure_mode.analysed`
-  for evidence).
-
-The life models and analyses the product stands on are saved in the workspace
-as its own records before any event is written (the library's records are
-copied through the ordinary save services, each remembering the library record
-it came from, so a second copy of the product reuses them). The events then
-name the workspace's records. A record the plan's storage has no room for stays
-linked to the shared library's, and the add says which.
+**Copies of the withdrawn ready-made product.** Until Nov 2026 a ready-made
+product could be added (through the same service methods as anything else, so
+its log is ordinary events); it has been withdrawn and nothing adds it now.
+Copies already in a workspace are the user's own data and stay. Their events
+still replay: `design.template_marked {position_id, template}` sets
+`from_template` on a design's top position, and `position.sample_cleared {id,
+name, sample_key}` renamed an earlier "… (sample)" copy in place and set
+`from_sample`.
 
 ### A product's physical layout (design locations)
 

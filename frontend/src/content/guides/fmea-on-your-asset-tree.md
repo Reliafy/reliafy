@@ -2,7 +2,7 @@
 title: "Score failure modes as an FMEA or FMECA on your asset tree"
 task: "How do I score severity, occurrence and detection for each failure mode, get an action priority and RPN, and work out criticality, on the same tree as my RCM?"
 category: "Maintenance strategy"
-prerequisites: "A position in your asset tree with failure modes, or the Survey quadcopter."
+prerequisites: "A position in your asset tree with failure modes."
 order: 26
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
 # FME(C)A tab itself and stays out of the index until Maintenance opens.
@@ -21,25 +21,13 @@ In Reliafy, the FMEA sits on the same failure modes as your RCM. The
 records: a failure mode written on either tab is there on the other, and a
 score or an effect edited on one shows on the other at once. Nothing is copied.
 
-## Start from the Survey quadcopter
+## Open the FME(C)A tab
 
-The Survey quadcopter is a made-up product: its numbers are invented. A
-quadcopter is something you design, so it is a product. On
-**Products**, press **Add the Survey quadcopter** (in **Assets → Explorer**,
-**Open the Survey quadcopter** in the **⋯** beside the tree's search box, or on the empty
-tree's card, does the same and opens it). *Survey quadcopter* is a
-small inspection quadcopter: an airframe with four arms, a centre
-frame and landing gear, propulsion with four motors, power, flight control,
-comms and a payload gimbal with its camera, with every failure mode scored
-and its criticality figures filled in over a year's 150 flight hours. Its
-**Functional structure** tab is the
-same Explorer, scoped to the design: pick its **FME(C)A** tab. Everything below
-works the same on a product's design and on your asset tree. Its **RCM** tab
-holds the same failure modes as an RCM, each with its decision. The product's own
-row holds the rest of it on its Summary: its bill of materials, the
-items built from it and their failure reports.
-
-![The FME(C)A tab on the Survey quadcopter: each failure mode with its cause, effects, scores, RPN and action priority](/guides/img/fmea-01-worksheet.png)
+Open **Assets → Explorer** and pick the **FME(C)A** tab. If your tree is empty,
+add a position, or bring your hierarchy in with **Import from Excel**. Everything below
+works the same on a product's design (its **Functional structure** tab is the
+same Explorer, scoped to the design) and on your asset tree. The **RCM** tab
+holds the same failure modes as an RCM, each with its decision.
 
 The tree of positions is the first column, as on the RCM tab. Under each
 position sit its functions, and under each function its failure modes, one
@@ -123,10 +111,10 @@ The fields, in the **Criticality** group of a failure mode's Details:
   mission, a year or the design life.
 - **Severity class**: I Catastrophic, II Critical, III Marginal, IV Minor.
 
-The formula is C<sub>m</sub> = β × α × λ × t. For the Survey quadcopter's
-motor bearing seizure that is 1.0 × 0.5 × 0.00008 per hour × 150 hours = 0.006: the
-chance, over a year's 150 flight hours, of losing the aircraft to that one
-mode on that one motor. The **item
+The formula is C<sub>m</sub> = β × α × λ × t. For a pump's bearing seizure,
+with a loss probability of 1.0, a mode ratio of 0.5, a failure rate of 0.00008 per
+hour and 1,000 running hours, that is 1.0 × 0.5 × 0.00008 × 1,000 = 0.04: roughly
+the chance, over those 1,000 hours, of losing the pump to that one mode. The **item
 criticality** C<sub>r</sub> of a position is the sum of its modes'
 C<sub>m</sub>, shown on the position's row and in its Details, with the sum
 per severity class.
@@ -136,8 +124,6 @@ matrix**: severity across, occurrence down, and in each cell how many of the
 position's failure modes (and those of the positions inside it) fall there,
 shaded by the worst action priority among them. Under it, the modes are
 listed by criticality, highest first.
-
-![A position's criticality matrix: severity across, occurrence down, the count of failure modes in each cell](/guides/img/fmea-02-matrix.png)
 
 Reliafy does not read the failure rate from a linked model for you yet: when a
 position's failure mode cites a non-repairable model as its evidence, read the

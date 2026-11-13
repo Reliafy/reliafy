@@ -1042,23 +1042,6 @@ def failure_mode_interval_inputs(mode_id: str, task_id: str | None = None, sessi
     return _run(go)
 
 
-@router.post("/sample-product")
-def add_sample_product(body: dict | None = Body(None), session=Depends(get_session),
-                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Add the Survey quadcopter, a ready-made product whose numbers are invented: a quadcopter's design
-    (its RCM, some decisions linked to evidence, and every failure mode scored as an FME(C)A; its
-    maintenance programme with each task's LSA record; life models on its motors, propellers, battery pack
-    and radio), its part with a bill of materials, three items built from it with two failure reports (the
-    first with its calendar tasks in a monthly work package), a flight-critical RBD with placeholder failure
-    rates and a maintainability prediction. Its life models and the analyses behind its decisions are saved
-    in the workspace as its own records (own_records; a second copy uses the first one's), except any the
-    plan's storage has no room for, which stay linked to the shared library's (kept_shared names them).
-    When a copy is there already nothing is added (added false) unless again is true."""
-    from backend.maintenance import templates
-
-    return _run(templates.add_sample_product, m, session, bool((body or {}).get("again")))
-
-
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Set when it was last done, and/or change its name, interval or unit, when it next falls due
@@ -1963,21 +1946,6 @@ def build_item(product_id: str, body: dict = Body(...), m: Maintenance = Depends
     """Build an item from a product by serial (dry_run, the default, only says what it would make)."""
     return _run(m.build_item, product_id, body.get("serial"), body.get("rev"), body.get("name"),
                 body.get("dry_run", True) is not False)
-
-
-@router.post("/products/{product_id}/make-own")
-def make_sample_own(product_id: str, session=Depends(get_session),
-                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Bring a copy of the Survey quadcopter added earlier as "… (sample)" to how it is added now, in
-    place: "(sample)" goes from its name and from what was added with it (its part, the items built from
-    it, its RBD, its maintainability prediction and the names and notes of its life-model links), and its
-    life models and the analyses behind its decisions are saved in the workspace as its own records, with
-    its positions' links and its decisions' evidence pointed at them (own_records; kept_shared names any
-    the plan's storage had no room for). Ids stay, and it is never added again beside this copy unless
-    asked. renamed lists what was renamed."""
-    from backend.maintenance import templates
-
-    return _run(templates.make_sample_own, m, session, product_id)
 
 
 @router.delete("/products/{product_id}/design")

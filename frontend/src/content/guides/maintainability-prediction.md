@@ -88,7 +88,7 @@ average, however long or short its repair.
 Press **Compute**. The answer comes first, in one sentence, then the tiles:
 Mct, M_max, inherent availability and the MTBF behind it.
 
-![The sample quadcopter's prediction: Mct, M_max, availability and the lines that take the time](/guides/img/mp-01-result.png)
+![A saved prediction: Mct, M_max, availability and the lines that take the time](/guides/img/mp-01-result.png)
 
 Below it:
 
@@ -98,17 +98,13 @@ Below it:
 - **What takes the time**: the lines, largest share first, with the running
   total. The top few lines are where a shorter repair, or a more reliable part,
   brings Mct down most.
-- **By assembly**, when the lines name their assemblies (`Propulsion › Arm 1`
-  counts under *Propulsion* and under *Arm 1*): each assembly's own Mct and
+- **By assembly**, when the lines name their assemblies (`Pump set › Pump A`
+  counts under *Pump set* and under *Pump A*): each assembly's own Mct and
   share.
 - **Every line's figures**, folded away: the elements, MTTR, spread and M_max
   per line.
 
-Numbers are shown to three or four figures with their unit. Open the sample,
-*Survey quadcopter — maintainability prediction (sample)*, to see a finished
-one. With Reliafy Maintenance, adding the Survey quadcopter on **Products**
-also saves the same prediction among your own, as *Survey quadcopter —
-maintainability*, attached to that product.
+Numbers are shown to three or four figures with their unit.
 
 ## How the numbers are worked out
 
@@ -162,8 +158,7 @@ kept with the result, recomputed on the server when saved, and the prediction
 appears on the [Maintainability prediction](/maintainability) page. Open one
 and press **Edit a copy** to change its lines and save a new version.
 
-The Free plan keeps **1 saved maintainability prediction** (the shared sample
-doesn't count); computing without saving has no limit. To save another, delete
+The Free plan keeps **1 saved maintainability prediction**; computing without saving has no limit. To save another, delete
 the one you have or [upgrade to Pro](/billing), which removes the limit.
 
 ## From an agent or the command line

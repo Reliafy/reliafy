@@ -222,7 +222,7 @@ export function builtItemChoices(items) {
 }
 
 // Where a report filed from a design is, for the form's "At …": "Motor 1 on serial 0007";
-// an item's own top already says its serial ("Survey quadcopter · 0007"), so that alone.
+// an item's own top already says its serial ("Pump skid · 0007"), so that alone.
 export function builtItemPlace(choice) {
   if (!choice) return "";
   if (choice.serial && choice.name.includes(choice.serial)) return choice.name;
