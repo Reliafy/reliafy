@@ -33,6 +33,7 @@ export default function OptimalReplacement() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [ranWith, setRanWith] = useState(null); // the model the result is for
+  const [source, setSource] = useState("saved"); // what the model picker shows
   const currency = useCurrency();
   // Opened from a model's "Use this model" (#294): that model, chosen.
   const wanted = modelFromSearch(useLocation().search);
@@ -42,8 +43,13 @@ export default function OptimalReplacement() {
 
   const isRegression = model?.kind === "regression";
   // Why Compute is greyed out, said beside it (null when ready).
-  const missing = replacementMissing({ model, planned: cp, unplanned: cu, unit });
+  const missing = replacementMissing({ model, planned: cp, unplanned: cu, unit, source });
   const canRun = !missing;
+  // A result whose inputs have since changed says so until Compute (as Failure finding does).
+  const numOrNull = (v) => (String(v ?? "").trim() === "" ? null : Number(v));
+  const stale = !!inputs && (ranWith !== model || inputs.planned_cost !== Number(cp)
+    || inputs.unplanned_cost !== Number(cu) || inputs.unit !== strategyUnit(model, unit)
+    || inputs.use_per_year !== numOrNull(useYear) || inputs.units !== numOrNull(units));
 
   const run = async () => {
     setLoading(true);
@@ -81,7 +87,7 @@ export default function OptimalReplacement() {
     <div className="strategy-tool">
       <div className="strategy-form">
         <ModelPicker key={wanted || ""} label="Non-repairable model" value={model} onChange={pickModel} preferSaved wanted={wanted}
-                     wt="repl-model" />
+                     onSource={setSource} wt="repl-model" />
         {isRegression && (
           <p className="hint">
             Pick a plain distribution — proportional-hazards models aren't
@@ -120,6 +126,9 @@ export default function OptimalReplacement() {
 
       {error && <div className="error">{error}</div>}
 
+      {result && stale && (
+        <p className="hint" role="status">The inputs changed: Compute to update the answer below.</p>
+      )}
       {result && (
         <ReplacementResult
           result={result}

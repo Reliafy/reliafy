@@ -46,8 +46,8 @@ so the switch makes it one.
 
 ## Describe each element
 
-Double-click a block to open it, or double-click its name to rename it in place
-(or select it and press F2).
+Double-click a block to open it. To rename it in place, select it and press F2,
+or right-click it and choose **Rename**.
 
 - **Name** — the tag or description your report will use: every result calls
   the block by it.

@@ -34,6 +34,9 @@ export default function RbdBuilder() {
     setAdded({ name, wired });
     navigate(location.pathname, { replace: true, state: null });
   }, [navigate, location.pathname]);
+  // Opened from a fault tree's "Open as RBD": what the conversion noted, shown once above the diagram.
+  const [fromTree] = useState(() => (id ? location.state?.fromFaultTree || null : null));
+  const [fromTreeHidden, setFromTreeHidden] = useState(false);
   const [meta, setMeta] = useState({});
   const [tab, setTab] = useState("builder");
   const [loadError, setLoadError] = useState(null); // { id, missing, message }
@@ -109,6 +112,15 @@ export default function RbdBuilder() {
               {imported.warnings.map((w, i) => <li key={i}>{w}</li>)}
             </ul>
           )}
+        </div>
+      )}
+      {fromTree && !fromTreeHidden && (
+        <div className="card note rbd-import-note">
+          <p>
+            <b>Made from the fault tree “{fromTree.tree}”</b> and saved. It doesn't follow later edits to the tree.
+            {" "}<button className="link" onClick={() => setFromTreeHidden(true)}>Dismiss</button>
+          </p>
+          {fromTree.notes?.length > 0 && <ul>{fromTree.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
         </div>
       )}
       {added && (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
+import { filterOptions } from "../selectSearch.js";
 
 // Fully-styled dropdown replacing native <select> (whose popup list can't be
 // themed). A trigger button opens a portal-rendered listbox positioned under
@@ -8,7 +9,10 @@ import { portalHost } from "../fullScreen.js";
 // click-outside close.
 //
 //   <Select value={v} onChange={setV} options=[{value, label, hint?, disabled?}]
-//           placeholder? disabled? className? title? ariaLabel? />
+//           placeholder? disabled? className? title? ariaLabel? searchable? />
+//
+// `searchable` puts a "Find…" box at the top of the open list (a long list of
+// saved models): typing narrows it to the rows holding every word typed.
 //
 // `options` entries may also be plain strings. `className` variants:
 //   sel-embedded — borderless, for selects fused inside a bordered parent
@@ -39,9 +43,13 @@ export default function Select({
   className = "",
   title,
   ariaLabel,
+  searchable = false,
 }) {
-  const items = options.map(norm);
-  const selected = items.find((o) => !o._header && o.value === value);
+  const all = options.map(norm);
+  const selected = all.find((o) => !o._header && o.value === value);
+  const [query, setQuery] = useState("");
+  const items = searchable ? filterOptions(all, query) : all;
+  const searchRef = useRef(null);
 
   // Move focus to the next selectable (non-header) row in a direction.
   const step = (from, dir) => {
@@ -76,7 +84,8 @@ export default function Select({
   const openMenu = () => {
     if (disabled) return;
     place();
-    setActive(items.findIndex((o) => o.value === value));
+    setQuery("");
+    setActive(all.findIndex((o) => o.value === value));
     setOpen(true);
   };
 
@@ -108,6 +117,11 @@ export default function Select({
     };
   }, [open]);
 
+  // A searchable list takes the typing as soon as it opens.
+  useLayoutEffect(() => {
+    if (open && searchable) searchRef.current?.focus();
+  }, [open, searchable]);
+
   // Keep the active row in view as keyboard focus moves.
   useLayoutEffect(() => {
     if (!open || active < 0) return;
@@ -123,14 +137,17 @@ export default function Select({
       }
       return;
     }
-    if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
+    if (e.key === "Escape") { e.preventDefault(); setOpen(false); triggerRef.current?.focus(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => step(i, 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => step(i, -1)); }
     else if (e.key === "Home") { e.preventDefault(); setActive(step(-1, 1)); }
     else if (e.key === "End") { e.preventDefault(); setActive(step(items.length, -1)); }
     else if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
-      if (items[active]) choose(items[active]);
+      // Typed into the search and pressed Enter: the first match.
+      const pick = items[active] && !items[active]._header ? items[active]
+        : searchable && query ? items.find((o) => !o._header) : null;
+      if (pick) choose(pick);
       else setOpen(false);
     }
   };
@@ -167,6 +184,22 @@ export default function Select({
             minWidth: pos.minWidth,
           }}
         >
+          {searchable && (
+            <input
+              ref={searchRef}
+              type="search"
+              className="sel-search"
+              value={query}
+              placeholder="Find…"
+              aria-label="Find in the list"
+              onChange={(e) => { setQuery(e.target.value); setActive(-1); }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown" && active < 0) { e.preventDefault(); setActive(step(-1, 1)); return; }
+                onKeyDown(e);
+              }}
+            />
+          )}
+          {searchable && items.length === 0 && <p className="sel-none">Nothing matches.</p>}
           {items.map((o, i) =>
             o._header ? (
               <div key={"h" + i} data-i={i} className="sel-group" role="presentation">

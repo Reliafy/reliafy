@@ -10022,6 +10022,39 @@ main.content:focus { outline: none; }
 .fleet-compare .mini-table th[scope="row"] { color: var(--muted); font-weight: 600; white-space: nowrap; }
 .fleet-items-tools button { white-space: normal; text-align: left; max-width: 100%; }
 
+/* Select's search box (searchable): the first row of the open list. */
+.sel-search {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  margin: -4px -4px 4px;
+  width: calc(100% + 8px);
+  box-sizing: border-box;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--r) var(--r) 0 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: var(--fs-13);
+  background: var(--surf);
+  color: var(--ink);
+}
+.sel-search:focus { outline: none; box-shadow: inset 0 -2px 0 var(--acc); }
+.sel-none { margin: 0; padding: 7px 10px; font-size: var(--fs-13); color: var(--muted); }
+
+/* Forecast › Spares › stock to hold by period: numbers right-aligned under
+   right-aligned headings, the period first. */
+.spares-by-period th, .spares-by-period td { text-align: right; font-variant-numeric: tabular-nums; }
+.spares-by-period th:first-child, .spares-by-period td:first-child { text-align: left; }
+
+/* RBD toolbar: Save saves; the arrow beside it opens the rest. */
+.rbd-save-split { display: inline-flex; align-items: stretch; }
+.rbd-save-split .rbd-save-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.rbd-save-split .rbd-save-more .rbd-tb-trigger { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; padding-left: 6px; padding-right: 6px; height: 100%; }
+.rbd-save-split .rbd-save-more .ovm-menu { right: 0; left: auto; }
+.rbd-plan-btn.is-on { background: var(--acc-t); color: var(--acc); border-color: var(--acc); }
+.rbd-menu-note { margin: 2px 10px 6px; font-size: var(--fs-12); color: var(--muted); }
+
 /* The same task on identical positions, offered after an interval change (TaskTwins.jsx). */
 .task-twins { margin-top: 8px; padding: 10px 12px; }
 .task-twins p { margin: 0 0 8px; overflow-wrap: anywhere; }

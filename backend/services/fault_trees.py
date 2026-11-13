@@ -459,6 +459,22 @@ def to_import_tree(tree: dict) -> tuple[ft.FaultTree, list[str]]:
     return ft.FaultTree(nodes, tree["top"]), fixed
 
 
+_FAILURE_TAIL = re.compile(r"\s+(?:fails|failed|failure|faults?|is failed|has failed)\s*$", re.IGNORECASE)
+_FAILURE_HEAD = re.compile(r"^\s*failure\s+of\s+(?:the\s+)?", re.IGNORECASE)
+
+
+def block_name(label: str) -> str:
+    """An RBD block's name from a basic event's: the failure words dropped
+    ("Dosing pump fails" → "Dosing pump", "Failure of the UV reactor" → "UV
+    reactor"), since a block is the part that works. Anything else, or a name
+    that would end up empty, is kept as it is."""
+    text = str(label or "")
+    out = _FAILURE_TAIL.sub("", _FAILURE_HEAD.sub("", text)).strip()
+    if not out:
+        return text
+    return out[0].upper() + out[1:] if _FAILURE_HEAD.match(text) else out
+
+
 def to_rbd_graph(tree: dict, resolve_saved_model=None) -> tuple[dict, list[str]]:
     """The RBD for a stored tree, by the importers' conversion (OR → series,
     AND → parallel, k of n failed → n − k + 1 of n working), in the builder's
@@ -471,6 +487,10 @@ def to_rbd_graph(tree: dict, resolve_saved_model=None) -> tuple[dict, list[str]]
         compact, notes = ft.to_graph(imported, unit=tree.get("unit") or "")
     except RbdImportError as exc:
         raise FaultTreeError(str(exc)) from None
+    # A basic event names a failure ("Dosing pump fails"); its block is the thing that works.
+    for node in compact.get("nodes") or []:
+        if node.get("type") not in ("input", "output", "knode") and node.get("label"):
+            node["label"] = block_name(node["label"])
     if fixed:
         notes.append(
             f"{_names(fixed)} {'have' if len(fixed) > 1 else 'has'} a fixed probability, which an RBD block "

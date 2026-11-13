@@ -8,8 +8,11 @@ import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { PlusIcon, SampleGroups, itemName } from "../components/LibRows.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
+import SegmentedControl from "../components/ui/SegmentedControl.jsx";
+import { parseAdd, reportHref } from "../reportComposer.js";
 
 const ReportComposer = lazy(() => import("../components/ReportComposer.jsx"));
+const ReportPreview = lazy(() => import("../components/ReportPreview.jsx"));
 
 const HELP = { guide: "share-your-work" };
 
@@ -215,25 +218,79 @@ function SharedLinks({ reports, inTeam }) {
   );
 }
 
+// One report, in the page (not a dialog): View reads it as its readers will
+// (and prints it); Edit is the composer. ``?open=<id>`` views it (an RCM
+// decision's evidence links here), ``&edit=1`` edits it, ``?new=1`` (with
+// ``&add=<collection>:<id>`` from an item's Share) starts a new one.
+function OneReport({ reports, openId, editing, add, onBack, onChanged }) {
+  const navigate = useNavigate();
+  const report = openId ? (reports || []).find((r) => r.id === openId) : null;
+  const title = openId ? report?.title || "Report" : "New report";
+  const go = (href) => navigate(href, { replace: true });
+  return (
+    <div className="rc-page">
+      <div className="rc-bar">
+        <Link to="/reports" onClick={(e) => { e.preventDefault(); onBack(); }}>‹ All reports</Link>
+        <h2 className="rc-bar-title">{title}</h2>
+        {openId && (
+          <div className="rc-bar-acts">
+            <SegmentedControl
+              label="Read or change the report"
+              value={editing ? "edit" : "view"}
+              onChange={(v) => go(reportHref({ open: openId, edit: v === "edit" }))}
+              options={[
+                { value: "view", label: "View" },
+                { value: "edit", label: report?.read_only ? "Details" : "Edit" },
+              ]}
+            />
+            {!editing && <button type="button" className="secondary sm" onClick={() => window.print()}>Print</button>}
+          </div>
+        )}
+      </div>
+      <Suspense fallback={<div className="card empty">Loading…</div>}>
+        {openId && !editing ? (
+          <ReportPreview id={openId} />
+        ) : (
+          <ReportComposer
+            key={openId || "new"}
+            openId={openId}
+            initial={add}
+            onClose={onBack}
+            onSaved={(id) => { onChanged(); if (id !== openId) go(reportHref({ open: id, edit: true })); }}
+            onDeleted={() => { onChanged(); onBack(); }}
+          />
+        )}
+      </Suspense>
+    </div>
+  );
+}
+
 // Reports: what's been written up and shared, in one place: the user's
 // reports (several items on one page), their saved analyses, and every live
 // share link. ?open=<id> opens that report (an RCM decision's evidence links here).
 export default function ReportsPage() {
   const { workspace, activeTeam } = useWorkspace() || {};
   const inTeam = Boolean(workspace && workspace !== "personal");
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
   const [reports, setReports] = useState(null);
   const [error, setError] = useState(null);
-  const [composer, setComposer] = useState(() => (params.get("open") ? { openId: params.get("open") } : null)); // null | { openId }
   const load = useCallback(() => {
     listReports().then((d) => setReports(d.reports || [])).catch((e) => setError(e.message));
   }, []);
   useEffect(() => load(), [load]);
-  const close = () => {
-    setComposer(null);
-    if (params.get("open")) setParams((p) => { p.delete("open"); return p; }, { replace: true });
-    load();
-  };
+  const openId = params.get("open") || "";
+  const adding = params.get("new") === "1";
+  const add = adding ? parseAdd(params.get("add")) : null;
+  const back = () => { navigate("/reports"); load(); };
+  if (openId || adding) {
+    return (
+      <div className="app">
+        <OneReport reports={reports} openId={openId} editing={!openId || params.get("edit") === "1"} add={add}
+                   onBack={back} onChanged={load} />
+      </div>
+    );
+  }
   return (
     <div className="app">
       <SectionHeader
@@ -242,17 +299,12 @@ export default function ReportsPage() {
           ? "This team's reports and saved analyses, for every member."
           : "Your reports, saved analyses and everything you've shared."}
         help={HELP}
-        primary={<button onClick={() => setComposer({ openId: "" })}><PlusIcon /> New report</button>}
+        primary={<button onClick={() => navigate(reportHref())}><PlusIcon /> New report</button>}
       />
-      <YourReports rows={reports} error={error} onOpen={(id) => setComposer({ openId: id })}
-                   onNew={() => setComposer({ openId: "" })} team={inTeam ? activeTeam?.name || "This team" : null} />
+      <YourReports rows={reports} error={error} onOpen={(id) => navigate(reportHref({ open: id }))}
+                   onNew={() => navigate(reportHref())} team={inTeam ? activeTeam?.name || "This team" : null} />
       <SavedAnalyses />
       <SharedLinks reports={reports} inTeam={inTeam} />
-      {composer && (
-        <Suspense fallback={null}>
-          <ReportComposer openId={composer.openId} onClose={close} />
-        </Suspense>
-      )}
     </div>
   );
 }

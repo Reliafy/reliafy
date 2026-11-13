@@ -745,20 +745,21 @@ def python_download(filename: str, source: str) -> Response:
 
 @router.get("/rbds/{rbd_id}/export.py")
 def export_rbd_python(
-    rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+    rbd_id: str, t: float | None = None, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> Response:
     """Download a saved RBD as a standalone SurPyval + RePyability script.
 
     Free for anyone who can view the diagram (owner, team, share recipient,
     samples) — not metered and not plan-gated. Sub-systems and saved models
-    resolve in the same scope as the diagram's analysis.
+    resolve in the same scope as the diagram's analysis. ``t`` (the
+    Calculator's "Evaluate at t") is the time the script ranks importance at.
     """
     rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
     if rbd is None or rbd.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     try:
         filename, source = rbds_service.export_python(
-            session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
+            session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id], evaluate_at=t
         )
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to export RBD %s as Python", rbd_id)

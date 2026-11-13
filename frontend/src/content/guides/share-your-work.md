@@ -39,7 +39,8 @@ can be revoked on its own, and you can make several, one per audience.
 
 When the story needs more than one item — the fitted model, the diagram built
 on it and the replacement interval that follows — put them in one report. In
-the Share dialog, choose **Add to a report…** at the bottom. Give the report a
+the Share dialog, choose **Add to a report…** at the bottom: Reports opens on a
+new report with that item in it (or choose **Add it to** an existing one). Give the report a
 **Title** and an **Author or organisation**, write an **Introduction**, and add
 the other items under **Sections** with **Add an item**: type part of a name in
 the search box or pick a kind (each item shows its kind and when it was saved),
@@ -59,8 +60,9 @@ and it flags any figure it can't find in the saved results.
 
 ### Everything you've shared, in one place
 
-[Reports](/reports) in the menu lists your reports (open one to edit it, or
-press **New report** to start one there), your saved analyses, and every live
+[Reports](/reports) in the menu lists your reports (open one to read it as its
+readers will, with **Print**, or switch to **Edit** to change it; **New report**
+starts one there), your saved analyses, and every live
 share link with what it shows, so you can see at a glance what's out there.
 Reports belong to the workspace they're made in: in a team workspace you see
 that team's reports, which every member can read. Public links are for items

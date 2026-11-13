@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   STEP_LABELS, STEP_WHAT, analysisName, graphWithModel, modelFromSearch, nextStepLink, nextStepsFor, plainName,
-  latestOnly, preferredModel, savedModelRef, stepsFor,
+  latestOnly, savedModelRef, stepsFor,
 } from "./modelNext.js";
 
 test("nextStepsFor: which tools take which kind of model", () => {
@@ -40,19 +40,6 @@ test("nextStepLink opens each tool with the model chosen", () => {
   assert.equal(modelFromSearch("?model=m1&new=1"), "m1");
   assert.equal(modelFromSearch("?model=<x>"), null);
   assert.equal(modelFromSearch(""), null);
-});
-
-test("preferredModel: the link's, then the recent one, then the newest of the user's own", () => {
-  const models = [
-    { id: "s1", is_sample: true, created_at: "2026-10-11T00:00:00Z" },
-    { id: "a", created_at: "2026-10-01T00:00:00Z" },
-    { id: "b", created_at: "2026-10-05T00:00:00Z" },
-  ];
-  assert.equal(preferredModel(models, { wanted: "a", recent: "b" }), "a");
-  assert.equal(preferredModel(models, { wanted: "gone", recent: "s1" }), "s1");
-  assert.equal(preferredModel(models, { recent: "gone" }), "b");
-  assert.equal(preferredModel([models[0]]), "s1");
-  assert.equal(preferredModel([]), null);
 });
 
 test("analysisName uses the saved model's name, without the sample suffix", () => {

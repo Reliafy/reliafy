@@ -357,3 +357,41 @@ export function copyForAlongside(nodes, sourceId, id) {
     targetPosition: "left",
   };
 }
+
+// Deleting a block that sits in series keeps the line whole: what fed it now
+// feeds what it fed. That holds when one side is a single connection to a
+// block nothing else joins there: a block between In and a split (In → PLC →
+// both pumps) leaves In → each pump; a block before a join, the mirror. A
+// block on a parallel branch isn't bridged (its split and join have other
+// branches): a line straight across would be a branch that never fails.
+// Returns the edges to add (the removed block's own edges are left for the
+// caller to drop).
+export function bridgeEdges(edges, removedIds) {
+  const gone = new Set(removedIds);
+  let live = [...edges];
+  const taken = new Set(edges.map((e) => e.id));
+  const added = [];
+  for (const id of removedIds) {
+    const ins = live.filter((e) => e.target === id && e.source !== id);
+    const outs = live.filter((e) => e.source === id && e.target !== id);
+    live = live.filter((e) => e.source !== id && e.target !== id);
+    if (!ins.length || !outs.length) continue;
+    const soleIn = ins.length === 1 && !live.some((e) => e.source === ins[0].source);
+    const soleOut = outs.length === 1 && !live.some((e) => e.target === outs[0].target);
+    if (!soleIn && !soleOut) continue;
+    for (const i of ins) {
+      for (const o of outs) {
+        if (i.source === o.target || live.some((e) => e.source === i.source && e.target === o.target)) continue;
+        const e = link(soleIn ? o : i, i.source, o.target, taken);
+        live.push(e);
+        added.push(e);
+      }
+    }
+  }
+  // A bridge to or from a block that is itself going isn't kept.
+  return added.filter((e) => !gone.has(e.source) && !gone.has(e.target));
+}
+
+// The Calculator's "Evaluate at t" (a number, or null), told to the builder so
+// Download as Python ranks importance at the same time.
+export const RBD_EVALUATE_AT_EVENT = "reliafy:rbd-evaluate-at";

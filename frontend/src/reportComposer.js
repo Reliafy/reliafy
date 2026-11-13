@@ -108,3 +108,24 @@ export const RENAMABLE = new Set([
   "models", "recurrent_models", "alt_models", "degradation_models", "rbds", "fault_trees",
   "reliability_predictions", "strategy_analyses", "fleets", "datasets",
 ]);
+
+// Reports' address for one report (#30): ``?open=<id>`` shows it as readers
+// see it; ``&edit=1`` opens its editor; ``?new=1`` starts a new one, with
+// ``&add=<collection>:<id>`` (an item's Share › Add to a report…) in it.
+export function reportHref({ open = "", edit = false, add = null } = {}) {
+  const q = new URLSearchParams();
+  if (open) {
+    q.set("open", open);
+    if (edit) q.set("edit", "1");
+  } else {
+    q.set("new", "1");
+    if (add?.collection && add?.artifact_id) q.set("add", `${add.collection}:${add.artifact_id}`);
+  }
+  return `/reports?${q.toString()}`;
+}
+
+// ``?add=models:abc`` → { collection: "models", artifact_id: "abc" }, or null.
+export function parseAdd(value) {
+  const m = /^([a-z_]{1,40}):([\w.:-]{1,200})$/.exec(String(value || ""));
+  return m ? { collection: m[1], artifact_id: m[2] } : null;
+}

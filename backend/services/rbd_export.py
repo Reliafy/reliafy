@@ -846,6 +846,7 @@ def to_python(
     resolve_subsystem: Optional[Callable[[str], Optional[dict]]] = None,
     versions: Optional[dict] = None,
     exported_at: Optional[datetime] = None,
+    evaluate_at: Optional[float] = None,
 ) -> str:
     """Render ``graph`` as a standalone Python script.
 
@@ -856,7 +857,9 @@ def to_python(
     ``resolve_subsystem(rbd_id)`` returns a nested diagram's graph (or
     ``None``); without it sub-system blocks become explanatory placeholders.
     ``versions`` overrides :func:`detect_versions` and ``exported_at`` the
-    export timestamp (both mainly for tests).
+    export timestamp (both mainly for tests). ``evaluate_at`` (a
+    non-repairable diagram) is the Calculator's "Evaluate at t": the script
+    reads the importance measures at it, as the page does.
     """
     graph = graph or {}
     versions = {**detect_versions(), **(versions or {})}
@@ -874,8 +877,9 @@ def to_python(
         body = rbd_network.python_body(script, graph, resolve_model,
                                        resolve_subsystem)
     else:
+        good_t = evaluate_at is not None and np.isfinite(evaluate_at) and evaluate_at > 0
         body = _nonrepairable_body(script, graph, resolve_model,
-                                   resolve_subsystem)
+                                   resolve_subsystem, float(evaluate_at) if good_t else None)
         body = rbd_phases.python_section(body, graph, script)
     header = _header(name, unit, repairable, versions, exported_at,
                      script.placeholders, filename(name), lfp=script.uses_lfp,
@@ -986,7 +990,8 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
 
 
 def _imports(script: _Script, repairable: bool) -> str:
-    out = ["import json", "import os", *(["import time"] if repairable else []), "", "import numpy as np"]
+    out = ["import json", "import os", "import sys", *(["import time"] if repairable else []), "",
+           "import numpy as np"]
     if script.uses_surv or (repairable and script.uses_stand_in):
         out.append("import surpyval as surv")
     names = sorted(script.imports)
@@ -1036,7 +1041,7 @@ def _edges_lines(edges) -> list[str]:
 
 
 def _nonrepairable_body(script: _Script, graph, resolve_model,
-                        resolve_subsystem) -> str:
+                        resolve_subsystem, evaluate_at: Optional[float] = None) -> str:
     L = script.lines
     L.append("# " + "-" * 75)
     L.append("# Blocks: one non-repairable model per block, built exactly as")
@@ -1149,6 +1154,10 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
     out.append("# found by system_horizon() below — exactly as Reliafy sizes it.")
     out.append(f"T_MAX_CEILING = {_num(t_max)}")
     out.append("GRID_POINTS = 200")
+    out.append("# The Calculator's \"Evaluate at t\" when this was downloaded; None")
+    out.append("# is the default, where the system reliability falls to 90%.")
+    out.append("# Change it to rank the blocks at another time.")
+    out.append(f"EVALUATE_AT = {_num(evaluate_at) if evaluate_at is not None else 'None'}")
     out.append("")
     out.append("")
     out.append(_NONREPAIRABLE_MAIN.replace("__IMP__", imp_rbd).strip("\n"))
@@ -1281,6 +1290,16 @@ def default_time(model, times, sf, **sf_kwargs):
     return float(times[i])
 
 
+def show_or_save(fig, plt):
+    """Save the plot beside this script; open a window only in an interactive
+    run, so a run from a scheduler or a pipeline never waits on one."""
+    png = os.path.splitext(os.path.abspath(__file__))[0] + ".png"
+    fig.savefig(png, dpi=150, bbox_inches="tight")
+    print(f"Plot saved to {png}")
+    if sys.stdout.isatty() and plt.get_backend().lower() != "agg":
+        plt.show()
+
+
 def save_results(results):
     """Write the numbers to $RELIAFY_RESULTS_JSON, when it is set."""
     path = os.environ.get("RELIAFY_RESULTS_JSON")
@@ -1302,9 +1321,11 @@ def main():
     b10 = b_life(times, system_sf, 0.10)
     b50 = b_life(times, system_sf, 0.50)
 
-    # Reliafy's default read-out time: when the system reliability falls
-    # to 90%.
-    t_rep = default_time(rbd, times, system_sf, **overrides)
+    # The time the importance measures are read at: the Calculator's
+    # "Evaluate at t" when one was typed (EVALUATE_AT), else Reliafy's
+    # default, when the system reliability falls to 90%.
+    t_rep = (EVALUATE_AT if EVALUATE_AT is not None
+             else default_time(rbd, times, system_sf, **overrides))
 
     # R(t) at a few round times around the MTTF (around the middle of the
     # time axis without one), plus the default read-out time.
@@ -1378,7 +1399,7 @@ def main():
         ax.set_ylabel("System reliability R(t)")
         ax.set_ylim(0.0, 1.02)
         ax.grid(True, alpha=0.3)
-        plt.show()
+        show_or_save(fig, plt)
     return results
 
 
@@ -1730,6 +1751,16 @@ def _repairable_ccf(graph: dict, nodes: set) -> list:
 
 
 _REPAIRABLE_MAIN = '''
+def show_or_save(fig, plt):
+    """Save the plot beside this script; open a window only in an interactive
+    run, so a run from a scheduler or a pipeline never waits on one."""
+    png = os.path.splitext(os.path.abspath(__file__))[0] + ".png"
+    fig.savefig(png, dpi=150, bbox_inches="tight")
+    print(f"Plot saved to {png}")
+    if sys.stdout.isatty() and plt.get_backend().lower() != "agg":
+        plt.show()
+
+
 def save_results(results):
     """Write the numbers to $RELIAFY_RESULTS_JSON, when it is set."""
     path = os.environ.get("RELIAFY_RESULTS_JSON")
@@ -1966,7 +1997,7 @@ def main():
         ax.set_ylabel("System availability A(t)")
         ax.legend()
         ax.grid(True, alpha=0.3)
-        plt.show()
+        show_or_save(fig, plt)
     return results
 
 
