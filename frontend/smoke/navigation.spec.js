@@ -8,7 +8,7 @@ import { test, expect, open, expectHealthy } from "./health.js";
 
 test.describe.configure({ mode: "serial" });
 
-const EVERYTHING = ["Home", "Products", "Assets", "Items", "Maintenance", "Modelling", "Decisions", "Reports"];
+const EVERYTHING = ["Home", "Products", "Assets", "Items", "Maintenance", "Modelling", "Libraries", "Decisions", "Reports"];
 
 const setRoles = async (request, roles) => {
   const res = await request.put("/api/me/roles", { data: { roles } });
@@ -75,7 +75,7 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await mainMenu(page).getByRole("button", { name: "Models", exact: true }).click();
   await expect(page).toHaveURL(/\/data$/);
   await expect(mainMenu(page).locator(".side-grandchildren .side-subitem")).toHaveText(["Non-repairable",
-    "Repairable", "Accelerated life", "Degradation", "Condition and life", "Library"]);
+    "Repairable", "Accelerated life", "Degradation", "Condition and life"]);
   await open(page, "/models");
   await expect(page.getByRole("heading", { name: "Models", level: 1 })).toBeVisible();
   await expect(mainMenu(page).getByRole("button", { name: "Models", exact: true })).toHaveAttribute("aria-expanded", "true");

@@ -488,7 +488,7 @@ _CAP_NOUNS = {
     "fault_trees": ("saved fault tree", "saved fault trees"),
     "reliability_predictions": ("saved reliability prediction", "saved reliability predictions"),
     "maintainability_predictions": ("saved maintainability prediction", "saved maintainability predictions"),
-    "libraries": ("data library", "data libraries"),
+    "libraries": ("library", "libraries"),
 }
 
 

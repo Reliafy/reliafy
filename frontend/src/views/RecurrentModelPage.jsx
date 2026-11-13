@@ -15,6 +15,8 @@ import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { recurrentAnswer, recurrentTabs } from "../recurrentResults.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
+import FromLibrary from "../components/FromLibrary.jsx";
 
 // A saved repairable (recurrent-event) model in the model frame: the answer
 // line, Share, the ⋯ menu (Download as Python, rename, delete) and the result's tabs, the open one in
@@ -24,6 +26,7 @@ export default function RecurrentModelPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  const [adding, setAdding] = useState(false);
   // Not on this list (404): ModelNotFound looks in the others.
   const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
@@ -71,12 +74,18 @@ export default function RecurrentModelPage() {
         <>
           <DownloadPythonItem download={() => downloadModelPython("recurrent", model.id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
+          <button type="button" className="ovm-item" onClick={() => setAdding(true)}>Add to library…</button>
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
           </button>
         </>
       )}
-      notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
+      notice={(error || model?.from_library) && (
+        <>
+          {model?.from_library && <FromLibrary from={model.from_library} className="mf-notice" />}
+          {error && <div className="card error mf-notice" role="alert">{error}</div>}
+        </>
+      )}
     >
       {model ? (
         // A model this page can't draw shows a card here, not the whole-app error page.
@@ -86,6 +95,9 @@ export default function RecurrentModelPage() {
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="recurrent" />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+      {adding && model && (
+        <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} collection="recurrent_models" onClose={() => setAdding(false)} />
+      )}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

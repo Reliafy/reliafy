@@ -171,8 +171,9 @@ reliafy list library --query "check valve" --record-kind rate   # published fail
 reliafy get library_record --id nrc-inl-2020:ckv-fto
 reliafy get library_record --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed
 reliafy change library_create --name "Site pumps" --description "Our fleet's fitted models"   # a library of your own
-reliafy change library_add_model --library-id LIBRARY_ID --model-id MODEL_ID --failure-mode "Bearing wear"
-reliafy list libraries
+reliafy change library_add --library-id LIBRARY_ID --model-id MODEL_ID   # a snapshot (or --dataset-id)
+reliafy list libraries                           # yours, shared with you, public and the built-in handbooks
+reliafy change library_use --library-id LIBRARY_ID --entry-id ENTRY_ID   # copy an entry into your workspace
 reliafy analyse prediction --environment GF --mission-time 1000 \
   --lines '[{"name": "Ceramic capacitors", "record_id": "mil-hdbk-217f-n2:10-1-ck-11015", "quantity": 48}]'   # a parts count
 reliafy change prediction_save --name "Controller box" --environment GF --lines @parts.json   # ... saved

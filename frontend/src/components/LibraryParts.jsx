@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  addModelToLibrary, createLibrary, createModelFromLibrary, fitDatasetWithPrior, getDataset, getLibraryComponent, getLibraryRecord, getLibrarySources,
-  listDatasets, listMyLibraries, searchLibrary, updateLibrary,
+  addLibraryEntry, createLibrary, createModelFromLibrary, fitDatasetWithPrior, getDataset, getLibraryComponent, getLibraryRecord,
+  listDatasets, listLibraries, updateLibrary,
 } from "../api.js";
+import { ErrorNotice } from "./StorageCap.jsx";
+import { isCapRefusal } from "../plan.js";
+import { entryPath, libraryChoiceReady, libraryPath } from "../libraries.js";
 import CovariateCalculator from "./CovariateCalculator.jsx";
 import { covariatesToSave, missingInputs } from "../covariate.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
@@ -12,52 +15,11 @@ import Field from "./ui/Field.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
-  familyName, isComponentId, isLife, lifeWords, pickerDetail, pickerSources, rangeText, recordPath, sig, sourcePath,
+  familyName, isComponentId, isLife, lifeWords, rangeText, sig,
 } from "../libraryModels.js";
 
-// The library's shared pieces: a look-up (search across the sources, each hit a link to its record),
-// and the two actions a record has on its pages: Use as a model… and Use as a prior…. Picking a
-// record inside a dialog is "Pick a library record" (LibraryRecordPicker.jsx), a modal of its own.
-
-export function LibraryLookup({ label = "Records" }) {
-  const [q, setQ] = useState("");
-  const [source, setSource] = useState("");
-  const [sources, setSources] = useState([]);
-  const [rows, setRows] = useState(null);
-  useEffect(() => {
-    let live = true;
-    getLibrarySources().then((d) => live && setSources(pickerSources(d.sources)), () => {});
-    return () => { live = false; };
-  }, []);
-  useEffect(() => {
-    let live = true;
-    const t = setTimeout(() => searchLibrary({ q: q.trim() || undefined, source: source || undefined, pageSize: 12 })
-      .then((d) => live && setRows(d.results || []), () => live && setRows([])), 250);
-    return () => { live = false; clearTimeout(t); };
-  }, [q, source]);
-  return (
-    <div className="lib-picker">
-      <div className="fit2-pair">
-        <TextInput type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, equipment, failure mode"
-                   aria-label="Search the data library" />
-        <Select aria-label="Library" value={source} onChange={(e) => setSource(e.target.value)}>
-          <option value="">Every library</option>
-          {sources.map((s) => <option key={s.id} value={s.id}>{s.mine ? `${s.name} (yours)` : s.short_name || s.name}</option>)}
-        </Select>
-      </div>
-      {rows === null ? <p className="rim-tquiet">Searching…</p> : rows.length === 0 ? <p className="rim-tquiet">No records match.</p> : (
-        <ul className="lib-look" aria-label={label}>
-          {rows.map((r) => (
-            <li key={r.id}>
-              <Link to={recordPath(r.id)}>{r.label}</Link>
-              <span className="evidence-meta">{pickerDetail(r)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
+// The library's shared pieces: the two actions a handbook record has on its pages (Use as a model…
+// and Use as a prior…), New library… / Edit…, and Add to library…. Picking a record inside a dialog is "Pick a library record" (LibraryRecordPicker.jsx), a modal of its own.
 
 // The record's covariates (a pipe's length, the clock, the demands a year, a handbook part's
 // environment...), read from its page: {inputs, values, setValues, ready, missing}. One state for the
@@ -263,24 +225,26 @@ export function UseAsPriorDialog({ record, onClose }) {
 }
 
 
-// New library… / Edit library…: a name, one line on what it holds, and notes or licence text shown
-// with every record. ``library``: the one to edit (none: create).
+// New library… / Edit…: a name, one line on what it holds, where its contents come from (source and
+// citation) and notes. ``library``: the one to edit (none: create). A refusal at the Free plan's
+// limit shows its words with the upgrade link.
 export function LibraryFormDialog({ library = null, onClose, onDone }) {
   const [name, setName] = useState(library?.name || "");
   const [description, setDescription] = useState(library?.description || "");
+  const [source, setSource] = useState(library?.source || "");
+  const [citation, setCitation] = useState(library?.citation || "");
   const [notes, setNotes] = useState(library?.notes || "");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const save = async () => {
     setBusy(true);
+    setFailed(null);
+    const body = { name: name.trim(), description: description.trim(), source: source.trim(), citation: citation.trim(), notes: notes.trim() };
     try {
-      const made = library
-        ? await updateLibrary(library.id, { name: name.trim(), description: description.trim(), notes: notes.trim() })
-        : await createLibrary({ name: name.trim(), description: description.trim(), notes: notes.trim() });
-      onDone(made);
+      onDone(library ? await updateLibrary(library.id, body) : await createLibrary(body));
     } catch (e) {
       setBusy(false);
-      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+      setFailed(isCapRefusal(e) ? e : saveErrorText(e, { offline: navigator.onLine === false }));
     }
   };
   return (
@@ -293,78 +257,93 @@ export function LibraryFormDialog({ library = null, onClose, onDone }) {
                </button>
              </>
            )}>
-      {!library && <p className="rw-fhelp">A library of your own holds snapshots of your saved life models, to use as models or priors. Add a model from its page: Add to a library….</p>}
+      {!library && (
+        <p className="rw-fhelp">
+          A library holds copies of your datasets and models, to keep, share with other workspaces or publish. Add to it
+          from a dataset’s or model’s ⋯ menu: <strong>Add to library…</strong>.
+        </p>
+      )}
       <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} maxLength={120} autoFocus /></Field>
       <Field label="What it holds (one line)"><TextInput value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} /></Field>
-      <Field label="Notes or licence text" help="Shown with every record in this library.">
+      <Field label="Source" help="Where the data and models come from, e.g. a site, a test programme or a report.">
+        <TextInput value={source} onChange={(e) => setSource(e.target.value)} maxLength={300} />
+      </Field>
+      <Field label="Citation" help="How to cite it. Needed to publish.">
+        <TextInput value={citation} onChange={(e) => setCitation(e.target.value)} maxLength={1000} />
+      </Field>
+      <Field label="Notes" help="Shown on the library’s page.">
         <TextArea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={4000} />
       </Field>
-      {failed && <p className="field-error" role="alert">{failed}</p>}
+      <ErrorNotice error={failed} className="field-error" role="alert" />
     </Modal>
   );
 }
 
-// Add to a library…: a saved life model snapshotted into one of the user's libraries (or a new one
-// made here), with a label, the equipment type, the failure mode and notes. A model is in no library
-// until it's added (Derryn, 9 Nov 2026).
-export function AddToLibraryDialog({ modelId, modelName, onClose, onDone }) {
+// Add to library…: a copy of a dataset or a model (any kind: fitted, from parameters, from a handbook
+// or a prior) as it is now, into one of your libraries or a new one made here. Nothing is ever added
+// automatically (Derryn, 9 Nov 2026). ``collection``: the model's ("models", "recurrent_models",
+// "alt_models"); a dataset passes ``datasetId`` instead of ``modelId``.
+export function AddToLibraryDialog({ modelId = null, modelName = "", collection = "models", datasetId = null, datasetName = "", onClose, onDone }) {
   const [libs, setLibs] = useState(null);
-  const [types, setTypes] = useState({});
   const [libraryId, setLibraryId] = useState("");
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [label, setLabel] = useState(modelName || "");
-  const [equipment, setEquipment] = useState("other");
-  const [mode, setMode] = useState("");
-  const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [done, setDone] = useState(null);
+  const name = datasetId ? datasetName : modelName;
   useEffect(() => {
     let live = true;
-    listMyLibraries().then((d) => {
+    listLibraries().then((d) => {
       if (!live) return;
-      const mine = (d.libraries || []).filter((l) => !l.read_only);
+      const mine = (d.libraries || []).filter((l) => l.relation === "yours" && l.can_edit && !l.builtin);
       setLibs(mine);
-      setTypes(d.equipment_types || {});
       setLibraryId(mine[0]?.id || "new");
-    }, () => live && setLibs([]));
+    }, () => live && (setLibs([]), setLibraryId("new")));
     return () => { live = false; };
   }, []);
   const making = libraryId === "new";
   const save = async () => {
     setBusy(true);
+    setFailed(null);
     try {
       let lib = (libs || []).find((l) => l.id === libraryId) || null;
-      if (making) lib = await createLibrary({ name: newName.trim(), description: newDescription.trim() });
-      const out = await addModelToLibrary(lib.id, { modelId, label: label.trim(), equipmentType: equipment, failureMode: mode.trim(), notes: notes.trim() });
+      if (making) {
+        lib = await createLibrary({ name: newName.trim(), description: newDescription.trim() });
+        setLibs((xs) => [lib, ...(xs || [])]);
+        setLibraryId(lib.id);
+      }
+      const out = await addLibraryEntry(lib.id, datasetId ? { dataset_id: datasetId } : { model_id: modelId, collection });
       setBusy(false);
-      setDone({ library: lib, record: out.record });
+      setDone({ library: out.library || lib, entry: out.entry });
       if (onDone) onDone(out, lib);
     } catch (e) {
       setBusy(false);
-      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+      setFailed(isCapRefusal(e) ? e : saveErrorText(e, { offline: navigator.onLine === false }));
     }
   };
-  const ready = label.trim() && (making ? newName.trim() : libraryId);
+  const ready = making ? newName.trim() : libraryId;
   return (
-    <Modal title="Add to a library" onClose={onClose} locked={busy} trapFocus
+    <Modal title="Add to library" onClose={onClose} locked={busy} trapFocus
            footer={done ? <button type="button" onClick={onClose}>Done</button> : (
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={save} disabled={busy || !ready} aria-busy={busy || undefined}>{busy ? "Adding…" : "Add to the library"}</button>
+               <button type="button" onClick={save} disabled={busy || !ready || libs === null} aria-busy={busy || undefined}>
+                 {busy ? "Adding…" : "Add to the library"}
+               </button>
              </>
            )}>
       {done ? (
         <p role="status">
-          Added <strong>{done.record?.label || label}</strong> to <Link to={sourcePath(done.library.id)} onClick={onClose}>{done.library.name}</Link>.
-          {" "}<Link to={recordPath(done.record.id)} onClick={onClose}>Open the record</Link>.
+          Added <strong>{done.entry?.name || name}</strong> to{" "}
+          <Link to={libraryPath(done.library.id)} onClick={onClose}>{done.library.name}</Link>.
+          {done.entry?.id && <>{" "}<Link to={entryPath(done.library.id, done.entry.id)} onClick={onClose}>Open the entry</Link>.</>}
         </p>
       ) : (
         <>
           <p className="rw-fhelp">
-            Keeps a snapshot of <strong>{modelName}</strong> as it is now (its distribution, parameters and bounds, unit and sample
-            sizes) in a library of yours, to use as a model or a prior. A later refit doesn’t change the record.
+            Adds <strong>{name || (datasetId ? "this dataset" : "this model")}</strong> to a library of yours. The library keeps
+            a copy as it is now; later edits here don’t change it.
           </p>
           <Field label="Library">
             <Select aria-label="Library" value={libraryId} onChange={(e) => setLibraryId(e.target.value)} disabled={libs === null}>
@@ -380,23 +359,52 @@ export function AddToLibraryDialog({ modelId, modelName, onClose, onDone }) {
                          onChange={(e) => setNewDescription(e.target.value)} maxLength={300} />
             </div>
           )}
-          <Field label="Label"><TextInput value={label} onChange={(e) => setLabel(e.target.value)} maxLength={200} /></Field>
-          <div className="fit2-pair">
-            <Field label="Equipment type">
-              <Select aria-label="Equipment type" value={equipment} onChange={(e) => setEquipment(e.target.value)}>
-                {Object.entries(types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                {!types.other && <option value="other">Other equipment</option>}
-              </Select>
-            </Field>
-            <Field label="Failure mode" help="Leave empty for all failures.">
-              <TextInput value={mode} onChange={(e) => setMode(e.target.value)} maxLength={200} placeholder="e.g. Bearing wear" />
-            </Field>
-          </div>
-          <Field label="Notes (optional)"><TextArea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={4000} /></Field>
-          <p className="rim-tquiet">The time unit comes from the model.</p>
         </>
       )}
-      {failed && <p className="field-error" role="alert">{failed}</p>}
+      <ErrorNotice error={failed} className="field-error" role="alert" />
     </Modal>
   );
 }
+
+// New dataset's "Also add to library": none (the default), one of your libraries, or New library… (named
+// here, made when the data is saved: resolveLibraryChoice). ``value``: {libraryId, newName}.
+export function LibraryChoice({ value, onChange, disabled = false }) {
+  const [libs, setLibs] = useState(null);
+  useEffect(() => {
+    let live = true;
+    listLibraries().then((d) => {
+      if (live) setLibs((d.libraries || []).filter((l) => l.relation === "yours" && l.can_edit && !l.builtin));
+    }, () => live && setLibs([]));
+    return () => { live = false; };
+  }, []);
+  const id = value?.libraryId || "";
+  // A library chosen before the list arrives (the library page's Upload data…) is kept and named once it does.
+  const known = (libs || []).some((l) => l.id === id);
+  return (
+    <section className="ds-library" aria-label="Also add to a library">
+      <Field label="Also add to library" optional help="The library keeps a copy of each dataset as it is now.">
+        <Select aria-label="Also add to library" value={id} disabled={disabled}
+                onChange={(e) => onChange({ ...value, libraryId: e.target.value })}>
+          <option value="">No library</option>
+          {id && id !== "new" && !known && <option value={id}>{libs === null ? "Loading…" : "This library"}</option>}
+          {(libs || []).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          <option value="new">New library…</option>
+        </Select>
+      </Field>
+      {id === "new" && (
+        <TextInput aria-label="New library's name" placeholder="Library name" value={value?.newName || ""} maxLength={120}
+                   disabled={disabled} onChange={(e) => onChange({ ...value, newName: e.target.value })} />
+      )}
+    </section>
+  );
+}
+
+// The library id to upload into for a LibraryChoice value: none, the one chosen, or a new library made now.
+export async function resolveLibraryChoice(value) {
+  const id = value?.libraryId || "";
+  if (id !== "new") return id || null;
+  const lib = await createLibrary({ name: (value.newName || "").trim() });
+  return lib.id;
+}
+
+export { libraryChoiceReady };

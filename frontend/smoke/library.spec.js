@@ -1,5 +1,5 @@
-// The data library under Models (Derryn, 9 Nov 2026: "a good way to use models from a library.
-// Especially the NUREG life models"): three levels (the sources, a source's records, a record),
+// The built-in handbooks under Libraries (Derryn, 9 Nov 2026: "a good way to use models from a library.
+// Especially the NUREG life models"; moved from Models to Libraries 13 Nov 2026): three levels (the sources, a source's records, a record),
 // each record usable as a model or a prior; the Explorer's "From the data library…" and the Fit
 // dialog's "A library record" prior, both through "Pick a library record" (a modal search).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
@@ -19,13 +19,13 @@ test("the library's three levels, then a record used as a model", async ({ page,
   await page.setViewportSize({ width: 1440, height: 900 });
   // The old address lands on the new one.
   await open(page, "/data/library");
-  await expect(page).toHaveURL(/\/models\/library$/);
-  await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
-  await expect(page.getByRole("searchbox", { name: "Search the data library" })).toBeVisible();
+  await expect(page).toHaveURL(/\/libraries$/);
+  await expect(page.getByRole("heading", { name: "All libraries", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Public", exact: true })).toBeVisible();
 
   // A source: its records, filtered and sorted.
-  await page.getByRole("link", { name: NRC }).click();
-  await expect(page).toHaveURL(/\/models\/library\/nrc-inl-2020$/);
+  await page.getByRole("link", { name: /^NRC\/INL 2020/ }).click();
+  await expect(page).toHaveURL(/\/libraries\/nrc-inl-2020$/);
   await page.getByRole("searchbox", { name: "Search this library" }).fill("Motor-operated valve");
   const table = page.locator(".lib-table");
   // A per-demand record is a model too, with its demands a year (a covariate of the record).
@@ -37,7 +37,7 @@ test("the library's three levels, then a record used as a model", async ({ page,
 
   // A record: the distribution written out and plotted, its source, the two actions.
   await table.getByRole("link", { name: SOP, exact: true }).click();
-  await expect(page).toHaveURL(/\/models\/library\/nrc-inl-2020\/mov-sop$/);
+  await expect(page).toHaveURL(/\/libraries\/nrc-inl-2020\/mov-sop$/);
   await expect(page.getByRole("heading", { name: SOP })).toBeVisible();
   await expect(page.getByRole("heading", { name: "The distribution" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Source and licence" })).toBeVisible();
@@ -49,7 +49,7 @@ test("the library's three levels, then a record used as a model", async ({ page,
 
   // The Models landing lists the library's sources and the record just used.
   await open(page, "/models");
-  const lib = page.getByRole("region", { name: "Library" });
+  const lib = page.getByRole("region", { name: "Libraries" });
   await expect(lib.getByRole("link", { name: NRC })).toBeVisible();
   await expect(lib.getByRole("link", { name: SOP }).first()).toBeVisible();
   await expectHealthy(page, problems, { label: "the data library" });
@@ -59,7 +59,7 @@ test("the library's three levels, then a record used as a model", async ({ page,
 // the gamma on its failure rate, and its page shows the 5–95% range across plants.
 test("a pipe's rate record as a model keeps its gamma across plants", async ({ page, problems }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, "/models/library/nrc-inl-2020/pipe-other-ell");
+  await open(page, "/libraries/nrc-inl-2020/pipe-other-ell");
   await expect(page.getByRole("heading", { name: "Pipe: external leak, large (not service water)" })).toBeVisible();
   await expect(page.locator("body")).toContainText("keeps this gamma on the rate");
   await page.getByRole("button", { name: "Use as a model…" }).first().click();
@@ -191,86 +191,117 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expectHealthy(page, problems, { label: "library models on a position" });
 });
 
-// A library of the user's own (Derryn, 9 Nov 2026: "allow a model to be added to one"): made on the
-// Library page, a saved model added from its ⋯ menu, the record in the pickers and usable as a prior.
-test("build a library: a model added to it, found in the picker, used as a prior", async ({ page, request, problems }) => {
+// A library of the user's own (Derryn, 13 Nov 2026): made on All libraries, a dataset and a model
+// fitted on it added from their ⋯ menus, the model's entry "fitted on ↑" the dataset, used (a copy
+// that says where it came from), shared with a workspace and published.
+test("build a library: data and a model added, used, shared and published", async ({ page, request, problems }) => {
   const tag = `ul${Date.now()}`;
   await page.setViewportSize({ width: 1440, height: 900 });
-  // A saved parametric model to add.
+  // A model from parameters (no data behind it): a first-class entry.
   const model = await postOk(request, "/api/models/from-params", {
     name: `Gearbox ${tag}`, distribution: "weibull", params: [{ name: "alpha", value: 2400 }, { name: "beta", value: 2.1 }], unit: "hours",
   });
 
-  // The Library page: "Yours" above "Published", with New library….
-  await open(page, "/models/library");
-  await expect(page.getByRole("heading", { name: "Yours" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Published" })).toBeVisible();
+  await open(page, "/libraries");
+  await expect(page.getByRole("heading", { name: "All libraries", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "New library…" }).first().click();
   const form = page.getByRole("dialog", { name: "New library" });
   await form.getByLabel("Name").fill(`Site gearboxes ${tag}`);
-  await form.getByLabel("What it holds (one line)").fill("Fitted models for the mill's gearboxes");
-  await form.getByLabel("Notes or licence text").fill("Internal use only.");
+  await form.getByLabel("What it holds (one line)").fill("Models for the mill's gearboxes");
   await form.getByRole("button", { name: "Create the library" }).click();
-  await expect(page).toHaveURL(/\/models\/library\/[0-9a-f]{32}$/);
-  const libraryUrl = page.url();
+  await expect(page).toHaveURL(/\/libraries\/[0-9a-f]+$/);
+  const libraryPath = new URL(page.url()).pathname;
   await expect(page.getByRole("heading", { name: `Site gearboxes ${tag}` })).toBeVisible();
-  await expect(page.locator("body")).toContainText("No records yet");
+  await expect(page.locator("body")).toContainText("Nothing in this library yet");
 
-  // The model's page: ⋯ › Add to a library…, into the library just made.
+  // The model's page: ⋯ › Add to library…, into the library just made.
   await open(page, `/models/m/${model.id}`);
   await page.getByRole("button", { name: "More actions" }).first().click();
-  await page.getByRole("button", { name: "Add to a library…" }).click();
-  const add = page.getByRole("dialog", { name: "Add to a library" });
+  await page.getByRole("button", { name: "Add to library…" }).click();
+  const add = page.getByRole("dialog", { name: "Add to library" });
+  await expect(add).toContainText("keeps a copy as it is now");
   await add.getByRole("combobox", { name: "Library", exact: true }).selectOption({ label: `Site gearboxes ${tag}` });
-  await add.getByLabel("Failure mode").fill("Bearing wear");
-  await add.getByRole("combobox", { name: "Equipment type" }).selectOption("rotating");
   await add.getByRole("button", { name: "Add to the library" }).click();
   await expect(add.getByRole("status")).toContainText("Added");
-  await add.getByRole("link", { name: "Open the record" }).click();
-  await expect(page).toHaveURL(/\/models\/library\/[0-9a-f]{32}\/[0-9a-f]{32}$/);
-  await expect(page.getByRole("heading", { name: `Gearbox ${tag}: Bearing wear` })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Source and licence" })).toBeVisible();
-  await expect(page.locator("body")).toContainText("Internal use only.");
-  await expect(page.getByRole("link", { name: `Gearbox ${tag}` })).toBeVisible(); // From the model …
-  await expect(page.getByRole("button", { name: "Remove from library" })).toBeVisible();
+  await add.getByRole("link", { name: "Open the entry" }).click();
+  await expect(page).toHaveURL(new RegExp(`${libraryPath}#entry-`));
+  const entry = page.locator(".lib-entry", { hasText: `Gearbox ${tag}` });
+  await expect(entry).toContainText("From parameters");
+  await expect(entry.getByRole("button", { name: "Update from the original" })).toBeVisible();
 
-  // The library's table has the record as a life model; the Models landing lists the library under Yours.
-  await open(page, libraryUrl.replace(/^https?:\/\/[^/]+/, ""));
-  await expect(page.locator(".lib-table tr", { hasText: "Bearing wear" })).toHaveCount(1);
-  await expect(page.locator(".lib-table")).toContainText("Life model");
-  await open(page, "/models");
-  const lib = page.getByRole("region", { name: "Library" });
-  await expect(lib.getByRole("heading", { name: "Yours" })).toBeVisible();
-  await expect(lib.getByRole("link", { name: `Site gearboxes ${tag}` })).toBeVisible();
+  // Use this model: a copy, which says where it came from.
+  await entry.getByRole("button", { name: "Use this model" }).click();
+  await expect(entry.getByRole("status")).toContainText("Copied to your workspace");
+  await entry.getByRole("status").getByRole("link").first().click();
+  await expect(page).toHaveURL(/\/models\/m\//);
+  await expect(page.locator(".from-library")).toContainText(`Site gearboxes ${tag}`);
 
-  // In the Explorer's fit pane, the library is in the picker's dropdown (first) and the record is a prior.
-  const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
-  const box = await postOk(request, `${M}/positions`, { name: `Gearbox position ${tag}` });
-  await postOk(request, `${M}/positions/${box.id}/fit`, { new_item: { name: `G1 ${tag}` }, on: ago(900) });
-  await postOk(request, `${M}/positions/${box.id}/remove`, { on: ago(300), reason: "failure" });
-  await postOk(request, `${M}/positions/${box.id}/fit`, { new_item: { name: `G2 ${tag}` }, on: ago(300) });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${box.id}&tab=models`);
-  await headPick(page, "Life model", "Fit a life model…");
-  const fit = page.getByRole("region", { name: "Fit a life model" });
-  await fit.getByRole("radio", { name: "With a prior" }).click();
-  await fit.getByRole("combobox", { name: "Prior", exact: true }).selectOption("library");
-  const picker = page.getByRole("dialog", { name: "Pick a library record" });
-  const dropdown = picker.getByRole("combobox", { name: "Library", exact: true });
-  await expect(dropdown.locator("option").first()).toHaveText(`Site gearboxes ${tag} (yours)`);
-  await dropdown.selectOption({ label: `Site gearboxes ${tag} (yours)` });
-  await picker.getByRole("listbox").getByRole("option", { name: new RegExp(`Gearbox ${tag}: Bearing wear`) }).click();
-  await expect(picker).toHaveCount(0);
-  await expect(fit.getByRole("group", { name: "The library record" })).toContainText(`Gearbox ${tag}: Bearing wear · mean life`);
-  await expect(fit.getByRole("status")).toContainText("The record's Weibull is the prior", { timeout: 60_000 });
-  const fitted = page.waitForResponse((r) => r.url().includes(`${M}/positions/${box.id}/models`) && r.request().method() === "POST",
-    { timeout: 60_000 });
-  await fit.getByRole("button", { name: "Save as this position's model" }).click();
-  expect((await fitted).status()).toBe(200);
-  await expect(fit).toHaveCount(0);
-  // Life model › Add to a library… is on now that the position has a life model.
-  await headMenu(page);
-  await page.getByRole("menuitem", { name: "Life model", exact: true }).click();
-  await expect(page.getByRole("menu", { name: "Life model" }).getByRole("menuitem", { name: "Add to a library…" })).toBeEnabled();
-  await page.keyboard.press("Escape");
+  // Sharing…: public needs a licence, a citation and the right to publish.
+  await open(page, libraryPath);
+  await page.getByRole("button", { name: "Sharing…" }).click();
+  const panel = page.getByRole("region", { name: "Sharing" });
+  await panel.getByRole("radio", { name: /^Public/ }).check();
+  await panel.getByRole("button", { name: "Save" }).click();
+  await expect(panel.getByRole("alert")).toContainText("Choose a licence");
+  await panel.getByLabel("Licence").selectOption({ index: 1 });
+  await panel.getByLabel("Citation").fill(`Mill gearbox records ${tag}`);
+  await panel.getByRole("checkbox", { name: "I have the right to publish this" }).check();
+  await panel.getByRole("button", { name: "Save" }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Preview as public" })).toBeVisible();
+  await page.getByRole("link", { name: "Preview as public" }).click();
+  await expect(page.locator(".share-bar")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign in to use" }).first()).toBeVisible();
+  await page.setViewportSize({ width: 400, height: 860 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "a library of the user's own" });
+});
+
+// Bulk import into a library (Derryn, 13 Nov 2026): New dataset's "Also add to library", split by a
+// column, puts every dataset it makes into the library; and a library's own Add… › Upload data….
+test("an upload split into datasets goes into a library, from Data and from the library", async ({ page, request, problems }) => {
+  const tag = `${Date.now()}`;
+  const sheet = ["Unit,Site,Hours,Failed", ...["North", "South", "East"].flatMap((site, k) => [1, 2, 3].map((i) =>
+    `${site[0]}-${i},${site},${100 * (k + 1) + 37 * i + Number(tag.slice(-3))},${i % 2}`))].join("\n") + "\n";
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, "/data");
+  await page.getByRole("button", { name: "New dataset" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('input[type="file"]').setInputFiles({ name: `sites ${tag}.csv`, mimeType: "text/csv", buffer: Buffer.from(sheet) });
+  await dialog.getByRole("combobox", { name: "Split into datasets by" }).click();
+  await page.getByRole("option", { name: "Site", exact: true }).click();
+  const choose = dialog.getByRole("combobox", { name: "Also add to library" });
+  await choose.selectOption("new");
+  await dialog.getByRole("textbox", { name: "New library's name" }).fill(`Sites ${tag}`);
+  await dialog.getByRole("button", { name: "Save 3 datasets" }).click();
+  const saved = dialog.getByRole("region", { name: "Saved datasets" });
+  await expect(saved.getByText("Saved 3 datasets:")).toBeVisible({ timeout: 30_000 });
+  await expect(saved.getByRole("status").filter({ hasText: "Added all 3 to" })).toBeVisible();
+  await saved.getByRole("link", { name: `Sites ${tag}` }).click();
+  await expect(page).toHaveURL(/\/libraries\/[0-9a-f]{32}$/);
+  await expect(page.getByText("3 datasets · 0 models").first()).toBeVisible();
+  await expectHealthy(page, problems, { label: "a library filled by a split upload" });
+
+  // From the library: Add… › Upload data…, this library chosen; back on the page with the new entry.
+  await page.getByRole("button", { name: "Add…" }).click();
+  await page.getByRole("menuitem", { name: "Upload data…" }).click();
+  const up = page.getByRole("dialog");
+  await expect(up.getByRole("heading", { name: `Upload data to Sites ${tag}` })).toBeVisible();
+  await up.locator('input[type="file"]').setInputFiles({
+    name: `west ${tag}.csv`, mimeType: "text/csv",
+    buffer: Buffer.from(`Hours,Failed\n${410 + Number(tag.slice(-3))},1\n620,0\n900,1\n1050,0\n`),
+  });
+  await expect(up.getByRole("combobox", { name: "Also add to library" })).toHaveValue(/[0-9a-f]{32}/);
+  await up.getByRole("button", { name: "Create dataset" }).click();
+  await expect(up).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByRole("status").filter({ hasText: "Added it to" })).toBeVisible();
+  await expect(page.getByText("4 datasets · 0 models").first()).toBeVisible();
+  await expect(page.getByText(`west ${tag}`)).toBeVisible();
+  // On a phone: opened at 400 px, nothing scrolls sideways.
+  const here = new URL(page.url()).pathname;
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, here);
+  await expect(page.getByText("4 datasets · 0 models").first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await expectHealthy(page, problems, { label: "a library after Upload data…" });
 });

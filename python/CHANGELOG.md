@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.0 (13 Nov 2026)
+
+Needs a server on the same release.
+
+- **Libraries of datasets and models**, shareable and public: `change
+  library_add` (`library_id`, `dataset_id` or `model_id`, `model_collection`)
+  replaces `library_add_model`, and `change library_remove` (`entry_id`)
+  replaces `library_remove_record`. New `change library_use` copies an entry
+  into your workspace. `change library_update` also sets `visibility`
+  (`private`, `workspaces`, `public`) with `workspaces`, `licence`, `source`,
+  `citation` and `rights_confirmed`. `list kind libraries` lists every library
+  you can see (`scope`), and `get kind library` takes `entry_id`.
+- **Upload into a library**: `change dataset_upload` (and `reliafy upload`)
+  takes `library_id`: every dataset made, each part of a split too, is added
+  to that library as a snapshot, all or nothing.
+
 ## 0.7.0 (14 Nov 2026)
 
 Needs a server on this release.

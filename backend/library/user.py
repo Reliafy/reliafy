@@ -249,13 +249,16 @@ def add_model(db, library_id: str, owner_id: str, model, label=None, equipment_t
     words = why_not_model(model)
     if words:
         raise LibraryError(words)
-    if db[RECORDS].count_documents({"library_id": lib["_id"]}) >= MAX_RECORDS:
-        raise LibraryError(f"“{lib['name']}” already holds {MAX_RECORDS} records, the most a library takes.")
-    rec = snapshot(model, label or model.name, equipment_type or "other", failure_mode or "", notes or "",
-                   lib["_id"], owner_id)
-    db[RECORDS].insert_one(dict(rec))
-    db[COLLECTION].update_one({"_id": lib["_id"]}, {"$set": {"updated_at": _now()}})
-    return record_doc(db[RECORDS].find_one({"_id": rec["_id"]}) or rec)
+    from backend.library import entries
+
+    mdoc = db.models.find_one({"_id": model.id})
+    if mdoc is None:
+        raise LibraryNotFound(model.id)
+    # A whole-model snapshot too (backend.library.entries), so the entry can be copied ("Use this model").
+    doc = entries.add_model(db, lib, "models", mdoc, [owner_id, model.owner_id], label=label,
+                            equipment_type=equipment_type or "other", failure_mode=failure_mode or "",
+                            notes=notes or "", unique=False)
+    return record_doc(doc)
 
 
 def remove_record(db, record_id: str, owner_id: str) -> dict:
@@ -268,15 +271,23 @@ def remove_record(db, record_id: str, owner_id: str) -> dict:
     return {"removed": True, "record_id": doc["_id"], "library_id": doc["library_id"]}
 
 
+#: An entry's snapshot and bookkeeping (backend.library.entries): not part of the record shape.
+_NOT_IN_RECORD = {"_id", "data", "snapshot", "origin", "entry_type", "entry_name", "entry_source", "headline",
+                  "basis_text", "tags"}
+#: Only life-model records join the published sources' search and record reads.
+LIFE_ONLY = {"kind": "life"}
+
+
 def record_doc(doc: dict) -> dict:
     """A stored record as the library's record shape (no Mongo id, dates as text)."""
-    out = {k: v for k, v in doc.items() if k != "_id"}
+    out = {k: v for k, v in doc.items() if k not in _NOT_IN_RECORD}
     out["created_at"] = _iso(out.get("created_at"))
+    out.pop("updated_at", None)
     return out
 
 
 def records_of(db, library_id: str) -> list[dict]:
-    return [record_doc(d) for d in db[RECORDS].find({"library_id": library_id}).sort("created_at", -1)]
+    return [record_doc(d) for d in db[RECORDS].find({"library_id": library_id, **LIFE_ONLY}).sort("created_at", -1)]
 
 
 # ---- merged beside the published sources ----------------------------------------------------
@@ -307,7 +318,7 @@ def mine(db, owners, hidden=frozenset(), can_write=None) -> dict[str, Any]:
     if not libs:
         return {"sources": {}, "records": []}
     by_lib: dict[str, list[dict]] = {d["_id"]: [] for d in libs}
-    for d in db[RECORDS].find({"library_id": {"$in": list(by_lib)}}).sort("created_at", -1):
+    for d in db[RECORDS].find({"library_id": {"$in": list(by_lib)}, **LIFE_ONLY}).sort("created_at", -1):
         by_lib[d["library_id"]].append(record_doc(d))
     sources = {}
     records: list[dict] = []

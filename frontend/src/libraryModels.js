@@ -1,13 +1,13 @@
-// The reliability data library under Models (Derryn, 9 Nov 2026: "the records are published rates
-// and distributions, so models with their uncertainty, not datasets"), three levels: the
-// libraries (/models/library), one library's records (/models/library/:source) and one record
-// (/models/library/:source/:record). Records are used as a model (a rate per hour → an exponential
+// The built-in handbooks under Libraries (Derryn, 9 Nov 2026: "the records are published rates
+// and distributions, so models with their uncertainty, not datasets"; moved from Models to
+// Libraries 13 Nov 2026), three levels: the libraries (/libraries), one handbook's records
+// (/libraries/:source) and one record (/libraries/:source/:record). Records are used as a model (a rate per hour → an exponential
 // with the source's 5–95% range; a life record → a model of its own family) or as a prior in a fit.
 // A user's own libraries (Derryn, 9 Nov 2026: "allow a model to be added to one") sit beside the
 // published sources with the same pages: their records are snapshots of saved life models (kind
 // "life"). The words and the arithmetic for the pages.
 
-export const LIBRARY_PATH = "/models/library";
+export const LIBRARY_PATH = "/libraries";
 export const sourcePath = (source) => `${LIBRARY_PATH}/${encodeURIComponent(source)}`;
 // A record's id is "source:code" (nrc-inl-2020:mov-fto).
 export function recordPath(recordId) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AddedToLibrary } from "../components/DatasetSplit.jsx";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { getDataset, deleteDataset, removeMeasurements, renameDataset, splitDataset } from "../api.js";
@@ -17,6 +18,8 @@ import "../components/Datasets.css";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
+import FromLibrary from "../components/FromLibrary.jsx";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
@@ -43,9 +46,12 @@ export default function DatasetPage() {
   const [busy, setBusy] = useState(null); // "split" | "remove"
   const [partModal, setPartModal] = useState(null); // { part, replacing }
   const [keepOne, setKeepOne] = useState(false);
+  const [adding, setAdding] = useState(false);
   // Creating a dataset whose data you already had opens that one: say so,
   // and offer the name you just typed (location state from the New flow).
   const [reused, setReused] = useState(() => (location.state?.reused ? location.state : null));
+  // New dataset's "Also add to library": which library it went into (this visit only).
+  const [addedTo] = useState(() => location.state?.library || null);
   // ?compare=<column> opens "Compare groups" split by that column (the MCP
   // analyse compare_groups action links here); ?part= picks the tab.
   const [params, setParams] = useSearchParams();
@@ -69,7 +75,7 @@ export default function DatasetPage() {
 
   // The notice is for this visit only, not a reload.
   useEffect(() => {
-    if (location.state?.reused) window.history.replaceState({}, "");
+    if (location.state?.reused || location.state?.library) window.history.replaceState({}, "");
   }, [location.state]);
 
   const confirm = useConfirm();
@@ -130,6 +136,9 @@ export default function DatasetPage() {
   return (
     <div className="app">
       <PageTitle name={ds && itemName(ds)} />
+      {adding && ds && (
+        <AddToLibraryDialog datasetId={ds.id} datasetName={itemName(ds)} onClose={() => setAdding(false)} />
+      )}
       <PageHeader
         crumbs={[{ label: "Data", to: "/data" }]}
         title={ds ? itemName(ds) : "Dataset"}
@@ -178,6 +187,7 @@ export default function DatasetPage() {
             {writable && parts.readingsOnly && (
               <button className="ovm-item" onClick={() => setPartModal({ part: "life", replacing: false })}>Add life data</button>
             )}
+            <button className="ovm-item" onClick={() => setAdding(true)}>Add to library…</button>
             <ShareButton
               collection="datasets"
               artifactId={ds.id}
@@ -191,6 +201,8 @@ export default function DatasetPage() {
           </>
         )}
       >
+        {ds?.from_library && <FromLibrary from={ds.from_library} />}
+        {addedTo && <AddedToLibrary library={addedTo} />}
         {reused && ds && (
           <p className="ds-reused" role="status">
             You already had this data, so it opened here.

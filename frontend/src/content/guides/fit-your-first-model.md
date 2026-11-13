@@ -296,8 +296,8 @@ reads them in detail.
 
 ## No data yet: a model from the data library
 
-The reliability data library has moved from Data to **Models › Library**
-([open it](/models/library)). It holds published failure data, each record
+The reliability data library's handbooks are under **Libraries**
+([open it](/libraries)), marked **Built-in**. They hold published failure data, each record
 cited: industry-average failure rates and probabilities on demand (NRC/INL
 2020, from U.S. nuclear plants) and handbook base rates for electronic parts.
 Open a source to filter its records by equipment type, failure mode and kind,
@@ -331,31 +331,13 @@ mode's share, and the constant rate an RBD block would use.
 
 ## Build your own library
 
-A model you fit is in no library until you put it there. Open a saved
-non-repairable model and choose **Add to a library…** from its ⋯ menu (or,
-in the Explorer's Modelling tab, **Life model › Add to a library…** for a
-position's life model). Pick one of your libraries or make a new one there
-(a name and one line on what it holds), then give the record a label (the
-model's name to start with), its equipment type, the failure mode it's for
-and any notes; the time unit comes from the model.
-
-Adding takes a snapshot: the distribution, its parameters with their bounds,
-the unit, how many units were observed and how the model was fitted. The
-record links back to the model, but a later refit doesn't change the record,
-so a library stays what you reviewed. Your libraries show first under
-**Yours** on the [Library page](/models/library), with **New library…**,
-and in the library pickers; a library's page has **Edit…** and **Delete…**
-(deleting a library never deletes the models), and a record's page has
-**Remove from library**. A library's notes or licence text shows with every
-record in it.
-
-A record of yours works like a published one: **Use as a model…** saves a
-model of the same family with the record's parameters and bounds, and **Use
-as a prior…** (or **A library record** in the Fit dialog) fits your data in
-the record's family with each parameter about the record's value, between
-its bounds (within about 30% when the record has none, and the result says
-so). One library counts as one saved item on the Free plan, however many
-records it holds.
+A model you fit is in no library until you put it there. Open a saved model
+and choose **Add to library…** from its ⋯ menu (or, in the Explorer's
+Modelling tab, **Life model › Add to library…** for a position's life model).
+The library keeps a copy as it is now; a later refit doesn't change it. You can
+share a library with other workspaces or publish it: the
+[Build and share a library](/guides/build-and-share-a-library) guide covers
+it all.
 
 ## Run it yourself in Python
 

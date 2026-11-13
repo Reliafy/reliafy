@@ -19,7 +19,7 @@ Every part type in a handbook has a **base failure rate** (λb): failures per
 million hours for a ceramic capacitor, a film resistor, a rectangular connector,
 a MOSFET. Reliafy's reliability data library carries these rates from
 MIL-HDBK-217F, the U.S. military's prediction handbook, each one cited (browse
-them under [Models › Library](/models/library)).
+them under [Libraries](/libraries)).
 
 For microcircuits (logic, microprocessors, memories, GaAs devices), motors,
 synchros and resolvers, circuit boards, quartz crystals, lamps and laser
@@ -86,7 +86,7 @@ handbook, under its own heading:
   and the result says so.
 - The result's method names the lines that used each handbook. CDNSWC and the
   Navy did not take part in or approve Reliafy, and the result says so. See
-  each part's model in words under [Models › Library](/models/library/nswc-11).
+  each part's model in words under [Libraries](/libraries/nswc-11).
 - Tick **Not electronic** on a part neither handbook has (an airframe). It's
   left out of the total, and the result lists what was left out.
 - For a part the handbook doesn't have, such as a battery, choose **Give a rate

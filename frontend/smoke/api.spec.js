@@ -9,6 +9,8 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  // Libraries: making one (reads are public, so only the writes need a sign-in).
+  ["POST", "/api/libraries"],
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
   // The asset tree in a spreadsheet, both ways (the Explorer's Import from Excel and Export).
   ["GET", "/api/maintenance/hierarchy/export"],

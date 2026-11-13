@@ -38,11 +38,11 @@ async function pickRecord(page, words, label) {
 
 test("a component: a standby pump's failure modes together, and its chance of failing over a period", async ({ page, problems }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, "/models/library/nrc-inl-2020");
+  await open(page, "/libraries/nrc-inl-2020");
   await page.getByRole("button", { name: "By component" }).click();
   await page.getByRole("searchbox", { name: "Search the components" }).fill("motor-driven pump");
   await page.getByRole("link", { name: PUMP, exact: true }).click();
-  await expect(page).toHaveURL(/\/models\/library\/nrc-inl-2020\/components\/motor-driven-pump-normally-standby$/);
+  await expect(page).toHaveURL(/\/libraries\/nrc-inl-2020\/components\/motor-driven-pump-normally-standby$/);
   await expect(page.getByRole("heading", { name: PUMP })).toBeVisible();
   await expect(page.getByRole("heading", { name: "How its modes combine" })).toBeVisible();
   const modes = page.locator(".lib-table tbody tr");
