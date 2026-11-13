@@ -343,3 +343,20 @@ def test_the_free_cap_over_mcp_and_rest(env, monkeypatch):  # noqa: F811
     assert r.status_code >= 400 and "limit of 1 saved librar" in r.text
     r = client.post("/api/v1/list/libraries", json={}, headers=headers)
     assert r.status_code == 200 and [x["name"] for x in r.json()["libraries"] if not x["builtin"]] == ["One"]
+
+
+def test_dataset_upload_into_a_library_over_mcp(env):  # noqa: F811
+    pro = env.oauth[PRO]
+    lid = _ok(_call(pro, "change", {"action": "library_create", "args": {"name": "Sites"}}))["library_id"]
+    csv = "site,time,c\nA,10,0\nA,20,1\nB,30,0\nB,40,0"
+    out = _ok(_call(pro, "change", {"action": "dataset_upload", "args": {
+        "name": "Sites", "csv": csv, "dataset_col": "site", "x_col": "time", "c_col": "c", "library_id": lid}}))
+    assert len(out["datasets"]) == 2 and len(out["library"]["added"]) == 2
+    assert out["library"]["url"].endswith(f"/libraries/{lid}")
+    got = _ok(_call(pro, "get", {"kind": "library", "args": {"id": lid}}))
+    assert [e["type"] for e in got["entries"]] == ["data", "data"]
+    # Someone else's library: refused before anything is saved.
+    before = env.db.datasets.count_documents({"owner_id": FREE})
+    msg = _err(_call(env.oauth[FREE], "change", {"action": "dataset_upload", "args": {
+        "name": "X", "csv": csv, "library_id": lid}}))
+    assert "Library not found" in msg and env.db.datasets.count_documents({"owner_id": FREE}) == before

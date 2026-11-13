@@ -6,7 +6,7 @@ import {
 } from "../api.js";
 import { ErrorNotice } from "./StorageCap.jsx";
 import { isCapRefusal } from "../plan.js";
-import { entryPath, libraryPath } from "../libraries.js";
+import { entryPath, libraryChoiceReady, libraryPath } from "../libraries.js";
 import CovariateCalculator from "./CovariateCalculator.jsx";
 import { covariatesToSave, missingInputs } from "../covariate.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
@@ -365,3 +365,46 @@ export function AddToLibraryDialog({ modelId = null, modelName = "", collection 
     </Modal>
   );
 }
+
+// New dataset's "Also add to library": none (the default), one of your libraries, or New library… (named
+// here, made when the data is saved: resolveLibraryChoice). ``value``: {libraryId, newName}.
+export function LibraryChoice({ value, onChange, disabled = false }) {
+  const [libs, setLibs] = useState(null);
+  useEffect(() => {
+    let live = true;
+    listLibraries().then((d) => {
+      if (live) setLibs((d.libraries || []).filter((l) => l.relation === "yours" && l.can_edit && !l.builtin));
+    }, () => live && setLibs([]));
+    return () => { live = false; };
+  }, []);
+  const id = value?.libraryId || "";
+  // A library chosen before the list arrives (the library page's Upload data…) is kept and named once it does.
+  const known = (libs || []).some((l) => l.id === id);
+  return (
+    <section className="ds-library" aria-label="Also add to a library">
+      <Field label="Also add to library" optional help="The library keeps a copy of each dataset as it is now.">
+        <Select aria-label="Also add to library" value={id} disabled={disabled}
+                onChange={(e) => onChange({ ...value, libraryId: e.target.value })}>
+          <option value="">No library</option>
+          {id && id !== "new" && !known && <option value={id}>{libs === null ? "Loading…" : "This library"}</option>}
+          {(libs || []).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          <option value="new">New library…</option>
+        </Select>
+      </Field>
+      {id === "new" && (
+        <TextInput aria-label="New library's name" placeholder="Library name" value={value?.newName || ""} maxLength={120}
+                   disabled={disabled} onChange={(e) => onChange({ ...value, newName: e.target.value })} />
+      )}
+    </section>
+  );
+}
+
+// The library id to upload into for a LibraryChoice value: none, the one chosen, or a new library made now.
+export async function resolveLibraryChoice(value) {
+  const id = value?.libraryId || "";
+  if (id !== "new") return id || null;
+  const lib = await createLibrary({ name: (value.newName || "").trim() });
+  return lib.id;
+}
+
+export { libraryChoiceReady };

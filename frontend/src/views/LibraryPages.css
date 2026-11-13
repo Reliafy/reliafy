@@ -69,3 +69,12 @@
 .lib-builtin-links { margin: 0 0 10px; }
 .lib-preview-note { margin: 0; }
 .lib-quiet { margin: 0; color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
+
+/* The library page's Add… menu (Upload data…, and where to add something already saved). */
+.lib-add { position: relative; display: inline-flex; }
+.lib-add .ds-menu { left: 0; right: auto; min-width: 240px; max-width: min(320px, calc(100vw - 32px)); }
+.lib-add .ds-menu-h { white-space: normal; }
+.lib-add .lib-add-link { display: block; padding: 7px 18px; font-size: 13px; border-radius: 6px; }
+.lib-add .lib-add-link:hover, .lib-add .lib-add-link:focus { background: var(--surf-2); }
+.ds-added-lib { margin: 0 0 12px; font-size: 14px; }
+.ds-library { display: flex; flex-direction: column; gap: 6px; }

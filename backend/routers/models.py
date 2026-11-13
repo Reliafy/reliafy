@@ -268,6 +268,44 @@ def _table_from_paste(content: str, no_header: bool | None):
     return csv_bytes, guess, (HEADER_HINT if apply and no_header is None else None)
 
 
+def _upload_library(session, ctx: AccessCtx, library_id: str | None):
+    """The library an upload also adds its datasets to (None without one), or the response saying why not:
+    checked before anything is saved."""
+    from backend.library import entries as lib_entries
+
+    if not (library_id or "").strip():
+        return None
+    try:
+        return lib_entries.upload_target(session, library_id.strip(), ctx.write_owner)
+    except lib_entries.LibraryNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Library not found."})
+    except lib_entries.NotAllowed:
+        return JSONResponse(status_code=403, content={
+            "detail": "Only the library's owner can add to it. Choose one of your own libraries."})
+
+
+def _into_library(session, ctx: AccessCtx, lib: dict | None, made: list) -> dict | JSONResponse | None:
+    """Add what an upload made (``[(dataset, reused), ...]``) to ``lib`` as snapshots, all or nothing: when
+    that fails, the datasets the upload created are deleted again and the answer says why."""
+    from backend.library import entries as lib_entries
+
+    if lib is None:
+        return None
+    try:
+        out = lib_entries.add_uploaded(session, lib, [d for d, _ in made], ctx.read_owners, ctx.hidden)
+        access_service.stamp_editor(session, lib_entries.COLLECTION, lib["_id"], ctx)
+        return out
+    except Exception as exc:  # noqa: BLE001 - undo the upload, then say why
+        fresh = [d.id for d, reused in made if not reused]
+        if fresh:
+            session.datasets.delete_many({"_id": {"$in": fresh}, "owner_id": ctx.write_owner})
+        if isinstance(exc, lib_entries.LibraryError):
+            return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        logger.exception("Failed to add an upload to a library")
+        return JSONResponse(status_code=500, content={
+            "detail": "The data couldn't be added to the library, so nothing was saved. The error has been logged."})
+
+
 @router.post("/datasets")
 def upload_dataset(
     file: UploadFile = File(...),
@@ -277,10 +315,15 @@ def upload_dataset(
     header_row: str | None = Form(default=None),
     dataset_col: str | None = Form(default=None),
     reading: str | None = Form(default=None),
+    library_id: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Store an uploaded CSV as a standalone dataset (no fit required).
+
+    ``library_id``: also add every dataset made (one, or each part of a
+    split) to that library of the caller's as a snapshot, all or nothing;
+    the answer's ``library`` says what was added.
 
     ``reading``: how its columns are read for modelling, as JSON
     (dataset_reading: x, c, n, xl, xr, tl, tr, i, m, e, c_invert, c_map,
@@ -310,9 +353,12 @@ def upload_dataset(
     chosen = _reading_form(reading)
     if isinstance(chosen, JSONResponse):
         return chosen
+    lib = _upload_library(session, ctx, library_id)
+    if isinstance(lib, JSONResponse):
+        return lib
     if (dataset_col or "").strip():
         return _split_upload(session, ctx, contents, dataset_col, (name or "").strip()
-                             or datasets_service.default_name(file.filename), chosen)
+                             or datasets_service.default_name(file.filename), chosen, lib)
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:
@@ -331,7 +377,11 @@ def upload_dataset(
         return JSONResponse(
             status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."}
         )
-    return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
+    added = _into_library(session, ctx, lib, [(dataset, reused)])
+    if isinstance(added, JSONResponse):
+        return added
+    return JSONResponse(content={**_created(dataset, reused, session, ctx, guess, hint),
+                                 **({"library": added} if added else {})})
 
 
 def _table_preview(read) -> JSONResponse:
@@ -383,16 +433,20 @@ def paste_dataset(
     content: str = Body(default=""),
     no_header: bool | None = Body(default=None),
     reading: dict | None = Body(default=None),
+    library_id: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Create a dataset from pasted tabular text (CSV or TSV). Used by the
     paste-data form and the assistant. ``no_header`` and the response's
-    ``header_guess`` / ``hint`` are as for an upload; ``reading`` as for an
-    upload (an object here)."""
+    ``header_guess`` / ``hint`` are as for an upload; ``reading`` and
+    ``library_id`` as for an upload (``reading`` an object here)."""
     read = _table_from_paste(content, no_header)
     if isinstance(read, JSONResponse):
         return read
+    lib = _upload_library(session, ctx, library_id)
+    if isinstance(lib, JSONResponse):
+        return lib
     csv_bytes, guess, hint = read
     # Free-plan cap (skipped when the identical data already exists).
     denied = _creation_denied(session, ctx, "datasets")
@@ -409,7 +463,11 @@ def paste_dataset(
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store pasted dataset")
         return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
-    return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
+    added = _into_library(session, ctx, lib, [(dataset, reused)])
+    if isinstance(added, JSONResponse):
+        return added
+    return JSONResponse(content={**_created(dataset, reused, session, ctx, guess, hint),
+                                 **({"library": added} if added else {})})
 
 
 def _reading_form(raw: str | None):
@@ -428,7 +486,7 @@ def _reading_form(raw: str | None):
 
 
 def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source: str,
-                  reading: dict | None = None) -> JSONResponse:
+                  reading: dict | None = None, lib: dict | None = None) -> JSONResponse:
     """One dataset per value of ``column`` (datasets_service.create_split),
     after checking the plan has room for every new one: past the cap nothing
     is saved and the refusal says how many fit. Answers ``{datasets: [{id,
@@ -450,10 +508,14 @@ def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source:
                                                     reading=reading)
     except (FitError, dataset_reading.ReadingError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    added = _into_library(session, ctx, lib, made)
+    if isinstance(added, JSONResponse):
+        return added
     return JSONResponse(content={
         "datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, **({"reused": True} if reused else {})}
                      for d, reused in made],
         "left_out": blank,
+        **({"library": added} if added else {}),
     })
 
 

@@ -4,6 +4,7 @@ import Select from "./Select.jsx";
 import { ErrorNotice } from "./StorageCap.jsx";
 import { getBilling, listDatasets } from "../api.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
+import { addedToLibraryWords } from "../libraries.js";
 import { blankWarning, readSheet, splitPlan, splitRoom } from "../datasetSplit.js";
 
 // The Data section's upload (New dataset): "Split into datasets by [column]",
@@ -132,8 +133,19 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
         Open one to fit a model to it.
         {saved.left_out ? ` ${blankWarning(saved.left_out, column)}.` : ""}
       </p>
+      {saved.library && <AddedToLibrary library={saved.library} />}
     </section>
   ) : null;
 
   return { offered, active, column, setColumn, picker, summary, savedList, saved, canSave, saveLabel, waitingFor, save, saving };
+}
+
+// After an upload that also went into a library: "Added to <library>", linked, with any already in it.
+export function AddedToLibrary({ library }) {
+  const { lead, tail } = addedToLibraryWords(library);
+  return (
+    <p className="ds-added-lib" role="status">
+      {lead} <Link to={library.url || `/libraries/${library.id}`}>{library.name}</Link>.{tail}
+    </p>
+  );
 }

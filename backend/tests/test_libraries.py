@@ -344,3 +344,80 @@ def test_spa_root_and_signed_in_routes():
     from backend.main import SPA_ROOTS, is_spa_route
 
     assert "libraries" in SPA_ROOTS and is_spa_route("libraries/abc")
+
+
+# ---- uploads straight into a library -----------------------------------------------------------
+
+SITES = "site,time,c\n" + "\n".join(f"{s},{t},{k}" for s, t, k in [
+    ("North", 120, 0), ("North", 340, 0), ("North", 510, 1), ("South", 700, 0), ("South", 980, 0),
+    ("South", 1200, 1), ("East", 1500, 0), ("East", 1700, 0), ("East", 800, 1)])
+
+
+def _upload(web, csv, **form):
+    return web.post("/api/datasets", files={"file": ("sites.csv", csv.encode(), "text/csv")}, data=form)
+
+
+def test_an_upload_split_into_datasets_goes_into_a_library_too(web):
+    lid = _library(web)["id"]
+    r = _upload(web, SITES, name="Pump sites", dataset_col="site", library_id=lid)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert len(out["datasets"]) == 3
+    assert out["library"]["id"] == lid and out["library"]["url"] == f"/libraries/{lid}"
+    assert len(out["library"]["added"]) == 3 and out["library"]["already"] == []
+    lib = web.get(f"/api/libraries/{lid}").json()
+    assert lib["counts"] == {"data": 3, "model": 0, "total": 3}
+    # Each entry is its own dataset's snapshot (the split column left out of each), never merged.
+    assert sorted(e["name"] for e in lib["entries"]) == sorted(d["name"] for d in out["datasets"])
+    assert all(e["data"]["columns"] == ["time", "c"] and e["data"]["n_rows"] == 3 for e in lib["entries"])
+    # The same file again: the datasets come back as they are, already in the library, nothing doubled.
+    again = _upload(web, SITES, name="Pump sites", dataset_col="site", library_id=lid).json()
+    assert sorted(again["library"]["already"]) == sorted(d["name"] for d in out["datasets"])
+    assert web.get(f"/api/libraries/{lid}").json()["counts"]["data"] == 3
+
+    # One file, no split; and a paste.
+    one = _upload(web, CSV, name="Bearings", library_id=lid).json()
+    assert one["name"] == "Bearings" and len(one["library"]["added"]) == 1
+    pasted = web.post("/api/datasets/paste", json={"name": "Seals", "content": CSV.replace("120,0", "125,0"),
+                                                    "library_id": lid})
+    assert pasted.status_code == 200 and len(pasted.json()["library"]["added"]) == 1
+    assert web.get(f"/api/libraries/{lid}").json()["counts"]["data"] == 5
+
+
+def test_an_upload_into_someone_elses_library_saves_nothing(web):
+    lid = _library(web)["id"]
+    _make_public(web, lid)
+    web.who["uid"] = OTHER
+    before = web.db.datasets.count_documents({"owner_id": OTHER})
+    r = _upload(web, SITES, name="Theirs", dataset_col="site", library_id=lid)
+    assert r.status_code == 403 and "owner" in r.json()["detail"]
+    r = _upload(web, CSV, name="Theirs", library_id="no-such-library")
+    assert r.status_code == 404
+    assert web.db.datasets.count_documents({"owner_id": OTHER}) == before
+    assert web.db.library_records.count_documents({"library_id": lid}) == 0
+
+
+def test_an_upload_into_a_library_is_all_or_nothing(web, monkeypatch):
+    from backend.library import entries
+
+    lid = _library(web)["id"]
+    monkeypatch.setattr(entries, "MAX_ENTRIES", 2)
+    before = web.db.datasets.count_documents({"owner_id": PRO})
+    r = _upload(web, SITES, name="Too many", dataset_col="site", library_id=lid)
+    assert r.status_code == 422 and "room for 2 more" in r.json()["detail"] and "nothing was saved" in r.json()["detail"]
+    assert web.db.datasets.count_documents({"owner_id": PRO}) == before
+    assert web.db.library_records.count_documents({"library_id": lid}) == 0
+
+
+def test_an_upload_into_a_library_keeps_the_free_cap(web):
+    web.who["uid"] = FREE
+    lid = _library(web, "One")["id"]
+    _dataset(web)  # 1 of the 3 free datasets
+    r = _upload(web, SITES, name="Sites", dataset_col="site", library_id=lid)
+    assert r.status_code == 402 and r.json()["code"] == "cap"
+    assert web.db.library_records.count_documents({"library_id": lid}) == 0
+    # What fits goes in: two parts.
+    two = "\n".join(line for line in SITES.splitlines() if not line.startswith("East"))
+    r = _upload(web, two, name="Sites", dataset_col="site", library_id=lid)
+    assert r.status_code == 200, r.text
+    assert len(r.json()["library"]["added"]) == 2

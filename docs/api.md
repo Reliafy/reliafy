@@ -742,6 +742,12 @@ libraries. Reads take an optional sign-in and are never cached.
 | `POST /api/libraries/{id}/entries/{entry_id}/refresh` | Update from the original. |
 | `POST /api/libraries/{id}/entries/{entry_id}/use` | Copy it into your workspace: `name?`, `with_dataset?` (a model's dataset too, when it's in the library). |
 
+An upload can go straight into one of your libraries: `POST /api/datasets`
+(and `/api/datasets/paste`) take `library_id`, and every dataset made (one, or
+each part of a `dataset_col` split) is added to it as a snapshot, all or
+nothing; the answer's `library` lists what was `added` (entry ids) and what was
+`already` there. Over MCP, `change dataset_upload` takes the same `library_id`.
+
 The older `/api/library/mine` calls still work for life-model records. Over
 MCP and `/api/v1`: `list kind libraries` (`scope?`), `get kind library` (`id`,
 `entry_id?`) and the `change` actions `library_create`, `library_update` (also

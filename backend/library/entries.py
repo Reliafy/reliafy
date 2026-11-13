@@ -606,6 +606,39 @@ def add_model(db, lib: dict, collection: str, mdoc: dict, owners, source: str = 
     return _insert(db, lib, "model", {"collection": collection, "id": mdoc["_id"]}, snap, source)
 
 
+def upload_target(db, library_id: str, write_owner: str) -> dict:
+    """The library an upload adds its datasets to: the caller's own (LibraryNotFound when it isn't visible to
+    them, NotAllowed when it's someone else's)."""
+    lib = db[COLLECTION].find_one({"_id": str(library_id or "")})
+    if lib is None:
+        raise LibraryNotFound(library_id)
+    if lib.get("owner_id") != write_owner:
+        raise NotAllowed(library_id)
+    return lib
+
+
+def add_uploaded(db, lib: dict, datasets: list, owners, hidden=frozenset()) -> dict:
+    """Add every dataset an upload made (one, or each part of a split) to the library as snapshots, all or
+    none: past the library's size nothing is added (LibraryError). A dataset already in it is left as it is.
+    Returns ``{id, name, url, added: [entry ids], already: [names]}``."""
+    have = {_origin_id(d) for d in db[RECORDS].find({"library_id": lib["_id"], "entry_type": "data"},
+                                                     {"origin": 1})}
+    new = [d for d in datasets if d.id not in have]
+    count = db[RECORDS].count_documents({"library_id": lib["_id"]})
+    if count + len(new) > MAX_ENTRIES:
+        raise LibraryError(f"“{lib['name']}” has room for {max(0, MAX_ENTRIES - count)} more entries, and this "
+                           f"upload makes {len(new)}: nothing was saved.")
+    added: list[str] = []
+    try:
+        for ds in new:
+            added.append(add_dataset(db, lib, ds, owners, hidden)["_id"])
+    except Exception:
+        db[RECORDS].delete_many({"_id": {"$in": added}})
+        raise
+    return {"id": lib["_id"], "name": lib.get("name") or "", "url": f"/libraries/{lib['_id']}", "added": added,
+            "already": [d.name for d in datasets if d.id in have]}
+
+
 def _room(db, lib: dict) -> None:
     if db[RECORDS].count_documents({"library_id": lib["_id"]}) >= MAX_ENTRIES:
         raise LibraryError(f"“{lib['name']}” already holds {MAX_ENTRIES} entries, the most a library takes.")

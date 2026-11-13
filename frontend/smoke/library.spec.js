@@ -256,3 +256,52 @@ test("build a library: data and a model added, used, shared and published", asyn
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "a library of the user's own" });
 });
+
+// Bulk import into a library (Derryn, 13 Nov 2026): New dataset's "Also add to library", split by a
+// column, puts every dataset it makes into the library; and a library's own Add… › Upload data….
+test("an upload split into datasets goes into a library, from Data and from the library", async ({ page, request, problems }) => {
+  const tag = `${Date.now()}`;
+  const sheet = ["Unit,Site,Hours,Failed", ...["North", "South", "East"].flatMap((site, k) => [1, 2, 3].map((i) =>
+    `${site[0]}-${i},${site},${100 * (k + 1) + 37 * i + Number(tag.slice(-3))},${i % 2}`))].join("\n") + "\n";
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, "/data");
+  await page.getByRole("button", { name: "New dataset" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('input[type="file"]').setInputFiles({ name: `sites ${tag}.csv`, mimeType: "text/csv", buffer: Buffer.from(sheet) });
+  await dialog.getByRole("combobox", { name: "Split into datasets by" }).click();
+  await page.getByRole("option", { name: "Site", exact: true }).click();
+  const choose = dialog.getByRole("combobox", { name: "Also add to library" });
+  await choose.selectOption("new");
+  await dialog.getByRole("textbox", { name: "New library's name" }).fill(`Sites ${tag}`);
+  await dialog.getByRole("button", { name: "Save 3 datasets" }).click();
+  const saved = dialog.getByRole("region", { name: "Saved datasets" });
+  await expect(saved.getByText("Saved 3 datasets:")).toBeVisible({ timeout: 30_000 });
+  await expect(saved.getByRole("status").filter({ hasText: "Added all 3 to" })).toBeVisible();
+  await saved.getByRole("link", { name: `Sites ${tag}` }).click();
+  await expect(page).toHaveURL(/\/libraries\/[0-9a-f]{32}$/);
+  await expect(page.getByText("3 datasets · 0 models").first()).toBeVisible();
+  await expectHealthy(page, problems, { label: "a library filled by a split upload" });
+
+  // From the library: Add… › Upload data…, this library chosen; back on the page with the new entry.
+  await page.getByRole("button", { name: "Add…" }).click();
+  await page.getByRole("menuitem", { name: "Upload data…" }).click();
+  const up = page.getByRole("dialog");
+  await expect(up.getByRole("heading", { name: `Upload data to Sites ${tag}` })).toBeVisible();
+  await up.locator('input[type="file"]').setInputFiles({
+    name: `west ${tag}.csv`, mimeType: "text/csv",
+    buffer: Buffer.from(`Hours,Failed\n${410 + Number(tag.slice(-3))},1\n620,0\n900,1\n1050,0\n`),
+  });
+  await expect(up.getByRole("combobox", { name: "Also add to library" })).toHaveValue(/[0-9a-f]{32}/);
+  await up.getByRole("button", { name: "Create dataset" }).click();
+  await expect(up).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByRole("status").filter({ hasText: "Added it to" })).toBeVisible();
+  await expect(page.getByText("4 datasets · 0 models").first()).toBeVisible();
+  await expect(page.getByText(`west ${tag}`)).toBeVisible();
+  // On a phone: opened at 400 px, nothing scrolls sideways.
+  const here = new URL(page.url()).pathname;
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, here);
+  await expect(page.getByText("4 datasets · 0 models").first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await expectHealthy(page, problems, { label: "a library after Upload data…" });
+});

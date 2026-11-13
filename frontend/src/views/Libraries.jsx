@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   deleteLibrary, getLibrary, listLibraries, listLibraryEntries, setLibraryVisibility,
@@ -10,6 +10,10 @@ import { SectionHeader, ShowMe } from "../components/SectionPage.jsx";
 import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { LibraryFormDialog } from "../components/LibraryParts.jsx";
+import NewDatasetModal from "../components/NewDatasetModal.jsx";
+import useMenuDismiss from "../components/useMenuDismiss.js";
+import { AddedToLibrary } from "../components/DatasetSplit.jsx";
+import "../components/Datasets.css";
 import { EntryList, LibraryAbout, LibraryCard, LibraryChips, useRobots } from "../components/LibraryEntries.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { LibrarySource } from "./LibraryPages.jsx";
@@ -265,6 +269,31 @@ function SharingPanel({ lib, onSaved, onClose }) {
 
 // /libraries/:id: one library. A built-in handbook shows its records (LibrarySource); any other
 // shows what it is, its entries, and the owner's Edit…, Sharing… and Delete….
+// The owner's Add…: upload data straight into the library (New dataset, this library chosen), or the
+// way to add something already saved.
+function AddMenu({ onUpload }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
+  useMenuDismiss(open, close, ref);
+  return (
+    <div className="lib-add" ref={ref}>
+      <button type="button" className="secondary" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        Add…
+      </button>
+      {open && (
+        <div className="ds-menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); onUpload(); }}>Upload data…</button>
+          <div className="ds-menu-sep" />
+          <div className="ds-menu-h">Already saved? Open the dataset or model and choose Add to library…</div>
+          <Link role="menuitem" className="lib-add-link" to="/data" onClick={close}>Your data</Link>
+          <Link role="menuitem" className="lib-add-link" to="/models" onClick={close}>Your models</Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LibraryPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -274,8 +303,21 @@ export function LibraryPage() {
   const [missing, setMissing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [sharing, setSharing] = useState(false);
+  // Upload data…: New dataset over the page, this library chosen; then the page shows the new entries.
+  const [uploading, setUploading] = useState(false);
+  const [added, setAdded] = useState(null);
+  const [tick, setTick] = useState(0);
+  const uploaded = (library) => {
+    setUploading(false);
+    if (library) setAdded(library);
+    setTick((t) => t + 1);
+  };
   useEffect(() => {
     let live = true;
+    if (tick) {
+      getLibrary(id).then((x) => live && setLib(x), () => {});
+      return () => { live = false; };
+    }
     setLib(null);
     setError(null);
     setMissing(false);
@@ -284,7 +326,8 @@ export function LibraryPage() {
       if (e.status === 404) setMissing(true); else setError(e.message);
     });
     return () => { live = false; };
-  }, [id]);
+  }, [id, tick]);
+  useEffect(() => setAdded(null), [id]);
   useRobots(!!lib?.indexable);
   if (lib?.builtin) return <LibrarySource sourceId={lib.id} />;
   if (missing) {
@@ -330,6 +373,7 @@ export function LibraryPage() {
                       {canEdit && lib.visibility === "public" && (
                         <Link className="lib-signin" to={`${libraryPath(lib.id)}?as=public`}>Preview as public</Link>
                       )}
+                      {canEdit && <AddMenu onUpload={() => setUploading(true)} />}
                       {canEdit && <button type="button" className="secondary" onClick={() => setEditing(true)}>Edit…</button>}
                     </>
                   )}
@@ -343,13 +387,15 @@ export function LibraryPage() {
             <SharingPanel lib={lib} onClose={() => setSharing(false)}
                           onSaved={(x) => { setLib((l) => ({ ...l, ...x, entries: x.entries || l.entries })); setSharing(false); }} />
           )}
+          {added && <AddedToLibrary library={added} />}
           <LibraryAbout lib={lib} />
           <section className="card" aria-labelledby="lib-entries-h">
             <h2 id="lib-entries-h" className="lib-h">Entries</h2>
             {canEdit && !(lib.entries || []).length ? (
               <p className="lib-quiet">
-                Nothing in this library yet. Open a <Link to="/data">dataset</Link> or a <Link to="/models">model</Link> and
-                choose <strong>Add to library…</strong> from its ⋯ menu. The library keeps a copy as it is then.
+                Nothing in this library yet. Choose <strong>Add…</strong> › <strong>Upload data…</strong>, or open a{" "}
+                <Link to="/data">dataset</Link> or a <Link to="/models">model</Link> and choose <strong>Add to library…</strong> from
+                its ⋯ menu. The library keeps a copy as it is then.
               </p>
             ) : (
               <EntryList libraryId={lib.id} entries={lib.entries || []} canEdit={canEdit}
@@ -358,6 +404,12 @@ export function LibraryPage() {
             )}
           </section>
         </>
+      )}
+      {uploading && lib && (
+        <NewDatasetModal title={`Upload data to ${lib.name}`} libraryChoice libraryId={lib.id} withMeasurements={false}
+                         onClose={() => setUploading(false)}
+                         onCreated={(ds) => uploaded(ds.library || null)}
+                         onSplit={(out) => uploaded(out?.library || null)} />
       )}
       {editing && lib && (
         <LibraryFormDialog library={lib} onClose={() => setEditing(false)}

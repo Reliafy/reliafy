@@ -142,3 +142,26 @@ export function usedLinks(result) {
   }
   return out;
 }
+
+// New dataset's "Also add to library": {libraryId, newName}. Ready unless New library… has no name yet.
+export const libraryChoiceReady = (value) => value?.libraryId !== "new" || !!String(value?.newName || "").trim();
+
+// The words after an upload that also went into a library (the answer's ``library``): what was added and
+// what was in it already.
+export function addedToLibraryWords(library) {
+  const n = library?.added?.length || 0;
+  const already = library?.already?.length || 0;
+  const lead = n === 0 ? "Already in" : n === 1 ? "Added it to" : `Added all ${n} to`;
+  const tail = n > 0 && already > 0 ? ` ${already} ${already === 1 ? "was" : "were"} in it already.` : "";
+  return { lead, tail };
+}
+
+// Where Data's New dataset sends you after one dataset is saved: its page, told whether the data was
+// already yours (reused) and which library it went into.
+export function createdState(ds, typedName = null) {
+  const state = {
+    ...(ds?.reused ? { reused: true, name: typedName || null } : {}),
+    ...(ds?.library ? { library: ds.library } : {}),
+  };
+  return Object.keys(state).length ? { state } : undefined;
+}

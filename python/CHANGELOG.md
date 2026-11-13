@@ -12,6 +12,9 @@ Needs a server on the same release.
   (`private`, `workspaces`, `public`) with `workspaces`, `licence`, `source`,
   `citation` and `rights_confirmed`. `list kind libraries` lists every library
   you can see (`scope`), and `get kind library` takes `entry_id`.
+- **Upload into a library**: `change dataset_upload` (and `reliafy upload`)
+  takes `library_id`: every dataset made, each part of a split too, is added
+  to that library as a snapshot, all or nothing.
 
 ## 0.7.0 (14 Nov 2026)
 

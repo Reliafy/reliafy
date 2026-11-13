@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { LibraryChoice, libraryChoiceReady, resolveLibraryChoice } from "./LibraryParts.jsx";
 import Modal from "./Modal.jsx";
 import { ErrorNotice } from "./StorageCap.jsx";
 import PreviewTable from "./PreviewTable.jsx";
@@ -73,7 +74,7 @@ function ListField({ f, v, onChange, disabled, placeholder, broadcast, bad }) {
 // dataset of a split), so building a model from it asks nothing about columns.
 export default function NewDatasetModal({
   onClose, onCreated, onSplit = null, withMeasurements = true, measurementsOpen = false,
-  initialFile = null, initialName = "", title = "New dataset",
+  initialFile = null, initialName = "", title = "New dataset", libraryChoice = false, libraryId: presetLibrary = null,
 }) {
   // Opens on the dropzone; "paste or type" switches to entering data.
   const [step, setStep] = useState("upload"); // upload | enter
@@ -93,6 +94,18 @@ export default function NewDatasetModal({
   const [measurements, setMeasurements] = useState(EMPTY_PART);
   const [measOpen, setMeasOpen] = useState(measurementsOpen);
   const [created, setCreated] = useState(null);
+  // "Also add to library" (``libraryChoice``: the Data section and a library's Upload data…): every
+  // dataset made goes into it as a snapshot, in the same save. A new library is made just before.
+  const [library, setLibrary] = useState({ libraryId: presetLibrary || "", newName: "" });
+  const libraryTarget = async () => {
+    if (!libraryChoice) return null;
+    const id = await resolveLibraryChoice(library);
+    if (id && library.libraryId === "new") setLibrary({ libraryId: id, newName: "" });
+    return id;
+  };
+  const libraryBox = libraryChoice && (
+    <LibraryChoice value={library} onChange={setLibrary} disabled={busy} />
+  );
   const addMeasurements = async (ds, typedName) => {
     if (!withMeasurements || !partHasData(measurements)) return onCreated(ds, typedName);
     try {
@@ -178,9 +191,10 @@ export default function NewDatasetModal({
   const payload = reading ? readingPayload(reading) : null;
 
   const onSaveSplit = () => split.save(async (column) => {
+    const libId = await libraryTarget();
     const out = picked.excel
-      ? await uploadSplitDatasets(sheetCsv.file, sourceStem(picked.file.name), column, false, payload)
-      : await uploadSplitDatasets(picked.file, sourceStem(picked.file.name), column, noHeader, payload);
+      ? await uploadSplitDatasets(sheetCsv.file, sourceStem(picked.file.name), column, false, payload, libId)
+      : await uploadSplitDatasets(picked.file, sourceStem(picked.file.name), column, noHeader, payload, libId);
     onSplit?.(out);
     return out;
   });
@@ -224,8 +238,9 @@ export default function NewDatasetModal({
     setBusy(true); setError(null);
     try {
       const { file, excel } = picked;
+      const libId = await libraryTarget();
       await addMeasurements(await uploadDataset(file, name.trim() || undefined, excel ? false : noHeader, excel || null,
-                                                payload), name.trim());
+                                                payload, libId), name.trim());
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
 
@@ -233,7 +248,10 @@ export default function NewDatasetModal({
   const pasteValid = name.trim() && preview && preview.nCols > 1;
   const onPaste = async () => {
     setBusy(true); setError(null);
-    try { await addMeasurements(await pasteDataset(name.trim(), text, noHeader, payload), name.trim()); }
+    try {
+      const libId = await libraryTarget();
+      await addMeasurements(await pasteDataset(name.trim(), text, noHeader, payload, libId), name.trim());
+    }
     catch (e) { setError(e); } finally { setBusy(false); }
   };
 
@@ -284,7 +302,8 @@ export default function NewDatasetModal({
       const file = new File([csv], `${name.trim() || "dataset"}.csv`, { type: "text/csv" });
       // The fields name their roles, so the reading is theirs: x (or its range), c, n, tl, tr.
       const typed = { ...emptyReading(), ...Object.fromEntries(outFields.map((f) => [f, f])) };
-      await addMeasurements(await uploadDataset(file, name.trim() || undefined, null, null, readingPayload(typed)),
+      const libId = await libraryTarget();
+      await addMeasurements(await uploadDataset(file, name.trim() || undefined, null, null, readingPayload(typed), libId),
                             name.trim());
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
@@ -293,7 +312,8 @@ export default function NewDatasetModal({
   const enter = step === "enter";
   // The reading must be settled (x and c at least) before a file or paste is saved.
   const needsReading = !(enter && enterMode === "form");
-  const valid = (enter ? (enterMode === "paste" ? pasteValid : formValid) : !!picked) && (!needsReading || !readingWait);
+  const valid = (enter ? (enterMode === "paste" ? pasteValid : formValid) : !!picked) && (!needsReading || !readingWait)
+    && (!libraryChoice || libraryChoiceReady(library));
   const run = enter ? (enterMode === "paste" ? onPaste : onForm) : onUpload;
   const footer = split.saved ? (
     <button className="ds-foot-primary" onClick={onClose}>Done</button>
@@ -302,7 +322,8 @@ export default function NewDatasetModal({
       {(split.waitingFor || readingWait) && (
         <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{split.waitingFor || readingWait}</span>
       )}
-      <button className="ds-foot-primary" onClick={onSaveSplit} disabled={!split.canSave || !!readingWait}>{split.saveLabel}</button>
+      <button className="ds-foot-primary" onClick={onSaveSplit}
+              disabled={!split.canSave || !!readingWait || (libraryChoice && !libraryChoiceReady(library))}>{split.saveLabel}</button>
     </>
   ) : created ? (
     <button className="ds-foot-primary" onClick={() => onCreated(created.ds, created.typedName)}>Open the dataset</button>
@@ -407,6 +428,7 @@ export default function NewDatasetModal({
               {split.picker}
               {split.summary}
               {readingBox}
+              {libraryBox}
               {!split.active && measurementsBox}
             </>
           )}
@@ -452,6 +474,7 @@ export default function NewDatasetModal({
               ) : text.trim() ? <p className="hint">Add a header row and at least one data row.</p> : null}
               {noHeaderBox(false)}
               {readingBox}
+              {libraryBox}
               {measurementsBox}
             </>
           ) : (
@@ -483,6 +506,7 @@ export default function NewDatasetModal({
               {hasValue && !lengthsMatch && (
                 <p className="hint">Each list needs one value per unit: {rowCount} here.</p>
               )}
+              {libraryBox}
               {measurementsBox}
             </div>
           )}

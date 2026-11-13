@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createdState } from "../libraries.js";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { listDatasets, deleteDataset, renameDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
@@ -90,7 +91,7 @@ export default function DatasetsHome() {
   const onCreated = (ds, typedName) => {
     setNewOpen(false);
     refresh();
-    navigate(datasetPath(ds.id), ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
+    navigate(datasetPath(ds.id), createdState(ds, typedName));
   };
 
   const confirm = useConfirm();
@@ -176,7 +177,7 @@ export default function DatasetsHome() {
       />
 
       {newOpen && (
-        <NewDatasetModal onClose={() => setNewOpen(false)} onCreated={onCreated} onSplit={refresh} />
+        <NewDatasetModal onClose={() => setNewOpen(false)} onCreated={onCreated} onSplit={refresh} libraryChoice />
       )}
     </div>
   );

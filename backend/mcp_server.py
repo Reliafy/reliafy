@@ -3354,6 +3354,9 @@ def upload_dataset(
     s_col: _RS = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    library_id: Annotated[Optional[str], Field(max_length=64, description=(
+        "Also add every dataset made (each part of a split too) to this library of the user's, as snapshots: "
+        "all or nothing."))] = None,
 ) -> dict[str, Any]:
     """Save a dataset from CSV text (csv) or a file sent with change upload_create (upload_id; an .xlsx
     needs sheet), with its reading (which column is x, c, n, …, Z); returns its id, columns, a preview and
@@ -3361,6 +3364,7 @@ def upload_dataset(
     user, db = _caller(ctx), _db()
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
+    lib = _own_library(db, user["uid"], library_id) if library_id else None
     split = (dataset_col or "").strip()
     if not split:
         _cap(db, user, "datasets", "datasets")
@@ -3388,12 +3392,13 @@ def upload_dataset(
                            unit=unit, m_unit=m_unit, z_units=z_units)
     reading = _upload_reading(data, given, split)
     if split:
-        return _split_upload(db, user, name.strip(), data, split, upload, guess, hint, reading)
+        return _split_upload(db, user, name.strip(), data, split, upload, guess, hint, reading, lib)
     try:
-        ds, _ = datasets_service.create_or_reuse(db, name.strip(), data, user["uid"], reading=reading,
-                                                 keep_reading=bool(reading.get("guessed")))
+        ds, reused = datasets_service.create_or_reuse(db, name.strip(), data, user["uid"], reading=reading,
+                                                      keep_reading=bool(reading.get("guessed")))
     except dataset_reading.ReadingError as exc:
         raise ToolError(str(exc)) from None
+    added = _upload_into_library(db, user["uid"], lib, [(ds, reused)])
     if upload is not None:
         uploads_service.delete(db, upload["_id"])
     out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
@@ -3402,7 +3407,25 @@ def upload_dataset(
            "reading": _reading_out(*dataset_reading.for_dataset(ds))}
     if hint:
         out["hint"] = hint
+    if added:
+        out["library"] = added
     return out
+
+
+def _upload_into_library(db, uid: str, lib: Optional[dict], made: list) -> Optional[dict]:
+    """An upload's datasets added to ``lib`` as snapshots, all or nothing: when that fails, the datasets the
+    upload created are deleted again and the call is refused in words."""
+    if lib is None:
+        return None
+    try:
+        out = lib_entries.add_uploaded(db, lib, [d for d, _ in made], _owners(uid))
+    except Exception as exc:  # noqa: BLE001 - undo the upload, then say why
+        fresh = [d.id for d, reused in made if not reused]
+        if fresh:
+            db.datasets.delete_many({"_id": {"$in": fresh}, "owner_id": uid})
+        raise ToolError(f"Nothing was saved: {exc}" if isinstance(exc, lib_entries.LibraryError) else
+                        "Nothing was saved: the data couldn't be added to the library.") from None
+    return {**out, "url": _url(out["url"])}
 
 
 def _upload_reading(data: bytes, given: dict, split: str) -> dict:
@@ -3428,7 +3451,7 @@ def _upload_reading(data: bytes, given: dict, split: str) -> dict:
 
 
 def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, hint,
-                  reading: dict | None = None) -> dict[str, Any]:
+                  reading: dict | None = None, lib: Optional[dict] = None) -> dict[str, Any]:
     """upload_dataset with dataset_col: one dataset per value of the column, all or nothing against the cap."""
     try:
         wanted = datasets_service.count_new_parts(db, data, column, user["uid"])
@@ -3438,6 +3461,7 @@ def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, 
                                                     keep_reading=bool((reading or {}).get("guessed")))
     except (FitError, dataset_reading.ReadingError) as exc:
         raise ToolError(str(exc)) from None
+    added = _upload_into_library(db, user["uid"], lib, made)
     if upload is not None:
         uploads_service.delete(db, upload["_id"])
     out = {"datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, "url": _url(f"/data/{d.id}"),
@@ -3448,6 +3472,8 @@ def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, 
         out["left_out"] = f"{blank} row{'' if blank == 1 else 's'} with no {column} left out."
     if hint:
         out["hint"] = hint
+    if added:
+        out["library"] = added
     return out
 
 

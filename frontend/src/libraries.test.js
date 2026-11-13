@@ -95,3 +95,27 @@ test("after Use: links to the copies made", () => {
   ]);
   assert.deepEqual(usedLinks({ dataset: null, model: null }), []);
 });
+
+test("New dataset's library choice: none, one of yours, or a new one once it's named", async () => {
+  const { libraryChoiceReady } = await import("./libraries.js");
+  assert.equal(libraryChoiceReady({ libraryId: "" }), true);
+  assert.equal(libraryChoiceReady({ libraryId: "abc" }), true);
+  assert.equal(libraryChoiceReady({ libraryId: "new", newName: "  " }), false);
+  assert.equal(libraryChoiceReady({ libraryId: "new", newName: "Site pumps" }), true);
+});
+
+test("after an upload into a library: what was added, and what was there already", async () => {
+  const { addedToLibraryWords } = await import("./libraries.js");
+  assert.deepEqual(addedToLibraryWords({ added: ["a"], already: [] }), { lead: "Added it to", tail: "" });
+  assert.deepEqual(addedToLibraryWords({ added: ["a", "b", "c"], already: ["d"] }),
+    { lead: "Added all 3 to", tail: " 1 was in it already." });
+  assert.deepEqual(addedToLibraryWords({ added: [], already: ["d", "e"] }), { lead: "Already in", tail: "" });
+});
+
+test("one dataset saved: its page is told it was reused and which library it went into", async () => {
+  const { createdState } = await import("./libraries.js");
+  assert.equal(createdState({ id: "d1" }), undefined);
+  const library = { id: "L", name: "Pumps", added: ["L:1"], already: [] };
+  assert.deepEqual(createdState({ id: "d1", library }), { state: { library } });
+  assert.deepEqual(createdState({ id: "d1", reused: true }, "Bearings"), { state: { reused: true, name: "Bearings" } });
+});

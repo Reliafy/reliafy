@@ -536,11 +536,14 @@ export function compareGroups(datasetId, body) {
 // the server guess (a first row of only numbers is data, #434).
 // ``reading``: how its columns are read for modelling (datasetReading.js),
 // kept with the dataset.
-export function uploadDataset(file, name, noHeader = null, excel = null, reading = null) {
+// ``libraryId``: also add the dataset to that library of yours as a snapshot (all or nothing; the
+// answer's ``library`` says what was added).
+export function uploadDataset(file, name, noHeader = null, excel = null, reading = null, libraryId = null) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
   if (reading) form.append("reading", JSON.stringify(reading));
+  if (libraryId) form.append("library_id", libraryId);
   if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
   if (excel?.sheet) form.append("sheet", excel.sheet);
   if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
@@ -552,10 +555,11 @@ export function uploadDataset(file, name, noHeader = null, excel = null, reading
 // section's upload. ``noHeader`` as for uploadDataset; an Excel sheet comes
 // already converted to CSV. Answers { datasets: [{ id, name, n_rows, reused? }],
 // left_out }.
-export function uploadSplitDatasets(file, source, datasetCol, noHeader = false, reading = null) {
+export function uploadSplitDatasets(file, source, datasetCol, noHeader = false, reading = null, libraryId = null) {
   const form = new FormData();
   form.append("file", file);
   if (reading) form.append("reading", JSON.stringify(reading));
+  if (libraryId) form.append("library_id", libraryId);
   if (source) form.append("name", source);
   form.append("no_header", noHeader ? "true" : "false");
   form.append("dataset_col", datasetCol);
@@ -613,7 +617,7 @@ export async function excelToCsvFile(file, sheet, headerRow) {
 // Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
 // server-side). Used by the paste-data form and the assistant. ``noHeader``
 // as for uploadDataset (null: guessed).
-export function pasteDataset(name, content, noHeader = null, reading = null) {
+export function pasteDataset(name, content, noHeader = null, reading = null, libraryId = null) {
   return withEvent(
     request("/api/datasets/paste", {
       method: "POST",
@@ -622,6 +626,7 @@ export function pasteDataset(name, content, noHeader = null, reading = null) {
         name: name || "", content: content || "",
         ...(noHeader != null ? { no_header: !!noHeader } : {}),
         ...(reading ? { reading } : {}),
+        ...(libraryId ? { library_id: libraryId } : {}),
       }),
     }),
     "dataset_upload"
