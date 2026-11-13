@@ -67,9 +67,8 @@ test("Test planning: 150% gets a message in percent and Compute waits", async ({
 
 test("Failure finding: 0.99 asks 'Did you mean 99%?' and computes only once answered", async ({ page, problems }) => {
   await open(page, "/strategy/failure-finding");
-  // The page opens on the newest saved model, which another test may have made
-  // with no finite mean life: pick the sample so the compute has one.
-  await page.getByRole("combobox", { name: "Model", exact: true }).click();
+  // The page opens on "Saved model" with none chosen: pick the sample, which has a mean life.
+  await page.getByRole("combobox", { name: /: saved model$/ }).click();
   await page.getByRole("option", { name: /^Bearing life — Weibull \(sample\)/ }).click();
   const field = page.getByLabel("Target availability");
   await field.fill("0.99");
