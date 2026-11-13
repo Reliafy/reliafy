@@ -305,7 +305,9 @@ export function LibraryPage() {
   const [sharing, setSharing] = useState(false);
   // Upload data…: New dataset over the page, this library chosen; then the page shows the new entries.
   const [uploading, setUploading] = useState(false);
-  // "Added all 3 to …" after an upload: shown until the next thing the user does here.
+  // "Added all 3 to …" after an upload: shown until the next thing the user does here. Cleared on
+  // click, not pointer-down: clearing on the press moved the list up under the pointer, so the
+  // first click on an entry missed it.
   const [added, setAdded] = useState(null);
   const clearAdded = () => setAdded(null);
   const [tick, setTick] = useState(0);
@@ -333,8 +335,8 @@ export function LibraryPage() {
   useEffect(() => {
     if (!added) return undefined;
     const next = (e) => { if (!e.target.closest?.(".ds-added-lib")) setAdded(null); };
-    document.addEventListener("pointerdown", next);
-    return () => document.removeEventListener("pointerdown", next);
+    document.addEventListener("click", next);
+    return () => document.removeEventListener("click", next);
   }, [added]);
   useRobots(!!lib?.indexable);
   if (lib?.builtin) return <LibrarySource sourceId={lib.id} />;
