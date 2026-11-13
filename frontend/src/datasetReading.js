@@ -221,7 +221,7 @@ export function readingIssues(r, facts, nRows) {
 export function readingParts(r) {
   if (!r) return [];
   const out = [];
-  if (r.x) out.push({ key: "x", label: "x", value: r.x + (r.unit && r.unit !== "units" ? ` (${r.unit.toLowerCase()})` : "") });
+  if (r.x) out.push({ key: "x", label: "x", value: r.x + (r.unit && r.unit !== "units" && !/\([^()]*\)\s*$/.test(r.x) ? ` (${r.unit.toLowerCase()})` : "") });
   if (r.xl) out.push({ key: "range", label: "range", value: `${r.xl} to ${r.xr}` });
   if (r.c) out.push({ key: "c", label: "c", value: r.c });
   else if (r.all_failed) out.push({ key: "c", label: "c", value: "every row failed" });

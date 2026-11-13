@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (13 Nov 2026)
 
 Needs a server on the same release.
 
