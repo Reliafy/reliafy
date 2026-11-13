@@ -578,9 +578,16 @@ def for_dataset_db(db, dataset, owners, hidden=frozenset()) -> tuple[dict, str]:
 def merged(base: dict, given: dict) -> dict:
     """``base`` (a guess, or the dataset's reading) with the roles and fields
     ``given`` names put over it: a column given a role leaves any other role
-    the base gave it, and Z and not used."""
+    the base gave it, and Z and not used; a column given as not used leaves
+    any role the base gave it."""
     out = {**empty(), **(base or {})}
     out.pop("guessed", None)
+    # A column the caller says is not used takes no role the base guessed for
+    # it (an id column guessed as i, say); a role the caller names wins.
+    for col in given.get("not_used") or []:
+        for role in ROLES:
+            if role not in given and out.get(role) == col:
+                out[role] = ""
     for role in ROLES:
         if role not in given:
             continue
