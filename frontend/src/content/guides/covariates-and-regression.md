@@ -35,13 +35,18 @@ tested at 60, 80 and 100 °C and at two loads.
 
 ## Add the covariates
 
-Start a new model under **Modelling → Models → Non-repairable** and choose **Fit to data**.
-Map **x** and **c** in the **Data** step as usual (see
-[fit your first non-repairable model](/guides/fit-your-first-model)). Then open
-**Advanced (regression): covariates** and tick each covariate column. Give each
-one a unit if you like (°C, kN); it's shown with its input and its coefficient.
+The covariates are part of the dataset's reading: when you upload it under
+[Data](/data) → **New dataset**, every column that isn't x, c or another role
+is a covariate (**Z**), apart from ids, dates and free text, which start as
+*not used* (one tap includes one). See
+[fit your first non-repairable model](/guides/fit-your-first-model).
 
-![The Data step with temp_C and load ticked as covariates](/guides/img/cov-01-covariates.png)
+Start a new model under **Modelling → Models → Non-repairable**, choose **Fit to
+data** and pick the dataset. On the **Model** step choose **Regression on Z**:
+every covariate starts ticked; untick any you don't want. Give each one a unit
+if you like (°C, kN); it's shown with its input and its coefficient.
+
+![The Model step with temp_C and load ticked as covariates](/guides/img/cov-01-covariates.png)
 
 Text columns, such as a site or a supplier, need **Advanced formula**. Write a
 formula over your columns, such as `temp_C + load + site`, and categories are

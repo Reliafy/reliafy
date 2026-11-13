@@ -64,6 +64,7 @@ _ORIGINAL: dict = {}
 PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 # Calls that can take a while: they share the MCP server's heavy-call slots.
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_models.link", "maintenance_workspace.import_history",
+               "maintenance_list.tree",
                "maintenance_parts.import_bom", "maintenance_parts.build_positions",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
@@ -258,6 +259,9 @@ LIST_KINDS: Table = {
     "products": ("", "", "Products (design trees): part, rev, items_built, open_reports."),
     "product_items": ("product_id", "", "The items built from a product: serial, rev, built_on, hours, location, open "
                                         "reports, top_position_id."),
+    "tree": ("", "position_id format", """The asset tree as the Explorer's Excel export has it: hierarchy (one
+        row per position with the item fitted there), locations and classes. position_id: that branch; format csv:
+        the hierarchy as CSV text. Edit and send back with maintenance workspace.import_history, sheet 'tree'."""),
     "items_overview": ("", "product_id item_class_id q limit offset", """Every item with its product, item class,
         position path, status (fitted, spare, not placed) and open reports. product_id ('none': no product),
         item_class_id and q filter; limit up to 500 and offset page it."""),
@@ -858,11 +862,21 @@ WORKSPACE: Table = {
     "set_time_zone": ("time_zone", "", """Where the workspace is, so today, due dates and overdue follow its
         local calendar: an IANA name ('Australia/Brisbane', 'Europe/London'); '' clears it (UTC). Ask the user
         rather than guessing."""),
-    "import_history": ("rows", "dry_run", """Bring an existing history in: positions (made from their paths),
+    "import_history": ("rows", "dry_run sheet", """Bring an existing history in: positions (made from their paths),
         items, when they were fitted and removed and whether they failed. Every row is checked first; with any
         error nothing is written. dry_run (default true) reports what would be made: show it, then run with
-        dry_run false. At most 5000 rows; for a file, the user can import it on the Maintenance page."""),
+        dry_run false. At most 5000 rows; for a file, the user can import it on the Maintenance page.
+        sheet 'tree': rows are the asset tree instead, list.tree's columns: matched by ID, else Path; new ones
+        made, matches updated or moved, nothing deleted; problems listed by row (guide topic register)."""),
 }
+
+
+def _tree_row(row: dict) -> dict:
+    """A tree sheet row keyed by list.tree's field names (path, item_id) or the sheet's headings."""
+    from backend.maintenance import hierarchy
+
+    heading = {field: h for field, h, _ in hierarchy.COLUMNS}
+    return {heading.get(str(k), str(k)): "" if v is None else str(v) for k, v in row.items()}
 
 
 # A record's label as the tools name it, with the argument its id goes in.
@@ -1311,7 +1325,7 @@ def register() -> None:
                              "after it."))] = None,
                          type: Annotated[str | None, Field(description="events: one event type.")] = None,
                          position_id: Annotated[str | None, Field(description=(
-                             "failure_reports: the position (with below, everything inside it)."))] = None,
+                             "failure_reports: the position (with below, everything inside it). tree: a branch."))] = None,
                          below: Annotated[bool | None, Field(description=(
                              "failure_reports: include the positions inside position_id (default true)."))] = None,
                          item_id: str | None = None, consequence: str | None = None, failure_mode_id: str | None = None,
@@ -1370,6 +1384,15 @@ def register() -> None:
             return found
         if kind == "position_classes":
             return {"classes": run(m.position_classes)}
+        if kind == "tree":
+            from backend.maintenance import hierarchy
+            from backend.mcp_server import DATA_NOTICE
+
+            data = run(hierarchy.export, m, position_id or None)
+            if format == "csv":
+                return {"data_notice": DATA_NOTICE, "csv": hierarchy.to_csv(data).decode("utf-8-sig"),
+                        "counts": data["counts"]}
+            return {"data_notice": DATA_NOTICE, **data}
         if kind == "item_classes":
             if format in (None, "tree"):
                 return run(m.item_class_tree)
@@ -2878,9 +2901,13 @@ def register() -> None:
                                   "import_history: one row per item per position: {position: 'House > Pool > "
                                   "Pump', class?, item?, serial?, manufacturer?, model?, part number?, fitted?: "
                                   "date, removed?: date, failed?: yes/no, failure mode?}. Column names are "
-                                  "matched loosely."))] = None,
-                              dry_run: bool | None = None) -> dict[str, Any]:
-        """The maintenance workspace as a whole: its time zone, and bringing an existing history in."""
+                                  "matched loosely. With sheet 'tree': list.tree's hierarchy rows, keyed by its "
+                                  "field names or the sheet's headings (Path, Name, Tag, Fitted item...)."))] = None,
+                              dry_run: bool | None = None,
+                              sheet: Annotated[Literal["history", "tree"] | None, Field(description=(
+                                  "import_history: history (default) or tree (the asset tree)."))] = None,
+                              ) -> dict[str, Any]:
+        """The maintenance workspace as a whole: its time zone, and bringing an existing history or tree in."""
         if action == "set_time_zone":
             user = _caller(ctx)
             m_for(ctx)  # Maintenance is on for this account
@@ -2888,6 +2915,13 @@ def register() -> None:
                 return {"time_zone": time_zones.set_personal(_db(), user["uid"], time_zone)}
             except time_zones.BadTimeZone as err:
                 raise ToolError(str(err)) from None
+        if sheet == "tree":
+            from backend.maintenance import hierarchy
+
+            def go():
+                table = hierarchy.rows_from_records([_tree_row(r) for r in rows or []])
+                return hierarchy.run(m_for(ctx), {"hierarchy": table}, _d(dry_run, True))
+            return run(go)
         if len(rows) > importer.MAX_ROWS:
             raise ToolError(f"At most {importer.MAX_ROWS} rows at a time.")
         return run(importer.run, m_for(ctx), [{str(k): str(v) for k, v in r.items()} for r in rows],

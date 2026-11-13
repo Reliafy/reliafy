@@ -241,7 +241,7 @@ function appendCovariateUnits(form, covariates, units) {
   if (Object.keys(picked).length) form.append("covariate_units", JSON.stringify(picked));
 }
 
-export function fitModel(distribution, file, mapping, { covariates, covariateUnits, formula, unit, datasetId, fitOptions } = {}) {
+export function fitModel(distribution, file, mapping, { covariates, covariateUnits, formula, unit, datasetId, fitOptions, itemLives } = {}) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
@@ -254,6 +254,7 @@ export function fitModel(distribution, file, mapping, { covariates, covariateUni
     appendCovariateUnits(form, covariates, covariateUnits);
   }
   appendFitOptions(form, fitOptions);
+  if (itemLives) form.append("item_lives", "true");
   return withEvent(
     request(`/api/fit/${distribution}`, { method: "POST", body: form }),
     "model_fit"
@@ -391,11 +392,12 @@ export function saveModel(
   distribution,
   file,
   mapping,
-  { covariates, covariateUnits, formula, unit, datasetId, fitOptions } = {}
+  { covariates, covariateUnits, formula, unit, datasetId, fitOptions, itemLives } = {}
 ) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
+  if (itemLives) form.append("item_lives", "true");
   form.append("name", name);
   form.append("distribution", distribution);
   appendMapping(form, mapping);
@@ -532,10 +534,13 @@ export function compareGroups(datasetId, body) {
 // sheet and header row (headerRow 0 = none), converted to CSV server-side.
 // ``noHeader``: true / false says whether the first row is data; null lets
 // the server guess (a first row of only numbers is data, #434).
-export function uploadDataset(file, name, noHeader = null, excel = null) {
+// ``reading``: how its columns are read for modelling (datasetReading.js),
+// kept with the dataset.
+export function uploadDataset(file, name, noHeader = null, excel = null, reading = null) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
+  if (reading) form.append("reading", JSON.stringify(reading));
   if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
   if (excel?.sheet) form.append("sheet", excel.sheet);
   if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
@@ -547,9 +552,10 @@ export function uploadDataset(file, name, noHeader = null, excel = null) {
 // section's upload. ``noHeader`` as for uploadDataset; an Excel sheet comes
 // already converted to CSV. Answers { datasets: [{ id, name, n_rows, reused? }],
 // left_out }.
-export function uploadSplitDatasets(file, source, datasetCol, noHeader = false) {
+export function uploadSplitDatasets(file, source, datasetCol, noHeader = false, reading = null) {
   const form = new FormData();
   form.append("file", file);
+  if (reading) form.append("reading", JSON.stringify(reading));
   if (source) form.append("name", source);
   form.append("no_header", noHeader ? "true" : "false");
   form.append("dataset_col", datasetCol);
@@ -607,7 +613,7 @@ export async function excelToCsvFile(file, sheet, headerRow) {
 // Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
 // server-side). Used by the paste-data form and the assistant. ``noHeader``
 // as for uploadDataset (null: guessed).
-export function pasteDataset(name, content, noHeader = null) {
+export function pasteDataset(name, content, noHeader = null, reading = null) {
   return withEvent(
     request("/api/datasets/paste", {
       method: "POST",
@@ -615,10 +621,51 @@ export function pasteDataset(name, content, noHeader = null) {
       body: JSON.stringify({
         name: name || "", content: content || "",
         ...(noHeader != null ? { no_header: !!noHeader } : {}),
+        ...(reading ? { reading } : {}),
       }),
     }),
     "dataset_upload"
   );
+}
+
+// The columns a new dataset would have (exactly as uploadDataset /
+// pasteDataset with the same fields would store them), their facts and the
+// server's guessed reading: New dataset's reading screen. Saves nothing.
+export function previewDataset(file, noHeader = null, excel = null) {
+  const form = new FormData();
+  form.append("file", file);
+  if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
+  if (excel?.sheet) form.append("sheet", excel.sheet);
+  if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
+  return request("/api/datasets/preview", { method: "POST", body: form });
+}
+
+export function previewPastedDataset(content, noHeader = null) {
+  return request("/api/datasets/preview-paste", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: content || "", ...(noHeader != null ? { no_header: !!noHeader } : {}) }),
+  });
+}
+
+// Keep a new reading for a dataset (Change on a fit, or confirming a guessed
+// one): later fits use it; models already made keep their own. Answers the
+// dataset's detail.
+// Only the reading of a dataset's measurements part ({ i, x, m, unit, m_unit }).
+export function setDatasetMeasurementsReading(id, measurements) {
+  return request(`/api/datasets/${id}/reading`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ measurements }),
+  });
+}
+
+export function setDatasetReading(id, reading) {
+  return request(`/api/datasets/${id}/reading`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reading }),
+  });
 }
 
 export function deleteDataset(id) {
@@ -3150,6 +3197,22 @@ export function importMaintenanceSheet(file, dryRun) {
   form.append("file", file);
   form.append("dry_run", dryRun ? "true" : "false");
   return request("/api/maintenance/import", { method: "POST", body: form });
+}
+
+// The asset tree in a spreadsheet (backend/maintenance/hierarchy.py): the whole tree or one
+// branch (positionId) as an Excel workbook or a CSV, and the same file back (a dry run unless
+// dryRun is false; with any problem nothing is written).
+export function downloadTreeSheet({ positionId = null, format = "xlsx" } = {}) {
+  const q = new URLSearchParams({ format });
+  if (positionId) q.set("position_id", positionId);
+  return downloadFile(`/api/maintenance/hierarchy/export?${q}`, `Asset tree.${format}`);
+}
+
+export function importTreeSheet(file, dryRun = true) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dry_run", dryRun ? "true" : "false");
+  return request("/api/maintenance/hierarchy/import", { method: "POST", body: form });
 }
 
 export function getClassEconomics(positionClass, { interval, unit, horizonYears, discountRate } = {}) {

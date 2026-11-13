@@ -5,6 +5,9 @@ same diagram; unreachable targets report the reachable range; the endpoint
 and the MCP tool give the same figures.
 """
 
+import itertools
+import math
+
 import mongomock
 import numpy as np
 import pytest
@@ -207,6 +210,66 @@ def test_k_of_n_availability_allocation_by_hand(how):
     p = need["a"]
     assert res["system"]["allocated"] == pytest.approx(0.999999)
     assert 3 * p ** 2 - 2 * p ** 3 == pytest.approx(0.999999)
+
+
+def _voting(edges, rates, votes):
+    nodes = [_node("input", "input"), _node("output", "output")]
+    nodes += [_node(nid, model=_exp(rate)) for nid, rate in rates.items()]
+    nodes += [{"id": nid, "type": "knode", "position": {"x": 0, "y": 0}, "data": {"label": nid, "n": k, "k": n}}
+              for nid, (k, n) in votes.items()]
+    return {"nodes": nodes, "edges": [{"id": f"{s}-{t}", "source": s, "target": t} for s, t in edges],
+            "unit": "Hours"}
+
+
+_VOTE_SHAPES = {
+    # 2-of-3 straight into the output.
+    "vote last": (
+        _voting([("input", "a"), ("input", "b"), ("input", "c"), ("a", "k3"), ("b", "k3"), ("c", "k3"),
+                 ("k3", "output")], {"a": 1e-3, "b": 2e-3, "c": 3e-3}, {"k3": (2, 3)}),
+        lambda w: w["a"] + w["b"] + w["c"] >= 2),
+    # A valve, then 2-of-3, then 3-of-4: two voting nodes in series.
+    "two votes": (
+        _voting([("input", "v"), ("v", "a"), ("v", "b"), ("v", "c"), ("a", "k3"), ("b", "k3"), ("c", "k3"),
+                 ("k3", "e"), ("k3", "f"), ("k3", "g"), ("k3", "h"),
+                 ("e", "k4"), ("f", "k4"), ("g", "k4"), ("h", "k4"), ("k4", "output")],
+                {"v": 1e-4, "a": 1e-3, "b": 1e-3, "c": 1e-3, "e": 2e-3, "f": 2e-3, "g": 2e-3, "h": 2e-3},
+                {"k3": (2, 3), "k4": (3, 4)}),
+        lambda w: w["v"] and w["a"] + w["b"] + w["c"] >= 2 and w["e"] + w["f"] + w["g"] + w["h"] >= 3),
+    # 2-of-3 on one branch, a single unit x on the other, then a valve.
+    "vote in parallel": (
+        _voting([("input", "a"), ("input", "b"), ("input", "c"), ("a", "k3"), ("b", "k3"), ("c", "k3"),
+                 ("input", "x"), ("k3", "d"), ("x", "d"), ("d", "output")],
+                {"a": 1e-3, "b": 1e-3, "c": 1e-3, "x": 5e-3, "d": 1e-4}, {"k3": (2, 3)}),
+        lambda w: w["d"] and (w["a"] + w["b"] + w["c"] >= 2 or w["x"])),
+}
+
+
+def _enumerate(works, p):
+    """The system reliability by enumerating every block state."""
+    ids, total = list(p), 0.0
+    for bits in itertools.product((0, 1), repeat=len(ids)):
+        state = dict(zip(ids, bits))
+        if works(state):
+            total += math.prod(p[i] if up else 1 - p[i] for i, up in state.items())
+    return total
+
+
+@pytest.mark.parametrize("shape", list(_VOTE_SHAPES))
+@pytest.mark.parametrize("method,options", [
+    ("equal", {}), ("simple", {}), ("simple", {"weights": {"a": 2}}), ("improvement", {}),
+    ("improvement", {"fixed": ["a"]}), ("cost_based", {}), ("cost_based", {"fixed": ["a"]}),
+])
+def test_k_of_n_shapes_allocate_to_the_target_by_enumeration(shape, method, options):
+    graph, works = _VOTE_SHAPES[shape]
+    target = 0.995  # above every shape's current reliability, so every method must raise it
+    res = ra.allocate(graph, target, method, T, options, None, None)
+    need, current = _required(res), {b["id"]: b["current"] for b in res["blocks"]}
+    assert "k3" not in need and "k4" not in need
+    assert res["system"]["current"] == pytest.approx(_enumerate(works, current))
+    assert _enumerate(works, need) == pytest.approx(target)
+    assert res["system"]["allocated"] == pytest.approx(target)
+    if options.get("fixed"):
+        assert need["a"] == pytest.approx(current["a"])
 
 
 # ---- repairable ------------------------------------------------------------------------

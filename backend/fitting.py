@@ -1278,6 +1278,35 @@ def read_interval_rows(xl, xr, c=None, xl_name: str = "xl", xr_name: str = "xr",
 #: Fit option: refuse a row whose two times differ but whose flag is 0 (see :func:`fit`).
 STRICT_INTERVALS_KEY = "strict_intervals"
 
+# Fit option: rows that follow an item over time (an item column, start and
+# stop or timeline rows) read as one life per item for a model without
+# covariates — its last time, and its status on that last row.
+ITEM_LIVES_KEY = "item_lives"
+
+
+def item_lives(df: pd.DataFrame, mapping: dict) -> tuple[pd.DataFrame, dict]:
+    """One row per item (``mapping["i"]``): x = the item's last time (the end
+    of its last row, xr, or its last x), c = the status on that row. The rows
+    and status must be read already (c as codes). Raises FitError without an
+    item column or a time."""
+    item = mapping.get("i")
+    time = mapping.get("xr") or mapping.get("x")
+    if not item or not time:
+        raise FitError("A life per item needs the item column (i) and each row's time (x, or the end of its "
+                       "row, xr).")
+    status = mapping.get("c")
+    keep = [item, time] + ([status] if status else [])
+    rows = df[keep].copy()
+    rows["__t"] = pd.to_numeric(rows[time], errors="coerce")
+    rows = rows[rows[item].notna() & rows["__t"].notna()]
+    if rows.empty:
+        raise FitError(f"No row has both an item in “{item}” and a time in “{time}”.")
+    last = rows.sort_values([item, "__t"], kind="mergesort").groupby(item, sort=False).tail(1)
+    out = pd.DataFrame({time: last["__t"].to_numpy(dtype=float)})
+    if status:
+        out[status] = last[status].to_numpy()
+    return out.reset_index(drop=True), {"x": time, **({"c": status} if status else {})}
+
 
 def _check_interval_flags(df: pd.DataFrame, mapping: dict) -> None:
     names = [mapping.get(k) for k in ("xl", "xr", "c")]
@@ -1623,6 +1652,7 @@ def options_from_form(
     criterion: Optional[str] = None,
     frailty_family: Optional[str] = None,
     u_col: Optional[str] = None,
+    item_lives: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers).
     ``c_map`` is a JSON object of status words to censor codes."""
@@ -1663,6 +1693,8 @@ def options_from_form(
         opts[more_models.FAMILY_KEY] = str(frailty_family).strip()
     if u_col and str(u_col).strip():
         opts["u_col"] = str(u_col).strip()  # unit_column.UNIT_COLUMN_KEY
+    if truthy(item_lives):
+        opts[ITEM_LIVES_KEY] = True
     return opts if any(opts.values()) else None
 
 
@@ -1998,6 +2030,10 @@ def fit(
         c_invert = False
     if c_invert:
         df = invert_censor_column(df, mapping["c"])
+    # Rows that follow an item over time, read as one life per item.
+    per_item = bool(options.pop(ITEM_LIVES_KEY, False))
+    if per_item:
+        df, mapping = item_lives(df, mapping)
     # An exact value on some rows and only a range on others: one xl/xr pair.
     x_and_range = x_and_range_rows(df, mapping)
     df, mapping = combine_exact_and_ranges(df, mapping)
@@ -2073,6 +2109,9 @@ def fit(
         result["options"] = {**(result.get("options") or {}), CENSOR_INVERT_KEY: True}
     if c_map:
         result["options"] = {**(result.get("options") or {}), CENSOR_MAP_KEY: c_map}
+    if per_item:
+        result["options"] = {**(result.get("options") or {}), ITEM_LIVES_KEY: True}
+        result["item_lives"] = int(len(df))
     if unit_conversion:
         result["options"] = {**(result.get("options") or {}), unit_column.UNIT_COLUMN_KEY: unit_conversion["column"]}
         result["unit_conversion"] = unit_conversion

@@ -78,9 +78,10 @@ Go to **Modelling → Models →** [Condition and life](/models/joint) and press
 model**. Under **1. Your dataset**, pick the dataset from the list (those holding life data
 with its measurements come first; a dataset with life data alone says to add its measurements on
 its page). Its two parts show beside the list. Or press **Upload or paste a new dataset…** to
-add one with its measurements. Reliafy guesses the columns of each part under **2.
-Columns**; check them. Each part has the same selectors as the other fits,
-labelled with SurPyval's names:
+add one with its measurements. Under **2. How the data is read**, each part's
+reading shows in one line, with **Change** (the same selectors as the other
+fits, labelled with SurPyval's names); a reading Reliafy guessed says *guessed —
+check it*:
 
 - **Life data**: **i** (which item each row is), **x** (the value when it
   failed, or now if still running) with its unit, or a range **xl to xr**, **c**

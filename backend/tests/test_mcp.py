@@ -312,8 +312,9 @@ def test_dataset_upload_then_fit_from_it(env):
     assert ds["columns"] == ["hours", "failed"] and ds["n_rows"] == len(TIMES)
     assert ds["id"] in [d["id"] for d in _ok(_call(env.token[A], "list", {"kind": "datasets"}))["datasets"]]
 
-    msg = _err(_call(env.token[A], "analyse", {"action": "fit", "dataset_id": ds["id"]}))
-    assert "time_column" in msg and "hours" in msg
+    # No columns named: the dataset's reading (guessed at upload) says which is which.
+    read = _ok(_call(env.token[A], "analyse", {"action": "fit", "dataset_id": ds["id"]}))
+    assert read["saved"] is False and "censoring" in read
     out = _ok(_call(env.token[A], "analyse", {"action": "fit",
         "dataset_id": ds["id"], "time_column": "hours", "censor_column": "failed"}))
     ref = _direct_fit(TIMES, FLAGS)

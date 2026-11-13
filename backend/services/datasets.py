@@ -138,10 +138,18 @@ def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: b
 
 
 def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
-                    no_header: bool = False) -> tuple[Dataset, bool]:
+                    no_header: bool = False, reading: dict | None = None,
+                    keep_reading: bool = False) -> tuple[Dataset, bool]:
     """``create_dataset``, also saying whether identical data already existed
     (``True``: the existing dataset, under its own name, came back) — so the
-    app can tell the user rather than silently dropping the new name."""
+    app can tell the user rather than silently dropping the new name.
+
+    ``reading``: how the columns are read (dataset_reading.normalize checks
+    it against the columns first; ReadingError when it doesn't fit). Identical
+    data already saved takes it too, unless ``keep_reading`` and it has one of
+    its own (a guess never replaces a reading someone chose)."""
+    from backend.services import dataset_reading
+
     check_size(file_bytes)
     if no_header:
         file_bytes = apply_generic_header(file_bytes)
@@ -149,10 +157,15 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
     digest = storage.checksum(file_bytes)
     existing = db.datasets.find_one({"checksum": digest, "owner_id": owner_id})
     if existing is not None:
-        return from_doc(Dataset, existing), True
+        ds = from_doc(Dataset, existing)
+        if reading is not None and not (keep_reading and ds.reading):
+            ds = set_reading(db, ds, reading, owner_id)
+        return ds, True
 
     df = read_dataframe(file_bytes)
     columns = [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns]
+    if reading is not None:
+        reading = _checked_reading(reading, columns)
 
     dataset = Dataset(
         id=uuid.uuid4().hex,
@@ -162,9 +175,31 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
         n_rows=int(df.shape[0]),
         columns=columns,
         data=file_bytes,
+        reading=reading,
     )
     db.datasets.insert_one(to_doc(dataset))
     return dataset, False
+
+
+def _checked_reading(reading: dict, columns, measurement_columns=None) -> dict:
+    """A reading as kept: checked against the columns (and the measurements'
+    sub-reading against theirs); a guess keeps its mark."""
+    from backend.services import dataset_reading
+
+    out = dataset_reading.normalize(reading, columns, measurement_columns=measurement_columns)
+    if reading.get("guessed"):
+        out["guessed"] = True
+    return out
+
+
+def set_reading(db, dataset: Dataset, reading: dict, owner_id: str) -> Dataset:
+    """Keep a new reading for the dataset (the upload's, or Change on a fit):
+    later fits use it; models already made keep the one they were fitted with.
+    Raises dataset_reading.ReadingError when it doesn't fit the columns."""
+    part = dataset.measurements
+    kept = _checked_reading(reading, dataset.columns, part.columns if part is not None else None)
+    db.datasets.update_one({"_id": dataset.id, "owner_id": owner_id}, {"$set": {"reading": kept}})
+    return dataset.model_copy(update={"reading": kept})
 
 
 # ---- One sheet, several datasets: split by a column ---------------------------
@@ -238,17 +273,23 @@ def split_names(values: list[str], taken: set[str], source: str) -> list[str]:
 
 
 def create_split(db, file_bytes: bytes, column: str, owner_id: str,
-                 source: str) -> tuple[list[tuple[Dataset, bool]], int]:
+                 source: str, reading: dict | None = None,
+                 keep_reading: bool = False) -> tuple[list[tuple[Dataset, bool]], int]:
     """Save one dataset per value of ``column`` (``split_by_column``), named by
     ``split_names`` against the owner's datasets: ``([(dataset, reused), ...],
-    blank_rows)``. Only the rows are kept: the columns are read when fitting.
-    Identical data already saved comes back as it is (``reused``)."""
+    blank_rows)``. ``reading``: the one reading every part is kept with (the
+    split column, left out of each part, left out of it too). Identical data
+    already saved comes back as it is (``reused``), with the reading."""
+    from backend.services import dataset_reading
+
     parts, blank = split_by_column(file_bytes, column)
+    if reading is not None:
+        reading = dataset_reading.drop_column(reading, str(column).strip())
     taken = {d.get("name") or "" for d in db.datasets.find({"owner_id": owner_id}, {"name": 1})}
     names = split_names([v for v, _ in parts], taken, source)
     out = []
     for (_, data), name in zip(parts, names):
-        ds, reused = create_or_reuse(db, name, data, owner_id)
+        ds, reused = create_or_reuse(db, name, data, owner_id, reading=reading, keep_reading=keep_reading)
         out.append((ds, reused))
     return out, blank
 

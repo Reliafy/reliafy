@@ -27,9 +27,9 @@ the load per unit goes up.
 So before you can add a load-sharing block, you need an
 **accelerated-failure-time (AFT) model with load as its single covariate**. In
 practice that means failure data gathered at more than one load level. Fit it
-under **Modelling → Models → Non-repairable → New model → Fit to data**: in the Data step choose your
-failure times for **x** (*the value when it failed or was removed*), open **Advanced (regression):
-covariates** and add your load column; then in the Model step choose an AFT
+under **Modelling → Models → Non-repairable → New model → Fit to data** from a dataset whose reading
+has your failure times as **x** (*the value when it failed or was removed*) and the load column in
+**Z**. In the Model step choose **Regression on Z**, keep only load ticked, and choose an AFT
 model — **Weibull AFT** is the usual starting point.
 
 If you've done accelerated life testing with load as the stress, you already have

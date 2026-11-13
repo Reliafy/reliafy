@@ -47,6 +47,41 @@ in the Explorer** takes you back to the tree.
 Replacing it later is done by closing a work order, so the old item's life (and
 whether it failed) goes into the position's history.
 
+## Import or export your tree
+
+Already have your hierarchy in a spreadsheet? Bring it in from Excel instead of
+adding positions one by one.
+
+1. In the **Explorer**, open the tree's **⋯** menu and choose **Export to
+   Excel…**, then **Download Excel**. Even an empty tree gives you the file with
+   the right columns, and its **Read me** sheet explains each one.
+2. Fill in the **Hierarchy** sheet, one row per position. The **Path** says
+   where it sits, every level from the top: `Plant 1 > Unit 2 > Feed pump A`.
+   Add its **Tag**, **Position class**, **Location** and the **Fitted item**
+   (with its serial, part number and **Installed on** date) if you know them.
+   A row's parent must be in the file or already in Reliafy.
+3. Choose **Import from Excel…** in the same menu (or on an empty Explorer)
+   and pick the file. Reliafy checks every row first and shows what will
+   happen ("Will create 312 positions, 40 locations, 18 classes and 290
+   items") and any problems, by row, with what to fix.
+4. Choose **Import**. It all goes in, or nothing does.
+
+Importing the same file again changes nothing: each row finds its position by
+its **ID** (in an exported file), else by its **Path**. So you can export, edit
+in Excel and import again:
+
+- Change a **Name**, **Tag** or class and the position is updated.
+- Change a **Path** to move a position; the preview says how many will move.
+- Nothing is ever deleted. Positions missing from the file stay, and a blank
+  cell never clears a value; the preview counts what wasn't in the file.
+- An item already fitted is never swapped by an import (close a work order to
+  replace it), and its fitted date isn't changed.
+- Locations and item classes the file names are made if they don't exist.
+
+To export one part of the tree, choose **Export this branch…** from a
+position's row menu. A CSV holds the Hierarchy sheet alone; Excel also has the
+Locations and Classes sheets.
+
 ## Where to go next
 
 - The Explorer's **Modelling** tab: life models on positions.

@@ -711,6 +711,7 @@ def save(db, owner_id: str, model, result: dict, priors, name: str | None = None
             "mapping": {k: v for k, v in mapping.items() if v},
             **({"options": {k: v for k, v in options.items() if v}} if options and any(options.values()) else {}),
             "notes": notes or "",
+            **({"reading": dict(dataset.reading)} if getattr(dataset, "reading", None) else {}),
             "bayes": {"x": xs.tolist(), "c": cs.tolist(), "priors": model.to_dict()["priors"]}}
     doc = Model(id=models_service.uuid.uuid4().hex, name=label, owner_id=owner_id, dataset_id=dataset.id,
                 kind="distribution", distribution_id=dist_id, spec=spec, results=fitting._json_safe(results),

@@ -81,7 +81,7 @@ export default function NewModelPage() {
   const sub =
     mode === "params" ? "Enter known parameters to build the model."
     : mode === "perdemand" ? "Reliability per demand, from a demands/failures count."
-    : fitting ? "Pick data, map columns, fit, then review and save."
+    : fitting ? "Pick the data, choose a model and fit, then review and save."
     : "Where does the model come from?";
 
   return (

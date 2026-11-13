@@ -271,7 +271,10 @@ def test_voids_and_corrections_are_checked(m):
     with pytest.raises(Invalid):
         m.correct_reading(r["id"], value=900, reason="lower than the reading before")
     with pytest.raises(Invalid):
-        m.correct_reading(r["id"], on=_ahead(1), reason="the future")
+        # After the latest day the workspace accepts (its own zone, plus the clock tolerance),
+        # not the runner's UTC date: late in the UTC day that is already "today" in Brisbane.
+        later = (date.fromisoformat(m.latest_day()) + timedelta(days=1)).isoformat()
+        m.correct_reading(r["id"], on=later, reason="the future")
     # Lower than itself is fine: the reading being replaced doesn't count.
     fixed = _the(m.correct_reading(r["id"], value=1300, reason="misread"), "correction")
     with pytest.raises(Invalid):
