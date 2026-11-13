@@ -24,8 +24,11 @@ const RecurrentHome = lazy(() => import("./views/RecurrentHome.jsx"));
 const RecurrentNewPage = lazy(() => import("./views/RecurrentNewPage.jsx"));
 const RecurrentModelPage = lazy(() => import("./views/RecurrentModelPage.jsx"));
 const AltHome = lazy(() => import("./views/AltHome.jsx"));
-const LibraryHome = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryHome })));
-const LibrarySource = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibrarySource })));
+// Libraries: yours, shared with you and public (with the built-in handbooks), every entry by kind,
+// one library's page, and a handbook's record and component pages.
+const LibrariesHome = lazy(() => import("./views/Libraries.jsx"));
+const LibraryEntriesPage = lazy(() => import("./views/Libraries.jsx").then((m) => ({ default: m.LibraryEntriesPage })));
+const LibraryPage = lazy(() => import("./views/Libraries.jsx").then((m) => ({ default: m.LibraryPage })));
 const LibraryRecord = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryRecord })));
 const LibraryComponent = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryComponent })));
 const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
@@ -313,10 +316,12 @@ function Shell() {
             <Route path="/failures" element={<PlannedPage id="failures" />} />
             <Route path="/asset-register/fleets" element={<PlannedPage id="fleets" />} />
             <Route path="/maintenance/inbox" element={<PlannedPage id="inbox" />} />
-            <Route path="/models/library" element={<LibraryHome />} />
-            <Route path="/models/library/:source" element={<LibrarySource />} />
-            <Route path="/models/library/:source/:record" element={<LibraryRecord />} />
-            <Route path="/models/library/:source/components/:component" element={<LibraryComponent />} />
+            <Route path="/libraries" element={<LibrariesHome />} />
+            <Route path="/libraries/data" element={<LibraryEntriesPage type="data" />} />
+            <Route path="/libraries/models" element={<LibraryEntriesPage type="model" />} />
+            <Route path="/libraries/:id" element={<LibraryPage />} />
+            <Route path="/libraries/:source/:record" element={<LibraryRecord />} />
+            <Route path="/libraries/:source/components/:component" element={<LibraryComponent />} />
 
             <Route path="/reports" element={<ReportsPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}

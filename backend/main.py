@@ -98,6 +98,7 @@ from backend.routers import content_jobs as content_jobs_router
 from backend.routers import extensions as extensions_router
 from backend.routers import feeds as feeds_router
 from backend.routers import library as library_router
+from backend.routers import libraries as libraries_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
 from backend.routers import predictions as predictions_router
@@ -299,6 +300,8 @@ app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
 app.include_router(library_router.router)
+# Libraries: shareable collections of dataset and model snapshots (backend/library/entries.py).
+app.include_router(libraries_router.router)
 # Reliability prediction: a parts count from the library's handbook rates.
 app.include_router(predictions_router.router)
 # Optional extensions (backend/extensions.py): the pages they add, and their
@@ -736,7 +739,7 @@ SPA_ROOTS = frozenset({
     # The signed-in app.
     "home", "products", "items", "systems", "asset-register", "maintenance", "data", "models", "strategy",
     "forecasts", "predictions", "reports",
-    "maintainability",
+    "maintainability", "libraries",
     "agent", "team", "settings", "tokens", "billing", "changes", "data-model",
     # Placeholder pages (frontend/src/plannedPages.js).
     "requirements", "failures", "risk",

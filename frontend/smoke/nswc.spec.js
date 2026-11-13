@@ -23,9 +23,9 @@ async function headPick(page, group, item) {
 
 test("the NSWC-11 library source, a bearing's record and Try it past a limit", async ({ page, problems }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, "/models/library");
-  await page.getByRole("link", { name: SOURCE }).click();
-  await expect(page).toHaveURL(/\/models\/library\/nswc-11$/);
+  await open(page, "/libraries");
+  await page.getByRole("link", { name: /^NSWC-11/ }).click();
+  await expect(page).toHaveURL(/\/libraries\/nswc-11$/);
   await expect(page.getByRole("heading", { name: "Covariate models: base rate × condition factors" })).toBeVisible();
   await expect(page.locator(".lib-disclaimer")).toContainText("did not take part");
   const table = page.locator(".lib-table");
@@ -40,7 +40,7 @@ test("the NSWC-11 library source, a bearing's record and Try it past a limit", a
   await page.setViewportSize({ width: 1440, height: 900 });
 
   await table.getByRole("link", { name: BEARING }).first().click();
-  await expect(page).toHaveURL(/\/models\/library\/nswc-11\/bearing-rolling-load-rating$/);
+  await expect(page).toHaveURL(/\/libraries\/nswc-11\/bearing-rolling-load-rating$/);
   await expect(page.getByRole("heading", { name: "The model in words" })).toBeVisible();
   await expect(page.locator("body")).toContainText("starts at one over its L10 life");
   await expect(page.getByRole("heading", { name: "The formula" })).toBeVisible();

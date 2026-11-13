@@ -67,10 +67,10 @@ def summary(doc) -> dict:
                              "text": ", ".join(m["mode"].lower() for m in comp["modes"] if m["counted"])}],
                 "counts": {}, "quality": {"word": "Generic", "tone": "neutral",
                                           "why": "Industry averages for its failure modes, not this equipment's own."},
-                "path": "/models/library/" + comp["source"] + "/components/" + comp["id"].rsplit(":", 1)[1],
+                "path": "/libraries/" + comp["source"] + "/components/" + comp["id"].rsplit(":", 1)[1],
                 "trend": None, "covariate_words": "component"}
     rec = doc.record
-    path = "/models/library/" + rec["id"].replace(":", "/", 1)
+    path = "/libraries/" + rec["id"].replace(":", "/", 1)
     if rec.get("kind") != "covariate_model":
         return {"name": doc.name, "unit": "Hours", "family": "life",
                 "kind": f"Library record ({library.units_text(rec)})",

@@ -119,10 +119,10 @@ function LibraryList() {
   return (
     <section className="card" aria-labelledby="models-library">
       <div className="maint-head">
-        <h2 id="models-library">Library</h2>
-        <Link to={LIBRARY_PATH}>Open the library</Link>
+        <h2 id="models-library">Libraries</h2>
+        <Link to={LIBRARY_PATH}>All libraries</Link>
       </div>
-      <p className="hint">Published failure rates and probabilities with their uncertainty, and libraries of your own models, to use as a model or a prior.</p>
+      <p className="hint">Published failure rates and probabilities with their uncertainty, and libraries of your own data and models.</p>
       {mine.length > 0 && (
         <>
           <h3 className="lib-h">Yours</h3>

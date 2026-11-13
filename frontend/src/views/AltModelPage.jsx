@@ -16,6 +16,8 @@ import { altPlanLink, altPrefill } from "../testPlanning.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
+import FromLibrary from "../components/FromLibrary.jsx";
 
 // A saved accelerated life model in the model frame: the answer line, the
 // result's tabs (Life-stress, Probability plot, Calculator, Diagnostics,
@@ -25,6 +27,7 @@ export default function AltModelPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  const [adding, setAdding] = useState(false);
   // Not on this list (404): ModelNotFound looks in the others.
   const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
@@ -77,12 +80,18 @@ export default function AltModelPage() {
             </Link>
           )}
           {!model.read_only && <button type="button" className="ovm-item" onClick={onRename}>Rename</button>}
+          <button type="button" className="ovm-item" onClick={() => setAdding(true)}>Add to library…</button>
           <button type="button" className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
           </button>
         </>
       )}
-      notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
+      notice={(error || model?.from_library) && (
+        <>
+          {model?.from_library && <FromLibrary from={model.from_library} className="mf-notice" />}
+          {error && <div className="card error mf-notice" role="alert">{error}</div>}
+        </>
+      )}
     >
       {model ? (
         // A model this page can't draw shows a card here, not the whole-app error page.
@@ -92,6 +101,9 @@ export default function AltModelPage() {
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="alt" />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+      {adding && model && (
+        <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} collection="alt_models" onClose={() => setAdding(false)} />
+      )}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

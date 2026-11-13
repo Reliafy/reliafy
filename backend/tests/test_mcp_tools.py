@@ -73,7 +73,10 @@ NEW_ACTIONS = {
     ("change", "prediction_save"), ("change", "prediction_update"), ("change", "prediction_delete"),
     # A user's own data libraries: saved life models as records (Nov 2026).
     ("get", "library"), ("list", "libraries"), ("change", "library_create"), ("change", "library_update"),
-    ("change", "library_delete"), ("change", "library_add_model"), ("change", "library_remove_record"),
+    ("change", "library_delete"),
+    # Libraries of datasets and models, shareable and public (Nov 2026; library_add and library_remove replace
+    # library_add_model and library_remove_record).
+    ("change", "library_add"), ("change", "library_remove"), ("change", "library_use"),
     # Fault trees built by hand (Nov 2026).
     ("get", "fault_tree"), ("list", "fault_trees"), ("analyse", "fault_tree"), ("change", "fault_tree_save"),
     ("change", "fault_tree_delete"),
@@ -231,7 +234,8 @@ def test_the_listed_tools_are_small(env):
     args and guide text; 7,972 with the user libraries' seven actions, after
     trimming the tool intros, titles and the replacement one-liners; 7,988 with the missions' analyse and
     change rbd_mission, after shortening the analyse and guide intros; 7,981 with analyse model_export_python,
-    after shortening the analyse intro again) and
+    after shortening the analyse intro again; 7,988 with libraries of datasets and models
+    (library_add / library_remove renamed, library_use added), after shortening the list intro) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

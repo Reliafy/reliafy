@@ -64,6 +64,7 @@ def _model_summary(doc, ctx: AccessCtx) -> dict:
         "unit": r.get("unit", ""),
         "dataset_id": doc.dataset_id,
         "is_sample": samples_service.is_sample(doc.owner_id),
+        **({"from_library": doc.from_library} if doc.from_library else {}),
         "read_only": not access_service.can_write(ctx, doc.owner_id),
         "updated_by": (doc.updated_by or {}).get("name"),
         "created_at": doc.created_at.isoformat(),

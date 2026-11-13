@@ -198,7 +198,7 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   const g = attachGroups({ positionClass: "Pump", hasPrediction: true });
   assert.deepEqual(g.map((x) => x.label), ["Life model", "RBD", "Prediction"]);
   assert.deepEqual(g[0].items.map((x) => x.label), ["Fit a life model…", "Assign a saved model…", "From the data library…",
-    "From the class…", "Enter parameters…", "Add to a library…"]);
+    "From the class…", "Enter parameters…", "Add to library…"]);
   assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Redundancy inside…", "New blank RBD…", "Link an existing RBD…"]);
   // A leaf: nothing to build from, so a new blank RBD is the way in.
   const leaf = attachGroups({ hasInside: false })[1].items;
@@ -223,7 +223,7 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   assert.equal(builtRbdLink(null, "pump"), null);
   const bare = attachGroups();
   assert.equal(bare[0].items.find((x) => x.id === "model-attach-class").reason, "This position has no class");
-  // Add to a library… needs a life model on the position (the one in use, else its first).
+  // Add to library… needs a life model on the position (the one in use, else its first).
   assert.equal(bare[0].items.find((x) => x.id === "model-attach-to-library").reason, "This position has no life model yet");
   assert.ok(!attachGroups({ hasLifeModel: true })[0].items.find((x) => x.id === "model-attach-to-library").disabled);
   const links = [link("p1", "pump", { model_id: "m1", model: WEIBULL }), link("p2", "pump", { model_id: "m2", model: WEIBULL, in_use: true }),

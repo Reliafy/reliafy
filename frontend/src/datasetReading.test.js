@@ -80,7 +80,7 @@ test("a column given a role leaves Z, and comes back by the guard when it's free
   const tagAsX = setRole(r, "tl", "Equipment Tag", f, 40);
   assert.equal(tagAsX.i, "");
   assert.equal(readingText({ ...s, z: ["Site"] }),
-    "x = Cumulative Operating Age at Failure or End (h) (hours) · c = Life Record Status (Failed / Right-censored) · "
+    "x = Cumulative Operating Age at Failure or End (h) · c = Life Record Status (Failed / Right-censored) · "
     + "i = Equipment Tag · failure mode = Failure Mode · s = Duty · Z: Site");
 });
 
@@ -189,4 +189,10 @@ test("a model kind that needs a role the reading lacks says so", () => {
   assert.match(missingFor("degradation", { ...r, m: "" }), /m \(the measured value\)/);
   assert.deepEqual(readingParts({ ...emptyReading(), x: "Age", unit: "Hours", c: "Status", z: ["Load"] })
     .map((p) => p.key), ["x", "c", "z"]);
+});
+
+test("the x line doesn't repeat a unit the column name already carries", () => {
+  const x = (r) => readingParts({ ...emptyReading(), ...r }).find((p) => p.key === "x").value;
+  assert.equal(x({ x: "Age", unit: "Hours" }), "Age (hours)");
+  assert.equal(x({ x: "Age (h)", unit: "Hours" }), "Age (h)");
 });

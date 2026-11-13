@@ -66,7 +66,7 @@ def test_the_guess_on_a_plant_sheet_and_its_z_guard():
     assert r["c_map"] == {"Failed": 0, "Running": 1}
     assert r["z"] == ["Equipment class", "Load", "Site"]
     assert r["not_used"] == ["ID", "Remarks"]
-    assert dr.summary(r) == ("x = Age (h) (Hours) · c = Status · i = Equipment Tag · failure mode = Failure mode · "
+    assert dr.summary(r) == ("x = Age (h) · c = Status · i = Equipment Tag · failure mode = Failure mode · "
                              "Z: Equipment class, Load, Site · not used: ID, Remarks")
 
 
@@ -119,7 +119,7 @@ def test_upload_keeps_the_reading_and_the_detail_returns_it(web):
     assert d["reading_source"] == "saved" and d["reading_kept"] is True
     assert d["reading"]["x"] == "Age (h)" and d["reading"]["z"] == ["Load", "Site"]
     assert d["reading"]["z_units"] == {"Load": "kN"}
-    assert d["reading_summary"].startswith("x = Age (h) (Hours) · c = Status")
+    assert d["reading_summary"].startswith("x = Age (h) · c = Status")
     assert db.datasets.find_one({"_id": d["id"]})["reading"]["c_map"] == {"Failed": 0, "Running": 1}
     again = client.get(f"/api/datasets/{d['id']}").json()
     assert again["reading_source"] == "saved"
@@ -245,3 +245,11 @@ def test_mcp_fit_without_columns_uses_the_reading(env):
                                                 "unit": "hours", "time_column": "Age (h)"}))
     # Naming only the time: every row a failure, as before.
     assert named["censoring"]["n_failed"] == 7 if "censoring" in named else True
+
+
+def test_summary_adds_the_unit_only_when_the_column_name_lacks_one():
+    from backend.services import dataset_reading as dr
+
+    assert dr.summary({"x": "Age", "unit": "Hours"}).startswith("x = Age (Hours)")
+    assert dr.summary({"x": "Age (h)", "unit": "Hours"}).startswith("x = Age (h)")
+    assert "(Hours)" not in dr.summary({"x": "Age (h)", "unit": "Hours"})

@@ -689,7 +689,9 @@ def summary(reading: dict) -> str:
         return ""
     parts = []
     if reading.get("x"):
-        unit = f" ({reading['unit']})" if reading.get("unit") else ""
+        # A column already named with its unit ("Age (h)") isn't given it twice.
+        named = re.search(r"\([^()]*\)\s*$", str(reading["x"]))
+        unit = f" ({reading['unit']})" if reading.get("unit") and not named else ""
         parts.append(f"x = {reading['x']}{unit}")
     if reading.get("xl"):
         parts.append(f"range = {reading['xl']} to {reading['xr']}")
