@@ -7,7 +7,7 @@
 // replacement's early-renewal age, a proof test's first test, coverage and full test), plus its
 // duty, crew priority and (for a task in no package) its maintenance group.
 import { explorerPath } from "./assetTree.js";
-import { taskSummary } from "./rbdMaintenancePlan.js";
+import { THRESHOLD_NEEDED, taskSummary } from "./rbdMaintenancePlan.js";
 
 // What the diagram may set for a tree-linked block, by what its task does (as the backend's SETTINGS).
 export const TREE_SETTINGS = {
@@ -16,6 +16,9 @@ export const TREE_SETTINGS = {
   condition: ["threshold", "cost", "duration"],
   test: ["offset", "coverage", "full_test"],
 };
+
+// A task's restoration and shutdown, in RePyability's shape (as rbd_tree_plan.merge).
+export const LIBRARY_KEYS = ["restoration", "replace_every", "replacement_cost", "shutdown", "older_than"];
 
 const blank = (v) => v == null || v === "";
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => !blank(v)));
@@ -39,6 +42,10 @@ export function mergeTreeData(data = {}, row) {
   const pm = { policy: plan.task, interval: plan.interval, operating_interval: plan.operating_interval };
   if (plan.task === "condition") Object.assign(pm, { inspection_cost: plan.inspection_cost }, own);
   else Object.assign(pm, { duration: plan.duration, cost: plan.cost }, own);
+  // What the library takes only once it supports it (the server puts these in the plan only then;
+  // until then the row's pending says so and it's calculated as new, on its own interval).
+  for (const k of LIBRARY_KEYS) if (plan[k] != null) pm[k] = plan[k];
+  if (plan.shutdown != null) for (const k of ["interval", "operating_interval", "duration", "opportunity"]) delete pm[k];
   out.preventive = pick(pm);
   if (plan.group) out.maintenance_group = plan.group;
   return out;
@@ -72,12 +79,10 @@ export function treeRowProblems(data = {}, row) {
   if (plan.task === "condition") {
     const th = Number(s.threshold);
     if (blank(s.threshold) || !Number.isFinite(th) || th < 0 || th > 1) {
-      out.push("Set the replacement threshold: a probability from 0 to 1 (e.g. 0.05).");
+      out.push(THRESHOLD_NEEDED);
     }
   }
-  if (plan.operating_interval != null && plan.interval == null && !(Number(data.duty) > 0 && Number(data.duty) <= 1)) {
-    out.push("The task counts running hours: set how much of the time the block runs (Runs %) to turn them into calendar time.");
-  }
+  // Running hours with Runs blank: the block runs all the time, so they're calendar hours.
   if (plan.task === "age" && !blank(s.opportunity) && !plan.group && blank(data.maintenance_group)) {
     out.push("Early renewal at a group stop needs a maintenance group.");
   }
@@ -120,4 +125,15 @@ export function treeBlockPlan(data = {}, row, unit = "") {
     editPath: treeTaskPath(pos.id, used ? { taskId: used.id } : { add: true }),
     editLabel: used ? "Edit in the tree" : "Add a task in the tree",
   };
+}
+
+// Blocks standing for positions deleted or moved out of the diagram's position since it was built
+// (plans.gone): kept in the diagram, named so they aren't mistaken for live ones. "" for none.
+export function goneText(gone = [], where = "") {
+  if (!gone?.length) return "";
+  const one = gone.length === 1;
+  const names = gone.slice(0, 8).map((g) => `“${g.label}”`).join(", ") + (gone.length > 8 ? " …" : "");
+  const inside = where ? `inside ${where}` : "inside";
+  return `${names} ${one ? "stands" : "stand"} for ${one ? "a position" : "positions"} no longer ${inside} (deleted or moved). `
+    + `${one ? "It's" : "They're"} kept in the diagram and still counted: delete ${one ? "the block" : "those blocks"} if ${one ? "it has" : "they have"} gone.`;
 }

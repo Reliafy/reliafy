@@ -15,7 +15,7 @@ test("entries with sub-pages toggle; the rest are links", () => {
   const top = Object.fromEntries(live.map((e) => [e.id, toggles(e)]));
   assert.deepEqual(top, {
     home: false, products: false, assets: false, items: false, maintenance: true,
-    modelling: true, decisions: true, reports: false, agent: false,
+    modelling: true, libraries: true, decisions: true, reports: false, agent: false,
   });
   const second = (id) => Object.fromEntries(find(live, id).entries.map((e) => [e.id, toggles(e)]));
   assert.deepEqual(second("modelling"), { data: false, models: true, prediction: false, maintainability: false, systems: true });
@@ -31,7 +31,9 @@ test("a group lists its entries; an entry lists exactly its children, never its 
     ["Data", "Models", "Reliability prediction", "Maintainability prediction", "System models"]);
   assert.deepEqual(labels(subItems(find(live, "decisions"))), ["Strategy", "Forecasts", "Risk"]);
   assert.deepEqual(labels(subItems(find(live, "models"))), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
-    "Condition and life", "Library"]);
+    "Condition and life"]);
+  // Libraries opens on All libraries and lists it first.
+  assert.deepEqual(labels(subItems(find(live, "libraries"))), ["All libraries", "Data", "Models"]);
   assert.deepEqual(labels(subItems(find(live, "strategy"))), ["Optimal replacement", "Compare two models", "Failure finding",
     "Test planning"]);
   // Maintenance opens on Orders and lists it first, then its other sub-pages.

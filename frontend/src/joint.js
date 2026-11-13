@@ -271,3 +271,81 @@ export function paramGroups(params) {
 export function usedOnPositions(links, modelId) {
   return !!modelId && (links || []).some((l) => l?.model_type === "model" && l?.model_id === modelId);
 }
+
+// The condition-and-life Data step: the shared selectors (ColumnMapper) for
+// each of its two tables. Lifetimes: i (the item id, sent as ``id``), x and
+// its range, c (0/1 codes, flipped with c_invert) and tl; readings: i, x
+// (when the reading was taken, sent as ``age``) and m (the measured value,
+// sent as ``value``): measurements, not covariates.
+export const JOINT_LIFE_ROWS = ["i", "x", "c", "tl"];
+export const JOINT_LIFE_KEYS = { i: "id" };
+export const JOINT_READ_ROWS = ["i", "x", "m"];
+export const JOINT_READ_KEYS = { i: "id", x: "age", m: "value" };
+
+// The lifetimes mapping sent: x, or the range (xl, xr) when x is blank, never
+// both (the fit reads one or the other); unset columns left out.
+export function jointLifeMapping(map) {
+  const m = map.x ? { id: map.id, x: map.x, c: map.c, tl: map.tl }
+    : { id: map.id, xl: map.xl, xr: map.xr, c: map.c, tl: map.tl };
+  return Object.fromEntries(Object.entries(m).filter(([, v]) => v));
+}
+
+// What stops a condition-and-life fit, beside its selector: [{ table, row, text }].
+export function jointIssues(map, rmap) {
+  const out = [];
+  const add = (table, row, text) => out.push({ table, row, text });
+  const range = !!(map.xl || map.xr);
+  if (!map.id) add("life", "i", "Pick i: the column saying which item each row is.");
+  if (map.x && range) add("life", "x", "Condition and life takes x or a range (xl to xr), not both: clear one.");
+  else if (range && !(map.xl && map.xr)) add("life", "x", "Pick both xl and xr for the range, or neither.");
+  else if (!map.x && !range) add("life", "x", "Pick x: the column with the value when each item failed or was last seen.");
+  if (!map.c) add("life", "c", "Pick c: the column saying whether each item failed or is still running.");
+  if (!rmap.id) add("reads", "i", "Pick i: the column saying which item each reading belongs to.");
+  if (!rmap.age) add("reads", "x", "Pick x: the column saying when each reading was taken.");
+  if (!rmap.value) add("reads", "m", "Pick m: the column with the measured value.");
+  return out;
+}
+
+// A saved dataset's reading as the condition-and-life fit's two mappings (no
+// column step). The life data from the main reading: i (sent as ``id``), x or
+// its range, c and tl, with c_invert and the time unit; the readings from the
+// reading of the measurements part (``r.measurements``: i, x, m), or, for one
+// table holding both (``combined``), the main reading's i, x and m. The fit
+// takes c as 0/1 codes: a status read by words (c_map) is turned into
+// c_invert when its values are 0 and 1, else said in ``statusIssue``.
+// Covariates: Z, numeric columns only (``lifeFacts``: column facts).
+// { map, rmap, invert, unit, markerUnit, covariates, statusIssue }.
+export function jointMappingsFromReading(r, { combined = false, lifeFacts = {} } = {}) {
+  const life = r || {};
+  const map = {
+    id: life.i || "", x: life.x || "", xl: life.x ? "" : life.xl || "", xr: life.x ? "" : life.xr || "",
+    c: life.c || "", tl: life.tl || "",
+  };
+  const meas = (combined ? { i: life.i, x: life.x, m: life.m, m_unit: life.m_unit } : life.measurements) || {};
+  const rmap = { id: meas.i || "", age: meas.x || "", value: meas.m || "" };
+  let invert = !!life.c_invert && !!life.c;
+  let statusIssue = null;
+  if (life.c && life.c_map && Object.keys(life.c_map).length) {
+    const entries = Object.entries(life.c_map);
+    if (entries.every(([k, v]) => ["0", "1"].includes(String(k).trim()) && [0, 1].includes(Number(v)))) {
+      invert = entries.some(([k, v]) => String(k).trim() === "1" && Number(v) === 0);
+    } else {
+      const words = entries.map(([k]) => k).slice(0, 3).join(", ");
+      statusIssue = `c (“${life.c}”) says failed or running in words (${words}); condition and life reads 0/1 codes `
+        + "only. Change the reading to a column of 0 = failed, 1 = running codes.";
+    }
+  }
+  const covariates = (life.z || []).filter((c) => !lifeFacts[c]?.dtype || isNumeric(lifeFacts[c].dtype));
+  return { map, rmap, invert, unit: life.unit || "", markerUnit: meas.m_unit || "", covariates, statusIssue };
+}
+
+// The fit request's column fields, as the page sends them (with dataset_id,
+// name, path_model, unit, marker and marker_unit beside).
+export function jointRequest(map, rmap, invert, covs) {
+  return {
+    mapping: jointLifeMapping(map),
+    readings_mapping: rmap,
+    c_invert: invert,
+    ...covariateParts(covs),
+  };
+}

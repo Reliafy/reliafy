@@ -9,6 +9,8 @@ docs/datasets.md for the shape, the limits and why."""
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 import uuid
 from datetime import datetime, timezone
@@ -136,10 +138,18 @@ def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: b
 
 
 def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
-                    no_header: bool = False) -> tuple[Dataset, bool]:
+                    no_header: bool = False, reading: dict | None = None,
+                    keep_reading: bool = False) -> tuple[Dataset, bool]:
     """``create_dataset``, also saying whether identical data already existed
     (``True``: the existing dataset, under its own name, came back) — so the
-    app can tell the user rather than silently dropping the new name."""
+    app can tell the user rather than silently dropping the new name.
+
+    ``reading``: how the columns are read (dataset_reading.normalize checks
+    it against the columns first; ReadingError when it doesn't fit). Identical
+    data already saved takes it too, unless ``keep_reading`` and it has one of
+    its own (a guess never replaces a reading someone chose)."""
+    from backend.services import dataset_reading
+
     check_size(file_bytes)
     if no_header:
         file_bytes = apply_generic_header(file_bytes)
@@ -147,10 +157,15 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
     digest = storage.checksum(file_bytes)
     existing = db.datasets.find_one({"checksum": digest, "owner_id": owner_id})
     if existing is not None:
-        return from_doc(Dataset, existing), True
+        ds = from_doc(Dataset, existing)
+        if reading is not None and not (keep_reading and ds.reading):
+            ds = set_reading(db, ds, reading, owner_id)
+        return ds, True
 
     df = read_dataframe(file_bytes)
     columns = [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns]
+    if reading is not None:
+        reading = _checked_reading(reading, columns)
 
     dataset = Dataset(
         id=uuid.uuid4().hex,
@@ -160,9 +175,131 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
         n_rows=int(df.shape[0]),
         columns=columns,
         data=file_bytes,
+        reading=reading,
     )
     db.datasets.insert_one(to_doc(dataset))
     return dataset, False
+
+
+def _checked_reading(reading: dict, columns, measurement_columns=None) -> dict:
+    """A reading as kept: checked against the columns (and the measurements'
+    sub-reading against theirs); a guess keeps its mark."""
+    from backend.services import dataset_reading
+
+    out = dataset_reading.normalize(reading, columns, measurement_columns=measurement_columns)
+    if reading.get("guessed"):
+        out["guessed"] = True
+    return out
+
+
+def set_reading(db, dataset: Dataset, reading: dict, owner_id: str) -> Dataset:
+    """Keep a new reading for the dataset (the upload's, or Change on a fit):
+    later fits use it; models already made keep the one they were fitted with.
+    Raises dataset_reading.ReadingError when it doesn't fit the columns."""
+    part = dataset.measurements
+    kept = _checked_reading(reading, dataset.columns, part.columns if part is not None else None)
+    db.datasets.update_one({"_id": dataset.id, "owner_id": owner_id}, {"$set": {"reading": kept}})
+    return dataset.model_copy(update={"reading": kept})
+
+
+# ---- One sheet, several datasets: split by a column ---------------------------
+# A sheet holding several kinds of thing (transformers, coal mills, pumps) is
+# saved as one dataset per value of its dataset column, each named by the
+# value. Each stands alone (datasets are atomic): no link between them, and
+# the dataset column itself is left out, as every row of a dataset holds the
+# same value. Rows with a blank value are left out and counted.
+
+
+def _csv_text(file_bytes: bytes) -> str:
+    try:
+        return bytes(file_bytes).decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return bytes(file_bytes).decode("latin-1")
+
+
+def split_by_column(file_bytes: bytes, column: str) -> tuple[list[tuple[str, bytes]], int]:
+    """A CSV's rows grouped by ``column``: ``([(value, csv_bytes), ...], blank)``,
+    in the order each value first appears, each part a CSV of the rows with
+    that value (cells exactly as they were, ``column`` dropped). ``blank``:
+    rows with no value in ``column`` (left out). Wholly blank rows are skipped.
+    Raises FitError when the column isn't in the sheet or holds no value."""
+    rows = list(csv.reader(io.StringIO(_csv_text(file_bytes))))
+    header = rows[0] if rows else []
+    names = [h.strip() for h in header]
+    want = str(column or "").strip()
+    if want not in names:
+        raise FitError(f"The sheet has no column “{want}”. Its columns: {', '.join(names)}.")
+    at = names.index(want)
+    groups: dict[str, list[list[str]]] = {}
+    blank = 0
+    for row in rows[1:]:
+        if not any(cell.strip() for cell in row):
+            continue
+        value = row[at].strip() if at < len(row) else ""
+        if not value:
+            blank += 1
+            continue
+        groups.setdefault(value, []).append(row[:at] + row[at + 1:])
+    if not groups:
+        raise FitError(f"Column “{want}” has no values to split the sheet by.")
+    out = []
+    kept = header[:at] + header[at + 1:]
+    for value, part in groups.items():
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow(kept)
+        writer.writerows(part)
+        out.append((value, buf.getvalue().encode("utf-8")))
+    return out, blank
+
+
+def split_names(values: list[str], taken: set[str], source: str) -> list[str]:
+    """Each value's dataset name: the value itself, or "<value> – <source>"
+    when the workspace already has a dataset of that name (case-insensitive).
+    A name still taken gets " (2)", " (3)"…"""
+    used = {t.strip().lower() for t in taken}
+    out = []
+    for value in values:
+        name = value[:200]
+        if name.lower() in used and source:
+            name = f"{value} – {source}"[:200]
+        base, k = name, 2
+        while name.lower() in used:
+            name = f"{base} ({k})"
+            k += 1
+        used.add(name.lower())
+        out.append(name)
+    return out
+
+
+def create_split(db, file_bytes: bytes, column: str, owner_id: str,
+                 source: str, reading: dict | None = None,
+                 keep_reading: bool = False) -> tuple[list[tuple[Dataset, bool]], int]:
+    """Save one dataset per value of ``column`` (``split_by_column``), named by
+    ``split_names`` against the owner's datasets: ``([(dataset, reused), ...],
+    blank_rows)``. ``reading``: the one reading every part is kept with (the
+    split column, left out of each part, left out of it too). Identical data
+    already saved comes back as it is (``reused``), with the reading."""
+    from backend.services import dataset_reading
+
+    parts, blank = split_by_column(file_bytes, column)
+    if reading is not None:
+        reading = dataset_reading.drop_column(reading, str(column).strip())
+    taken = {d.get("name") or "" for d in db.datasets.find({"owner_id": owner_id}, {"name": 1})}
+    names = split_names([v for v, _ in parts], taken, source)
+    out = []
+    for (_, data), name in zip(parts, names):
+        ds, reused = create_or_reuse(db, name, data, owner_id, reading=reading, keep_reading=keep_reading)
+        out.append((ds, reused))
+    return out, blank
+
+
+def count_new_parts(db, file_bytes: bytes, column: str, owner_id: str) -> int:
+    """How many of a split's parts would be new datasets (identical data the
+    owner already has is reused and doesn't count against a cap)."""
+    parts, _ = split_by_column(file_bytes, column)
+    return sum(1 for _, data in parts
+               if db.datasets.find_one({"checksum": storage.checksum(data), "owner_id": owner_id}) is None)
 
 
 def preview_frame(db, owner_id, dataset_id: str | None, file_bytes: bytes | None) -> tuple[pd.DataFrame, str | None]:
@@ -647,6 +784,62 @@ _FAILED_NAME_RE = re.compile(
     r"(is_?)?(fail|failed|failure|failures|event|status|dead|death|broken)(_?flag)?",
     re.IGNORECASE,
 )
+# A header that says what 1 means ("Failed (1=yes)", "status (1 = failed)",
+# "Running (1=yes)", "yes=1"): the same reading as the fit's Data step
+# (``flagHeaderMeaning`` in frontend/src/datasetGuess.js), so the Data list
+# counts failures the way the fit reads them.
+_SUBJECT_FAILED = re.compile(r"\b(fail|failed|fails|failure|failures|event|events|dead|death|died|broken|broke|tripped)\b")
+_SUBJECT_RUNNING = re.compile(r"\b(c|cens|censor|censored|censoring|suspend|suspended|suspension|running|survived"
+                              r"|survives|alive|working|ok|in service)\b")
+_WORD_FAILED = re.compile(r"^(failed|fail|failure|f|broken|dead|event|down)$")
+_WORD_RUNNING = re.compile(r"^(running|run|r|censored|cens|suspended|s|survived|alive|ok|working|in service"
+                           r"|still running)$")
+
+
+def flag_header_meaning(name) -> str | None:
+    """What a 0/1 column's 1 means by its header: ``"failed"``,
+    ``"running"`` or None when the header doesn't say."""
+    raw = re.sub(r"([a-z])([A-Z])", r"\1 \2", str(name or "")).lower()
+    core = re.sub(r"-?\d+\s*=\s*[a-z ]+?(?=[),;/]|$)|[a-z]+\s*=\s*-?\d+", " ", raw)
+    core = re.sub(r"\s+", " ", re.sub(r"[_\-.()\[\]#:?/,;]+", " ", core)).strip()
+    failed, running = bool(_SUBJECT_FAILED.search(core)), bool(_SUBJECT_RUNNING.search(core))
+    subject = "failed" if failed and not running else "running" if running and not failed else None
+
+    def flip(m):
+        return {"failed": "running", "running": "failed"}.get(m)
+
+    def meaning(word):
+        v = re.sub(r"\s+", " ", word.strip())
+        if _WORD_FAILED.match(v):
+            return "failed"
+        if _WORD_RUNNING.match(v):
+            return "running"
+        if re.match(r"^(yes|y|true|t)$", v):
+            return subject
+        if re.match(r"^(no|n|false)$", v):
+            return flip(subject)
+        return None
+
+    for m in re.finditer(r"(?:^|[^\d-])([01])\s*=\s*([a-z][a-z ]*?)(?=\s*(?:[),;/]|$|\d))", raw):
+        w = meaning(m.group(2))
+        if w:
+            return w if m.group(1) == "1" else flip(w)
+    for m in re.finditer(r"([a-z][a-z ]*?)\s*=\s*([01])\b", raw):
+        w = meaning(re.split(r"[(,;/]", m.group(1))[-1])
+        if w:
+            return w if m.group(2) == "1" else flip(w)
+    return subject
+
+
+def one_means_failed(column) -> bool:
+    """Whether a 0/1 flag column reads 1 as failed: its header says so, or
+    (saying nothing) it is named like "failed" / "status" / "event"."""
+    said = flag_header_meaning(column)
+    if said is not None:
+        return said == "failed"
+    return bool(_FAILED_NAME_RE.fullmatch(str(column).strip()))
+
+
 # Interval-censored data has two time columns (the failure lies between them): SurPyval's xl / xr,
 # the shortest / longest a saved Bayesian update writes, or a plain left / right, lower / upper.
 _TIME_NAME_RE = re.compile(
@@ -658,8 +851,18 @@ _STOP_RE = re.compile(r"(stop|end|exit|^tr$|until)", re.IGNORECASE)
 
 
 def _unit_column(df: pd.DataFrame) -> str | None:
-    """A unit-like text column whose values repeat (several rows per unit)."""
+    """A unit-like text column whose values repeat (several rows per unit).
+    A column of time units ("hrs", "days") is never one; nor is a coded
+    group ("CV-07") when another column already names every row (an idler
+    number, a serial): then each row is a unit and the group is a covariate."""
+    from backend.unit_column import _unit_counts  # local: unit_column reads services
+
     numeric = {c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])}
+    rows = df.dropna(how="all")
+    row_ids = len(rows) > 1 and any(
+        g not in numeric and rows[g].notna().all() and rows[g].nunique() == len(rows)
+        and rows[g].astype(str).str.contains(r"\d").mean() >= 0.8
+        for g in df.columns)
     for g in df.columns:
         if g in numeric:
             continue
@@ -669,8 +872,10 @@ def _unit_column(df: pd.DataFrame) -> str | None:
         sizes = col.groupby(col).size()
         if len(sizes) == len(col) or (sizes >= 2).mean() < 0.5:
             continue
+        if _unit_counts(df[g]) is not None:
+            continue
         digits = sizes.index.to_series().str.contains(r"\d").mean()
-        if _UNIT_NAME_RE.search(str(g)) or digits >= 0.8:
+        if _UNIT_NAME_RE.search(str(g)) or (digits >= 0.8 and not row_ids):
             return str(g)
     return None
 
@@ -687,6 +892,7 @@ def _censor_column(df: pd.DataFrame) -> str | None:
 
 def detect_tags(df: pd.DataFrame) -> dict:
     """``{"tags": [...], "use_for": [...]}`` for a dataset's columns."""
+    df = df.dropna(how="all")  # a blank row in a sheet is no unit (the fit skips it too)
     tags: set[str] = set()
     unit = _unit_column(df)
     censor = _censor_column(df)
@@ -812,7 +1018,7 @@ def _noun(col: str | None) -> str:
     """What a row's unit is called, from its ID column ("pump" → pumps)."""
     if not col:
         return "unit"
-    word = re.sub(r"[_\s-]*(id|no|number|serial|sn|tag)$", "", str(col).strip(), flags=re.IGNORECASE)
+    word = re.sub(r"[_\s-]*(id|no|number|serial|sn|tag)\.?$", "", str(col).strip(), flags=re.IGNORECASE)
     word = re.sub(r"[_-]+", " ", word).strip().lower()
     if not word or _GENERIC_ID_RE.match(word) or len(word) > 20:
         return "unit"
@@ -980,7 +1186,7 @@ def life_counts(df: pd.DataFrame, censor: str | None = None, times: list[str] | 
         if raw.isna().any():
             return None
         # A flag named "failed" / "status" is 1 = failed; left (-1) and interval (2) stay.
-        flip = bool(_FAILED_NAME_RE.fullmatch(censor.strip()))
+        flip = one_means_failed(censor)
         codes = raw.where(~raw.isin((0, 1)), 1 - raw) if flip else raw
     else:
         words = _word_status(df, skip)
@@ -1033,13 +1239,13 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
     if "Measurements" in tags:
         return f"{units} · {len(df):,} readings"
     if "Repairable" in tags:
-        failed_flag = 1 if censor and _FAILED_NAME_RE.fullmatch(censor.strip()) else 0
+        failed_flag = 1 if censor and one_means_failed(censor) else 0
         n = int((df[censor] == failed_flag).sum()) if censor else len(df)
         return f"{units} · {n:,} {_plural('failure', n)}"
     counts = None if unit else life_counts(df, censor, times)
     if counts is None:
         if censor:  # several rows per unit with a flag (start and stop rows)
-            failed_flag = 1 if _FAILED_NAME_RE.fullmatch(censor.strip()) else 0
+            failed_flag = 1 if one_means_failed(censor) else 0
             return f"{units} · {int((df[censor] == failed_flag).sum()):,} failed"
         # No status, and nothing that looks like one left unread (a column
         # named like a status, a second time): every row is a failure.
@@ -1059,15 +1265,39 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
 _TAG_CACHE: dict[str, dict] = {}
 
 
+def with_reading_covariates(detected: dict, z: list[str]) -> dict:
+    """The tags with "Covariates" as the dataset's reading says: only when the
+    reading includes covariates (its ``z``). The columns alone can't tell an
+    id marked not used, or a failure mode read as ``e``, from a covariate."""
+    tags = set(detected.get("tags") or [])
+    has = bool(z)
+    if has and "Time-varying covariates" not in tags:
+        tags.add("Covariates")
+    elif not has:
+        tags.discard("Covariates")
+    suffix = " with covariates"
+    use_for = []
+    for u in detected.get("use_for") or []:
+        if u in ("Non-repairable model", "Repairable model", "Non-repairable model" + suffix,
+                 "Repairable model" + suffix):
+            u = u.removesuffix(suffix) + (suffix if "Covariates" in tags else "")
+        use_for.append(u)
+    return {**detected, "tags": [t for t in TAGS if t in tags], "use_for": use_for}
+
+
 def dataset_tags(dataset: Dataset) -> dict:
     """``detect_tags`` for a saved dataset (with its measurements part folded
     in), cached by its content (datasets are content-addressed, so the
     checksums name the tables)."""
     part = dataset.measurements
-    key = (dataset.checksum or dataset.id) + (f"|{part.checksum}" if part is not None else "")
+    z = None if not isinstance(dataset.reading, dict) else sorted(str(c) for c in dataset.reading.get("z") or [])
+    key = ((dataset.checksum or dataset.id) + (f"|{part.checksum}" if part is not None else "")
+           + ("" if z is None else "|z:" + "\x1f".join(z)))
     if key not in _TAG_CACHE:
         try:
             out = detect_tags(load_dataframe(dataset))
+            if z is not None:
+                out = with_reading_covariates(out, z)
             if part is not None:
                 readings = None
                 if not out.get("time_unit"):

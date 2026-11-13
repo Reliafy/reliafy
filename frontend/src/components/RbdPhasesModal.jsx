@@ -86,7 +86,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, o
           const summary = [
             skipped.length
               ? `Doesn't need ${skipped.length === 1 ? labelOf.get(skipped[0]) : `${skipped.length} blocks`}`
-              : "Needs every block",
+              : "Every block in use, wired as in the RBD",
             ...changed.map((v) => `${v.label}: ${row.votes[v.id]} of ${v.inputs}`),
           ].join(" · ");
           return (

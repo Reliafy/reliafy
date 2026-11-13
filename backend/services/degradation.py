@@ -57,6 +57,9 @@ def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> Degradation
     """Fit and persist a degradation model. Raises ``FitError`` on a bad fit.
     The readings are the dataset's measurements part when it has one, else
     its one table (``datasets_service.load_measurements``)."""
+    from backend.services import dataset_reading
+
+    spec = dataset_reading.with_reading(spec, dataset)
     df = datasets_service.load_measurements(dataset)
     payload, cache_id = degradation_fit.fit(
         df,

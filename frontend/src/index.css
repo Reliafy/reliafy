@@ -4947,43 +4947,74 @@ h1 .chip,
 .ds-flag-notice > span { flex: 1 1 260px; min-width: 0; }
 .ds-flag-notice .link { font-size: inherit; }
 
-/* Every column and its role (#434), the used / ignored summary as its head. */
-.col-roles { display: flex; flex-direction: column; gap: var(--sp-2); }
-.col-roles-h { margin: 0; font-size: var(--fs-13); line-height: 1.5; overflow-wrap: anywhere; }
-.col-roles-sum { color: var(--muted); }
-.col-roles-sum b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
-.col-roles-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* The Data step's selectors (ColumnMapper): one row per SurPyval input, its
+   label (x, c, n, xl, xr, tl) and plain words, then the column picker. */
+.xcn { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-3); min-width: 0; }
+.xcn-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
   gap: var(--sp-2) var(--sp-4);
-}
-.col-role {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 190px);
   align-items: center;
-  gap: var(--sp-2);
-  padding: 6px var(--sp-2) 6px var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surf);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--line2);
+  min-width: 0;
 }
-.col-role.ignored { background: var(--surf-2); }
-.col-role.ignored .col-role-name { color: var(--muted); }
-.col-role-name {
+.xcn-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.xcn-key { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.xcn-key code, .xcn-pair code, .xcn-fields > code { font-weight: 600; color: var(--ink); font-size: var(--fs-14); white-space: nowrap; }
+.xcn-words { color: var(--muted); font-size: var(--fs-13); line-height: 1.4; }
+.xcn-fields { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-width: 0; }
+.xcn-pick { min-width: 0; width: 15rem; max-width: 100%; }
+.xcn-sub, .xcn-below, .xcn-row > .xcn-warning, .xcn-note-line { grid-column: 2; min-width: 0; }
+.xcn-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.xcn-pair { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.xcn-pair .xcn-pick { width: 12rem; }
+.xcn-hint { flex-basis: 100%; font-size: var(--fs-12); }
+.xcn-unit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--sp-2); margin-left: auto; }
+.xcn-unit .units-input { width: 11rem; max-width: 100%; padding: 6px 10px; font-size: var(--fs-13); }
+.xcn-unit .ds-unitless { min-height: 28px; font-size: var(--fs-12); }
+.xcn-tick { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); min-height: 32px; }
+.xcn-note-line { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.xcn-below { display: flex; flex-direction: column; gap: var(--sp-2); }
+.xcn-issue {
+  margin: 0;
+  padding: 6px var(--sp-2);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-13);
+  line-height: 1.45;
+}
+.xcn-issue.xcn-note { background: var(--surf-2); border-color: var(--line); color: var(--ink); }
+.xcn-below .ds-flag-notice { margin: 0; }
+/* Rows left out of the fit (x and a range both filled): loud, never blocking. */
+.xcn-warning {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  font-size: var(--fs-14);
-  font-weight: 500;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 4px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-left: 4px solid var(--warn);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-13);
+  line-height: 1.45;
 }
-.col-role-eg { font-size: var(--fs-12); font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.xcn-warning summary { cursor: pointer; }
+.ds-status-compact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); min-width: 0; }
+.ds-status-pair { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-13); }
+.ds-status-pair .ds-status-value { overflow-wrap: anywhere; }
+.ds-next-why { color: var(--warn); max-width: 420px; line-height: 1.4; }
+/* A phone: each row's label above its pickers. */
+@media (max-width: 720px) {
+  .xcn-row { grid-template-columns: minmax(0, 1fr); }
+  .xcn-sub, .xcn-below, .xcn-row > .xcn-warning, .xcn-note-line { grid-column: 1; }
+  .xcn-pick, .xcn-pair .xcn-pick { width: 100%; }
+  .xcn-unit { margin-left: 0; }
+  .xcn-tick, .ds-status-pair .seg-btn { min-height: 44px; }
+}
 
 /* "Your first row looks like data…" with its Undo (#434). */
 .ds-header-note {
@@ -7518,10 +7549,13 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 /* ---- New-model fit flow (page panel) ---------------------------------- */
+/* The stepper sits at the top of the flow. */
+.fit-flow-head { margin-bottom: 1rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--line2); }
+.fit-flow-head .steps { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
 .fit-flow-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1rem;
   margin-top: 1.25rem;
   padding-top: 1rem;
@@ -7530,7 +7564,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   flex-wrap: wrap;
 }
 .fit-flow-foot .row { flex-wrap: wrap; }
-.fit-flow-foot .steps { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
 /* Result step: the model's name sits beside Save (#311). */
 .fit-save-name {
   width: 280px;
@@ -7552,14 +7585,14 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* A phone: the stepper and the buttons wrap instead of scrolling the page. */
 @media (max-width: 560px) {
   .fit-flow-foot { flex-wrap: wrap; }
-  .fit-flow-foot .steps { flex-wrap: wrap; gap: 6px; min-width: 0; }
-  .fit-flow-foot .steps .step-wrap { gap: 6px; }
-  .fit-flow-foot .steps .sep { width: 10px; }
   .fit-flow-foot .row { flex-wrap: wrap; }
   .fit-save-name { flex: 1 1 100%; width: auto; order: -1; }
+  .fit-flow-head .steps { gap: 6px; }
+  .fit-flow-head .steps .step-wrap { gap: 6px; }
+  .fit-flow-head .steps .sep { width: 10px; }
   /* One line of numbered dots, with only the current step's name. */
-  .fit-flow-foot .steps { flex-wrap: nowrap; }
-  .fit-flow-foot .steps .step:not(.active) .step-label {
+  .fit-flow-head .steps { flex-wrap: nowrap; }
+  .fit-flow-head .steps .step:not(.active) .step-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -10021,3 +10054,86 @@ main.content:focus { outline: none; }
 .rbd-save-split .rbd-save-more .ovm-menu { right: 0; left: auto; }
 .rbd-plan-btn.is-on { background: var(--acc-t); color: var(--acc); border-color: var(--acc); }
 .rbd-menu-note { margin: 2px 10px 6px; font-size: var(--fs-12); color: var(--muted); }
+
+/* The same task on identical positions, offered after an interval change (TaskTwins.jsx). */
+.task-twins { margin-top: 8px; padding: 10px 12px; }
+.task-twins p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.task-twins .maint-row { flex-wrap: wrap; gap: 8px; }
+/* The Decide dialog's cost row and a failure mode's own restoration (RCM). */
+.decision-cost { align-items: center; flex-wrap: wrap; gap: 8px; }
+.rim-restore { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rim-restore .rw-fhelp { flex-basis: 100%; margin: 0; }
+.rcm-on-tree { margin-bottom: 16px; }
+.rcm-on-tree-list { margin: 8px 0 0; padding-left: 18px; }
+.rcm-on-tree-list li { margin: 4px 0; overflow-wrap: anywhere; }
+
+/* A workbook's sheet chosen in the fit flow's source step, not in a modal. */
+.xl-inline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  min-width: 0;
+}
+.xl-inline-title { margin: 0; font-size: var(--fs-16); font-weight: 600; overflow-wrap: anywhere; }
+.xl-inline-actions { margin: 0; justify-content: flex-end; flex-wrap: wrap; }
+/* A phone: the header-row picker takes the panel's width, never more. */
+.xl-picker .xl-inline { max-width: 100%; min-width: 0; flex-wrap: wrap; }
+.xl-picker .xl-inline .select-wrap, .xl-picker .xl-inline > div { min-width: 0; max-width: 100%; flex: 1 1 12rem; }
+.xl-picker .xl-inline button { max-width: 100%; }
+
+/* The Data section upload's split: "This file makes 3 datasets", then what was saved. */
+.ds-split { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.ds-split-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-weight: 600; font-size: var(--fs-13); }
+.ds-split-pick > .sel-trigger { flex: 1 1 12rem; min-width: 0; max-width: 22rem; font-weight: 400; }
+.split-summary { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); min-width: 0; }
+.split-summary h3 { margin: 0; font-size: var(--fs-14); }
+.split-table { border-collapse: collapse; font-size: var(--fs-13); }
+/* A long split (dozens of datasets) scrolls inside its card instead of stretching the dialog. */
+.split-scroll { max-height: 18rem; overflow-y: auto; }
+.split-table th, .split-table td { padding: 4px var(--sp-4) 4px 0; text-align: left; vertical-align: baseline; }
+.split-table th { font-weight: 600; overflow-wrap: anywhere; }
+.split-table td { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ---- A dataset's reading: the upload's selectors and Z, a fit flow's one line ---- */
+.ds-reading { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; border-top: 1px solid var(--line); padding-top: var(--sp-3); }
+.reading-editor { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.reading-z { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.reading-z-head { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; }
+.reading-z-head code { font-weight: 600; color: var(--ink); font-size: var(--fs-14); }
+.reading-z-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.reading-z-item { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; min-width: 0; max-width: 100%; }
+.reading-z-item.off { background: var(--line2); color: var(--muted); }
+.reading-z-item.off .reading-z-pick span { text-decoration: none; }
+.reading-z-pick { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-14); min-height: 32px; overflow-wrap: anywhere; }
+.reading-z-unit { width: 8rem; max-width: 100%; }
+.reading-z-line { margin: 0; color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
+.reading-summary { display: flex; flex-direction: column; gap: var(--sp-1); border: 1px solid var(--line); border-radius: 8px; padding: var(--sp-2) var(--sp-3); min-width: 0; }
+.reading-summary.guessed { border-color: var(--warn-line); background: var(--warn-bg); }
+.reading-summary-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-14); min-width: 0; }
+.reading-summary-lead { color: var(--muted); }
+.reading-summary-parts { min-width: 0; overflow-wrap: anywhere; }
+.reading-part code { font-weight: 600; color: var(--ink); }
+.reading-part.unused { color: var(--muted); }
+.reading-part.unused code { color: var(--muted); font-weight: 500; }
+.reading-badge { color: var(--warn); font-size: var(--fs-13); font-weight: 600; white-space: nowrap; }
+.reading-summary-actions { display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+.reading-summary-actions .link, .reading-summary-actions button { min-height: 32px; }
+.reading-summary-note { margin: 0; color: var(--muted); font-size: var(--fs-13); }
+.reading-change { display: flex; flex-direction: column; gap: var(--sp-2); border: 1px solid var(--line); border-radius: 8px; padding: var(--sp-3); min-width: 0; }
+.reading-change-h { margin: 0; font-size: var(--fs-15, 15px); }
+.reading-change-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+.fit-reading { gap: var(--sp-2); }
+.fit-z { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+@media (max-width: 600px) {
+  .reading-summary-actions { margin-left: 0; }
+  .reading-z-item { width: 100%; }
+  .reading-summary-actions .link, .reading-summary-actions button, .reading-z-pick { min-height: 44px; }
+}
+.fit-reading { margin-bottom: var(--sp-3); }
+
+/* A copy made from a library says where it came from (components/FromLibrary.jsx). */
+.from-library { margin: 4px 0 0; color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }

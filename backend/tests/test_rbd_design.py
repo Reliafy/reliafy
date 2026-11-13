@@ -283,7 +283,7 @@ def test_front_respects_weight_limits():
         (None, None, {"target": 1.0, "budget": None}, "below 1"),
         (None, None, {"t": 0}, "mission time"),
         (None, None, {"budget": {"cost": 1}}, "already costs 2. Enter a total above that"),
-        (None, None, {"target": 0.999999, "budget": None}, "unreachable"),
+        (None, None, {"target": 0.999999, "budget": None}, "can.t be reached"),
     ],
 )
 def test_bad_requests_are_refused_clearly(mutate, blocks, kwargs, needle):
@@ -510,7 +510,7 @@ def test_common_cause_makes_redundancy_pay_off_less():
     assert 0 < gain[0.3] < gain[0]
     # More copies can't get past the shared cause: a target independent pumps
     # reach is out of reach with the group, and one both reach costs more.
-    with pytest.raises(DesignError, match="unreachable"):
+    with pytest.raises(DesignError, match="can.t be reached"):
         rd.design_redundancy(_pumps(beta=0.1), T, PUMP_BLOCKS, target=0.99)
     assert rd.design_redundancy(_pumps(beta=0), T, PUMP_BLOCKS, target=0.99)["design"]["cost"] == 12
     cheap = {beta: rd.design_redundancy(_pumps(beta=beta), T, PUMP_BLOCKS, target=0.97)["design"]
@@ -725,3 +725,66 @@ def test_design_endpoint_designs_and_applies_a_common_cause_diagram(client):
     assert body["reliability"] == pytest.approx(res["design"]["reliability"], rel=1e-12)
     assert len(body["graph"]["ccf_groups"][0]["members"]) > 2
     assert body["notes"] and "common-cause group" in body["notes"][0]
+
+
+# ---------------------------------------------------------------------------
+# Unreachable targets say the target as asked and what to do next
+# ---------------------------------------------------------------------------
+def test_an_unreachable_target_says_the_target_and_what_to_do():
+    graph = _series((0.002, 0.004))
+    blocks = [_block("a", 1, 2), _block("b", 1, 2)]
+    with pytest.raises(DesignError) as exc:
+        rd.design_redundancy(graph, T, blocks, target=0.999999999)
+    text = str(exc.value)
+    # Not rounded to "Target 1": the target the user typed.
+    assert "99.9999999%" in text and "Target 1 " not in text
+    best = _active(_p(0.002), 2) * _active(_p(0.004), 2)
+    assert f"{best * 100:.4g}%" in text
+    assert "Lower the target" in text and "more copies" in text
+
+    with pytest.raises(DesignError) as exc:
+        rd.design_redundancy(graph, T, blocks, budget={"cost": 3}, target=0.85)
+    text = str(exc.value)
+    assert "85%" in text and "within the budget" in text and "Raise the budget" in text
+
+
+# ---------------------------------------------------------------------------
+# k-out-of-n (voting) nodes: the voters can be designed, the vote stays as drawn
+# ---------------------------------------------------------------------------
+def _two_of_three():
+    """Pumps a, b, c voting 2-out-of-3 (node k3), in series with valve d."""
+    nodes = _io() + [_node(i, _exp(r)) for i, r in (("a", 0.001), ("b", 0.001), ("c", 0.002), ("d", 0.0001))]
+    nodes.append({"id": "k3", "type": "knode", "position": {"x": 0, "y": 0},
+                  "data": {"label": "2oo3", "n": 2, "k": 3}})
+    edges = _edges(("input", "a"), ("input", "b"), ("input", "c"),
+                   ("a", "k3"), ("b", "k3"), ("c", "k3"), ("k3", "d"), ("d", "output"))
+    return {"nodes": nodes, "edges": edges, "unit": "hours"}
+
+
+def _two_of_three_by_hand(copies):
+    """2-out-of-3 of the (possibly duplicated) pumps, in series with d."""
+    pa, pb, pc = (_active(_p(r), copies[i]) for i, r in (("a", 0.001), ("b", 0.001), ("c", 0.002)))
+    vote = pa * pb * pc + pa * pb * (1 - pc) + pa * (1 - pb) * pc + (1 - pa) * pb * pc
+    return vote * _active(_p(0.0001), copies["d"])
+
+
+def test_k_of_n_diagram_design_matches_by_hand():
+    blocks = [_block(i, 1, 3) for i in "abcd"]
+    res = rd.design_redundancy(_two_of_three(), T, blocks, budget={"cost": 6})
+    assert res["current"]["reliability"] == pytest.approx(_two_of_three_by_hand(dict.fromkeys("abcd", 1)))
+    copies = {b["id"]: b["copies"] for b in res["design"]["blocks"]}
+    assert sum(copies.values()) == 6
+    assert res["design"]["reliability"] == pytest.approx(_two_of_three_by_hand(copies))
+    # The best of every design within the budget, by brute force.
+    best = max(
+        _two_of_three_by_hand(dict(zip("abcd", n)))
+        for n in itertools.product(range(1, 4), repeat=4) if sum(n) <= 6
+    )
+    assert res["design"]["reliability"] == pytest.approx(best)
+    reached = rd.design_redundancy(_two_of_three(), T, blocks, target=0.99)
+    assert reached["design"]["reliability"] >= 0.99
+
+
+def test_k_of_n_node_itself_is_refused_plainly():
+    with pytest.raises(DesignError, match="k-out-of-n block.*stay as drawn"):
+        rd.design_redundancy(_two_of_three(), T, [_block("k3", 1)], target=0.99)

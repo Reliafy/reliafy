@@ -43,6 +43,9 @@ def _list_query(owner_id, shared=frozenset()):
 
 def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> RecurrentModelDoc:
     """Fit and persist a recurrent model. Raises ``FitError`` on a bad fit."""
+    from backend.services import dataset_reading
+
+    spec = dataset_reading.with_reading(spec, dataset)
     df = datasets_service.load_dataframe(dataset)
     payload, cache_id = recurrent_fit.fit_spec(df, spec)
     doc = RecurrentModelDoc(
@@ -84,6 +87,34 @@ def save_from_params(db, name: str, model_id: str, params: list, horizon, unit: 
     db.recurrent_models.insert_one(to_doc(doc))
     _remember_live(doc.id, cache_id)
     return doc
+
+
+_MAPPING_KEYS = ("i", "x", "c", "n", "tl", "tr", "mode", "ws", "we")
+
+
+def last_mapping(db, dataset_id: str, owner_id, hidden=frozenset(), columns=None) -> dict | None:
+    """How the newest repairable model fitted from a dataset read its
+    columns, so a new repairable fit from the dataset starts there (the end
+    of record, the unit, covariates) rather than from a fresh guess:
+    ``{mapping, unit, model_name}``, or None. Only a mapping whose columns
+    are all still in the dataset counts."""
+    names = {c.get("name") if isinstance(c, dict) else str(c) for c in columns or []}
+    query = {"dataset_id": dataset_id, "owner_id": {"$in": access.owner_in(owner_id)}}
+    for d in db.recurrent_models.find(query, {"spec": 1, "name": 1, "results.unit": 1}).sort("created_at", -1):
+        if d["_id"] in hidden:
+            continue
+        spec = d.get("spec") or {}
+        raw = spec.get("mapping") or {}
+        mapping = {k: raw[k] for k in _MAPPING_KEYS if isinstance(raw.get(k), str) and raw.get(k)}
+        z = [str(c) for c in (raw.get("z") or []) if c]
+        if not (mapping.get("i") and mapping.get("x")):
+            continue
+        if names and not (set(mapping.values()) | set(z)) <= names:
+            continue
+        return {"mapping": {**mapping, **({"z": z} if z else {})},
+                "unit": spec.get("unit") or (d.get("results") or {}).get("unit") or "",
+                "model_name": d.get("name") or ""}
+    return None
 
 
 def list_models(db, owner_id, hidden=frozenset(), shared=frozenset()) -> list[RecurrentModelDoc]:

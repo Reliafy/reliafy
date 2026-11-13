@@ -111,10 +111,12 @@ from backend import recurrent_models
 from backend import storage
 from backend.fitting import FitError
 from backend.library import service as library_service
+from backend.library import entries as lib_entries
 from backend.library import user as user_library
 from backend.mcp_actions import Table, check, choice
 from backend.mcp_actions import describe as describe_actions
 from backend.services import access as access_service
+from backend.services import dataset_reading
 from backend.services import alt as alt_service
 from backend.services import joint as joint_service
 from backend.services import availability_answer
@@ -854,6 +856,7 @@ ONE_OF = {
     ("analyse", "next_replacement"): "model_id or params, age, shuts, failure_cost",
     ("analyse", "prediction"): "lines or product_id",
     ("change", "prediction_save"): "name, lines or product_id",
+    ("change", "library_add"): "library_id, dataset_id or model_id",
 }
 #: Kept short: tools/list is capped at 8,000 characters (test_mcp_tools.py); it appears on every tool.
 ARGS_HELP = "Args: see guide(action='<tool>.<action>')."
@@ -1586,7 +1589,8 @@ _FitInvert = Annotated[bool, Field(
                 "Reliafy flips the 0/1 flags before fitting (-1 and 2 are left as is).")]
 _FitDataset = Annotated[Optional[str], Field(
     description="A saved dataset (list kind datasets) instead of inline data.")]
-_FitTimeCol = Annotated[Optional[str], Field(description="Dataset column holding the times (required with dataset_id).")]
+_FitTimeCol = Annotated[Optional[str], Field(description=(
+    "Dataset column holding the times. Omit to use the dataset's reading (get kind dataset shows it)."))]
 _FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, "
                                                              "1 = running, -1 = left-censored, 2 = "
                                                              "interval-censored).")]
@@ -1816,6 +1820,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                         "drop it, or switch to that form.")
 
     dataset = None
+    reading_options: dict[str, Any] = {}
     if data is not None:
         if not data:
             raise ToolError("`data` is empty.")
@@ -1837,14 +1842,33 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         if dataset is None:
             raise ToolError("Dataset not found.")
         names = [c["name"] for c in dataset.columns]
-        if not time_column:
-            raise ToolError(f"Say which column holds the times (time_column). Columns: {', '.join(names)}.")
-        times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
         # group_column is a shared frailty's Group by (#179) or competing risks' groups (#177).
         frailty = (fitting.REGRESSION_MODELS.get(dist) or {}).get("frailty")
-        mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
-                   "tr": trunc_right_column, "i": id_column, "e": cause_column,
-                   ("group" if frailty else "g"): group_column}
+        if not time_column:
+            # No columns named: the dataset's reading says which is which.
+            reading, _ = dataset_reading.for_dataset_db(db, dataset, _owners(uid))
+            mapping, from_reading = dataset_reading.life_mapping(reading)
+            if not (mapping.get("x") or mapping.get("xl")):
+                raise ToolError(f"Say which column holds the times (time_column), or set the dataset's reading "
+                                f"(change dataset_update x_col). Columns: {', '.join(names)}.")
+            if competing_risks.is_competing_risks(dist) and reading.get("e") and not cause_column:
+                mapping["e"] = reading["e"]
+            if covariates is None and dist in fitting.REGRESSION_MODELS and reading.get("z"):
+                covariates = list(reading["z"])
+            mapping.update({k: v for k, v in (("c", censor_column), ("n", count_column), ("tl", trunc_left_column),
+                                              ("tr", trunc_right_column), ("i", id_column), ("e", cause_column),
+                                              ("group" if frailty else "g", group_column)) if v})
+            if from_reading.get("c_map") and not censor_column:
+                reading_options = {fitting.CENSOR_MAP_KEY: from_reading["c_map"]}
+            elif from_reading.get("c_invert") and not censor_column:
+                c_invert = True
+            if from_reading.get("u_col"):
+                reading_options = {**reading_options, "u_col": from_reading["u_col"]}
+        else:
+            times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
+            mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
+                       "tr": trunc_right_column, "i": id_column, "e": cause_column,
+                       ("group" if frailty else "g"): group_column}
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
@@ -1866,7 +1890,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                         "covariates) or to competing risks (with causes / cause_column) — choose one of "
                         "those, or drop the group column.")
     # Flags sent as codes are read as they are: an interval row is flagged 2.
-    options: dict[str, Any] = {fitting.STRICT_INTERVALS_KEY: True}
+    options: dict[str, Any] = {fitting.STRICT_INTERVALS_KEY: True, **reading_options}
     if c_invert:
         if "c" not in mapping:
             raise ToolError("c_invert flips censoring flags — pass `censored` (or censor_column) too.")
@@ -1901,7 +1925,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     options = options or None
 
     # #60: rows are stretches of an item's life, not units — no per-row counts.
-    checks = _censor_checks(df, {k: v for k, v in mapping.items() if k != "c"} if id_column else mapping,
+    counted = df
+    if reading_options.get(fitting.CENSOR_MAP_KEY) and mapping.get("c"):
+        # Status words from the reading: counted as the fit reads them.
+        counted = fitting.map_censor_column(df, mapping["c"], reading_options[fitting.CENSOR_MAP_KEY])
+    checks = _censor_checks(counted, {k: v for k, v in mapping.items() if k != "c"} if id_column else mapping,
                             c_invert, censor_column)
     if not save:
         result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options,
@@ -3261,6 +3289,50 @@ def split_dataset(
             **_dataset_parts(ds)}
 
 
+def _col(what: str):
+    return Annotated[Optional[str], Field(description=f"The column holding {what}.")]
+
+
+_RX = _col("x, the value when each unit failed or was removed (hours, cycles, km…)")
+_RXL = _col("the start of x's range (where x is blank), with xr_col")
+_RXR = _col("the end of x's range (where x is blank), with xl_col")
+_RC = _col("the status: failed or still running (0 = failed, 1 = still running, -1, 2; or words with c_meanings)")
+_RN = _col("how many units each row stands for")
+_RTL = _col("late entry: each row observed only from this value")
+_RTR = _col("each row observed only up to this value")
+_RI = _col("which item (unit, pump, tag) each row belongs to")
+_RM = _col("a measured value (readings)")
+_RE = _col("each failure's mode (the state entered, for multi-state data)")
+_RS = _col("the state the unit was in during the row (multi-state data; kept, not yet used by a model)")
+_RZ = Annotated[Optional[list[str]], Field(description=(
+    "The covariates (Z). Omit for the default: every column not given a role, less ids, dates, free text and "
+    "one-value columns."))]
+_RNotUsed = Annotated[Optional[list[str]], Field(description="Columns read as nothing (not covariates).")]
+_RMeanings = Annotated[Optional[dict[str, int]], Field(description=(
+    "What each value of c_col means: {value: 0 failed | 1 still running | -1 | 2}, e.g. "
+    "{\"Failed\": 0, \"Running\": 1}. 0/1 codes need none (c_invert flips a 1 = failed column)."))]
+_RInvert = Annotated[Optional[bool], Field(description="c_col's 0/1 codes use 1 = failed.")]
+_RAllFailed = Annotated[Optional[bool], Field(description="No status column: every row is a failure.")]
+_RUnit = Annotated[Optional[str], Field(description="x's unit (hours, cycles, km, any unit).")]
+_RMUnit = Annotated[Optional[str], Field(description="m's unit (mm, %, mm/s…).")]
+_RZUnits = Annotated[Optional[dict[str, str]], Field(description="Units of covariates, {column: unit} (optional).")]
+
+
+def _reading_given(**kw) -> dict:
+    """The reading fields a call named (None left out), in the reading's keys."""
+    keys = {"x_col": "x", "xl_col": "xl", "xr_col": "xr", "c_col": "c", "n_col": "n", "tl_col": "tl",
+            "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "s_col": "s", "z_cols": "z", "not_used": "not_used",
+            "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "unit": "unit",
+            "m_unit": "m_unit", "z_units": "z_units"}
+    return {keys[k]: v for k, v in kw.items() if v is not None}
+
+
+def _reading_out(reading: dict, source: str) -> dict:
+    """A reading for an MCP caller: its fields with words, and where it came from."""
+    keep = {k: v for k, v in reading.items() if v not in ("", None, [], {}, False) and k != "guessed"}
+    return {**keep, "source": source, "summary": dataset_reading.summary(reading)}
+
+
 def upload_dataset(
     ctx: Context,
     name: Annotated[str, Field(min_length=1, description="A short name for the dataset.")],
@@ -3274,13 +3346,28 @@ def upload_dataset(
         "lists them)."))] = None,
     no_header: Annotated[Optional[bool], Field(description=(
         "True if the first row is data, not column names; omit to guess."))] = None,
+    dataset_col: Annotated[Optional[str], Field(description=(
+        "Split the sheet by this column: one dataset per value, named by the value (\"<value> – <name>\" if "
+        "taken), the column itself left out; rows with no value are left out. Returns datasets, a list."))] = None,
+    x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
+    tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
+    s_col: _RS = None,
+    z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
+    all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    library_id: Annotated[Optional[str], Field(max_length=64, description=(
+        "Also add every dataset made (each part of a split too) to this library of the user's, as snapshots: "
+        "all or nothing."))] = None,
 ) -> dict[str, Any]:
     """Save a dataset from CSV text (csv) or a file sent with change upload_create (upload_id; an .xlsx
-    needs sheet); returns its id, columns and a preview. Censoring columns: 0 = failed, 1 = still running."""
+    needs sheet), with its reading (which column is x, c, n, …, Z); returns its id, columns, a preview and
+    the reading. Columns not named are guessed and the reading says so. Censoring: 0 = failed, 1 = running."""
     user, db = _caller(ctx), _db()
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
-    _cap(db, user, "datasets", "datasets")
+    lib = _own_library(db, user["uid"], library_id) if library_id else None
+    split = (dataset_col or "").strip()
+    if not split:
+        _cap(db, user, "datasets", "datasets")
     upload, sheet_header = None, None
     if upload_id is not None:
         upload, text, sheet_header = _upload_table(db, user["uid"], upload_id, sheet, 0 if no_header else None)
@@ -3298,15 +3385,95 @@ def upload_dataset(
         apply = guess == 0 if no_header is None else bool(no_header)
         if apply and no_header is None:
             hint = fitting.HEADER_HINT
-    ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text, apply),
-                                         user["uid"])
+    data = datasets_service.normalize_pasted(text, apply)
+    given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
+                           tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
+                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
+                           unit=unit, m_unit=m_unit, z_units=z_units)
+    reading = _upload_reading(data, given, split)
+    if split:
+        return _split_upload(db, user, name.strip(), data, split, upload, guess, hint, reading, lib)
+    try:
+        ds, reused = datasets_service.create_or_reuse(db, name.strip(), data, user["uid"], reading=reading,
+                                                      keep_reading=bool(reading.get("guessed")))
+    except dataset_reading.ReadingError as exc:
+        raise ToolError(str(exc)) from None
+    added = _upload_into_library(db, user["uid"], lib, [(ds, reused)])
     if upload is not None:
         uploads_service.delete(db, upload["_id"])
     out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
            "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/{ds.id}"),
-           "header_guess": guess}
+           "header_guess": guess,
+           "reading": _reading_out(*dataset_reading.for_dataset(ds))}
     if hint:
         out["hint"] = hint
+    if added:
+        out["library"] = added
+    return out
+
+
+def _upload_into_library(db, uid: str, lib: Optional[dict], made: list) -> Optional[dict]:
+    """An upload's datasets added to ``lib`` as snapshots, all or nothing: when that fails, the datasets the
+    upload created are deleted again and the call is refused in words."""
+    if lib is None:
+        return None
+    try:
+        out = lib_entries.add_uploaded(db, lib, [d for d, _ in made], _owners(uid))
+    except Exception as exc:  # noqa: BLE001 - undo the upload, then say why
+        fresh = [d.id for d, reused in made if not reused]
+        if fresh:
+            db.datasets.delete_many({"_id": {"$in": fresh}, "owner_id": uid})
+        raise ToolError(f"Nothing was saved: {exc}" if isinstance(exc, lib_entries.LibraryError) else
+                        "Nothing was saved: the data couldn't be added to the library.") from None
+    return {**out, "url": _url(out["url"])}
+
+
+def _upload_reading(data: bytes, given: dict, split: str) -> dict:
+    """The reading an upload keeps: what the call named over the guess (the
+    guess marked so when nothing was named). Refused only when x can't be told."""
+    try:
+        base = dataset_reading.guess_for_bytes(data)
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    reading = dataset_reading.merged(base, given) if given else base
+    if split:
+        reading = dataset_reading.drop_column(reading, split)
+    if not (reading.get("x") or reading.get("xl")):
+        try:
+            cols = fitting.preview(data)["columns"]
+        except FitError:
+            cols = []
+        raise ToolError("Couldn't tell which column holds x, the value when each unit failed or was removed: "
+                        f"name it with x_col. Columns: {', '.join(cols)}.")
+    if not given:
+        reading["guessed"] = True
+    return reading
+
+
+def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, hint,
+                  reading: dict | None = None, lib: Optional[dict] = None) -> dict[str, Any]:
+    """upload_dataset with dataset_col: one dataset per value of the column, all or nothing against the cap."""
+    try:
+        wanted = datasets_service.count_new_parts(db, data, column, user["uid"])
+        if wanted:
+            _cap(db, user, "datasets", "datasets", n=wanted)
+        made, blank = datasets_service.create_split(db, data, column, user["uid"], name, reading=reading,
+                                                    keep_reading=bool((reading or {}).get("guessed")))
+    except (FitError, dataset_reading.ReadingError) as exc:
+        raise ToolError(str(exc)) from None
+    added = _upload_into_library(db, user["uid"], lib, made)
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
+    out = {"datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, "url": _url(f"/data/{d.id}"),
+                         **({"reused": True} if reused else {})} for d, reused in made],
+           "columns": [c["name"] for c in made[0][0].columns], "header_guess": guess,
+           "reading": _reading_out(*dataset_reading.for_dataset(made[0][0]))}
+    if blank:
+        out["left_out"] = f"{blank} row{'' if blank == 1 else 's'} with no {column} left out."
+    if hint:
+        out["hint"] = hint
+    if added:
+        out["library"] = added
     return out
 
 
@@ -3377,6 +3544,11 @@ def get_dataset(
         "next_offset": end if end < total else None,
         "url": _url(f"/data/{ds.id}"),
     }
+    if part != "measurements":
+        try:
+            out["reading"] = _reading_out(*dataset_reading.for_dataset_db(db, ds, _owners(user["uid"])))
+        except Exception:  # noqa: BLE001 - the rows still answer
+            pass
     if ds.measurements is not None and part != "measurements":
         out["measurements"] = {"n_rows": ds.measurements.n_rows,
                                "columns": [c["name"] for c in ds.measurements.columns],
@@ -3514,6 +3686,16 @@ class BlockCosts(BaseModel):
         "Purchase price, once. analyse rbd_cheapest_design copies the blocks that have one."))
 
 
+class PreventiveRestoration(BaseModel):
+    """What a fixed-interval task leaves the unit as (Kijima virtual age)."""
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["as_new", "kijima1", "kijima2"] = Field(description=(
+        "as_new = renewed; kijima1 = each task removes part of the age gained since the last one; kijima2 = "
+        "part of the whole age."))
+    q: Optional[float] = Field(None, ge=0, le=1, description=(
+        "kijima1/kijima2: the share of the age left after a task (0 = as new, 1 = as before)."))
+
+
 class Preventive(BaseModel):
     model_config = ConfigDict(extra="forbid")
     policy: Literal["age", "block", "condition"] = Field("age", description=(
@@ -3534,6 +3716,12 @@ class Preventive(BaseModel):
     opportunity: Optional[float] = Field(None, ge=0, description=(
         "age only, with maintenance_group: renewed early at a stop of its group once at least this old "
         "(0 to interval)."))
+    restoration: Optional[PreventiveRestoration] = Field(None, description=(
+        "age or block: what each task leaves the unit as when it isn't renewed; omit = as good as new."))
+    replace_every: Optional[int] = Field(None, ge=1, description=(
+        "With restoration: every this many tasks is a full replacement (as new) instead."))
+    replacement_cost: Optional[float] = Field(None, ge=0, description=(
+        "With replace_every: the cost of each full replacement; omit = 0."))
 
 
 class ProofTest(BaseModel):
@@ -5057,8 +5245,8 @@ def save_rbd_mission(
     except (rbd_missions.MissionError, rbd_graph.GraphError) as exc:
         raise ToolError(f"Nothing was saved — {exc}") from None
     try:
-        saved = rbds_service.save_rbd(db, rbd.name, graph, uid, rbd_id=rbd.id,
-                                      expected_updated_at=rbd.updated_at.isoformat())
+        saved = rbds_service.save_rbd(db, rbd_missions.rbd_name_after(rbd.name, rbd.graph or {}, graph), graph, uid,
+                                      rbd_id=rbd.id, expected_updated_at=rbd.updated_at.isoformat())
     except access_service.EditConflict:
         raise ToolError(f"“{rbd.name}” was saved by someone else meanwhile. Nothing was saved: retry.") from None
     out = {**_rbd_brief(saved), "missions": [rbd_missions.summary(graph, m) for m in rbd_missions.missions_of(graph)]}
@@ -8624,21 +8812,44 @@ def update_dataset(
     dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list kind datasets).")],
     name: _NewName = None,
     notes: _NewNotes = None,
+    x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
+    tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
+    s_col: _RS = None,
+    z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
+    all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
 ) -> dict[str, Any]:
-    """Rename one of the user's own datasets or set its notes; never the data, never a sample."""
+    """Rename one of the user's own datasets, set its notes, or change its reading (x_col, c_col, …, z_cols:
+    later fits use it; models already made keep theirs); never the data, never a sample."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
-    name, notes = _details(name, notes)
+    given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
+                           tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
+                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
+                           unit=unit, m_unit=m_unit, z_units=z_units)
+    if name is None and notes is None and not given:
+        raise ToolError("Nothing to change: give name, notes, or the reading (x_col, c_col, …, z_cols).")
+    if name is not None or notes is not None:
+        name, notes = _details(name, notes)
     ds = datasets_service.get_dataset(db, dataset_id, _owners(uid))
     if ds is None:
         raise ToolError("Dataset not found.")
     if samples_service.is_sample(ds.owner_id):
         raise ToolError(f"“{ds.name}” is a shared sample dataset, not yours — it can't be renamed or annotated.")
-    ds = datasets_service.update_details(db, ds.id, uid, name=name, notes=notes)
-    if ds is None:
-        raise ToolError("Dataset not found.")
-    return {"updated": _changed(name, notes), "dataset_id": ds.id, "name": ds.name, "notes": ds.notes,
-            "url": _url(f"/data/{ds.id}")}
+    if name is not None or notes is not None:
+        ds = datasets_service.update_details(db, ds.id, uid, name=name, notes=notes)
+        if ds is None:
+            raise ToolError("Dataset not found.")
+    out = {"updated": _changed(name, notes) if (name is not None or notes is not None) else [],
+           "dataset_id": ds.id, "name": ds.name, "notes": ds.notes, "url": _url(f"/data/{ds.id}")}
+    if given:
+        current, _ = dataset_reading.for_dataset_db(db, ds, _owners(uid))
+        try:
+            ds = datasets_service.set_reading(db, ds, dataset_reading.merged(current, given), uid)
+        except dataset_reading.ReadingError as exc:
+            raise ToolError(str(exc)) from None
+        out["updated"] = [*out["updated"], "reading"]
+        out["reading"] = _reading_out(*dataset_reading.for_dataset(ds))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -8918,14 +9129,19 @@ def _my_libraries(ctx: Context) -> Optional[dict]:
     return user_library.mine(_db(), _owners(user["uid"]))
 
 
-# ---- A user's own data libraries (backend/library/user.py) --------------------------------
+# ---- Libraries: shareable collections of dataset and model snapshots (backend/library/entries.py) ----
 
 _LibraryId = Annotated[str, Field(max_length=64, description="A library id (list kind libraries).")]
+_EntryId = Annotated[str, Field(max_length=120, description="An entry's id (get kind library).")]
 _LibraryName = Annotated[str, Field(min_length=1, max_length=user_library.MAX_NAME, description="The library's name.")]
 _LibraryDescription = Annotated[Optional[str], Field(max_length=user_library.MAX_DESCRIPTION,
                                                      description="One line on what it holds.")]
 _LibraryNotes = Annotated[Optional[str], Field(max_length=user_library.MAX_NOTES,
-                                               description="Notes or licence text shown with every record.")]
+                                               description="Notes shown with the library.")]
+_LibrarySource = Annotated[Optional[str], Field(max_length=lib_entries.MAX_SOURCE,
+                                                description="Where the data comes from (who published it).")]
+_LibraryCitation = Annotated[Optional[str], Field(max_length=lib_entries.MAX_CITATION,
+                                                  description="How to cite it.")]
 
 
 def _library_call(fn, *args, **kwargs):
@@ -8934,99 +9150,178 @@ def _library_call(fn, *args, **kwargs):
     except user_library.LibraryError as exc:
         raise ToolError(str(exc)) from None
     except user_library.LibraryNotFound:
-        raise ToolError("Library not found: list kind libraries gives the user's own.") from None
+        raise ToolError("Not found: get kind library lists a library's entries; list kind libraries the "
+                        "libraries.") from None
 
 
-def _library_brief(lib: dict) -> dict:
-    return {**lib, "url": _url(f"/models/library/{lib['id']}")}
+def _with_urls(out: dict) -> dict:
+    """A library (or card) with its address in full."""
+    return {**out, "url": _url(out["url"])} if out.get("url") else out
 
 
-def _library_record_brief(rec: dict) -> dict:
-    return {**library_service.brief(rec, {"sources": {rec["source"]: {"mine": True, "short_name": ""}}, "records": []}),
-            "url": _url(f"/models/library/{rec['source']}/{rec['id'].split(':', 1)[1]}")}
+def _library_out(db, uid: str, lib: dict) -> dict:
+    principals = _owners(uid)
+    rel = lib_entries.relation(lib, uid, principals)
+    return _with_urls(lib_entries.library_out(db, lib, rel, lib.get("owner_id") == uid, principals))
 
 
-def list_libraries(ctx: Context) -> dict[str, Any]:
-    """The user's own data libraries: id, name, description, how many records."""
-    user, db = _caller(ctx), _db()
-    return {"libraries": [_library_brief(lib) for lib in user_library.list_libraries(db, user["uid"])]}
-
-
-def get_library(ctx: Context, library_id: _LibraryId) -> dict[str, Any]:
-    """One of the user's libraries with its records (each a saved life model's snapshot: distribution, parameters
-    and bounds, unit, mean life, B10; get kind library_record gives one in full)."""
-    user, db = _caller(ctx), _db()
-    lib = user_library.get_library(db, library_id, _owners(user["uid"]))
+def _visible_library(db, uid: str, library_id: str) -> dict:
+    lib = lib_entries.get_visible(db, library_id, _owners(uid))
     if lib is None:
-        raise ToolError("Library not found: list kind libraries gives the user's own.")
-    records = user_library.records_of(db, lib["_id"])
-    return {**_library_brief(user_library.brief(lib, len(records))),
-            "records": [_library_record_brief(r) for r in records]}
+        raise ToolError("Library not found: list kind libraries gives the ones you can see.")
+    return lib
+
+
+def _own_library(db, uid: str, library_id: str) -> dict:
+    lib = _visible_library(db, uid, library_id)
+    if lib.get("owner_id") != uid:
+        raise ToolError("Only the library's owner can change it: change library_use copies an entry instead.")
+    return lib
+
+
+def list_libraries(ctx: Context, scope: Annotated[Optional[Literal["yours", "shared", "public"]], Field(
+        description="Only these (default: every library you can see, the built-in handbooks last).")] = None
+                   ) -> dict[str, Any]:
+    """The libraries the user can see: theirs, those shared with their workspace, and public ones (other people's
+    and the built-in handbooks), each with what it holds (datasets, models), visibility and licence."""
+    user, db = _caller(ctx), _db()
+    rows = lib_entries.list_cards(db, _owners(user["uid"]), user["uid"], lambda owner: owner == user["uid"])
+    rows = [r for r in rows if scope is None or r["relation"] == scope]
+    return {"libraries": [_with_urls(r) for r in rows], "workspace_id": user["uid"]}
+
+
+def get_library(ctx: Context, library_id: _LibraryId, entry_id: Annotated[Optional[str], Field(
+        max_length=120, description="One entry in full (a dataset's first rows and reading, a model's "
+                                    "parameters).")] = None) -> dict[str, Any]:
+    """A library with its entries: datasets (rows, reading summary) and models (kind, distribution, headline
+    B10 with its 90% lower bound, the dataset it was fitted on when that is in the library, or where it came
+    from). A built-in handbook's records: list kind library with its id as source."""
+    user, db = _caller(ctx), _db()
+    built = lib_entries.builtin_out(library_id)
+    if built is not None:
+        if entry_id:
+            raise ToolError("A built-in handbook's records: get kind library_record.")
+        return _with_urls(built)
+    lib = _visible_library(db, user["uid"], library_id)
+    if entry_id:
+        return _library_call(lib_entries.entry_detail, db, lib, entry_id, lib.get("owner_id") == user["uid"],
+                             _owners(user["uid"]))
+    return _library_out(db, user["uid"], lib)
 
 
 def create_library(ctx: Context, name: _LibraryName, description: _LibraryDescription = None,
-                   notes: _LibraryNotes = None) -> dict[str, Any]:
-    """A new, empty data library of the user's own (one saved item toward the Free plan's limit); change
-    library_add_model fills it."""
+                   notes: _LibraryNotes = None, source: _LibrarySource = None,
+                   citation: _LibraryCitation = None) -> dict[str, Any]:
+    """A new, private, empty library (one saved item toward the Free plan's limit); change library_add fills it."""
     user, db = _caller(ctx), _db()
-    _cap(db, user, user_library.COLLECTION, "data libraries")
-    lib = _library_call(user_library.create, db, user["uid"], name, description or "", notes or "")
-    return {"saved": True, "library_id": lib["id"], **_library_brief(lib)}
+    _cap(db, user, user_library.COLLECTION, "libraries")
+    lib = _library_call(lib_entries.create, db, user["uid"], name, description or "", notes or "", source or "",
+                        citation or "")
+    return {"saved": True, "library_id": lib["_id"], **_library_out(db, user["uid"], lib)}
 
 
 def update_library(ctx: Context, library_id: _LibraryId, name: Annotated[Optional[str], Field(
         min_length=1, max_length=user_library.MAX_NAME, description="A new name.")] = None,
-                   description: _LibraryDescription = None, notes: _LibraryNotes = None) -> dict[str, Any]:
-    """Rename one of the user's libraries, or change its description or notes."""
+                   description: _LibraryDescription = None, notes: _LibraryNotes = None,
+                   source: _LibrarySource = None, citation: _LibraryCitation = None,
+                   visibility: Annotated[Optional[Literal["private", "workspaces", "public"]], Field(description=(
+                       "private (your workspace), workspaces (also the workspaces given, read-only) or public "
+                       "(anyone; needs licence, citation or source, and rights_confirmed)."))] = None,
+                   workspaces: Annotated[Optional[list[str]], Field(description=(
+                       "Workspace IDs to share with (each workspace's owner sees its ID in Libraries)."))] = None,
+                   licence: Annotated[Optional[Literal["public-domain", "cc0", "cc-by-4.0", "own-cc-by-4.0"]], Field(
+                       description="For public: own-cc-by-4.0 is the user's own data under CC BY 4.0.")] = None,
+                   rights_confirmed: Annotated[Optional[bool], Field(description=(
+                       "For public: the user says they have the right to publish it. Ask them; never assume."))] = None,
+                   ) -> dict[str, Any]:
+    """Rename one of the user's libraries, change its description, notes, source or citation, or who sees it."""
     user, db = _caller(ctx), _db()
-    lib = _library_call(user_library.update, db, library_id, user["uid"], name=name, description=description, notes=notes)
-    return {"saved": True, "library_id": lib["id"], **_library_brief(lib)}
+    lib = _own_library(db, user["uid"], library_id)
+    if any(v is not None for v in (name, description, notes)) or (visibility is None and (source or citation)):
+        lib = _library_call(lib_entries.update, db, lib, name=name, description=description, notes=notes,
+                            source=source if visibility is None else None,
+                            citation=citation if visibility is None else None)
+    if visibility is not None:
+        lib = _library_call(lib_entries.set_visibility, db, lib, visibility, workspaces=workspaces, licence=licence,
+                            source=source, citation=citation, rights_confirmed=rights_confirmed)
+    elif workspaces is not None or licence is not None:
+        raise ToolError("Give visibility with workspaces or licence.")
+    return {"saved": True, "library_id": lib["_id"], **_library_out(db, user["uid"], lib)}
 
 
 def delete_library(ctx: Context, library_id: _LibraryId) -> dict[str, Any]:
-    """Permanently delete one of the user's libraries and its records (the models they came from stay). Only on
-    the user's explicit request, confirmed by name."""
+    """Permanently delete one of the user's libraries and its entries (the datasets and models they were taken from
+    stay). Only on the user's explicit request, confirmed by name."""
     user, db = _caller(ctx), _db()
-    removed = _library_call(user_library.delete, db, library_id, user["uid"])
-    return {"deleted": True, "library_id": library_id, "records_removed": removed}
+    lib = _own_library(db, user["uid"], library_id)
+    return {"deleted": True, "library_id": library_id, "entries_removed": lib_entries.delete(db, lib)}
 
 
-def library_add_model(
+def library_add(
     ctx: Context, library_id: _LibraryId,
-    model_id: Annotated[str, Field(max_length=64, description="One of the user's saved non-repairable life models "
-                                                              "(Weibull, exponential, lognormal, normal or gamma).")],
+    dataset_id: Annotated[Optional[str], Field(max_length=64, description="A saved dataset to add.")] = None,
+    model_id: Annotated[Optional[str], Field(max_length=64, description=(
+        "A saved model to add: fitted, from parameters, from a handbook or a Bayesian update; its data "
+        "isn't needed."))] = None,
+    model_collection: Annotated[Literal["models", "recurrent_models", "alt_models"], Field(description=(
+        "The model's kind: models (non-repairable), recurrent_models (repairable), alt_models."))] = "models",
+    source: Annotated[Optional[str], Field(max_length=lib_entries.MAX_CITATION, description=(
+        "The entry's own published source or citation, if it has one."))] = None,
     label: Annotated[Optional[str], Field(max_length=user_library.MAX_LABEL,
-                                          description="The record's name (default: the model's).")] = None,
-    equipment_type: Annotated[Optional[str], Field(description="e.g. pump, valve (list kind library_sources lists "
-                                                               "them); other if none fits.")] = None,
+                                          description="The entry's name (default: the model's).")] = None,
+    equipment_type: Annotated[Optional[str], Field(description="A life model's equipment type, e.g. pump (list kind "
+                                                               "library_sources lists them).")] = None,
     failure_mode: Annotated[Optional[str], Field(max_length=user_library.MAX_LABEL,
-                                                 description="The failure mode the model is for, in words.")] = None,
-    notes: _LibraryNotes = None,
+                                                 description="A life model's failure mode, in words.")] = None,
 ) -> dict[str, Any]:
-    """Add a saved life model to one of the user's libraries as a record: a snapshot of the model now (distribution,
-    parameters with their bounds, unit, sample sizes, how it was fitted), with the model linked. A later refit
-    doesn't change the record."""
+    """Add a snapshot of a dataset (its rows and reading) or a saved model to one of the user's libraries. Later
+    edits in the workspace don't change it; nothing is ever added unasked."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
-    model = models_service.get_model(db, model_id, _owners(uid))
-    if model is None:
-        raise ToolError("Model not found: list kind models gives the user's own.")
-    rec = _library_call(user_library.add_model, db, library_id, uid, model, label=label,
-                        equipment_type=equipment_type or "other", failure_mode=failure_mode or "", notes=notes or "")
-    return {"saved": True, "library_id": library_id, "record_id": rec["id"], "record": _library_record_brief(rec)}
+    lib = _own_library(db, uid, library_id)
+    if bool(dataset_id) == bool(model_id):
+        raise ToolError("Give dataset_id or model_id (one of them).")
+    if dataset_id:
+        ds = datasets_service.get_dataset(db, dataset_id, uid)
+        if ds is None:
+            raise ToolError("Dataset not found: list kind datasets gives the user's own.")
+        doc = _library_call(lib_entries.add_dataset, db, lib, ds, _owners(uid), frozenset(), source or "")
+    else:
+        mdoc = db[model_collection].find_one({"_id": model_id, "owner_id": {"$in": _owners(uid)}})
+        if mdoc is None:
+            raise ToolError("Model not found: list kind models gives the user's own.")
+        doc = _library_call(lib_entries.add_model, db, lib, model_collection, mdoc, _owners(uid), source or "",
+                            label=label, equipment_type=equipment_type or "other", failure_mode=failure_mode or "")
+    out = _library_out(db, uid, lib)
+    entry = next((e for e in out["entries"] if e["id"] == doc["_id"]), None)
+    return {"saved": True, "library_id": library_id, "entry_id": doc["_id"], "entry": entry}
 
 
-def library_remove_record(ctx: Context, library_id: _LibraryId,
-                          record_id: Annotated[str, Field(max_length=120, description="The record's id (get kind library).")]
-                          ) -> dict[str, Any]:
-    """Take a record out of one of the user's libraries (the model it came from stays)."""
+def library_remove(ctx: Context, library_id: _LibraryId, entry_id: _EntryId) -> dict[str, Any]:
+    """Take an entry out of one of the user's libraries (what it was taken from stays)."""
     user, db = _caller(ctx), _db()
-    out = _library_call(user_library.remove_record, db, record_id, user["uid"])
-    if out["library_id"] != library_id:
-        raise ToolError("That record isn't in that library.")
-    return out
+    lib = _own_library(db, user["uid"], library_id)
+    _library_call(lib_entries.remove, db, lib, entry_id)
+    return {"removed": True, "library_id": library_id, "entry_id": entry_id}
 
 
+def library_use(ctx: Context, library_id: _LibraryId, entry_id: _EntryId,
+                name: Annotated[Optional[str], Field(max_length=user_library.MAX_NAME,
+                                                     description="The copy's name (default: the entry's).")] = None,
+                with_dataset: Annotated[bool, Field(description=(
+                    "A model entry: also copy the dataset it was fitted on, when that is in the library."))] = False,
+                ) -> dict[str, Any]:
+    """Copy a library entry into the user's workspace as their own dataset or model (counts as that saved item);
+    the copy records the library, entry and version it came from."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    lib = _visible_library(db, uid, library_id)
+    doc = _library_call(lib_entries.entry_doc, db, lib, entry_id)
+    for kind, n in lib_entries.what_use_makes(db, lib, doc, with_dataset).items():
+        if n:
+            _cap(db, user, kind, "saved datasets" if kind == "datasets" else "saved models")
+    out = _library_call(lib_entries.use, db, lib, entry_id, uid, name, with_dataset)
+    return {"saved": True, **{k: (_with_urls(v) if v else None) for k, v in out.items()}}
 
 
 # ---- Reliability prediction: a parts count (backend/services/reliability_prediction) ---------
@@ -9568,8 +9863,9 @@ _A = {  # new tool -> {action: the function it runs}
         "library_create": _act(create_library),
         "library_update": _act(update_library),
         "library_delete": _act(delete_library),
-        "library_add_model": _act(library_add_model),
-        "library_remove_record": _act(library_remove_record),
+        "library_add": _act(library_add),
+        "library_remove": _act(library_remove),
+        "library_use": _act(library_use),
     },
     "report_problem": {
         "report": _act(report_problem_report),
@@ -9584,7 +9880,7 @@ _action_tool("get", _READ, "Read one item", "kind",
              docs={"id": "The item's id (a job's job_id, an upload's upload_id, a library record's id, a maintainability "
                          "prediction's id)."})
 _action_tool("list", _READ, "List items", "kind",
-             "The user's items of one kind (with samples), what changed, the data library.",
+             "The user's items of one kind (with samples), what changed, libraries.",
              _A["list"])
 _action_tool("analyse", _READ, "Analyse", "action",
              "Every calculation (life, repairable, plans, RBDs); saves nothing.", _A["analyse"], docs={

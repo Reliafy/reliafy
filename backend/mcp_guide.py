@@ -16,7 +16,12 @@ and censored units a fit used: check them against what the user said.
 trunc_left (trunc_left_column), not a flag. trunc_right is the age past which a failure couldn't be seen.
 - Params are lists of {name, value} with SurPyval's names: weibull [alpha (scale), beta (shape)], exponential \
 [failure_rate], normal / lognormal [mu, sigma], gamma [alpha, beta]; in the model's time unit.
-- Fit and report: analyse fit (inline data, or dataset_id with time_column / censor_column). Keep it: \
+- A dataset keeps its reading: which column is x, c, n, the range (xl/xr), tl, tr, i, m, e (failure mode), s \
+(state during the row) and the covariates Z. change dataset_upload takes x_col, c_col, … z_cols, c_meanings, unit; \
+what isn't named is guessed and the answer's reading says so (source guessed): relay it for the user to check, \
+and fix it with change dataset_update. get kind dataset returns it.
+- Fit and report: analyse fit (inline data, or dataset_id: with no time_column it fits from the dataset's \
+reading; time_column / censor_column override it). Keep it: \
 change model_fit (same arguments plus name; inline data is saved as a dataset too). Fitted elsewhere (e.g. locally \
 with SurPyval, the way when fitting isn't on the plan): change model_save with the distribution and params.
 - distribution: weibull by default; 'best' fits every plain distribution and keeps the lowest AIC \
@@ -217,15 +222,19 @@ the handbook is a research result, not an official DoD document.
 never the user's own data: say so, cite the record (licence.attribution), put the source in the block's label \
 and suggest replacing it with their own data.
 - Library lookups are never counted against the Free plan's tool calls.
-- Build the user's own library: change library_create (name, description, notes or licence text shown with every \
-record), then change library_add_model (library_id, model_id, failure_mode, equipment_type) for each saved Weibull, \
-exponential, lognormal, normal or gamma model. A model is in no library until it's added; adding keeps a snapshot \
-(distribution, parameters with their bounds, unit, sample sizes, how it was fitted) with model_id as a link, so a \
-later refit doesn't change the record. list kind libraries and get kind library read them; their records appear in \
-list kind library and get kind library_record like published ones (source: the library's id; kind life), usable as \
-a model or a prior (the prior is in the record's family: each parameter about its value, between its bounds). One \
-library is one saved item toward the Free storage limit, whatever it holds. Only on the user's request: \
-library_remove_record and library_delete (the models stay).
+- Libraries (list kind libraries, get kind library with library_id, and entry_id for one entry): collections of \
+datasets and models. Each is private (its owner's workspace), shared with workspaces (by workspace ID, read-only for \
+them) or public (anyone can read). The built-in handbooks above are listed too, read-only. change library_create \
+makes one (private, one saved item toward the Free limit); change library_add (library_id, dataset_id or model_id, \
+model_collection for a repairable or ALT model) adds a snapshot: later edits in the workspace don't change it. A \
+model needn't be fitted to data (from parameters, a handbook, a published source: give source). Nothing is added \
+unless the user asks. change library_update changes the name, notes, source, citation or visibility: public needs \
+a licence (public-domain, cc0, cc-by-4.0, own-cc-by-4.0), a source or citation, and rights_confirmed: ask the user \
+whether they have the right to publish it; only public-domain, open or CC BY data may be published. change \
+library_use copies an entry into the user's own workspace (with_dataset: the dataset a model was fitted on too); \
+it counts as that dataset or model, and the copy says where it came from. Only the owner changes a library. A life \
+model entry also appears in list kind library and get kind library_record, usable as a model or prior. Only on \
+the user's request: library_remove and library_delete (what the entries were taken from stays).
 """),
     "prediction": ("Reliability prediction: a parts count from handbook base rates, before there's failure data.", """\
 A reliability prediction (analyse prediction; change prediction_save / prediction_update / prediction_delete; get kind \

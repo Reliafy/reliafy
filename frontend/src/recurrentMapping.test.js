@@ -33,3 +33,15 @@ test("numericColumns reads dtypes, else the preview", () => {
   assert.deepEqual(numericColumns(["a", "b"], { dtypes: ["int64", "object"] }), [true, false]);
   assert.deepEqual(numericColumns(["a", "b"], { preview: [[1, "x"], [null, "y"]] }), [true, false]);
 });
+
+test("savedRecurrentMapping: a dataset's last repairable reading, only while its columns are there", async () => {
+  const { savedRecurrentMapping } = await import("./recurrentMapping.js");
+  const saved = { mapping: { i: "truck", x: "hours", tr: "observed_to_hours", z: ["site"] }, unit: "Hours", model_name: "Trucks" };
+  const got = savedRecurrentMapping(saved, ["truck", "hours", "observed_to_hours", "site"]);
+  assert.equal(got.mapping.tr, "observed_to_hours");
+  assert.deepEqual(got.mapping.z, ["site"]);
+  assert.equal(got.unit, "Hours");
+  assert.equal(got.from, "Trucks");
+  assert.equal(savedRecurrentMapping(saved, ["truck", "hours"]), null);
+  assert.equal(savedRecurrentMapping(null, ["truck"]), null);
+});

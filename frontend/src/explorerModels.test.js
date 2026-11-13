@@ -198,7 +198,7 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   const g = attachGroups({ positionClass: "Pump", hasPrediction: true });
   assert.deepEqual(g.map((x) => x.label), ["Life model", "RBD", "Prediction"]);
   assert.deepEqual(g[0].items.map((x) => x.label), ["Fit a life model…", "Assign a saved model…", "From the data library…",
-    "From the class…", "Enter parameters…", "Add to a library…"]);
+    "From the class…", "Enter parameters…", "Add to library…"]);
   assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Redundancy inside…", "New blank RBD…", "Link an existing RBD…"]);
   // A leaf: nothing to build from, so a new blank RBD is the way in.
   const leaf = attachGroups({ hasInside: false })[1].items;
@@ -223,7 +223,7 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   assert.equal(builtRbdLink(null, "pump"), null);
   const bare = attachGroups();
   assert.equal(bare[0].items.find((x) => x.id === "model-attach-class").reason, "This position has no class");
-  // Add to a library… needs a life model on the position (the one in use, else its first).
+  // Add to library… needs a life model on the position (the one in use, else its first).
   assert.equal(bare[0].items.find((x) => x.id === "model-attach-to-library").reason, "This position has no life model yet");
   assert.ok(!attachGroups({ hasLifeModel: true })[0].items.find((x) => x.id === "model-attach-to-library").disabled);
   const links = [link("p1", "pump", { model_id: "m1", model: WEIBULL }), link("p2", "pump", { model_id: "m2", model: WEIBULL, in_use: true }),
@@ -282,4 +282,16 @@ test("a typed-in model's row offers Edit parameters…", () => {
   const ids = (x) => rowActions(x).map((a) => a.id);
   assert.ok(ids(r({ kind: "Exponential", entered: { distribution: "exponential", params: {} } })).includes("model-params-edit"));
   assert.ok(!ids(r({ kind: "Weibull" })).includes("model-params-edit"));
+});
+
+test("classModelHint: a position with no model whose class has one says so, and how many failures since", async () => {
+  const { classModelHint } = await import("./explorerModels.js");
+  const r = { type: "pos", ref: { position_class: "Seal" }, lsum: { n: 0 } };
+  const cms = { Seal: { failures: 14, failures_now: 15 } };
+  assert.match(classModelHint(r, cms), /Its class \(Seal\) has one: Life model › From the class… \(fitted before 1 new failure: refit it\)/);
+  assert.equal(classModelHint(r, cms, { short: true }), "class model · 1 new failure since");
+  assert.equal(classModelHint(r, { Seal: { failures: 14, failures_now: 14 } }, { short: true }), "class model to attach");
+  assert.equal(classModelHint({ ...r, lsum: { n: 1 } }, cms), "");
+  assert.equal(classModelHint({ ...r, ref: { position_class: "Pump" } }, cms), "");
+  assert.equal(classModelHint(r, null), "");
 });

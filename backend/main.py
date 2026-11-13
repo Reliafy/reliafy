@@ -98,6 +98,7 @@ from backend.routers import content_jobs as content_jobs_router
 from backend.routers import extensions as extensions_router
 from backend.routers import feeds as feeds_router
 from backend.routers import library as library_router
+from backend.routers import libraries as libraries_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
 from backend.routers import predictions as predictions_router
@@ -299,6 +300,8 @@ app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
 app.include_router(library_router.router)
+# Libraries: shareable collections of dataset and model snapshots (backend/library/entries.py).
+app.include_router(libraries_router.router)
 # Reliability prediction: a parts count from the library's handbook rates.
 app.include_router(predictions_router.router)
 # Optional extensions (backend/extensions.py): the pages they add, and their
@@ -468,6 +471,8 @@ def data_reading_endpoint(
     n: str | None = Form(default=None),
     xl: str | None = Form(default=None),
     xr: str | None = Form(default=None),
+    tl: str | None = Form(default=None),
+    tr: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     session=Depends(get_session),
@@ -477,7 +482,7 @@ def data_reading_endpoint(
     failed at a known time, between two times (inspection data), at their
     first look, and units still running, counted the way the fit will count
     them. ``notes`` says where the reading rests on a guess."""
-    mapping = {k: v for k, v in {"x": x, "c": c, "n": n, "xl": xl, "xr": xr}.items() if v}
+    mapping = {k: v for k, v in {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}.items() if v}
     try:
         if dataset_id:
             dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])
@@ -532,6 +537,7 @@ def fit_endpoint(
     frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     u_col: str | None = Form(default=None),
+    item_lives: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
     session=Depends(get_session),
@@ -573,7 +579,7 @@ def fit_endpoint(
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
             include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
-            frailty_family=frailty_family, u_col=u_col,
+            frailty_family=frailty_family, u_col=u_col, item_lives=item_lives,
         )
         options = regression_diagnostics.with_cox_form(options, cox)  # Cox ties / strata / cluster (#61)
         result = fit(
@@ -733,7 +739,7 @@ SPA_ROOTS = frozenset({
     # The signed-in app.
     "home", "products", "items", "systems", "asset-register", "maintenance", "data", "models", "strategy",
     "forecasts", "predictions", "reports",
-    "maintainability",
+    "maintainability", "libraries",
     "agent", "team", "settings", "tokens", "billing", "changes", "data-model",
     # Placeholder pages (frontend/src/plannedPages.js).
     "requirements", "failures", "risk",

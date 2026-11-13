@@ -48,12 +48,13 @@ def test_an_operating_time_interval_goes_through_the_duty():
     assert spec["interval"] == pytest.approx(1160)
 
 
-def test_an_operating_time_interval_without_a_duty_is_refused_in_plain_words():
+def test_an_operating_time_interval_with_a_blank_duty_runs_all_the_time():
+    # Runs blank reads "all the time" in the plan (and 100% is stored as blank), so running
+    # hours are calendar hours: the block is calculated, not refused.
     data = {"preventive": {"policy": "age", "operating_interval": 500}}
-    with pytest.raises(AnalysisError, match="has no Runs share"):
-        rbd_maintenance.preventive_spec(data, "Pump")
-    errors = rbd_maintenance.validation_errors(_pump(**data))
-    assert any("Runs %" in e for e in errors)
+    spec = rbd_maintenance.preventive_spec(data, "Pump")
+    assert spec["interval"] == pytest.approx(500)
+    assert not any("Runs" in e for e in rbd_maintenance.validation_errors(_pump(**data)))
 
 
 @pytest.mark.parametrize("duty", [0, -0.2, 1.5, "lots"])

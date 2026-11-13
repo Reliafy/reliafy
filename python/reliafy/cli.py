@@ -412,7 +412,15 @@ def cmd_upload(client: Client, ns) -> int:
     if ns.measurements_for:
         render(client.add_measurements(ns.measurements_for, ns.file, sheet=ns.sheet), ns.json)
     else:
-        render(client.upload_dataset(ns.file, name=ns.name, sheet=ns.sheet), ns.json)
+        reading = {k: v for k, v in (("x_col", ns.x_col), ("xl_col", ns.xl_col), ("xr_col", ns.xr_col),
+                                     ("c_col", ns.c_col), ("n_col", ns.n_col), ("tl_col", ns.tl_col),
+                                     ("tr_col", ns.tr_col), ("i_col", ns.i_col), ("m_col", ns.m_col),
+                                     ("e_col", ns.e_col), ("s_col", ns.s_col), ("unit", ns.unit),
+                                     ("c_invert", True if ns.c_invert else None),
+                                     ("z_cols", [c.strip() for c in ns.z_cols.split(",") if c.strip()]
+                                      if ns.z_cols is not None else None),
+                                     ("library_id", getattr(ns, "library_id", None))) if v is not None}
+        render(client.upload_dataset(ns.file, name=ns.name, sheet=ns.sheet, **reading), ns.json)
     return 0
 
 
@@ -667,6 +675,19 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--sheet")
     sp.add_argument("--measurements-for", metavar="DATASET_ID",
                     help="Add the file as this dataset's measurements (readings: unit id, age, value) instead.")
+    # The dataset's reading: which column is which. Any left out are guessed (the answer says how).
+    for role, words in (("x", "x: the value when each unit failed or was removed"),
+                        ("xl", "the start of x's range"), ("xr", "the end of x's range"),
+                        ("c", "c: failed (0) or still running (1)"), ("n", "n: how many units a row stands for"),
+                        ("tl", "tl: observed only from this value"), ("tr", "tr: observed only up to this value"),
+                        ("i", "i: which item each row belongs to"), ("m", "m: a measured value"),
+                        ("e", "e: the failure mode"), ("s", "s: the state during the row (multi-state)")):
+        sp.add_argument(f"--{role}-col", dest=f"{role}_col", metavar="COLUMN", help=f"The column for {words}.")
+    sp.add_argument("--z-cols", metavar="A,B", help="The covariates (Z), comma-separated; \"\" for none.")
+    sp.add_argument("--c-invert", action="store_true", help="The c column's 0/1 codes use 1 = failed.")
+    sp.add_argument("--unit", help="x's unit (hours, cycles, km…).")
+    sp.add_argument("--library-id", dest="library_id", metavar="LIBRARY_ID",
+                    help="Also add the dataset to this library of yours, as a snapshot.")
     sp = add("import", cmd_import, "Import a diagram file (rbd) or an .xlsx workbook (excel).")
     sp.add_argument("what", choices=["rbd", "excel"])
     sp.add_argument("file")

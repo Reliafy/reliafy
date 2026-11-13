@@ -1,7 +1,55 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (13 Nov 2026)
 
+Needs a server on the same release.
+
+- **Libraries of datasets and models**, shareable and public: `change
+  library_add` (`library_id`, `dataset_id` or `model_id`, `model_collection`)
+  replaces `library_add_model`, and `change library_remove` (`entry_id`)
+  replaces `library_remove_record`. New `change library_use` copies an entry
+  into your workspace. `change library_update` also sets `visibility`
+  (`private`, `workspaces`, `public`) with `workspaces`, `licence`, `source`,
+  `citation` and `rights_confirmed`. `list kind libraries` lists every library
+  you can see (`scope`), and `get kind library` takes `entry_id`.
+- **Upload into a library**: `change dataset_upload` (and `reliafy upload`)
+  takes `library_id`: every dataset made, each part of a split too, is added
+  to that library as a snapshot, all or nothing.
+
+## 0.7.0 (14 Nov 2026)
+
+Needs a server on this release.
+
+- **Datasets keep their reading** (which column is x, c, n, xl/xr, tl, tr,
+  i, m, e, s and the covariates Z): `change dataset_upload` (and `reliafy
+  upload`, with `--x-col`, `--c-col`, … `--z-cols`, `--unit`) takes it;
+  columns left out are guessed and the answer's `reading` says how
+  (`source: guessed`). `change dataset_update` changes it, `get kind
+  dataset` returns it, and `analyse fit` / `change model_fit` with a
+  `dataset_id` and no `time_column` fit from it.
+
+- **The asset tree as a sheet** (Reliafy Maintenance): `reliafy maintenance
+  list.tree` (`position_id` for a branch, `format csv`) gives one row per
+  position with its path, tag, class, location and fitted item; `reliafy
+  maintenance workspace.import_history` with `sheet tree` takes the same rows
+  back (a dry run by default; matched by ID, else Path; nothing deleted).
+
+## 0.6.0 (13 Nov 2026)
+
+Needs a server on this release.
+
+- **Every interval is 90%** (server change): life bounds (B-lives, mean or
+  median life, remaining life) are 90% one-sided lower bounds, and every other
+  interval is 90% two-sided. Results carry `ci_level`; result keys that named
+  a level are now level-free: `beta_ci_95` → `beta_ci`, `ci_95` → `ci`,
+  `rocof_ci_95`, `mtbf_ci_95`, `rate_ratio_ci_95`, `effectiveness_ci_95`
+  (now without `_95`) and `survival_95ci` → `survival_ci`. Forecast ranges are
+  90% (P5–P95); demonstration tests and per-demand bounds default to 90%.
+- **Split one sheet into several datasets**: dataset uploads take
+  `dataset_col`; each value of that column becomes its own dataset.
+- **Data mapping**: fits read `x` with an optional range (`xl`, `xr`) row by
+  row; rows with `x` and a range both filled are left out with a warning.
+  `tr` (observed only up to this value) is mapped like `tl`.
 - **Download as Python for every model**: `reliafy analyse model_export_python
   --model-id ID` (or `POST /api/v1/analyse/model_export_python`) gives any
   saved model (non-repairable, regression, time-varying covariates,

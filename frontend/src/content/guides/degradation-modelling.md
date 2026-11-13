@@ -50,18 +50,26 @@ being deliberate about, because everything downstream is expressed relative to i
 
 Go to **Modelling → Models → Degradation → New model** and pick your dataset under **Saved
 data** (datasets of readings come first; the rest are greyed out, with the reason), or upload a
-file. Then choose the
-item id, time and measurement columns, and set the **Failure threshold** along
-with the **Time unit** and **Measurement unit** so the outputs are labelled
-properly. A dataset that holds life data with its **Measurements** (readings on
+file (it's saved as a dataset first, through **New dataset**). There is no
+column step: the dataset's reading gives the three a degradation fit reads,
+shown in one line with **Change**: **i** (*which item each reading belongs
+to*), **x** (*when the reading was taken*) with its unit, and **m** (*the
+measured value*) with its unit, so the outputs are labelled properly. There is
+no **c**: an item's readings simply stop. Anything that needs settling (an item
+column with only one item, items read only once) is said under that line, with
+**Change the reading**. A dataset that holds life data with its **Measurements** (readings on
 the same units; see [condition and life](/guides/condition-based-risk)) is read
 here by its measurements.
 
-In the next step you name the model. Under **Advanced** (the defaults are fine)
-you can choose a **path** — how degradation progresses. The
+On the **Model** step you name the model and set its fixed inputs: **Fails when
+m falls to** (or **rises to**) the **failure threshold**, in m's unit, and the
+**path** — how degradation progresses. Which way m goes is guessed from the
+first readings and checked against the threshold; the fit itself reads each
+item's path. The
 default, **Best (auto-select by AICc)**, tries all nine paths and keeps the one
 that fits best. **Linear** is the common case for steady wear; choose another
-when the physics says wear accelerates or plateaus. What the model does is fit a path to each item, extrapolate each to the
+when the physics says wear accelerates or plateaus. Under **Advanced** (the
+defaults are fine) are the life distribution and the population method. What the model does is fit a path to each item, extrapolate each to the
 threshold, and then fit a life distribution to the resulting crossing times —
 which is how a set of wear curves becomes a reliability model of the population.
 
@@ -98,7 +106,7 @@ The page has five tabs:
 
 The population model is useful, but the real payoff is per-asset.
 
-Under **Decisions → Risk →** [Condition monitoring](/risk) (or **Track items** on the model's page),
+Under **Decisions → Risk →** [Condition monitoring](/risk) (or **Track items** on the model's page, which opens the model's fleet, or a new one on that model),
 register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much

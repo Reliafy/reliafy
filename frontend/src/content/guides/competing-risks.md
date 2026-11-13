@@ -39,15 +39,15 @@ modes and 22 still running.
 
 Go to **Modelling → Models → Non-repairable**, start a new model and choose **Fit to data**.
 Pick your file or dataset. In the **Data** step, choose the mode column as
-**Failure mode (optional)**. The step reminds you that *a blank mode is a unit
-still running*.
+**failure mode** (*optional, competing risks*). The step reminds you that *a
+blank mode is a unit still running*.
 
 When the file has no status column and some rows have no mode, the step asks
 first: *were those units still running?* Answer **Yes** to fit by failure mode,
 or **No** to treat every row as a failure. It doesn't count failures until you
 answer.
 
-You can still map **Failed or still running?** if your file has a status column
+You can still choose a column for **c** (*failed or still running*) if your file has a status column
 as well. Otherwise the blank modes say which units are running.
 
 Press **Next**. The **Model** step now reads *Failure modes from "failure_mode"

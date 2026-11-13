@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import DegradationNewModal from "../components/DegradationNewModal.jsx";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { listDegradationModels, deleteDegradationModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -12,16 +11,15 @@ import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "degradation-modelling" };
 
-// Models › Degradation: list, create (a 3-step modal that
-// fits, saves and opens the new model's page), open, delete. Lives inside the
-// Models section.
+// Models › Degradation: list, create (the New model page,
+// /models/degradation/new, fits, saves and opens the new model's page), open,
+// delete. Lives inside the Models section.
 export default function DegradationHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
-  const [params, setParams] = useSearchParams();
-  // ?dataset= (the Data list's Fit menu) opens the new-model flow on that dataset.
+  const [params] = useSearchParams();
+  // ?dataset= (an earlier link to the new-model flow) goes to the New model page on that dataset.
   const fromData = params.get("dataset");
-  const [modalOpen, setModalOpen] = useState(Boolean(fromData));
   const [error, setError] = useState(null);
 
   const refresh = useCallback(() => {
@@ -44,8 +42,9 @@ export default function DegradationHome() {
   };
 
   const pathOf = (id) => `/models/degradation/${id}`;
-  const open = (id) => navigate(pathOf(id));
-  const newModel = <button onClick={() => setModalOpen(true)}><PlusIcon /> New model</button>;
+  const newModel = <button onClick={() => navigate("/models/degradation/new")}><PlusIcon /> New model</button>;
+
+  if (fromData) return <Navigate to={`/models/degradation/new?dataset=${encodeURIComponent(fromData)}`} replace />;
 
   return (
     <div className="app">
@@ -97,14 +96,6 @@ export default function DegradationHome() {
           </tr>
         )}
       />
-
-      {modalOpen && (
-        <DegradationNewModal
-          initialDataset={fromData ? { id: fromData, name: "" } : null}
-          onClose={() => { setModalOpen(false); if (fromData) setParams({}, { replace: true }); }}
-          onSaved={(m) => open(m.id)}
-        />
-      )}
     </div>
   );
 }

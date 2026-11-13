@@ -5,7 +5,7 @@ import Plot from "./Plot.jsx";
 import { COLORWAY, referenceShape } from "../plotTheme.js";
 import { compareGroups } from "../api.js";
 import { unitInText } from "./unitText.js";
-import { guessCompareColumns } from "../datasetGuess.js";
+import { guessCompareColumns, guessUnit } from "../datasetGuess.js";
 import { guessStatus, statusMeaning, statusValues, statusValuesWithBlank } from "../lifeData.js";
 import StatusMeanings from "./StatusMeanings.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
@@ -86,7 +86,9 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
   const [status, setStatus] = useState(() => statusFor(firstCensor, facts, first.invert));
   const [causeCol, setCauseCol] = useState("");
   // The dataset's own unit ("hour" → "hours") when it names one.
-  const [unit, setUnit] = useState(first.unit || (dataset.time_unit ? `${String(dataset.time_unit).toLowerCase()}s` : ""));
+  // Failing that, the unit the last model fitted to it used, or the time column's name ("Hours run").
+  const [unit, setUnit] = useState(first.unit || (dataset.time_unit ? `${String(dataset.time_unit).toLowerCase()}s` : "")
+    || unitInText(dataset.last_mapping?.unit || "") || unitInText(guessUnit(first.time) || ""));
   const [tau, setTau] = useState("");
   const [reference, setReference] = useState(null);
   const [result, setResult] = useState(null);

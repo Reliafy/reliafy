@@ -213,6 +213,21 @@ export function rollupText(r, open = false) {
   return parts.join(" · ");
 }
 
+// A position with no model of its own whose class has a fitted one (`classModels`: the
+// position-models read's {class name: {failures, failures_now}}): "Its class has a model:
+// From the class… (1 new failure since its fit)"; "" otherwise. The class's model isn't the
+// position's until it's attached, so the roll-up never counts it.
+export function classModelHint(r, classModels, { short = false } = {}) {
+  if (!r || r.type !== "pos" || (r.lsum?.n || 0) > 0) return "";
+  const name = (r.ref?.position_class || "").trim();
+  const cm = name && classModels ? classModels[name] : null;
+  if (!cm) return "";
+  const fresh = Number.isFinite(cm.failures_now) && Number.isFinite(cm.failures) ? cm.failures_now - cm.failures : 0;
+  const since = fresh > 0 ? ` (fitted before ${fresh.toLocaleString("en-AU")} new failure${fresh === 1 ? "" : "s"}: refit it)` : "";
+  if (short) return fresh > 0 ? `class model · ${fresh.toLocaleString("en-AU")} new failure${fresh === 1 ? "" : "s"} since` : "class model to attach";
+  return `No model here yet. Its class (${name}) has one: Life model › From the class…${since}`;
+}
+
 // The model in use in a few words: "RBD", "Prediction", or the life model's kind.
 export function inUseWords(link) {
   if (!link) return "";
@@ -243,7 +258,7 @@ export function rowActions(r, { viewOnly = null } = {}) {
     // A covariate model (NSWC-11, ALT, PH): which covariates are fixed here, the rest set in an RBD.
     bindingOf(link) ? { id: "model-bind", label: "Fix covariates at this position…", ...off } : null,
     // A life model (not an RBD or a prediction) can be snapshotted into one of the user's data libraries.
-    isLifeModelLink(link) ? { id: "model-to-library", label: "Add to a library…", ...off } : null,
+    isLifeModelLink(link) ? { id: "model-to-library", label: "Add to library…", ...off } : null,
     // Typed-in parameters (Assumed): changed in place, without unlinking and entering them again.
     link.model?.entered ? { id: "model-params-edit", label: "Edit parameters…", ...off } : null,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
@@ -381,7 +396,7 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
         ...(positionClass || viewOnly ? {} : { disabled: true, reason: "This position has no class" }) },
       { id: "model-attach-params", label: "Enter parameters…", ...off },
       // The position's life model (the one in use) snapshotted into one of the user's own libraries.
-      { id: "model-attach-to-library", label: "Add to a library…", ...off,
+      { id: "model-attach-to-library", label: "Add to library…", ...off,
         ...(hasLifeModel || viewOnly ? {} : { disabled: true, reason: "This position has no life model yet" }) },
     ] },
     { id: "model-group-rbd", label: "RBD", items: [

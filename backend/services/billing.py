@@ -488,7 +488,7 @@ _CAP_NOUNS = {
     "fault_trees": ("saved fault tree", "saved fault trees"),
     "reliability_predictions": ("saved reliability prediction", "saved reliability predictions"),
     "maintainability_predictions": ("saved maintainability prediction", "saved maintainability predictions"),
-    "libraries": ("data library", "data libraries"),
+    "libraries": ("library", "libraries"),
 }
 
 
@@ -515,6 +515,35 @@ def would_exceed_cap(db, uid: str, kind: str) -> bool:
     if cap is None:
         return False
     return owned_count(db, uid, kind) >= cap
+
+
+def room_left(db, uid: str, kind: str) -> int | None:
+    """How many more ``kind`` items this user may save under their plan's cap:
+    None when there is no cap (billing off, Pro). Never below 0."""
+    if not config.BILLING_ENABLED:
+        return None
+    cap = cap_for(kind, account(db, uid)["active_plan"])
+    if cap is None:
+        return None
+    return max(0, cap - owned_count(db, uid, kind))
+
+
+def cap_room_message(db, uid: str, kind: str, wanted: int) -> str:
+    """The "limit reached" message for a save of ``wanted`` items at once
+    (a sheet split into several datasets): how many still fit, so the user can
+    choose before anything is saved. ``cap_message`` when none fit."""
+    room = room_left(db, uid, kind)
+    if not room:
+        return cap_message(db, uid, kind)
+    plan = account(db, uid)["active_plan"]
+    cap = cap_for(kind, plan)
+    one, many = _CAP_NOUNS[kind]
+    which = "Agent plan" if plan == "agent" else "free plan"
+    return (
+        f"This would save {wanted} {many.removeprefix('saved ')}, but your {which} allows {cap} "
+        f"{one if cap == 1 else many} and only {room} more fit{'s' if room == 1 else ''}. Nothing was saved. "
+        f"Upgrade to Pro for unlimited {many.removeprefix('saved ')}, or delete some you no longer need."
+    )
 
 
 def api_access_allowed(db, user: dict) -> bool:

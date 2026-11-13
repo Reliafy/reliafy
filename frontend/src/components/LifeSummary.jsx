@@ -7,7 +7,7 @@ import { openGuide } from "./HelpButton.jsx";
 import { formatNumber } from "../format.js";
 import { bestFitSentence, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
-import { PARAMS, paramLabel } from "../paramLabels.js";
+import { PARAMS, extraParamView, paramLabel } from "../paramLabels.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import { ciPct } from "../levels.js";
 
@@ -25,9 +25,19 @@ function distId(result) {
 }
 
 // A parameter with its plain label (unit included) and formatted value.
+// A mixture's "alpha1", "weight2" read as "Scale α (hours), group 1",
+// "Share in group 2".
+function mixtureLabel(result, name) {
+  const m = /^(\D+?)(\d+)$/.exec(String(name));
+  if (!m || !(result.mixture > 1)) return null;
+  if (m[1] === "weight") return `Share in group ${m[2]}`;
+  const label = paramLabel(result.base_distribution_id, m[1], result.unit);
+  return label === m[1] ? null : `${label}, group ${m[2]}`;
+}
+
 export function paramView(result, p) {
   return {
-    label: paramLabel(distId(result), p.name, result.unit),
+    label: mixtureLabel(result, p.name) || paramLabel(distId(result), p.name, result.unit),
     value: formatNumber(p.value),
     ci: p.ci ? `${formatNumber(p.ci[0])}–${formatNumber(p.ci[1])}` : null,
   };
@@ -75,6 +85,15 @@ function verdictText(result) {
       return { title, text: "β's interval includes 1, so a constant failure rate fits these data too." };
     }
     return null;
+  }
+  if (id === "rayleigh") {
+    // A Weibull with its shape fixed at 2: the failure rate rises in a
+    // straight line with age, by assumption rather than from the data.
+    return { title: "Wear-out (assumed)",
+             text: "Rayleigh is a Weibull with its shape fixed at 2: the failure rate rises steadily with age, so "
+               + "preventive replacement can pay off. The shape is assumed, not estimated; a Weibull fit says how "
+               + "sure the data are about it.",
+             action: "replacement" };
   }
   if (id === "exponential" && byName.failure_rate) {
     return {
@@ -263,12 +282,15 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
             </div>
           );
         })}
-        {(result.extra_params || []).map((p) => (
-          <div className="gofr" key={p.name}>
-            <span className="gk">{p.name}</span>
-            <span className="gv">{formatNumber(p.value)}</span>
-          </div>
-        ))}
+        {(result.extra_params || []).map((p) => {
+          const v = extraParamView(p.name, p.value, result.unit, formatNumber);
+          return (
+            <div className="gofr" key={p.name}>
+              <span className="gk">{v.label}</span>
+              <span className="gv">{v.value}</span>
+            </div>
+          );
+        })}
         {/* What the fit says, one quiet row; its reading in words opens on click. */}
         {reading && (
           <button type="button" className="gofr gofr-link life-reading-row" onClick={() => setReadingOpen(true)}

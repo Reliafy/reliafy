@@ -36,8 +36,13 @@ export const classesPath = (name) =>
   tabAt(name == null ? "tab=classes&scope=all" : `tab=classes&scope=all&class=${encodeURIComponent(name)}`);
 
 export const MOVED = [
-  // The reliability data library moved from Data to Models (9 Nov 2026): its records are models.
-  { path: "/data/library", to: "/models/library" },
+  // The reliability data library moved from Data to Models (9 Nov 2026), then to Libraries with
+  // the user's own libraries (13 Nov 2026): every handbook page keeps its ids.
+  { path: "/data/library", to: "/libraries" },
+  { path: "/models/library", to: "/libraries" },
+  { path: "/models/library/:id", to: "/libraries/:id" },
+  { path: "/models/library/:source/:record", to: "/libraries/:source/:record" },
+  { path: "/models/library/:source/components/:component", to: "/libraries/:source/components/:component" },
   // Modelling → Analyse › Models and Analyse › Data.
   { path: "/modelling", to: "/models" },
   { path: "/modelling/models", to: "/models" },

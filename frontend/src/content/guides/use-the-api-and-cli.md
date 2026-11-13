@@ -82,6 +82,18 @@ Two things the command never guesses:
 - **Which way round it is.** If your flag uses 1 for failed, add `--c-invert`
   rather than editing the file.
 
+To keep the file as a dataset, with how its columns are read, use `reliafy
+upload`:
+
+```
+reliafy upload bearings.csv --name "Bearings" --x-col hours --c-col censored --unit hours
+```
+
+Columns you don't name are guessed, and the answer's `reading` says how
+(`source: guessed`): check it, and change it with
+`reliafy change dataset_update`. Every model built from the dataset, in the app or with
+`dataset_id` and no columns over the API, reads it that way.
+
 Every other tool works the same way: `reliafy tools` lists them, and
 `reliafy <tool> <action> --help` shows one action's arguments. More on the
 [command line](/api-docs/cli) page.

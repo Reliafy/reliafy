@@ -124,3 +124,11 @@
 .mt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .mt-retire { margin-left: auto; color: var(--danger, #b42318); }
 .mt-rate-list .lsa-num input { width: 7rem; }
+
+/* What a replace-or-restore task leaves the item as (MaintenanceTask.jsx): fits a phone. */
+.mt-restore { min-width: 0; max-width: 100%; box-sizing: border-box; margin: 0; padding: 8px 12px 10px;
+  border: 1px solid var(--border, #d0d7de); border-radius: 6px; }
+.mt-restore legend { padding: 0 4px; }
+.mt-restore select, .mt-restore input:not([type="checkbox"]) { max-width: 100%; box-sizing: border-box; }
+.mt-restore-row { flex-wrap: wrap; gap: 8px 12px; }
+.mt-restore-row > * { min-width: 0; flex: 1 1 10rem; }

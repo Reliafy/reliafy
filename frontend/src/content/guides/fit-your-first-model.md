@@ -52,72 +52,134 @@ censoring covers most real cases.
 ## Loading it in
 
 Reliafy opens on [Home](/home): what changed, what needs attention and your
-recent work, with **Start here** cards while your workspace is new. From there,
-go to **Modelling → Models → Non-repairable** and press **New model**, then choose **Fit to
-data**. The fit runs in four steps, shown along the bottom: **Source**, **Data**, **Model** and
-**Result**. The source step asks where the data comes from:
+recent work, with **Start here** cards while your workspace is new. Your data
+goes in once, as a dataset, and the dataset remembers how its columns are read.
+Every model you build from it then asks nothing about columns.
 
-- **Saved data** lists every dataset you've saved (yours first, then the samples), with its rows,
-  what it holds (Non-repairable, Covariates and so on) and when it was added. Search it by name or
-  tag. Pick one to see its first rows and how its columns will be read: which column is the time,
-  and what each status value means (0 = failed, 1 = still running). Anything that would stop the
-  fit shows there too. Press **Next** to change the columns. Datasets that hold other kinds of data
-  (repeated failures of the same units, or readings alone) are greyed out, with what to fit them
-  with instead.
-- **Paste or type** takes a column of times, with an optional 0/1 status column.
-- **Upload a file** takes a CSV or Excel file, dropped on the page or browsed for.
+Upload it under [Data](/data) → **New dataset**: drop a CSV or Excel file (for
+a workbook, choose the sheet and the header row), or **Paste or type the
+data**. Reliafy shows the first rows, then asks once how the columns are read.
 
-Datasets are reusable: once a file is in Reliafy you can fit as many models to it as you like
-without uploading it again.
+### How the columns are read
 
-![The new-model flow: pick a saved dataset, see its first rows and how its columns will be read](/guides/img/fit-01-new.png)
+One selector for each thing a model can use, labelled with SurPyval's name for
+it and a few plain words. Reliafy fills them in from the column names and
+values, so for most files you only check them.
 
-If your file has no header row, upload it under [Data](/data) → **New dataset** and
-tick **No header row**: Reliafy names the columns `col 1`, `col 2`, … so the
-first row stays data rather than being eaten as titles.
+- **x**: *the value when it failed or was removed*. Required: every model is
+  built on it. It needn't be time: days, operating hours, cycles, kilometres,
+  volts or a load all work. Beside it, the **unit** (pick one or type your
+  own; guessed from the column name where it can be), or **no unit** if the
+  values really have none. The unit flows through to every chart and result.
+- **where x is blank, a range: xl to xr**: for failures found at an
+  inspection. **xl** is the last value the unit was seen working, **xr** the
+  value it was found failed (blank **xr**: still running). Map only the range
+  when every row is one. Map **x** as well when some rows have an exact value
+  and others only a range: each row is read on its own.
+- **c**: *failed or still running*, `0` = failed and `1` = still running.
+  Required too: pick the column, or tick **No status column: every row
+  failed**, because without it a model can't tell failures from units still
+  running. If your column uses `1` for a failure, tick **my column uses 1 =
+  failed**. A column of words (*Failed*, *Running*) is read for you, and the
+  line under **c** shows how (*Failed → 0, Running → 1*), with a switch to
+  flip any one.
+- **n**: *how many units the row stands for*, if one row represents several
+  identical units.
+- **tl**: *late entry, observed only from this value*, for units already in
+  service when records began (*Entered at (h)*).
+- **tr**: *observed only up to this value*, when records stop (*Observed
+  until*). Same unit as **x**; a blank cell is no limit on that row.
+- **i**: *which item each row belongs to* (a tag, a serial). Optional: a
+  repairable model, readings and rows that follow an item over time need it.
+- **m**: *a measured value*, for readings (wear, vibration), with its unit.
+- **failure mode**: when units fail in more than one way, each mode is a
+  competing risk (see [competing risks](/guides/competing-risks)).
+- **s**: *the state the unit was in during this row*, for data that moves
+  between several states. Optional; it is kept with the dataset for later.
+- **Z**, the covariates: every column not used above, such as a load, a site
+  or a duty. A plain life model ignores them; a regression offers them. Columns
+  that are rarely covariates start as **not used**, greyed, each with why (*an
+  id*, *a date*, *free text*, *one value*), and one tap includes any of them.
+  A line sums it up: *Z: Load, Site, Duty (3 covariates) · not used: Remarks,
+  Commissioning date*. Give a covariate a unit if you like.
+
+Anything that needs settling is said beside the selector it concerns, and when
+**Create dataset** is greyed the reason is beside it. Blank rows are skipped.
+
+If your file has no header row, tick **No header row**: Reliafy names the
+columns `col 1`, `col 2`, … so the first row stays data.
 
 A dataset can also carry **measurements**: readings taken on the same units
-over time (vibration, wear), one row per reading. They sit beside the life data
-on the dataset's page, on its **Measurements** tab, and feed a
+over time, one row per reading. They sit beside the life data on the
+dataset's page, on its **Measurements** tab, and feed a
 [condition and life model](/guides/condition-based-risk).
 
-## Mapping the columns
+### One sheet, several datasets
 
-The **Data** step shows the first rows and asks what each column means, in plain
-words. You only need the ones your data has:
+A sheet often holds more than one kind of thing: transformers, coal mills and
+boiler feed pumps, each row naming its class in a column. Once the file is
+chosen, pick that column in **Split into datasets by**. Each value becomes its
+own dataset, named by the value (*Transformer*, *Coal mill*). If you already
+have a dataset with that name, the file's name is added (*Transformer – plant*).
 
-- **Time to failure or removal** — the failure or censoring time. Required.
-- **Failed or still running?** — the censoring column. Reliafy lists the values
-  it finds, with how many rows have each, and you mark each one **Failed** or
-  **Still running**. For the sample *Pump field returns*, `0` is 18 failures and
-  `1` is 7 pumps still running. If most units come out as still running, the
-  step says so and offers **Swap the flags**: many spreadsheets use `1` for
-  failed. A header that says which way round it is, such as *Failed (1=yes)*,
-  *failure (y/n)* or *1 = failed*, is read that way; when the header doesn't
-  say, the step asks, with the failures and still-running counts both ways.
-  The line under the columns then reads, for example, *Read as: 10 failures,
-  16 still running · 1 = failed, 0 = still running*.
-- **Count** — if one row represents several identical units.
-- **Unit of each row** — a column that says each row's unit, such as *hrs* on
-  most rows and *days* on a few. Every time is converted to the **Unit** below
-  before the fit (the most common one to start with), and the step says how
-  many rows were converted. If such a column is left unused, the step asks
-  first, and a fit made without it says so on **Diagnostics**.
-- **Failure mode** — when units fail in more than one way: each mode is treated as a competing risk (see [competing risks](/guides/competing-risks)).
-- Under **Advanced: interval and truncated data**, the earliest and latest
-  possible failure time (for failures found at an inspection, used *instead of*
-  a single time) and when each unit was observed from and until (truncation).
-- Under **Advanced (regression): covariates**, the columns a failure depends on,
-  such as load or temperature.
+- Before anything is saved, the box lists what it will make, with each
+  dataset's rows: *Transformer · 24 rows*.
+- Rows with no value in that column are left out, and the box says how many.
+- The column itself isn't kept: every row of a dataset holds the same value.
+- The one reading you set applies to every dataset the split makes.
+- On the Free plan every saved dataset counts towards the limit; if they won't
+  all fit, the box says how many more you can save, and nothing is saved.
+- **Save 3 datasets** saves them all at once, then lists them with a link to
+  each.
 
-Set the **Unit** here too. It's guessed from the column name where it can be,
-and it flows through to every chart and result afterwards, so it stops you
-comparing a model in hours against one in cycles later on. A unit is optional:
-leave it blank, or tick **No unit (just numbers)** if the times really have none.
+Over the API and MCP, `change dataset_upload` takes `dataset_col`, and the
+reading as `x_col`, `c_col`, … `z_cols`; columns you don't name are guessed,
+and the answer says how they were read.
+
+## Building the model
+
+Go to **Modelling → Models → Non-repairable**, press **New model** and choose
+**Fit to data**. The fit runs in three steps: **Source**, **Model** and
+**Result**. The source step asks where the data comes from:
+
+- **Saved data** lists every dataset you've saved (yours first, then the
+  samples), with its rows, what it holds and when it was added. Pick one to
+  see its first rows and how its columns are read. Datasets that hold other
+  kinds of data (repeated failures of the same units, or readings alone) are
+  greyed out, with what to fit them with instead.
+- **Paste or type** takes a column of times, with an optional 0/1 status
+  column.
+- **Upload a file** takes a CSV or Excel file.
+
+Pasted values and a new file are saved as a dataset first, through the same
+**New dataset** screen, so they're read the same way; then the fit goes on.
+
+![The new-model flow: pick a saved dataset, see its first rows and how its columns are read](/guides/img/fit-01-new.png)
+
+The **Model** step opens with the dataset's reading in one line, for example
+*x = Age (hours) · c = Status · i = Tag · failure mode = Mode · Z: Load, Site*,
+with the failures and units still running counted under it. Roles this model
+doesn't use are shown quieter. **Change** opens the same selectors as the
+upload: what you keep there is saved with the dataset and used by every later
+model. Models already made keep the reading they were fitted with, so a refit
+gives the same answer.
+
+![The Model step: how the dataset's columns are read, in one line, with Change](/guides/img/fit-04-data-step.png)
+
+A dataset saved before readings existed is read the way its last model read
+it, or guessed, and the line says *guessed — check it*: press **Looks right**
+(or **Change**) once, and the reading is kept.
+
+If the dataset has covariates (Z), choose **Life model, no covariates** or
+**Regression on Z**: a regression starts with every covariate ticked; untick
+any you don't want (see [covariates](/guides/covariates-and-regression)). When
+the rows follow each item over time (start and stop rows), a regression fits
+the covariates over time, and a life model reads one life per item: its last
+time and its status then.
 
 ## Choosing a distribution
 
-Then, in the **Model** step, pick the model. Weibull is the default. If you
+Then, still in the **Model** step, pick the model. Weibull is the default. If you
 don't know which distribution you want — and often you genuinely don't — choose
 **Best fit (auto)** and Reliafy will fit every candidate
 and keep the one with the lowest AIC, showing you the full ranking so you can
@@ -234,8 +296,8 @@ reads them in detail.
 
 ## No data yet: a model from the data library
 
-The reliability data library has moved from Data to **Models › Library**
-([open it](/models/library)). It holds published failure data, each record
+The reliability data library's handbooks are under **Libraries**
+([open it](/libraries)), marked **Built-in**. They hold published failure data, each record
 cited: industry-average failure rates and probabilities on demand (NRC/INL
 2020, from U.S. nuclear plants) and handbook base rates for electronic parts.
 Open a source to filter its records by equipment type, failure mode and kind,
@@ -269,31 +331,13 @@ mode's share, and the constant rate an RBD block would use.
 
 ## Build your own library
 
-A model you fit is in no library until you put it there. Open a saved
-non-repairable model and choose **Add to a library…** from its ⋯ menu (or,
-in the Explorer's Modelling tab, **Life model › Add to a library…** for a
-position's life model). Pick one of your libraries or make a new one there
-(a name and one line on what it holds), then give the record a label (the
-model's name to start with), its equipment type, the failure mode it's for
-and any notes; the time unit comes from the model.
-
-Adding takes a snapshot: the distribution, its parameters with their bounds,
-the unit, how many units were observed and how the model was fitted. The
-record links back to the model, but a later refit doesn't change the record,
-so a library stays what you reviewed. Your libraries show first under
-**Yours** on the [Library page](/models/library), with **New library…**,
-and in the library pickers; a library's page has **Edit…** and **Delete…**
-(deleting a library never deletes the models), and a record's page has
-**Remove from library**. A library's notes or licence text shows with every
-record in it.
-
-A record of yours works like a published one: **Use as a model…** saves a
-model of the same family with the record's parameters and bounds, and **Use
-as a prior…** (or **A library record** in the Fit dialog) fits your data in
-the record's family with each parameter about the record's value, between
-its bounds (within about 30% when the record has none, and the result says
-so). One library counts as one saved item on the Free plan, however many
-records it holds.
+A model you fit is in no library until you put it there. Open a saved model
+and choose **Add to library…** from its ⋯ menu (or, in the Explorer's
+Modelling tab, **Life model › Add to library…** for a position's life model).
+The library keeps a copy as it is now; a later refit doesn't change it. You can
+share a library with other workspaces or publish it: the
+[Build and share a library](/guides/build-and-share-a-library) guide covers
+it all.
 
 ## Run it yourself in Python
 

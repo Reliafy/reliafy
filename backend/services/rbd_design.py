@@ -312,6 +312,39 @@ _BUDGET_TOO_LOW = re.compile(
     r"got (?P<got>[-+.\deE]+)\.")
 
 
+# RePyability's out-of-reach targets (0.16): the target as ``:g`` (so
+# 0.999999999 reads "1"), the best reachable reliability, or the budget.
+_CEILING = re.compile(
+    r"target \S+ is unreachable: the best achievable system reliability is (?P<best>[-+.\deE]+)"
+    r"(?P<capped> within max_units)?")
+_OVER_BUDGET = re.compile(r"target \S+ is unreachable within the budget")
+
+
+def _pct(v: float) -> str:
+    """A reliability as a percentage, with the digits it needs (99.9999999%)."""
+    return f"{v * 100:.10g}%"
+
+
+def _unreachable_words(message: str, target: Optional[float]) -> Optional[str]:
+    """An out-of-reach target in plain words: the target as asked, the best
+    reachable, and what to change."""
+    if target is None:
+        return None
+    m = _CEILING.search(message)
+    if m:
+        try:
+            best = float(m.group("best"))
+        except ValueError:
+            return None
+        within = " with the most copies allowed" if m.group("capped") else ""
+        return (f"A system reliability of {_pct(target)} can't be reached: the best these blocks can give is "
+                f"{best * 100:.4g}%{within}. Lower the target, allow more copies, or design more blocks.")
+    if _OVER_BUDGET.search(message):
+        return (f"A system reliability of {_pct(target)} can't be reached within the budget. Raise the budget "
+                "or lower the target.")
+    return None
+
+
 def _money(v: float) -> str:
     return f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.4g}"
 
@@ -334,9 +367,9 @@ def _budget_words(message: str) -> Optional[str]:
     return words + "."
 
 
-def _friendly(message: str, blocks: list[dict]) -> str:
+def _friendly(message: str, blocks: list[dict], target: Optional[float] = None) -> str:
     """A RePyability message in the panel's terms (block labels, not ids)."""
-    budget = _budget_words(message)
+    budget = _budget_words(message) or _unreachable_words(message, target)
     if budget:
         return budget
     for b in blocks:
@@ -543,7 +576,7 @@ def design_redundancy(
                 costs, budget=limits or None, target=target, method=method, **options
             )
     except (ValueError, NotImplementedError) as exc:
-        raise DesignError(_friendly(str(exc), parsed)) from None
+        raise DesignError(_friendly(str(exc), parsed, target)) from None
 
     # The trade-off around the answer, within any weight / volume limit and
     # the most copies — and up to twice what the answer, the budget or the

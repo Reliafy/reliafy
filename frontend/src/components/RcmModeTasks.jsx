@@ -25,6 +25,8 @@ import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { PlusIcon } from "./icons.jsx";
+import TaskTwins from "./TaskTwins.jsx";
+import { modeRestorationBody, modeRestorationForm, modeRestorationProblem, restorationWords } from "../taskRestoration.js";
 
 // Step 3 of a failure mode's details, "Proactive task or default action" (the
 // Explorer's RCM tab), edited in place like step 2 (Derryn, 9 Nov 2026: the
@@ -576,9 +578,13 @@ function intervalWhy(raw) {
 // promise; a refusal shows here with everything as typed. Escape cancels (when it can be).
 function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, onSave, onCancel = null, onDone }) {
   // Starts on a kind the decision doesn't have yet (any kind may come again, a click away).
+  // The first task of a mode with no decision yet starts with no kind ticked (unless only one
+  // is allowed): the kind is the RCM choice itself, so it's never pre-chosen for the user.
   const [kind, setKind] = useState(() => {
+    if (fixed) return fixed;
+    if (!d) return kinds?.length === 1 ? kinds[0] : null;
     const have = isCombination(d) ? d.outcomes.map((o) => o.outcome) : [d?.outcome];
-    return fixed || kinds?.find((k) => !have.includes(k)) || kinds?.[0];
+    return kinds?.find((k) => !have.includes(k)) || kinds?.[0];
   });
   const [use, setUse] = useState("new"); // "new" | "existing"
   const [name, setName] = useState(start.name || "");
@@ -607,7 +613,7 @@ function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, 
   }, [use, choices, ops, r]);
   const n = Number(interval);
   const asksDue = scheduled && use === "new" && takesStart({ unit });
-  const why = !scheduled ? null
+  const why = !kind ? "Choose the kind of task." : !scheduled ? null
     : use === "existing" ? (picked ? null : "Choose a task.")
       : !name.trim() ? "Name the task." : intervalWhy(interval) || (asksDue && startWhy(due)) || null;
   const hint = kinds && scheduled && use === "new" ? secondTaskHint(r) : null;
@@ -667,7 +673,9 @@ function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, 
         </div>
       )}
       <Row1 lead={ROLE[kind]?.lead} acts={acts}>
-        {!scheduled ? (
+        {!kind ? (
+          <span className="rim-empty">Choose the kind of task first.</span>
+        ) : !scheduled ? (
           <span className="rim-empty">the other task stands in until the change is made. Say what's to change in Notes and rationale, under the title.</span>
         ) : use === "new" ? (
           <>
@@ -1040,6 +1048,7 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
   const d = mode?.ref.decision || null;
   const can = !readOnly && !!ops?.editTask;
   const [eventOpen, setEventOpen] = useState(false);
+  const [twinCheck, setTwinCheck] = useState(null); // an interval just changed: the same task elsewhere
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [saved, setSaved] = useState({});
@@ -1081,7 +1090,8 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
           <div className="rim-ivline">
             {can && !eventOnly ? (
               <IntervalInline key={`${t.id}:${t.interval}:${t.unit}`} task={t} d={d} busy={busy}
-                              onSave={(interval, unit) => save({ interval, unit }, "Saved the interval.", "interval")} />
+                              onSave={(interval, unit) => save({ interval, unit }, "Saved the interval.", "interval")
+                                .then((ok) => { if (ok) setTwinCheck({ taskId: t.id, name: t.name, interval, unit }); })} />
             ) : <span className="rim-tevery">{every(t) || "No interval yet"}</span>}
             {!eventOnly && calcLink(t, outcome)}
           </div>
@@ -1107,6 +1117,10 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
           )}
           {can && !eventOnly && <CountsField task={t} busy={busy} onSave={(body) => save(body, "Saved what it counts.", "interval")} />}
           {failed && <p className="field-error" role="alert">{failed}</p>}
+          {twinCheck && twinCheck.taskId === t.id && (
+            <TaskTwins key={`${twinCheck.interval}:${twinCheck.unit}`} {...twinCheck}
+                       onDone={(said) => { setTwinCheck(null); if (said) onSaid?.(said); }} />
+          )}
         </div>
       </section>
       {found && (
@@ -1119,8 +1133,64 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
           </div>
         </section>
       )}
+      {outcome === "fixed_interval" && t.id && mode?.ref.id && (
+        <section className="rw-sg" aria-label="Leaves it as">
+          <StepLabel saved={saved.restore}>Leaves it as</StepLabel>
+          <div className="rw-sc rim-tcell">
+            <ModeRestoration key={`${t.id}:${mode.ref.id}:${JSON.stringify(t.restorations?.[mode.ref.id] || null)}`}
+                             task={t} modeId={mode.ref.id} can={can} busy={busy}
+                             onSave={(body, said) => save(body, said, "restore")} />
+          </div>
+        </section>
+      )}
       {calcDialog}
     </>
+  );
+}
+
+// What a replace-or-restore task leaves the item as, for this failure mode only: as the task
+// says (its own, set on the Maintenance tab), as new, or restored partly (Kijima I or II). A
+// repairable RBD's plan reads it; where the modes a task serves disagree it takes the least
+// restoring and says so.
+function ModeRestoration({ task, modeId, can, busy, onSave }) {
+  const [f, setF] = useState(() => modeRestorationForm(task, modeId));
+  const [tried, setTried] = useState(false);
+  const problem = modeRestorationProblem(f);
+  const start = modeRestorationForm(task, modeId);
+  const changed = f.kind !== start.kind || (f.kind.startsWith("kijima") && String(f.restores) !== String(start.restores));
+  const taskWords = restorationWords(task.restoration);
+  const submit = (e) => {
+    e?.preventDefault();
+    setTried(true);
+    if (problem || busy || !changed) return;
+    onSave(modeRestorationBody(task, modeId, f), f.kind === "task" ? "This failure mode follows the task again." : "Saved what it leaves the item as.");
+  };
+  if (!can) {
+    const mine = task.restorations?.[modeId];
+    return <span className="rim-tevery">{mine ? restorationWords(mine) : `${taskWords} (as the task says)`}</span>;
+  }
+  return (
+    <form className="rim-restore" onSubmit={submit} aria-label="What the task leaves the item as, for this failure mode">
+      <Select value={f.kind} disabled={busy} aria-label="After the task, for this failure mode"
+              onChange={(e) => setF((x) => ({ ...x, kind: e.target.value }))}>
+        <option value="task">As the task says: {taskWords}</option>
+        <option value="as_new">As new</option>
+        <option value="kijima1">Restores part of the age gained since the last task (Kijima I)</option>
+        <option value="kijima2">Restores part of its whole age (Kijima II)</option>
+      </Select>
+      {f.kind.startsWith("kijima") && (
+        <InputGroup>
+          <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={f.restores} readOnly={busy}
+                     className="interval-input" placeholder="e.g. 70" aria-label="Restores (% of the age)"
+                     aria-invalid={tried && problem ? "true" : undefined}
+                     onChange={(e) => setF((x) => ({ ...x, restores: e.target.value }))} />
+          <span className="rim-tquiet">% of the age</span>
+        </InputGroup>
+      )}
+      {changed && <button type="submit" className="sm" disabled={busy}>{busy ? "Saving…" : "Save"}</button>}
+      {tried && problem && <p className="rim-why" role="alert">{problem}</p>}
+      <p className="rw-fhelp">For this failure mode only. The task serves others too? Each can say its own; an RBD takes the least restoring.</p>
+    </form>
   );
 }
 

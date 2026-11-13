@@ -138,3 +138,14 @@ test("a temperature given in °C is shown and entered in °C, asked in kelvin", 
   assert.deepEqual(defaultUse(f), [104]);
   assert.deepEqual(useForModel(f, ["104"]), [313.15]);
 });
+
+test("useRangeWarning: says when the use stress is far from the tested ones", async () => {
+  const { useRangeWarning } = await import("./altFrame.js");
+  const r = { stresses: [{ label: "Voltage", unit: "kV" }], levels: [{ stress: [30] }, { stress: [33] }, { stress: [36] }] };
+  const w = useRangeWarning(r, [20], { value: 10990 });
+  assert.match(w, /^20 kV is well below the tested 30–36 kV \(an acceleration factor of 10,990×\)/);
+  assert.equal(useRangeWarning(r, [27]), null);
+  // A temperature entered in °C reads back in °C.
+  const t = { stresses: [{ label: "Temperature", entered_unit: "°C" }], levels: [{ stress: [378.15] }, { stress: [418.15] }] };
+  assert.match(useRangeWarning(t, [313.15]), /^40 °C is well below the tested 105–145 °C/);
+});

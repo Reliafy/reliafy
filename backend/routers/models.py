@@ -17,7 +17,9 @@ from backend.routers import excel as excel_router
 from backend.services import billing as billing_service
 from backend.services import excel as excel_service
 from backend.services import datasets as datasets_service
+from backend.services import dataset_reading
 from backend.services import models as models_service
+from backend.services import recurrent as recurrent_service
 from backend.services import model_split
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
@@ -62,6 +64,7 @@ def _model_summary(model, ctx: AccessCtx) -> dict:
         "created_at": model.created_at.isoformat(),
         "dataset_id": model.dataset_id,
         "is_sample": samples_service.is_sample(model.owner_id),
+        **({"from_library": model.from_library} if model.from_library else {}),
         "read_only": not access_service.can_write(ctx, model.owner_id),
         "updated_by": (model.updated_by or {}).get("name"),
         # Randomness verdict (weibull beta CI / exponential), used when picking
@@ -128,27 +131,15 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
         "measurements": _measurements_summary(dataset),
         "created_at": dataset.created_at.isoformat(),
         "is_sample": samples_service.is_sample(dataset.owner_id),
+        **({"from_library": dataset.from_library} if dataset.from_library else {}),
         "read_only": not access_service.can_write(ctx, dataset.owner_id),
     }
 
 
 def _last_mapping(models: list, columns: list) -> dict | None:
     """How the newest model fitted from a dataset read its columns, so a new
-    fit from the dataset starts there (the status words, the late-entry
-    column...) rather than from a fresh guess: ``{mapping, options, unit,
-    model_name}``, or None. Only a mapping whose columns are all still in the
-    dataset counts; options are the status reading only."""
-    names = {c.get("name") if isinstance(c, dict) else str(c) for c in columns or []}
-    for m in models:
-        spec = m.spec or {}
-        mapping = {k: v for k, v in (spec.get("mapping") or {}).items() if v}
-        if not (mapping.get("x") or mapping.get("xl")) or not set(mapping.values()) <= names:
-            continue
-        opts = spec.get("options") or {}
-        return {"mapping": mapping, "unit": spec.get("unit") or (m.results or {}).get("unit") or "",
-                "options": {k: opts[k] for k in ("c_map", "c_invert") if opts.get(k)},
-                "model_name": m.name}
-    return None
+    fit from the dataset starts there (dataset_reading.last_model_mapping)."""
+    return dataset_reading.last_model_mapping(models, columns)
 
 
 def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
@@ -176,8 +167,21 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
             session, dataset.id, ctx.read_owners, ctx.hidden))
         if d["collection"] != "models"
     ]
+    last = _last_mapping(models, dataset.columns)
+    try:
+        reading, reading_source = dataset_reading.for_dataset(dataset, last, preview if preview.get("dtypes") else None)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to read the dataset's reading: %s", exc)
+        reading, reading_source = None, "guessed"
     return {
         **summary,
+        # How the columns are read for modelling (dataset_reading): kept from
+        # upload ("saved"), or derived for an older dataset from its newest
+        # model ("last_model") or a guess ("guessed"), never written back.
+        "reading": reading,
+        "reading_source": reading_source,
+        "reading_kept": bool(dataset.reading),
+        "reading_summary": dataset_reading.summary(reading or {}),
         "n_models": len(models) + len(others),
         "preview": preview.get("preview", []),
         "preview_columns": preview.get("columns", []),
@@ -187,9 +191,15 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "blanks": preview.get("blanks"),
         "values": preview.get("values"),
         "whole": preview.get("whole"),
+        "nonpositive": preview.get("nonpositive"),
+        # Wholly blank rows, skipped by every fit (n_rows still counts them).
+        "blank_rows": preview.get("blank_rows", 0),
         "models": [_model_summary(m, ctx) for m in models],
         # How the newest model read the columns: a new fit from here starts there.
-        "last_mapping": _last_mapping(models, dataset.columns),
+        "last_mapping": last,
+        # The same for a repairable fit: the newest repairable model's columns.
+        "last_recurrent_mapping": None if public else recurrent_service.last_mapping(
+            session, dataset.id, ctx.read_owners, ctx.hidden, dataset.columns),
         "other_models": others,
         "profile": profile,
         # The measurements part (readings at ages), with its own preview and
@@ -258,6 +268,44 @@ def _table_from_paste(content: str, no_header: bool | None):
     return csv_bytes, guess, (HEADER_HINT if apply and no_header is None else None)
 
 
+def _upload_library(session, ctx: AccessCtx, library_id: str | None):
+    """The library an upload also adds its datasets to (None without one), or the response saying why not:
+    checked before anything is saved."""
+    from backend.library import entries as lib_entries
+
+    if not (library_id or "").strip():
+        return None
+    try:
+        return lib_entries.upload_target(session, library_id.strip(), ctx.write_owner)
+    except lib_entries.LibraryNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Library not found."})
+    except lib_entries.NotAllowed:
+        return JSONResponse(status_code=403, content={
+            "detail": "Only the library's owner can add to it. Choose one of your own libraries."})
+
+
+def _into_library(session, ctx: AccessCtx, lib: dict | None, made: list) -> dict | JSONResponse | None:
+    """Add what an upload made (``[(dataset, reused), ...]``) to ``lib`` as snapshots, all or nothing: when
+    that fails, the datasets the upload created are deleted again and the answer says why."""
+    from backend.library import entries as lib_entries
+
+    if lib is None:
+        return None
+    try:
+        out = lib_entries.add_uploaded(session, lib, [d for d, _ in made], ctx.read_owners, ctx.hidden)
+        access_service.stamp_editor(session, lib_entries.COLLECTION, lib["_id"], ctx)
+        return out
+    except Exception as exc:  # noqa: BLE001 - undo the upload, then say why
+        fresh = [d.id for d, reused in made if not reused]
+        if fresh:
+            session.datasets.delete_many({"_id": {"$in": fresh}, "owner_id": ctx.write_owner})
+        if isinstance(exc, lib_entries.LibraryError):
+            return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        logger.exception("Failed to add an upload to a library")
+        return JSONResponse(status_code=500, content={
+            "detail": "The data couldn't be added to the library, so nothing was saved. The error has been logged."})
+
+
 @router.post("/datasets")
 def upload_dataset(
     file: UploadFile = File(...),
@@ -265,10 +313,27 @@ def upload_dataset(
     no_header: bool | None = Form(default=None),
     sheet: str | None = Form(default=None),
     header_row: str | None = Form(default=None),
+    dataset_col: str | None = Form(default=None),
+    reading: str | None = Form(default=None),
+    library_id: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Store an uploaded CSV as a standalone dataset (no fit required).
+
+    ``library_id``: also add every dataset made (one, or each part of a
+    split) to that library of the caller's as a snapshot, all or nothing;
+    the answer's ``library`` says what was added.
+
+    ``reading``: how its columns are read for modelling, as JSON
+    (dataset_reading: x, c, n, xl, xr, tl, tr, i, m, e, c_invert, c_map,
+    unit, m_unit, z, z_units, not_used). With ``dataset_col`` every part
+    keeps the same reading. Left out, the dataset reads as guessed until a
+    fit confirms it.
+
+    ``dataset_col``: split the sheet by this column, one dataset per value,
+    each named by the value (see ``_split_upload``). Datasets are stored as
+    their rows; the columns are read when fitting, so nothing else is kept.
 
     ``no_header``: true keeps the first row as data (columns ``col 1``,
     ``col 2``, …), false reads it as the column names; blank guesses, so a
@@ -285,6 +350,15 @@ def upload_dataset(
     if isinstance(read, JSONResponse):
         return read
     contents, guess, hint = read
+    chosen = _reading_form(reading)
+    if isinstance(chosen, JSONResponse):
+        return chosen
+    lib = _upload_library(session, ctx, library_id)
+    if isinstance(lib, JSONResponse):
+        return lib
+    if (dataset_col or "").strip():
+        return _split_upload(session, ctx, contents, dataset_col, (name or "").strip()
+                             or datasets_service.default_name(file.filename), chosen, lib)
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:
@@ -294,16 +368,63 @@ def upload_dataset(
     try:
         dataset, reused = datasets_service.create_or_reuse(
             session, (name or "").strip() or datasets_service.default_name(file.filename), contents,
-            ctx.write_owner,
+            ctx.write_owner, reading=chosen,
         )
-    except FitError as exc:
+    except (FitError, dataset_reading.ReadingError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store dataset")
         return JSONResponse(
             status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."}
         )
-    return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
+    added = _into_library(session, ctx, lib, [(dataset, reused)])
+    if isinstance(added, JSONResponse):
+        return added
+    return JSONResponse(content={**_created(dataset, reused, session, ctx, guess, hint),
+                                 **({"library": added} if added else {})})
+
+
+def _table_preview(read) -> JSONResponse:
+    """The columns a new dataset would have, with the facts the reading needs
+    (fitting.preview, distinct) and the server's guess of its reading."""
+    if isinstance(read, JSONResponse):
+        return read
+    from backend import fitting
+
+    contents, guess, hint = read
+    try:
+        out = fitting.preview(contents, distinct=True)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    out["reading"] = dataset_reading.guess(out)
+    out["header_guess"] = guess
+    if hint:
+        out["hint"] = hint
+    return JSONResponse(content=out)
+
+
+@router.post("/datasets/preview")
+def preview_upload(
+    file: UploadFile = File(...),
+    no_header: bool | None = Form(default=None),
+    sheet: str | None = Form(default=None),
+    header_row: str | None = Form(default=None),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """New dataset's reading screen: the columns of a file exactly as an
+    upload with the same fields would store them, their facts and the guessed
+    reading. Saves nothing."""
+    return _table_preview(_table_from_upload(ctx, file, no_header, sheet, header_row))
+
+
+@router.post("/datasets/preview-paste")
+def preview_paste(
+    content: str = Body(default="", embed=True),
+    no_header: bool | None = Body(default=None, embed=True),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The same for pasted text."""
+    return _table_preview(_table_from_paste(content, no_header))
 
 
 @router.post("/datasets/paste")
@@ -311,15 +432,21 @@ def paste_dataset(
     name: str = Body(default=""),
     content: str = Body(default=""),
     no_header: bool | None = Body(default=None),
+    reading: dict | None = Body(default=None),
+    library_id: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Create a dataset from pasted tabular text (CSV or TSV). Used by the
     paste-data form and the assistant. ``no_header`` and the response's
-    ``header_guess`` / ``hint`` are as for an upload."""
+    ``header_guess`` / ``hint`` are as for an upload; ``reading`` and
+    ``library_id`` as for an upload (``reading`` an object here)."""
     read = _table_from_paste(content, no_header)
     if isinstance(read, JSONResponse):
         return read
+    lib = _upload_library(session, ctx, library_id)
+    if isinstance(lib, JSONResponse):
+        return lib
     csv_bytes, guess, hint = read
     # Free-plan cap (skipped when the identical data already exists).
     denied = _creation_denied(session, ctx, "datasets")
@@ -329,14 +456,67 @@ def paste_dataset(
             return denied
     try:
         dataset, reused = datasets_service.create_or_reuse(
-            session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner,
+            session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner, reading=reading,
         )
-    except FitError as exc:
+    except (FitError, dataset_reading.ReadingError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store pasted dataset")
         return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
-    return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
+    added = _into_library(session, ctx, lib, [(dataset, reused)])
+    if isinstance(added, JSONResponse):
+        return added
+    return JSONResponse(content={**_created(dataset, reused, session, ctx, guess, hint),
+                                 **({"library": added} if added else {})})
+
+
+def _reading_form(raw: str | None):
+    """The ``reading`` form field (JSON) as a dict, None when left out, or the 422."""
+    import json
+
+    if raw is None or not raw.strip():
+        return None
+    try:
+        out = json.loads(raw)
+    except ValueError:
+        return JSONResponse(status_code=422, content={"detail": "reading must be a JSON object."})
+    if not isinstance(out, dict):
+        return JSONResponse(status_code=422, content={"detail": "reading must be a JSON object."})
+    return out
+
+
+def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source: str,
+                  reading: dict | None = None, lib: dict | None = None) -> JSONResponse:
+    """One dataset per value of ``column`` (datasets_service.create_split),
+    after checking the plan has room for every new one: past the cap nothing
+    is saved and the refusal says how many fit. Answers ``{datasets: [{id,
+    name, n_rows, reused}], left_out}``; ``left_out``: rows with no value in
+    the column."""
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
+    try:
+        wanted = datasets_service.count_new_parts(session, contents, column, ctx.write_owner)
+        room = (None if not ctx.is_personal or billing_service.is_admin_user(ctx.user)
+                else billing_service.room_left(session, ctx.uid, "datasets"))
+        if room is not None and room < wanted:
+            return JSONResponse(status_code=402, content={
+                "detail": billing_service.cap_room_message(session, ctx.uid, "datasets", wanted),
+                "code": "cap", "upgrade": True})
+        made, blank = datasets_service.create_split(session, contents, column, ctx.write_owner, source,
+                                                    reading=reading)
+    except (FitError, dataset_reading.ReadingError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    added = _into_library(session, ctx, lib, made)
+    if isinstance(added, JSONResponse):
+        return added
+    return JSONResponse(content={
+        "datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, **({"reused": True} if reused else {})}
+                     for d, reused in made],
+        "left_out": blank,
+        **({"library": added} if added else {}),
+    })
 
 
 def _created(dataset, reused: bool, session, ctx: AccessCtx, guess: int = 1, hint: str | None = None) -> dict:
@@ -375,6 +555,39 @@ def rename_dataset(
     dataset = datasets_service.update_details(session, dataset_id, ctx.write_owner, name=name)
     if dataset is None:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    access_service.stamp_editor(session, "datasets", dataset.id, ctx)
+    return JSONResponse(content=_dataset_detail(dataset, session, ctx))
+
+
+@router.put("/datasets/{dataset_id}/reading")
+def set_dataset_reading(
+    dataset_id: str,
+    reading: dict | None = Body(default=None, embed=True),
+    measurements: dict | None = Body(default=None, embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Keep a new reading for the dataset (Change on a fit, or confirming a
+    guessed one): later fits use it; models already made keep the reading
+    they were fitted with. The data never changes. ``measurements`` alone
+    changes only the measurements part's reading (a guessed main reading is
+    kept as guessed)."""
+    dataset = _writable_dataset(session, dataset_id, ctx)
+    if isinstance(dataset, JSONResponse):
+        return dataset
+    if reading is None and measurements is None:
+        return JSONResponse(status_code=422, content={"detail": "Give the reading (or the measurements' reading)."})
+    try:
+        if reading is None:
+            if dataset.measurements is None:
+                return JSONResponse(status_code=422, content={"detail": "This dataset has no measurements."})
+            current, source = dataset_reading.for_dataset_db(session, dataset, ctx.read_owners, ctx.hidden)
+            reading = {**current, "measurements": measurements, **({"guessed": True} if source != "saved" else {})}
+        else:
+            reading = {k: v for k, v in reading.items() if k != "guessed"}
+        dataset = datasets_service.set_reading(session, dataset, reading, ctx.write_owner)
+    except dataset_reading.ReadingError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     access_service.stamp_editor(session, "datasets", dataset.id, ctx)
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
 
@@ -613,6 +826,7 @@ def save_model(
     frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     u_col: str | None = Form(default=None),
+    item_lives: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
     session=Depends(get_session),
@@ -643,7 +857,7 @@ def save_model(
                 )
         elif file is not None:
             dataset = datasets_service.create_dataset(
-                session, file.filename or "dataset.csv", read_upload(file), ctx.write_owner
+                session, datasets_service.default_name(file.filename), read_upload(file), ctx.write_owner
             )
         else:
             return JSONResponse(
@@ -656,7 +870,7 @@ def save_model(
             options=regression_diagnostics.with_cox_form(options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
                 include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
-            frailty_family=frailty_family, u_col=u_col,
+            frailty_family=frailty_family, u_col=u_col, item_lives=item_lives,
             ), cox),
             covariate_units=covariate_units_from_form(covariate_units),
         )
@@ -753,7 +967,7 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
         dataset = datasets_service.get_dataset(session, str(body["dataset_id"]), ctx.read_owners)
     elif content is not None:
         label = str(body.get("name") or result.get("label") or "Life data").strip()[:150]
-        dataset = datasets_service.create_dataset(session, f"{label}: data.csv", content, ctx.write_owner)
+        dataset = datasets_service.create_dataset(session, f"{label}: data", content, ctx.write_owner)
     mapping = {"x": str(body.get("time_column") or ""), "c": body.get("censor_column") or ""}
     options = {"c_invert": bool(body.get("c_invert")) or None,
                "c_map": body.get("c_map") if isinstance(body.get("c_map"), dict) else None}

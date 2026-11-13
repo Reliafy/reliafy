@@ -669,6 +669,8 @@ async function main() {
         await page.getByRole("radio", { name: /Bearing fatigue test/ }).click();
         await page.locator(".dsp-reads").waitFor({ timeout: 15000 }); await wait(600);
       } },
+    // The Data step: the first rows, then x (with its range), c, n, tl, tr and failure mode.
+    { file: "fit-04-data-step.png", url: "/models/new?dataset=sample-ds-pumps", settle: 1500 },
     { file: "fit-02-result.png", url: `/models/m/${S.bearings}`, settle: 2500 },
     { file: "fit-03-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000, act: modelCalculator },
     // --- Censored data (the pump model is right-censored) ---
@@ -820,7 +822,7 @@ async function main() {
     // site (on its Diagnostics tab) ---
     { file: "crisk-01-model-step.png", url: "/models/new?dataset=sample-ds-pump-modes", settle: 1500,
       async act(page) {
-        await chooseOption(page, "Failure mode (optional)", /^failure_mode/);
+        await chooseOption(page, "Failure mode", /^failure_mode/);
         await page.getByRole("button", { name: /^Next$/ }).click(); await wait(1200);
       } },
     { file: "crisk-02-incidence.png", url: "/models/m/sample-model-pump-modes", settle: 2500 },
@@ -829,9 +831,8 @@ async function main() {
     // --- Covariates: ticking them, the PH coefficients, a changing-load schedule ---
     { file: "cov-01-covariates.png", url: "/models/new?dataset=sample-ds-seal-alt", settle: 1500,
       async act(page) {
-        await page.getByText("Advanced (regression): covariates").click(); await wait(400);
-        await page.locator(".cov-chip", { hasText: "temp_C" }).click();
-        await page.locator(".cov-chip", { hasText: "load" }).click(); await wait(500);
+        // The covariates come from the dataset's reading (Z): a regression starts with every one ticked.
+        await page.getByRole("radio", { name: /Regression on Z/ }).click(); await wait(500);
         await page.locator(".cov-chip", { hasText: "temp_C" }).evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 420));
         await wait(500);
       } },

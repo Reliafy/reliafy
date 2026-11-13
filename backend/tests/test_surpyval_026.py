@@ -255,19 +255,19 @@ def test_a_censored_time_below_zero_names_its_row():
     with pytest.raises(FitError) as exc:
         fitting.fit("weibull", df, {"x": "t", "c": "c"})
     msg = str(exc.value)
-    assert msg.startswith("Row 1 (time -1) is outside the support of a Weibull")
+    assert msg.startswith("Row 1 (time -1) is out of range for a Weibull")
     assert "censored" in msg and "Correct or remove that row" in msg
 
 
 def test_several_bad_rows_are_listed():
     df = pd.DataFrame({"t": [5.0, -2, 8, -3, 20, 30], "c": [0, 1, 0, -1, 0, 0]})
-    with pytest.raises(FitError, match=r"^Rows 2 and 4 \(times -2 and -3\) are outside the support"):
+    with pytest.raises(FitError, match=r"^Rows 2 and 4 \(times -2 and -3\) are out of range"):
         fitting.fit("weibull", df, {"x": "t", "c": "c"})
 
 
 def test_an_offset_fit_names_an_infinite_row():
     df = pd.DataFrame({"t": [3.0, 5, 8, 12, 20, np.inf]})
-    with pytest.raises(FitError, match=r"Row 6 \(time inf\) is outside the support of an offset Weibull: "
+    with pytest.raises(FitError, match=r"Row 6 \(time inf\) is out of range for an offset Weibull: "
                                        r"it can't take an infinite time"):
         fitting.fit("weibull", df, {"x": "t"}, options={"offset": True})
 
@@ -283,7 +283,7 @@ def test_best_fit_names_the_rows_every_candidate_refuses():
     # positive ones refuse it, named, in the "failed" list.
     r = fitting.fit("best", df, {"x": "t", "c": "c"})
     failed = {f["id"]: f["reason"] for f in r["selection"]["failed"]}
-    assert failed["weibull"].startswith("Row 1 (time -1) is outside the support of a Weibull")
+    assert failed["weibull"].startswith("Row 1 (time -1) is out of range for a Weibull")
     assert r["distribution_id"] not in failed
     # When every candidate refuses the rows, the error names them.
     df = pd.DataFrame({"t": [5.0, np.inf, 8, 12], "c": [0, 0, 0, 0]})
@@ -296,7 +296,7 @@ def test_a_regression_fit_names_the_row():
     df = pd.DataFrame({"t": sp.Weibull.random(30, 100, 2, random_state=rng), "c": 0,
                        "z": rng.normal(size=30)})
     df.loc[4, "t"], df.loc[4, "c"] = -1.0, 1
-    with pytest.raises(FitError, match=r"^Row 5 \(time -1\) is outside the support of a Weibull PH"):
+    with pytest.raises(FitError, match=r"^Row 5 \(time -1\) is out of range for a Weibull PH"):
         fitting.fit("weibull_ph", df, {"x": "t", "c": "c"}, ["z"])
 
 
@@ -308,7 +308,7 @@ def test_an_alt_fit_names_the_row():
     df = pd.DataFrame({"t": sp.Weibull.random(30, 100, 2, random_state=rng) * np.exp(3000 / T - 8),
                        "c": 0, "T": T})
     df.loc[7, "t"], df.loc[7, "c"] = -1.0, 1
-    with pytest.raises(FitError, match=r"^Row 8 \(time -1\) is outside the support of a Weibull"):
+    with pytest.raises(FitError, match=r"^Row 8 \(time -1\) is out of range for a Weibull"):
         alt.fit(df, {"x": "t", "c": "c"}, ["T"], "weibull", "arrhenius")
 
 

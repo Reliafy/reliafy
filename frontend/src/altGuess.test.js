@@ -59,3 +59,11 @@ test("a stress column with many values asks whether it is the right one", () => 
   assert.match(stressLevelsWarning(capacitors, "hours"), /37 different values/);
   assert.equal(stressLevelsWarning(capacitors, "temp_K"), null);
 });
+
+test("suggestLifeModel: a voltage suggests the inverse power law, a temperature Arrhenius", async () => {
+  const { suggestLifeModel } = await import("./altGuess.js");
+  const src = (columns) => ({ columns, dtypes: columns.map(() => "float64") });
+  assert.equal(suggestLifeModel(src(["minutes", "voltage_kV", "censored"])), "inverse_power");
+  assert.equal(suggestLifeModel(src(["hours", "temp_C", "voltage"])), "arrhenius");
+  assert.equal(suggestLifeModel(src(["hours", "level"])), "");
+});

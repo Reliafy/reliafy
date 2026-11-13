@@ -61,3 +61,9 @@ test("measurement units from column names", () => {
   assert.equal(guessMeasurementUnit("mm"), "");
   assert.equal(guessMeasurementUnit("reading"), "");
 });
+
+test("guessDegradationColumns: item, time and measurement by name", async () => {
+  const { guessDegradationColumns } = await import("./degradation.js");
+  assert.deepEqual(guessDegradationColumns(["wear_mm", "odometer_km", "pad_id"]), { i: "pad_id", x: "odometer_km", y: "wear_mm" });
+  assert.deepEqual(guessDegradationColumns(["a", "b", "c"]), { i: "a", x: "b", y: "c" });
+});

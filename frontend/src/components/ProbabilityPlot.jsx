@@ -1,6 +1,7 @@
 import Plot from "./Plot.jsx";
 import { GRID, band, dataPoints, fitLine } from "../plotTheme.js";
 import { levelPct } from "../levels.js";
+import { valueAxisTitle } from "../lifeData.js";
 
 // Renders a probability plot from the backend payload. The backend has already
 // linearised both axes with the distribution's own probability-paper
@@ -8,11 +9,16 @@ import { levelPct } from "../levels.js";
 // supplied tick values/labels.
 // ``bandName`` / ``lineName``: the legend's words (a Bayesian update's band is
 // a credible one, its line the updated model).
+// A tick label of digits gets its thousands separator ("1200" → "1,200"),
+// like every other number on the page.
+const thousands = (label) => (/^-?\d{4,}(\.\d+)?$/.test(String(label).trim())
+  ? Number(label).toLocaleString("en-US", { maximumFractionDigits: 6 }) : label);
+
 export default function ProbabilityPlot({ plot, unit, download = null, fill = false, bandName = null, lineName = "Fit" }) {
   // The band's level as the fit gives it (90% two-sided; 95% on a plot saved before the rule).
   bandName = bandName || `${levelPct(plot?.bounds?.level ?? 0.95)} CI`;
   const { scatter, line, bounds, x_range, y_range, x_ticks, y_ticks } = plot;
-  const xTitle = unit ? `Time (${unit})` : "Time";
+  const xTitle = valueAxisTitle(unit);
 
   const traces = [
     // Confidence bounds, when the fit produced a covariance matrix. A mixture
@@ -44,7 +50,7 @@ export default function ProbabilityPlot({ plot, unit, download = null, fill = fa
       type: "linear",
       range: x_range,
       tickvals: x_ticks.vals,
-      ticktext: x_ticks.labels,
+      ticktext: (x_ticks.labels || []).map(thousands),
       // Probability paper: both grids carry meaning.
       showgrid: true,
       gridcolor: GRID,

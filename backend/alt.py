@@ -34,6 +34,7 @@ from backend.fitting import (
     FitError,
     _eval_functions,
     _json_safe,
+    combine_exact_and_ranges,
     failure_positions_mask,
     no_maximum_notice,
     outside_support_message,
@@ -187,6 +188,9 @@ def build_inputs(df: pd.DataFrame, mapping: dict, stress_cols: list, kelvin_from
     and optional ``c``/``n``/``t`` (an n×2 truncation window).
     """
     mapping = {k: v for k, v in (mapping or {}).items() if v}
+    # x beside a range: an exact value where x is filled, the range elsewhere
+    # (rows giving both are left out; the fit says so).
+    df, mapping = combine_exact_and_ranges(df, mapping)
     interval = bool(mapping.get("xl") or mapping.get("xr"))
     if interval and (mapping.get("x") or not (mapping.get("xl") and mapping.get("xr"))):
         raise FitError("Map the failure time to x, or inspection data to both xl (the last inspection it "
@@ -327,6 +331,9 @@ def fit(
             if labels[j] == stress_cols[j]:
                 labels[j] = "Temperature"  # "temp_C (K)" would read as Celsius
 
+    from backend.fitting import x_and_range_rows  # the Data step's warning, on the result too
+
+    both = x_and_range_rows(df, mapping)
     inputs = build_inputs(df, mapping, stress_cols, kelvin_from)
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
@@ -373,6 +380,9 @@ def fit(
         said = fit_warnings(caught)
         if said:
             payload["fit_warnings"] = said
+    if both:
+        payload["fit_warnings"] = [*(payload.get("fit_warnings") or []), both["warning"]]
+        payload["x_and_range_rows"] = both
     return payload, store_live(model)
 
 
@@ -1128,8 +1138,32 @@ def life_lines(model, Zuse: np.ndarray, tested) -> list:
         G[:, j] = grid
         life = _characteristic_life(model, G)
         keep = np.isfinite(life) & (life > 0)
-        out.append({"stress": grid[keep].tolist(), "life": life[keep].tolist()})
+        line = {"stress": grid[keep].tolist(), "life": life[keep].tolist()}
+        band = _life_band(model, G[keep], life[keep])
+        if band:
+            line.update(band)
+        out.append(line)
     return out
+
+
+def _life_band(model, G: np.ndarray, life: np.ndarray, confidence: float = rule.LEVEL) -> dict | None:
+    """A two-sided Wald band on the life along a life-stress line (the delta
+    method on the log life at each point, as :func:`life_at_use_interval`),
+    so the chart shows how soft the extrapolated end is: ``{lower, upper,
+    level}``, or None where the fit has no usable covariance."""
+    from scipy.stats import norm
+
+    z = float(norm.ppf(0.5 + confidence / 2.0))
+    lower, upper = [], []
+    for row, value in zip(G, life):
+        se = _log_life_se(model, np.atleast_2d(row), float(value))
+        if se is None:
+            return None
+        with np.errstate(all="ignore"):
+            lo, hi = float(value * np.exp(-z * se)), float(value * np.exp(z * se))
+        lower.append(lo if np.isfinite(lo) else None)
+        upper.append(hi if np.isfinite(hi) else None)
+    return {"lower": lower, "upper": upper, "level": confidence}
 
 
 def _use_row(use_stress, life_model_id: str) -> np.ndarray:

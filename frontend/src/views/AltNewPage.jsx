@@ -3,17 +3,23 @@ import { DataSourceStep } from "../components/DatasetPicker.jsx";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select.jsx";
 import RefLink from "../components/RefLink.jsx";
-import PreviewTable from "../components/PreviewTable.jsx";
-import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
+import { getEntry } from "../reference.js";
+import NewDatasetModal from "../components/NewDatasetModal.jsx";
+import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
+import { useDatasetReading } from "../useDatasetReading.js";
 import AltResultView from "../components/AltResultView.jsx";
 import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
 import { altAnswerParts } from "../altFrame.js";
 import {
-  getAltOptions, getColumns, listDatasets, getDataset, fitAlt, saveAltModel, SPREADSHEET_ACCEPT,
+  getAltOptions, listDatasets, getDataset, fitAlt, saveAltModel, SPREADSHEET_ACCEPT,
 } from "../api.js";
-import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import { ErrorNotice } from "../components/StorageCap.jsx";
-import { guessAltColumns, isThermal, stressLevelsWarning } from "../altGuess.js";
+import {
+  altDataIssues, altMapping, altMappingFromReading, altStressFromReading, altStressIssues, altStressPool, isThermal,
+  stressLevelsWarning, suggestLifeModelFromReading,
+} from "../altGuess.js";
+import { codedStatusNote } from "../readingCodes.js";
+import { fileStem } from "../datasetGuess.js";
 
 // A thermal model's temperature must be absolute: the unit is asked, and °C or
 // °F are converted to kelvin before the fit.
@@ -21,37 +27,40 @@ const TEMPERATURE_OPTIONS = [
   { value: "°C", label: "°C" }, { value: "K", label: "K (kelvin)" }, { value: "°F", label: "°F" },
 ];
 
-const STEPS = ["Source", "Model", "Data", "Result"];
+const STEPS = ["Source", "Model", "Result"];
+// What an ALT fit takes from a dataset's reading (the rest shown quieter); its
+// stresses are picked from the reading's covariates (Z).
+const USES = ["x", "c", "n", "tl", "tr", "z"];
+// Stress units offered (any other can be typed).
+const STRESS_UNITS = ["°C", "K", "°F", "V", "kV", "MPa", "kPa", "psi", "bar", "%RH", "A", "W", "g", "rpm", "N", "kN"];
 
-// New Accelerated Life model — a 4-step wizard. Unlike the life-data flow the
-// MODEL is chosen before the data, because the life-stress relationship decides
-// how many stress columns must be mapped (one, or two).
+// New Accelerated Life model — a 3-step wizard like the life-data flow: a
+// saved dataset (an upload is saved as one first, with how its columns are
+// read); the Model step reads the life columns from the dataset's reading and
+// holds the model's own inputs: the distribution, the life-stress
+// relationship and its stress columns (from the reading's Z), each with its
+// unit and the use stress.
 export default function AltNewPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  // An Excel workbook becomes a CSV of the chosen sheet before anything else.
-  const { toCsv, modal: sheetModal } = useSpreadsheet();
 
   const [lifeModels, setLifeModels] = useState([]);
   const [dists, setDists] = useState([]);
   const [datasets, setDatasets] = useState(null); // null while the list loads
 
+  // An uploaded file, while it is saved as a dataset (NewDatasetModal).
   const [file, setFile] = useState(null);
-  const [headerNote, setHeaderNote] = useState(null); // a file with no header row (#434)
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
-  const [csv, setCsv] = useState(null);
+  const [detail, setDetail] = useState(null); // the dataset (getDataset)
 
   const [distribution, setDistribution] = useState("weibull");
   const [lifeModel, setLifeModel] = useState("arrhenius");
-  const [map, setMap] = useState({ x: "", xl: "", xr: "", c: "", n: "" });
-  // Inspection data (#237): each failure known only to lie between two
-  // inspections, mapped as xl (last passed) and xr (found failed) in place of x.
-  const [inspection, setInspection] = useState(false);
   const [stress, setStress] = useState([{ col: "", label: "" }]);
+  // The use stress, as typed in each stress's unit: the Calculator starts there.
+  const [useStress, setUseStress] = useState(["", ""]);
   // Until the user picks a stress column, it follows the life-stress model.
   const [stressTouched, setStressTouched] = useState(false);
-  const [unit, setUnit] = useState("");
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -70,11 +79,32 @@ export default function AltNewPage() {
   const lm = useMemo(() => lifeModels.find((m) => m.id === lifeModel), [lifeModels, lifeModel]);
   const nStress = lm?.n_stress || 1;
 
-  // Keep the stress-column slots in sync with the chosen life-stress model:
-  // re-guessed from the columns' names until the user picks one.
+  // How the dataset's columns are read (kept with it): x with its range, c,
+  // n, tl and tr come from there; the stresses are offered from its Z.
+  const rd = useDatasetReading(detail);
+  const derived = useMemo(() => altMappingFromReading(rd.reading, rd.facts, rd.nRows), [rd.reading, rd.facts, rd.nRows]);
+  // x and/or the range xl–xr (inspection data, #237), c, n, tl, tr.
+  const map = derived?.map || { x: "", xl: "", xr: "", c: "", n: "", tl: "", tr: "" };
+  const unit = derived?.unit || "";
+  const fitC = derived?.status?.c || "";
+  const csv = rd.cols;
+
+  // A dataset's stresses suggest the life-stress relationship (a kV or load
+  // the inverse power law, a temperature Arrhenius), once per dataset; the
+  // user can change it.
+  const suggestedFor = useRef(null);
   useEffect(() => {
-    if (csv && !stressTouched) {
-      setStress(guessAltColumns(csv, { nStress, lifeModel }).stress);
+    if (!detail || !rd.reading || suggestedFor.current === detail.id) return;
+    suggestedFor.current = detail.id;
+    const suggested = suggestLifeModelFromReading(rd.cols, rd.reading, fitC);
+    if (suggested && suggested !== lifeModel && !(isThermal(suggested) && isThermal(lifeModel))) setLifeModel(suggested);
+  }, [detail, rd.reading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the stress-column slots in sync with the chosen life-stress model and
+  // the reading: guessed from the reading's Z until the user picks one.
+  useEffect(() => {
+    if (rd.cols && rd.reading && !stressTouched) {
+      setStress(altStressFromReading(rd.cols, rd.reading, { nStress, lifeModel, c: fitC }));
       return;
     }
     setStress((cur) => {
@@ -82,63 +112,46 @@ export default function AltNewPage() {
       while (next.length < nStress) next.push({ col: "", label: "" });
       return next;
     });
-  }, [nStress, lifeModel]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nStress, lifeModel, rd.reading, rd.cols]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ``facts``: the columns preview (names, dtypes, few values, distinct counts).
-  const loadColumns = (facts) => {
-    const columns = facts.columns || [];
-    const src = { ...facts, columns, preview: facts.preview || [] };
-    setCsv(src);
-    // First guesses by the headers' meaning: never a text id as the time,
-    // never a time column as the stress.
-    const g = guessAltColumns(src, { nStress, lifeModel });
-    setMap({ x: g.x, xl: "", xr: "", c: g.c, n: "" });
-    setUnit(g.unit || "");
-    setInspection(false);
-    setStressTouched(false);
-    setStress(g.stress);
-  };
-
-  const pickFile = async (picked, { keepHeader = false } = {}) => {
+  // An uploaded file is saved as a dataset first, through the upload's own
+  // screen (how its columns are read), then the fit goes on from it.
+  const pickFile = (picked) => {
     if (!picked) return;
-    const csvFile = await toCsv(picked);
-    if (!csvFile) return;
-    if (csvFile.size > 5 * 1024 * 1024) {
-      setError(`That file is ${(csvFile.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB.`);
-      return;
-    }
-    const { file: f, note } = await detectHeader(picked, csvFile, { keepHeader });
-    setHeaderNote(note);
-    setFile(f); setDatasetId(null); setSourceName(f.name); setResult(null); setError(null); setLoading(true);
-    try {
-      const cols = await getColumns(f);
-      loadColumns(cols);
-      setStep(2);
-    } catch (err) { setError(err); } finally { setLoading(false); }
+    setError(null);
+    setFile(picked);
+  };
+  const onCreated = (ds) => {
+    setFile(null);
+    if (!ds?.id) return;
+    setDatasets((cur) => [ds, ...(cur || []).filter((d) => d.id !== ds.id)]);
+    pickDataset(ds);
   };
 
   const pickDataset = async (d) => {
-    setFile(null); setHeaderNote(null); setDatasetId(d.id); setSourceName(d.name); setResult(null); setError(null); setLoading(true);
+    setDatasetId(d.id); setSourceName(d.name); setResult(null); setError(null); setLoading(true);
     try {
       const full = await getDataset(d.id);
-      loadColumns({ ...full, columns: full.preview_columns || [] });
+      if (!d.name) setSourceName(full.name || "dataset");
+      setUseStress(["", ""]);
+      setStressTouched(false);
+      setDetail(full);
       setStep(2);
     } catch (err) { setError(err); } finally { setLoading(false); }
   };
 
   const onDrop = (e) => { e.preventDefault(); setDragging(false); pickFile(e.dataTransfer.files?.[0]); };
 
-  const stressCols = stress.slice(0, nStress).map((s) => s.col);
-  const timeCols = inspection ? [map.xl, map.xr] : [map.x];
-  const allMapped = timeCols.every(Boolean) && stressCols.every(Boolean);
-  const distinct = new Set([...timeCols, ...stressCols]).size === timeCols.length + nStress;
-  // What's posted: the failure time, or the inspection interval — never both.
-  const mapping = inspection
-    ? { xl: map.xl, xr: map.xr, c: map.c, n: map.n }
-    : { x: map.x, c: map.c, n: map.n };
-  // A thermal model's temperature needs its unit (°C, K or °F).
-  const tempUnitMissing = isThermal(lifeModel) && !String(stress[0]?.unit || "").trim();
-  const mappingValid = allMapped && distinct && !tempUnitMissing;
+  // What's posted: the reading's life columns (x, its range, c, n, tl, tr).
+  const mapping = altMapping(map);
+  // What the reading lacks or this fit can't read, else the fit's own checks.
+  const missing = derived?.missing || null;
+  const dataIssues = missing ? [] : altDataIssues(map);
+  const dataValid = !!derived && !missing && dataIssues.length === 0;
+  // The stress columns (not the life columns) and a thermal model's unit.
+  const stressIssues = altStressIssues(stress, nStress, lifeModel, map);
+  const mappingValid = dataValid && stressIssues.length === 0 && !rd.editing;
+  const useFor = (j) => (useStress[j] === "" || useStress[j] == null ? null : useStress[j]);
 
   const setStressAt = (j, patch) =>
     setStress((cur) => cur.map((s, k) => (k === j ? { ...s, ...patch } : s)));
@@ -151,11 +164,11 @@ export default function AltNewPage() {
         datasetId, mapping, stress: stress.slice(0, nStress),
         distribution, lifeModel, unit,
       };
-      const res = await fitAlt(datasetId ? null : file, opts);
+      const res = await fitAlt(null, opts);
       setResult(res);
-      const src = (file?.name || sourceName || "dataset").replace(/\.csv$/i, "");
+      const src = (sourceName || "dataset").replace(/\.csv$/i, "");
       setName(`${dists.find((d) => d.id === distribution)?.name || "ALT"} — ${src}`);
-      setStep(4);
+      setStep(3);
     } catch (err) { setError(err); } finally { setLoading(false); }
   };
 
@@ -163,9 +176,8 @@ export default function AltNewPage() {
     if (!name.trim()) return;
     setSaving(true); setError(null);
     try {
-      // A preview of an upload stores nothing (dataset_id null): the save sends the file.
-      const saved = await saveAltModel(name.trim(), result.dataset_id ? null : file, {
-        datasetId: result.dataset_id, mapping, stress: stress.slice(0, nStress),
+      const saved = await saveAltModel(name.trim(), null, {
+        datasetId: result.dataset_id || datasetId, mapping, stress: stress.slice(0, nStress),
         distribution, lifeModel, unit,
       });
       navigate(`/models/alt/${saved.id}`);
@@ -193,17 +205,24 @@ export default function AltNewPage() {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
       <span className="hint" style={{ margin: 0 }}>Pick a saved dataset, or upload a CSV or Excel file, to continue</span></>);
   } else if (step === 2) {
+    const why = !dataValid ? "First fix how the columns are read: Change the reading."
+      : rd.editing ? "First save or cancel the change to the reading."
+      : !mappingValid ? `First settle the note${new Set(stressIssues.map((i) => i.stress)).size === 1 ? "" : "s"} beside the stress${nStress > 1 ? "es" : ""}.`
+      : null;
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-      <button onClick={() => setStep(3)}>Next</button></>);
-  } else if (step === 3) {
-    nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+      {why && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span>}
       <button onClick={onFit} disabled={!mappingValid || loading}>{loading ? "Fitting…" : "Fit model"}</button></>);
   } else {
     nav = (<><button className="secondary" onClick={goBack} disabled={saving}>Back</button>
       <button onClick={onSave} disabled={!name.trim() || saving}>{saving ? "Saving…" : "Save model"}</button></>);
   }
 
-  const colOpts = (csv?.columns || []).map((c) => ({ value: c, label: c }));
+  // The stresses: the reading's Z (else the numeric columns with no role),
+  // and any column already picked.
+  const pool = csv && rd.reading ? altStressPool(csv, rd.reading, fitC) : [];
+  const stressOptions = [...pool, ...stress.map((s) => s.col).filter((c) => c && !pool.includes(c))]
+    .filter((c) => !Object.values(mapping).includes(c))
+    .map((c) => ({ value: c, label: c }));
 
   return (
     <div className="app">
@@ -215,11 +234,12 @@ export default function AltNewPage() {
             <b>New model</b>
           </div>
           <h1>New accelerated-life model</h1>
-          <p>Pick data, choose a distribution and life-stress relationship, map the time and stress columns, then fit and save.</p>
+          <p>Pick data, choose a distribution, a life-stress relationship and its stresses, then fit and save.</p>
         </div>
       </header>
 
       <div className="card fit-flow">
+        <div className="fit-flow-head">{stepper}</div>
         {step === 1 && (
           <>
             <DataSourceStep
@@ -238,13 +258,12 @@ export default function AltNewPage() {
                   <path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
                 </svg>
               </span>
-              {loading ? <span className="dz-big">Reading file…</span>
+              {loading ? <span className="dz-big">Reading the dataset…</span>
                 : file ? <span className="dz-big filename">{file.name}</span>
                 : <span className="dz-big">Drop a CSV or Excel file here or <strong>click to browse</strong></span>}
               <span className="dz-hint">one row per unit: failure time · stress level(s) · optional censoring</span>
               <input ref={inputRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
-              {sheetModal}
             </div>
                 </>
               )}
@@ -252,125 +271,107 @@ export default function AltNewPage() {
           </>
         )}
 
-        {step === 2 && (
+        {file && (
+          <NewDatasetModal title="Save the file as a dataset" initialFile={file} initialName={fileStem(file.name)}
+                           withMeasurements={false} onCreated={onCreated} onClose={() => setFile(null)} />
+        )}
+
+        {step === 2 && csv && rd.reading && (
           <div className="fit-step">
-            <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
+            <ReadingSummary name={sourceName} reading={rd.reading} source={rd.source} use={USES}
+                            note={codedStatusNote(derived?.status)}
+                            onChange={rd.editing ? null : rd.startChange}
+                            onConfirm={rd.confirm} confirming={rd.saving} readOnly={rd.readOnly} />
+            <ReadingChange name={sourceName} rd={rd} />
+            {!rd.editing && <ErrorNotice error={rd.error} />}
+            {(missing || dataIssues.length > 0) && (
+              <div className="xcn-below" role="status">
+                {missing
+                  ? <p className="xcn-issue" style={{ margin: 0 }}>{missing}</p>
+                  : dataIssues.map((i) => <p key={i.text} className="xcn-issue">{i.text} Change the reading to fix it.</p>)}
+                {!rd.editing && (
+                  <button type="button" className="secondary" style={{ alignSelf: "flex-start" }}
+                          onClick={rd.startChange}>Change the reading</button>
+                )}
+              </div>
+            )}
+            {dataValid && !rd.editing && (
+              <>
             <div className="alt-model-pick">
               <div className="dist-field" style={{ width: 260 }}>
                 <span className="dist-label">Life distribution</span>
-                <Select value={distribution} onChange={setDistribution}
+                <Select value={distribution} onChange={setDistribution} ariaLabel="Life distribution"
                         options={dists.map((d) => ({ value: d.id, label: d.name }))} />
               </div>
               <div className="dist-field" style={{ width: 320 }}>
                 <span className="dist-label">Life-stress relationship</span>
-                <Select value={lifeModel} onChange={setLifeModel}
+                <Select value={lifeModel} onChange={setLifeModel} ariaLabel="Life-stress relationship"
                         options={lifeModels.map((m) => ({ value: m.id, label: `${m.name} · ${m.n_stress} stress${m.n_stress > 1 ? "es" : ""}` }))} />
               </div>
             </div>
             {lm?.desc && (
               <p className="muted-line" style={{ margin: 0 }}>
-                {lm.desc}
-                <RefLink entryId={lifeModel} label="What is this life-stress relationship?" />
-                <RefLink entryId={distribution} label="What is this distribution?" />
+                {lm.desc}{" "}
+                <RefLink text entryId={lifeModel} label={`About ${lm.name}`} />
+                {getEntry(lifeModel) && getEntry(distribution) ? " · " : ""}
+                <RefLink text entryId={distribution} label={`About the ${dists.find((d) => d.id === distribution)?.name || "distribution"}`} />
               </p>
             )}
-            <p className="muted-line" style={{ margin: 0 }}>
-              You'll map <b>{nStress}</b> stress column{nStress > 1 ? "s" : ""} on the next step.
-            </p>
-          </div>
-        )}
-
-        {step === 3 && csv && (
-          <div className="fit-step">
-            <p className="muted-line">{sourceName} · {csv.n_rows} rows · {csv.columns.length} columns</p>
-            <PreviewTable columns={csv.columns} rows={csv.preview} />
-            <div className="alt-map">
-              <label className="alt-interval-toggle">
-                <input type="checkbox" checked={inspection} onChange={(e) => setInspection(e.target.checked)} />
-                <span>Inspection data — each failure was found at an inspection, between two read-outs</span>
-              </label>
-              {inspection ? (
-                <>
-                  <div className="alt-map-row">
-                    <span className="alt-map-k">Last inspection passed (xl)</span>
-                    <Select value={map.xl} onChange={(v) => setMap((m) => ({ ...m, xl: v }))} options={colOpts} placeholder="column…" ariaLabel="Last inspection passed (xl)" />
-                  </div>
-                  <div className="alt-map-row">
-                    <span className="alt-map-k">Found failed at (xr)</span>
-                    <Select value={map.xr} onChange={(v) => setMap((m) => ({ ...m, xr: v }))} options={colOpts} placeholder="column…" ariaLabel="Found failed at (xr)" />
-                  </div>
-                </>
-              ) : (
-                <div className="alt-map-row">
-                  <span className="alt-map-k">Failure time (x)</span>
-                  <Select value={map.x} onChange={(v) => setMap((m) => ({ ...m, x: v }))} options={colOpts} placeholder="column…" ariaLabel="Failure time (x)" />
-                </div>
-              )}
+            {/* The model's own inputs: its stress columns, each with its unit and the use stress. */}
+            <div className="xcn">
               {stress.slice(0, nStress).map((s, j) => {
                 const temperature = j === 0 && isThermal(lifeModel);
                 const many = s.col ? stressLevelsWarning(csv, s.col) : null;
+                const issues = stressIssues.filter((i) => i.stress === j);
                 return (
-                  <div key={j}>
-                    <div className="alt-map-row">
-                      <span className="alt-map-k">{temperature ? "Temperature" : `Stress ${nStress > 1 ? j + 1 : ""}`}</span>
-                      <Select value={s.col} onChange={(v) => { setStressTouched(true); setStressAt(j, { col: v }); }}
-                              options={colOpts} placeholder="column…" ariaLabel={`Stress ${j + 1} column`} />
-                      <input className="alt-map-label" type="text" placeholder="label (optional)"
-                             aria-label={`Stress ${j + 1} label (optional)`}
-                             value={s.label} onChange={(e) => setStressAt(j, { label: e.target.value })} />
-                      {temperature ? (
-                        <Select value={TEMPERATURE_OPTIONS.some((o) => o.value === s.unit) ? s.unit : ""}
-                                onChange={(v) => setStressAt(j, { unit: v })} options={TEMPERATURE_OPTIONS}
-                                placeholder="unit…" ariaLabel="Temperature unit (required)" />
-                      ) : (
-                        <input className="alt-map-label alt-map-unit" type="text" placeholder="unit, e.g. V"
-                               aria-label={`Stress ${j + 1} unit (optional)`} maxLength={24}
-                               value={s.unit || ""} onChange={(e) => setStressAt(j, { unit: e.target.value })} />
-                      )}
+                  <div className="xcn-row" key={j}>
+                    <span className="xcn-key">
+                      <code>Stress {j + 1}</code>
+                      <span className="xcn-words">{temperature ? "the temperature each unit was tested at" : "the stress each unit was tested at"}</span>
+                    </span>
+                    <div className="xcn-fields">
+                      <Select value={s.col} className="xcn-pick" ariaLabel={`Stress ${j + 1} column`}
+                              onChange={(v) => { setStressTouched(true); setStressAt(j, { col: v }); }}
+                              options={[{ value: "", label: "— pick a column —" }, ...stressOptions]} />
+                      <span className="xcn-unit">
+                        <span className="xcn-words">unit</span>
+                        {temperature ? (
+                          <Select value={TEMPERATURE_OPTIONS.some((o) => o.value === s.unit) ? s.unit : ""}
+                                  onChange={(v) => setStressAt(j, { unit: v })} options={TEMPERATURE_OPTIONS}
+                                  placeholder="°C, K or °F" ariaLabel={`Stress ${j + 1} unit`} />
+                        ) : (
+                          <>
+                            <input className="units-input" type="text" list={`alt-units-${j}`} maxLength={24}
+                                   aria-label={`Stress ${j + 1} unit`} placeholder="V, kV, MPa…"
+                                   value={s.unit || ""} onChange={(e) => setStressAt(j, { unit: e.target.value })} />
+                            <datalist id={`alt-units-${j}`}>{STRESS_UNITS.map((u) => <option value={u} key={u} />)}</datalist>
+                          </>
+                        )}
+                      </span>
+                      <label className="xcn-unit">
+                        <span className="xcn-words">use stress</span>
+                        <input className="units-input alt-use-in" type="number" step="any" inputMode="decimal"
+                               aria-label={`Stress ${j + 1} use stress`} value={useStress[j] ?? ""}
+                               onChange={(e) => setUseStress((u) => u.map((v, k) => (k === j ? e.target.value : v)))} />
+                        <span className="xcn-words">{s.unit ? `in ${s.unit}` : "in that unit"}</span>
+                      </label>
                     </div>
-                    {many && <p className="hint" style={{ margin: "0 0 6px" }}>{many}</p>}
+                    {(issues.length > 0 || many) && (
+                      <div className="xcn-below">
+                        {issues.map((i) => <p key={i.text} className="xcn-issue" role="status">{i.text}</p>)}
+                        {many && <p className="xcn-issue xcn-note" role="status">{many}</p>}
+                      </div>
+                    )}
                   </div>
                 );
               })}
-              {tempUnitMissing && (
-                <p className="hint" style={{ margin: 0 }}>
-                  Pick the temperature&apos;s unit. The {lm?.name || "thermal"} model needs absolute temperature, so
-                  °C and °F are converted to kelvin before the fit; you enter the use temperature in the same unit.
-                </p>
-              )}
-              <div className="alt-map-row">
-                <span className="alt-map-k">Censor flag (c) <span className="muted">optional</span></span>
-                <Select value={map.c} onChange={(v) => setMap((m) => ({ ...m, c: v }))} ariaLabel="Censor flag (c)"
-                        options={[{ value: "", label: "— none —" }, ...colOpts]} />
-              </div>
-              <div className="alt-map-row">
-                <span className="alt-map-k">Count (n) <span className="muted">optional</span></span>
-                <Select value={map.n} onChange={(v) => setMap((m) => ({ ...m, n: v }))} ariaLabel="Count (n)"
-                        options={[{ value: "", label: "— none —" }, ...colOpts]} />
-              </div>
-              <label className="alt-map-row">
-                <span className="alt-map-k">Time unit <span className="muted">optional</span></span>
-                <input className="alt-map-label" type="text" placeholder="e.g. hours"
-                       value={unit} onChange={(e) => setUnit(e.target.value)} />
-              </label>
             </div>
-            {inspection && (
-              <p className="muted-line" style={{ margin: 0 }}>
-                A unit found failed lies between the two columns (censor flag 2). One still running repeats its
-                last time in both, or leaves “found failed at” blank (flag 1); one seen to fail repeats its failure
-                time (flag 0). Without a censor column, unequal times read as intervals.
-              </p>
-            )}
-            {!mappingValid && (
-              <p className="hint">
-                Map {inspection ? "both inspection columns" : "a failure-time column"} and {nStress} distinct stress
-                column{nStress > 1 ? "s" : ""}{tempUnitMissing ? ", and pick the temperature's unit" : ""}.
-              </p>
+              </>
             )}
           </div>
         )}
 
-        {step === 4 && result && (
+        {step === 3 && result && (
           <div className="fit-step">
             <label className="login-field">
               <span>Model name</span>
@@ -383,7 +384,7 @@ export default function AltNewPage() {
             </p>
             {/* The model page's frame, inside the wizard: the answer line over the tabs. */}
             <ModelFrame embedded notice={<div className="mf-wizard-head"><AnswerLine parts={altAnswerParts(result.results)} /></div>}>
-              <AltResultView results={result.results} />
+              <AltResultView results={result.results} initialUse={useStress.slice(0, nStress).every((v, j) => useFor(j) != null) ? useStress.slice(0, nStress) : null} />
             </ModelFrame>
           </div>
         )}
@@ -391,7 +392,6 @@ export default function AltNewPage() {
         <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
-          {stepper}
           <div className="row" style={{ margin: 0 }}>{nav}</div>
         </div>
       </div>

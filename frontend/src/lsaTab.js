@@ -569,3 +569,10 @@ export function sectionDraft(kind, resources = {}) {
   if (kind === "duration_hours") return s(resources.duration_hours);
   return "";
 }
+
+// A task with where it is, so six "Check the motor" tasks can be told apart:
+// "Check the motor (Pump 3 › Drive motor)".
+export function taskOnText(t) {
+  const on = [t?.subject?.within, t?.subject?.name].filter(Boolean).join(" › ");
+  return on ? `${t.name} (${on})` : t?.name || "";
+}

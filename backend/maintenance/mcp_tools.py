@@ -64,6 +64,7 @@ _ORIGINAL: dict = {}
 PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 # Calls that can take a while: they share the MCP server's heavy-call slots.
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_models.link", "maintenance_workspace.import_history",
+               "maintenance_list.tree",
                "maintenance_parts.import_bom", "maintenance_parts.build_positions",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
@@ -85,6 +86,19 @@ Trigger = Annotated[dict[str, Any] | None, Field(description=(
 
 
 # A task's LSA record: what doing it needs (Maintenance.set_task_resources).
+Restoration = Annotated[dict[str, Any] | None, Field(description=(
+    "update: what a fixed-interval task leaves the item as: {kind: as_new | kijima1 (takes away a share of "
+    "the age since the last task) | kijima2 (of its whole age), q (0 as good as new to 1 as bad as old) or "
+    "restores (the %), replace_every? (every Nth task a full replacement), replacement_cost?, "
+    "failure_mode_id? (that mode's decision only)}; {} clears it."))]
+OlderThan = Annotated[dict[str, Any] | None, Field(description=(
+    "update: at a shutdown, do it only on an item older than {value, unit (days/weeks/months/years)}; "
+    "{} clears it."))]
+Shutdown = Annotated[dict[str, Any] | None, Field(description=(
+    "create/update: the package is a shutdown, its visits planned outages: {duration_hours, cost?, scope? "
+    "(position ids inside it; default the whole position), idle_ageing? (default true), dates? (in place of "
+    "the cadence)}; {} makes it an ordinary package."))]
+
 Resources = Annotated[dict[str, Any] | None, Field(description=(
     "Sections, each optional: labour [{trade, people, hours}] (hours per person), tools [{name, qty?, note?, "
     "point_id? (the measuring point or channel it reads)}], spares [{part_id? | name, qty}], consumables [{name, "
@@ -245,6 +259,9 @@ LIST_KINDS: Table = {
     "products": ("", "", "Products (design trees): part, rev, items_built, open_reports."),
     "product_items": ("product_id", "", "The items built from a product: serial, rev, built_on, hours, location, open "
                                         "reports, top_position_id."),
+    "tree": ("", "position_id format", """The asset tree as the Explorer's Excel export has it: hierarchy (one
+        row per position with the item fitted there), locations and classes. position_id: that branch; format csv:
+        the hierarchy as CSV text. Edit and send back with maintenance workspace.import_history, sheet 'tree'."""),
     "items_overview": ("", "product_id item_class_id q limit offset", """Every item with its product, item class,
         position path, status (fitted, spare, not placed) and open reports. product_id ('none': no product),
         item_class_id and q filter; limit up to 500 and offset page it."""),
@@ -461,7 +478,7 @@ TASKS: Table = {
         or a reading past a limit). maintenance guide topic plan has examples."""),
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
-               "while_stored include_positions trigger clear_trigger start cost clear_cost", """Rename it or change its interval, second limit (also_interval 0
+               "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
@@ -512,10 +529,10 @@ WORK_ORDERS: Table = {
         if any action or reading is invalid."""),
     "cancel": ("work_order_id", "reason", """Cancel one that won't be done (a duplicate, raised by mistake);
         reason kept as cancel_reason. Work that was done: close."""),
-    "generate": ("", "horizon_days package_id", """Open a preventive work order for every task due within horizon_days
+    "generate": ("", "horizon_days package_id location_id", """Open a preventive work order for every task due within horizon_days
         (default 30, at most 366) that has none open, on the task's subject; one per work package visit (lines
         added to its open one instead); skipped: any it couldn't, and why. package_id: only that package's next
-        visit, raised now whenever it is (nothing else)."""),
+        visit, raised now whenever it is (nothing else). location_id: only the work in that area."""),
     "labour": ("work_order_id hours", "who rate on note", "Hours worked, by whom, at an hourly rate if known."),
     "part_used": ("work_order_id", "part quantity unit_cost part_number note part_id from_location_id", """A part
         or consumable used: free text (part) or a catalogue part (part_id, from the work order's
@@ -533,10 +550,11 @@ PACKAGES: Table = {
         and trade, each with a ready create and warnings; weekday: longer cadences as layers on the shortest.
         Saves nothing: show the user."""),
     "create": ("name", "position_id location_id parent_id timing every unit weekday nth day anchor tolerance "
-               "tolerance_unit trade notes tasks season", """A package on exactly one of position_id or location_id, or
+               "tolerance_unit trade notes tasks season shutdown", """A package on exactly one of position_id or location_id, or
         a layer on parent_id. Timing, cadence and visit rules: maintenance guide topic plan."""),
     "update": ("package_id", "name timing every unit weekday nth day clear_pattern anchor tolerance tolerance_unit "
-               "trade notes tasks season", "Change it; tasks: members' visit rules; season {} clears it."),
+               "trade notes tasks season shutdown", "Change it; tasks: members' visit rules; season {} clears it; "
+               "shutdown: its visits are planned outages ({} clears it)."),
     "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
     "remove_task": ("package_id task_id", "", "Take a task out: it's raised on its own again."),
     "pause": ("package_id reason", "until full_visit", """Pause it until a date (back by itself then; none:
@@ -844,11 +862,21 @@ WORKSPACE: Table = {
     "set_time_zone": ("time_zone", "", """Where the workspace is, so today, due dates and overdue follow its
         local calendar: an IANA name ('Australia/Brisbane', 'Europe/London'); '' clears it (UTC). Ask the user
         rather than guessing."""),
-    "import_history": ("rows", "dry_run", """Bring an existing history in: positions (made from their paths),
+    "import_history": ("rows", "dry_run sheet", """Bring an existing history in: positions (made from their paths),
         items, when they were fitted and removed and whether they failed. Every row is checked first; with any
         error nothing is written. dry_run (default true) reports what would be made: show it, then run with
-        dry_run false. At most 5000 rows; for a file, the user can import it on the Maintenance page."""),
+        dry_run false. At most 5000 rows; for a file, the user can import it on the Maintenance page.
+        sheet 'tree': rows are the asset tree instead, list.tree's columns: matched by ID, else Path; new ones
+        made, matches updated or moved, nothing deleted; problems listed by row (guide topic register)."""),
 }
+
+
+def _tree_row(row: dict) -> dict:
+    """A tree sheet row keyed by list.tree's field names (path, item_id) or the sheet's headings."""
+    from backend.maintenance import hierarchy
+
+    heading = {field: h for field, h, _ in hierarchy.COLUMNS}
+    return {heading.get(str(k), str(k)): "" if v is None else str(v) for k, v in row.items()}
 
 
 # A record's label as the tools name it, with the argument its id goes in.
@@ -1297,7 +1325,7 @@ def register() -> None:
                              "after it."))] = None,
                          type: Annotated[str | None, Field(description="events: one event type.")] = None,
                          position_id: Annotated[str | None, Field(description=(
-                             "failure_reports: the position (with below, everything inside it)."))] = None,
+                             "failure_reports: the position (with below, everything inside it). tree: a branch."))] = None,
                          below: Annotated[bool | None, Field(description=(
                              "failure_reports: include the positions inside position_id (default true)."))] = None,
                          item_id: str | None = None, consequence: str | None = None, failure_mode_id: str | None = None,
@@ -1356,6 +1384,15 @@ def register() -> None:
             return found
         if kind == "position_classes":
             return {"classes": run(m.position_classes)}
+        if kind == "tree":
+            from backend.maintenance import hierarchy
+            from backend.mcp_server import DATA_NOTICE
+
+            data = run(hierarchy.export, m, position_id or None)
+            if format == "csv":
+                return {"data_notice": DATA_NOTICE, "csv": hierarchy.to_csv(data).decode("utf-8-sig"),
+                        "counts": data["counts"]}
+            return {"data_notice": DATA_NOTICE, **data}
         if kind == "item_classes":
             if format in (None, "tree"):
                 return run(m.item_class_tree)
@@ -1623,7 +1660,9 @@ def register() -> None:
                                       "interval_unit, task_id?, evidence?, on_found?}, ...] instead of outcome, "
                                       "task and interval (a member's evidence, else the decision's, is checked "
                                       "for it). on_found: what's done when an on_condition or failure_finding "
-                                      "check finds it ('Replace the bearing'; left out: kept). notes: deprecated, "
+                                      "check finds it ('Replace the bearing'; left out: kept). restoration (a "
+                                      "fixed_interval decision or member): what its task leaves the item as, "
+                                      "as tasks.update's. notes: deprecated, "
                                       "added to the mode's notes and rationale (one place: update notes)."))] = None,
                                   cause_id: str | None = None, task_id: str | None = None,
                                   name: str | None = None, interval: float | None = None,
@@ -1798,7 +1837,11 @@ def register() -> None:
                           clear_trigger: bool | None = None, resources: Resources = None,
                           cost: Annotated[float | None, Field(description=(
                               "update: what the task costs each time it's done (typed), e.g. 180."))] = None,
-                          clear_cost: bool | None = None,
+                          clear_cost: bool | None = None, restoration: Restoration = None,
+                          basis: Annotated[Literal["calendar", "operating"] | None, Field(description=(
+                              "update: operating counts its interval in running hours (an RBD puts it on "
+                              "the calendar through the block's duty); calendar (default)."))] = None,
+                          older_than: OlderThan = None,
                           trade_rates: Annotated[dict[str, float | None] | None, Field(description=(
                               "set_resources: hourly rates by trade, e.g. {'Fitter': 95}; null clears "
                               "one."))] = None,
@@ -1829,6 +1872,13 @@ def register() -> None:
                                      None if clear_trigger else trigger if trigger is not None else ..., start=start)
                 if clear_cost or cost is not None:
                     view = m.set_task_cost(task_id, None if clear_cost else cost)
+                if restoration is not None:
+                    given = dict(restoration)
+                    view = m.set_task_restoration(task_id, given, failure_mode_id=given.pop("failure_mode_id", None))
+                if basis is not None:
+                    view = m.set_task_basis(task_id, basis)
+                if older_than is not None:
+                    view = m.set_task_older_than(task_id, older_than)
                 return view
             return run(update)
         if action == "link":
@@ -1928,7 +1978,7 @@ def register() -> None:
         if action == "generate":
             if package_id:
                 return run(m.raise_package_visit, package_id)
-            return run(m.generate, max(0, min(_d(horizon_days, 30), 366)))
+            return run(m.generate, max(0, min(_d(horizon_days, 30), 366)), location_id)
         if action == "labour":
             return run(m.log_labour, work_order_id, hours, who or "", rate, on, note or "")
         if action == "part_used":
@@ -2073,7 +2123,7 @@ def register() -> None:
             = None,
             season: Annotated[dict[str, Any] | None, Field(description=(
                 "Active only part of the year: {months: [10, 11, 12, 1, 2, 3]} or {start: 'MM-DD', end: 'MM-DD'}; "
-                "update: {} for all year."))] = None) -> dict[str, Any]:
+                "update: {} for all year."))] = None, shutdown: Shutdown = None) -> dict[str, Any]:
         """Work packages: tasks done together on one visit (the weekly check), raising one work order per
         visit, with layers adding lines on some visits (the first Saturday of the month). How-to: maintenance
         guide topic plan (making them) and run (their work orders)."""
@@ -2081,13 +2131,21 @@ def register() -> None:
         if action == "propose":
             return run(m.propose_packages, position_id, location_id, weekday)
         if action == "create":
-            return run(m.create_package, name, position_id, location_id, parent_id, _d(timing, "fixed"),
-                       _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance, tolerance_unit,
-                       trade or "", notes or "", tasks, season)
+            def create():
+                m.check_shutdown(shutdown)  # refused before the package is made
+                made = m.create_package(name, position_id, location_id, parent_id, _d(timing, "fixed"),
+                                        _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance,
+                                        tolerance_unit, trade or "", notes or "", tasks, season)
+                return m.set_package_shutdown(made["id"], shutdown) if shutdown else made
+            return run(create)
         if action == "update":
-            return run(m.update_package, package_id, name, timing, every, unit, weekday, nth, day,
-                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
-                       ... if season is None else season)
+            def update():
+                m.check_shutdown(shutdown)
+                out = m.update_package(package_id, name, timing, every, unit, weekday, nth, day,
+                                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
+                                       ... if season is None else season)
+                return m.set_package_shutdown(package_id, shutdown) if shutdown is not None else out
+            return run(update)
         if action == "add_task":
             return run(m.add_package_task, package_id, task_id, visit_rule, every_nth, suppresses)
         if action == "remove_task":
@@ -2843,9 +2901,13 @@ def register() -> None:
                                   "import_history: one row per item per position: {position: 'House > Pool > "
                                   "Pump', class?, item?, serial?, manufacturer?, model?, part number?, fitted?: "
                                   "date, removed?: date, failed?: yes/no, failure mode?}. Column names are "
-                                  "matched loosely."))] = None,
-                              dry_run: bool | None = None) -> dict[str, Any]:
-        """The maintenance workspace as a whole: its time zone, and bringing an existing history in."""
+                                  "matched loosely. With sheet 'tree': list.tree's hierarchy rows, keyed by its "
+                                  "field names or the sheet's headings (Path, Name, Tag, Fitted item...)."))] = None,
+                              dry_run: bool | None = None,
+                              sheet: Annotated[Literal["history", "tree"] | None, Field(description=(
+                                  "import_history: history (default) or tree (the asset tree)."))] = None,
+                              ) -> dict[str, Any]:
+        """The maintenance workspace as a whole: its time zone, and bringing an existing history or tree in."""
         if action == "set_time_zone":
             user = _caller(ctx)
             m_for(ctx)  # Maintenance is on for this account
@@ -2853,6 +2915,13 @@ def register() -> None:
                 return {"time_zone": time_zones.set_personal(_db(), user["uid"], time_zone)}
             except time_zones.BadTimeZone as err:
                 raise ToolError(str(err)) from None
+        if sheet == "tree":
+            from backend.maintenance import hierarchy
+
+            def go():
+                table = hierarchy.rows_from_records([_tree_row(r) for r in rows or []])
+                return hierarchy.run(m_for(ctx), {"hierarchy": table}, _d(dry_run, True))
+            return run(go)
         if len(rows) > importer.MAX_ROWS:
             raise ToolError(f"At most {importer.MAX_ROWS} rows at a time.")
         return run(importer.run, m_for(ctx), [{str(k): str(v) for k, v in r.items()} for r in rows],

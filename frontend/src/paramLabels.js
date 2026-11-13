@@ -38,3 +38,25 @@ export function paramLabel(distId, name, unit = "") {
   const suffix = kind === "time" && u ? ` (${u})` : kind === "rate" && u ? ` (per ${singular(unit)})` : "";
   return spec[0] + suffix;
 }
+
+// A fit option's extra quantity (the payload's ``extra_params``, named
+// "gamma (offset)", "p (max fraction failing)", "f0 (failed at t=0)") in
+// plain words: { label, value }. A share near zero reads "about 0", not
+// "3.83e-9".
+const EXTRA = {
+  gamma: ["Offset γ: no failures before", "time"],
+  p: ["Share that can ever fail, p", "share"],
+  f0: ["Share failed at time 0, f₀", "share"],
+};
+export function extraParamView(name, value, unit, fmt) {
+  const key = String(name).split(" ")[0];
+  const spec = EXTRA[key];
+  const v = Number(value);
+  if (!spec) return { label: name, value: fmt(value) };
+  const u = unit ? unitInText(unit) : "";
+  if (spec[1] === "share") {
+    const shown = !Number.isFinite(v) ? fmt(value) : Math.abs(v) < 1e-4 ? "about 0%" : `${fmt(v * 100)}%`;
+    return { label: spec[0], value: shown };
+  }
+  return { label: spec[0], value: `${fmt(value)}${u ? ` ${u}` : ""}` };
+}

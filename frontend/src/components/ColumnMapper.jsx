@@ -1,125 +1,309 @@
 import Select from "./Select.jsx";
 import StatusMeanings from "./StatusMeanings.jsx";
-import { ResultDetails } from "./ui/ResultSummary.jsx";
+import { COMMON_UNITS } from "./Units.jsx";
 import { guessUnit } from "../datasetGuess.js";
-import { countProblem, setMappingField } from "../lifeData.js";
-import { TVC_STATUS, TvcTimeFields } from "./TvcColumns.jsx";
+import {
+  UNITLESS, countProblem, isUnitless, issueRow, lateEntryWords, setMappingField, statusCodesOnly, unitColumnWords,
+} from "../lifeData.js";
+import { TVC_STATUS } from "./TvcColumns.jsx";
 
-// Column mapping in plain words (#291). Encodes SurPyval's input rules:
-//   - the time column (x) is mutually exclusive with the interval pair xl/xr,
-//     and xl and xr are used together
-//   - the status (c), count (n) and truncation (tl/tr) columns are optional
-//   - each status value gets a meaning, failed or still running: 0/1 codes are
-//     sent as they are or flipped (``c_invert``), words as a map (``c_map``)
-// Interval and truncation fields sit under Advanced. ``facts`` (see
-// lifeData.columnFacts) gives each column's few values, for the status map.
-// ``timeVarying`` ("intervals" | "timeline", #60): covariates change over
-// time, so an item column and each row's times take the time column's place,
-// with no count or truncation.
-const COMMON_UNITS = [
-  "Hours", "Days", "Weeks", "Months", "Years",
-  "Cycles", "Kilometres", "Miles", "Operations", "Rounds",
-];
+// The Data step's selectors, one per SurPyval input, each with its label (i,
+// x, xl, xr, c, n, tl, tr, m) and a few plain words, for every flow that maps
+// columns: non-repairable life, repairable, accelerated life, condition and
+// life (both tables) and degradation. The words never assume time: x is the
+// value when a unit failed or was removed, in hours, cycles, km, volts…
+//
+//   i   [column]                                    which item each row belongs to
+//   x   [column]                                    unit [hours]
+//       where x is blank, a range: xl [column] to xr [column]
+//   m   [column]                                    unit [mm]
+//   c   [column]  0 = failed, 1 = running   [ ] my column uses 1 = failed
+//   n   [column]
+//   tl  [column]  late entry: observed only from this value
+//   tr  [column]  observed only up to this value
+//   failure mode [column]
+//
+// ``rows``: which rows a flow shows, in order (LIFE_ROWS by default); a fit
+// that doesn't take an input never shows its row. ``range``: x's range
+// (xl to xr) inside the x row. ``keys``: the mapping field behind a row where
+// a flow names it differently ({ i: "id", x: "age", m: "value", e: "mode" }).
+// ``words``: a flow's own plain words for a row; ``none``: its "— none —".
+// x and the range are read per row: x filled is an exact value, x blank its
+// range (only a range, with no x, is inspection data). ``issues`` / ``notes``:
+// [{ col, text, row? }], each shown by the row it concerns (``row``, or
+// lifeData.issueRow). ``asides``: { row: [node] }, a question to answer
+// there; ``warning``: a node shown loud on the x row. ``facts`` (column →
+// dtype, values…) lets c show its codes and how words were read
+// (``meanings``: false where the fit takes 0/1 codes only; ``invertible``:
+// false where it can't flip a 1 = failed column). ``lifeRules``: false for a
+// flow whose mapping isn't a life mapping (lifeData's rules don't apply).
+// ``timeVarying`` ("intervals" | "timeline", #60): an item column and each
+// row's times take x's place, with no count or late entry.
+export const LIFE_ROWS = ["x", "c", "n", "tl", "tr", "e"];
 
-const ADVANCED = [
-  { field: "xl", label: "Earliest possible failure time", hint: "Inspection data: the unit failed between this time and the latest. Used instead of a single time." },
-  { field: "xr", label: "Latest possible failure time", hint: "Leave it blank for a unit that was still running at the earliest time." },
-  { field: "tl", label: "Observed from (left truncation)", hint: "Units already in service when records began." },
-  { field: "tr", label: "Observed until (right truncation)" },
-];
+const WORDS = {
+  i: "which item each row belongs to",
+  x: "the value when it failed or was removed",
+  m: "the measured value",
+  c: "failed or still running",
+  n: "how many units the row stands for",
+  tl: "late entry: observed only from this value",
+  tr: "observed only up to this value",
+  e: "optional, competing risks",
+  s: "optional: the state the unit was in during this row",
+};
+const LABELS = { e: "failure mode" };
 
-// ``failureMode`` offers the failure-mode column (#177: the fit wizard only);
-// ``timeVarying`` (#60) is the layout of an item's rows when covariates change over time.
-export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {},
-                                      timeVarying = null, failureMode = false, renderUnit = null }) {
-  const usingInterval = !!mapping.xl || !!mapping.xr;
-  const options = (none) => [{ value: "", label: none }, ...columns];
+export default function ColumnMapper({
+  columns, mapping, onChange, unit, onUnitChange, facts = {}, timeVarying = null, failureMode = false,
+  issues = [], notes = [], asides = {}, warning = null,
+  rows = null, range = true, keys = {}, words = {}, none = {}, meanings: showMeanings = true,
+  mUnit, onMUnitChange, codeWords = "0 = failed, 1 = running", invertible = true, lifeRules = null,
+}) {
+  const shown = rows || (failureMode ? LIFE_ROWS : LIFE_ROWS.filter((r) => r !== "e"));
+  const k = (role) => keys[role] || role;
+  const val = (role) => mapping[k(role)] || "";
+  const options = (label) => [{ value: "", label }, ...columns];
+  const hasRange = range && !!(val("xl") || val("xr"));
+  // The life rules (status meanings guessed, issueRow) unless a flow says otherwise.
+  const lifeKeys = lifeRules ?? !Object.keys(keys).length;
 
-  const setField = (field, value) => {
-    // Exclusive fields, groups and status meanings: see setMappingField.
-    const next = setMappingField(mapping, field, value, facts);
-    // A unit guessed from the old time column follows the new one.
-    if (field === "x" && onUnitChange && (!unit || unit === guessUnit(mapping.x))) {
-      onUnitChange(guessUnit(value));
-    }
+  const setField = (role, value) => {
+    const field = k(role);
+    // Life mappings: status meanings guessed afresh, no groups without modes (lifeData).
+    const next = lifeKeys ? setMappingField(mapping, field, value, facts) : { ...mapping, [field]: value };
+    // A unit guessed from the old value column follows the new one.
+    const first = role === "x" || (role === "xl" && !val("x"));
+    if (first && onUnitChange && (!unit || unit === guessUnit(val(role)))) onUnitChange(guessUnit(value));
     onChange(next);
   };
 
   // A count holds whole numbers (#434): a column of text or decimals is
   // shown, but can't be picked, with the reason beside it.
-  const countOptions = (none) => [
-    { value: "", label: none },
+  const countOptions = (label) => [
+    { value: "", label },
     ...columns.map((col) => {
       const why = countProblem(facts[col]);
-      return why ? { value: col, label: col, hint: why === "text" ? "text" : "has decimals", disabled: col !== mapping.n } : col;
+      return why ? { value: col, label: col, hint: why === "text" ? "text" : "has decimals", disabled: col !== val("n") } : col;
     }),
   ];
 
-  const field = (key, label, none, hint) => (
-    <label className="ds-field" key={key}>
-      <span className="ds-label">{label}</span>
-      <Select value={mapping[key] || ""} onChange={(v) => setField(key, v)}
-              options={key === "n" ? countOptions(none) : options(none)} />
-      {hint && <span className="ds-hint">{hint}</span>}
-    </label>
+  const pick = (role, noneLabel, aria) => (
+    <Select value={val(role)} onChange={(v) => setField(role, v)} ariaLabel={aria || role}
+            className="xcn-pick" options={role === "n" && facts[columns[0]] ? countOptions(noneLabel) : options(noneLabel)} />
   );
 
-  // ``renderUnit``: the caller's own unit field (the fit flow's, which
-  // requires a unit or an explicit "No unit").
-  const unitField = renderUnit ? renderUnit() : onUnitChange && (
-    <label className="ds-field ds-unit">
-      <span className="ds-label">Unit</span>
-      <input
-        className="units-input"
-        type="text"
-        list="x-units"
-        value={unit || ""}
-        placeholder="e.g. Hours"
-        onChange={(e) => onUnitChange(e.target.value)}
-      />
-      <datalist id="x-units">
-        {COMMON_UNITS.map((u) => (
-          <option value={u} key={u} />
-        ))}
-      </datalist>
-    </label>
-  );
+  // What a row says beneath it: problems (stop the fit), notes, questions.
+  const rowOf = (x) => x.row || (lifeKeys ? issueRow(x, mapping) : "x");
+  const below = (row) => {
+    const out = [];
+    for (const i of issues.filter((x) => rowOf(x) === row)) {
+      out.push(<p key={`i${i.text}`} className="xcn-issue" role="status">{i.text}</p>);
+    }
+    for (const n of notes.filter((x) => rowOf(x) === row)) {
+      out.push(<p key={`n${n.text}`} className="xcn-issue xcn-note" role="status">{n.text}</p>);
+    }
+    for (const a of asides[row] || []) out.push(a);
+    return out.length ? <div className="xcn-below">{out}</div> : null;
+  };
 
-  return (
-    <div className="ds-mapper">
-      {timeVarying ? (
-        <TvcTimeFields layout={timeVarying} field={field} unit={unitField} />
-      ) : (
-      <div className="ds-row">
-        {field("x", "Time to failure or removal", usingInterval ? "— using earliest / latest times —" : "— pick a column —")}
-        {unitField}
+  const unitBox = (value, onSet, id, aria, placeholder) => onSet && (
+    <span className="xcn-unit">
+      <span className="xcn-words">unit</span>
+      <input className="units-input" type="text" list={id} aria-label={aria}
+             value={isUnitless(value) ? "" : value || ""} disabled={isUnitless(value)}
+             placeholder={isUnitless(value) ? "No unit" : placeholder}
+             onChange={(e) => onSet(e.target.value)} />
+      <datalist id={id}>{COMMON_UNITS.map((u) => <option value={u} key={u} />)}</datalist>
+      <label className="ds-unitless">
+        <input type="checkbox" checked={isUnitless(value)} onChange={(e) => onSet(e.target.checked ? UNITLESS : "")} />
+        no unit
+      </label>
+    </span>
+  );
+  const xUnit = unitBox(unit, onUnitChange, "xcn-units", "Unit of the values", "hours, cycles, km…");
+  // A column of per-row units (hrs / days), guessed or picked from a question.
+  const perRow = !timeVarying && mapping.u ? unitColumnWords(mapping, facts, unit) : null;
+
+  const key = (role, text) => (
+    <span className="xcn-key">
+      <code>{LABELS[role] || role}</code>
+      {text && <span className="xcn-words">{text}</span>}
+    </span>
+  );
+  const say = (role) => words[role] ?? WORDS[role];
+
+  // c: 0 = failed, 1 = still running, with the flip for a 1 = failed column.
+  const cCol = val("c");
+  const codesOnly = cCol && statusCodesOnly(facts[cCol]?.values);
+  const codes = () => {
+    if (!cCol || !codesOnly || !invertible) {
+      return cCol && showMeanings && !codesOnly ? null : <span className="xcn-words">{codeWords}</span>;
+    }
+    return (
+      <>
+        <span className="xcn-words">{codeWords}</span>
+        <label className="xcn-tick">
+          <input type="checkbox" checked={!!mapping.c_invert}
+                 onChange={(e) => onChange({ ...mapping, c_invert: e.target.checked, c_map: null }, { meanings: true })} />
+          my column uses 1 = failed
+        </label>
+      </>
+    );
+  };
+  // A status column of words: how each was read, one short line.
+  const meanings = () => {
+    if (!cCol || codesOnly || !showMeanings || !facts[cCol]) return null;
+    return (
+      <div className="xcn-sub">
+        <span className="xcn-words">0 = failed, 1 = running. Read as:</span>
+        <StatusMeanings compact column={cCol} values={facts[cCol]?.values} blanks={facts[cCol]?.blanks || 0}
+                        mapping={mapping} onChange={(m) => onChange(m, { meanings: true })} />
       </div>
-      )}
+    );
+  };
 
-      <div className="ds-row">
-        {/* The status column, with what each of its values means beneath it. */}
-        <div className="ds-field">
-          {field("c", TVC_STATUS[timeVarying] || "Failed or still running?",
-                 usingInterval ? "— none: read from the two times —" : "— none: every row failed —")}
-          {mapping.c && (
-            <StatusMeanings column={mapping.c} values={facts[mapping.c]?.values} blanks={facts[mapping.c]?.blanks || 0}
-                            mapping={mapping} onChange={onChange} />
+  if (timeVarying) {
+    // Covariates that change over time (#60): the item, each row's times, the status.
+    return (
+      <div className="xcn">
+        <div className="xcn-row">
+          {key("i", "the pump, motor or unit each row belongs to")}
+          <div className="xcn-fields">{pick("i", "— pick a column —", "Item")}{xUnit}</div>
+          {below("x")}
+        </div>
+        <div className="xcn-row">
+          {timeVarying === "intervals" ? (
+            <>
+              {key("xl", "where the row starts")}
+              <div className="xcn-fields">
+                {pick("xl", "— pick a column —", "Start of the row")}
+                <code>xr</code><span className="xcn-words">where it ends</span>
+                {pick("xr", "— pick a column —", "End of the row")}
+              </div>
+            </>
+          ) : (
+            <>
+              {key("x", "when the row's values take effect")}
+              <div className="xcn-fields">{pick("x", "— pick a column —", "Value of the row")}</div>
+            </>
           )}
         </div>
-        {!timeVarying && field("n", "Count (optional)", "— none: one unit per row —")}
-        {/* #177: a failure-mode column fits the modes as competing risks. Shown with
-            covariates over time too, so a mode mapped before can be cleared. */}
-        {failureMode && field("e", "Failure mode (optional)", "— none: all modes together —",
-                              mapping.e ? "A blank mode is a unit still running." : null)}
-      </div>
-
-      {!timeVarying && (
-      <ResultDetails summary="Advanced: interval and truncated data" open={usingInterval || !!mapping.tl || !!mapping.tr}>
-        <div className="ds-row ds-row-4">
-          {ADVANCED.map((a) => field(a.field, a.label, "— none —", a.hint))}
+        <div className="xcn-row">
+          {key("c", TVC_STATUS[timeVarying])}
+          <div className="xcn-fields">{pick("c", "— none: every item failed —", "c")}{codes()}</div>
+          {meanings()}
+          {below("c")}
         </div>
-      </ResultDetails>
-      )}
+      </div>
+    );
+  }
+
+  const ROW = {
+    i: () => (
+      <div className="xcn-row" key="i">
+        {key("i", say("i"))}
+        <div className="xcn-fields">{pick("i", none.i || "— pick a column —", "i")}</div>
+        {below("i")}
+      </div>
+    ),
+    x: () => (
+      <div className="xcn-row" key="x">
+        {key("x", say("x"))}
+        <div className="xcn-fields">
+          {pick("x", hasRange ? "— none: every row is a range —" : none.x || "— pick a column —", "x")}
+          {xUnit}
+        </div>
+        {range && (
+          <div className="xcn-sub xcn-range">
+            <span className="xcn-words">where x is blank, a range:</span>
+            <span className="xcn-pair">
+              <code>xl</code>{pick("xl", "— none —", "xl, the last value it was seen working")}
+              <span className="xcn-words">to</span>
+              <code>xr</code>{pick("xr", "— none —", "xr, the value it was found failed")}
+            </span>
+            <span className="xcn-words xcn-hint">xl: last seen working · xr: found failed (blank: still running)</span>
+          </div>
+        )}
+        {perRow?.note && (
+          <p className="xcn-note-line">
+            {perRow.note}{" "}
+            <button type="button" className="link" onClick={() => onChange({ ...mapping, u: "" })}>Don't convert</button>
+          </p>
+        )}
+        {warning}
+        {below("x")}
+      </div>
+    ),
+    m: () => (
+      <div className="xcn-row" key="m">
+        {key("m", say("m"))}
+        <div className="xcn-fields">
+          {pick("m", none.m || "— pick a column —", "m")}
+          {unitBox(mUnit, onMUnitChange, "xcn-m-units", "Unit of m", "mm, %, mm/s…")}
+        </div>
+        {below("m")}
+      </div>
+    ),
+    c: () => (
+      <div className="xcn-row" key="c">
+        {key("c", say("c"))}
+        <div className="xcn-fields">
+          {pick("c", hasRange ? "— none: read from the values —" : none.c || "— none: every row failed —", "c")}
+          {codes()}
+        </div>
+        {meanings()}
+        {below("c")}
+      </div>
+    ),
+    n: () => (
+      <div className="xcn-row" key="n">
+        {key("n", say("n"))}
+        <div className="xcn-fields">{pick("n", none.n || "— none —", "n")}</div>
+        {below("n")}
+      </div>
+    ),
+    tl: () => (
+      <div className="xcn-row" key="tl">
+        {key("tl", say("tl"))}
+        <div className="xcn-fields">
+          {pick("tl", none.tl || "— none —", "tl")}
+          {val("tl") && facts[val("tl")] && <span className="xcn-words">{lateEntryWords(val("tl"), facts)}</span>}
+        </div>
+        {below("tl")}
+      </div>
+    ),
+    tr: () => (
+      <div className="xcn-row" key="tr">
+        {key("tr", say("tr"))}
+        <div className="xcn-fields">
+          {pick("tr", none.tr || "— none —", "tr")}
+          {val("tr") && <span className="xcn-words">same unit as x; a blank is no limit on that row</span>}
+        </div>
+        {below("tr")}
+      </div>
+    ),
+    e: () => (
+      <div className="xcn-row" key="e">
+        {key("e", say("e"))}
+        <div className="xcn-fields">
+          {pick("e", none.e || "— none —", "Failure mode")}
+          {val("e") && facts[val("e")]?.blanks > 0 && (
+            <span className="xcn-words">a blank mode is a unit still running</span>
+          )}
+        </div>
+        {below("e")}
+      </div>
+    ),
+  };
+
+  // s: the state a row starts from (multi-state data); shown where a flow asks for it.
+  ROW.s = () => (
+    <div className="xcn-row" key="s">
+      {key("s", say("s"))}
+      <div className="xcn-fields">{pick("s", none.s || "— none: every row starts working —", "State during the row")}</div>
+      {below("s")}
     </div>
   );
+  return <div className="xcn">{shown.map((r) => ROW[r]())}</div>;
 }

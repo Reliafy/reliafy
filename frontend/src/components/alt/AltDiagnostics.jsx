@@ -126,11 +126,18 @@ function deltaText(d) {
   return `${d > 0 ? "+" : "−"}${Math.abs(d).toFixed(1)}`;
 }
 
+// Why a life model in the comparison isn't one you can fit here.
+const NOT_OFFERED = {
+  "Inverse Eyring": "For comparison only: Eyring with the stress inverted. Reliafy fits Eyring; Download as Python gives SurPyval, which fits this form too.",
+  "General log-linear": "For comparison only: the general form the other relationships are special cases of. Download as Python gives SurPyval, which fits it.",
+};
+
 function CompareTable({ diag, unit }) {
   const rows = diag?.comparison || [];
   const hasUse = rows.some((r) => r.life_at_use != null);
   const u = unit ? unitInText(unit) : "";
   return (
+    <>
     <table className="mini-table">
       <thead>
         <tr><th>Life model</th><th className="mf-num">ΔAIC</th>{hasUse && <th className="mf-num">Life at use{u ? ` (${u})` : ""}</th>}</tr>
@@ -141,7 +148,11 @@ function CompareTable({ diag, unit }) {
             <td>
               {r.name}
               {r.current && <span className="gof-sub"> · this model</span>}
-              {!r.current && !r.life_model_id && <span className="gof-sub"> · not offered here</span>}
+              {!r.current && !r.life_model_id && (
+                <span className="gof-sub" title={NOT_OFFERED[r.name] || "A form the library compares against; Reliafy doesn't fit it as a model."}>
+                  {" "}· for comparison only
+                </span>
+              )}
             </td>
             <td className="mf-num">{r.current ? "—" : deltaText(r.delta)}</td>
             {hasUse && <td className="mf-num">{formatNumber(r.life_at_use)}</td>}
@@ -149,6 +160,14 @@ function CompareTable({ diag, unit }) {
         ))}
       </tbody>
     </table>
+    {rows.some((r) => !r.current && !r.life_model_id) && (
+      <p className="mf-note">
+        Rows marked “for comparison only” are forms the check fits for reference; they aren't offered as models
+        here ({rows.filter((r) => !r.current && !r.life_model_id).map((r) => NOT_OFFERED[r.name]
+          ? r.name.toLowerCase() : null).filter(Boolean).join(", ") || "see each row"}: hover for why).
+      </p>
+    )}
+    </>
   );
 }
 

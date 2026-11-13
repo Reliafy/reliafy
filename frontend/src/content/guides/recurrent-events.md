@@ -32,34 +32,45 @@ CMP-1,2050,5000
 CMP-2,1400,5000
 ```
 
-The key columns are **i** (the system identifier — this is what groups events
-into per-machine histories) and **x** (the event time, measured from that
-system's start, not a calendar date).
+Each dataset keeps how its columns are read, set when it is saved, so the fit
+asks no column questions: it shows that reading in one line at the top of the
+**Model** step, with **Change** to read the columns differently. The key columns are **i** (*which item each
+row belongs to*: this is what groups events into per-machine histories) and
+**x** (*the value at each failure, counted from new*: hours, cycles or
+kilometres from that system's start, not a calendar date). **c** (a failure, 0,
+or the end of the record, 1), **n** (how many failures the row stands for) and
+**tl** (start of record) are there if your data has them. There is no range
+(xl to xr): a repairable fit takes each failure's own value.
 
-You should also give each system's **observation window** — how long you watched
-it, whether or not it failed again — mapped to `tr`. Without it the analysis
+You should also give each system's **tr** (*end of record: observed only up to
+this value*) — how long you watched
+it, whether or not it failed again. Without it the analysis
 can't tell the difference between a machine that stopped failing and a machine
 you stopped watching, and it will quietly conclude your fleet is improving.
-The Data step guesses it from names like "observed to", "records end" or "end
-of record", and warns you while it's empty.
+The upload guesses it from names like "observed to", "records end" or "end
+of record", and the Model step says so while the reading has none. A dataset
+saved before it kept a reading starts from the columns and unit its last
+repairable model used. With no **i** in the reading, the Model step says so and
+offers **Change the reading** instead of fitting.
 
 Three optional columns add more:
 
-- **Cause of each failure** (a failure mode such as seal or bearing): the MCF of
+- **failure mode** (*each failure's cause*, such as seal or bearing): the MCF of
   each cause, and a growth projection.
 - **Covariates** (site, duty, operating condition), constant for each system: what
-  drives the repair rate.
-- **Observation windows**, when a system wasn't watched for a while (mothballed,
-  records lost): a window-start and window-end column, or type them in as
-  `system, start, end`, one a line. A failure has to fall inside one of its
-  system's windows.
+  drives the repair rate. They are the reading's **Z**, used by the **Covariates** models.
+- **Observation windows**, under **Gaps in the records (optional)** on the Model step,
+  when a system wasn't watched for a while (mothballed, records lost): a
+  window-start and window-end column, or type them in as `system, start, end`,
+  one a line. A failure has to fall inside one of its system's windows.
 
 ## Fitting
 
 Go to **Modelling → Models → Repairable** and press **New model**. Pick your data: under
 **Saved data**, your datasets come first, then the samples, and those holding repeated failures
 of the same units are at the top (the rest are greyed out, with what to fit them with instead).
-Or switch to **Upload a file**. Then map the columns and choose a model. The default kind, **Minimal repair**, offers:
+Or switch to **Upload a file**: it is saved as a dataset first, on the same screen as
+any new dataset, where you say how its columns are read. Then choose a model. The default kind, **Minimal repair**, offers:
 
 - **Crow-AMSAA (NHPP)** — the standard reliability-growth model, and the right
   default.

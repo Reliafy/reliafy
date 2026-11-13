@@ -26,6 +26,7 @@ const REACHED_FROM = {
   "/models/new": "Models › New model, Home's starts, a dataset's Fit menu",
   "/models/recurrent/new": "Models › Repairable › New model",
   "/models/alt/new": "Models › Accelerated life › New model",
+  "/models/degradation/new": "Models › Degradation › New model, a dataset's Fit menu, Time to the limit",
   "/models/joint/new": "Models › Condition and life › New model",
   "/maintainability/new": "Maintainability prediction › New prediction",
   "/systems/b": "RBDs › New diagram, Home's starts",
@@ -64,11 +65,11 @@ test("every menu link is a page of the app", () => {
   }
 });
 
-test("the menu is one flat list: Home, Products, Assets, Items, Maintenance, Modelling, Decisions, Reports, the Agent", () => {
+test("the menu is one flat list: Home, Products, Assets, Items, Maintenance, Modelling, Libraries, Decisions, Reports, the Agent", () => {
   const { main } = buildMenu({ has: ALL });
-  assert.deepEqual(ids(main), ["home", "products", "assets", "items", "maintenance", "modelling", "decisions", "reports", "agent"]);
+  assert.deepEqual(ids(main), ["home", "products", "assets", "items", "maintenance", "modelling", "libraries", "decisions", "reports", "agent"]);
   assert.deepEqual(main.map((e) => e.label),
-    ["Home", "Products", "Assets", "Items", "Maintenance", "Modelling", "Decisions", "Reports", "Reliability Agent"]);
+    ["Home", "Products", "Assets", "Items", "Maintenance", "Modelling", "Libraries", "Decisions", "Reports", "Reliability Agent"]);
   // No section headings any more.
   for (const e of ENTRIES) assert.equal(e.section, undefined, e.id);
 });
@@ -81,7 +82,9 @@ test("Modelling and Decisions are groups: their entries, each with its children"
   assert.deepEqual(group("decisions"), ["Strategy", "Forecasts", "Risk"]);
   assert.deepEqual(kids(live, "data"), []);
   assert.deepEqual(kids(live, "models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
-    "Condition and life", "Library"]);
+    "Condition and life"]);
+  // Libraries is its own entry after Modelling: it opens on All libraries.
+  assert.deepEqual(kids(live, "libraries"), ["All libraries", "Data", "Models"]);
   assert.deepEqual(kids(live, "maintainability"), []);
   assert.deepEqual(kids(live, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(live, "strategy"), ["Optimal replacement", "Compare two models", "Failure finding",
@@ -113,6 +116,8 @@ test("a group opens on its first live entry; an entry with no landing page opens
   assert.equal(find(live, "risk").children[0].label, "Condition monitoring");
   assert.equal(to("assets"), "/asset-register");
   assert.equal(to("maintenance"), "/maintenance/work-orders");
+  assert.equal(to("libraries"), "/libraries");
+  assert.equal(find(live, "libraries").children[0].label, "All libraries");
 });
 
 test("a menu word is the title of the page it opens", () => {
@@ -146,7 +151,7 @@ test("an entry's landing page is never also one of its children", () => {
 
 test("without Reliafy Maintenance: no Assets, and Maintenance opens on RCM studies", () => {
   const none = liveEntries({});
-  assert.deepEqual(ids(none), ["home", "maintenance", "modelling", "decisions", "reports"]);
+  assert.deepEqual(ids(none), ["home", "maintenance", "modelling", "libraries", "decisions", "reports"]);
   assert.ok(!everyLink(none).includes("/asset-register"));
   // "Maintenance" is the RCM studies page itself, not repeated as a child.
   const m = none.find((e) => e.id === "maintenance");
@@ -201,17 +206,17 @@ test("no roles shows everything the workspace has, nothing under More", () => {
 test("a technician sees Home, Assets, Items and Maintenance; the rest is under More", () => {
   const { main, more } = buildMenu({ roles: ["technician"], has: ALL });
   assert.deepEqual(ids(main), ["home", "assets", "items", "maintenance"]);
-  assert.deepEqual(ids(more), ["products", "modelling", "decisions", "reports", "agent"]);
+  assert.deepEqual(ids(more), ["products", "modelling", "libraries", "decisions", "reports", "agent"]);
   assert.equal(main[3].to, "/maintenance/work-orders");
 });
 
 test("a role keeps the menu's own order", () => {
   assert.deepEqual(ids(buildMenu({ roles: ["fleet"], has: ALL }).main),
-    ["home", "assets", "items", "maintenance", "modelling", "decisions", "reports"]);
+    ["home", "assets", "items", "maintenance", "modelling", "libraries", "decisions", "reports"]);
   assert.deepEqual(ids(buildMenu({ roles: ["planner", "analyst"], has: ALL }).main),
-    ["home", "assets", "items", "maintenance", "modelling", "decisions", "reports", "agent"]);
+    ["home", "assets", "items", "maintenance", "modelling", "libraries", "decisions", "reports", "agent"]);
   assert.deepEqual(ids(buildMenu({ roles: ["manager"], has: ALL }).main),
-    ["home", "maintenance", "modelling", "decisions", "reports"]);
+    ["home", "maintenance", "modelling", "libraries", "decisions", "reports"]);
   assert.deepEqual(homeCards(["fleet"]), ["fleets", "due"]);
 });
 
@@ -253,6 +258,12 @@ test("a page lights its place in the menu at every level", () => {
   assert.deepEqual(at("/models/joint/x"), ["modelling", "models", "Condition and life"]);
   assert.deepEqual(at("/data"), ["modelling", "data", null]);
   assert.deepEqual(at("/data/d1"), ["modelling", "data", null]);
+  // Libraries: a library's page (and a handbook's record) is under All libraries; Data and Models are their own.
+  assert.deepEqual(at("/libraries"), ["libraries", null, "All libraries"]);
+  assert.deepEqual(at("/libraries/abc"), ["libraries", null, "All libraries"]);
+  assert.deepEqual(at("/libraries/nrc-inl-2020/mov-fto"), ["libraries", null, "All libraries"]);
+  assert.deepEqual(at("/libraries/data"), ["libraries", null, "Data"]);
+  assert.deepEqual(at("/libraries/models"), ["libraries", null, "Models"]);
   assert.deepEqual(at("/systems/rbds"), ["modelling", "systems", "RBDs"]);
   assert.deepEqual(at("/systems/b/r1"), ["modelling", "systems", "RBDs"]);
   assert.deepEqual(at("/systems/b"), ["modelling", "systems", "RBDs"]);
@@ -370,7 +381,7 @@ test("the roles are off unless the deployment turns them on: saved roles unused,
   // On: the roles as saved, and the one-time question when the server offers it.
   const on = rolesInUse(saved, true);
   assert.deepEqual(on, { roles: ["technician", "planner"], offer: true, rolesOn: true });
-  assert.deepEqual(ids(buildMenu({ roles: on.roles, has: ALL }).more), ["products", "modelling", "agent"]);
+  assert.deepEqual(ids(buildMenu({ roles: on.roles, has: ALL }).more), ["products", "modelling", "libraries", "agent"]);
   assert.equal(homeCards(on.roles)[0], "work-today");
   assert.deepEqual(rolesInUse({ roles: [], offer: false }, true), { roles: [], offer: false, rolesOn: true });
   assert.deepEqual(rolesInUse(undefined, true), { roles: [], offer: false, rolesOn: true });
@@ -382,6 +393,7 @@ test("saved items open at their new addresses", () => {
   assert.equal(itemPath("fleets", "f"), "/forecasts/f");
   assert.equal(itemPath("rbds", "r"), "/systems/b/r");
   assert.equal(itemPath("reports", "r"), null);
+  assert.equal(itemPath("libraries", "l1"), "/libraries/l1");
   assert.equal(datasetPath("d1"), "/data/d1");
 });
 
@@ -396,7 +408,11 @@ const tabbed = (query, search = "") => (EXPLORER_PARTS_CLASSES_TABS ? `/asset-re
 const OLD_TO_NEW = [
   ["/modelling", "/models"],
   ["/modelling/models", "/models"],
-  ["/data/library", "/models/library"],
+  ["/data/library", "/libraries"],
+  ["/models/library", "/libraries"],
+  ["/models/library/x", "/libraries/x"],
+  ["/models/library/x/y", "/libraries/x/y"],
+  ["/models/library/x/components/y", "/libraries/x/components/y"],
   ["/modelling/data", "/data"],
   ["/modelling/data/x", "/data/x"],
   ["/modelling/life", "/models/life"],
@@ -539,7 +555,7 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   const plain = liveEntries(ALL);
   const preview = liveEntries(PREVIEW);
   assert.deepEqual(kids(plain, "data"), []);
-  // The library moved under Models, for everyone (9 Nov 2026): Data has no preview entries now.
+  // The library moved under Models, then to Libraries, for everyone: Data has no preview entries now.
   assert.deepEqual(kids(preview, "data"), []);
   assert.deepEqual(kids(plain, "maintenance"), ["Orders", "Packages", "RCM studies"]);
   assert.deepEqual(kids(preview, "maintenance"), ["Orders", "Packages", "RCM studies", "Requests"]);
@@ -547,10 +563,19 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   assert.deepEqual(kids(preview, "assets"), []);
 });
 
-test("every placeholder page has its text; Requests is in the preview menu, the library is live under Models", () => {
+test("every placeholder page has its text; Requests is in the preview menu, the libraries are live for everyone", () => {
   const links = new Set(everyLink(liveEntries(PREVIEW)));
   for (const [id, page] of Object.entries(PLANNED)) assert.ok(page.title && page.purpose && page.will.length, id);
-  assert.ok(new Set(everyLink(liveEntries(ALL))).has("/models/library"));
+  assert.ok(new Set(everyLink(liveEntries(ALL))).has("/libraries"));
+  assert.ok(new Set(everyLink(liveEntries({}))).has("/libraries/data"));
   assert.ok(links.has("/maintenance/inbox"));
   assert.deepEqual(Object.keys(PLANNED).sort(), ["failures", "fleets", "inbox", "requirements"]);
+});
+
+test("every top-level menu entry has a sidebar icon", () => {
+  const src = readFileSync(new URL("./components/Sidebar.jsx", import.meta.url), "utf8");
+  const table = src.slice(src.indexOf("const ICONS = {"), src.indexOf("};", src.indexOf("const ICONS = {")));
+  const topLevel = [...new Set(ROLES.flatMap((r) => r.entries || []))];
+  const missing = topLevel.filter((id) => !new RegExp(`\\n\\s*${id}:`).test(table));
+  assert.deepEqual(missing, []);
 });

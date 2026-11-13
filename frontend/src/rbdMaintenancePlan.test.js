@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  PLAN_SUPPORTS, costText, dutyText, dutyWords, intervalBasis, parseCost, parseDuty, parseNumber, planColumns,
+  PLAN_SUPPORTS, costText, parsePercent, percentText, dutyText, dutyWords, intervalBasis, parseCost, parseDuty, parseNumber, planColumns,
   planCounts, planRows, rowProblems, setDuty, setGroup, setInterval, setIntervalBasis, setScheduleField, setTask,
   taskOf, taskSummary, toCalendar, toOperating,
 } from "./rbdMaintenancePlan.js";
@@ -70,15 +70,25 @@ test("an interval in running time follows the duty", () => {
   assert.equal(setIntervalBasis(cal, "operating").preventive.operating_interval, 500);
 });
 
-test("running time with no duty is refused in plain words, never guessed", () => {
+test("running time with Runs blank is calendar time: the block runs all the time", () => {
   let d = setInterval(setTask({}, "age"), 500, "operating");
-  assert.equal(d.preventive.interval, undefined);
-  assert.match(rowProblems(d, "Hours")[0], /Runs %/);
+  assert.equal(d.preventive.interval, 500);
+  assert.deepEqual(rowProblems(d, "Hours"), []);
   assert.match(rowProblems(d, "Cycles")[0], /time unit/);
-  // Taking the duty away again leaves the calendar interval unset, not stale.
+  // A duty set and taken away again: back to the running interval on the calendar.
   d = setDuty(setDuty(d, 0.5), null);
   assert.equal(d.duty, undefined);
-  assert.equal(d.preventive.interval, undefined);
+  assert.equal(d.preventive.interval, 500);
+});
+
+test("a threshold and a coverage are typed as percentages and kept as fractions", () => {
+  assert.deepEqual(parsePercent("5"), { value: 0.05, error: null });
+  assert.deepEqual(parsePercent("12.5 %"), { value: 0.125, error: null });
+  assert.deepEqual(parsePercent(""), { value: null, error: null });
+  assert.match(parsePercent("120").error, /0 to 100/);
+  assert.equal(percentText(0.05), "5");
+  assert.equal(percentText(null), "");
+  assert.match(rowProblems(setInterval(setTask({}, "condition"), 100)).join(), /as a %/);
 });
 
 test("switching task keeps what was typed and drops what doesn't apply", () => {

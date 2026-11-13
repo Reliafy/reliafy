@@ -132,8 +132,6 @@ export const ENTRIES = [
           { to: "/models/alt", label: "Accelerated life" },
           { to: "/models/degradation", label: "Degradation" },
           { to: "/models/joint", label: "Condition and life" },
-          // Published rates and probabilities with their uncertainty: models, not datasets (9 Nov 2026).
-          { to: "/models/library", label: "Library" },
         ],
       },
       // Reliability prediction: a parts count from handbook base rates, for a
@@ -151,6 +149,18 @@ export const ENTRIES = [
           { to: "/systems/runs", label: "Simulation runs" },
         ],
       },
+    ],
+  },
+
+  // Libraries (13 Nov 2026): your own libraries of data and models (snapshots), shared with
+  // workspaces or published, beside the built-in handbooks (moved here from Models › Library).
+  // It opens on All libraries; Data and Models are every entry of that kind you can see.
+  {
+    id: "libraries", label: "Libraries", to: "/libraries", opensOnFirstChild: true,
+    children: [
+      { to: "/libraries", label: "All libraries", not: ["/libraries/data", "/libraries/models"] },
+      { to: "/libraries/data", label: "Data" },
+      { to: "/libraries/models", label: "Models" },
     ],
   },
 
@@ -195,12 +205,12 @@ export const MENU_ENTRIES = flatEntries(ENTRIES).map((e) => ({ ...e, match: e.ma
 export const ROLES = [
   {
     id: "analyst", label: "Reliability engineer / analyst",
-    entries: ["modelling", "decisions", "reports", "agent"],
+    entries: ["modelling", "libraries", "decisions", "reports", "agent"],
     home: ["recent-models", "recent-data"],
   },
   {
     id: "design", label: "Design engineer",
-    entries: ["products", "modelling", "decisions", "reports"],
+    entries: ["products", "modelling", "libraries", "decisions", "reports"],
     home: ["recent-systems", "recent-models"],
   },
   {
@@ -217,17 +227,17 @@ export const ROLES = [
     // Looks after many items in service (trucks, pumps, aircraft): their
     // forecasts, the items' condition, and what's due on them.
     id: "fleet", label: "Fleet manager",
-    entries: ["decisions", "assets", "items", "maintenance", "modelling", "reports"],
+    entries: ["decisions", "assets", "items", "maintenance", "modelling", "libraries", "reports"],
     home: ["fleets", "due"],
   },
   {
     id: "logistics", label: "Supportability / logistics",
-    entries: ["assets", "products", "items", "decisions", "modelling", "reports"],
+    entries: ["assets", "products", "items", "decisions", "modelling", "libraries", "reports"],
     home: ["spares", "due"],
   },
   {
     id: "manager", label: "Manager",
-    entries: ["reports", "maintenance", "decisions", "modelling"],
+    entries: ["reports", "maintenance", "decisions", "modelling", "libraries"],
     home: ["waiting"],
   },
 ];
@@ -293,7 +303,10 @@ export function entryActive(entry, pathname) {
   return (entry.match || [entry.to]).some((p) => under(pathname, p));
 }
 
+// ``not``: addresses under the child's own that belong to a sibling instead (All libraries'
+// /libraries holds every library's page, but /libraries/data is Data's).
 export function childActive(child, pathname) {
+  if ((child.not || []).some((p) => under(pathname, p))) return false;
   return [child.to, ...(child.also || [])].some((p) => under(pathname, p));
 }
 
@@ -357,7 +370,7 @@ export const COLLECTION_PATHS = {
   fleets: "/forecasts/",
   tracked_fleets: "/risk/",
   reliability_predictions: "/predictions/",
-  libraries: "/models/library/",
+  libraries: "/libraries/",
   rcm_studies: "/maintenance/rcm/",
 };
 

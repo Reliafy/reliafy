@@ -184,7 +184,8 @@ export const BUILD_ITEM = { id: "build-item", label: "Build an item…" };
 export const MAKE_OWN = { id: "make-own", label: "Make this my own…" };
 export function designActions(actions, design, { row = null, viewOnly = null } = {}) {
   if (!design) return actions;
-  const out = actions.filter((a) => a.id !== "report-new" && a.id !== "event-log");
+  // A design's (and a built unit's) tree isn't in the Excel export: it's the product's.
+  const out = actions.filter((a) => a.id !== "report-new" && a.id !== "event-log" && a.id !== "pos-here" && a.id !== "tree-export");
   if (row?.type !== "pos" || !row.ref?.design) return out;
   const offer = (a) => (viewOnly ? { ...a, disabled: true, reason: viewOnly } : a);
   return [offer(BUILD_ITEM), ...(isSampleRow(row) ? [offer(MAKE_OWN)] : []), ...out];

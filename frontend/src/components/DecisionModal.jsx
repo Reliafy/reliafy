@@ -1,8 +1,12 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
 import TaskChoice from "./TaskChoice.jsx";
+import ChoiceChips from "./ui/ChoiceChips.jsx";
+import { FOUND_EMPTY, ROLE, findsSomething } from "../rcmWorksheet.js";
+import { workspaceCurrency } from "../money.js";
+import { decisionExtrasCheck } from "../decisionCheck.js";
 
 // Evidence that's linked, not checked: it goes with any decision.
 const LINKED_ONLY = new Set(["report", "working"]);
@@ -40,7 +44,13 @@ const EVIDENT_HIDDEN = [
 // pressed (decisionCheck.js); `limits` adds the Explorer's own checks.
 // `workings`: the performance standards' workings the decision can link
 // (explorerRcm.js workingsFor), beside models and reports.
-export default function DecisionModal({ options, mode, onSave, onClose, limits = false, workings = [] }) {
+// `loadTasks` (the Explorer): () => promise of {available} — the tasks on the
+// position or above it that could serve this mode, so the decision can take an
+// existing task ("Existing task") instead of making a second one. With it the
+// first task also asks what's done if the check finds it, and what the task
+// costs each time (kept on the task, as the Maintenance tab keeps it; sent back
+// as `cost` beside the decision).
+export default function DecisionModal({ options, mode, onSave, onClose, limits = false, workings = [], loadTasks = null }) {
   const id = useId();
   const existing = mode.decision || {};
   // The decision's own task, when it also serves other failure modes: it keeps
@@ -69,6 +79,18 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   // The decision's own unit, else its task's, else the one chosen last on this device, else hours.
   const [intervalUnit, setIntervalUnit] = useState(() => startUnit(existing.interval_unit ? existing : { interval_unit: own?.unit }));
   const [evidence, setEvidence] = useState(existing.evidence || null);
+  // The first task: a new one (named here) or one already on the position or above it.
+  const [use, setUse] = useState(existing.task_id && !own ? "existing" : "new");
+  const [picked, setPicked] = useState(existing.task_id || "");
+  const [available, setAvailable] = useState(null);
+  const [found, setFound] = useState(existing.on_found || "");
+  const [cost, setCost] = useState("");
+  useEffect(() => {
+    if (!loadTasks || use !== "existing" || available !== null) return undefined;
+    let on = true;
+    Promise.resolve(loadTasks()).then((out) => { if (on) setAvailable(out?.available || []); }, () => { if (on) setAvailable([]); });
+    return () => { on = false; };
+  }, [loadTasks, use, available]);
   // A combination's further tasks ([{key, outcome, task, interval, intervalUnit, taskId}]), the first
   // being the decision's own. One kind may come more than once, so each row has a key of its own.
   const nextKey = useRef(0);
@@ -125,8 +147,15 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
     }
   };
 
-  const fields = outcomeOpt?.fields || [];
-  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, fields, extras, hidden, consequence }, { limits });
+  const fields0 = outcomeOpt?.fields || [];
+  // A task of its own to name (not one shared with other modes already, not a redesign or a default action).
+  const asksTask = !!loadTasks && !sharedNote && SCHEDULED.includes(outcome);
+  const existingTask = asksTask && use === "existing";
+  // An existing task keeps its own name and interval: nothing to type for them.
+  const fields = existingTask ? fields0.filter((f) => f !== "task" && f !== "interval") : fields0;
+  const asksFound = !!loadTasks && findsSomething(outcome);
+  const check0 = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, fields, extras, hidden, consequence }, { limits });
+  const check = decisionExtrasCheck(check0, { existingTask, picked, cost: asksTask && !existingTask ? cost : "" });
   const canSave = check.blockers.length === 0;
   const needsInterval = NEEDS_INTERVAL.has(outcome) && fields.includes("interval");
   // One save at a time: a second click (or Enter) while one is on its way does nothing.
@@ -138,6 +167,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
     if (!canSave || busy.current) return;
     const decision = { outcome };
     if (outcome === "rtf") decision.rtf_basis = rtfBasis;
+    if (asksFound && found.trim()) decision.on_found = found.trim();
     if (fields.includes("task") && task.trim()) decision.task = task.trim();
     if (fields.includes("interval") && interval !== "" && !Number.isNaN(Number(interval))) {
       decision.interval = Number(interval);
@@ -149,7 +179,8 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       const first = { outcome };
       // The first task it had, by its id, while it's the same kind (members are told apart by task).
       const firstTask = Array.isArray(existing.outcomes) && existing.outcomes.length > 1 ? existing.outcomes[0] : existing;
-      if (firstTask?.task_id && firstTask.outcome === outcome) first.task_id = firstTask.task_id;
+      if (existingTask) first.task_id = picked;
+      else if (firstTask?.task_id && firstTask.outcome === outcome) first.task_id = firstTask.task_id;
       for (const k of ["task", "interval", "interval_unit"]) if (decision[k] !== undefined) first[k] = decision[k];
       if (firstOwn?.type && firstOwn?.id) first.evidence = { type: firstOwn.type, id: firstOwn.id };
       delete decision.outcome;
@@ -157,6 +188,13 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       delete decision.interval;
       delete decision.interval_unit;
       decision.outcomes = [first, ...extras.map((x) => extraBody(x, expectedOf(x.outcome)))];
+    } else if (existingTask) {
+      // One existing task: named by its id, as a one-task combination (the server's shape for it).
+      const first = { outcome, task_id: picked };
+      if (decision.on_found) first.on_found = decision.on_found;
+      delete decision.outcome;
+      delete decision.on_found;
+      decision.outcomes = [first];
     }
     // A report or a working goes with any decision; a model only with one that expects its kind
     // (or the one linked before, left as it was: the check then says why it doesn't fit).
@@ -164,7 +202,8 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       || evidence === existing.evidence) ? { type: evidence.type, id: evidence.id } : null;
     busy.current = true;
     setFailed(null);
-    const done = onSave({ hidden, consequence, decision });
+    const typedCost = asksTask && !existingTask && String(cost).trim() !== "" ? Number(cost) : null;
+    const done = onSave({ hidden, consequence, decision, ...(typedCost != null ? { cost: typedCost } : {}) });
     if (!done || typeof done.then !== "function") return;
     setSaving(true);
     try {
@@ -251,6 +290,28 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
         )}
       </div>
 
+      {asksTask && (
+        <div className="decision-step">
+          <ChoiceChips label="New or existing task" value={use}
+                       options={[{ value: "new", label: "New task" }, { value: "existing", label: "Existing task" }]}
+                       onChange={(v) => { if (v) setUse(v); }} />
+          {existingTask && (
+            available === null ? <p className="option-hint">Reading the tasks…</p>
+              : available.length === 0 ? <p className="option-hint">No other task on this position or above it: choose New task.</p>
+                : (
+                  <>
+                    <Select value={picked} onChange={setPicked} ariaLabel="Existing task" placeholder="Choose a task…"
+                            options={[...available.map((t) => ({
+                              value: t.id,
+                              label: `${t.name}${t.interval ? ` · every ${t.interval} ${t.unit || ""}`.trimEnd() : ""}${t.position?.id && t.position.id !== mode.position_id ? ` · on ${t.position.name}` : ""}`,
+                            }))]} />
+                    <p className="option-hint">It keeps its own interval and cost for every failure mode it serves.</p>
+                  </>
+                )
+          )}
+        </div>
+      )}
+
       {(fields.includes("task") || fields.includes("interval")) && (
         <div className="decision-step">
           <label className="field-label">{needsInterval ? "Task and interval (the interval is needed)" : "Task"}</label>
@@ -301,6 +362,24 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               resolve as inconclusive.
             </p>
           )}
+          {asksTask && !existingTask && (
+            <div className="field-row decision-cost">
+              <label className="field-label" htmlFor={`${id}-cost`}>Cost each time ({workspaceCurrency()}, optional)</label>
+              <input id={`${id}-cost`} type="number" inputMode="decimal" min="0" step="any" value={cost}
+                     placeholder="e.g. 180" className="interval-input"
+                     aria-invalid={check.costError ? "true" : undefined}
+                     onChange={(e) => setCost(e.target.value)} />
+            </div>
+          )}
+          {check.costError && <p className="field-error">{check.costError}</p>}
+        </div>
+      )}
+
+      {asksFound && (
+        <div className="decision-step">
+          <label className="field-label" htmlFor={`${id}-found`}>{ROLE[outcome]?.then || "Then, if found:"} (optional)</label>
+          <input id={`${id}-found`} type="text" value={found} maxLength={500} placeholder={FOUND_EMPTY}
+                 onChange={(e) => setFound(e.target.value)} />
         </div>
       )}
 

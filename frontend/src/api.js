@@ -1,6 +1,9 @@
 // Thin wrappers around the backend endpoints.
 import { loadAuth } from "./firebase.js";
 import { trackEvent } from "./telemetry.js";
+import { mappingFields } from "./lifeData.js";
+import { altFields } from "./altGuess.js";
+import { recurrentFields } from "./recurrentMapping.js";
 
 // SSE streaming (the metered assistant) is served straight from Cloud Run to
 // bypass Firebase Hosting's CDN, which buffers Server-Sent Events. Cross-origin
@@ -191,8 +194,8 @@ export function getDataReading(file, mapping, datasetId = null) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  const { x, c, n, xl, xr, c_invert, c_map } = mapping || {};
-  appendMapping(form, { x, c, n, xl, xr, c_invert, c_map });
+  const { x, c, n, xl, xr, tl, tr, c_invert, c_map } = mapping || {};
+  appendMapping(form, { x, c, n, xl, xr, tl, tr, c_invert, c_map });
   return request("/api/data-reading", { method: "POST", body: form });
 }
 
@@ -223,14 +226,7 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
 // ``c_map`` ({"Failed": 0, "Running": 1}: a status column of words), sent as
 // JSON when it has entries (#291).
 function appendMapping(form, mapping) {
-  // ``u``: a column of per-row units, sent as the ``u_col`` fit option.
-  const { c_invert, c_map, u, ...columns } = mapping || {};
-  if (u) form.append("u_col", u);
-  for (const [field, column] of Object.entries(columns)) {
-    if (column) form.append(field, column);
-  }
-  if (columns.c) form.append("c_invert", c_invert ? "1" : "0");
-  if (columns.c && c_map && Object.keys(c_map).length) form.append("c_map", JSON.stringify(c_map));
+  for (const [field, value] of mappingFields(mapping)) form.append(field, value);
 }
 
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
@@ -245,7 +241,7 @@ function appendCovariateUnits(form, covariates, units) {
   if (Object.keys(picked).length) form.append("covariate_units", JSON.stringify(picked));
 }
 
-export function fitModel(distribution, file, mapping, { covariates, covariateUnits, formula, unit, datasetId, fitOptions } = {}) {
+export function fitModel(distribution, file, mapping, { covariates, covariateUnits, formula, unit, datasetId, fitOptions, itemLives } = {}) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
@@ -258,6 +254,7 @@ export function fitModel(distribution, file, mapping, { covariates, covariateUni
     appendCovariateUnits(form, covariates, covariateUnits);
   }
   appendFitOptions(form, fitOptions);
+  if (itemLives) form.append("item_lives", "true");
   return withEvent(
     request(`/api/fit/${distribution}`, { method: "POST", body: form }),
     "model_fit"
@@ -395,11 +392,12 @@ export function saveModel(
   distribution,
   file,
   mapping,
-  { covariates, covariateUnits, formula, unit, datasetId, fitOptions } = {}
+  { covariates, covariateUnits, formula, unit, datasetId, fitOptions, itemLives } = {}
 ) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
+  if (itemLives) form.append("item_lives", "true");
   form.append("name", name);
   form.append("distribution", distribution);
   appendMapping(form, mapping);
@@ -536,13 +534,35 @@ export function compareGroups(datasetId, body) {
 // sheet and header row (headerRow 0 = none), converted to CSV server-side.
 // ``noHeader``: true / false says whether the first row is data; null lets
 // the server guess (a first row of only numbers is data, #434).
-export function uploadDataset(file, name, noHeader = null, excel = null) {
+// ``reading``: how its columns are read for modelling (datasetReading.js),
+// kept with the dataset.
+// ``libraryId``: also add the dataset to that library of yours as a snapshot (all or nothing; the
+// answer's ``library`` says what was added).
+export function uploadDataset(file, name, noHeader = null, excel = null, reading = null, libraryId = null) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
+  if (reading) form.append("reading", JSON.stringify(reading));
+  if (libraryId) form.append("library_id", libraryId);
   if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
   if (excel?.sheet) form.append("sheet", excel.sheet);
   if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
+  return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
+}
+
+// One sheet saved as several datasets, split by ``datasetCol`` (one per
+// value, named by it; "<value> – <source>" when the name is taken): the Data
+// section's upload. ``noHeader`` as for uploadDataset; an Excel sheet comes
+// already converted to CSV. Answers { datasets: [{ id, name, n_rows, reused? }],
+// left_out }.
+export function uploadSplitDatasets(file, source, datasetCol, noHeader = false, reading = null, libraryId = null) {
+  const form = new FormData();
+  form.append("file", file);
+  if (reading) form.append("reading", JSON.stringify(reading));
+  if (libraryId) form.append("library_id", libraryId);
+  if (source) form.append("name", source);
+  form.append("no_header", noHeader ? "true" : "false");
+  form.append("dataset_col", datasetCol);
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
 }
 
@@ -597,7 +617,7 @@ export async function excelToCsvFile(file, sheet, headerRow) {
 // Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
 // server-side). Used by the paste-data form and the assistant. ``noHeader``
 // as for uploadDataset (null: guessed).
-export function pasteDataset(name, content, noHeader = null) {
+export function pasteDataset(name, content, noHeader = null, reading = null, libraryId = null) {
   return withEvent(
     request("/api/datasets/paste", {
       method: "POST",
@@ -605,10 +625,52 @@ export function pasteDataset(name, content, noHeader = null) {
       body: JSON.stringify({
         name: name || "", content: content || "",
         ...(noHeader != null ? { no_header: !!noHeader } : {}),
+        ...(reading ? { reading } : {}),
+        ...(libraryId ? { library_id: libraryId } : {}),
       }),
     }),
     "dataset_upload"
   );
+}
+
+// The columns a new dataset would have (exactly as uploadDataset /
+// pasteDataset with the same fields would store them), their facts and the
+// server's guessed reading: New dataset's reading screen. Saves nothing.
+export function previewDataset(file, noHeader = null, excel = null) {
+  const form = new FormData();
+  form.append("file", file);
+  if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
+  if (excel?.sheet) form.append("sheet", excel.sheet);
+  if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
+  return request("/api/datasets/preview", { method: "POST", body: form });
+}
+
+export function previewPastedDataset(content, noHeader = null) {
+  return request("/api/datasets/preview-paste", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: content || "", ...(noHeader != null ? { no_header: !!noHeader } : {}) }),
+  });
+}
+
+// Keep a new reading for a dataset (Change on a fit, or confirming a guessed
+// one): later fits use it; models already made keep their own. Answers the
+// dataset's detail.
+// Only the reading of a dataset's measurements part ({ i, x, m, unit, m_unit }).
+export function setDatasetMeasurementsReading(id, measurements) {
+  return request(`/api/datasets/${id}/reading`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ measurements }),
+  });
+}
+
+export function setDatasetReading(id, reading) {
+  return request(`/api/datasets/${id}/reading`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reading }),
+  });
 }
 
 export function deleteDataset(id) {
@@ -1340,14 +1402,10 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name, options, w
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  form.append("i", mapping.i);
-  form.append("x", mapping.x);
-  // Optional modifiers, matching the life-data column surface.
-  // ``mode`` is each failure's mode (or cause): a growth projection (#232)
-  // and the MCF by cause (#65); ``ws``/``we`` observation-window columns.
-  ["c", "n", "tl", "tr", "t", "mode", "ws", "we"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
-  // #65: covariate columns, a model's options, windows entered by hand.
-  (mapping.z || []).forEach((col) => form.append("z", col));
+  // i, x and the optional modifiers (``mode``: each failure's mode or cause,
+  // #232 / #65; ``ws``/``we``: observation windows), then the covariates (#65):
+  // recurrentMapping.js. Then a model's options and windows entered by hand.
+  for (const [k, v] of recurrentFields(mapping)) form.append(k, v);
   if (options?.baseline) form.append("baseline", options.baseline);
   if (options?.m != null && options.m !== "") form.append("m", String(options.m));
   if (windows && String(windows).trim()) form.append("windows", windows);
@@ -1452,14 +1510,9 @@ function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, un
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  // The failure time x, or inspection data's interval xl / xr (#237).
-  ["x", "xl", "xr", "c", "n", "tl", "tr"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
-  // stress = [{col,label}, …]; s1 required, s2 optional.
-  if (stress[0]) { form.append("s1", stress[0].col); if (stress[0].label) form.append("s1_label", stress[0].label); }
-  if (stress[1]) { form.append("s2", stress[1].col); if (stress[1].label) form.append("s2_label", stress[1].label); }
-  // Optional stress units, e.g. "K" or "kV" (#265).
-  if (stress[0]?.unit?.trim()) form.append("s1_unit", stress[0].unit.trim());
-  if (stress[1]?.unit?.trim()) form.append("s2_unit", stress[1].unit.trim());
+  // The value x and/or its range xl / xr (#237), c, n, tl, tr; the stresses
+  // s1 (required) and s2, with optional labels and units (#265): altGuess.js.
+  for (const [k, v] of altFields(mapping, stress)) form.append(k, v);
   if (distribution) form.append("distribution", distribution);
   if (lifeModel) form.append("life_model", lifeModel);
   if (unit) form.append("unit", unit);
@@ -2521,8 +2574,10 @@ export function listDueTasks(horizonDays = 30) {
   return request(`/api/maintenance/due?horizon_days=${encodeURIComponent(horizonDays)}`);
 }
 
-export function generateWorkOrders(horizonDays = 30) {
-  return postJson("/api/maintenance/work-orders/generate", { horizon_days: horizonDays });
+export function generateWorkOrders(horizonDays = 30, locationId = null) {
+  return postJson("/api/maintenance/work-orders/generate", {
+    horizon_days: horizonDays, ...(locationId ? { location_id: locationId } : {}),
+  });
 }
 
 export function getWorkOrder(id) {
@@ -2694,6 +2749,10 @@ export function cancelWorkOrder(id, reason) {
 }
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
+}
+// The same task (by name) on identical positions, with their intervals ({task, twins}).
+export function getTaskTwins(id) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(id)}/twins`);
 }
 // The condition points a task's trigger can watch ({points: [{id, name, unit,
 // alarm_above, alarm_below, on: {id, name}}]}), nearest first.
@@ -3147,6 +3206,22 @@ export function importMaintenanceSheet(file, dryRun) {
   form.append("file", file);
   form.append("dry_run", dryRun ? "true" : "false");
   return request("/api/maintenance/import", { method: "POST", body: form });
+}
+
+// The asset tree in a spreadsheet (backend/maintenance/hierarchy.py): the whole tree or one
+// branch (positionId) as an Excel workbook or a CSV, and the same file back (a dry run unless
+// dryRun is false; with any problem nothing is written).
+export function downloadTreeSheet({ positionId = null, format = "xlsx" } = {}) {
+  const q = new URLSearchParams({ format });
+  if (positionId) q.set("position_id", positionId);
+  return downloadFile(`/api/maintenance/hierarchy/export?${q}`, `Asset tree.${format}`);
+}
+
+export function importTreeSheet(file, dryRun = true) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dry_run", dryRun ? "true" : "false");
+  return request("/api/maintenance/hierarchy/import", { method: "POST", body: form });
 }
 
 export function getClassEconomics(positionClass, { interval, unit, horizonYears, discountRate } = {}) {
@@ -3737,27 +3812,7 @@ export function fitDatasetWithPrior(body) {
   });
 }
 
-// ---- The user's own data libraries (backend/library/user.py) ------------------------------
-const libJson = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export function listMyLibraries() {
-  return request("/api/library/mine");
-}
-export function createLibrary({ name, description = "", notes = "" }) {
-  return request("/api/library/mine", libJson("POST", { name, description, notes }));
-}
-export function updateLibrary(libraryId, changes) {
-  return request(`/api/library/mine/${encodeURIComponent(libraryId)}`, libJson("PATCH", changes));
-}
-export function deleteLibrary(libraryId) {
-  return request(`/api/library/mine/${encodeURIComponent(libraryId)}`, { method: "DELETE" });
-}
-// A saved life model added to a library as a record (a snapshot of it now, the model linked).
-export function addModelToLibrary(libraryId, { modelId, label, equipmentType, failureMode, notes }) {
-  return request(`/api/library/mine/${encodeURIComponent(libraryId)}/records`, libJson("POST", {
-    model_id: modelId, label: label || null, equipment_type: equipmentType || "other", failure_mode: failureMode || "",
-    notes: notes || "",
-  }));
-}
+// A record of one of the user's earlier libraries (backend/library/user.py) taken out of it.
 export function removeLibraryRecord(libraryId, recordId) {
   return request(`/api/library/mine/${encodeURIComponent(libraryId)}/records/${encodeURIComponent(recordId)}`,
     { method: "DELETE" });
@@ -3794,4 +3849,60 @@ export function deleteMission(rbdId, missionId) {
 // The chance of completing it, per phase, and each phase's weakest block; `phases`: unsaved edits.
 export function calculateMission(rbdId, missionId, phases = null) {
   return request(`${missionPath(rbdId, missionId)}/calculate`, asJson("POST", phases ? { phases } : {}));
+}
+
+// ---- Libraries (backend/routers/libraries.py): the user's own libraries of data and models,
+// shared with workspaces or published, beside the built-in handbooks. Reads work signed out
+// (public libraries only); writes need sign-in.
+const libsPath = (id = null, rest = "") =>
+  `/api/libraries${id ? `/${encodeURIComponent(id)}` : ""}${rest}`;
+const libEntryPath = (id, entryId, rest = "") => libsPath(id, `/entries/${encodeURIComponent(entryId)}${rest}`);
+// {libraries: [card], signed_in, workspace_id, licences: [{id, name}]}
+export function listLibraries() {
+  return request(libsPath());
+}
+// {entries: [entry + library], builtin: [card]}; type "data" | "model".
+export function listLibraryEntries(type, q = "") {
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  if (q) params.set("q", q);
+  const s = params.toString();
+  return request(`${libsPath(null, "/entries")}${s ? `?${s}` : ""}`);
+}
+export function getLibrary(id) {
+  return request(libsPath(id));
+}
+export function getLibraryEntry(id, entryId) {
+  return request(libEntryPath(id, entryId));
+}
+// {name, description?, source?, citation?, notes?}
+export function createLibrary(body) {
+  return request(libsPath(), asJsonBody("POST", body));
+}
+export function updateLibrary(id, changes) {
+  return request(libsPath(id), asJsonBody("PATCH", changes));
+}
+// {visibility, workspaces?, licence?, source?, citation?, rights_confirmed?}
+export function setLibraryVisibility(id, body) {
+  return request(libsPath(id, "/visibility"), asJsonBody("PUT", body));
+}
+export function deleteLibrary(id) {
+  return request(libsPath(id), { method: "DELETE" });
+}
+// {dataset_id} or {model_id, collection}: a snapshot of it now. -> {entry, library}
+export function addLibraryEntry(id, body) {
+  return request(libsPath(id, "/entries"), asJsonBody("POST", body));
+}
+export function removeLibraryEntry(id, entryId) {
+  return request(libEntryPath(id, entryId), { method: "DELETE" });
+}
+export function refreshLibraryEntry(id, entryId) {
+  return request(libEntryPath(id, entryId, "/refresh"), asJsonBody("POST", {}));
+}
+// {name?, with_dataset?} -> {dataset: {id, name, url, reused} | null, model: {id, name, url} | null}
+export function copyLibraryEntry(id, entryId, body = {}) {
+  return request(libEntryPath(id, entryId, "/use"), asJsonBody("POST", body));
+}
+function asJsonBody(method, body) {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) };
 }

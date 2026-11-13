@@ -66,16 +66,17 @@ def test_right_truncated_data_fits_and_plots():
     assert result["params"][0]["value"] != pytest.approx(untruncated["params"][0]["value"])
 
 
-# build_fit_inputs no longer validates — SurPyval does, and fit() surfaces it.
-def test_fit_surfaces_x_and_interval_error():
+# x with a range is read per row (test_exact_and_ranges.py); a sheet whose
+# every row gives both can't be fitted, and says so.
+def test_fit_refuses_x_and_a_range_on_every_row():
     df = _df("a,b,c\n1,1,2\n2,2,3\n3,3,4\n")
-    with pytest.raises(FitError, match="either 'x'"):
+    with pytest.raises(FitError, match="Every row has x"):
         fit("weibull", df, {"x": "a", "xl": "b", "xr": "c"})
 
 
 def test_fit_surfaces_negative_value_error():
     df = _df("x\n-1\n2\n3\n4\n")
-    with pytest.raises(FitError, match="support"):
+    with pytest.raises(FitError, match="out of range"):
         fit("weibull", df, {"x": "x"})
 
 

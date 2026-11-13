@@ -1,7 +1,7 @@
 // The Explorer's row menu on the Summary tab (right-click a row, its ⋯
 // button, or Shift+F10): changing the tree itself. New position (or location)
 // inside, Add failure report… (a position: a report sits at a position),
-// Rename, Move to… and Delete…, beside Focus › and Pin this branch. The RCM
+// Rename, Move to…, Export this branch… (to Excel) and Delete…, beside Focus › and Pin this branch. The RCM
 // tab's rows keep their own menu (explorerRcm.js rowActions).
 //
 // On every other tab a row's menu starts with what that tab keeps under it
@@ -42,6 +42,8 @@ export function viewOnlyReason(team) {
 // workspace can't be changed (every change greyed), else null. Pin this
 // branch is added by the page.
 const DELETE = { id: "tree-delete", label: "Delete…", danger: true };
+export const POS_HERE = { id: "pos-here", label: "New position here" };
+export const TREE_EXPORT = { id: "tree-export", label: "Export this branch…" };
 export function summaryActions(r, { mode, viewOnly = null } = {}) {
   if (!r) return [];
   const out = [];
@@ -57,8 +59,15 @@ export function summaryActions(r, { mode, viewOnly = null } = {}) {
       out.push(write({ id: "tree-move", label: "Move to…" },
         viewOnly || (r.ref.carried_by ? "It sits on an item and moves with it: fit the item elsewhere to move it." : null)));
     }
+    // To Excel (TreeSheetPane): reading, so never greyed for a view-only team. Not a position
+    // an item carries (it goes with its item's tree).
+    if (!r.ref.carried_by) out.push(TREE_EXPORT);
     out.push(write(DELETE, viewOnly));
   } else if (r.type === "loc") {
+    // A place you look after holds positions (Derryn, 12 Nov 2026: "New asset" makes a place that
+    // can hold equipment): New position here, the position at this place. Not on a product's
+    // layout or a place an item carries (products.js designActions takes it off a design's).
+    if (!r.ref?.design_of && !r.ref?.carried_by) out.push(write(POS_HERE, viewOnly));
     out.push(write({ id: "tree-new", label: "New location inside" }, viewOnly));
     out.push(write({ id: "tree-rename", label: "Rename…" }, viewOnly));
     out.push(write({ id: "tree-move", label: "Move to…" }, viewOnly));
@@ -117,7 +126,7 @@ export const showsAddRow = (tab) => !tab || tab === "summary";
 //   A tab with nothing of its own for it: New … inside, Rename…, Move to… and
 //   Delete… go last, after Focus and Pin (they change the tree, not what the
 //   tab shows), so the tab never opens on New position inside.
-const TREE_CHANGES = ["tree-new", "tree-rename", "tree-move", "tree-delete"];
+const TREE_CHANGES = ["pos-here", "tree-new", "tree-rename", "tree-move", "tree-delete"];
 export function tabMenu(tab, items, { lead = [], pin = [] } = {}) {
   if (!tab || tab === "summary") return withPin(items, pin);
   const ids = TAB_LEADS[tab] || [];

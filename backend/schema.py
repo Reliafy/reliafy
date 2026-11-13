@@ -51,6 +51,12 @@ class Dataset(BaseModel):
     data: bytes = b""  # raw CSV bytes (excluded from API responses)
     notes: Optional[str] = None  # free-text annotation (set over MCP: change dataset_update)
     measurements: Optional[DatasetPart] = None
+    # How the columns are read for modelling (x, c, n, … and the covariates
+    # Z), kept from upload: backend/services/dataset_reading.py. None for a
+    # dataset saved before readings: one is derived on read, never written.
+    reading: Optional[dict] = None
+    # Where a copy came from: {library_id, library_name, entry_id, version} (backend/library/entries.py).
+    from_library: Optional[dict] = None
 
 
 class Model(BaseModel):
@@ -61,6 +67,7 @@ class Model(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     dataset_id: str = ""
+    from_library: Optional[dict] = None  # where a copy came from (backend/library/entries.py)
 
     kind: str = "distribution"  # 'distribution' | 'regression'
     distribution_id: str = ""
@@ -148,6 +155,7 @@ class RecurrentModelDoc(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     dataset_id: str = ""
+    from_library: Optional[dict] = None  # where a copy came from (backend/library/entries.py)
     spec: dict = Field(default_factory=dict)
     results: dict = Field(default_factory=dict)
     serialized: Optional[dict] = None  # persisted fit; rehydrated w/o refit
@@ -174,6 +182,7 @@ class AltModelDoc(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     dataset_id: str = ""
+    from_library: Optional[dict] = None  # where a copy came from (backend/library/entries.py)
     spec: dict = Field(default_factory=dict)
     results: dict = Field(default_factory=dict)
     serialized: Optional[dict] = None  # persisted fit; rehydrated w/o refit

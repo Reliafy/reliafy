@@ -4,11 +4,12 @@ import { CloseIcon } from "./icons.jsx";
 import { unitAbbr } from "./rbdModelText.js";
 import { costLabel, workspaceCurrency } from "../money.js";
 import {
-  RESTORATIONS, TASKS, costText, dutyText, dutyWords, fmt, hasDuty, intervalBasis, operatingAllowed, parseCost,
-  parseDuty, parseNumber, planColumns, planCounts, planRows, rowProblems, schedule, setCrewPriority, setDuty,
+  PENDING_WORDS, RESTORATIONS, TASKS, costText, dutyText, dutyWords, fmt, hasDuty, intervalBasis, operatingAllowed, parseCost,
+  parseDuty, parseNumber, parsePercent, percentText, planColumns, planCounts, planRows, rowProblems, schedule, setCrewPriority, setDuty,
   setGroup, setInterval, setIntervalBasis, setScheduleField, setTask, taskLabel, taskOf, toCalendar,
 } from "../rbdMaintenancePlan.js";
-import { mergeTreeData, setTreeSetting, treeRowProblems, treeTaskPath } from "../rbdTreePlan.js";
+import { goneText, mergeTreeData, setTreeSetting, treeRowProblems, treeTaskPath } from "../rbdTreePlan.js";
+import { packagePath } from "../maintenanceOrders.js";
 import "../views/Maintenance.css";
 import "./RbdMaintenancePlan.css";
 
@@ -21,7 +22,8 @@ import "./RbdMaintenancePlan.css";
 //   nodes, unit        the diagram's nodes and time unit
 //   crews              limited repair crews are set (the crew column shows)
 //   groupNames         the maintenance groups in use (the group field suggests them)
-//   selected           ids of the component blocks selected on the canvas (filters the table)
+//   selected           ids of the component blocks selected on the canvas (Show only them narrows
+//                      the table to them; it opens on every block)
 //   onChange(id, data) a block's new data      onShowAll()  clear the selection
 //   onCrewsAndGroups() open Crews and groups…  onClose()
 //   tree               the diagram's plan read from the tree (rbdTreePlan.js; null: none): a block
@@ -35,7 +37,11 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
                                              onChange, onShowAll, onCrewsAndGroups, onClose, tree = null,
                                              onTreeLink = null, onExpand = null }) {
   const all = planRows(nodes);
-  const filtered = selected.length ? all.filter((r) => selected.includes(r.id)) : all;
+  // Every block at first (a block picked on the canvas no longer hides the rest); "Show only the
+  // selected" narrows it when asked.
+  const [onlySelected, setOnlySelected] = useState(false);
+  const picked = all.filter((r) => selected.includes(r.id));
+  const filtered = onlySelected && picked.length ? picked : all;
   // Counted as calculated: a tree-linked block with its position's task.
   const counts = planCounts(all.map((r) => {
     const t = tree?.blocks?.[r.id];
@@ -95,6 +101,11 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
           you set only what belongs to the diagram (duty, crew priority, a few settings under More).
         </p>
       )}
+      {tree?.gone?.length > 0 && (
+        <p className="rbd-plan-tree rbd-plan-gone" role="note">
+          <b>{goneText(tree.gone, tree.position?.name)}</b>
+        </p>
+      )}
       {subsystems.length > 0 && (
         <div className="rbd-plan-subs" role="note">
           <p>
@@ -112,10 +123,20 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
         </div>
       )}
       {expanding.said && !subsystems.length && <p className="rbd-plan-tree" role="status">{expanding.said}</p>}
-      {selected.length > 0 && (
+      {tree?.shutdowns?.length > 0 && <Shutdowns shutdowns={tree.shutdowns} unit={u} onTreeLink={onTreeLink} />}
+      {picked.length > 0 && picked.length < all.length && (
         <p className="rbd-plan-filter">
-          Showing the {filtered.length === 1 ? "selected block" : `${filtered.length} selected blocks`}.{" "}
-          <button type="button" className="link" onClick={onShowAll}>Show all {all.length}</button>
+          {onlySelected ? (
+            <>
+              Showing the {picked.length === 1 ? "selected block" : `${picked.length} selected blocks`}.{" "}
+              <button type="button" className="link" onClick={() => { setOnlySelected(false); onShowAll?.(); }}>Show all {all.length}</button>
+            </>
+          ) : (
+            <>
+              {picked.length === 1 ? "1 block is" : `${picked.length} blocks are`} selected on the diagram.{" "}
+              <button type="button" className="link" onClick={() => setOnlySelected(true)}>Show only {picked.length === 1 ? "it" : "them"}</button>
+            </>
+          )}
         </p>
       )}
       {all.length === 0 ? (
@@ -151,7 +172,9 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
         </div>
       )}
       <p className="muted rbd-plan-note">
-        Every task leaves the block as good as new.{" "}
+        {restoring(tree)
+          ? `Results take every task as leaving the block as good as new until the next library update; the restorations saved in the tree are used then. `
+          : "Every task leaves the block as good as new. "}
         {standby ? "Standby groups take no planned work, so they aren't listed. " : ""}
         Times are in {unit ? unit.toLowerCase() : "the diagram's unit"}; the Calculator splits downtime and cost into planned and unplanned.
       </p>
@@ -283,6 +306,10 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
 
 const RESTORE_WORDS = { as_new: RESTORATIONS.as_new };
 
+// Whether a tree-linked block's task restores it only partly while the results can't use it yet.
+const restoring = (tree) => Object.values(tree?.blocks || {}).some((b) => b.restoration && b.restoration.kind !== "as_new"
+  && !(b.plan && b.plan.restoration));
+
 // A block standing for a position: its maintenance is its position's task, read from the tree and
 // shown, not edited, here ("Edit in the tree"); the RBD's own settings for it (duty, crew priority,
 // and under More what the task can't say) are edited as on any row.
@@ -300,6 +327,9 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
   const extras = plan && (plan.task === "condition" || plan.task === "test" || plan.task === "age");
   const num = (v, suffix = u) => (v == null ? <span className="muted">—</span> : <>{fmt(v)}{suffix ? ` ${suffix}` : ""}</>);
   const others = tree.tasks.filter((t) => !t.used);
+  const pending = tree.pending || [];
+  const pendingRestoration = tree.restoration && tree.restoration.kind !== "as_new" && pending.length > 0
+    && !(tree.plan && tree.plan.restoration);
   return (
     <tbody className={"rbd-plan-block is-tree" + (problems.length ? " has-problem" : "")}>
       <tr>
@@ -317,6 +347,7 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
             <span aria-hidden="true">%</span>
           </span>
           <small className="muted">{hasDuty(data) && data.duty < 1 ? dutyWords(data.duty, unit).replace(/^Runs \S+ of the time · /, "") : "all the time"}</small>
+          <DutyProposal proposal={tree.duty_proposal} data={data} name={name} onChange={onChange} />
         </td>
         <td className="rbd-plan-tree-task">
           {plan ? (
@@ -349,9 +380,13 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
             </>
           ) : plan.cost == null ? <span className="muted">—</span> : fmt(plan.cost)}
         </td>
-        <td>
-          {tree.restoration ? <span title={tree.restoration.note}>{RESTORE_WORDS[tree.restoration.kind] || tree.restoration.kind}</span>
-            : <span className="muted">—</span>}
+        <td className="rbd-plan-restores">
+          {tree.restoration ? (
+            <>
+              <span title={tree.restoration.note}>{tree.restoration.words || RESTORE_WORDS[tree.restoration.kind] || tree.restoration.kind}</span>
+              {pendingRestoration && <small className="rbd-plan-pending" title={PENDING_WORDS}>saved · calculated as new for now</small>}
+            </>
+          ) : <span className="muted">—</span>}
         </td>
         <td>
           {plan?.group ? <span title="From the task's work package">{plan.group}</span>
@@ -392,6 +427,7 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
             {others.length > 0 && <span className="muted"> · also on {pos.name}, not modelled: {others.map((t) => t.name).join(", ")}</span>}
             {[...tree.flags, ...tree.notes.filter((n) => !/a block takes one today/.test(n)), ...(tree.repair_missing ? [tree.repair_missing] : [])]
               .map((t) => <span key={t} className="rbd-plan-flag"> {t}</span>)}
+            {pending.map((t) => <span key={t} className="rbd-plan-pending"> {t}</span>)}
           </span>
         </td>
       </tr>
@@ -404,12 +440,61 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
   );
 }
 
+// The Runs % the position's running-hours meter suggests ("Runs 25% of the time"): a proposal beside
+// the block's own (data.duty), applied only when the user says so.
+function DutyProposal({ proposal, data, name, onChange }) {
+  if (!proposal) return null;
+  const same = hasDuty(data) ? Math.abs(Number(data.duty) - proposal.duty) < 0.0005 : proposal.duty >= 0.9995;
+  return (
+    <small className="rbd-plan-proposal" title={`${proposal.words}, ${proposal.basis}`}>
+      Meter: {proposal.percent}%
+      {!same && (
+        <button type="button" className="link" onClick={() => onChange(setDuty(data, proposal.duty))}
+                aria-label={`${name}: set Runs from the meter, ${proposal.words.toLowerCase()}`}>Use</button>
+      )}
+    </small>
+  );
+}
+
+// The shutdowns on the diagram's position or inside it (work packages that are shutdowns, read from
+// the tree like the tasks): when, how long, what they take down, and the blocks done at each.
+function Shutdowns({ shutdowns, unit, onTreeLink }) {
+  return (
+    <div className="rbd-plan-shuts" role="group" aria-label="Shutdowns">
+      <h4>Shutdowns</h4>
+      <ul>
+        {shutdowns.map((s) => {
+          const path = packagePath(s.package.id);
+          return (
+            <li key={s.package.id}>
+              <Link to={path} onClick={(e) => onTreeLink?.(e, path)}><strong>{s.name}</strong></Link>
+              {" "}<span className="muted">on {s.position.name} · {s.when}{s.next ? ` · next ${s.next}` : ""} · {s.words}</span>
+              <span className="muted">
+                {" · takes down "}{s.scope ? (s.scope.length ? s.scope.map((b) => b.label).join(", ") : "no block here") : "the whole system"}
+                {s.spec ? ` (${fmt(s.spec.duration)} ${unit} each time)` : ""}
+              </span>
+              {s.blocks.length > 0 && (
+                <span className="muted"> · done at it: {s.blocks.map((b) => b.label + (b.older_than ? ` (if older than ${b.older_than.value} ${b.older_than.unit})` : "")).join(", ")}</span>
+              )}
+              {s.flags.map((f) => <span key={f} className="rbd-plan-flag"> {f}</span>)}
+              {s.pending && <span className="rbd-plan-pending"> {s.pending} Until then the results have no shutdowns.</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// Chances and shares, typed as percentages and kept as fractions.
+const PERCENT_KEYS = new Set(["threshold", "coverage"]);
+
 // The RBD's own settings for a tree-linked block: what its task can't say.
 function TreeFields({ data, task, name, u, settings, onChange }) {
   const field = (key, label, hint, parse) => (
     <label className="rbd-plan-field">
       <span>{label}</span>
-      <DraftInput value={key === "cost" ? costText(settings[key]) : String(settings[key] ?? "")} parse={parse}
+      <DraftInput value={key === "cost" ? costText(settings[key]) : PERCENT_KEYS.has(key) ? percentText(settings[key]) : String(settings[key] ?? "")} parse={parse}
                   placeholder="—" label={`${name}: ${label.toLowerCase()}`} className="rbd-plan-num"
                   onCommit={(v) => onChange(setTreeSetting(data, key, v))} />
       {hint && <small className="muted">{hint}</small>}
@@ -417,12 +502,12 @@ function TreeFields({ data, task, name, u, settings, onChange }) {
   );
   return (
     <div className="rbd-plan-fields">
-      {task === "condition" && field("threshold", "Replace above", "chance of failing before the next inspection, e.g. 0.05", (t) => parseNumber(t, { max: 1 }))}
+      {task === "condition" && field("threshold", "Replace above (%)", "chance of failing before the next inspection, e.g. 5", parsePercent)}
       {task === "condition" && field("cost", "Replacement cost", "the inspection task's cost is the inspection's", parseCost)}
       {task === "condition" && field("duration", "Replacement takes", `${u} off-line`, (t) => parseNumber(t))}
       {task === "age" && field("opportunity", "Renew early from age", `${u} · at a stop of its group`, (t) => parseNumber(t))}
       {task === "test" && field("offset", "First test at", `${u} · stagger redundant channels`, (t) => parseNumber(t))}
-      {task === "test" && field("coverage", "Coverage", "share of failures a test finds · blank = all", (t) => parseNumber(t, { max: 1 }))}
+      {task === "test" && field("coverage", "Coverage (%)", "share of failures a test finds · blank = all", parsePercent)}
       {task === "test" && Number(settings.coverage) < 1 && settings.coverage != null &&
         field("full_test", "Full test every", `${u} · a multiple of the test interval`, (t) => parseNumber(t, { positive: true }))}
     </div>
@@ -436,7 +521,7 @@ function ExtraFields({ data, task, name, u, onChange }) {
   const field = (key, label, hint, parse, extra = {}) => (
     <label className="rbd-plan-field">
       <span>{label}</span>
-      <DraftInput value={key === "inspection_cost" ? costText(s[key]) : String(s[key] ?? "")} parse={parse}
+      <DraftInput value={key === "inspection_cost" ? costText(s[key]) : PERCENT_KEYS.has(key) ? percentText(s[key]) : String(s[key] ?? "")} parse={parse}
                   placeholder="—" label={`${name}: ${label.toLowerCase()}`} className="rbd-plan-num" {...extra}
                   onCommit={(v) => onChange(setScheduleField(data, key, v))} />
       {hint && <small className="muted">{hint}</small>}
@@ -444,12 +529,12 @@ function ExtraFields({ data, task, name, u, onChange }) {
   );
   return (
     <div className="rbd-plan-fields">
-      {task === "condition" && field("threshold", "Replace above", "chance of failing before the next inspection, e.g. 0.05",
-        (t) => parseNumber(t, { max: 1 }))}
+      {task === "condition" && field("threshold", "Replace above (%)", "chance of failing before the next inspection, e.g. 5",
+        parsePercent)}
       {task === "condition" && field("inspection_cost", "Cost per inspection", "optional", parseCost)}
       {task === "age" && field("opportunity", "Renew early from age", `${u} · at a stop of its group`, (t) => parseNumber(t))}
       {task === "test" && field("offset", "First test at", `${u} · stagger redundant channels`, (t) => parseNumber(t))}
-      {task === "test" && field("coverage", "Coverage", "share of failures a test finds · blank = all", (t) => parseNumber(t, { max: 1 }))}
+      {task === "test" && field("coverage", "Coverage (%)", "share of failures a test finds · blank = all", parsePercent)}
       {task === "test" && Number(s.coverage) < 1 && s.coverage != null &&
         field("full_test", "Full test every", `${u} · a multiple of the test interval`, (t) => parseNumber(t, { positive: true }))}
     </div>

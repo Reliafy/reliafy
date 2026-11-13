@@ -221,12 +221,12 @@ def auto_status(df: pd.DataFrame, *, time_column: str, group_column: str, censor
     "event"), which is 1 when the unit failed."""
     if censor_column or cause_column or all_failed:
         return censor_column, None, False
-    from backend.services.datasets import _FAILED_NAME_RE, status_column
+    from backend.services.datasets import one_means_failed, status_column
 
     found = status_column(df, skip={time_column, group_column})
     if not found:
         return None, None, False
-    invert = bool(_numeric_flags(df[found])) and bool(_FAILED_NAME_RE.fullmatch(found.strip()))
+    invert = bool(_numeric_flags(df[found])) and one_means_failed(found)
     return found, (f"“{found}” was read as which units failed and which were still running"
                    f"{' (1 = failed)' if invert else ''}. If every row really is a failure, say so (all_failed) "
                    "and it is left out."), invert

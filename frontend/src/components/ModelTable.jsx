@@ -36,12 +36,13 @@ export { MODEL_TREE_HEAD } from "../explorerModels.js";
 
 // Every attached model, read when the tab is on (and again on `load`).
 export function useTreeModels({ on }) {
-  const [state, setState] = useState({ links: null, error: null });
+  const [state, setState] = useState({ links: null, classModels: null, error: null });
   const load = useCallback(() => listPositionModels()
-    .then((d) => setState({ links: d.links || [], error: null }))
-    .catch((e) => setState((s) => ({ links: s.links, error: e.message }))), []);
+    .then((d) => setState({ links: d.links || [], classModels: d.class_models || {}, error: null }))
+    .catch((e) => setState((s) => ({ ...s, error: e.message }))), []);
   useEffect(() => { if (on) load(); }, [on, load]);
-  return { links: state.links, error: state.error, load };
+  // classModels: {class name: {model_id, failures, failures_now}}, the classes with a fitted model.
+  return { links: state.links, classModels: state.classModels, error: state.error, load };
 }
 
 const QUALITY_TONE = { success: "success", warning: "warning", neutral: "neutral" };
@@ -299,16 +300,24 @@ function RbdDetails({ d, model, age, onAge }) {
       <h3 className="ml-h">Blocks</h3>
       <div className="maint-scroll">
         <table className="ml-params ml-blocks">
-          <thead><tr><th>Block</th><th>Model</th><th>Where its model came from</th><th>From</th></tr></thead>
+          {/* Two columns (block, model) so the narrow panel doesn't wrap each cell onto five lines;
+              where the model came from and the position are on hover and for screen readers. */}
+          <thead><tr><th>Block</th><th>Model</th></tr></thead>
           <tbody>
-            {blocks.map((b) => (
-              <tr key={b.id}>
-                <td>{b.label}</td>
-                <td>{b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}</td>
-                <td>{b.placeholder ? "No model in use, from its class or inside it" : b.source || <span className="rw-blank">—</span>}</td>
-                <td>{b.position ? b.position.name : <span className="rw-blank">—</span>}</td>
-              </tr>
-            ))}
+            {blocks.map((b) => {
+              const where = b.placeholder ? "No model in use, from its class or inside it" : b.source || "";
+              const from = b.position && b.position.name !== b.label ? `position ${b.position.name}` : "";
+              const hover = [where, from].filter(Boolean).join(" · ");
+              return (
+                <tr key={b.id} title={hover || undefined}>
+                  <td>{b.label}</td>
+                  <td>
+                    {b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}
+                    {hover && <span className="sr-only">. {hover}</span>}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

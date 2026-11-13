@@ -63,7 +63,7 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
 
   // The menu: the changes, then Isolate and Pin this branch, then Delete (never greyed for what's inside).
   let menu = await menuOf(page, `Menu circulation ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Export this branch…", "Focus", "Pin this branch", "Delete…"]);
   await expect(menu.getByRole("menuitem", { name: "New position inside" })).toBeFocused();
   await expect(menu.getByRole("menuitem", { name: "Delete…" })).not.toHaveAttribute("aria-disabled", "true");
   await shot(page, "rowmenu-1-summary-row-menu-1280");
@@ -181,7 +181,7 @@ test("Locations: a location's menu has new inside, rename, move and delete; at 4
   await page.setViewportSize({ width: 1280, height: 720 });
   await open(page, `/asset-register/explorer?arrange=locations&sel=${p.shed.id}`);
   let menu = await menuOf(page, `Menu shed ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New location inside", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position here", "New location inside", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
   const dialog = page.getByRole("dialog", { name: `Move “Menu shed ${tag}”` });
   await dialog.getByRole("combobox").selectOption(p.store.id);
@@ -235,7 +235,7 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   await expect(addRow).toHaveCount(0);
   let menu = await menuOf(page, `Menu circulation ${tag}`);
   await expect(menu.getByRole("menuitem")).toHaveText(
-    ["Package the tasks here…", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
+    ["Package the tasks here…", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Export this branch…", "Focus", "Pin this branch", "Delete…"]);
   await expect(menu.getByRole("menuitem", { name: "Package the tasks here…" })).toBeFocused();
   await shot(page, "rowmenu-5-lsa-row-menu-1440");
 

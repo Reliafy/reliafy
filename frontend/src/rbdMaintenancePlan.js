@@ -14,9 +14,11 @@
 // plain note (the backend does the same, and is the judge).
 import { hoursPerUnit, unitAbbr } from "./components/rbdModelText.js";
 
-// What the library supports today. Kijima restoration and shutdowns come with a later RePyability
-// release: their columns and rows appear only once these say so, never as placeholders.
+// What the installed library takes, when the server doesn't say (a tree plan carries its own
+// `supports`, found by capability). Restoration and shutdowns saved in the tree before the library
+// takes them are shown with PENDING_WORDS and calculated with what it can (as new, no shutdowns).
 export const PLAN_SUPPORTS = Object.freeze({ restoration: ["as_new"], shutdowns: false });
+export const PENDING_WORDS = "Saved — used in results once the next library update is in.";
 export const RESTORATIONS = { as_new: "As new", kijima1: "Kijima I", kijima2: "Kijima II" };
 
 export const TASKS = [
@@ -113,6 +115,18 @@ export function costText(v) {
 }
 
 // A plain number field: blank, or a non-negative (or positive) number.
+// A chance or a share typed as a percentage ("5", "5%") and kept as a fraction (0.05), as the
+// diagram stores it; and back for the box. Blank is none.
+export const THRESHOLD_NEEDED = "Set the replacement threshold: the chance of failing before the next inspection, as a % (e.g. 5%).";
+export function parsePercent(text) {
+  const t = String(text ?? "").trim().replace(/%$/, "").trim();
+  if (!t) return { value: null, error: null };
+  const x = Number(t);
+  if (!Number.isFinite(x) || x < 0 || x > 100) return { value: null, error: "Enter a percentage from 0 to 100." };
+  return { value: Number((x / 100).toPrecision(12)), error: null };
+}
+export const percentText = (v) => (finite(v) ? String(Number((Number(v) * 100).toPrecision(6))) : "");
+
 export function parseNumber(text, { positive = false, max = null } = {}) {
   const t = String(text ?? "").trim();
   if (!t) return { value: null, error: null };
@@ -168,7 +182,7 @@ export function setScheduleField(data, key, value) {
 }
 
 // Set the interval, on the calendar or in operating time. In operating time the calendar interval
-// follows from the duty; with no duty it's left unset (and the row says what to do).
+// follows from the duty; with Runs blank the block runs all the time, so it's the same number.
 export function setInterval(data, value, basis = "calendar") {
   const which = data.inspection ? "inspection" : data.preventive ? "preventive" : null;
   if (!which) return data;
@@ -177,7 +191,7 @@ export function setInterval(data, value, basis = "calendar") {
     if (value == null) delete next.interval;
     return { ...data, [which]: next };
   }
-  const calendar = hasDuty(data) ? toCalendar(value, Number(data.duty)) : null;
+  const calendar = hasDuty(data) ? toCalendar(value, Number(data.duty)) : value;
   const next = { ...data.preventive, operating_interval: value, interval: calendar };
   if (value == null) delete next.operating_interval;
   if (calendar == null) delete next.interval;
@@ -224,19 +238,16 @@ export function rowProblems(data = {}, unit = "") {
   const s = schedule(data) || {};
   const operating = intervalBasis(data) === "operating";
   if (operating) {
+    // Runs blank is "all the time": running time is calendar time, nothing more to set.
     if (!finite(s.operating_interval) || Number(s.operating_interval) <= 0) out.push("Set how often, in running time.");
-    else if (!hasDuty(data)) {
-      out.push(operatingAllowed(unit)
-        ? "Set how much of the time it runs (Runs %) to turn running time into calendar time, or give the interval on the calendar."
-        : "Running time needs the diagram in a time unit (hours, days, …).");
-    }
+    else if (!operatingAllowed(unit)) out.push("Running time needs the diagram in a time unit (hours, days, …).");
   } else if (!finite(s.interval) || Number(s.interval) <= 0) {
     out.push(task === "condition" ? "Set how often it's inspected." : task === "test" ? "Set how often it's tested." : "Set how often it's replaced.");
   }
   const every = Number(s.interval);
   if (task === "condition") {
     const th = Number(s.threshold);
-    if (!finite(s.threshold) || th < 0 || th > 1) out.push("Set the replacement threshold: a probability from 0 to 1 (e.g. 0.05).");
+    if (!finite(s.threshold) || th < 0 || th > 1) out.push(THRESHOLD_NEEDED);
   }
   if (task === "age" && !isBlank(s.opportunity)) {
     if (isBlank(data.maintenance_group)) out.push("Early renewal at a group stop needs a maintenance group.");

@@ -33,6 +33,9 @@ for (const [tab, path, answer] of TABS) {
     await open(page, "/strategy/test-planning");
     await page.getByRole("tab", { name: tab }).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
+    // Tabs stay mounted once visited (#822): wait for this tab's render, or Compute can
+    // resolve to the Demonstration tab's button just before it is hidden.
+    await expect(page.getByRole("tab", { name: tab })).toHaveAttribute("aria-selected", "true");
     await page.getByRole("button", { name: "Compute" }).click();
     await expect(page.locator(".rs-sentence")).toContainText(answer, { timeout: 30_000 });
     await expectHealthy(page, problems, { label: `${tab} plan`, chart: true });

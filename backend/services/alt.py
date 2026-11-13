@@ -56,6 +56,9 @@ def _with_evaluate_path(results: dict, model_id: str) -> dict:
 
 def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> AltModelDoc:
     """Fit and persist an ALT model. Raises ``FitError`` on a bad fit."""
+    from backend.services import dataset_reading
+
+    spec = dataset_reading.with_reading(spec, dataset)
     df = datasets_service.load_dataframe(dataset)
     # A temperature in °C or °F is fitted in kelvin (and a bare one that reads
     # as °C refused): the spec keeps how, so every refit converts the same way.

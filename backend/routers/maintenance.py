@@ -1091,6 +1091,17 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "cost" in body:
             # What it costs each time, typed (null: its LSA's figure again).
             view = m.set_task_cost(task_id, body["cost"])
+        if "restoration" in body:
+            # What a fixed-interval task leaves the item as (null: as new); failure_mode_id inside it:
+            # that mode's decision only.
+            given = dict(body["restoration"] or {})
+            view = m.set_task_restoration(task_id, given or None, failure_mode_id=given.pop("failure_mode_id", None))
+        if "basis" in body:
+            # operating: its interval counts running hours; calendar or null: by its unit.
+            view = m.set_task_basis(task_id, body["basis"])
+        if "older_than" in body:
+            # At a shutdown, only on an item older than {value, unit} (null: every shut).
+            view = m.set_task_older_than(task_id, body["older_than"])
         if view is None:
             raise Invalid("Nothing to change.")
         return view
@@ -1109,6 +1120,14 @@ def set_trade_rate(body: dict = Body(...), m: Maintenance = Depends(maintenance_
     """A trade's hourly rate ({trade, rate}; rate null clears it), for every task whose labour uses it.
     Also over MCP and the CLI: maintenance tasks.set_resources trade_rates."""
     return _run(m.set_trade_rate, body.get("trade"), body.get("rate"))
+
+
+@router.get("/tasks/{task_id}/twins")
+def task_twins(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The same task (by name) on identical positions: the same position class, or with no class
+    the same parent and a name that differs only in its last letter or number. Each with its
+    interval and unit and whether they match this task's (same)."""
+    return _run(m.task_twins, task_id)
 
 
 @router.get("/tasks/{task_id}/lsa")
@@ -1148,11 +1167,20 @@ def retire_task(task_id: str, body: dict = Body(default={}), m: Maintenance = De
 
 
 @router.post("/positions/{position_id}/retire")
-def retire_position(position_id: str, body: dict = Body(default={}),
+def retire_position(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                    ctx: AccessCtx = Depends(get_access),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go.
-    return _run(m.retire_position, position_id, body.get("reason", ""), bool(body.get("cascade")),
-                bool(body.get("dry_run")))
+    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go,
+    # and name the RBDs built from the tree that have blocks for it (rbds: they keep them).
+    from backend.maintenance import rbd_tree_plan as tp
+
+    def run():
+        out = m.retire_position(position_id, body.get("reason", ""), bool(body.get("cascade")), bool(body.get("dry_run")))
+        if body.get("dry_run") and isinstance(out, dict):
+            out = {**out, "rbds": tp.rbds_holding(m, session, ctx.read_owners, ctx.hidden, position_id)}
+        return out
+
+    return _run(run)
 
 
 @router.post("/fitments/{fitment_id}/void")
@@ -1247,7 +1275,10 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
-    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids))})
+    # class_models: the classes with a fitted model, so a position of one with no model of its own
+    # can say so (From the class…), and whether the class has failed again since its fit.
+    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids)),
+                         "class_models": m.class_models()})
 
 
 @router.get("/position-missions")
@@ -1262,10 +1293,18 @@ def position_missions(position_ids: str | None = None, session=Depends(get_sessi
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
+
+    def read():
+        rows = m.all_position_models(ids)
+        has = pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden, rows)
+        # other_model: positions with a model in use that can't be a block (a condition-and-life
+        # model, say), so the tab can say why there's no Add a mission there.
+        other = sorted({x["position_id"] for x in rows if x.get("in_use") and x.get("model_type") != "rbd"} - set(has))
+        return {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
+                "has_model": has, "other_model": other}
+
     # has_model: positions whose model in use a mission's one-block RBD can take (a leaf's Add a mission).
-    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
-                         "has_model": pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden,
-                                                             m.all_position_models(ids))})
+    return _run(read)
 
 
 @router.post("/positions/{position_id}/missions")
@@ -1546,6 +1585,48 @@ async def import_sheet(file: UploadFile = File(...), dry_run: bool = Form(False)
     except Exception:  # noqa: BLE001 - an unreadable file
         return JSONResponse(status_code=422, content={"detail": "That file couldn't be read as CSV or Excel."})
     return await run_in_threadpool(_run, importer.run, m, rows, dry_run)
+
+
+@router.get("/hierarchy/export")
+def export_hierarchy(position_id: str | None = None, format: str = "xlsx",
+                     m: Maintenance = Depends(maintenance)) -> Response:
+    """The asset tree (or the branch at position_id) as the Excel workbook (Hierarchy,
+    Locations, Classes, Read me) or a CSV of the Hierarchy sheet (see hierarchy.py)."""
+    from backend.maintenance import hierarchy
+
+    if format not in ("xlsx", "csv"):
+        return JSONResponse(status_code=422, content={"detail": "format is xlsx or csv."})
+    try:
+        data = hierarchy.export(m, position_id or None)
+    except NotFound:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    except Invalid as err:
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
+    body = hierarchy.to_xlsx(data) if format == "xlsx" else hierarchy.to_csv(data)
+    media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if format == "xlsx"
+             else "text/csv; charset=utf-8")
+    name = hierarchy.filename(data, format, m.today())
+    return Response(content=body, media_type=media, headers={
+        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
+@router.post("/hierarchy/import")
+async def import_hierarchy(file: UploadFile = File(...), dry_run: bool = Form(True),
+                           m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The asset tree from the export's workbook or CSV (or a sheet made by hand with
+    its columns): every row checked, then all of it or nothing (see hierarchy.py)."""
+    from backend.maintenance import hierarchy
+
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        return JSONResponse(status_code=413, content={"detail": "The file is over 10 MB."})
+    try:
+        sheets = await run_in_threadpool(hierarchy.read_file, data, file.filename or "")
+    except Invalid as err:
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
+    except Exception:  # noqa: BLE001 - an unreadable file
+        return JSONResponse(status_code=422, content={"detail": "That file couldn't be read as Excel or CSV."})
+    return await run_in_threadpool(_run, hierarchy.run, m, sheets, dry_run)
 
 
 @router.get("/classes")
@@ -2053,9 +2134,10 @@ def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance
 
 
 @router.post("/work-orders/generate")
-def generate_work_orders(horizon_days: int = Body(30, embed=True),
+def generate_work_orders(horizon_days: int = Body(30, embed=True), location_id: str | None = Body(None, embed=True),
                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.generate, max(0, min(horizon_days, 366)))
+    """Work orders for what's due in the window; location_id: only the work in that area."""
+    return _run(m.generate, max(0, min(horizon_days, 366)), location_id)
 
 
 @router.patch("/work-orders/{work_order_id}")
@@ -2581,19 +2663,30 @@ _PACKAGE_FIELDS = ("name", "timing", "every", "unit", "weekday", "nth", "day", "
 def create_package(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """On exactly one of position_id or location_id, or a layer on parent_id; tasks: task ids or
     {task_id, visit_rule, every_nth, suppresses}."""
-    return _run(m.create_package, body.get("name"), body.get("position_id"), body.get("location_id"),
-                body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
-                body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
-                body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"), body.get("trade", ""),
-                body.get("notes", ""), body.get("tasks"), body.get("season"))
+    def go():
+        m.check_shutdown(body.get("shutdown"))
+        made = m.create_package(body.get("name"), body.get("position_id"), body.get("location_id"),
+                                body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
+                                body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
+                                body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"),
+                                body.get("trade", ""), body.get("notes", ""), body.get("tasks"), body.get("season"))
+        # A shutdown: its visits are planned outages (shutdowns.py).
+        return m.set_package_shutdown(made["id"], body["shutdown"]) if body.get("shutdown") else made
+    return _run(go)
 
 
 @router.patch("/packages/{package_id}")
 def update_package(package_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Change its name, cadence, tolerance, trade, notes, or members' visit rules (tasks);
     clear_pattern true removes its pattern."""
-    return _run(m.update_package, package_id, clear_pattern=bool(body.get("clear_pattern")),
-                season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+    def go():
+        if "shutdown" in body:
+            m.check_shutdown(body["shutdown"])
+        out = m.update_package(package_id, clear_pattern=bool(body.get("clear_pattern")),
+                               season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+        # shutdown: its visits are planned outages; null makes it an ordinary package again.
+        return m.set_package_shutdown(package_id, body["shutdown"]) if "shutdown" in body else out
+    return _run(go)
 
 
 @router.post("/{kind}/{target_id}/out-of-service")

@@ -118,6 +118,25 @@ workspaces Neo4j holds that the log doesn't, or that are outside
 `MAINTENANCE_GRAPH_MIRROR_ORGS`. `verify` compares the replay with Neo4j node
 for node and exits 1 on any difference: the check before trusting a copy.
 
+### Erasing part of a workspace with its history (operators only)
+
+The log is never rewritten, except when a workspace's owner asks for something
+to be removed together with its history (a delete in the app keeps it).
+`python -m backend.scripts.maintenance_purge --org ORG --root ID ...` finds
+everything connected to the roots (edges either way, or ids held in
+properties; `--barrier ID` is never entered) and every event that names only
+that. A dry run lists them; `--apply` overwrites each in place as
+`event.purged` with the payload `{"purged": true, "on": DATE}` (same id,
+sequence number, organisation, time and actor, so the log has no gaps), removes
+`maintenance_*` records that name only what goes, replays the log to check the
+rest is unchanged, and copies the workspace whole to the mirror. An event
+naming both something that goes and something kept refuses the purge, and
+nothing is written.
+
+Every running process notices on its next sync (the log's purge count,
+`purged` on the counter document, is read with the events) and rebuilds its
+graph from the log; a mirror then copies every workspace whole once.
+
 ## Owner-only graph queries in Cypher (#423)
 
 An agent (or the owner, through the API) can run its own read-only Cypher on the

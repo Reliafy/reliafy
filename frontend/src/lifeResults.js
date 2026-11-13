@@ -67,6 +67,11 @@ export function bestFitSentence(rows) {
   const about = rest.filter((r) => r.verdict === "about");
   const worse = rest.filter((r) => r.verdict !== "about");
   if (about.length) s += `; ${listNames(about.map((r) => r.name))} ${about.length === 1 ? "is" : "are"} about as good`;
+  // A special case with a fixed shape (Rayleigh: a Weibull with β = 2) won
+  // only by its one parameter fewer: say what the general one adds.
+  const note = best.id === "rayleigh" && about.some((r) => r.id === "weibull")
+    ? " Rayleigh assumes the Weibull shape is exactly 2; the Weibull estimates it, so its bounds also carry "
+      + "that uncertainty." : "";
   if (worse.length) {
     const how = worse.every((r) => r.verdict === "clearly") ? "clearly worse" : "worse";
     if (worse.length <= 2) {
@@ -75,7 +80,7 @@ export function bestFitSentence(rows) {
       s += `; the other ${worse.length} are ${how}`;
     }
   }
-  return `${s}.`;
+  return `${s}.${note}`;
 }
 
 // A confidence bound in words: "we're 90% sure it's at least 38%". ``fmt``
@@ -126,6 +131,8 @@ export function precisePercent(fraction) {
   if (p === 100) return "100%";
   // Outside 0–100 (a model that isn't a proper probability): as it comes.
   if (p < 0 || p > 100) return formatPercent(f, { sig: 3 });
+  // Tiny chances in plain decimals ("0.000964%", never "9.64e-4%").
+  if (p < 0.001) return p < 1e-7 ? "under 0.0000001%" : `${trimZeros(p.toFixed(Math.min(MAX_PERCENT_DECIMALS, 2 - Math.floor(Math.log10(p)))))}%`;
   if (p < 10) return `${formatNumber(p, { sig: 3 })}%`;
   const gap = 100 - p;
   const decimals = gap >= 10 ? 1 : Math.min(MAX_PERCENT_DECIMALS, Math.max(1, 1 - Math.floor(Math.log10(gap))));
