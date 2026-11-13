@@ -1,108 +1,59 @@
+@import "./tokens.css";
+
 :root {
-  /* Design tokens (#306): one name per value. Rules use these rather than
-     literals, so a change here re-themes the app. */
+  /* The names before design system v2, pointing at their replacements while
+     rules move over (MIGRATION.md in the design system). */
+  --bg: var(--bg-canvas);
+  --surf: var(--bg-surface);
+  --surf-2: var(--bg-subtle);
+  --line: var(--border);
+  --line2: var(--border-subtle);
+  --ink: var(--text);
+  --muted: var(--text-secondary);
+  --subtle: var(--text-tertiary);
+  --faint: var(--text-disabled);
+  --on-fill: var(--text-on-fill);
+  --acc: var(--accent);
+  --acc-d: var(--accent-hover);
+  --acc-t: var(--accent-subtle);
+  --acc-hover: var(--accent-wash);
+  --acc-line: var(--accent-border);
+  --ok: var(--success);
+  --ok-bg: var(--success-bg);
+  --ok-line: var(--success-border);
+  --warn: var(--warning);
+  --warn-bg: var(--warning-bg);
+  --warn-line: var(--warning-border);
+  --danger-line: var(--danger-border);
+  --cat-teal-t: var(--cat-teal-bg);
+  --cat-teal-line: var(--cat-teal-border);
+  --cat-amber: var(--cat-pink);
+  --cat-amber-t: var(--cat-pink-bg);
+  --cat-amber-line: var(--cat-pink-border);
+  --cat-violet-t: var(--cat-violet-bg);
+  --cat-violet-line: var(--cat-violet-border);
+  --std: var(--icon-standard);
+  --axis: var(--chart-axis);
+  --fs-28: var(--fs-24);
+  --fs-42: var(--fs-40);
+  --sp-1: var(--space-1);
+  --sp-2: var(--space-2);
+  --sp-3: var(--space-3);
+  --sp-4: var(--space-4);
+  --sp-5: var(--space-6);
+  --sp-6: var(--space-8);
+  --sp-7: var(--space-12);
+  --r-sm: var(--radius-md);
+  --r: var(--radius-lg);
+  --ctl-h: var(--control-md);
+  --ctl-h-sm: var(--control-sm);
+  --shadow-card: var(--shadow-sm);
+  --shadow-overlay: var(--shadow-lg);
+  --focus: var(--focus-ring);
+  --ring-sel: var(--ring-selected);
+  --mono: var(--font-mono);
 
-  /* Surfaces and lines */
-  --bg: #fbfbf9;
-  --surf: #ffffff;
-  --surf-2: #f6f5f1;
-  --line: #e8e7e2;
-  --line2: #f1f0eb;
-
-  /* Text: ink, muted (labels, secondary text), subtle (hints, placeholders).
-     --faint (2.6:1) is for borders and disabled states only, never text. */
-  --ink: #14171c;
-  --muted: #5f6670;
-  --subtle: #666c76; /* 4.5:1+ as hint text on every surface */
-  --faint: #9aa0a8;
-  /* Text and icons on a solid fill (accent, ink, semantic). */
-  --on-fill: #ffffff;
-
-  /* Accent: primary action, links, selection */
-  --acc: #245fe0; /* 4.5:1+ as text on every surface, incl. its own tint */
-  --acc-d: #2257d6;
-  --acc-t: rgba(47, 109, 246, 0.09);
-  --acc-hover: rgba(47, 109, 246, 0.05); /* row and control hover */
-  --acc-line: rgba(47, 109, 246, 0.3); /* border of an accent-tinted box */
-
-  /* Meaning: green a good verdict, amber a caveat, red bad (text on bg) */
-  --ok: #15803d;
-  --ok-bg: #f0fdf4;
-  --ok-line: #bbf7d0;
-  --warn: #b45309;
-  --warn-bg: #fffbeb;
-  --warn-line: #fcd9a6;
-  --danger: #b91c1c;
-  --danger-bg: #fef2f2;
-  --danger-line: #fecaca;
-
-  /* Categorical: kinds, not verdicts (model kinds, RBD block kinds, fault-tree
-     gates, common cause, maintenance). Blue is the accent; the rest match
-     CATEGORY in plotTheme.js. Text on a tint stays ink. */
-  --cat-teal: #0f9ab0;
-  --cat-teal-t: #ecf7f9;
-  --cat-teal-line: #9fd8e2;
-  --cat-amber: #d0762f;
-  --cat-amber-t: #fdf4ec;
-  --cat-amber-line: #f3c29a;
-  --cat-violet: #7c3aed;
-  --cat-violet-t: #f5f3ff;
-  --cat-violet-line: #c4b5fd;
-  --cat-grey: #6c727c;
-
-  /* RCM performance standard icon (a measure): teal, apart from the blue
-     function icon. 3:1+ for an icon on every surface and the selected row
-     (checked in tokenContrast.test.js). */
-  --std: #0d8680;
-
-  /* Chart axes (plotTheme AXIS) and the dimmed page behind a modal or drawer. */
-  --axis: #cfd3d8;
-  --scrim: rgba(20, 23, 28, 0.3);
-
-  /* Type scale: caption/chip/table header · secondary/table · body/controls ·
-     card title · section/stat value · page title. Weights 400, 500, 600. */
-  --fs-12: 12px;
-  --fs-13: 13px;
-  --fs-14: 14px;
-  --fs-16: 16px;
-  --fs-20: 20px;
-  --fs-28: 28px;
-  /* Display sizes for the public pages only (landing, blog, guides, pricing):
-     article h2, article and section titles, the landing hero. */
-  --fs-24: 24px;
-  --fs-32: 32px;
-  --fs-42: 42px;
-
-  /* Spacing */
-  --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
-  --sp-5: 24px;
-  --sp-6: 32px;
-  --sp-7: 48px;
-
-  /* Radii: controls and chips; cards and modals. 999px only for avatars and toggles. */
-  --r-sm: 6px;
-  --r: 12px;
-
-  /* Control heights: inputs, selects, the chips that stand in for a select. */
-  --ctl-h: 34px;
-  --ctl-h-sm: 30px;
-
-  /* Shadows */
-  --shadow-card: 0 1px 2px rgba(20, 23, 28, 0.06);
-  --shadow-overlay: 0 12px 40px rgba(20, 23, 28, 0.16);
-  /* The soft edge on a side of a table with more to scroll to. */
-  --scroll-shade: rgba(20, 23, 28, 0.13);
-  /* Strong enough to see on any surface (the 9% accent tint is for fills). */
-  --focus: 0 0 0 3px rgba(47, 109, 246, 0.35);
-  /* The selected node on a diagram canvas. */
-  --ring-sel: 0 0 0 2px rgba(47, 109, 246, 0.25);
-
-  font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto,
-    sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
