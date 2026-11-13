@@ -1761,6 +1761,22 @@ def _with_censor_checks(summary: dict, checks: dict) -> dict:
     return summary
 
 
+def _reading_unit(db, dataset, uid: str, time_column: str | None = None) -> str:
+    """The time unit a saved dataset's reading gives its x (or xl/xr), for a fit
+    from that dataset whose caller named no unit: a model saved without one
+    reads as unitless everywhere. "" when the reading has none, or when the
+    caller fits another column than the reading's time."""
+    if dataset is None:
+        return ""
+    try:
+        reading, _ = dataset_reading.for_dataset_db(db, dataset, _owners(uid))
+    except Exception:  # noqa: BLE001 - a reading that can't be made just gives no unit
+        return ""
+    if time_column and time_column not in {reading.get(k) for k in ("x", "xl", "xr") if reading.get(k)}:
+        return ""
+    return str(reading.get("unit") or "").strip()
+
+
 def _fit(ctx: Context, **inputs) -> dict[str, Any]:
     """Shared body of analyse fit (report only) and change model_fit."""
     try:
@@ -1874,6 +1890,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             if col not in names:
                 raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
         df = datasets_service.load_dataframe(dataset)
+        if not (unit or "").strip():
+            unit = _reading_unit(db, dataset, uid, time_column) or unit
     # #177: failure modes are read by the competing-risks ids only, and need them.
     by_mode = competing_risks.is_competing_risks(dist)
     if by_mode and "e" not in mapping:
@@ -2757,6 +2775,8 @@ def fit_alt_model(
                 raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
         stress_cols, labels = list(stress_columns), list(stress_columns)
         df = datasets_service.load_dataframe(dataset)
+        if not (unit or "").strip():
+            unit = _reading_unit(db, dataset, uid, time_column) or unit
 
     checks = _censor_checks(df, mapping, c_invert, censor_column)
     if c_invert:
@@ -2981,6 +3001,11 @@ def _joint_report(r: dict, top: int = 10) -> dict:
 
 def _joint_fit(ctx: Context, body: dict, save: bool) -> dict:
     user, db = _caller(ctx), _db()
+    if not body.get("unit") and body.get("dataset_id"):
+        # No unit named: the dataset's reading gives its ages' unit.
+        dataset = datasets_service.get_dataset(db, body["dataset_id"], user["uid"])
+        mapping = body.get("mapping") or {}
+        body = {**body, "unit": _reading_unit(db, dataset, user["uid"], mapping.get("x") or mapping.get("xl"))}
     if save:
         _cap(db, user, "models", "models")
     status, payload = joint_service.start_fit(db, uid=user["uid"], owners=user["uid"], body=body, save=save,
@@ -7256,6 +7281,8 @@ def fit_recurrent_model(
         if covariate_columns:
             mapping["z"] = list(covariate_columns)
         df = datasets_service.load_dataframe(dataset)
+        if not (unit or "").strip():
+            unit = _reading_unit(db, dataset, uid, time_column) or unit
     else:
         n = len(times)
         if not n:
