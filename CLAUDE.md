@@ -106,6 +106,8 @@ always be rebuilt. See [docs/maintenance-graph.md](docs/maintenance-graph.md).
 - New behaviour gets a new event type (and projector in `PROJECTORS`).
   Never change what an existing event means or its payload shape. Why: the log
   is never rewritten, so old events must replay to the same graph forever.
+  (One exception, operators only: erasing a branch with its history at the
+  owner's request, `backend/maintenance/purge.py`.)
 - Projectors read only the event payload, never the clock, and write only
   through the store interface (`put_node`, `patch_node`, `put_edge`, `node`,
   `nodes`, `out`, `inn`, ...). No SQL or Cypher in `service.py` or projectors.

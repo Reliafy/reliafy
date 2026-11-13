@@ -74,6 +74,7 @@ from backend.maintenance import task_costs as _task_costs
 from backend.maintenance.captures import CaptureOps
 from backend.maintenance import restoration as _restoration
 from backend.maintenance import shutdowns as _shutdowns
+from backend.maintenance import purge as _purge
 
 logger = logging.getLogger(__name__)
 
@@ -15340,5 +15341,9 @@ PROJECTORS.update({
     "fitment.found_failed": _fitment_found_failed,
     "task.overdue_carried": _task_overdue_carried,
 })
+
+# Events erased at a workspace owner's request (Nov 2026, purge.py): the number stays, the
+# content goes, and the projector does nothing.
+PROJECTORS.update(_purge.PROJECTORS)
 
 PROJECTION_VERSION = 5
