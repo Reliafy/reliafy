@@ -27,7 +27,7 @@ import LsaTask from "./LsaTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import { PlusIcon } from "./LibRows.jsx";
-import { isDesignRow } from "../explorerTabs.js";
+import { EXPLORER_GROUPED_TABS, isDesignRow } from "../explorerTabs.js";
 import { ColumnChooser } from "./RcmWorksheet.jsx";
 import "./RcmWorksheet.css";
 import "./Outline.css";
@@ -423,6 +423,48 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
   );
 }
 
+// ---- the packages here (grouped tabs: Maintenance › Packages) -------------------------------
+
+// The work packages on this part of the tree (tasks done together on one visit): name, how often,
+// trade, how many tasks and whether it's paused. A name opens the package in the tab (?package=),
+// its back link coming here again. Packages are made from the What it needs view (tick tasks).
+function PackagesHere({ scope, where, onOpen, version }) {
+  const [state, setState] = useState({ data: null, error: null });
+  useEffect(() => {
+    let live = true;
+    listPackages(scope).then((d) => live && setState({ data: d.packages.filter((p) => p.status !== "retired"), error: null }))
+      .catch((e) => live && setState({ data: null, error: e.message }));
+    return () => { live = false; };
+  }, [scope, version]);
+  const list = state.data;
+  return (
+    <div className="td-tab-page pk-panel rw">
+      <p className="lib-date pk-purpose">The work packages {where} and below: tasks done together on one visit, each visit one work order. To make one, tick tasks in What it needs and package them.</p>
+      {state.error && <div className="card error">Couldn&apos;t load the packages: {state.error}</div>}
+      {!list && !state.error && <div className="card empty">Loading…</div>}
+      {list && list.length === 0 && <div className="card empty pk-empty"><p>No packages here yet. Tick the tasks done on the same visit in What it needs, then Package selected….</p></div>}
+      {list && list.length > 0 && (
+        <div className="maint-scroll">
+          <table className="lib-table pk-here">
+            <thead><tr><th>Package</th><th>How often</th><th>Trade</th><th>Tasks</th><th>Status</th></tr></thead>
+            <tbody>
+              {list.map((p) => (
+                <tr key={p.id}>
+                  <td><button type="button" className="link" onClick={() => onOpen(p.id)}>{p.parent ? "↳ " : ""}{p.name}</button></td>
+                  <td>{cadenceWords(p)}</td>
+                  <td>{p.trade || "—"}</td>
+                  <td>{p.task_count}</td>
+                  <td>{p.status === "paused" ? "Paused" : "Active"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- one package --------------------------------------------------------------------------
 
 function PackageView({ id, today, onBack, onOpen, onChanged }) {
@@ -739,7 +781,12 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       </div>
     );
   }
-  const viewSwitch = maint && preview ? (
+  // With grouped tabs the panel's header switches the views (Tasks · What it needs · Packages ·
+  // Forecast), so the body draws no switch of its own.
+  if (!maint && !design && EXPLORER_GROUPED_TABS && viewParam.open === "packages") {
+    return <PackagesHere scope={scope} where={where} onOpen={open.setOpen} version={version} />;
+  }
+  const viewSwitch = maint && preview && !EXPLORER_GROUPED_TABS ? (
     <SegmentedControl size="sm" className="mt-view" label="Show" value={forecastOn ? "forecast" : "tasks"}
                       onChange={(v) => viewParam.setOpen(v === "forecast" ? "forecast" : null)}
                       options={[{ value: "tasks", label: "Tasks" }, { value: "forecast", label: "Forecast (preview)", title: "A preview of the forecast's layout, with made-up numbers" }]} />

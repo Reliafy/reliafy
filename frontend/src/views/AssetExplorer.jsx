@@ -78,7 +78,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { addressTab, isDesignRow, rowKind, shownTab, tabCarried, tabForArrangement, tabsFor } from "../explorerTabs.js";
+import { EXPLORER_GROUPED_TABS, addressTab, isDesignRow, rowKind, shownTab, tabCarried, tabForArrangement, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -745,8 +745,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     return () => clearTimeout(t);
   }, [rcmOn, selIsPos, selPos, version]);
 
-  const setTab = (t) => {
-    if (t === tab) return;
+  // `view`: the ?mview= of a grouped tab's inner view (explorerTabs.js TAB_GROUPS: Maintenance's
+  // Packages and Forecast); null or left out, none. The same tab with another view changes only that.
+  const setTab = (t, { view = null } = {}) => {
+    if (t === tab) {
+      if (EXPLORER_GROUPED_TABS && (params.get("mview") || null) !== view) {
+        setQuery_((q) => {
+          if (view) q.set("mview", view);
+          else q.delete("mview");
+          // A package or task open in the view left goes with it.
+          for (const k of ["package", "task", "packaging", "mtask", "addtask", "rates"]) q.delete(k);
+        });
+      }
+      return;
+    }
     setEditing(null);
     const toTable = t === "rcm" || t === "fmea" || t === "measurements" || t === "models" || t === "missions";
     if (!toTable) {
@@ -770,6 +782,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setQuery_((q) => {
       if (t === "summary") q.delete(tabKey);
       else q.set(tabKey, t);
+      if (EXPLORER_GROUPED_TABS) {
+        if (view) q.set("mview", view);
+        else q.delete("mview");
+      }
       if (toTable) q.set("arrange", "positions");
       // The report open in the Failure reports tab goes with the tab.
       if (t !== "reports") q.delete("report");
@@ -2461,7 +2477,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const phoneTabs = phone && posRow && tabsFor(posRow).length > 1 && (
     <div className="tp-tabs-wrap">
       <p className="tp-tabs-for">For <strong>{posRow.ref.name || "(no name)"}</strong></p>
-      <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} className="tp-tabs" wholeTabs />
+      {EXPLORER_GROUPED_TABS
+        ? <HeaderTabs row={posRow} tab={tab} onTab={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} idPrefix="tp" className="tp-tabs" />
+        : <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} className="tp-tabs" wholeTabs />}
     </div>
   );
   // A row picked in the panel (a crumb, a row in "Directly inside").

@@ -7,7 +7,12 @@ import SignalsPanel from "./SignalsPanel.jsx";
 import OverflowMenu from "./OverflowMenu.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { ancestorsOf, structuralRow } from "../assetTree.js";
-import { branchOf, classesInBranch, hasTabBar, isDesignRow, isProductRow, rowKind, shownTab, tabsFor } from "../explorerTabs.js";
+import {
+  EXPLORER_GROUPED_TABS, branchOf, classesInBranch, groupLabel, groupedTabsFor, groupedView, hasTabBar, isDesignRow, isPlainGroup, isProductRow, rowKind,
+  shownTab, tabsFor, viewTarget,
+} from "../explorerTabs.js";
+import GroupedTabs from "./ui/GroupedTabs.jsx";
+import { useAppConfig } from "../ConfigProvider.jsx";
 import TreeSummary from "./TreeSummary.jsx";
 import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
 import "./TreeSummary.css";
@@ -290,10 +295,35 @@ function GroupedHeaderMenu({ items }) {
 
 // The panel's tabs (Summary, RCM), under its heading. A row with Summary alone has none; an item
 // class has its one tab, Condition monitoring (a position on an asset has that tab too).
-export function HeaderTabs({ row, tab, onTab }) {
-  const tabs = tabsFor(row);
+//
+// With EXPLORER_GROUPED_TABS (explorerTabs.js), the grouped row instead (GroupedTabs: Summary |
+// Analysis ▾ | Operation ▾ | History ▾); `onTab(tab, {view})` then also names the ?mview= of the
+// inner view picked (Packages, Forecast), null for none. `idPrefix`: "td" for the panel's own row.
+export function HeaderTabs({ row, tab, onTab, label = "What to show for this row", idPrefix = "td", className = "tt-tabs" }) {
+  const { menu_preview: preview } = useAppConfig();
+  const [params] = useSearchParams();
   if (!hasTabBar(row)) return null;
-  return <Tabs tabs={tabs} value={shownTab(tab, row)} onChange={onTab} label="What to show for this row" idPrefix="td" className="tt-tabs" wholeTabs />;
+  if (EXPLORER_GROUPED_TABS) {
+    const opts = { preview: !!preview };
+    const groups = groupedTabsFor(row, opts);
+    const at = groupedView(tab, row, { ...opts, mview: params.get("mview") });
+    return (
+      <GroupedTabs groups={groups} at={at} label={label} idPrefix={idPrefix} className={className + " tt-gtabs"}
+                   labelOf={groupLabel} isPlain={isPlainGroup}
+                   onChoose={(entry, view) => {
+                     const to = viewTarget(row, entry, view, opts);
+                     if (to) onTab(to.tab, { view: to.mview });
+                   }} />
+    );
+  }
+  return <Tabs tabs={tabsFor(row)} value={shownTab(tab, row)} onChange={onTab} label={label} idPrefix={idPrefix} className={className} wholeTabs />;
+}
+
+// The id of the tab that names the panel (its aria-labelledby): the tab shown, or with grouped
+// tabs the group it's in.
+function panelLabelId(tab, row, mview, preview) {
+  if (!EXPLORER_GROUPED_TABS) return `td-tab-${shownTab(tab, row)}`;
+  return `td-tab-${groupedView(tab, row, { mview, preview })?.group || "summary"}`;
 }
 
 // `menu`: the "…" items the tab's body gave (through `onMenu`, panelMenu.js),
@@ -302,9 +332,12 @@ const TreeDetail = forwardRef(function TreeDetail({
   display, row, today, onSelect, onCrumb, above, back, version, empty, tab, onTab, fullScreenButton, headless = false, actions = [],
   reports = null, heading = 1, menu = [], onMenu = null, within = null, structure = null,
 }, headingRef) {
+  const { menu_preview: preview } = useAppConfig();
+  const [params] = useSearchParams();
   if (!row) return <div className="td">{back}{empty}</div>;
   const tabbed = hasTabBar(row);
   const shown = shownTab(tab, row);
+  const labelledBy = tabbed ? panelLabelId(tab, row, params.get("mview"), !!preview) : undefined;
   return (
     <div className="td">
       {back}
@@ -317,7 +350,7 @@ const TreeDetail = forwardRef(function TreeDetail({
         </div>
       )}
       <div className="td-body" role={tabbed ? "tabpanel" : undefined} id={tabbed ? "td-panel" : undefined}
-           aria-labelledby={tabbed ? `td-tab-${shown}` : undefined}>
+           aria-labelledby={labelledBy}>
         {shown === "reports" && reports
           ? <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />
           // The Measurements tab is the tree-table (AssetExplorer, MeasurementTable.jsx), not a panel.

@@ -12,7 +12,7 @@ Right-click, the row's ⋯ button (`MoreMenu`), or Shift+F10 / the Menu key on a
   - `danger` — a destructive action in `danger-text`, last in the menu.
   - `disabled` + `reason` — the item stays in the menu, greyed, with the reason in `help` type under it (and as its description to a screen reader). Don't hide what can't be used now; say why.
   - `items` — a submenu ("Focus ›"). It opens beside the menu on a wide screen, in place under its item on a phone.
-  - `checked` (true | false) — a radio in a submenu, ticked with ✓.
+  - `checked` (true | false) — a radio, ticked with ✓: in a submenu, or in a whole menu of choices (`GroupedTabs` ticks the entry shown).
   - `separator` — a `border` line between groups; the arrow keys pass over it.
 - `at` — `{x, y}`, the pointer or the corner of what opened it. The menu moves in to stay on screen.
 - `label` — the menu's name ("Actions for Feed pump").

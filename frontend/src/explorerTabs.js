@@ -240,3 +240,136 @@ export function classesInBranch(display, branch) {
   return [...count].map(([position_class, here]) => ({ position_class, here }))
     .sort((a, b) => a.position_class.localeCompare(b.position_class, "en", { numeric: true, sensitivity: "base" }));
 }
+
+// ---- Grouped tabs (prototype, Derryn 14 Nov 2026) ---------------------------------------------
+//
+// The panel's tabs as a short row where the grouped ones are drop-downs:
+//   Summary | Analysis ▾ | Operation ▾ | History ▾
+// Analysis: RCM, FME(C)A, Reliability models (the Modelling tab), Missions. Operation: Maintenance
+// (inner views Tasks · What it needs (the LSA tab) · Packages · Forecast, the last a preview shown
+// only with MENU_PREVIEW) and Monitoring (Measurements and Condition monitoring as one entry, inner
+// views Readings · Risk now). History: Failure reports.
+//
+// It's a layer over the tabs above, not a new set of them: every view is one of TABS (plus the
+// ?mview= the Maintenance and LSA bodies read), so the address still names the tab and every old
+// address (?tab=lsa, ?tab=condition, …) opens its group, entry and inner view (groupedView). An
+// entry or view a row hasn't (tabsFor) is left out; a group with no entries for the row isn't
+// shown. A tab no group names (Parts and stock, Classes, Signals, when switched on) stays a tab of
+// its own at the end of the row. Off, the panel shows the flat tab row as before.
+export const EXPLORER_GROUPED_TABS = true;
+
+export const TAB_GROUPS = [
+  { id: "summary", label: "Summary", entries: [{ id: "summary", label: "Summary", views: [{ id: "summary", tab: "summary" }] }] },
+  {
+    id: "analysis", label: "Analysis", title: "RCM, FME(C)A, reliability models and missions",
+    entries: [
+      { id: "rcm", label: "RCM", views: [{ id: "rcm", tab: "rcm" }] },
+      { id: "fmea", label: "FME(C)A", views: [{ id: "fmea", tab: "fmea" }] },
+      { id: "models", label: "Reliability models", views: [{ id: "models", tab: "models" }] },
+      { id: "missions", label: "Missions", views: [{ id: "missions", tab: "missions" }] },
+    ],
+  },
+  {
+    id: "operation", label: "Operation", title: "Maintenance and monitoring",
+    entries: [
+      {
+        id: "maintenance", label: "Maintenance",
+        views: [
+          { id: "tasks", label: "Tasks", tab: "maintenance" },
+          { id: "needs", label: "What it needs", tab: "lsa", title: "What each task needs to be done: labour, tools, spares and method" },
+          // Packaging happens on the built items, so a design's rows haven't it (asset).
+          { id: "packages", label: "Packages", tab: "lsa", mview: "packages", asset: true, title: "The work packages here: tasks done together on one visit" },
+          { id: "forecast", label: "Forecast (preview)", tab: "maintenance", mview: "forecast", preview: true, title: "A preview of the forecast's layout, with made-up numbers" },
+        ],
+      },
+      {
+        id: "monitoring", label: "Monitoring", title: "Readings at every measuring point, and the risk now",
+        views: [
+          { id: "readings", label: "Readings", tab: "measurements" },
+          { id: "risk", label: "Risk now", tab: "condition" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "history", label: "History", title: "What has happened here",
+    entries: [{ id: "reports", label: "Failure reports", views: [{ id: "reports", tab: "reports" }] }],
+  },
+];
+
+// The groups a row has: [{id, label, title, entries: [{id, label, title, views: [{id, label, tab,
+// mview, title}]}]}], each entry with only the views the row has, each group with only its entries
+// that have a view, and no empty group. `preview`: MENU_PREVIEW is on (the Forecast preview).
+export function groupedTabsFor(row, { preview = false } = {}) {
+  const tabs = tabsFor(row);
+  const has = new Map(tabs.map((t) => [t.id, t]));
+  const design = isDesignRow(row);
+  const used = new Set();
+  const groups = [];
+  for (const g of TAB_GROUPS) {
+    const entries = [];
+    for (const e of g.entries) {
+      const views = e.views.filter((v) => has.has(v.tab) && !(v.preview && !preview) && !(v.asset && design))
+        .map((v) => ({ ...v, label: v.label || e.label, title: v.title || has.get(v.tab).title }));
+      if (!views.length) continue;
+      views.forEach((v) => used.add(v.tab));
+      entries.push({ id: e.id, label: e.label, title: e.title || views[0].title, views, of: e.views.length });
+    }
+    // A group with one entry says what that entry is on hover (a design's History: the reports on
+    // the items built from the product).
+    if (entries.length) groups.push({ id: g.id, label: g.label, title: entries.length === 1 ? entries[0].title : g.title, entries });
+  }
+  // A tab no group names (switched back on): a tab of its own.
+  for (const t of tabs) {
+    if (used.has(t.id)) continue;
+    groups.push({ id: t.id, label: t.label, title: t.title, entries: [{ id: t.id, label: t.label, title: t.title, views: [{ id: t.id, label: t.label, tab: t.id, title: t.title }] }] });
+  }
+  return groups;
+}
+
+// Is the group a plain tab (one entry, one view, named as the group: Summary), not a drop-down?
+export const isPlainGroup = (g) => g.entries.length === 1 && g.entries[0].id === g.id && g.entries[0].views.length === 1;
+
+// Where the row's panel is: {group, entry, view} (ids) for the tab shown (shownTab) and the
+// ?mview= in the address. A view that names an mview is picked only with that mview; else the
+// entry's view for the tab with none. Null for a row with no groups.
+export function groupedView(tab, row, { mview = null, preview = false } = {}) {
+  const groups = groupedTabsFor(row, { preview });
+  const shown = shownTab(tab, row);
+  let plain = null;
+  for (const g of groups) {
+    for (const e of g.entries) {
+      for (const v of e.views) {
+        if (v.tab !== shown) continue;
+        const at = { group: g.id, entry: e.id, view: v.id };
+        if (v.mview && v.mview === mview) return at;
+        if (!v.mview && !plain) plain = at;
+      }
+    }
+  }
+  return plain;
+}
+
+// The tab and ?mview= that open an entry's view: {tab, mview} (mview null: none). `view` left out:
+// the entry's first view.
+export function viewTarget(row, entryId, viewId = null, { preview = false } = {}) {
+  for (const g of groupedTabsFor(row, { preview })) {
+    const e = g.entries.find((x) => x.id === entryId);
+    if (!e) continue;
+    const v = (viewId && e.views.find((x) => x.id === viewId)) || e.views[0];
+    return { tab: v.tab, mview: v.mview || null };
+  }
+  return null;
+}
+
+// The words on a group's button: the group's name, and for the group the panel is in, the entry
+// shown ("Operation: Maintenance"). `short` (a phone): the entry's name alone.
+export function groupLabel(group, at, { short = false } = {}) {
+  if (isPlainGroup(group) || at?.group !== group.id) return group.label;
+  const entry = group.entries.find((e) => e.id === at.entry);
+  if (!entry) return group.label;
+  // An entry with inner views of which the row has one (a class's Monitoring: Risk now alone)
+  // names that view too, as there's no switch to show it.
+  const one = entry.views.length === 1 && entry.of > 1 ? ` › ${entry.views[0].label}` : "";
+  return short ? `${entry.label}${one}` : `${group.label}: ${entry.label}${one}`;
+}

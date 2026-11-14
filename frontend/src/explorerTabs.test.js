@@ -293,3 +293,121 @@ test("an address with a class picked by Classes opens on the class's tab, whatev
   assert.equal(addressTab("packages", {}), "lsa");
   assert.equal(addressTab("nonsense"), "summary");
 });
+
+// ---- Grouped tabs (prototype) ----------------------------------------------------------------
+import {
+  EXPLORER_GROUPED_TABS, TAB_GROUPS, groupLabel, groupedTabsFor, groupedView, isPlainGroup, viewTarget,
+} from "./explorerTabs.js";
+
+const shape = (groups) => groups.map((g) => [g.id, g.entries.map((e) => [e.id, e.views.map((v) => v.id)])]);
+
+test("grouped tabs are on in this branch and every grouped view is a tab that exists", () => {
+  assert.equal(EXPLORER_GROUPED_TABS, true);
+  const ids = new Set(TABS.map((t) => t.id));
+  for (const g of TAB_GROUPS) for (const e of g.entries) for (const v of e.views) assert.ok(ids.has(v.tab), v.tab);
+});
+
+test("an asset's position: Summary | Analysis | Operation | History, Maintenance and Monitoring with their inner views", () => {
+  const asset = { type: "pos", ref: { name: "Pump" } };
+  assert.deepEqual(shape(groupedTabsFor(asset)), [
+    ["summary", [["summary", ["summary"]]]],
+    ["analysis", [["rcm", ["rcm"]], ["fmea", ["fmea"]], ["models", ["models"]], ["missions", ["missions"]]]],
+    ["operation", [["maintenance", ["tasks", "needs", "packages"]], ["monitoring", ["readings", "risk"]]]],
+    ["history", [["reports", ["reports"]]]],
+  ]);
+  // The Forecast preview only with MENU_PREVIEW.
+  const op = groupedTabsFor(asset, { preview: true }).find((g) => g.id === "operation");
+  assert.deepEqual(op.entries[0].views.map((v) => v.id), ["tasks", "needs", "packages", "forecast"]);
+  assert.equal(groupedTabsFor(asset).find((g) => g.id === "analysis").entries[2].label, "Reliability models");
+  assert.ok(isPlainGroup(groupedTabsFor(asset)[0]));
+  assert.ok(!isPlainGroup(groupedTabsFor(asset)[3]));
+});
+
+test("a product's design: no Monitoring, no Packages; History is the reports on the items built from it", () => {
+  const product = { type: "pos", ref: { design: { rev: "A" } } };
+  assert.deepEqual(shape(groupedTabsFor(product)), [
+    ["summary", [["summary", ["summary"]]]],
+    ["analysis", [["rcm", ["rcm"]], ["fmea", ["fmea"]], ["models", ["models"]], ["missions", ["missions"]]]],
+    ["operation", [["maintenance", ["tasks", "needs"]]]],
+    ["history", [["reports", ["reports"]]]],
+  ]);
+  const reports = groupedTabsFor(product).find((g) => g.id === "history").entries[0];
+  assert.match(reports.title, /items built from this product/);
+  // A design location has no History at all.
+  const designLoc = { type: "loc", ref: { design_of: "d", in_design: true } };
+  assert.ok(!groupedTabsFor(designLoc).some((g) => g.id === "history"));
+});
+
+test("a class row keeps its one view as Operation › Monitoring › Risk now; locations and items lose what they haven't", () => {
+  assert.deepEqual(shape(groupedTabsFor({ type: "cls" })), [["operation", [["monitoring", ["risk"]]]]]);
+  assert.deepEqual(groupedView("summary", { type: "cls" }), { group: "operation", entry: "monitoring", view: "risk" });
+  assert.deepEqual(shape(groupedTabsFor(loc)), [
+    ["summary", [["summary", ["summary"]]]],
+    ["analysis", [["rcm", ["rcm"]], ["fmea", ["fmea"]]]],
+    ["operation", [["maintenance", ["tasks", "needs", "packages"]], ["monitoring", ["readings"]]]],
+    ["history", [["reports", ["reports"]]]],
+  ]);
+  assert.deepEqual(shape(groupedTabsFor(item)), [
+    ["summary", [["summary", ["summary"]]]],
+    ["operation", [["monitoring", ["readings"]]]],
+    ["history", [["reports", ["reports"]]]],
+  ]);
+  assert.deepEqual(groupedTabsFor({ type: "group" }).map((g) => g.id), ["summary"]);
+});
+
+test("old addresses open their group, entry and inner view", () => {
+  const asset = { type: "pos", ref: { name: "Pump" } };
+  const at = (value, mview = null, opts = {}) => groupedView(tabParam(value), asset, { mview, ...opts });
+  assert.deepEqual(at("rcm"), { group: "analysis", entry: "rcm", view: "rcm" });
+  assert.deepEqual(at("fmea"), { group: "analysis", entry: "fmea", view: "fmea" });
+  assert.deepEqual(at("models"), { group: "analysis", entry: "models", view: "models" });
+  assert.deepEqual(at("missions"), { group: "analysis", entry: "missions", view: "missions" });
+  assert.deepEqual(at("maintenance"), { group: "operation", entry: "maintenance", view: "tasks" });
+  assert.deepEqual(at("lsa"), { group: "operation", entry: "maintenance", view: "needs" });
+  assert.deepEqual(at("packages"), { group: "operation", entry: "maintenance", view: "needs" });
+  assert.deepEqual(at("measurements"), { group: "operation", entry: "monitoring", view: "readings" });
+  assert.deepEqual(at("condition"), { group: "operation", entry: "monitoring", view: "risk" });
+  assert.deepEqual(at("reports"), { group: "history", entry: "reports", view: "reports" });
+  assert.deepEqual(at(null), { group: "summary", entry: "summary", view: "summary" });
+  // The inner views that need an mview.
+  assert.deepEqual(at("lsa", "packages"), { group: "operation", entry: "maintenance", view: "packages" });
+  assert.deepEqual(at("maintenance", "forecast", { preview: true }), { group: "operation", entry: "maintenance", view: "forecast" });
+  // Without the preview, Forecast falls back to Tasks; on a design Packages to What it needs.
+  assert.deepEqual(at("maintenance", "forecast"), { group: "operation", entry: "maintenance", view: "tasks" });
+  const product = { type: "pos", ref: { design: { rev: "A" } } };
+  assert.deepEqual(groupedView("lsa", product, { mview: "packages" }), { group: "operation", entry: "maintenance", view: "needs" });
+  // A tab a row hasn't shows Summary.
+  assert.deepEqual(groupedView("condition", product), { group: "summary", entry: "summary", view: "summary" });
+});
+
+test("an entry or view picked names the tab and mview to open", () => {
+  const asset = { type: "pos", ref: { name: "Pump" } };
+  assert.deepEqual(viewTarget(asset, "maintenance"), { tab: "maintenance", mview: null });
+  assert.deepEqual(viewTarget(asset, "maintenance", "needs"), { tab: "lsa", mview: null });
+  assert.deepEqual(viewTarget(asset, "maintenance", "packages"), { tab: "lsa", mview: "packages" });
+  assert.deepEqual(viewTarget(asset, "monitoring"), { tab: "measurements", mview: null });
+  assert.deepEqual(viewTarget(asset, "monitoring", "risk"), { tab: "condition", mview: null });
+  assert.deepEqual(viewTarget(asset, "models"), { tab: "models", mview: null });
+  // A class's Monitoring opens its one view.
+  assert.deepEqual(viewTarget({ type: "cls" }, "monitoring"), { tab: "condition", mview: null });
+  assert.equal(viewTarget(item, "rcm"), null);
+});
+
+test("the group the panel is in names the entry shown", () => {
+  const asset = { type: "pos", ref: { name: "Pump" } };
+  const groups = groupedTabsFor(asset);
+  const op = groups.find((g) => g.id === "operation");
+  const at = groupedView("lsa", asset);
+  assert.equal(groupLabel(op, at), "Operation: Maintenance");
+  assert.equal(groupLabel(op, at, { short: true }), "Maintenance");
+  assert.equal(groupLabel(groups.find((g) => g.id === "analysis"), at), "Analysis");
+  assert.equal(groupLabel(groups[0], at), "Summary");
+  // A class's Monitoring has Risk now alone: the tab names it.
+  const cls = { type: "cls" };
+  const clsOp = groupedTabsFor(cls)[0];
+  assert.equal(groupLabel(clsOp, groupedView(null, cls)), "Operation: Monitoring › Risk now");
+  assert.equal(groupLabel(clsOp, groupedView(null, cls), { short: true }), "Monitoring › Risk now");
+  // A design's History says on hover whose reports they are.
+  const product = { type: "pos", ref: { design: { rev: "A" } } };
+  assert.match(groupedTabsFor(product).find((g) => g.id === "history").title, /items built from this product/);
+});

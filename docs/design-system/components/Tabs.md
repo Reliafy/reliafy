@@ -13,3 +13,5 @@ Follows the ARIA tab pattern: only the active tab is in the Tab order (roving ta
 - `wholeTabs` — on a scrolling row, reveal starts on a whole tab.
 
 Tabs are `text-secondary` 14px at 500; the active tab is `accent-text` at 600 with a 2px `accent` underline over the row's 1px `border` baseline.
+
+Too many tabs for a phone's width, falling into a few groups? Use `GroupedTabs`: the same look, some tabs drop-downs.

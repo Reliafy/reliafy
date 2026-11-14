@@ -1,0 +1,45 @@
+/* The grouped tab row (GroupedTabs.jsx; docs/design-system/components/GroupedTabs.md). The tabs
+   look as the shared Tabs (.tab / .tab.active in index.css: text-secondary 14px at 500; active
+   accent-text at 600 with a 2px accent underline over a 1px border baseline). The row wraps rather
+   than scrolling sideways; the inner views (a SegmentedControl) follow, or wrap under. */
+.gtabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
+  min-width: 0;
+}
+.gtabs-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-1);
+  min-width: 0;
+  background: linear-gradient(var(--border), var(--border)) left bottom / 100% 1px no-repeat;
+}
+.gtabs .gtab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-md);
+  padding: 0 var(--space-3);
+}
+.gtabs .gtab:hover { color: var(--text); background: transparent; }
+.gtabs .gtab.active:hover { color: var(--accent-text); }
+.gtabs .gtab:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); }
+.gtabs .gtab.open { color: var(--text); }
+.gtab-caret { font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-tertiary); }
+.gtab.active .gtab-caret { color: var(--accent-text); }
+.gtab-short { display: none; }
+.gtabs-views { align-self: center; }
+/* A narrow panel or phone: the group the panel is in names only its entry ("Maintenance ▾"),
+   and the tabs and inner views stay on screen by wrapping. */
+@media (max-width: 560px) {
+  .gtab-full { display: none; }
+  .gtab-short { display: inline; }
+  .gtabs .gtab { padding: 0 var(--space-2); min-height: var(--control-lg); }
+  /* The inner views share the width in equal parts, a long label on two lines. */
+  .gtabs-views { flex: 1 1 100%; display: flex; }
+  .gtabs-views .seg-btn { flex: 1 1 0; min-width: 0; white-space: normal; padding-left: var(--space-2); padding-right: var(--space-2); }
+}
