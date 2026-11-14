@@ -23,6 +23,7 @@
 // movePhase, cleanPhases: changedPhases).
 
 import { reliabilityPercent } from "./rbdMission.js";
+import { tabPlace } from "./explorerTabs.js";
 
 export const MISSION_TYPE = "mission";
 export const PHASE_TYPE = "phase";
@@ -192,14 +193,14 @@ export function noMissionWhy(r, short = false) {
   const linked = (r?.rbds || []).some((l) => l.rbd && !l.rbd.mission_rbd);
   if (r?.otherModel) {
     return short ? "its model can't be a block"
-      : "Its model in use can't be a block in a mission's RBD (only a life distribution or a covariate model can): give it one on the Modelling tab, or add positions inside it";
+      : `Its model in use can't be a block in a mission's RBD (only a life distribution or a covariate model can): give it one in ${tabPlace("models")}, or add positions inside it`;
   }
   if (linked) {
     return short ? "its RBD can't take missions"
       : "Missions are flown on a non-repairable block diagram: give it a life model, or add positions inside it";
   }
   return short ? "needs a life model or positions inside"
-    : "Give it a life model on the Modelling tab, or add positions inside it: a mission's RBD is built from them";
+    : `Give it a life model in ${tabPlace("models")}, or add positions inside it: a mission's RBD is built from them`;
 }
 
 // A position row's roll-up: its own ("2 missions", or "No missions yet · Add a mission" wherever

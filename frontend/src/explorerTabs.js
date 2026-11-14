@@ -240,3 +240,116 @@ export function classesInBranch(display, branch) {
   return [...count].map(([position_class, here]) => ({ position_class, here }))
     .sort((a, b) => a.position_class.localeCompare(b.position_class, "en", { numeric: true, sensitivity: "base" }));
 }
+
+// ---- Plain tabs with an overflow (prototype, Derryn 14 Nov 2026) -------------------------------
+//
+// The panel's tabs as one flat row, ordered by use, the ones that don't fit folded into a last
+// "⋯ N" tab (the shared Tabs with `overflow`):
+//   Summary · Maintenance · Monitoring · RCM · FME(C)A · Models · History
+// Maintenance has inner views Tasks · What it needs (the LSA tab) · Packages · Forecast (a preview,
+// only with MENU_PREVIEW); Monitoring has Readings (Measurements) · Life left (Condition
+// monitoring: the chance of failing soon and the life left); Models has Life models (the Modelling
+// tab) · Missions. History is the Failure reports; on a product's design it's "Field reports" (the
+// reports on the items built from the product).
+//
+// It's a layer over the tabs above, not a new set of them: every view is one of TABS (plus the
+// ?mview= the Maintenance and LSA bodies read), so the address still names the tab and every old
+// address (?tab=lsa, ?tab=condition, …) opens its tab and inner view (panelView). A view a row
+// hasn't (tabsFor) is left out, and a tab with no views for the row isn't shown (never greyed); the
+// order never changes. A tab no panel tab names (Parts and stock, Classes, Signals, when switched
+// on) stays a tab of its own at the end of the row. Off, the panel shows the flat TABS row.
+export const EXPLORER_PANEL_TABS = true;
+
+export const PANEL_TABS = [
+  { id: "summary", label: "Summary", views: [{ id: "summary", tab: "summary" }] },
+  {
+    id: "maintenance", label: "Maintenance", title: "The maintenance tasks here, what each needs, and how they're packaged into visits",
+    designTitle: "The maintenance programme here: its tasks and what each needs",
+    views: [
+      { id: "tasks", label: "Tasks", tab: "maintenance" },
+      { id: "needs", label: "What it needs", tab: "lsa", title: "What each task needs to be done: labour, tools, spares and method" },
+      // Packaging happens on the built items, so a design's rows haven't it (asset).
+      { id: "packages", label: "Packages", tab: "lsa", mview: "packages", asset: true, title: "The work packages here: tasks done together on one visit" },
+      { id: "forecast", label: "Forecast", tab: "maintenance", mview: "forecast", preview: true, title: "Forecast (preview): the forecast's layout, with made-up numbers" },
+    ],
+  },
+  {
+    id: "monitoring", label: "Monitoring", title: "Readings at every measuring point, and the life left",
+    views: [
+      { id: "readings", label: "Readings", tab: "measurements" },
+      { id: "risk", label: "Life left", tab: "condition" },
+    ],
+  },
+  { id: "rcm", label: "RCM", views: [{ id: "rcm", tab: "rcm" }] },
+  { id: "fmea", label: "FME(C)A", views: [{ id: "fmea", tab: "fmea" }] },
+  {
+    id: "models", label: "Models", title: "The life models on this position and the positions inside it, and the missions flown on its RBD",
+    views: [
+      { id: "life", label: "Life models", tab: "models" },
+      { id: "missions", label: "Missions", tab: "missions" },
+    ],
+  },
+  { id: "history", label: "History", designLabel: "Field reports", views: [{ id: "reports", label: "Failure reports", tab: "reports" }] },
+];
+
+// The tabs a row has: [{id, label, title, views: [{id, label, tab, mview, title}]}], each with
+// only the views the row has, and no tab without one. `preview`: MENU_PREVIEW is on (Forecast).
+export function panelTabsFor(row, { preview = false } = {}) {
+  const tabs = tabsFor(row);
+  const has = new Map(tabs.map((t) => [t.id, t]));
+  const design = isDesignRow(row);
+  const used = new Set();
+  const out = [];
+  for (const p of PANEL_TABS) {
+    const views = p.views.filter((v) => has.has(v.tab) && !(v.preview && !preview) && !(v.asset && design))
+      .map((v) => ({ ...v, label: v.label || p.label, title: v.title || has.get(v.tab).title }));
+    if (!views.length) continue;
+    views.forEach((v) => used.add(v.tab));
+    // A tab with one view says what that view is on hover (a design's Field reports: the reports
+    // on the items built from the product; a class's Monitoring: its positions' risk).
+    const title = views.length === 1 ? views[0].title : (design && p.designTitle) || p.title;
+    out.push({ id: p.id, label: (design && p.designLabel) || p.label, title, views });
+  }
+  // A tab no panel tab names (switched back on): a tab of its own.
+  for (const t of tabs) {
+    if (!used.has(t.id)) out.push({ id: t.id, label: t.label, title: t.title, views: [{ id: t.id, label: t.label, tab: t.id, title: t.title }] });
+  }
+  return out;
+}
+
+// Where the row's panel is: {tab, view} (panel tab and inner view ids) for the tab shown (shownTab)
+// and the ?mview= in the address. A view that names an mview is picked only with that mview; else
+// the view for the tab with none. Null for a row with no tabs.
+export function panelView(tab, row, { mview = null, preview = false } = {}) {
+  const shown = shownTab(tab, row);
+  let plain = null;
+  for (const p of panelTabsFor(row, { preview })) {
+    for (const v of p.views) {
+      if (v.tab !== shown) continue;
+      if (v.mview && v.mview === mview) return { tab: p.id, view: v.id };
+      if (!v.mview && !plain) plain = { tab: p.id, view: v.id };
+    }
+  }
+  return plain;
+}
+
+// The address tab and ?mview= that open a panel tab's view: {tab, mview} (mview null: none).
+// `view` left out: the tab's first view. Null: the row hasn't that tab.
+export function viewTarget(row, tabId, viewId = null, { preview = false } = {}) {
+  const p = panelTabsFor(row, { preview }).find((x) => x.id === tabId);
+  if (!p) return null;
+  const v = (viewId && p.views.find((x) => x.id === viewId)) || p.views[0];
+  return { tab: v.tab, mview: v.mview || null };
+}
+
+// The words that name where an address tab is, for text that sends you there ("Models › Life
+// models"; with the panel tabs off, the old tab's name: "Modelling").
+export function tabPlace(tab) {
+  const old = TABS.find((t) => t.id === tab)?.label || tab;
+  if (!EXPLORER_PANEL_TABS) return old;
+  for (const p of PANEL_TABS) {
+    const v = p.views.find((x) => x.tab === tab && !x.mview);
+    if (v) return p.views.length > 1 ? `${p.label} › ${v.label}` : p.label;
+  }
+  return old;
+}

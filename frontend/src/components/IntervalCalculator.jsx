@@ -11,6 +11,7 @@ import {
 import { savedModelRef } from "../modelNext.js";
 import { modeAnswers } from "../decisionCheck.js";
 import { formatCost } from "../money.js";
+import { tabPlace } from "../explorerTabs.js";
 import {
   ANALYSIS_KIND, TASK_COST_FIELD, TIME_UNITS, analysisName, taskCostWords, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfUnits, rationale, roundDown, taskUnit, withUnit,
 } from "../rcmIntervals.js";
@@ -90,7 +91,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
       if (calc.key === "fixed" && got.life_model?.distribution_id) {
         next.model = got.life_model;
         said.model = got.life_model.source === "position"
-          ? `From the position's model, “${got.life_model.name}” (the Modelling tab).`
+          ? `From the position's model, “${got.life_model.name}” (${tabPlace("models")}).`
           : `From the decision's evidence, “${got.life_model.name}”.`;
         if (got.costs?.planned_cost != null && blank(f.planned_cost)) next.planned_cost = String(got.costs.planned_cost);
         if (got.costs?.unplanned_cost != null && blank(f.unplanned_cost)) next.unplanned_cost = String(got.costs.unplanned_cost);

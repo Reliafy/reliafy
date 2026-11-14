@@ -116,7 +116,7 @@ def test_members_are_the_positions_whose_item_is_of_the_class_or_inside_it(m, db
     # No model anywhere: a dash for each (no risk keys, no reason) and one note saying how to get risk.
     assert all(r["model"] is None and not r["scored"] and r["why"] is None and "risk" not in r for r in out["members"])
     assert (out["scored"], out["no_model"], out["not_scored"], out["models"]) == (0, 3, 0, [])
-    assert out["note"].startswith("None of these positions has a condition and life model") and "Modelling" in out["note"]
+    assert out["note"].startswith("None of these positions has a condition and life model") and "Models › Life models" in out["note"]
     with pytest.raises(NotFound):
         _fleet(m, db, "no-such-class")
     _same_after_rebuild(m)

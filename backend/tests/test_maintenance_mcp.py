@@ -1163,7 +1163,7 @@ def test_an_item_class_fleet_over_mcp_and_rest(env):
     assert (fleet["positions"], fleet["scored"], fleet["no_model"]) == (2, 1, 1)
     first, second = fleet["members"]
     assert first["position"]["id"] == ids[0] and first["scored"] and len(first["risk"]) == 3
-    assert second["model"] is None and "risk" not in second and "Modelling" in fleet["note"]
+    assert second["model"] is None and "risk" not in second and "Models › Life models" in fleet["note"]
     assert one["member"]["unit"]["prediction"] and one["member"]["risk"] == pytest.approx(first["risk"])
     assert "get.item_class with fleet" in guide["guide"]
 

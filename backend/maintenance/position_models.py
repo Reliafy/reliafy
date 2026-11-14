@@ -1652,7 +1652,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         m.use_position_model(position_id, link["id"])
     if nested:
         built["notes"].append(f"Placeholders inside sub-systems: {', '.join(nested[:8])}"
-                              f"{' …' if len(nested) > 8 else ''}. Give each a model on the Modelling tab and rebuild.")
+                              f"{' …' if len(nested) > 8 else ''}. Give each a model in Models › Life models and rebuild.")
     return {**link, "notes": built["notes"], "placeholders": built["placeholders"] + nested}
 
 
@@ -1684,8 +1684,8 @@ def new_rbd(m, db, owners, hidden, position_id: str, owner_id: str, repairable: 
         if fields is None:
             fields = {"model": dict(rbd_derive.PLACEHOLDER), "data": {"model_source": "A placeholder: no model in use"}}
             placeholders.append(p["name"])
-            notes.append(f"{p['name']} has no life model in use: a placeholder (flagged) stands in. Give it one on "
-                         "the Modelling tab, or set the block's model in the builder.")
+            notes.append(f"{p['name']} has no life model in use: a placeholder (flagged) stands in. Give it one in "
+                         "Models › Life models, or set the block's model in the builder.")
         bid = rbd_derive._bid(p["id"])
         nodes.append({"id": bid, "type": "component", "label": p["name"], **fields})
         edges = [{"source": "in", "target": bid}, {"source": bid, "target": "out"}]
@@ -1822,7 +1822,7 @@ def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:
                          "non-repairable, or give the position a life model.")
     if fields is None:
         raise sv.Invalid(note or f"{p['name']} has nothing inside and no model in use to build the mission's RBD "
-                                 "from. Give it a life model on the Modelling tab, or add the positions inside it.")
+                                 "from. Give it a life model in Models › Life models, or add the positions inside it.")
     bid = rbd_derive._bid(p["id"])
     graph = {"unit": unit, "nodes": [{"id": "in", "type": "input"}, {"id": "out", "type": "output"},
                                      {"id": bid, "type": "component", "label": p["name"], **fields}],

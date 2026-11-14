@@ -20,6 +20,8 @@ Right-click, the row's ⋯ button (`MoreMenu`), or Shift+F10 / the Menu key on a
 - `onChoose(id)` — runs after the menu has closed.
 - `onClose()` — puts the focus back on the row.
 
+The same menu lists the tabs folded into a tab row's "⋯ N" (`Tabs` with `overflow`).
+
 ## Look
 
 - A `bg-surface` card with a 1px `border`, `radius-lg`, `shadow-lg` and 4px padding. 200px at least.
