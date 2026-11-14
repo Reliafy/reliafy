@@ -60,8 +60,10 @@ def pytest_configure(config):
     # the next release removes is found here rather than in production. Their
     # messages: SurPyval "... will be removed in v0.26", its dated converters
     # "... removed in the first release on or after ...", RePyability "...
-    # will be refused in 0.16" (a FutureWarning).
-    library = r".*(will be removed in v0\.|removed in the first release on or after|will be refused in 0\.)"
+    # will be refused in 0.18", "... will be removed in 0.18" (a function moved
+    # to surpyval) and "..., and 0.18 will refuse it" (a renamed attribute),
+    # all FutureWarnings.
+    library = r".*(will be removed in v?0\.|removed in the first release on or after|will be refused in 0\.|0\.\d+ will refuse it)"
     for category in ("DeprecationWarning", "FutureWarning"):
         config.addinivalue_line("filterwarnings", f"error:{library}:{category}")
 

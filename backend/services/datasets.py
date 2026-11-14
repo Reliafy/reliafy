@@ -987,21 +987,31 @@ _TIME_UNITS = frozenset({"second", "minute", "hour", "day", "week", "month", "ye
 
 
 def _time_unit(times: list[str]) -> str | None:
-    """The unit the time column names, as SurPyval normalises it ("engine_hours"
-    → "hour"), or None. A suggestion for fitting; the model stores the unit."""
+    """The unit the time column names ("engine_hours" → "hour"), or None. A
+    suggestion for fitting; the model stores the unit.
+
+    SurPyval reads the words with pint: ``same_unit`` says whether a word
+    names one of the units here. (Up to 0.26 ``normalise_unit`` gave pint's
+    name for a word; from 0.27 it keeps the label as typed, #1218 there.)"""
     try:
-        from surpyval.utils.units import normalise_unit
+        from surpyval.utils.units import same_unit
     except ImportError:  # an older SurPyval: no units
         return None
     for col in times:
         for word in re.split(r"[_\s\-()/]+", col):
-            try:
-                u = normalise_unit(word) if word else None
-            except Exception:  # noqa: BLE001 - not a unit
-                u = None
-            if u in _TIME_UNITS:
-                return u
+            if not word:
+                continue
+            for unit in _TIME_UNIT_ORDER:
+                try:
+                    if same_unit(word, unit):
+                        return unit
+                except Exception:  # noqa: BLE001 - not a unit
+                    break
     return None
+
+
+#: The units in a fixed order, so the answer never depends on set order.
+_TIME_UNIT_ORDER = tuple(sorted(_TIME_UNITS))
 
 
 _GENERIC_ID_RE = re.compile(r"^(id|ids|unit|units|item|items|serial|sn|tag|no|number|name|asset_id|unit_id|item_id)$", re.IGNORECASE)

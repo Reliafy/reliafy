@@ -1711,7 +1711,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "event-log") setEventFor({ id: r.key, name: r.ref.name });
       else if (id === "tree-export") openSheet("export", { id: r.key, name: r.ref.name || "(no name)" });
       else if (id === "build-item") buildFrom(r.key);
-      else if (id === "make-own") makeOwn(r);
       else if (id === "asset-merge") openMerge();
       else if (id === "asset-separate") separateRow(r);
       else if (id === "pin") pinTo(r.key, { select: true });

@@ -77,7 +77,7 @@ test("Maintenance: every task here with where it came from and its cost; add one
   await expect(form).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await form.getByRole("textbox", { name: /Task: the action only/ }).fill(`Replace the impeller ${tag}`);
-  await form.getByRole("spinbutton", { name: "Interval" }).fill("24");
+  await form.getByRole("group", { name: "How often" }).getByRole("spinbutton", { name: "How many" }).fill("24");
   await form.getByRole("combobox", { name: "Why it's done (optional)" }).selectOption("oem");
   await form.getByRole("textbox", { name: "Reference (optional)" }).fill("Pump manual 7.2");
   await form.getByRole("checkbox", { name: `Seal leaks ${tag}` }).check();
