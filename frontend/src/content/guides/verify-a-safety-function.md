@@ -101,17 +101,19 @@ scale over the SIL bands, with the PFDavg dashed and the SIL limit dotted.
 
 Under **Details**, **Where the PFDavg comes from** lists each element's share:
 
-- **Share of PFDavg** — the share of the PFDavg in which the element is one of
-  the failed elements (its Fussell–Vesely importance). Both channels of a 1oo2
-  are in the same failure, so these shares add up to more than 100%. A common
-  cause is in its members' shares.
+- **Share of PFDavg** — the element's part of the PFDavg, with each
+  common-cause group on a row of its own. The common cause's part is what the
+  PFDavg would fall by if the shared cause never struck. The two channels of a
+  1oo2 split the time they are down together half and half. These add up to
+  100%.
 - **Share of dangerous failures** — each element's share of the function's
   failures, with each common-cause group on a row of its own. These add up to
   100%.
 
 The element at the top is where a shorter test interval, a better element or
 more redundancy does the most good. In the starter it is the single shutdown
-valve: **98%** of the PFDavg.
+valve: **98%** of the PFDavg; the transmitters' common cause is about 1.5% and
+each transmitter on its own a few hundredths of a percent.
 
 **What to improve**, between the chart and Details, says the same as a ranked
 list of changes, each moved 10% the way that helps. In the starter the top two

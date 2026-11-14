@@ -226,7 +226,10 @@ def test_design_life_interval_from_the_fitted_blocks():
     iv, t = res["band"]["design_life"], res["design_life"]["time"]
     assert iv["lower"] < t < iv["upper"]
     # Its B10 is the same quantity, from the same draws.
-    assert iv == pytest.approx(res["band"]["blife"]["b10"], rel=1e-9)
+    b10 = res["band"]["blife"]["b10"]
+    assert iv["bound_side"] == b10["bound_side"]
+    numbers = ("lower", "upper", "bound")
+    assert {k: iv[k] for k in numbers} == pytest.approx({k: b10[k] for k in numbers}, rel=1e-9)
 
     # As of now: the band and the interval run from now, and are shorter.
     now = analyze(_fitted_pumps(), resolve_model=_resolver({"m1": FIT}), band={"level": 0.9},
