@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { getPositionForecast } from "../api.js";
 import {
-  besidesRoutine, costRangeText, datesText, failuresText, hoursText, moneyText, periodLabel, restsOn, sig,
+  besidesRoutine, costRangeText, datesText, dayText, everyText, failuresText, hoursText, moneyText, periodLabel, restsOn, sig,
 } from "../positionForecast.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import "./PositionForecast.css";
 
 // The Maintenance tab's Forecast view (?mview=forecast): the position and everything inside it,
@@ -16,12 +17,25 @@ import "./PositionForecast.css";
 //
 //   positionId, name: the row opened      root: the asset opened (nothing above it is used)
 //   bar: the Tasks / Forecast switch, shown in the view's own bar
+//
+// Built from the design system's shared parts: the answer is a ResultSummary (amber with "!" when
+// something is missing), the folds are ResultDetails; spacing and colour are tokens.
 
 const PERIODS = [
   { value: "month", label: "Months", periods: 12 },
   { value: "quarter", label: "Quarters", periods: 4 },
   { value: "year", label: "Years", periods: 5 },
 ];
+
+// The answer's numbers in bold, after its date ("To 30 Nov 2027: **58** tasks, about **46** labour
+// hours …"), as the design system's result sentences have them.
+function boldNumbers(text) {
+  const s = String(text);
+  const at = s.indexOf(": ");
+  const head = at < 0 ? "" : s.slice(0, at + 2);
+  const parts = s.slice(head.length).split(/(\$?\d[\d,]*(?:\.\d+)?%?)/);
+  return [head, ...parts.map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part))];
+}
 
 export default function PositionForecast({ positionId, name, root = null, bar = null }) {
   const [period, setPeriod] = useState("month");
@@ -50,14 +64,15 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
       {!fc && !error && <div className="card empty">Working out the forecast…</div>}
       {fc && (
         <>
-          <p className="fc-answer">{fc.answer}</p>
-          <p className="lib-date fc-how">
-            For {fc.covers || name}, from today ({fc.start}) to {fc.end}. {fc.hours_basis ? `${fc.hours_basis}.` : ""}{" "}
+          <ResultSummary className="fc-summary" tone={fc.states.length > 0 ? "caveat" : "neutral"} sentence={boldNumbers(fc.answer)}>
+            For {fc.covers || name}, from today ({dayText(fc.start)}) to {dayText(fc.end)}. {fc.hours_basis ? `${fc.hours_basis}.` : ""}{" "}
             Ranges are 90% of outcomes (the 5th to 95th percentile).
-          </p>
+          </ResultSummary>
           {fc.states.length > 0 && (
             <ul className="fc-states" aria-label="What's missing">
-              {fc.states.map((s, i) => <li key={i} className={`fc-state fc-${s.kind}`}>{s.text}</li>)}
+              {fc.states.map((s, i) => (
+                <li key={i} className={`fc-state fc-${s.kind}`}><span className="fc-state-icon" aria-hidden="true">!</span>{s.text}</li>
+              ))}
             </ul>
           )}
           <div className="maint-scroll fc-scroll">
@@ -106,15 +121,14 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
               </tfoot>
             </table>
           </div>
-          <details className="fc-fold" open={fc.tasks.length > 0 && fc.tasks.length <= 6}>
-            <summary>Tasks on dates ({fc.tasks.length})</summary>
+          <ResultDetails summary={`Tasks on dates (${fc.tasks.length})`} open={fc.tasks.length > 0 && fc.tasks.length <= 6}>
             {fc.tasks.length === 0 ? <p className="lib-date">No tasks with dates here or inside it.</p> : (
               <ul className="td-rows fc-list">
                 {fc.tasks.map((t) => (
                   <li key={t.id}>
                     <strong>{t.name}</strong>
                     {fc.by_position.length > 1 && <span className="lib-date"> · {t.position.name}</span>}
-                    <span className="lib-date"> · {t.how_often}</span>
+                    <span className="lib-date"> · {everyText(t.how_often)}</span>
                     <div>{t.overdue ? "Overdue: done first, then " : ""}{datesText(t.dates)}
                       {t.by_use && t.moments.length > 0 && t.moments[0] && <span className="lib-date"> (the meter reaches it at {t.moments[0].slice(11)} on the first)</span>}
                     </div>
@@ -124,9 +138,8 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                 ))}
               </ul>
             )}
-          </details>
-          <details className="fc-fold" open={fc.models.length > 0 && fc.models.length <= 3}>
-            <summary>Failures: the life models used ({fc.models.length})</summary>
+          </ResultDetails>
+          <ResultDetails summary={`Failures: the life models used (${fc.models.length})`} open={fc.models.length > 0 && fc.models.length <= 3}>
             {fc.models.length === 0 && <p className="lib-date">No life model in use on a position here with an item fitted. Attach one on the Modelling tab.</p>}
             <ul className="td-rows fc-list">
               {fc.models.map((m) => (
@@ -141,10 +154,9 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                 </li>
               ))}
             </ul>
-          </details>
+          </ResultDetails>
           {fc.by_position.length > 1 && (
-            <details className="fc-fold">
-              <summary>By position ({fc.by_position.length})</summary>
+            <ResultDetails summary={`By position (${fc.by_position.length})`}>
               <div className="maint-scroll">
                 <table className="lib-table fc-table">
                   <thead>
@@ -154,7 +166,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   <tbody>
                     {fc.by_position.map((p) => (
                       <tr key={p.position.id}>
-                        <th scope="row" style={{ paddingLeft: `${10 + p.depth * 14}px` }} title={p.hours_basis || undefined}>{p.position.name}</th>
+                        <th scope="row" style={{ "--fc-depth": p.depth }} className="fc-depth" title={p.hours_basis || undefined}>{p.position.name}</th>
                         <td className="num">{p.tasks}</td>
                         <td className="num">{p.labour_hours ? hoursText(p.labour_hours) : "—"}</td>
                         <td className="num">{p.planned_cost ? moneyText(p.planned_cost) : "—"}</td>
@@ -165,11 +177,10 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   </tbody>
                 </table>
               </div>
-            </details>
+            </ResultDetails>
           )}
           {(fc.not_on_dates.length > 0 || fc.not_forecast.length > 0) && (
-            <details className="fc-fold">
-              <summary>Left out ({fc.not_on_dates.length + fc.not_forecast.length})</summary>
+            <ResultDetails summary={`Left out (${fc.not_on_dates.length + fc.not_forecast.length})`}>
               <ul className="td-rows fc-list">
                 {fc.not_on_dates.map((x) => (
                   <li key={`t-${x.task.id}`}><strong>{x.task.name}</strong> <span className="lib-date">· {x.position.name}</span><div className="lib-date">Not on dates: {x.reason}.</div></li>
@@ -178,7 +189,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   <li key={`m-${x.link_id}-${x.position.id}`}><strong>{x.position.name}</strong>: {x.name}<div className="lib-date">Failures not forecast: {x.reason}.</div></li>
                 ))}
               </ul>
-            </details>
+            </ResultDetails>
           )}
           {fc.notes.length > 0 && <ul className="lib-date fc-notes">{fc.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
         </>

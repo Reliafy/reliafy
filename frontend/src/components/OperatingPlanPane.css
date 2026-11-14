@@ -55,5 +55,5 @@
   .op-pane .op-body { padding: 10px 12px 20px; }
   .op-day { grid-template-columns: 5.6em 1fr 3em; }
 }
-.op-actual { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }
+.op-actual { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) 0; }
 .op-actual p { margin: 0; }

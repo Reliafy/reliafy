@@ -1,19 +1,26 @@
-/* The Maintenance tab's Forecast view (PositionForecast.jsx). */
-.fc-view { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 4px 0 12px; }
-.fc-bar { flex-wrap: wrap; }
-.fc-answer { margin: 0; font-size: 1.05em; font-weight: 600; }
-.fc-how { margin: 0; }
-.fc-states { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.fc-state { padding: 8px 12px; border: 1px solid var(--warning-border, var(--border)); background: var(--warning-bg, var(--bg-subtle));
-  color: var(--warning-text, inherit); border-radius: 6px; }
-.fc-table th, .fc-table td { padding: 4px 10px; vertical-align: top; }
+/* The Maintenance tab's Forecast view (PositionForecast.jsx). Design system v2: the answer is a
+   ResultSummary, the folds ResultDetails; spacing, type and colour come from tokens only. */
+.fc-view { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; padding: var(--space-1) 0 var(--space-3); }
+.fc-view .result-summary { margin: 0; }
+.fc-bar { flex-wrap: wrap; margin: 0; }
+.fc-states { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-2); }
+.fc-state {
+  display: flex; align-items: flex-start; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border); border-radius: var(--radius-md);
+  background: var(--warning-bg); color: var(--warning-text); font-size: var(--fs-13); line-height: var(--lh-13);
+}
+.fc-state-icon { flex: none; font-weight: 600; }
+.fc-table th, .fc-table td { padding: var(--space-1) var(--space-3); vertical-align: top; }
 .fc-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fc-table tfoot th, .fc-table tfoot td { font-weight: 600; border-top: 1px solid var(--border); }
 .fc-table th { text-align: left; white-space: nowrap; }
 .fc-table td.fc-besides { white-space: nowrap; }
 .fc-table th[scope="row"] { white-space: nowrap; font-weight: 500; }
-.fc-fold > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
-.fc-list li { padding: 6px 0; overflow-wrap: anywhere; }
-.fc-flag-word { color: var(--warning-text, inherit); font-weight: 600; }
-.fc-notes { margin: 0; padding-left: 18px; }
+.fc-table th.fc-depth { padding-left: calc(var(--space-3) + var(--fc-depth, 0) * var(--space-4)); }
+.fc-view .rs-details { margin: 0; }
+.fc-list { margin: 0; }
+.fc-list li { padding: var(--space-2) var(--space-3); overflow-wrap: anywhere; }
+.fc-list li + li { border-top: 1px solid var(--border-subtle); }
+.fc-flag-word { color: var(--warning-text); font-weight: 600; }
+.fc-notes { margin: 0; padding-left: var(--space-4); }
 .mt-view { margin-left: auto; }

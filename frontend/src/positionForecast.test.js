@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { besidesRoutine, costRangeText, datesText, failuresText, periodLabel, restsOn, sig } from "./positionForecast.js";
+import { besidesRoutine, costRangeText, datesText, dayText, everyText, failuresText, periodLabel, restsOn, sig } from "./positionForecast.js";
 
 test("period labels say where a cut-short first period starts", () => {
   assert.equal(periodLabel({ start: "2026-11-16" }, "month", true), "Nov 2026 (from 16 Nov)");
@@ -34,4 +34,12 @@ test("dates in short, and what each column rests on", () => {
   assert.equal(restsOn(fc, "hours"), "Hours from the operating plan");
   assert.equal(restsOn(fc, "failures"), "Ring: Weibull life");
   assert.match(restsOn({ models: [] }, "failures"), /No life models/);
+});
+
+test("dates are day first and intervals read as words", () => {
+  assert.equal(dayText("2026-11-14"), "14 Nov 2026");
+  assert.equal(everyText("1 weeks"), "every week");
+  assert.equal(everyText("2000 hours"), "every 2,000 hours");
+  assert.equal(everyText("6 months"), "every 6 months");
+  assert.equal(everyText("the first Saturday of every month"), "the first Saturday of every month");
 });

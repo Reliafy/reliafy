@@ -61,12 +61,27 @@ export function besidesRoutine(row, tasks, few = 4) {
   return out;
 }
 
+// A day-first date ("14 Nov 2026") from an ISO date, as the design system writes dates.
+export function dayText(iso) {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+// A task's interval in words: "every week", "every 2,000 hours"; a pattern's own words
+// ("the first Saturday of every month") pass through.
+export function everyText(limit) {
+  const m = /^(\d+(?:\.\d+)?) ([a-z ]+)$/i.exec(String(limit || "").trim());
+  if (!m) return limit || "";
+  const n = Number(m[1]);
+  const unit = m[2];
+  if (n === 1) return `every ${unit.replace(/s$/, "")}`;
+  return `every ${n.toLocaleString("en-GB")} ${unit}`;
+}
+
 // A task's dates in short: the first few, then how many more.
 export function datesText(dates, shown = 4) {
-  const words = dates.slice(0, shown).map((d) => {
-    const [y, m, day] = d.split("-").map(Number);
-    return `${day} ${MONTHS[m - 1]} ${y}`;
-  });
+  const words = dates.slice(0, shown).map(dayText);
   const more = dates.length - shown;
   return more > 0 ? `${words.join(", ")} and ${more} more` : words.join(", ") || "none in this time";
 }
