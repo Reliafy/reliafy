@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { getMaintenanceTree, moveMeasurementPoint } from "../api.js";
 import { pointMoveChoices } from "../measuringPoint.js";
 import { Field, FormModal } from "./MaintenanceParts.jsx";
+import { EXPLORER_PATH } from "../navigation.js";
 import "../views/AssetExplorer.css";
 
 // "Move…" for a measuring point (the Measurements tab's ⋯ menu and the
@@ -13,13 +15,19 @@ export default function PointMoveModal({ point, onClose, onDone }) {
   const [error, setError] = useState(null);
   const [query, setQuery] = useState("");
   const [to, setTo] = useState("");
+  // In the Explorer opened on one asset (?root=): that asset's positions, unless "Any asset" is ticked.
+  const { pathname, search } = useLocation();
+  const within = pathname === EXPLORER_PATH ? new URLSearchParams(search).get("root") : null;
+  const [anyAsset, setAnyAsset] = useState(false);
+  const scope = within && !anyAsset ? within : null;
   useEffect(() => {
     let live = true;
-    getMaintenanceTree()
+    setPositions(null);
+    getMaintenanceTree({ within: scope })
       .then((t) => live && setPositions(t.positions || []))
       .catch((e) => live && setError(e.message || "Couldn't load the tree."));
     return () => { live = false; };
-  }, []);
+  }, [scope]);
   const here = point.position?.id || null;
   const { rows, more } = useMemo(() => pointMoveChoices(positions || [], query, here), [positions, query, here]);
   const picked = rows.find((r) => r.id === to) || (positions || []).find((p) => p.id === to);
@@ -34,6 +42,12 @@ export default function PointMoveModal({ point, onClose, onDone }) {
         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, tag or a position above it"
                aria-label="Find a position" autoFocus />
       </Field>
+      {within && (
+        <label className="maint-place-any">
+          <input type="checkbox" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }} />
+          {" "}Any asset <span className="lib-date">(not only the one open)</span>
+        </label>
+      )}
       {error && <div className="card error">{error}</div>}
       {positions === null && !error ? <p className="lib-date">Loading the tree…</p> : (
         <ul className="rcm-move-tree" role="listbox" aria-label="Positions">

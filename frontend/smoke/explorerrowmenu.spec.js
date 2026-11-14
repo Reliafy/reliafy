@@ -224,7 +224,7 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   const addRow = page.locator(".tp-addrow");
   const packaging = page.locator(".pk-panel").getByRole("region", { name: "Package the tasks" });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
+  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.pool.id}`);
   // Summary: the tree ends with its quiet "+ New position" row.
   await expect(addRow).toHaveText("+New position");
 

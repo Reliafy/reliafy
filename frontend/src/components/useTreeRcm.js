@@ -33,7 +33,8 @@ const WORDS = {
 // A functional failure added from a standard's row: it breaches that standard.
 const WORDS_UNDER_STANDARD = { ...WORDS.fail, label: "How does it fail to meet this performance standard?" };
 
-export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askText }) {
+// within: one asset (the Explorer opened on it, ?root=): its RCM alone, read so at the source.
+export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askText, within = null }) {
   const [rcm, setRcm] = useState(null);
   const [error, setError] = useState(null);
   // Each read is numbered and only the latest read's answer is shown, except
@@ -45,10 +46,10 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
   const landed = useRef(0);
   const load = useCallback(() => {
     const n = ++latest.current;
-    return getWorkspaceRcm()
+    return getWorkspaceRcm({ within })
       .then((d) => { if (n === latest.current || landed.current === 0) { landed.current = n; setRcm(d); setError(null); } return d; })
       .catch((e) => { if (n === latest.current) setError(e.message); });
-  }, []);
+  }, [within]);
   useEffect(() => {
     if (on) load();
   }, [on, load]);

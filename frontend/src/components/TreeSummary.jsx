@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import Chip from "./ui/Chip.jsx";
 import Section, { AddRow } from "./ui/Section.jsx";
 import ClampLines from "./ui/ClampLines.jsx";
@@ -10,7 +10,7 @@ import { byName, insideWords, statusWords } from "../assetTree.js";
 import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
 import { annualLsa, annualText, nextVisit } from "../lsaTab.js";
-import { explorerPath } from "../assetTree.js";
+import { explorerHere } from "../products.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
 // column, a readable width at most. Status chips and the description first,
@@ -123,6 +123,8 @@ const SHOWN_TASKS = 8;
 // "Log an event…" (the row's action, when it has one) sits at the foot of Work:
 // tasks waiting for an event are raised from here.
 function Work({ r, state, today, fullPage, logEvent = null }) {
+  // The LSA links stay in the tree on show (one asset open on its own stays so).
+  const { pathname, search } = useLocation();
   const { data, error } = state;
   let body;
   let count = null;
@@ -164,12 +166,12 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
           )}
           {visit && (
             <p className="td-quiet td-next-visit">
-              Next visit: <Link to={explorerPath("positions", { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
+              Next visit: <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
             </p>
           )}
           {annual && (
             <p className="td-quiet td-annual" title="Each task's labour hours × 365.25 ÷ its interval in days, added up. Tasks raised by an event or counted by use have no yearly count.">
-              <Link to={explorerPath("positions", { sel: r.key, tab: "lsa" })}>{annual}</Link>
+              <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa" })}>{annual}</Link>
             </p>
           )}
           {tasks.length > 0 && (

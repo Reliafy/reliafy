@@ -589,3 +589,90 @@ test("an asset opened by Classes: the place it's at (an asset on the Assets page
   assert.deepEqual(rl.roots, ["river"]);
   assert.ok(rl.rows.has("r1") && !rl.rows.has("p1") && !rl.rows.has("pool"));
 });
+
+// An asset is self-contained (14 Nov 2026): a link naming a row opens that row's asset alone.
+test("arrivalRoot, arrivalNamed, opensAsset and rcmPositionOf: what opens one asset on its own", async () => {
+  const { arrivalRoot, arrivalNamed, assetOfId, opensAsset, rcmPositionOf } = await import("./assetTree.js");
+  const data = {
+    locations: [
+      { id: "anthony", name: "96 Anthony Street", parent_id: null },
+      { id: "kitchen", name: "Kitchen", parent_id: "anthony" },
+      { id: "farm", name: "Farm", parent_id: null },
+    ],
+    positions: [
+      { id: "hws", name: "Hot water", parent_id: null, location_id: "kitchen", location: { id: "kitchen" } },
+      { id: "elem", name: "Element", parent_id: "hws", location: { id: "kitchen", inherited: true } },
+      { id: "pump", name: "Bore pump", parent_id: null, location_id: "farm", location: { id: "farm" } },
+      { id: "boat", name: "Boat", parent_id: null },
+      { id: "motor", name: "Outboard", parent_id: "boat" },
+    ],
+    spares: [{ id: "spare", name: "Spare element", location_id: "kitchen" }],
+  };
+  const q = (s) => new URLSearchParams(s);
+  // By id: a position (its top place, else its top position), a place, a spare at a place.
+  assert.equal(assetOfId(data, "elem"), "anthony");
+  assert.equal(assetOfId(data, "kitchen"), "anthony");
+  assert.equal(assetOfId(data, "spare"), "anthony");
+  assert.equal(assetOfId(data, "motor"), "boat");
+  assert.equal(assetOfId(data, "nope"), null);
+  // A link naming a row lands on its asset; a fit pane's position does too.
+  assert.equal(arrivalRoot(data, q("arrange=positions&sel=elem")), "anthony");
+  assert.equal(arrivalRoot(data, q("arrange=locations&sel=farm")), "farm");
+  assert.equal(arrivalRoot(data, q("tab=models&fit=motor"), "motor"), "boat");
+  // Not: one open already, the whole register asked for, the positions at no place, nothing named.
+  assert.equal(arrivalRoot(data, q("root=farm&sel=elem")), null);
+  assert.equal(arrivalRoot(data, q("all=1&sel=elem")), null);
+  assert.equal(arrivalRoot(data, q("place=none&sel=boat")), null);
+  assert.equal(arrivalRoot(data, q("arrange=positions")), null);
+  assert.equal(arrivalRoot(null, q("sel=elem")), null);
+  // An RCM row isn't a tree row: named, for the RCM read to place (a class's row never is).
+  assert.equal(arrivalNamed(data, q("tab=rcm&sel=fn1")), "fn1");
+  assert.equal(arrivalNamed(data, q("tab=rcm&sel=elem")), null);
+  assert.equal(arrivalNamed(data, q("sel=cls:pumps")), null);
+  assert.equal(arrivalNamed(data, q("all=1&sel=fn1")), null);
+  const rcm = { positions: [
+    { id: "pump", functions: [{ id: "fn0", failures: [{ id: "ff0", modes: [{ id: "m0" }] }] }] },
+    { id: "elem", functions: [{ id: "fn1", failures: [{ id: "ff1", modes: [{ id: "m1" }] }] }] },
+  ] };
+  assert.equal(rcmPositionOf(rcm, "fn1"), "elem");
+  assert.equal(rcmPositionOf(rcm, "m0"), "pump");
+  assert.equal(rcmPositionOf(rcm, "T:m1:task9"), "elem");
+  assert.equal(rcmPositionOf(rcm, "zzz"), null);
+  assert.equal(rcmPositionOf(null, "fn1"), null);
+  // On the whole register, an asset's own top row opens it alone: a top place, a top position at
+  // no place; not a top position at a place (its asset is the place), nor a row inside, nor Classes.
+  const byLoc = buildDisplay(data, "locations");
+  const byPos = buildDisplay(data, "positions");
+  assert.equal(opensAsset(data, byLoc.rows.get("anthony"), "locations"), true);
+  assert.equal(opensAsset(data, byLoc.rows.get("kitchen"), "locations"), false);
+  assert.equal(opensAsset(data, byPos.rows.get("boat"), "positions"), true);
+  assert.equal(opensAsset(data, byPos.rows.get("hws"), "positions"), false);
+  assert.equal(opensAsset(data, byPos.rows.get("motor"), "positions"), false);
+  assert.equal(opensAsset(data, byPos.rows.get("boat"), "classes"), false);
+  assert.equal(opensAsset(data, null, "positions"), false);
+});
+
+test("one place opened on its own: the tree in every arrangement holds nothing of another asset", () => {
+  // As GET /api/maintenance/tree?within=anthony sends it, and as scopeTree keeps it.
+  const data = {
+    locations: [
+      { id: "anthony", name: "96 Anthony Street", parent_id: null },
+      { id: "kitchen", name: "Kitchen", parent_id: "anthony" },
+      { id: "farm", name: "Farm", parent_id: null },
+    ],
+    positions: [
+      { id: "hws", name: "Hot water", parent_id: null, location_id: "kitchen", location: { id: "kitchen" }, item: { id: "i1" }, item_class_id: "heater" },
+      { id: "pump", name: "Bore pump", parent_id: null, location_id: "farm", location: { id: "farm" }, item: { id: "i2" }, item_class_id: "heater" },
+    ],
+    spares: [{ id: "s1", name: "Farm spare", location_id: "farm" }],
+    unhomed: [{ id: "u1", name: "Loose item" }],
+    classes: [{ id: "heater", name: "Heaters", children: [] }],
+  };
+  const one = scopeTree(data, "anthony");
+  for (const mode of ["positions", "locations", "classes"]) {
+    const d = buildDisplay(one, mode);
+    const names = [...d.rows.values()].map((r) => r.ref?.name);
+    assert.ok(!names.includes("Bore pump") && !names.includes("Farm") && !names.includes("Farm spare") && !names.includes("Loose item"), `${mode}: ${names}`);
+    assert.ok(names.includes("Hot water"), mode);
+  }
+});

@@ -63,7 +63,7 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 720 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.lineA.id}`);
+  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.lineA.id}`);
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-level", "2");
 
   // Right-click the line: Pin this branch (after the changes to the tree, before Delete).
@@ -209,7 +209,7 @@ test("a row outside the branch shows the whole tree again; a pin that's gone qui
   const tag = `o${Date.now()}`;
   const p = await plant(request, tag);
   // ?sel= outside the pinned branch: the whole tree, the row picked, and a note.
-  await open(page, `/asset-register/explorer?arrange=positions&pin=${p.lineA.id}&sel=${p.other.id}`);
+  await open(page, `/asset-register/explorer?all=1&arrange=positions&pin=${p.lineA.id}&sel=${p.other.id}`);
   await expect(page.locator(".tt-head").getByRole("status")).toHaveText("Showing the whole tree again");
   await expect(bar(page)).toHaveCount(0);
   await expect(row(page, `Works other ${tag}`)).toHaveAttribute("aria-selected", "true");

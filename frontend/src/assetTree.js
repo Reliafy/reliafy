@@ -106,6 +106,56 @@ export function assetOf(data, row) {
   return p ? p.id : null;
 }
 
+// The asset a row id is in (assetOf's answer, from the id alone): a position, a place, or an item
+// placed at one. null for an id that's none of them (a class, a group, an item with no home).
+export function assetOfId(data, id) {
+  if (!data || !id) return null;
+  if ((data.positions || []).some((p) => p.id === id)) return assetOf(data, { type: "pos", key: id });
+  if ((data.locations || []).some((l) => l.id === id)) return assetOf(data, { type: "loc", key: id });
+  const spare = (data.spares || []).find((it) => it.id === id);
+  return spare ? assetOf(data, { type: "item", key: id, ref: spare }) : null;
+}
+
+// An asset is self-contained (Derryn, 14 Nov 2026: "assets and all their linkages needs to be
+// completely isolated"): a link that lands on the whole-register Explorer naming a row (?sel=, or
+// a fit or RBD pane's position) opens that row's asset on its own (?root=). The asset to open, or
+// null to stay on the whole register: one already open (?root=), the whole register asked for
+// (?all=1: "Show every asset", and rows picked there), the positions at no place (?place=none),
+// nothing named, or a row in no asset. `data`: the whole register's tree read.
+export function arrivalRoot(data, params, paneId = null) {
+  if (!data || params.get("root") || params.get("all") || params.get("place")) return null;
+  return assetOfId(data, params.get("sel") || paneId);
+}
+
+// The row id an arrival names that isn't a tree row (an RCM row: a function, a failure mode), so
+// arrivalRoot couldn't place it: null when there's none, or the address keeps the whole register.
+export function arrivalNamed(data, params) {
+  if (!data || params.get("root") || params.get("all") || params.get("place")) return null;
+  const sel = params.get("sel");
+  return sel && !assetOfId(data, sel) && !String(sel).startsWith("cls:") ? sel : null;
+}
+
+// The position whose RCM (GET /api/maintenance/rcm: positions with their functions, failures and
+// modes) holds the row `id` (a task's row, T:<mode>:<task>, by its mode), or null.
+export function rcmPositionOf(rcm, id) {
+  const want = new Set(String(id || "").split(":").filter((x) => x.length > 1));
+  if (!want.size) return null;
+  const holds = (v) => {
+    if (Array.isArray(v)) return v.some(holds);
+    if (!v || typeof v !== "object") return false;
+    return want.has(v.id) || Object.values(v).some(holds);
+  };
+  for (const p of rcm?.positions || []) if (want.has(p.id) || holds(p)) return p.id;
+  return null;
+}
+
+// Whether a row picked on the whole register opens on its own: an asset's own top row (a top
+// place, or a top position at no place) in Positions or Locations. Classes' top rows are classes.
+export function opensAsset(data, row, mode) {
+  if (!row || row.parent != null || mode === "classes" || (row.type !== "pos" && row.type !== "loc")) return false;
+  return assetOf(data, row) === row.key;
+}
+
 // The Explorer's address for an arrangement, with any other query
 // ({sel, place}; empty values left out).
 export function explorerPath(mode = "positions", extra = {}) {
