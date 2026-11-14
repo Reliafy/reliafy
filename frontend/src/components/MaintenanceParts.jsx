@@ -380,7 +380,8 @@ export function everyText(t) {
   // A task raised by an event says what it waits for, or both when its interval runs too.
   const event = t.trigger?.text ? `on event: ${t.trigger.text}` : "";
   if (event && !t.trigger.with_interval) return event;
-  const first = `${t.interval} ${t.unit}`;
+  // A pattern says itself: "the first Saturday of every month".
+  const first = t.rule_text || `${t.interval} ${t.unit}`;
   const timed = t.also_interval ? `${first} or ${t.also_interval} ${t.also_unit}` : first;
   return event ? `${timed} or ${event}` : timed;
 }

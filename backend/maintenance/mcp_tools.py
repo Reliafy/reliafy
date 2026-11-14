@@ -85,6 +85,13 @@ Trigger = Annotated[dict[str, Any] | None, Field(description=(
     "too (otherwise it waits for the event, never overdue)."))]
 
 
+# How often, as a pattern an interval can't say (how_often.py).
+Rule = Annotated[dict[str, Any] | None, Field(description=(
+    "create/update: a calendar pattern, e.g. {kind: 'monthly', every: 1, weekday: 'Saturday', nth: 1} (the "
+    "first Saturday), {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1}, {kind: 'weekly', weekdays: "
+    "['Monday']}; monthly/yearly take day in place of weekday+nth. The interval follows it. update: {} clears."))]
+
+
 # A task's LSA record: what doing it needs (Maintenance.set_task_resources).
 Restoration = Annotated[dict[str, Any] | None, Field(description=(
     "update: what a fixed-interval task leaves the item as: {kind: as_new | kijima1 (takes away a share of "
@@ -118,6 +125,9 @@ def _d(value, default):
 
 
 GET_KINDS: Table = {
+    "operating_plan": ("id", "root", """How a position (or the item fitted to one) runs: its own plan, or
+        the nearest above it inside root (the asset opened), with inherited_from; hours a week and the next 14
+        days."""),
     "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
         from_precision / to_precision for rough dates), failure modes (from RCM, by hand or ad hoc),
         class_failure_modes (seen at other positions of its class), tasks with last-done / next-due and trade,
@@ -274,9 +284,11 @@ POSITIONS: Table = {
         to compare and pool. operating_context: how it's used (load, environment, hours). location_id: where it
         physically is; leave it out to inherit its parent's. Returns the position."""),
     "update": ("position_id", "name tag position_class description operating_context parent_id move_to_top_level "
-               "location_id clear_location", """Rename, change tag / class / description / operating_context,
-        move it (parent_id, or move_to_top_level true), set where it is (location_id: positions inside without
-        their own follow) or clear_location true to inherit its parent's again."""),
+               "location_id clear_location operating_plan end_operating_plan until", """Rename, change tag / class
+        / description / operating_context, move it (parent_id, or move_to_top_level true), set where it is
+        (location_id: positions inside without their own follow) or clear_location true to inherit its parent's
+        again. operating_plan: how it runs (guide topic operating_plan); end_operating_plan true stops its own
+        plan from until (default today)."""),
     "copy": ("position_id name", "parent_id", """Copy a position and everything inside it (positions, failure
         modes, tasks, parts lists, locations set on them; not items, stock or work orders) under a new name.
         Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
@@ -460,7 +472,7 @@ PRODUCTS: Table = {
 TASKS: Table = {
     "create": ("name", "interval position_id item_id location_id unit outcome also_interval also_unit point_id "
                "instructions checklist source reference failure_mode_id failure_mode_ids last_done trade while_stored "
-               "include_positions trigger start", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
+               "include_positions trigger start rule", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
         position_id (the job: lubricate the pump), item_id (follows the serial number: calibration,
         certification, a rotable's overhaul, preserving a stored spare) or location_id (a round; calendar units
         only). unit (default months): days, weeks, months, years, or hours / cycles / km from a counter
@@ -473,7 +485,8 @@ TASKS: Table = {
         or a reading past a limit). maintenance guide topic plan has examples."""),
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
-               "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than", """Rename it or change its interval, second limit (also_interval 0
+               "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than "
+               "rule", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
@@ -544,11 +557,11 @@ PACKAGES: Table = {
     "propose": ("", "position_id location_id weekday", """Drafts grouping the tasks in no package by cadence, area
         and trade, each with a ready create and warnings; weekday: longer cadences as layers on the shortest.
         Saves nothing: show the user."""),
-    "create": ("name", "position_id location_id parent_id timing every unit weekday nth day anchor tolerance "
+    "create": ("name", "position_id location_id parent_id timing every unit weekday nth day month anchor tolerance "
                "tolerance_unit trade notes tasks season shutdown", """A package on exactly one of position_id or location_id, or
         a layer on parent_id. Timing, cadence and visit rules: maintenance guide topic plan."""),
-    "update": ("package_id", "name timing every unit weekday nth day clear_pattern anchor tolerance tolerance_unit "
-               "trade notes tasks season shutdown", "Change it; tasks: members' visit rules; season {} clears it; "
+    "update": ("package_id", "name timing every unit weekday nth day month clear_pattern anchor tolerance "
+               "tolerance_unit trade notes tasks season shutdown", "Change it; tasks: members' visit rules; season {} clears it; "
                "shutdown: its visits are planned outages ({} clears it)."),
     "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
     "remove_task": ("package_id task_id", "", "Take a task out: it's raised on its own again."),
@@ -1246,7 +1259,10 @@ def register() -> None:
                             "one member, for its curves."))] = None,
                         fleet: Annotated[bool | None, Field(description=(
                             "item_class: true for the class's fleet (its positions, with risk now) in place of "
-                            "the class record."))] = None) -> dict[str, Any]:
+                            "the class record."))] = None,
+                        root: Annotated[str | None, Field(description=(
+                            "operating_plan: the asset opened; plans above it aren't used."))] = None
+                        ) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance overview, maintenance list.… and the records themselves."""
         m = m_for(ctx)
@@ -1281,6 +1297,8 @@ def register() -> None:
             return run(document_link, base_url(ctx), m, rid)
         if kind == "task_measurement":
             return run(m.task_measurement, rid, position_id)
+        if kind == "operating_plan":
+            return run(m.operating_plan, rid, root)
         if kind == "item_class" and fleet:
             from backend.maintenance import class_fleet
 
@@ -1487,12 +1505,20 @@ def register() -> None:
                               reason: str | None = None, cascade: bool | None = None,
                               dry_run: bool | None = None,
                               until: Annotated[str | None, Field(description=(
-                                  "out_of_service: the return date (none: open-ended)."))] = None,
+                                  "out_of_service: the return date (none: open-ended). update with "
+                                  "end_operating_plan: the day it stops."))] = None,
                               start: Annotated[str | None, Field(description=(
                                   "out_of_service: the first day out (default today)."))] = None,
                               event_type: str | None = None, note: str | None = None,
                               on: Annotated[str | None, Field(description=(
-                                  "log_event: the day it happened (default today)."))] = None) -> dict[str, Any]:
+                                  "log_event: the day it happened (default today)."))] = None,
+                              operating_plan: Annotated[dict[str, Any] | None, Field(description=(
+                                  "update: how it runs from a date: {plan: {background: {kind: continuous | "
+                                  "shifts | roster | rate | runs, ...}, specific?: [{runs: [[on, off], ...]}]}, "
+                                  "name?, time_zone?, from?, notes?}; guide topic operating_plan."))] = None,
+                              end_operating_plan: Annotated[bool | None, Field(description=(
+                                  "update: stop its own operating plan from until (default today)."))] = None
+                              ) -> dict[str, Any]:
         """Positions: the functional tree (functional locations, SAP's FLOC): the slot, by what it does.
         Items are fitted to them; tasks, failure modes, parts lists and life data belong to them."""
         m = m_for(ctx)
@@ -1508,7 +1534,19 @@ def register() -> None:
                 changes["parent_id"] = None if move_to_top_level else parent_id
             if location_id or clear_location:
                 changes["location_id"] = None if clear_location else location_id
-            return run(lambda: (m.update_position(position_id, **changes), m.position(position_id))[1])
+
+            def update():
+                if operating_plan is not None or end_operating_plan:
+                    if changes:
+                        m.update_position(position_id, **changes)
+                    if end_operating_plan:
+                        return m.end_operating_plan(position_id, until)
+                    given = dict(operating_plan)
+                    return m.set_operating_plan(position_id, given.get("plan"), given.get("name") or "",
+                                                given.get("time_zone"), given.get("from"), given.get("notes") or "")
+                m.update_position(position_id, **changes)
+                return m.position(position_id)
+            return run(update)
         if action == "copy":
             return run(m.copy_position, position_id, name, parent_id)
         if action == "retire":
@@ -1842,7 +1880,8 @@ def register() -> None:
                               "one."))] = None,
                           start: Annotated[str | None, Field(description=(
                               "create/update: the date it (next) falls due, e.g. 2027-10-01; then every "
-                              "interval. Default one interval from today; '' clears."))] = None) -> dict[str, Any]:
+                              "interval. Default one interval from today; '' clears."))] = None,
+                          rule: Rule = None) -> dict[str, Any]:
         """Scheduled tasks: they fall due and raise work orders (maintenance work_orders.generate). A task
         is on a position (the job; it counts again from each new item fitted), an item (follows the serial
         number, into a store too) or a location (a round). A task from an RCM decision comes with
@@ -1855,7 +1894,7 @@ def register() -> None:
                        also_unit, point_id, instructions or "", checklist, _d(source, "manual"), reference or "",
                        failure_mode_id, last_done, trade or "", item_id=item_id, location_id=location_id,
                        while_stored=while_stored, include_positions=include_positions,
-                       failure_mode_ids=failure_mode_ids, trigger=trigger, start=start)
+                       failure_mode_ids=failure_mode_ids, trigger=trigger, start=start, rule=rule)
         if action == "update":
             mode = "" if unlink_failure_mode else failure_mode_id
 
@@ -1864,7 +1903,8 @@ def register() -> None:
                                      instructions, checklist, mode, source, reference,
                                      None if clear_outcome else outcome if outcome is not None else ..., trade,
                                      while_stored, include_positions, last_done_reading,
-                                     None if clear_trigger else trigger if trigger is not None else ..., start=start)
+                                     None if clear_trigger else trigger if trigger is not None else ..., start=start,
+                                     rule=... if rule is None else rule)
                 if clear_cost or cost is not None:
                     view = m.set_task_cost(task_id, None if clear_cost else cost)
                 if restoration is not None:
@@ -2084,9 +2124,13 @@ def register() -> None:
                                        "sunday"] | None, Field(description=(
                 "With weeks: on that day; with months and nth: that day of the month (the first Saturday)."))]
             = None,
-            nth: Annotated[Literal[1, 2, 3, 4, -1, -2, -3, -4] | None, Field(description=(
-                "With weekday and months: which one (1 first, -1 last)."))] = None,
-            day: Annotated[int | None, Field(ge=1, le=31, description="With months: the day of the month.")] = None,
+            nth: Annotated[Literal[1, 2, 3, 4, 5, -1, -2, -3, -4, -5] | None, Field(description=(
+                "With weekday and months (or years and month): which one (1 first, -1 last; a 5th skips months "
+                "with none)."))] = None,
+            day: Annotated[int | None, Field(ge=1, le=31, description=(
+                "With months (or years and month): the day of the month."))] = None,
+            month: Annotated[int | None, Field(ge=1, le=12, description=(
+                "With years: the month, with weekday and nth (the first Tuesday of November) or day."))] = None,
             clear_pattern: bool | None = None,
             anchor: Annotated[str | None, Field(description=(
                 "The date the cadence counts from (default today)."))] = None,
@@ -2119,7 +2163,7 @@ def register() -> None:
                 m.check_shutdown(shutdown)  # refused before the package is made
                 made = m.create_package(name, position_id, location_id, parent_id, _d(timing, "fixed"),
                                         _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance,
-                                        tolerance_unit, trade or "", notes or "", tasks, season)
+                                        tolerance_unit, trade or "", notes or "", tasks, season, month)
                 return m.set_package_shutdown(made["id"], shutdown) if shutdown else made
             return run(create)
         if action == "update":
@@ -2127,7 +2171,7 @@ def register() -> None:
                 m.check_shutdown(shutdown)
                 out = m.update_package(package_id, name, timing, every, unit, weekday, nth, day,
                                        bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
-                                       ... if season is None else season)
+                                       ... if season is None else season, month)
                 return m.set_package_shutdown(package_id, shutdown) if shutdown is not None else out
             return run(update)
         if action == "add_task":

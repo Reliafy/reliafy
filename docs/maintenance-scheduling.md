@@ -983,6 +983,32 @@ Keep to the project's rules (`CLAUDE.md`):
     not, one or two of them, either meter), the times against the clock
     walked a quarter of an hour at a time.
 
+## How often, as a pattern; and operating plans
+
+A task's interval says "every 3 months"; some schedules are patterns instead: the first
+Saturday of every month, the first Tuesday of November every year.
+
+- `task.rule_set {task_id, rule}` gives a task a pattern (`rule: null` clears it). The shape is
+  `backend/maintenance/how_often.py`'s: `{kind: weekly | monthly | yearly, every, weekdays |
+  weekday + nth | day, month (yearly), anchor, version}`. The task's `interval` / `unit` follow the
+  rule (every 1 month, every 1 year) for whatever reads them, and its next date is the rule's first
+  after it was last done (or on or after the day it was made). A package's cadence (`every`, `unit`,
+  `pattern`, `anchor`) reads into the same shape; its `pattern` may now hold a `month` for a yearly
+  pattern, and a fifth weekday (`nth` 5 or -5) skips months with none. The app edits both with one
+  control ("How often") that shows the next three dates before saving.
+- `operating_plan.set {id, position_id, name, plan, time_zone, from, notes, on}` says how a position
+  runs from a date, and `operating_plan.ended {id, until, on}` stops one (a new plan ends the one
+  before it on its `from` date first; the past is never rewritten). Node `OperatingPlan`, edge
+  `RUNS_TO` from the position. `plan` is `backend/maintenance/operating_plan.py`'s shape: a
+  background with no end (`continuous`, `shifts`, `roster`, `rate`, `runs`) and specific runs on
+  top, each covering its own span. A position with no plan of its own runs to the nearest above it,
+  looked for only inside the asset opened; an item runs as the position it's fitted to.
+- The hours the app shows from a plan (a typical week, the next two weeks) are a simple summary in
+  clock hours. Where specific runs hand over to the background, the background counts only the time
+  the runs don't cover, pro rata, so no hours appear or go missing at the handover. Due dates by use
+  still come from meter readings; putting them on dates through the plan, and the forecast by
+  month, come with the scheduling library.
+
 ## Tasks raised by an event
 
 A task is scheduled by its interval (on the calendar or by use). Some work

@@ -392,7 +392,7 @@ def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
                 body.get("source") or "manual", body.get("reference", ""), body.get("failure_mode_id"),
                 body.get("last_done"), body.get("trade", ""), while_stored=body.get("while_stored"),
                 include_positions=body.get("include_positions"), failure_mode_ids=body.get("failure_mode_ids"),
-                trigger=body.get("trigger"), start=body.get("start"), **subject)
+                trigger=body.get("trigger"), start=body.get("start"), rule=body.get("rule"), **subject)
 
 
 @router.post("/positions/{position_id}/tasks")
@@ -1070,6 +1070,9 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
                                  body.get("while_stored"), body.get("include_positions"),
                                  body.get("last_done_reading"),
                                  start=("" if body["start"] is None else body["start"]) if "start" in body else None)
+        if "rule" in body:
+            # How often, as a pattern (the first Saturday of every month; how_often.py); null clears it.
+            view = m.set_task_rule(task_id, body["rule"])
         if "trigger" in body:
             # What raises it besides (or instead of) its interval; null clears it.
             view = m.set_task_trigger(task_id, body["trigger"])
@@ -2648,7 +2651,7 @@ def get_package(package_id: str, m: Maintenance = Depends(maintenance)) -> JSONR
 
 
 _PACKAGE_FIELDS = ("name", "timing", "every", "unit", "weekday", "nth", "day", "anchor", "tolerance", "tolerance_unit",
-                   "trade", "notes", "tasks")
+                   "trade", "notes", "tasks", "month")
 
 
 @router.post("/packages")
@@ -2661,7 +2664,8 @@ def create_package(body: dict = Body(...), m: Maintenance = Depends(maintenance_
                                 body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
                                 body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
                                 body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"),
-                                body.get("trade", ""), body.get("notes", ""), body.get("tasks"), body.get("season"))
+                                body.get("trade", ""), body.get("notes", ""), body.get("tasks"), body.get("season"),
+                                body.get("month"))
         # A shutdown: its visits are planned outages (shutdowns.py).
         return m.set_package_shutdown(made["id"], body["shutdown"]) if body.get("shutdown") else made
     return _run(go)
@@ -2689,6 +2693,32 @@ def out_of_service(kind: str, target_id: str, body: dict = Body(...),
     if kind not in ("positions", "items"):
         raise HTTPException(status_code=404, detail="Not found.")
     return _run(m.take_out_of_service, target_id, body.get("reason"), body.get("until"), body.get("start"))
+
+
+@router.get("/{kind}/{target_id}/operating-plan")
+def get_operating_plan(kind: str, target_id: str, root: str | None = None,
+                       m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """How a position (or the item fitted to one) runs: its own plan, or the nearest above it
+    inside root (the asset opened). Also over MCP and the CLI: maintenance get.operating_plan."""
+    if kind not in ("positions", "items"):
+        raise HTTPException(status_code=404, detail="Not found.")
+    return _run(m.operating_plan, target_id, root or None)
+
+
+@router.put("/positions/{position_id}/operating-plan")
+def set_operating_plan(position_id: str, body: dict = Body(...),
+                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{plan, name?, time_zone?, from?, notes?}: how it runs from a date (default today).
+    Also: maintenance positions.set_operating_plan."""
+    return _run(m.set_operating_plan, position_id, body.get("plan"), body.get("name") or "", body.get("time_zone"),
+                body.get("from"), body.get("notes") or "")
+
+
+@router.post("/positions/{position_id}/operating-plan/end")
+def end_operating_plan(position_id: str, body: dict = Body(default={}),
+                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{until?}: stop its own plan (default today). Also: maintenance positions.end_operating_plan."""
+    return _run(m.end_operating_plan, position_id, (body or {}).get("until"))
 
 
 @router.post("/{kind}/{target_id}/back-in-service")

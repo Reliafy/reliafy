@@ -1,0 +1,12 @@
+/* "How often" (HowOften.jsx): a sentence with pickers that wraps on a phone. */
+.how-often { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.how-often .ho-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.45rem; min-width: 0; }
+.how-often .ho-word { white-space: nowrap; }
+.how-often .ho-inline { display: inline-flex; align-items: center; gap: 0.35rem; }
+.how-often input.ho-num { width: 5.5rem; min-width: 0; }
+.how-often input.ho-day { width: 4rem; }
+.how-often select { max-width: 100%; min-width: 0; }
+.how-often .ho-dates { margin: 0; }
+/* The fieldset it sits in on a form ("How often" as its legend). */
+.mt-how { border: 1px solid var(--border, #d0d7de); border-radius: 6px; padding: 6px 10px 8px; margin: 0; min-width: 0; }
+.mt-how legend { font-size: 0.9em; padding: 0 4px; }
