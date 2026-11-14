@@ -7618,6 +7618,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   text-align: left;
   padding: 7px 10px;
   font-size: var(--fs-13);
+  font-weight: 500;
   color: var(--text);
   background: transparent;
   border: none;

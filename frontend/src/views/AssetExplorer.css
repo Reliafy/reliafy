@@ -1064,7 +1064,7 @@ button.rw-cklink {
 .row-menu .ovm-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-subtle); color: var(--accent-text); }
 .row-menu .ovm-item.danger:focus-visible { background: var(--danger-bg); color: var(--danger-text); }
 /* An item that can't be used now: greyed, with the reason under it. */
-.row-menu .ovm-item.off { color: var(--text-tertiary); cursor: not-allowed; }
+.row-menu .ovm-item.off { flex-direction: column; align-items: flex-start; gap: 0; color: var(--text-tertiary); cursor: not-allowed; }
 .row-menu .ovm-item.off:hover, .row-menu .ovm-item.off:focus-visible { background: var(--bg-subtle, transparent); color: var(--text-secondary); }
 /* A submenu (Focus ›): its item has the arrow at its end; beside the menu
    on a wide screen, in place under its item on a phone. The arrow is drawn,
