@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import ListSearch, { matches } from "./ListSearch.jsx";
 import PageHeader from "./ui/PageHeader.jsx";
+import HelpLink from "./ui/HelpLink.jsx";
 import Select from "./Select.jsx";
 import { ShowMeHow } from "./Walkthrough.jsx";
 import { openGuide } from "./HelpButton.jsx";
@@ -11,7 +12,7 @@ import { useNavCrumbs } from "../RolesProvider.jsx";
 
 // One template for every section's landing page and its children's pages:
 //
-//   header   title, a one-line purpose and "Show me how", the main action
+//   header   title, a purpose (up to two lines) and its help link, the main action
 //            ("New …") top right with any secondary actions beside it;
 //   starter  at most one starter banner, styled the same everywhere;
 //   list     the section's full list: search, a type filter where the section
@@ -23,12 +24,16 @@ import { useNavCrumbs } from "../RolesProvider.jsx";
 
 // "Show me how": the section's walkthrough when it has one (it opens a sample
 // and points at each step), else its how-to guide in the Help drawer.
-export function ShowMe({ help, children = "Show me how" }) {
+// In a section header (``asHelp``) it is the quiet help link that names what
+// it does: "Take the tour" or "Read the guide" (ui/HelpLink); in a sentence
+// (an empty state) it stays an inline text link.
+export function ShowMe({ help, children = "Show me how", asHelp = false }) {
   if (!help) return null;
   if (help.walkthrough && getWalkthrough(help.walkthrough)) {
-    return <ShowMeHow id={help.walkthrough}>{children}</ShowMeHow>;
+    return <ShowMeHow id={help.walkthrough} asHelp={asHelp}>{children}</ShowMeHow>;
   }
   if (!help.guide) return null;
+  if (asHelp) return <HelpLink kind="guide" onClick={() => openGuide(help.guide)} />;
   return (
     <button type="button" className="link wt-launch" onClick={() => openGuide(help.guide)}>
       {children}
@@ -49,7 +54,7 @@ export function SectionHeader({ section, title, purpose, help, primary, actions,
       meta={(purpose || help) && (
         <span className="sh-purpose">
           {purpose && <span className="sh-purpose-text" title={typeof purpose === "string" ? purpose : undefined}>{purpose}</span>}
-          <ShowMe help={help} />
+          <ShowMe help={help} asHelp />
         </span>
       )}
       primary={primary}

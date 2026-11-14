@@ -75,6 +75,18 @@ def test_time_unit_from_the_time_column():
     assert tags([[1.0, 0], [2.0, 1]], ["x", "c"])["time_unit"] is None
 
 
+def test_time_unit_reads_the_column_words_with_pint():
+    """SurPyval 0.27 keeps a unit label as typed, so the app compares each
+    word with its units (``same_unit``) rather than reading a normalised name."""
+    from backend.services.datasets import _time_unit
+
+    assert _time_unit(["odometer_km"]) == "kilometer"
+    assert _time_unit(["cycles"]) == "cycle"
+    assert _time_unit(["age (years)"]) == "year"
+    assert _time_unit(["Days"]) == "day"
+    assert _time_unit(["time_to_failure"]) is None
+
+
 def test_outcome_once_per_unit_with_readings_is_life_data_with_measurements():
     rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u, None if k < 3 else u % 2] for u in range(4) for k in range(4)]
     out = tags(rows, ["bearing", "hours", "vibration_mm_s", "censored"])

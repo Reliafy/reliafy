@@ -11,10 +11,12 @@ import { DueChip, Field, fmtDate, today as workspaceToday } from "../components/
 import { PauseDialog, RetireDialog, StatusChips } from "../components/LsaPanel.jsx";
 import { SubjectCell } from "./MaintenanceHome.jsx";
 import usePhone from "../usePhone.js";
-import { WEEKDAYS, dayName, rollupLines, visitRuleText } from "../lsaTab.js";
+import { rollupLines, visitRuleText } from "../lsaTab.js";
+import HowOften from "../components/HowOften.jsx";
+import { packageDates } from "../howOften.js";
 import { PACKAGES_PATH, linesText, packagePath, workOrderPath } from "../maintenanceOrders.js";
 import {
-  NTHS, PACKAGE_UNITS, editBody, formProblem, initialForm, outcomeText, packageSentence, patternsFor, taskLabel, visitDay,
+  PACKAGE_UNITS, editBody, formProblem, initialForm, outcomeText, packageSentence, taskLabel, visitDay,
   visitTasksText,
 } from "../packagePage.js";
 import { ORDERS_PATH, PACKAGES_LABEL } from "../navigation.js";
@@ -239,7 +241,7 @@ function Tasks({ pkg }) {
                 </td>
                 <td><SubjectCell subject={t.subject} /></td>
                 <td className="maint-nowrap">{visitRuleText(t)}</td>
-                <td className="lib-date maint-nowrap">every {t.interval} {unitWord(t.interval, t.unit)}</td>
+                <td className="lib-date maint-nowrap">{t.rule_text || `every ${t.interval} ${unitWord(t.interval, t.unit)}`}</td>
                 <td className="maint-nowrap"><DueChip task={t} /></td>
                 <td className="lib-date maint-nowrap">{fmtDate(t.last_done)}</td>
               </tr>
@@ -294,8 +296,9 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
   const body = editBody(pkg, form);
   const nothing = Object.keys(body).length === 0;
   const layer = !!pkg.parent;
-  const patterns = patternsFor({ ...form, timing: layer ? "fixed" : form.timing });
-  const pattern = patterns.includes(form.pattern) ? form.pattern : patterns[0];
+  const fixed = layer || form.timing === "fixed";
+  const today = workspaceToday();
+  const dates = problem ? null : packageDates(form.how, { anchor: pkg.cadence?.anchor, today, timing: fixed ? "fixed" : "from_last_visit" });
   const save = async (e) => {
     e.preventDefault();
     if (problem || nothing) return;
@@ -321,35 +324,11 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
             </select>
           </Field>
         )}
-        <div className="pk-dialog-row">
-          <Field label="Every"><input type="number" min="1" step="1" inputMode="numeric" value={form.every} onChange={set("every")} /></Field>
-          <Field label="Unit">
-            <select value={form.unit} onChange={set("unit")}>{PACKAGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
-          </Field>
-        </div>
-        {form.unit === "months" && patterns.length > 1 && (
-          <Field label="In the month">
-            <select value={pattern} onChange={set("pattern")}>
-              <option value="weekday">On a day of the week</option>
-              <option value="day">On a date</option>
-            </select>
-          </Field>
-        )}
-        {pattern === "weekday" && (
-          <div className="pk-dialog-row">
-            {form.unit === "months" && (
-              <Field label="Which">
-                <select value={form.nth} onChange={set("nth")}>{NTHS.map(([v, w]) => <option key={v} value={v}>{w}</option>)}</select>
-              </Field>
-            )}
-            <Field label="On">
-              <select value={form.weekday} onChange={set("weekday")}>{WEEKDAYS.map((d) => <option key={d} value={d}>{dayName(d)}</option>)}</select>
-            </Field>
-          </div>
-        )}
-        {pattern === "day" && (
-          <Field label="Day of the month"><input type="number" min="1" max="31" step="1" inputMode="numeric" value={form.day} onChange={set("day")} /></Field>
-        )}
+        <fieldset className="mt-how">
+          <legend>How often</legend>
+          <HowOften value={form.how} onChange={(how) => setForm((f) => ({ ...f, how }))} units={PACKAGE_UNITS} patterns={fixed}
+                    dates={dates} datesNote={fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+        </fieldset>
         {layer ? (
           <p className="lib-date">A layer visits on some of {pkg.parent.name}&apos;s set dates; its on-time window is {pkg.parent.name}&apos;s.</p>
         ) : (

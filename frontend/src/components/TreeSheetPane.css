@@ -3,21 +3,21 @@
    page sideways at 400 px. */
 .tree-sheet { padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 22px; overflow: auto; min-width: 0; }
 .ts-part { display: flex; flex-direction: column; gap: 10px; min-width: 0; max-width: 52rem; }
-.ts-part + .ts-part { border-top: 1px solid var(--line); padding-top: 18px; }
+.ts-part + .ts-part { border-top: 1px solid var(--border); padding-top: 18px; }
 .ts-title { margin: 0; font-size: var(--fs-15, 15px); }
 .ts-sub { margin: 6px 0 0; font-size: var(--fs-14, 14px); }
 .ts-intro { max-width: 46rem; }
 .ts-label { font-size: var(--fs-13); font-weight: 600; }
 .ts-file { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .ts-file input { max-width: 100%; min-height: 36px; }
-.ts-preview, .ts-done { display: flex; flex-direction: column; gap: 8px; min-width: 0; border: 1px solid var(--line);
-  border-radius: var(--r-sm, 8px); padding: 10px 12px; background: var(--surf); }
+.ts-preview, .ts-done { display: flex; flex-direction: column; gap: 8px; min-width: 0; border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px); padding: 10px 12px; background: var(--bg-surface); }
 .ts-done p, .ts-summary { margin: 0; overflow-wrap: anywhere; }
 .ts-lines { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 2px; }
 .ts-moves summary, .ts-notes summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
 .ts-moves ul, .ts-notes ul { margin: 4px 0 0; padding-left: 1.2rem; overflow-wrap: anywhere; font-size: var(--fs-13); }
 .ts-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
-.ts-table th, .ts-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ts-table th, .ts-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .ts-table td { overflow-wrap: anywhere; }
 .ts-where { white-space: nowrap; font-weight: 600; }
 .ts-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
@@ -25,8 +25,8 @@
 .ts-scope { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .ts-choice { display: flex; align-items: center; gap: 8px; min-height: 36px; overflow-wrap: anywhere; }
 /* In the details' place: the whole width beside the tree (not a 340 px side panel). */
-.rw-panel.tree-sheet-pane { flex: 1 1 auto; width: auto; min-width: 0; border: 0; border-top: 1px solid var(--line);
+.rw-panel.tree-sheet-pane { flex: 1 1 auto; width: auto; min-width: 0; border: 0; border-top: 1px solid var(--border);
   border-radius: 0; padding: 0; gap: 0; overflow: auto; }
-.rw-panel.tree-sheet-pane.table-pane-phone { position: fixed; inset: 0; z-index: 90; border: 0; background: var(--surf); }
+.rw-panel.tree-sheet-pane.table-pane-phone { position: fixed; inset: 0; z-index: 90; border: 0; background: var(--bg-surface); }
 .tree-sheet-pane .table-pane-head { display: flex; align-items: center; gap: 8px; }
 .tree-sheet-pane .table-pane-title { white-space: normal; }

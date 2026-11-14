@@ -6,7 +6,7 @@
 .mm-table-card .rs-table-wrap { padding: 2px 16px 6px; max-width: none; }
 .mm-table-card th { white-space: nowrap; }
 .detail-panel .mm-note { margin: 8px 0 0; }
-.mm-part { color: var(--muted); }
+.mm-part { color: var(--text-secondary); }
 /* Stacked (as .detail-panel stacks at 760 px): full width, so the table
    scrolls inside its card rather than widening the page. */
 @media (max-width: 760px) {

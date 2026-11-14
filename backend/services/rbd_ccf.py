@@ -10,8 +10,9 @@ fixed time or an exponential one — so the most common SIL case, a 1oo2 or
 simulation can't take a group — a member whose life isn't exponential, one
 with scheduled maintenance, imperfect repair or a maintenance group, revealed
 failures with non-exponential repairs, tests or repairs of another length,
-limited repair crews, a member pinned working or failed, or one started from
-a current state — it refuses, with the reason.
+limited repair crews or a member pinned working or failed — it refuses, with
+the reason. Since 0.17 a group starts from its members' current states (As of
+now), so a state on a member no longer leaves the groups out.
 
 Reliafy's rule: a repairable diagram's common cause is in **every** figure or
 in **none**. :func:`common_cause_refusal` asks RePyability whether its long

@@ -93,3 +93,48 @@ export function photoStep(index, count, key) {
 export function photoLabel(index, count, caption) {
   return `Open photo ${index + 1} of ${count}${caption ? `: ${caption}` : ""}`;
 }
+
+// The picker's choices inside one asset (the Explorer opened on it, ?root=), from that asset's
+// tree read (GET /api/maintenance/tree?within=): its positions (depth first, A to Z), its places
+// and its items (fitted there, or placed at one of its places). `ids`: every one of them, for
+// keeping only the work orders on something inside it (inAsset).
+export function assetLists(tree) {
+  const positions = tree?.positions || [];
+  const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "en", { numeric: true, sensitivity: "base" });
+  const known = new Set(positions.map((p) => p.id));
+  const kids = new Map();
+  for (const p of positions) {
+    const k = p.parent_id && known.has(p.parent_id) ? p.parent_id : null;
+    if (!kids.has(k)) kids.set(k, []);
+    kids.get(k).push(p);
+  }
+  for (const list of kids.values()) list.sort(byName);
+  const ordered = [];
+  const stack = [...(kids.get(null) || [])].reverse().map((p) => [p, 0]);
+  const seen = new Set();
+  while (stack.length) {
+    const [p, depth] = stack.pop();
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    ordered.push({ id: p.id, name: p.name, depth });
+    for (const c of [...(kids.get(p.id) || [])].reverse()) stack.push([c, depth + 1]);
+  }
+  const locs = tree?.locations || [];
+  const locById = new Map(locs.map((l) => [l.id, l]));
+  const locations = locs.map((l) => ({ id: l.id, name: l.name, parent: locById.has(l.parent_id) ? { name: locById.get(l.parent_id).name } : null }));
+  const items = [];
+  const itemIds = new Set();
+  for (const it of [...positions.map((p) => p.item).filter(Boolean), ...(tree?.spares || [])]) {
+    if (itemIds.has(it.id)) continue;
+    itemIds.add(it.id);
+    items.push({ id: it.id, name: it.name, serial: it.serial });
+  }
+  items.sort(byName);
+  return { positions: ordered, locations, items, ids: new Set([...known, ...locById.keys(), ...itemIds]) };
+}
+
+// Whether a work order (as the work order list gives it) is on something inside the asset (`ids`:
+// assetLists' ids): what it's on, the position the work is at, or where it is.
+export function inAsset(wo, ids) {
+  return [wo?.subject?.id, wo?.position?.id, wo?.location?.id].some((id) => id && ids.has(id));
+}

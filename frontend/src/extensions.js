@@ -48,18 +48,34 @@ export function asHandle(result) {
   return { unmount: null, update: null };
 }
 
-// The CSS custom properties extension pages may use (their current values).
+// The CSS custom properties extension pages may use (their current values):
+// the design system's roles (tokens.css), plus the names before v2, which
+// extensions written earlier still read. Each old name gives its new role's value.
 export const THEME_TOKENS = [
-  "--ink", "--muted", "--subtle", "--faint", "--line", "--line2", "--bg", "--surf", "--surf-2",
-  "--acc", "--acc-d", "--acc-line", "--danger", "--warn", "--warn-bg", "--warn-line", "--ok",
-  "--on-fill", "--mono", "--r-sm",
+  "--text", "--text-secondary", "--text-tertiary", "--text-disabled", "--text-on-fill",
+  "--bg-canvas", "--bg-surface", "--bg-subtle", "--border", "--border-subtle", "--border-control",
+  "--accent", "--accent-hover", "--accent-text", "--accent-subtle", "--accent-border",
+  "--success", "--success-text", "--success-bg", "--warning", "--warning-text", "--warning-bg", "--warning-border",
+  "--danger", "--danger-text", "--danger-bg", "--font-sans", "--font-mono", "--radius-md",
 ];
+export const LEGACY_TOKENS = {
+  "--ink": "--text", "--muted": "--text-secondary", "--subtle": "--text-tertiary", "--faint": "--text-disabled",
+  "--line": "--border", "--line2": "--border-subtle", "--bg": "--bg-canvas", "--surf": "--bg-surface", "--surf-2": "--bg-subtle",
+  "--acc": "--accent", "--acc-d": "--accent-hover", "--acc-line": "--accent-border", "--danger": "--danger",
+  "--warn": "--warning", "--warn-bg": "--warning-bg", "--warn-line": "--warning-border", "--ok": "--success",
+  "--on-fill": "--text-on-fill", "--mono": "--font-mono", "--r-sm": "--radius-md",
+};
 
 export function readTokens(style) {
   const out = {};
+  const read = (name) => style?.getPropertyValue?.(name)?.trim();
   for (const name of THEME_TOKENS) {
-    const v = style?.getPropertyValue?.(name);
-    if (v) out[name] = v.trim();
+    const v = read(name);
+    if (v) out[name] = v;
+  }
+  for (const [old, now] of Object.entries(LEGACY_TOKENS)) {
+    const v = out[now] || read(now);
+    if (v) out[old] = v;
   }
   return out;
 }

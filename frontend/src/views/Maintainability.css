@@ -6,16 +6,16 @@
 .mp-settings {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--sp-3) var(--sp-4);
-  margin: var(--sp-3) 0;
+  gap: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0;
 }
 
 .mp-start {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-3);
+  gap: var(--space-2) var(--space-3);
   align-items: center;
-  margin-bottom: var(--sp-3);
+  margin-bottom: var(--space-3);
 }
 .mp-start .sel-trigger,
 .mp-start .select { min-width: 220px; }
@@ -24,19 +24,19 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  margin: 0 0 var(--sp-2);
+  margin: 0 0 var(--space-2);
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 .mp-split input { margin-top: 2px; }
 
-.mp-lines { margin-top: var(--sp-2); }
+.mp-lines { margin-top: var(--space-2); }
 /* One repair time per line fits a laptop; the five element columns need the
    card to scroll sideways. */
 .mp-lines table { min-width: 720px; }
 .mp-lines.is-split table { min-width: 1060px; }
 .mp-lines th { white-space: nowrap; }
-.mp-lines th.mp-el { font-weight: 500; color: var(--muted); }
+.mp-lines th.mp-el { font-weight: 500; color: var(--text-secondary); }
 .mp-lines td { padding: 4px 6px; vertical-align: middle; }
 .mp-lines input[type="text"] {
   width: 100%;
@@ -47,25 +47,25 @@
 .mp-lines td.mp-text input { min-width: 150px; }
 .mp-lines td.mp-cell input { width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
 .mp-lines td.mp-cell.mp-qty input { width: 54px; }
-.mp-lines tr.mp-row-total td { color: var(--muted); font-size: var(--fs-13); }
+.mp-lines tr.mp-row-total td { color: var(--text-secondary); font-size: var(--fs-13); }
 .mp-lines td.mp-sum { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mp-lines .mp-remove { padding: 2px 6px; line-height: 1; }
-.mp-add { margin-top: var(--sp-2); display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.mp-add { margin-top: var(--space-2); display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
 
 .mp-compute {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-3);
+  gap: var(--space-2) var(--space-3);
   align-items: center;
-  margin-top: var(--sp-4);
+  margin-top: var(--space-4);
 }
-.mp-compute .compute-why { color: var(--muted); font-size: var(--fs-13); }
+.mp-compute .compute-why { color: var(--text-secondary); font-size: var(--fs-13); }
 
-.mp-result { margin-top: var(--sp-4); }
-.mp-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0 0; }
-.mp-section { margin-top: var(--sp-5); }
+.mp-result { margin-top: var(--space-4); }
+.mp-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0 0; }
+.mp-section { margin-top: var(--space-6); }
 .mp-section h3 { margin: 0 0 4px; font-size: var(--fs-15); }
-.mp-section .muted-line { margin: 0 0 var(--sp-2); }
+.mp-section .muted-line { margin: 0 0 var(--space-2); }
 
 .mp-table th.mp-num, .mp-table td.mp-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mp-table th.mp-barcol, .mp-table td.mp-barcol { width: 28%; min-width: 120px; }
@@ -74,16 +74,16 @@
   display: block;
   height: 10px;
   border-radius: 5px;
-  background: var(--surf-2);
+  background: var(--bg-subtle);
   overflow: hidden;
 }
-.mp-bar-fill { display: block; height: 100%; background: var(--acc); border-radius: 5px; }
-.mp-bar-muted .mp-bar-fill { background: var(--muted); }
+.mp-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 5px; }
+.mp-bar-muted .mp-bar-fill { background: var(--text-secondary); }
 
 .mp-paste textarea {
   width: 100%;
   min-height: 160px;
-  font-family: var(--mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-13);
 }
 

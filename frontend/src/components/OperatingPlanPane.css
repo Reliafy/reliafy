@@ -1,0 +1,57 @@
+/* The operating plan pane (OperatingPlanPane.jsx), in the Explorer's table area. */
+.op-pane .op-body { padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 14px; max-width: 760px; min-width: 0; overflow-wrap: anywhere; }
+.op-answer { margin: 0; font-size: 1.02em; }
+.op-now { display: flex; flex-direction: column; gap: 8px; }
+.op-now p { margin: 0; }
+.op-sub { font-size: 0.95em; margin: 4px 0 6px; font-weight: 600; }
+.op-label { font-weight: 600; font-size: 0.92em; }
+.op-hint { margin: 2px 0 6px; }
+.op-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.op-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.op-num { width: 5rem; }
+.op-grow { flex: 1 1 14rem; }
+.op-grow input { flex: 1 1 10rem; min-width: 0; }
+.op-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.op-kinds { border: 0; padding: 0; margin: 0; min-width: 0; }
+.op-kind-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.op-kind { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; min-height: 36px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
+.op-kind input { margin: 0; }
+.op-kind.on { border-color: var(--accent-border, var(--accent)); background: var(--accent-subtle); color: var(--accent-text); }
+.op-shift { border: 1px solid var(--border-subtle, var(--border)); border-radius: 6px; padding: 8px 10px; margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.op-days { display: flex; flex-wrap: wrap; gap: 4px; }
+.op-daybox { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; min-height: 32px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.9em; }
+.op-daybox input { margin: 0; }
+.op-daybox.on { border-color: var(--accent-border, var(--accent)); background: var(--accent-subtle); }
+.op-add { align-self: flex-start; }
+.op-runs textarea { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 0.9em; }
+.op-runs-foot { display: flex; gap: 12px; align-items: center; margin-top: 4px; }
+.op-specific summary { cursor: pointer; font-weight: 600; font-size: 0.92em; padding: 4px 0; }
+.op-specific[open] summary { margin-bottom: 6px; }
+.op-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.op-preview { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-subtle, var(--border)); padding-top: 10px; }
+
+/* The strip: one row a day, its 24 hours as a bar. */
+.op-strip { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.op-day { display: grid; grid-template-columns: 6.5em 1fr 3.5em; align-items: center; gap: 8px; font-size: 0.88em; }
+.op-day-name { white-space: nowrap; color: var(--text-muted, inherit); }
+.op-day-hours { text-align: right; font-variant-numeric: tabular-nums; }
+.op-bar { position: relative; height: 14px; border-radius: 3px; background: var(--bg-subtle); overflow: hidden; min-width: 0;
+  background-image: linear-gradient(to right, transparent calc(25% - 1px), var(--border-subtle, var(--border)) 25%, transparent calc(25% + 1px),
+    transparent calc(50% - 1px), var(--border-subtle, var(--border)) 50%, transparent calc(50% + 1px),
+    transparent calc(75% - 1px), var(--border-subtle, var(--border)) 75%, transparent calc(75% + 1px)); }
+.op-run { position: absolute; top: 0; bottom: 0; }
+.op-l-background { background: var(--accent); opacity: 0.55; }
+.op-l-specific { background: var(--accent); }
+.op-spread { position: absolute; top: 3px; bottom: 3px; right: 0; border-radius: 2px;
+  background: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 6px); opacity: 0.7; }
+.op-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; }
+.op-key { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-left: 4px; }
+.op-specific-key { background: var(--accent); }
+.op-background-key { background: var(--accent); opacity: 0.55; }
+.op-spread-key { background: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 6px); }
+.op-hist-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; padding: 6px 10px; }
+.op-meta label { font-size: 0.92em; }
+@media (max-width: 480px) {
+  .op-pane .op-body { padding: 10px 12px 20px; }
+  .op-day { grid-template-columns: 5.6em 1fr 3em; }
+}

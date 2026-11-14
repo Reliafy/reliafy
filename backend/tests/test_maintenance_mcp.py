@@ -292,7 +292,8 @@ def test_the_guide_by_topic(env):
 
     index, pages, bad = _session(env["token"], flow)
     assert set(index["topics"]) == {"start", "model", "register", "plan", "run", "learn", "modelling", "decide", "data",
-                                    "classes", "conditions", "structure", "signals", "failures", "products", "apply"}
+                                    "classes", "conditions", "structure", "signals", "failures", "products", "apply",
+                                    "operating_plan"}
     apply = pages["apply"]["guide"]
     assert "maintenance apply" in apply and "@p" in apply and "confirm" in apply and "dry_run" in apply
     structure = pages["structure"]["guide"]

@@ -1,8 +1,8 @@
 /* The interval optimiser's block picker (#257): chips, all ticked by default. */
-.rbd-intervals-blocks { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-3); }
-.rbd-intervals-blocks-label { font-size: var(--fs-13); color: var(--muted); }
+.rbd-intervals-blocks { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); }
+.rbd-intervals-blocks-label { font-size: var(--fs-13); color: var(--text-secondary); }
 .rbd-intervals-blocks .chip-btn { min-height: 32px; }
-.rbd-intervals tr.is-fixed td { color: var(--muted); }
+.rbd-intervals tr.is-fixed td { color: var(--text-secondary); }
 @media (max-width: 640px) {
   .rbd-intervals-blocks .chip-btn { min-height: 44px; }
 }

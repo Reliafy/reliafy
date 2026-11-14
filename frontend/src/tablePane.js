@@ -44,6 +44,14 @@ export const TABLE_PANES = {
       confirmLabel: "Discard them", cancelLabel: "Keep fixing",
     },
   },
+  // How a position runs (?plan=<position id>; the Measurements and Summary tabs): its operating plan.
+  plan: {
+    param: "plan",
+    discard: {
+      title: "Discard this operating plan?", body: "The changes to how it runs aren't saved.",
+      confirmLabel: "Discard it", cancelLabel: "Keep editing",
+    },
+  },
   // A mission on a position's RBD (?mission=<RBD id>:<mission id>&on=<position id>; the Missions tab).
   mission: {
     param: "mission",

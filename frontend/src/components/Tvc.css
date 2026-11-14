@@ -5,31 +5,31 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-4);
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
-.tvc-toggle .cov-adv-toggle { color: var(--ink); font-size: var(--fs-14); font-weight: 500; }
+.tvc-toggle .cov-adv-toggle { color: var(--text); font-size: var(--fs-14); font-weight: 500; }
 
 /* Coefficients tab: the coefficients, then what they mean and the baseline. */
 .tvc-coef {
   display: grid;
   grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
-  gap: var(--sp-4);
+  gap: var(--space-4);
   align-items: start;
 }
 .tvc-coef .gof-metrics-card { max-width: none; }
-.tvc-coef-side { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.tvc-coef-side { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .tvc-reading {
   margin: 0;
   padding: 11px 16px;
-  border-bottom: 1px solid var(--line2);
+  border-bottom: 1px solid var(--border-subtle);
   font-size: var(--fs-14);
-  line-height: 1.5;
-  color: var(--ink);
+  line-height: var(--lh-14);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 .tvc-reading:last-child { border-bottom: none; }
-.tvc-data-line { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.tvc-data-line { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
 @media (max-width: 760px) {
   .tvc-coef { grid-template-columns: minmax(0, 1fr); }
 }
@@ -37,14 +37,14 @@
 /* Calculator. */
 .tvc-calc .tvc-msg { margin: 0 0 0.4rem; }
 .tvc-schedule { display: flex; flex-direction: column; gap: 6px; }
-.tvc-schedule-h { font-size: var(--fs-13); font-weight: 500; color: var(--ink); }
+.tvc-schedule-h { font-size: var(--fs-13); font-weight: 500; color: var(--text); }
 .tvc-table-wrap { overflow-x: auto; }
 .tvc-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .tvc-table th {
   padding: 0 6px 4px 0;
   font-size: var(--fs-12);
   font-weight: 500;
-  color: var(--muted);
+  color: var(--text-secondary);
   text-align: left;
   white-space: nowrap;
 }
@@ -58,11 +58,11 @@
   font-size: var(--fs-14);
 }
 .tvc-table .combo-remove { margin: 0; }
-.tvc-zero { display: inline-block; padding: 0 0.5rem; font-size: var(--fs-14); color: var(--muted); }
+.tvc-zero { display: inline-block; padding: 0 0.5rem; font-size: var(--fs-14); color: var(--text-secondary); }
 .tvc-add { align-self: flex-start; }
 .tvc-pair { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; }
 .tvc-pair .calc-t input { width: 100%; }
-.tvc-schedule-sub { font-weight: 400; color: var(--muted); }
+.tvc-schedule-sub { font-weight: 400; color: var(--text-secondary); }
 
 /* Phone: the answer, then the inputs and life, then the chart. */
 @media (max-width: 900px) {
@@ -75,4 +75,4 @@
 @media (max-width: 560px) {
   .tvc-table input, .tvc-table .combo-remove, .tvc-add { min-height: 44px; }
 }
-.tvc-coef .param-ci-note { margin: 0; padding: 8px 16px 12px; font-size: var(--fs-12); color: var(--muted); }
+.tvc-coef .param-ci-note { margin: 0; padding: 8px 16px 12px; font-size: var(--fs-12); color: var(--text-secondary); }

@@ -1,17 +1,18 @@
-"""Demonstration test plans that keep both risks (#223): RePyability 0.12's
-``demonstration_plan`` / ``mtbf_demonstration_plan`` behind the calculator's
+"""Demonstration test plans that keep both risks (#223): SurPyval's
+``test_planning.demonstration_plan`` / ``mtbf_demonstration_plan`` (RePyability's
+before 0.17) behind the calculator's
 ``producer_risk``, the operating-characteristic curve, the saved analysis,
 the REST endpoints and the MCP tool."""
 
 import mongomock
 import pytest
-from repyability import (
+from scipy import stats
+from surpyval.test_planning import (
     demonstration_pass_probability,
     demonstration_plan,
     mtbf_demonstration_plan,
     mtbf_pass_probability,
 )
-from scipy import stats
 
 from backend.services import strategy_store
 from backend.services.strategy import StrategyError, demonstration_test
@@ -23,10 +24,10 @@ from backend.tests.test_mcp import A, _call, _err, _ok, env  # noqa: F401 - env 
 
 
 def test_attribute_plan_is_the_librarys_and_keeps_both_risks():
-    # RePyability's docstring: 90% at 90% confidence, a 95% design passing >= 80%: 128 units, 8 failures.
+    # The library's docstring: 90% at 90% confidence, a 95% design passing >= 80%: 128 units, 8 failures.
     out = demonstration_test(0.9, 0.9, design_reliability=0.95, producer_risk=0.2,
                              mission_time=1000, unit="hours", failures=0)  # failures is the plan's own
-    plan = demonstration_plan(0.9, 0.95, confidence=0.9, producer_risk=0.2)
+    plan = demonstration_plan(0.9, 0.95, alpha_ci=1 - 0.9, producer_risk=0.2)
     assert (out["units"], out["failures"]) == (plan.n, plan.failures) == (128, 8)
     assert out["two_risk"] is True and out["producer_risk_target"] == 0.2
     assert out["consumer_risk"] == pytest.approx(plan.consumer_risk, rel=1e-12)
@@ -56,7 +57,7 @@ def test_the_success_run_alone_fails_the_good_design_often():
 
 def test_a_longer_test_with_a_weibull_shape():
     out = demonstration_test(0.9, 0.9, design_reliability=0.95, producer_risk=0.2, test_multiple=2, shape=1.5)
-    plan = demonstration_plan(0.9, 0.95, confidence=0.9, producer_risk=0.2, test_multiple=2.0, shape=1.5)
+    plan = demonstration_plan(0.9, 0.95, alpha_ci=1 - 0.9, producer_risk=0.2, test_multiple=2.0, shape=1.5)
     assert (out["units"], out["failures"]) == (plan.n, plan.failures)
     assert out["producer_risk"] == pytest.approx(plan.producer_risk, rel=1e-12)
 
@@ -64,7 +65,7 @@ def test_a_longer_test_with_a_weibull_shape():
 def test_units_given_the_plan_searches_the_test_length():
     out = demonstration_test(0.9, 0.9, design_reliability=0.95, producer_risk=0.2, units=60, shape=2,
                              mission_time=1000, unit="hours")
-    plan = demonstration_plan(0.9, 0.95, confidence=0.9, producer_risk=0.2, n=60, shape=2.0)
+    plan = demonstration_plan(0.9, 0.95, alpha_ci=1 - 0.9, producer_risk=0.2, n=60, shape=2.0)
     assert out["solve_for"] == "test_time" and out["units"] == 60
     assert out["failures"] == plan.failures and out["test_multiple"] == pytest.approx(plan.test_multiple)
     assert out["test_time_per_unit"] == pytest.approx(1000 * plan.test_multiple)
@@ -72,10 +73,10 @@ def test_units_given_the_plan_searches_the_test_length():
 
 
 def test_mtbf_plan_is_mil_hdbk_781s():
-    # RePyability's docstring: an MTBF of 1000 at 90%, a 2000 design passing >= 80%: ~14,206 h, 9 failures.
+    # The library's docstring: an MTBF of 1000 at 90%, a 2000 design passing >= 80%: ~14,206 h, 9 failures.
     out = demonstration_test(method="mtbf", mtbf=1000, confidence=0.9, design_mtbf=2000, producer_risk=0.2,
                              units=10, unit="hours")
-    plan = mtbf_demonstration_plan(1000.0, 2000.0, confidence=0.9, producer_risk=0.2)
+    plan = mtbf_demonstration_plan(1000.0, 2000.0, alpha_ci=1 - 0.9, producer_risk=0.2)
     assert out["failures"] == plan.failures == 9
     assert out["total_test_time"] == pytest.approx(plan.test_time, rel=1e-12)
     assert round(out["total_test_time"]) == 14206 and out["test_time_per_unit"] == pytest.approx(1420.6, rel=1e-4)

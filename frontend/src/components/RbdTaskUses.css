@@ -1,7 +1,7 @@
 /* RbdTaskUses.jsx: the Maintenance tab's "Used in RBDs". */
-.rtu { margin: 10px 0 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf); }
+.rtu { margin: 10px 0 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface); }
 .rtu-h { margin: 0; font-size: var(--fs-14, 0.875rem); font-weight: 600; }
 .rtu-why { margin: 2px 0 6px; }
-.rtu-list { margin: 0; padding-left: 1.1rem; font-size: var(--fs-13); line-height: 1.5; }
+.rtu-list { margin: 0; padding-left: 1.1rem; font-size: var(--fs-13); line-height: var(--lh-13); }
 .rtu-list li { overflow-wrap: anywhere; }
-.rtu-old { color: var(--warn, var(--danger)); font-size: var(--fs-13); }
+.rtu-old { color: var(--warning, var(--danger)); font-size: var(--fs-13); }

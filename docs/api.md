@@ -521,6 +521,29 @@ after the day it was set). The app's routes take `start` too:
 `POST /api/maintenance/failure-modes/{id}/tasks` and
 `PATCH /api/maintenance/tasks/{id}` (null clears it).
 
+How often a task falls due can also be a pattern an interval can't say: `tasks.create` and
+`tasks.update` take `rule`, e.g. `{kind: "monthly", every: 1, weekday: "Saturday", nth: 1}` (the
+first Saturday of every month; `nth` 1 to 5 or -1 for the last, a 5th skipping months with none),
+`{kind: "yearly", month: 11, weekday: "Tuesday", nth: 1}`, `{kind: "weekly", weekdays: ["Monday"]}`,
+or `day` in place of `weekday` and `nth`. The task's interval and unit follow the rule and it falls
+due on the rule's dates (the first after it was last done); `{}` clears it, as does a new interval.
+Task reads carry `rule` and `rule_text`. Packages take the same yearly pattern with `month`
+(`unit: years`, `month`, `weekday` + `nth` or `day`); a package read's `cadence.rule` gives its
+cadence in the same shape. The app's routes take `rule` too (`PATCH /api/maintenance/tasks/{id}`,
+null clears it).
+
+How a position runs is its operating plan: `positions.update` with `operating_plan: {plan, name?,
+time_zone?, from?, notes?}` sets it from a date (default today), ending the plan before it there;
+`end_operating_plan: true` (with `until`) stops it. `plan` is `{background, specific?}`: a
+background of `continuous`, `shifts` (a repeating week), `roster` (days on and off), `rate` (hours a
+day, week, month or year) or `runs` only, with set runs on top (`specific: [{runs: [[on, off],
+...]}]`). `get operating_plan` (`id` a position or an item, `root` the asset opened) gives its plan
+or the nearest above it inside `root` (`inherited_from`), its own plans past and planned, the
+background's hours in an ordinary week and the next 14 days. `maintenance guide` topic
+`operating_plan` has the shapes. The app's routes: `GET /api/maintenance/positions/{id}/operating-plan`
+(or `items/{id}`; `?root=`), `PUT /api/maintenance/positions/{id}/operating-plan` and
+`POST /api/maintenance/positions/{id}/operating-plan/end`.
+
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
 points, tasks, failure modes, classes, conditions, groups, connections and

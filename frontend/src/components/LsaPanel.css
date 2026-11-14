@@ -42,19 +42,19 @@
 .pk-trow { position: relative; min-height: 30px; }
 .pk-trow .rw-c { padding-top: 4px; padding-bottom: 4px; }
 .pk-tick { justify-content: center; padding: 0; }
-.rw-h.pk-tick { position: sticky; left: 0; z-index: 2; background: var(--surf-2); }
+.rw-h.pk-tick { position: sticky; left: 0; z-index: 2; background: var(--bg-subtle); }
 .rw-c.pk-tick { position: sticky; left: 0; z-index: 1; background: inherit; }
-.pk-trow .rw-c.pk-tick { background: var(--surf); }
-.pk-trow.focus .rw-c.pk-tick, .pk-trow:hover .rw-c.pk-tick { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
+.pk-trow .rw-c.pk-tick { background: var(--bg-surface); }
+.pk-trow.focus .rw-c.pk-tick, .pk-trow:hover .rw-c.pk-tick { background: linear-gradient(var(--accent-wash), var(--accent-wash)), var(--bg-surface); }
 .pk-two { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .pk-two .rw-sum { white-space: nowrap; }
 .pk-kind { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.pk-overdue { color: var(--danger); font-weight: 600; }
+.pk-overdue { color: var(--danger-text); font-weight: 600; }
 .pk-pkg-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; text-align: left; }
 .pk-none { padding: 10px 12px; margin: 0; }
 .pk-actions {
   position: sticky; bottom: 0; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
-  margin-top: 8px; padding: 8px 12px; background: var(--surf-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+  margin-top: 8px; padding: 8px 12px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-md);
   box-shadow: 0 -2px 8px -4px rgba(20, 23, 28, 0.18);
 }
 .pk-actions-n { font-weight: 600; }
@@ -86,8 +86,8 @@
 .lsa-sec { padding: 10px 0; border-top: 1px solid var(--border); }
 .lsa-sec-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin: 0 0 4px; }
 .lsa-state { font-size: 12px; font-weight: 400; }
-.lsa-saved { color: var(--ok, var(--acc)); }
-.lsa-err { color: var(--danger); }
+.lsa-saved { color: var(--success, var(--accent)); }
+.lsa-err { color: var(--danger-text); }
 .lsa-hint { margin: 0 0 6px; }
 .lsa-rows { list-style: none; margin: 0 0 4px; padding: 0; }
 .lsa-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 0; }

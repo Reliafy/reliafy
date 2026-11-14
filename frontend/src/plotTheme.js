@@ -9,25 +9,25 @@
 // label. Several comparable series (covariate combinations, stress levels,
 // items) take COLORWAY in order.
 
-export const ACCENT = "#2f6df6";
-export const INK = "#14171c";
-export const MUTED = "#5f6670";
-export const SUBTLE = "#6c727c";
-export const REFERENCE = "#9aa0a8"; // borders, reference lines
-export const GRID = "#e9ebee";
-export const AXIS = "#cfd3d8";
-export const DANGER = "#b91c1c";
-export const SUCCESS = "#15803d";
-export const WARNING = "#b45309";
+export const ACCENT = "#235edf"; // accent (blue-600)
+export const INK = "#1b1915"; // text (neutral-950)
+export const MUTED = "#5f5e57"; // text-secondary (neutral-700)
+export const SUBTLE = "#6c6a64"; // text-tertiary, cat-grey (neutral-600)
+export const REFERENCE = "#8f8e87"; // chart-reference (neutral-500): dashed reference lines
+export const GRID = "#f2f1ed"; // chart-grid (neutral-100)
+export const AXIS = "#cdcbc5";
+export const DANGER = "#c02523";
+export const SUCCESS = "#147f3c";
+export const WARNING = "#955b00";
 export const SURFACE = "#ffffff"; // card and page surface; marker outlines
 
 // Kinds, not series: model kinds, distribution families, planned work. The
-// same palette as the --cat-* tokens in index.css (blue is the accent).
-export const CATEGORY = { blue: ACCENT, amber: "#d0762f", teal: "#0f9ab0", violet: "#7c3aed", grey: SUBTLE };
+// same palette as the --cat-* roles in tokens.css (blue is the accent).
+export const CATEGORY = { blue: ACCENT, pink: "#a7416b", teal: "#00788a", violet: "#7833e7", grey: SUBTLE };
 
-export const DATA_INK = "rgba(20, 23, 28, 0.7)"; // observed data: ink at 70%
-export const BAND_FILL = "rgba(47, 109, 246, 0.10)"; // accent at 0.10
-export const NEUTRAL_BAND_FILL = "rgba(20, 23, 28, 0.08)"; // a band around observed (ink) data
+export const DATA_INK = "rgba(27, 25, 21, 0.7)"; // observed data: ink at 70%
+export const BAND_FILL = "rgba(35, 94, 223, 0.12)"; // accent at 0.12
+export const NEUTRAL_BAND_FILL = "rgba(27, 25, 21, 0.08)"; // a band around observed (ink) data
 
 // Categorical order, led by the accent; validated for colour-vision
 // deficiency on adjacent pairs. Assign in order, never by rank.

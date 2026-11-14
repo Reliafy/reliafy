@@ -47,6 +47,7 @@ import math
 import re
 import time
 import unicodedata
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
@@ -56,6 +57,7 @@ from backend.maintenance.store import GraphStore, new_id
 from backend.services import time_zones
 from backend.maintenance import fmea, rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
+from backend.maintenance import how_often
 from backend.maintenance.schedule import Cadence, Season
 from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
 from backend.maintenance.products import PROJECTORS as _PRODUCT_PROJECTORS
@@ -1447,6 +1449,39 @@ def _first_due(task: dict) -> str | None:
     return due
 
 
+def _operating_plan_set(s: GraphStore, org: str, p: dict) -> None:
+    """How a position runs from a date (Nov 2026; operating_plan.py): a plan with a background
+    (all the time, a repeating week, a roster, a rate, runs only) and specific runs on top."""
+    s.put_node(org, p["id"], "OperatingPlan", {
+        "name": p.get("name", ""), "plan": p["plan"], "time_zone": p.get("time_zone"), "from": p["from"],
+        "until": None, "notes": p.get("notes", ""), "created": p["on"]})
+    s.put_edge(org, "RUNS_TO", p["position_id"], p["id"])
+
+
+def _operating_plan_ended(s: GraphStore, org: str, p: dict) -> None:
+    """A plan stops applying from a date (it stays in the history: the past isn't rewritten)."""
+    s.patch_node(org, p["id"], {"until": p["until"]})
+
+
+def _task_rule_set(s: GraphStore, org: str, p: dict) -> None:
+    """A task's "how often" pattern (Nov 2026; how_often.py): the first Saturday of every
+    month, the first Tuesday of November every year. None clears it (its interval alone)."""
+    s.patch_node(org, p["task_id"], {"rule": p.get("rule")})
+
+
+def _rule_due(task: dict) -> str | None:
+    """A task's next date on its rule: the first after it was last done; else the date it
+    was set to fall due; else the first on or after the day it was made."""
+    rule = task["rule"]
+    cad = how_often.cadence(rule, task["start"])
+    done = task.get("last_done")
+    first = _first_due(task)
+    if first:
+        return first
+    found = cad.after(done) if done else cad.on_or_after(task["start"])
+    return found.isoformat() if found else None
+
+
 def _task_updated(s: GraphStore, org: str, p: dict) -> None:
     changes = dict(p["changes"])
     if "failure_mode_id" in changes:
@@ -2717,6 +2752,9 @@ PROJECTORS = {
     "task.unlinked": _task_unlinked,
     # Raised by an event as well as (or instead of) its interval, and the events logged.
     "task.trigger_set": _task_trigger_set,
+    "task.rule_set": _task_rule_set,
+    "operating_plan.set": _operating_plan_set,
+    "operating_plan.ended": _operating_plan_ended,
     # What each task needs to be done (LSA): labour, tools, spares, consumables, access, method.
     "task.resources_set": _task_resources_set,
     "position.event_logged": _position_event_logged,
@@ -6232,7 +6270,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid),
                 "fmea": fmea.position_summary(views)}
 
-    def rcm_all(self) -> dict:
+    def rcm_all(self, within: str | None = None) -> dict:
         """The RCM of every live position that has any (functions or failure
         modes), for the asset tree's RCM tab: each position's functions ›
         functional failures › failure modes and its unassigned modes, read in
@@ -6240,13 +6278,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         parents: {position id: the position it sits in, or None} for each
         position listed and every position above one, so a position's rollup
         can count what's inside it (a position carried by an item counts as a
-        top: the asset tree places it through the item's fitment)."""
+        top: the asset tree places it through the item's fitment). With
+        ``within`` (one asset, as positions_inside reads it): that asset's
+        positions alone, the parents stopping at its edge."""
+        keep = self.positions_inside(within) if within is not None else None
         index = self._rcm_index()
         out = []
         live = {}
         for p in self.s.nodes(self.org, "Position"):
             pid = p["id"]
-            if p.get("retired"):
+            if p.get("retired") or (keep is not None and pid not in keep):
                 continue
             live[pid] = p
             if not (index["functions"].get(pid) or index["modes"].get(pid)):
@@ -6360,7 +6401,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _tasks_on(self, position_id: str) -> list[dict]:
         return [t for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task" and not t.get("retired")]
 
-    def _due_by(self, task: dict, interval: float, unit: str) -> dict:
+    def _due_by(self, task: dict, interval: float, unit: str, rule: dict | None = None) -> dict:
         """When one limit of a task falls due: on the calendar, or by use from its
         meter (projected from the meter's recent rate). An item's task by use with no
         counter of its own goes by the use it has had wherever it was fitted; an item's
@@ -6371,6 +6412,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         subject = _subject(self.s, self.org, task) or {}
         if subject.get("id") in self._design_ids():
             return {"limit": limit, "next_due": None, "note": "a design's task: due on the items built from it"}
+        if rule and _is_calendar(unit):
+            # On a pattern (the first Saturday of every month): its dates, not an interval's.
+            return {"limit": how_often.describe(rule), "next_due": _rule_due(task)}
         if _is_calendar(unit):
             first = _first_due(task)
             if first:
@@ -6480,7 +6524,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _task_view(self, task: dict) -> dict:
         on_event = _on_event_only(task)
         # A task raised only by its trigger is never due on a date (nor late): it waits for the event.
-        limits = [] if on_event else [self._due_by(task, task["interval"], task["unit"])]
+        limits = [] if on_event else [self._due_by(task, task["interval"], task["unit"], task.get("rule"))]
         if not on_event and task.get("also_interval") and task.get("also_unit"):
             limits.append(self._due_by(task, task["also_interval"], task["also_unit"]))
         dues = [lim["next_due"] for lim in limits if lim["next_due"]]
@@ -6500,6 +6544,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "failure_mode": {"id": mode[0]["id"], "text": mode[0]["text"]} if mode else None,
             "failure_modes": [{"id": m["id"], "text": m["text"]} for m in mode],
             "interval": task["interval"], "unit": task["unit"],
+            # A pattern its dates follow (how_often.py), with it in words; null: the interval alone.
+            "rule": task.get("rule"), "rule_text": task.get("rule") and how_often.describe(task["rule"]),
             "also_interval": task.get("also_interval"), "also_unit": task.get("also_unit"),
             "instructions": task.get("instructions", ""), "checklist": task.get("checklist") or [],
             "trade": task.get("trade", ""), "last_done": task.get("last_done"), "last_done_reading": task.get("last_done_reading"),
@@ -9220,7 +9266,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _cadence(pkg: dict) -> Cadence:
         pattern = pkg.get("pattern") or {}
         return Cadence(pkg["every"], pkg["unit"], pkg["anchor"], weekday=pattern.get("weekday"),
-                       nth=pattern.get("nth"), day=pattern.get("day"))
+                       nth=pattern.get("nth"), day=pattern.get("day"), month=pattern.get("month"))
 
     @staticmethod
     def _tolerance_days(pkg: dict) -> int:
@@ -9590,7 +9636,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid("A tolerance in days is a whole number (on Saturdays with Sunday still on time: 1).")
         return {"amount": int(days), "unit": "days"}
 
-    def _cadence_fields(self, timing, every, unit, weekday, nth, day, anchor) -> dict:
+    def _cadence_fields(self, timing, every, unit, weekday, nth, day, anchor, month=None) -> dict:
         """A package's timing and cadence, checked: the payload's fields."""
         if timing not in self.PACKAGE_TIMINGS:
             raise Invalid("timing is fixed (on set dates: every Saturday) or from_last_visit (the interval after "
@@ -9601,17 +9647,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         n = _interval(every, unit, "package's interval (every)")
         if not float(n).is_integer():
             raise Invalid("every is a whole number of days, weeks, months or years.")
-        pattern = {k: v for k, v in (("weekday", weekday), ("nth", nth), ("day", day)) if v not in (None, "")}
+        pattern = {k: v for k, v in (("weekday", weekday), ("nth", nth), ("day", day), ("month", month))
+                   if v not in (None, "")}
         if pattern and timing != "fixed":
-            raise Invalid("A pattern (weekday, nth, day) goes with fixed timing: counted from the last visit, the "
+            raise Invalid("A pattern (weekday, nth, day, month) goes with fixed timing: counted from the last visit, the "
                           "next is the close date plus the interval.")
         anchor = _day(anchor, "anchor date", self.today())
         try:
             cad = Cadence(int(n), unit, anchor, weekday=pattern.get("weekday"), nth=pattern.get("nth"),
-                          day=pattern.get("day"))
+                          day=pattern.get("day"), month=pattern.get("month"))
         except (TypeError, ValueError) as err:
             raise Invalid(str(err)) from None
-        pattern = {k: v for k, v in (("weekday", cad.weekday), ("nth", cad.nth), ("day", cad.day)) if v is not None}
+        pattern = {k: v for k, v in (("weekday", cad.weekday), ("nth", cad.nth), ("day", cad.day),
+                                     ("month", cad.month)) if v is not None}
         return {"timing": timing, "every": int(n), "unit": unit, "pattern": pattern or None, "anchor": anchor}
 
     def _check_layer_dates(self, fields: dict, parent: dict, name: str) -> None:
@@ -9627,7 +9675,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def create_package(self, name, position_id=None, location_id=None, parent_id=None, timing="fixed", every=1,
                        unit="weeks", weekday=None, nth=None, day=None, anchor=None, tolerance=None,
-                       tolerance_unit=None, trade="", notes="", tasks=None, season=None) -> dict:
+                       tolerance_unit=None, trade="", notes="", tasks=None, season=None, month=None) -> dict:
         """A work package: tasks done together on one visit, raising one work order per
         visit. On exactly one of a position (its tasks on it or on positions inside it)
         or a location (tasks at it); a layer (parent_id) is on its parent's. Timing fixed
@@ -9666,7 +9714,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             ref = {"position_id": area["id"]} if kind == "Position" else {"subject": {"kind": "location",
                                                                                          "id": area["id"]}}
         fields = self._cadence_fields(timing or "fixed", 1 if every in (None, "") else every, unit, weekday, nth,
-                                      day, anchor)
+                                      day, anchor, month)
         if parent is not None:
             self._check_layer_dates(fields, parent, name)
         members = [self._member_arg(t) for t in _list(tasks, "tasks", self.MAX_PACKAGE_TASKS)]
@@ -9708,7 +9756,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def update_package(self, package_id: str, name=None, timing=None, every=None, unit=None, weekday=None, nth=None,
                        day=None, clear_pattern=False, anchor=None, tolerance=None, tolerance_unit=None, trade=None,
-                       notes=None, tasks=None, season=...) -> dict:
+                       notes=None, tasks=None, season=..., month=None) -> dict:
         """Change a package: its name, timing and cadence (a weekday, nth or day replaces
         the pattern; clear_pattern removes it), anchor, tolerance (0 removes it), trade,
         notes, or members' visit rules (tasks: [{task_id, visit_rule, every_nth,
@@ -9724,14 +9772,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             changes["trade"] = _text(trade, "trade")
         if notes is not None:
             changes["notes"] = _text(notes, "notes")
-        timing_given = any(v not in (None, "") for v in (timing, every, unit, weekday, nth, day, anchor)) or clear_pattern
+        timing_given = any(v not in (None, "") for v in (timing, every, unit, weekday, nth, day, anchor, month)) \
+            or clear_pattern
         if timing_given:
             pattern = dict(pkg.get("pattern") or {})
-            if clear_pattern or any(v not in (None, "") for v in (weekday, nth, day)):
-                pattern = {k: v for k, v in (("weekday", weekday), ("nth", nth), ("day", day)) if v not in (None, "")}
+            if clear_pattern or any(v not in (None, "") for v in (weekday, nth, day, month)):
+                pattern = {k: v for k, v in (("weekday", weekday), ("nth", nth), ("day", day), ("month", month))
+                           if v not in (None, "")}
             fields = self._cadence_fields(timing or pkg["timing"], pkg["every"] if every in (None, "") else every,
                                           unit or pkg["unit"], pattern.get("weekday"), pattern.get("nth"),
-                                          pattern.get("day"), anchor or pkg["anchor"])
+                                          pattern.get("day"), anchor or pkg["anchor"], pattern.get("month"))
             layers = self._package_layers(pkg["id"])
             if parent is not None:
                 if fields["timing"] != "fixed":
@@ -10102,6 +10152,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         months = "every month" if n == 1 else f"every {n} months"
         if pkg["timing"] == "from_last_visit":
             return f"{every} after the last visit"
+        if pattern.get("month") or pattern.get("nth") in (5, -5):
+            # A named month each year, or a fifth weekday: the shared words (how_often.py).
+            return how_often.describe(how_often.rule_of_package(pkg))
         if pattern.get("weekday") and pattern.get("nth"):
             words = {1: "first", 2: "second", 3: "third", 4: "fourth", -1: "last", -2: "second last",
                      -3: "third last", -4: "fourth last"}
@@ -10124,7 +10177,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 if not (self.s.node(self.org, m["task_id"]) or {"retired": True}).get("retired")]
         out = {"id": pkg["id"], "name": pkg["name"], "status": status, "timing": pkg["timing"],
                "cadence": {"every": pkg["every"], "unit": pkg["unit"], **(pkg.get("pattern") or {}),
-                           "anchor": pkg["anchor"], "text": self._cadence_text(pkg)},
+                           "anchor": pkg["anchor"], "text": self._cadence_text(pkg),
+                           # The same cadence in the shape a task's "how often" rule has (how_often.py).
+                           "rule": how_often.rule_of_package(pkg)},
                "tolerance": (root.get("tolerance") and {**root["tolerance"],
                                                         "enforced": root["tolerance"]["unit"] == "days"}),
                "trade": pkg.get("trade", ""), "subject": self._subject_brief(subject),
@@ -10253,6 +10308,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 brief["within"] = self._within(subject["id"])
             rows.append({"id": task["id"], "name": task["name"], "subject": brief,
                          "modes": modes, "kind": kind, "interval": task.get("interval"), "unit": task.get("unit"),
+                         "rule_text": task.get("rule") and how_often.describe(task["rule"]),
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
@@ -10320,6 +10376,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 view["subject"]["within"] = self._within(view["subject"]["id"])
             rows.append({"task_id": task["id"], "name": task["name"], "subject": view["subject"],
                          "interval": task["interval"], "unit": task["unit"], "trade": task.get("trade", ""),
+                         "rule_text": task.get("rule") and how_often.describe(task["rule"]),
                          "visit_rule": member.get("visit_rule", "every"), "every_nth": member.get("every_nth"),
                          "suppresses": list(member.get("suppresses") or []), "retired": bool(task.get("retired")),
                          "last_done": task.get("last_done"), "next_due": view["next_due"],
@@ -10700,7 +10757,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
                     failure_mode_id=None, last_done=None, trade="", item_id=None, location_id=None,
                     while_stored=None, include_positions=None, failure_mode_ids=None, trigger=None,
-                    start=None) -> dict:
+                    start=None, rule=None) -> dict:
         """A scheduled task added directly (not an RCM decision's): from the maker's manual (source 'oem'),
         a law or standard ('statutory'), your own practice ('manual') or elsewhere
         ('other'). It's scheduled and raises work orders like a task from RCM. outcome
@@ -10731,6 +10788,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         checked_trigger = self._checked_trigger(trigger)
         if interval in (None, "") and checked_trigger and not checked_trigger.get("with_interval"):
             interval, unit = 12, "months"
+        if rule not in (None, "", {}):
+            # A pattern (how_often.py): its interval and unit follow it.
+            try:
+                interval, unit = how_often.interval_of(how_often.check_rule(rule))
+            except ValueError as err:
+                raise Invalid(str(err)) from None
         unit = _unit(unit, "months")
         interval = _interval(interval, unit)
         if outcome in ("", None):
@@ -10772,6 +10835,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         self._emit("task.added", payload)
         if checked_trigger:
             self._emit("task.trigger_set", {"id": payload["id"], "trigger": checked_trigger})
+        if rule not in (None, "", {}):
+            self.set_task_rule(payload["id"], rule)
         if done:
             self.set_last_done(payload["id"], done)
         return self._task_view(self._get(payload["id"], "Task"))
@@ -10779,7 +10844,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
                     also_unit=None, point_id=None, instructions=None, checklist=None, failure_mode_id=None,
                     source=None, reference=None, outcome=..., trade=None, while_stored=None,
-                    include_positions=None, last_done_reading=None, trigger=..., start=None) -> dict:
+                    include_positions=None, last_done_reading=None, trigger=..., start=None, rule=...) -> dict:
         """Change a task. start: the date it next falls due, then every interval after ('' goes
         back to one interval from when it was last done, or made). trigger: what raises it besides its interval (set_task_trigger); None
         clears it. also_interval / also_unit add a second limit, whichever comes
@@ -10863,6 +10928,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             self._emit("task.rescheduled", {"id": task_id, "first_due": rescheduled, "on": self.today()})
         if checked_trigger is not ... and checked_trigger != (task.get("trigger") or None):
             self._emit("task.trigger_set", {"id": task_id, "trigger": checked_trigger})
+        if rule is not ...:
+            return self.set_task_rule(task_id, rule)
+        if task.get("rule") and any(k in changes for k in ("interval", "unit")) \
+                and (changes.get("interval", task["interval"]), changes.get("unit", task["unit"])) \
+                != (task["interval"], task["unit"]):
+            # A new interval is the task's schedule now: its pattern goes.
+            self._emit("task.rule_set", {"task_id": task_id, "rule": None})
         return self._task_view(self._get(task_id, "Task"))
 
     # ---- tasks raised by an event (Nov 2026) ----------------------------------------
@@ -10927,6 +10999,184 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if _flag_value(trigger.get("with_interval"), "with_interval"):
             out["with_interval"] = True
         return out
+
+    # ---- operating plans (Nov 2026) ---------------------------------------------------
+    #
+    # How a position runs (operating_plan.py), dated: a new plan from a date ends the one
+    # before it there, and ending one keeps it in the history. A position with none of its
+    # own runs to the nearest plan above it, looked for only inside the asset opened (root);
+    # an item has none of its own and runs as the position it's fitted to.
+
+    def _plans_on(self, position_id: str) -> list[dict]:
+        """A position's own plans, oldest first."""
+        return sorted((p for p in self.s.out(self.org, position_id, "RUNS_TO") if p["label"] == "OperatingPlan"),
+                      key=lambda p: (p["from"], p.get("created") or "", p["id"]))
+
+    def _plan_on(self, position_id: str, day: str) -> dict | None:
+        """The position's own plan that applies on ``day``."""
+        found = None
+        for p in self._plans_on(position_id):
+            if p["from"] <= day and not (p.get("until") and p["until"] <= day):
+                found = p
+        return found
+
+    def _plan_brief(self, plan: dict, today: str) -> dict:
+        from backend.maintenance import operating_plan as op
+
+        return {"id": plan["id"], "name": plan.get("name", ""), "plan": plan["plan"],
+                "time_zone": plan.get("time_zone") or self.time_zone, "from": plan["from"],
+                "until": plan.get("until"), "notes": plan.get("notes", ""), "text": op.describe(plan["plan"]),
+                "hours_per_week": (lambda h: None if h is None else round(h, 1))(op.typical_week(plan["plan"])),
+                "status": ("ended" if plan.get("until") and plan["until"] <= today
+                           else "planned" if plan["from"] > today else "current")}
+
+    def _any(self, node_id: str) -> dict:
+        node = self.s.node(self.org, node_id)
+        if node is None or node["label"] not in ("Position", "Item"):
+            raise NotFound(f"Position {node_id}")
+        return node
+
+    def _plan_holder(self, node_id: str, root: str | None) -> str | None:
+        """The position whose plans ``node_id`` runs to: itself; an item's, the position it's
+        fitted to. None when it isn't on a position."""
+        node = self._any(node_id)
+        if node["label"] == "Position":
+            return node_id
+        if node["label"] == "Item":
+            if root and node_id == root:
+                return None
+            fit = self._current_fitment_of_item(node_id)
+            at = fit and self.s.out(self.org, fit["id"], "AT")
+            return at[0]["id"] if at else None
+        raise Invalid("An operating plan goes on a position (an item runs as the position it's fitted to).")
+
+    def operating_plan(self, position_id: str, root: str | None = None) -> dict:
+        """How a position (or the item fitted to one) runs: its own plan today, or the
+        nearest above it inside the asset opened (``root``), saying where it came from;
+        its own plans past and planned; the hours from it in a typical week and a strip of
+        the next 14 days (a simple summary until the scheduling library's forecast)."""
+        from backend.maintenance import operating_plan as op
+
+        today = self.today()
+        asked = self._any(position_id)
+        holder = self._plan_holder(position_id, root)
+        own = self._plans_on(holder) if holder else []
+        current, source = (self._plan_on(holder, today) if holder else None), None
+        if current is None and holder:
+            node_id, seen = holder, {holder}
+            while not (root and node_id == root):
+                parent = self._parent(node_id)
+                if parent is None or (root and parent["id"] == root and parent["label"] == "Item"):
+                    break
+                if parent["label"] == "Item":
+                    node_id = self._plan_holder(parent["id"], root)  # the position it's fitted to
+                elif parent["label"] == "Position":
+                    node_id = parent["id"]
+                else:
+                    break
+                if not node_id or node_id in seen:
+                    break
+                seen.add(node_id)
+                found = self._plan_on(node_id, today)
+                if found:
+                    current = found
+                    source = {"id": node_id, "name": self._any(node_id).get("name", "")}
+                    break
+        out = {"position": {"id": asked["id"], "name": asked.get("name", ""), "kind": asked["label"].lower()},
+               "plan": current and self._plan_brief(current, today),
+               "inherited_from": source,
+               "own": [self._plan_brief(p, today) for p in own],
+               "time_zone": self.time_zone, "today": today, "days": []}
+        if asked["label"] == "Item":
+            out["note"] = "An item runs as the position it's fitted to." if holder else \
+                "Not fitted anywhere: it runs to no plan."
+        if current:
+            out["days"] = [{**d, "hours": round(d["hours"], 2)}
+                           for d in op.hours_by_day(current["plan"], date.fromisoformat(today), 14)]
+        return out
+
+    def set_operating_plan(self, position_id: str, plan, name="", time_zone=None, from_=None, notes="") -> dict:
+        """How a position runs from a date (default today): ``plan`` is {background, specific}
+        (operating_plan.py). The plan in force there before ends that day; an earlier date
+        than its own plan's start isn't allowed (the past isn't rewritten: end it first)."""
+        from backend.maintenance import operating_plan as op
+
+        node = self._any(position_id)
+        if node["label"] != "Position":
+            raise Invalid("An operating plan goes on a position: an item runs as the position it's fitted to.")
+        if node.get("retired"):
+            raise Invalid(f"{node.get('name', 'That position')} has been retired: restore it first.")
+        try:
+            checked = op.check_plan(plan)
+        except op.PlanError as err:
+            raise Invalid(str(err)) from None
+        start = _day(from_, "from date", self.today()) if from_ not in (None, "") else self.today()
+        zone = time_zones.zone_name(time_zone) if time_zone not in (None, "") else self.time_zone
+        if time_zone not in (None, "") and zone is None:
+            raise Invalid(f"{str(time_zone)[:60]!r} isn't a time zone: give one like Australia/Brisbane.")
+        own = self._plans_on(position_id)
+        later = [p for p in own if p["from"] > start and not (p.get("until") and p["until"] <= p["from"])]
+        if later:
+            raise Invalid(f"A plan here starts later, on {later[-1]['from']}: end it first, or start this one on or "
+                          "after it.")
+        for p in own:
+            if not p.get("until") or p["until"] > start:
+                self._emit("operating_plan.ended", {"id": p["id"], "until": max(start, p["from"]),
+                                                     "on": self.today()})
+        pid = new_id()
+        self._emit("operating_plan.set", {"id": pid, "position_id": position_id, "name": _text(name, "name")[:200],
+                                          "plan": checked, "time_zone": zone, "from": start,
+                                          "notes": _text(notes, "notes"), "on": self.today()})
+        return self.operating_plan(position_id)
+
+    def end_operating_plan(self, position_id: str, until=None) -> dict:
+        """Stop a position's own plan from a date (default today): it runs to the nearest plan
+        above it again. The plan stays in the history."""
+        self._get(position_id, "Position")
+        day = _day(until, "until date", self.today()) if until not in (None, "") else self.today()
+        open_ = [p for p in self._plans_on(position_id) if not p.get("until") or p["until"] > day]
+        if not open_:
+            raise Invalid("This position has no plan of its own running then.")
+        for p in open_:
+            self._emit("operating_plan.ended", {"id": p["id"], "until": max(day, p["from"]), "on": self.today()})
+        return self.operating_plan(position_id)
+
+    def set_task_rule(self, task_id: str, rule) -> dict:
+        """How often a task falls due, as a pattern its interval can't say (how_often.py): a
+        weekday every so many weeks, the nth weekday or a day of every so many months, or of a
+        named month every so many years ({kind: 'yearly', month: 11, weekday: 'Tuesday',
+        nth: 1}). Its interval and unit follow the rule (every 1 month, every 1 year), for
+        whatever reads them. A rule of kind 'every' is a plain interval: it sets the interval
+        and clears any pattern. None or {} clears the pattern (the interval alone)."""
+        task = self._get(task_id, "Task")
+        if task.get("retired"):
+            raise Invalid("That task has been retired.")
+        if rule in (None, "", {}):
+            if task.get("rule"):
+                self._emit("task.rule_set", {"task_id": task_id, "rule": None})
+            return self._task_view(self._get(task_id, "Task"))
+        try:
+            checked = how_often.check_rule(rule)
+        except ValueError as err:
+            raise Invalid(str(err)) from None
+        if _on_event_only(task):
+            raise Invalid("This task waits for its trigger, with no dates: give it with_interval first, or clear "
+                          "the trigger.")
+        if not _is_calendar(task["unit"]):
+            raise Invalid(f"This task goes by use ({task['unit']}): a calendar pattern goes on a task by days, "
+                          "weeks, months or years.")
+        if checked["kind"] != "every" and "anchor" not in checked:
+            # Weeks, months and years counted from when the task was made, unless the rule says.
+            checked["anchor"] = task["start"]
+        interval, unit = how_often.interval_of(checked)
+        if (interval, unit) != (task["interval"], task["unit"]):
+            self._emit("task.updated", {"id": task_id, "changes": {"interval": interval, "unit": unit}})
+        if checked["kind"] == "every":
+            if task.get("rule"):
+                self._emit("task.rule_set", {"task_id": task_id, "rule": None})
+        elif checked != task.get("rule"):
+            self._emit("task.rule_set", {"task_id": task_id, "rule": checked})
+        return self._task_view(self._get(task_id, "Task"))
 
     def set_task_trigger(self, task_id: str, trigger) -> dict:
         """Raise the task's work order when an event happens: a reading past a limit
@@ -14006,7 +14256,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         for iid, i in items.items() if iid not in fitted_at and iid not in placed_at],
         }
 
-    def positions_inside(self, root_id: str) -> set[str]:
+    def positions_inside(self, root_id: str, read: dict | None = None) -> set[str]:
         """One asset's positions, as the Explorer opened on it shows them (its ?root=):
         for a position, it and every position the tree nests inside it (one an item
         carries sits in the position that item is fitted to); for a place (a location),
@@ -14015,7 +14265,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         node = self.s.node(self.org, root_id)
         if node is None or node.get("retired") or node["label"] not in ("Position", "Location"):
             raise NotFound(root_id)
-        read = self._tree_read()
+        read = read or self._tree_read()
         rows = read["positions"]
         if node["label"] == "Location":
             kids: dict[str | None, list[str]] = {}
@@ -14037,8 +14287,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if task.get("also_interval") and task.get("also_unit"):
             limits.append((task["also_interval"], task["also_unit"]))
         dues = []
-        for interval, unit in limits:
-            if _is_calendar(unit) and not (subject_label == "Item" and task.get("while_stored") == "pause"):
+        for k, (interval, unit) in enumerate(limits):
+            if k == 0 and task.get("rule") and _is_calendar(unit):
+                due = _rule_due(task)
+            elif _is_calendar(unit) and not (subject_label == "Item" and task.get("while_stored") == "pause"):
                 due = _first_due(task) or add_interval(task.get("last_done") or task["start"], interval, unit)
             else:
                 due = self._due_by(task, interval, unit)["next_due"]
@@ -14053,6 +14305,29 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return latest and latest["value"]
         readings = _manual_readings(self.s, self.org, mp["id"])
         return readings[-1]["value"] if readings else None
+
+    def _tree_within(self, read: dict, within: str) -> dict:
+        """The tree read cut down to one asset (tree_rows' ``within``)."""
+        keep = self.positions_inside(within, read)
+        node = self.s.node(self.org, within)
+        rows = {}
+        for pid, r in read["positions"].items():
+            if pid not in keep:
+                continue
+            # Its parent in another asset: a top of this one.
+            rows[pid] = r if r["parent_id"] is None or r["parent_id"] in keep else {**r, "parent_id": None}
+        if node["label"] == "Location":
+            kids: dict[str | None, list[str]] = {}
+            for loc in read["locations"]:
+                kids.setdefault(loc["parent_id"], []).append(loc["id"])
+            places = _walk_down(within, kids)
+            locations = [{**loc, "parent_id": None} if loc["id"] == within else loc
+                         for loc in read["locations"] if loc["id"] in places]
+        else:
+            locations = [loc for loc in read["locations"] if within in (loc.get("design_of"), loc.get("carried_by"))]
+            places = {loc["id"] for loc in locations}
+        return {**read, "positions": rows, "locations": locations,
+                "spares": [x for x in read["spares"] if x["location_id"] in places], "unhomed": []}
 
     @staticmethod
     def _tree_rollup(rows: dict) -> tuple[dict, dict]:
@@ -14114,7 +14389,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             stack.extend((c, node["children"], i) for i, c in enumerate(kids.get(pid, [])))
         return out
 
-    def tree_rows(self) -> dict:
+    def tree_rows(self, within: str | None = None) -> dict:
         """The asset trees for the app's tree pane, flat: every live position once
         (id, name, parent_id, and when set: tag, position_class, item (with the
         item's own status, when it has any), item_class_id (the fitted item's
@@ -14122,8 +14397,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         (where it is), carried_by, status, inside, context: it has an operating
         context), with the
         locations, the items placed at one now (spares) and the items neither fitted
-        nor placed (unhomed). Empty fields are left out: a big register stays small."""
+        nor placed (unhomed). Empty fields are left out: a big register stays small.
+
+        With ``within`` (one asset: a position, or a place): that asset alone, as
+        positions_inside reads it, so nothing of another asset is sent (an asset is
+        self-contained). A position whose parent is outside it is a top here, and the
+        rollups count only what's inside the asset. A place keeps itself, the places
+        inside it and the spares there; a position keeps its tree's own locations (a
+        product's layout, or the ones a built item carries). No unhomed items: they
+        are in no asset."""
         read = self._tree_read()
+        if within is not None:
+            read = self._tree_within(read, within)
         rows = read["positions"]
         _, inside = self._tree_rollup(rows)
         rcm = self._rcm_index()
@@ -14136,6 +14421,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return {k: v for k, v in d.items() if v} or None if d else None
 
         sets = self._redundancy_marks()
+        if within is not None:  # a set's count is of its members inside this asset
+            counts = Counter(mark["id"] for pid, mark in sets.items() if pid in rows)
+            sets = {pid: {**mark, "n": counts[mark["id"]]} for pid, mark in sets.items() if pid in rows}
         positions = []
         for pid, r in rows.items():
             row = {"id": pid, "name": r["name"], "parent_id": r["parent_id"]}

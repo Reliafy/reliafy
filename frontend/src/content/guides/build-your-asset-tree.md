@@ -29,6 +29,11 @@ Your asset tree has three kinds of thing in it:
 3. Add the areas inside the asset (a pump hall, a valve pit) with
    **Location inside**, if you want them. A position can be at any of them.
 
+Choose an asset's name on the **Assets** page and the **Explorer** opens on
+that asset alone: its tree, search, tabs and pickers show nothing from any
+other asset. The **One asset** note above the tree has **Show every asset** for
+the whole register; the **Explorer** menu entry opens the whole register too.
+
 ## Add positions inside positions
 
 A pump set has a pump and a motor inside it. Open the

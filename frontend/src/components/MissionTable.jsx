@@ -12,16 +12,16 @@ export { MISSION_COLUMNS, MISSION_TREE_HEAD } from "../explorerMissions.js";
 // Every position's RBDs and their missions, read when the tab is on (and again on `load`). Two
 // reads can be out at once (a mission saved, then its result worked out): the one asked for last
 // is the one shown, whichever answers first.
-export function useTreeMissions({ on }) {
+export function useTreeMissions({ on, within = null }) {
   const [state, setState] = useState({ links: null, hasModel: [], otherModel: [], error: null });
   const asked = useRef(null);
   if (!asked.current) asked.current = latestOnly();
   const load = useCallback(() => {
     const latest = asked.current();
-    return listPositionMissions()
+    return listPositionMissions(null, { within })
       .then((d) => latest() && setState({ links: d.links || [], hasModel: d.has_model || [], otherModel: d.other_model || [], error: null }))
       .catch((e) => latest() && setState((s) => ({ ...s, error: e.message })));
-  }, []);
+  }, [within]);
   useEffect(() => { if (on) load(); }, [on, load]);
   return { links: state.links, hasModel: state.hasModel, otherModel: state.otherModel, error: state.error, load };
 }

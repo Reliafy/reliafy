@@ -1,17 +1,17 @@
 """Where a safety function's PFDavg comes from (#298): each element's share,
 and the common-cause groups'.
 
-RePyability 0.13 has no breakdown of the PFDavg itself that splits out the
-common-cause term. It has two exact long-run measures that answer the
-question between them, on the same diagram the PFDavg was worked out on
-(with its common-cause groups wherever the PFDavg has them):
+Two exact long-run measures, on the same diagram the PFDavg was worked out
+on (with its common-cause groups wherever the PFDavg has them):
 
-* **Share of PFDavg** — ``RepairableRBD.fussell_vesely``: the share of the
-  long-run unavailability (the PFDavg) in which the element's minimal cut
-  sets have failed. A common cause fails its members together, so it sits
-  in each member's share and has none of its own; and the members of a
-  redundant pair are both in its cut set, so the shares add up to more than
-  100%.
+* **Share of PFDavg** — ``RepairableRBD.pfd_breakdown`` (RePyability 0.17):
+  the PFDavg split into each component's share and each common-cause group's,
+  adding up to the PFDavg. The common-cause share is what the PFDavg would
+  fall by if the groups' shared causes never struck; the rest is shared among
+  the components, a redundant pair splitting its coincident downtime half
+  and half. (Before 0.17 the app showed Fussell–Vesely here, which gives each
+  member of a redundant pair the pair's whole overlap and the common cause
+  inside each member's share, so the shares added up to more than 100%.)
 * **Share of dangerous failures** — ``RepairableRBD.barlow_proschan_importance``:
   each element's share of the function's failures in the long run, with a
   cause that strikes a common-cause group's members together counted for the
@@ -27,9 +27,6 @@ from typing import Any, Optional
 
 import numpy as np
 
-#: Said beside the shares when a group's common cause is in the PFDavg.
-COMMON_CAUSE_IN_MEMBERS = ("The common-cause part of the PFDavg isn't split out: each member's share of the "
-                           "PFDavg includes it. Its share of the dangerous failures is on its own row.")
 _GATE_TYPES = ("knode", "input", "output")
 
 
@@ -46,9 +43,13 @@ def _measure(rbd, method: str, overrides: dict) -> tuple[Optional[dict], Optiona
 
     try:
         with np.errstate(all="ignore"):
-            return dict(getattr(rbd, method)(**overrides)), None
+            result = getattr(rbd, method)(**overrides)
     except (NotImplementedError, ValueError) as exc:
         return None, plain_reason(str(exc))
+    if method == "pfd_breakdown":
+        # Each component's and each group's share as a fraction of the PFDavg.
+        result = getattr(result, "fractions", result)
+    return dict(result), None
 
 
 def pfd_shares(rbd, graph: dict, overrides: Optional[dict] = None) -> Optional[dict]:
@@ -60,9 +61,9 @@ def pfd_shares(rbd, graph: dict, overrides: Optional[dict] = None) -> Optional[d
     nodes = {n.get("id"): n for n in graph.get("nodes") or []}
     labels = {nid: (n.get("data") or {}).get("label") or str(nid) for nid, n in nodes.items()}
     skip = {nid for nid, n in nodes.items() if n.get("type") in _GATE_TYPES}
-    fv, fv_reason = _measure(rbd, "fussell_vesely", overrides)
+    pfd, pfd_reason = _measure(rbd, "pfd_breakdown", overrides)
     bp, bp_reason = _measure(rbd, "barlow_proschan_importance", overrides)
-    if fv is None and bp is None:
+    if pfd is None and bp is None:
         return None
 
     elements: list[dict[str, Any]] = []
@@ -72,26 +73,29 @@ def pfd_shares(rbd, graph: dict, overrides: Optional[dict] = None) -> Optional[d
         elements.append({
             "id": str(nid),
             "label": labels.get(nid, str(nid)),
-            "pfd_share": _f(fv.get(nid)) if fv is not None else None,
+            "pfd_share": _f(pfd.get(nid)) if pfd is not None else None,
             "failure_share": _f(bp.get(nid)) if bp is not None else None,
         })
-    groups = []
-    for key, value in (bp or {}).items():
-        if isinstance(key, tuple):
-            members = [str(m) for m in key]
-            groups.append({
-                "members": members,
-                "label": " + ".join(labels.get(m, m) for m in key),
+    # A group is keyed by the tuple of its members in both measures; matched
+    # as a set, so the two needn't list them in the same order.
+    by_members: dict[frozenset, dict[str, Any]] = {}
+    for measure, field in ((bp, "failure_share"), (pfd, "pfd_share")):
+        for key, value in (measure or {}).items():
+            if not isinstance(key, tuple):
+                continue
+            row = by_members.setdefault(frozenset(key), {
+                "members": [str(m) for m in key],
+                "label": " + ".join(labels.get(m, str(m)) for m in key),
                 "pfd_share": None,
-                "failure_share": _f(value),
+                "failure_share": None,
             })
+            row[field] = _f(value)
+    groups = list(by_members.values())
     elements.sort(key=lambda r: (-(r["pfd_share"] if r["pfd_share"] is not None else -1),
                                  -(r["failure_share"] or 0)))
     out: dict[str, Any] = {"elements": elements, "common_cause": groups}
-    if groups:
-        out["common_cause_note"] = COMMON_CAUSE_IN_MEMBERS
-    if fv is None:
-        out["pfd_share_reason"] = fv_reason
+    if pfd is None:
+        out["pfd_share_reason"] = pfd_reason
     if bp is None:
         out["failure_share_reason"] = bp_reason
     return out

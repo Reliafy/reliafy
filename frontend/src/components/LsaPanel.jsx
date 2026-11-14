@@ -4,7 +4,12 @@ import {
   addPackageTask, changePackage, createPackage, createPackages, getPackage, getTaskTable, listPackages, proposePackages,
   removePackageTask,
 } from "../api.js";
-import { Field, FormModal, fmtDate, useSendOnce } from "./MaintenanceParts.jsx";
+import { Field, FormModal, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
+import HowOften from "./HowOften.jsx";
+import ForecastPreview from "./ForecastPreview.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
+import { useAppConfig } from "../ConfigProvider.jsx";
+import { CALENDAR, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
 import Chip from "./ui/Chip.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import { ShowMe } from "./SectionPage.jsx";
@@ -216,8 +221,6 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
   );
 }
 
-const UNITS = ["days", "weeks", "months", "years"];
-const NTH = [[1, "first"], [2, "second"], [3, "third"], [4, "fourth"], [-1, "last"]];
 
 // Package selected… (and Add a package…, with no tasks): a new package on the
 // picked position or place, with the tasks ticked; its cadence starts from
@@ -235,19 +238,22 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
   const trades = [...new Set(tasks.map((t) => t.trade).filter(Boolean))];
   const [name, setName] = useState("");
   const [timing, setTiming] = useState("fixed");
-  const [every, setEvery] = useState(String(start.every));
-  const [unit, setUnit] = useState(start.unit);
-  const [weekday, setWeekday] = useState(DEFAULT_VISIT_DAY);
-  const [nth, setNth] = useState("1");
+  // Weekly visits on the visit day; monthly ones on the first of that weekday.
+  const [how, setHow] = useState(() => ({
+    ...formFromPackage({ cadence: { every: start.every, unit: start.unit } }),
+    weekday: dayName(DEFAULT_VISIT_DAY), pattern: start.unit === "weeks" ? "weekday" : start.unit === "months" ? "nth" : "none",
+  }));
   const [trade, setTrade] = useState(trades.length === 1 ? trades[0] : "");
   const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
-  const patterned = timing === "fixed" && (unit === "weeks" || unit === "months");
-  const n = Number(every);
-  const ok = name.trim() && Number.isInteger(n) && n >= 1;
+  const fixed = timing === "fixed";
+  const problem = howOftenProblem(how, { wholeOnly: true });
+  const ok = name.trim() && !problem;
+  const today = workspaceToday();
+  const dates = problem ? null : packageDates(how, { anchor: today, today, timing });
   const submit = async () => {
+    const { clear_pattern: _none, ...cadence } = packageBody(fixed ? how : { ...how, pattern: "none" });
     const body = {
-      ...scope, name: name.trim(), timing, every: n, unit, trade: trade.trim(),
-      ...(patterned ? { weekday, ...(unit === "months" ? { nth: Number(nth) } : {}) } : {}),
+      ...scope, name: name.trim(), timing, ...cadence, trade: trade.trim(),
       ...(tolerance !== "" && Number(tolerance) > 0 ? { tolerance: Math.round(Number(tolerance)), tolerance_unit: "days" } : {}),
       ...(tasks.length ? { tasks: tasks.map((t) => t.id) } : {}),
     };
@@ -270,28 +276,15 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
       <Field label="Name" text={name}><input autoFocus value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="e.g. Weekly inspection" /></Field>
       <Field label="Dates">
         <select value={timing} onChange={(e) => setTiming(e.target.value)}>
-          <option value="fixed">{unit === "weeks" ? `Set dates (every ${dayName(weekday)})` : "Set dates"}</option>
+          <option value="fixed">Set dates</option>
           <option value="from_last_visit">Counted from the last visit</option>
         </select>
       </Field>
-      <div className="pk-dialog-row">
-        <Field label="Every"><input type="number" min="1" step="1" inputMode="numeric" value={every} onChange={(e) => setEvery(e.target.value)} /></Field>
-        <Field label="Unit">
-          <select value={unit} onChange={(e) => setUnit(e.target.value)}>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
-        </Field>
-      </div>
-      {patterned && (
-        <div className="pk-dialog-row">
-          {unit === "months" && (
-            <Field label="Which">
-              <select value={nth} onChange={(e) => setNth(e.target.value)}>{NTH.map(([v, w]) => <option key={v} value={v}>{w}</option>)}</select>
-            </Field>
-          )}
-          <Field label={unit === "months" ? "Day of the week in the month" : "On"}>
-            <select value={weekday} onChange={(e) => setWeekday(e.target.value)}>{WEEKDAYS.map((d) => <option key={d} value={d}>{dayName(d)}</option>)}</select>
-          </Field>
-        </div>
-      )}
+      <fieldset className="mt-how">
+        <legend>How often</legend>
+        <HowOften value={how} onChange={setHow} units={CALENDAR} patterns={fixed} problem={problem} dates={dates}
+                  datesNote={fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+      </fieldset>
       <div className="pk-dialog-row">
         <Field label="Trade (optional)" text={trade}><input value={trade} maxLength={200} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Fitter" /></Field>
         <Field label="On time up to (days after)"><input type="number" min="0" step="1" inputMode="numeric" value={tolerance} onChange={(e) => setTolerance(e.target.value)} /></Field>
@@ -634,6 +627,11 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const taskOpen = useOpenParam(maint ? "mtask" : "task");
   const adding = useOpenParam("addtask");
   const ratesOpen = useOpenParam("rates");
+  // Tasks / Forecast (?mview=forecast): the Forecast view is a preview of its layout with made-up
+  // numbers, shown only where the menu preview is on (MENU_PREVIEW), until the forecast is built.
+  const viewParam = useOpenParam("mview");
+  const { menu_preview: preview } = useAppConfig();
+  const forecastOn = maint && preview && viewParam.open === "forecast";
   // Held here as well as in the address, so the box answers at once.
   const belowParam = useOpenParam("below");
   const [belowOn, setBelowOn] = useState(belowParam.open === "1");
@@ -741,6 +739,19 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       </div>
     );
   }
+  const viewSwitch = maint && preview ? (
+    <SegmentedControl size="sm" className="mt-view" label="Show" value={forecastOn ? "forecast" : "tasks"}
+                      onChange={(v) => viewParam.setOpen(v === "forecast" ? "forecast" : null)}
+                      options={[{ value: "tasks", label: "Tasks" }, { value: "forecast", label: "Forecast (preview)", title: "A preview of the forecast's layout, with made-up numbers" }]} />
+  ) : null;
+  if (forecastOn) {
+    return (
+      <div className="td-tab-page pk-panel rw">
+        <div className="pk-bar">{viewSwitch}</div>
+        <ForecastPreview today={today} where={row.ref.name || "this position"} />
+      </div>
+    );
+  }
   const tick = shown ? tickState(shown.filter((t) => !t.why_not), picked) : "none";
   const flip = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const free = chosen.filter((t) => !t.package && !t.why_not);
@@ -772,6 +783,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
           </button>
         )}
         {shown && <span className="lib-date pk-count">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>}
+        {viewSwitch}
         {colsOpen && (
           <div className="pk-cols">
             <ColumnChooser cols={cols} onCols={setCols} usual={USUAL_COLS[variant]} columns={offered} open={colsOpen}

@@ -52,7 +52,7 @@ from backend.services import rbd_analysis, rbd_ccf, rbd_next_failure, rbd_repeat
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.26", "repyability": "0.16"}
+_DEFAULT_VERSIONS = {"surpyval": "0.27", "repyability": "0.17"}
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
 # Names the script itself uses at module level; block variables avoid them
@@ -93,11 +93,13 @@ def detect_versions() -> dict:
     ``requirements.txt`` is copied, fall back to the installed package and
     finally to the known-good defaults.
     """
+    # Only a version reads as one: the Dockerfile pins RePyability by commit,
+    # and a commit hash that starts with a digit (1f7701c9...) isn't a version.
     surpyval = _pin_from(
-        _REPO_ROOT / "requirements.txt", r"SurPyval\.git@v?([0-9][\w.\-]*)"
+        _REPO_ROOT / "requirements.txt", r"(?m)^surpyval==([0-9]+\.[0-9][\w.\-]*)"
     ) or _installed("surpyval")
     repyability = _pin_from(
-        _REPO_ROOT / "Dockerfile", r"RePyability\.git@v?([0-9][\w.\-]*)"
+        _REPO_ROOT / "Dockerfile", r"RePyability\.git@v([0-9]+\.[0-9][\w.\-]*)"
     ) or _installed("repyability")
     return {
         "surpyval": surpyval or _DEFAULT_VERSIONS["surpyval"],

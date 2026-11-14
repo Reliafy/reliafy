@@ -317,10 +317,14 @@ def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
 
 
 @router.get("/tree")
-def tree(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def tree(within: str | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The asset trees for the app's tree pane: every position once, flat, with what
     each row shows (status, and everything inside it rolled up), the locations, the
-    spares placed at them and the items with no home."""
+    spares placed at them and the items with no home. within: one asset alone (a
+    position, or a place), as the Explorer opened on it shows it: nothing of any
+    other asset, and no workspace summary."""
+    if within:
+        return _run(lambda: m.tree_rows(within))
     return _run(lambda: {"summary": summary(m), **m.tree_rows()})
 
 
@@ -388,7 +392,7 @@ def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
                 body.get("source") or "manual", body.get("reference", ""), body.get("failure_mode_id"),
                 body.get("last_done"), body.get("trade", ""), while_stored=body.get("while_stored"),
                 include_positions=body.get("include_positions"), failure_mode_ids=body.get("failure_mode_ids"),
-                trigger=body.get("trigger"), start=body.get("start"), **subject)
+                trigger=body.get("trigger"), start=body.get("start"), rule=body.get("rule"), **subject)
 
 
 @router.post("/positions/{position_id}/tasks")
@@ -554,11 +558,12 @@ def _rcm_read(session, ctx: AccessCtx, fn, *args) -> JSONResponse:
 
 
 @router.get("/rcm")
-def workspace_rcm(session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+def workspace_rcm(within: str | None = None, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
                   m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """Every position's RCM (those with any), for the asset tree's RCM tab, with each
-    decision's evidence check as the reader sees it."""
-    return _rcm_read(session, ctx, m.rcm_all)
+    decision's evidence check as the reader sees it. within: one asset's alone (a
+    position, or a place: everything the Explorer opened on it shows)."""
+    return _rcm_read(session, ctx, m.rcm_all, within or None)
 
 
 @router.get("/positions/{position_id}/rcm")
@@ -1065,6 +1070,9 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
                                  body.get("while_stored"), body.get("include_positions"),
                                  body.get("last_done_reading"),
                                  start=("" if body["start"] is None else body["start"]) if "start" in body else None)
+        if "rule" in body:
+            # How often, as a pattern (the first Saturday of every month; how_often.py); null clears it.
+            view = m.set_task_rule(task_id, body["rule"])
         if "trigger" in body:
             # What raises it besides (or instead of) its interval; null clears it.
             view = m.set_task_trigger(task_id, body["trigger"])
@@ -1249,15 +1257,29 @@ def _fit_failed(err) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {client_message(err)}"})
 
 
+def _within_ids(m: Maintenance, within: str, ids: list[str] | None) -> list[str]:
+    """The positions of one asset (a position, or a place), cut to ``ids`` when given. Never
+    empty: a list naming no position keeps every reader's "only these" meaning nothing."""
+    inside = m.positions_inside(within)
+    out = sorted(inside if ids is None else inside.intersection(ids))
+    return out or ["-"]
+
+
 @router.get("/position-models")
-def position_models(position_ids: str | None = None, session=Depends(get_session),
+def position_models(position_ids: str | None = None, within: str | None = None, session=Depends(get_session),
                     ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """Every model attached to a position in use (position_ids: only these, comma-separated), each with its
+    """Every model attached to a position in use (position_ids: only these, comma-separated; within: only
+    one asset's positions, a position or a place), each with its
     model's kind, headline numbers with bounds, data counts and a one-word quality, and what uses it (RCM
     decisions linking it as evidence, RBD blocks)."""
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
+    if within:
+        try:
+            ids = _within_ids(m, within, ids)
+        except NotFound:
+            return JSONResponse(status_code=404, content={"detail": "That asset wasn't found."})
     # class_models: the classes with a fitted model, so a position of one with no model of its own
     # can say so (From the class…), and whether the class has failed again since its fit.
     return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids)),
@@ -1265,7 +1287,7 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
 
 
 @router.get("/position-missions")
-def position_missions(position_ids: str | None = None, session=Depends(get_session),
+def position_missions(position_ids: str | None = None, within: str | None = None, session=Depends(get_session),
                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The missions on each position: for every RBD linked to a position (position_ids: only these,
     comma-separated), its missions with their phases, length and last result (rbd_missions.py);
@@ -1276,6 +1298,11 @@ def position_missions(position_ids: str | None = None, session=Depends(get_sessi
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
+    if within:
+        try:
+            ids = _within_ids(m, within, ids)
+        except NotFound:
+            return JSONResponse(status_code=404, content={"detail": "That asset wasn't found."})
 
     def read():
         rows = m.all_position_models(ids)
@@ -2624,7 +2651,7 @@ def get_package(package_id: str, m: Maintenance = Depends(maintenance)) -> JSONR
 
 
 _PACKAGE_FIELDS = ("name", "timing", "every", "unit", "weekday", "nth", "day", "anchor", "tolerance", "tolerance_unit",
-                   "trade", "notes", "tasks")
+                   "trade", "notes", "tasks", "month")
 
 
 @router.post("/packages")
@@ -2637,7 +2664,8 @@ def create_package(body: dict = Body(...), m: Maintenance = Depends(maintenance_
                                 body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
                                 body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
                                 body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"),
-                                body.get("trade", ""), body.get("notes", ""), body.get("tasks"), body.get("season"))
+                                body.get("trade", ""), body.get("notes", ""), body.get("tasks"), body.get("season"),
+                                body.get("month"))
         # A shutdown: its visits are planned outages (shutdowns.py).
         return m.set_package_shutdown(made["id"], body["shutdown"]) if body.get("shutdown") else made
     return _run(go)
@@ -2665,6 +2693,32 @@ def out_of_service(kind: str, target_id: str, body: dict = Body(...),
     if kind not in ("positions", "items"):
         raise HTTPException(status_code=404, detail="Not found.")
     return _run(m.take_out_of_service, target_id, body.get("reason"), body.get("until"), body.get("start"))
+
+
+@router.get("/{kind}/{target_id}/operating-plan")
+def get_operating_plan(kind: str, target_id: str, root: str | None = None,
+                       m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """How a position (or the item fitted to one) runs: its own plan, or the nearest above it
+    inside root (the asset opened). Also over MCP and the CLI: maintenance get.operating_plan."""
+    if kind not in ("positions", "items"):
+        raise HTTPException(status_code=404, detail="Not found.")
+    return _run(m.operating_plan, target_id, root or None)
+
+
+@router.put("/positions/{position_id}/operating-plan")
+def set_operating_plan(position_id: str, body: dict = Body(...),
+                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{plan, name?, time_zone?, from?, notes?}: how it runs from a date (default today).
+    Also: maintenance positions.set_operating_plan."""
+    return _run(m.set_operating_plan, position_id, body.get("plan"), body.get("name") or "", body.get("time_zone"),
+                body.get("from"), body.get("notes") or "")
+
+
+@router.post("/positions/{position_id}/operating-plan/end")
+def end_operating_plan(position_id: str, body: dict = Body(default={}),
+                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{until?}: stop its own plan (default today). Also: maintenance positions.end_operating_plan."""
+    return _run(m.end_operating_plan, position_id, (body or {}).get("until"))
 
 
 @router.post("/{kind}/{target_id}/back-in-service")

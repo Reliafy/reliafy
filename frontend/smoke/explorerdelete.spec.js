@@ -123,7 +123,7 @@ test("A location's Delete… takes the places inside it", async ({ page, request
   const site = await post(`${M}/locations`, { name: `Zdel site ${tag}` });
   await post(`${M}/locations`, { name: `Zdel shed ${tag}`, parent_id: site.id });
   await page.setViewportSize({ width: 1280, height: 720 });
-  await open(page, `/asset-register/explorer?arrange=locations&sel=${site.id}`);
+  await open(page, `/asset-register/explorer?all=1&arrange=locations&sel=${site.id}`);
   await row(page, `Zdel site ${tag}`).locator(".tp-nm").click({ button: "right" });
   await rowMenu(page, `Zdel site ${tag}`).getByRole("menuitem", { name: "Delete…" }).click();
   const dialog = page.getByRole("dialog", { name: `Delete “Zdel site ${tag}” and everything inside it?` });

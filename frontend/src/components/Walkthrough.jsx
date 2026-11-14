@@ -18,6 +18,7 @@ import {
   targetsOf,
 } from "../walkthroughs.js";
 import "./Walkthrough.css";
+import HelpLink from "./ui/HelpLink.jsx";
 
 // In-app guided walkthroughs (#32): a small callout anchored to the real
 // control, one sentence a step, with Next / Back / Skip, and a ring around
@@ -392,9 +393,11 @@ function WalkthroughCallout({ run, targetRef, onMove, onEnd, onShown }) {
 
 // "Show me how": starts walkthrough ``id`` (opening its page if need be).
 // Renders nothing outside the app shell.
-export function ShowMeHow({ id, children = "Show me how", className = "" }) {
+// With ``asHelp`` it is the page's help link (ui/HelpLink): "Take the tour".
+export function ShowMeHow({ id, children = "Show me how", className = "", asHelp = false }) {
   const ctx = useWalkthrough();
   if (!ctx || !getWalkthrough(id)) return null;
+  if (asHelp) return <HelpLink kind="tour" className={className} onClick={() => ctx.start(id)} />;
   return (
     <button type="button" className={"link wt-launch" + (className ? " " + className : "")} onClick={() => ctx.start(id)}>
       {children}

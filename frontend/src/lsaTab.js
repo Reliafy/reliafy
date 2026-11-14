@@ -183,7 +183,7 @@ export function cellText(t, col) {
     case "mode": return t.modes?.[0]?.text || "";
     case "task": return t.name || "";
     case "kind": return kindText(t);
-    case "interval": return t.on_event ? "" : whenText({ interval: t.interval, interval_unit: t.unit, trigger: t.trigger });
+    case "interval": return t.on_event ? "" : t.rule_text || whenText({ interval: t.interval, interval_unit: t.unit, trigger: t.trigger });
     case "trade": return t.trade || "";
     case "due": return t.next_due || "";
     case "package": return t.package?.name || "";

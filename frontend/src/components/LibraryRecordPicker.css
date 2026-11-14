@@ -7,18 +7,18 @@
 .lib-pick-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px 6px; }
 .lib-pick-filters > * { flex: 1 1 150px; min-width: 0; }
 .lib-pick-filters > .lib-pick-q { flex: 2 1 240px; }
-.lib-pick-status { margin: 0; padding: 0 18px 8px; font-size: var(--fs-12); color: var(--muted); }
-.lib-pick-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; border-top: 1px solid var(--line2); }
-.lib-pick-row { display: grid; align-items: start; gap: 4px 10px; padding: 7px 18px; border-bottom: 1px solid var(--line2);
+.lib-pick-status { margin: 0; padding: 0 18px 8px; font-size: var(--fs-12); color: var(--text-secondary); }
+.lib-pick-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; border-top: 1px solid var(--border-subtle); }
+.lib-pick-row { display: grid; align-items: start; gap: 4px 10px; padding: 7px 18px; border-bottom: 1px solid var(--border-subtle);
   grid-template-columns: minmax(180px, 2.4fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 1.3fr) minmax(0, 0.9fr) auto;
   font-size: var(--fs-13); }
 .lib-pick-row > span { min-width: 0; overflow-wrap: anywhere; }
 .lib-pick-row .num { text-align: right; font-variant-numeric: tabular-nums; }
-.lib-pick-head { position: sticky; top: 0; z-index: 1; background: var(--surf); font-size: var(--fs-12); font-weight: 600; color: var(--muted); }
+.lib-pick-head { position: sticky; top: 0; z-index: 1; background: var(--bg-surface); font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); }
 [role="option"].lib-pick-row { cursor: pointer; }
-.lib-pick-row.hi { background: var(--acc-t); box-shadow: inset 3px 0 0 var(--acc); }
+.lib-pick-row.hi { background: var(--accent-subtle); box-shadow: inset 3px 0 0 var(--accent); }
 .lib-pick-name { font-weight: 600; }
-.lib-pick-now { font-weight: 400; color: var(--muted); }
+.lib-pick-now { font-weight: 400; color: var(--text-secondary); }
 .lib-pick-detail { display: none; }
 .lib-pick-empty { padding: 24px 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .lib-pick-empty p { margin: 0; }
@@ -29,7 +29,7 @@
   .lib-pick-row { grid-template-columns: minmax(0, 1fr) auto; padding: 8px 16px; }
   .lib-pick-col { display: none; }
   .lib-pick-name { grid-column: 1; }
-  .lib-pick-detail { display: block; grid-column: 1; font-size: var(--fs-12); color: var(--muted); line-height: 1.35; }
+  .lib-pick-detail { display: block; grid-column: 1; font-size: var(--fs-12); color: var(--text-secondary); line-height: var(--lh-12); }
   .lib-pick-link { grid-column: 2; grid-row: 1; }
   .lib-pick-filters { padding: 10px 16px 6px; }
   .lib-pick-status { padding: 0 16px 8px; }
@@ -37,6 +37,6 @@
 }
 /* The picked record's one line in the dialog that opened the picker. */
 .lib-picked { display: flex; flex-direction: column; gap: 4px; }
-.lib-picked-line { margin: 0; font-size: var(--fs-13); overflow-wrap: anywhere; line-height: 1.4; }
+.lib-picked-line { margin: 0; font-size: var(--fs-13); overflow-wrap: anywhere; line-height: var(--lh-13); }
 .lib-picked-acts { display: inline-flex; align-items: center; gap: 10px; font-size: var(--fs-13); }
 .lib-picked-pick { align-self: flex-start; }

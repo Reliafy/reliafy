@@ -128,7 +128,7 @@ export default function MaintenanceWorkOrder() {
             <label key={i} className="maint-row" style={{ marginTop: "0.25rem", gap: "0.5rem" }}>
               <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
-              <span style={c.done ? { textDecoration: "line-through", color: "var(--muted)" } : null}>
+              <span style={c.done ? { textDecoration: "line-through", color: "var(--text-secondary)" } : null}>
                 {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
               {c.task_id && !c.step && progressText(wo.readings_by_task?.[c.task_id]) && (
                 <span className="lib-date maint-line-readings">{progressText(wo.readings_by_task[c.task_id])}</span>

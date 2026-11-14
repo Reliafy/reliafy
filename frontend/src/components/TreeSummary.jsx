@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import Chip from "./ui/Chip.jsx";
 import Section, { AddRow } from "./ui/Section.jsx";
 import ClampLines from "./ui/ClampLines.jsx";
@@ -10,7 +10,9 @@ import { byName, insideWords, statusWords } from "../assetTree.js";
 import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
 import { annualLsa, annualText, nextVisit } from "../lsaTab.js";
-import { explorerPath } from "../assetTree.js";
+import { explorerHere } from "../products.js";
+import { getOperatingPlan } from "../api.js";
+import { hoursWords, planWords } from "../operatingPlan.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
 // column, a readable width at most. Status chips and the description first,
@@ -123,6 +125,8 @@ const SHOWN_TASKS = 8;
 // "Log an event…" (the row's action, when it has one) sits at the foot of Work:
 // tasks waiting for an event are raised from here.
 function Work({ r, state, today, fullPage, logEvent = null }) {
+  // The LSA links stay in the tree on show (one asset open on its own stays so).
+  const { pathname, search } = useLocation();
   const { data, error } = state;
   let body;
   let count = null;
@@ -164,12 +168,12 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
           )}
           {visit && (
             <p className="td-quiet td-next-visit">
-              Next visit: <Link to={explorerPath("positions", { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
+              Next visit: <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
             </p>
           )}
           {annual && (
             <p className="td-quiet td-annual" title="Each task's labour hours × 365.25 ÷ its interval in days, added up. Tasks raised by an event or counted by use have no yearly count.">
-              <Link to={explorerPath("positions", { sel: r.key, tab: "lsa" })}>{annual}</Link>
+              <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa" })}>{annual}</Link>
             </p>
           )}
           {tasks.length > 0 && (
@@ -304,6 +308,37 @@ function Inside({ r, display, onSelect, add, here = null, design = false }) {
   );
 }
 
+// One line: how it runs (its operating plan, or the one above it it runs to), opening the plan
+// in the table area (?plan=). An item runs as the position it's fitted to: said, not opened.
+function OperatingPlanLine({ r }) {
+  const { pathname, search } = useLocation();
+  const [state, setState] = useState({ key: null, data: null });
+  const kind = r.type === "item" ? "item" : "position";
+  const root = new URLSearchParams(search).get("root");
+  useEffect(() => {
+    let live = true;
+    getOperatingPlan(kind, r.key, root).then((d) => live && setState({ key: r.key, data: d }), () => live && setState({ key: r.key, data: null }));
+    return () => { live = false; };
+  }, [r.key, kind, root]);
+  const data = state.key === r.key ? state.data : null;
+  if (!data) return null;
+  const plan = data.plan;
+  const q = new URLSearchParams(search);
+  q.set("plan", r.key);
+  const words = plan ? `${planWords(plan.plan)}${plan.hours_per_week != null ? ` · ${hoursWords(plan.hours_per_week)}` : ""}` : null;
+  return (
+    <Section title="Operating plan">
+      <ul className="td-rows">
+        <Row title={words || quiet("None yet")}
+             meta={kind === "item" ? (plan ? `Runs as the position it's fitted to${data.inherited_from ? ` (from ${data.inherited_from.name})` : ""}` : data.note)
+               : plan ? (data.inherited_from ? `From ${data.inherited_from.name}` : "Its own plan")
+               : "Say how it runs: usage tasks go on dates from it"}
+             chips={kind === "position" ? <Link to={`${pathname}?${q}`} className="td-more">{plan ? "Open" : "Set one"}</Link> : null} />
+      </ul>
+    </Section>
+  );
+}
+
 const SHOWN_POINTS = 6;
 const ALARM = { low: "Below its alarm limit", high: "Above its alarm limit" };
 
@@ -397,6 +432,7 @@ export default function TreeSummary({
       {facts || <Facts r={row} display={display} design={design} fittedFrom={row.type === "pos" ? position.data?.fitted : null} />}
       {children}
       {row.type === "pos" && !design && <Work r={row} state={position} today={today} fullPage={fullPage} logEvent={logEvent} />}
+      {(row.type === "pos" || row.type === "item") && !design && <OperatingPlanLine r={row} />}
       {row.type === "pos" && (
         <OperatingContextCard positionId={row.key} state={position} onSaved={onContextSaved} />
       )}

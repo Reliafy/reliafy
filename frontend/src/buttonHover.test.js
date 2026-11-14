@@ -11,6 +11,6 @@ import { fileURLToPath } from "node:url";
 const css = readFileSync(fileURLToPath(new URL("./index.css", import.meta.url)), "utf8");
 
 test("the default button hover carries no weight of its own", () => {
-  assert.match(css, /button:where\(:hover:not\(:disabled\)\)\s*\{\s*background: var\(--acc-d\);/);
+  assert.match(css, /button:where\(:hover:not\(:disabled\)\)\s*\{\s*background: var\(--accent-hover\);/);
   assert.doesNotMatch(css, /^button:hover:not\(:disabled\)/m);
 });

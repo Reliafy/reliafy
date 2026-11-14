@@ -4,7 +4,9 @@ import {
   createSubjectTask, getMaintenancePosition, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
   setTradeRate, unlinkTaskFailureMode, updateMaintenanceTask,
 } from "../api.js";
-import { Field, useSendOnce } from "./MaintenanceParts.jsx";
+import { Field, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
+import HowOften from "./HowOften.jsx";
+import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { costWhere, fromRcm, fromText, money, SOURCE_WORDS } from "../lsaTab.js";
 import { taskUnits } from "../maintenanceSubjects.js";
@@ -19,7 +21,7 @@ import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES }
 // a back link to the table. The RCM says what is done: a task's name is the action alone
 // ("Replace the seal"), and how it's done is its LSA (the LSA tab).
 //
-//   Add task:   name, every N unit, what kind, why it's done (own practice, the maker,
+//   Add task:   name, how often (HowOften: every N unit, a pattern, a second limit), what kind, why it's done (own practice, the maker,
 //               a law or standard, other) and a reference, the failure modes it prevents
 //               (optional, a position's), and what it costs each time (optional).
 //   A task:     the same fields, saved together. A task from an RCM decision keeps its
@@ -41,6 +43,7 @@ const validMoney = (v) => v === "" || (Number.isFinite(Number(v)) && Number(v) >
 function startFrom(task) {
   return {
     name: task?.name || "", interval: task?.interval != null ? String(task.interval) : "", unit: task?.unit || "months",
+    how: formFromTask(task),
     outcome: task?.outcome || "", source: task && !fromRcm(task) ? task.source : "manual", reference: task?.reference || "",
     cost: task?.cost?.typed != null ? String(task.cost.typed) : "",
     modes: new Set((task?.failure_modes || []).map((m) => m.id)),
@@ -97,20 +100,24 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
   const ready = loaded.key === key && !loaded.error;
   const rcm = !!task && fromRcm(task);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  // How often: interval and unit mirror it, for what reads them (its restoration fields).
+  const setHow = (how) => setF((x) => ({ ...x, how, interval: how.every, unit: how.unit }));
   const flip = (id) => setF((x) => { const m = new Set(x.modes); if (m.has(id)) m.delete(id); else m.add(id); return { ...x, modes: m }; });
   const missing = task?.cost?.lsa?.missing_rates?.filter((t) => t !== "no trade") || [];
   const restoreProblem = f.outcome === "fixed_interval" ? restorationProblem(f) : null;
-  const can = ready && !!f.name.trim() && !tooLong(f.name) && Number(f.interval) > 0 && validMoney(f.cost)
+  const howProblem = howOftenProblem(f.how);
+  const can = ready && !!f.name.trim() && !tooLong(f.name) && !howProblem && validMoney(f.cost)
     && Object.values(rates).every(validMoney) && !restoreProblem;
   const subject = { kind: row.type === "loc" ? "location" : "position", id: row.key, name: row.ref?.name };
 
   const send = useSendOnce(async () => {
     for (const [trade, rate] of Object.entries(rates)) if (rate !== "") await setTradeRate(trade, Number(rate));
     const ids = [...f.modes];
-    const fields = { name: f.name.trim(), interval: Number(f.interval), unit: f.unit, outcome: f.outcome || null };
+    const how = taskBody(f.how, taskAnchor(task, workspaceToday()));
+    const fields = { name: f.name.trim(), ...how, outcome: f.outcome || null };
     if (adding) {
       const made = await createSubjectTask(subject, {
-        ...fields, source: f.source, reference: f.reference,
+        ...fields, also_interval: how.also_interval || null, rule: how.rule || null, source: f.source, reference: f.reference,
         ...(ids.length && subject.kind === "position" ? { failure_mode_ids: ids } : {}),
       });
       if (f.cost !== "") await updateMaintenanceTask(made.id, { cost: Number(f.cost) });
@@ -164,6 +171,9 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
   if (!ready) return <div>{back}<p className="lib-date">Loading…</p></div>;
   const units = taskUnits(subject.kind);
   const modes = loaded.modes;
+  // The next three dates it gives: from when it was last done, else from today.
+  const today = workspaceToday();
+  const shown = howOftenPreview(f.how, { from: task?.last_done || today, after: !!task?.last_done, anchor: taskAnchor(task, today) });
   const lsaPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "lsa", task: task.id }) : null;
   const rcmPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "rcm" }) : null;
   return (
@@ -176,12 +186,11 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
         <Field label="Task: the action only" text={f.name} hint="say how in its LSA">
           <input autoFocus={adding} value={f.name} onChange={set("name")} placeholder="e.g. Inspect the guard" />
         </Field>
-        <Field label="Every">
-          <div className="maint-row mt-every">
-            <input type="number" inputMode="decimal" min="0" step="any" value={f.interval} onChange={set("interval")} aria-label="Interval" />
-            <select value={f.unit} onChange={set("unit")} aria-label="Interval unit">{units.map((u) => <option key={u} value={u}>{u}</option>)}</select>
-          </div>
-        </Field>
+        <fieldset className="mt-how">
+          <legend>How often</legend>
+          <HowOften value={f.how} onChange={setHow} units={units} withAlso disabled={send.busy} problem={howProblem}
+                    dates={shown.dates} datesLead={shown.lead} datesAfter={shown.after} datesNote={shown.note} />
+        </fieldset>
         <Field label="What kind of task">
           <select value={f.outcome} onChange={set("outcome")}>{KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </Field>
