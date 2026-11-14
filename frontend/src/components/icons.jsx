@@ -7,6 +7,9 @@ const svg = (paths) => (
 
 export const WaveIcon = () => svg(<path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />);
 export const PlusIcon = () => svg(<path d="M12 5v14M5 12h14" />);
+// Help links (ui/HelpLink): a walkthrough plays; a guide is read.
+export const PlayIcon = () => svg(<path d="M8 5.5v13l10-6.5z" />);
+export const BookIcon = () => svg(<><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v15H5.5c-.8 0-1.5.7-1.5 1.5z" /><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v15h5.5c.8 0 1.5.7 1.5 1.5z" /></>);
 export const ListIcon = () => svg(<path d="M4 6h16M4 12h16M4 18h10" />);
 export const CompareIcon = () => svg(<><path d="M4 18V8M9 18V5M14 18v-7M19 18v-4" /></>);
 export const RbdIcon = () => svg(<><rect x="3" y="4" width="6" height="6" rx="1" /><rect x="15" y="4" width="6" height="6" rx="1" /><rect x="9" y="14" width="6" height="6" rx="1" /><path d="M9 7h6M6 10v4M18 10v4" /></>);

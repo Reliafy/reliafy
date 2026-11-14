@@ -9818,7 +9818,7 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 .home-wait-title { width: 132px; height: 12px; margin: 5px 0; }
 .home-start-wait { margin-top: 16px; }
 /* Home's purpose says what Reliafy is for, so it wraps and is never cut short. */
-.home .sh-purpose-text { white-space: normal; overflow: visible; }
+.home .sh-purpose-text { display: block; -webkit-line-clamp: unset; line-clamp: none; white-space: normal; overflow: visible; }
 
 /* Section landing pages: a compact header. The menu already says which
    section you're in, so the one-word breadcrumb only shows on a phone. */
@@ -9829,19 +9829,27 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
   .page-header.section-header .crumb { display: none; }
   .page-header.section-header { align-items: center; }
 }
-/* The purpose and "Show me how" stay on one line on a wide screen: a long
-   purpose is cut with an ellipsis (its full text on hover) before the link wraps. */
+/* The purpose and its help link (ui/HelpLink): the purpose wraps to at most
+   two lines (the full text on hover), never cut mid-sentence on one line; the
+   link sits after it while there's room, else on its own line, flush left. */
 .page-header.section-header .ph-meta { max-width: none; }
-.sh-purpose { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; }
-.sh-purpose .wt-launch { flex: none; white-space: nowrap; }
-@media (min-width: 900px) {
-  .sh-purpose-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-purpose { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-3); row-gap: var(--space-1); max-width: 100%; }
+.sh-purpose-text { min-width: 0; max-width: 72ch; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+
+/* A help link: quiet until wanted. Its padding bleeds left, so the icon lines
+   up with the text above it when it wraps. */
+button.help-link {
+  flex: none;
+  margin-inline-start: calc(-1 * var(--space-2));
+  padding-inline: var(--space-2);
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
 }
-@media (max-width: 899px) {
-  .sh-purpose { display: inline; }
-  /* Inline, the flex gap is gone: keep a space before "Show me how". */
-  .sh-purpose .wt-launch { margin-left: 6px; }
-}
+button.help-link svg { color: var(--text-tertiary); }
+button.help-link:hover:not(:disabled) { color: var(--accent-text); background: var(--accent-wash); }
+button.help-link:hover:not(:disabled) svg { color: var(--accent-text); }
+button.help-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 /* A dialog takes focus as it opens (so the keyboard is in it): no ring on the box itself. */
 .modal:focus { outline: none; }
