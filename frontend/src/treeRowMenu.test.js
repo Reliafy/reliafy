@@ -202,3 +202,24 @@ test("the tree's last row (+ New position inside …) shows on the Summary tab o
     assert.equal(showsAddRow(tab), false, tab);
   }
 });
+
+test("one asset open: its top row merges into another asset; a row inside becomes its own asset", async () => {
+  const { withAssetMoves, ASSET_MERGE, ASSET_SEPARATE } = await import("./treeRowMenu.js");
+  const items = [{ id: "tree-new" }, { id: "tree-rename" }, { id: "tree-move" }, { id: "tree-export" }, { id: "tree-delete" }];
+  const top = { key: "site", type: "loc", ref: {} };
+  const inside = { key: "pump", type: "pos", ref: {} };
+  assert.deepEqual(withAssetMoves(items, top, { root: "site" }).map((i) => i.id),
+    ["tree-new", "tree-rename", "tree-move", ASSET_MERGE.id, "tree-export", "tree-delete"]);
+  assert.deepEqual(withAssetMoves(items, inside, { root: "site" }).map((i) => i.id)[3], ASSET_SEPARATE.id);
+  // No Move to… (a position by Locations): before Export this branch….
+  assert.deepEqual(withAssetMoves([{ id: "tree-rename" }, { id: "tree-export" }], inside, { root: "site" }).map((i) => i.id),
+    ["tree-rename", ASSET_SEPARATE.id, "tree-export"]);
+  // Not: no asset open (a product's design), an item, a position an item carries.
+  assert.equal(withAssetMoves(items, top, { root: null }), items);
+  assert.equal(withAssetMoves(items, { key: "i", type: "item", ref: {} }, { root: "site" }), items);
+  assert.equal(withAssetMoves(items, { key: "c", type: "pos", ref: { carried_by: { id: "i" } } }, { root: "site" }), items);
+  // A view-only team: greyed, with the reason.
+  const greyed = withAssetMoves(items, top, { root: "site", viewOnly: "View only" }).find((i) => i.id === ASSET_MERGE.id);
+  assert.equal(greyed.disabled, true);
+  assert.equal(greyed.reason, "View only");
+});

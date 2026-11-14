@@ -34,6 +34,13 @@ that asset alone: its tree, search, tabs and pickers show nothing from any
 other asset. The **Explorer** always shows one asset. To look at another, go
 back to **Assets** and choose it there.
 
+To see two assets together, merge one into the other. Choose **Merge into
+another asset…** from the asset's **⋯** on the **Assets** page (or from its top
+row's menu in the Explorer). Pick the asset it joins and where in that asset's
+tree it goes; the pane says what comes along before you choose **Merge**.
+Everything inside it keeps its history, readings, tasks, RCM and fitted items.
+To split it off again, choose **Make this its own asset…** from its row's menu.
+
 ## Add positions inside positions
 
 A pump set has a pump and a motor inside it. Open its asset from **Assets**

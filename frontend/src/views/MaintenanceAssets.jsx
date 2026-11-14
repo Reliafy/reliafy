@@ -103,7 +103,13 @@ export default function MaintenanceAssets() {
         error={error} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
         count={assetsSummary(view)} search={(p) => [p.name, p.description]}
         name={(p) => ({ to: assetOpenPath(p.id, fromExplorer || ""), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
-        columns={columns} after={notPlaced || null} onDelete={setDeleting}
+        columns={columns} after={notPlaced || null}
+        // Merge into another asset… opens the asset in the Explorer with the merge pane beside its tree.
+        rowMenu={(p) => [
+          { id: "merge", label: "Merge into another asset…", onSelect: () => navigate(assetOpenPath(p.id, "merge=1")) },
+          { separator: true },
+          { id: "delete", label: "Delete…", danger: true, onSelect: () => setDeleting(p) },
+        ]}
         empty={{
           title: "No assets yet",
           text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is.",
