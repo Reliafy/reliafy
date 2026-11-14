@@ -169,9 +169,20 @@ export function expectsChart(path, record = {}) {
   return typeof rule === "function" ? rule(record) : Boolean(rule);
 }
 
+// The Explorer is always one asset (?root=): an address that opens it with no
+// asset, no row and no ?place lands on the Assets list, to pick one there.
+export const ASSETS_LIST = "/asset-register";
+export function explorerWithoutAsset(target) {
+  const [path, query = ""] = String(target).split("?");
+  if (path !== "/asset-register/explorer") return false;
+  const q = new URLSearchParams(query);
+  return !["root", "sel", "place"].some((k) => q.has(k));
+}
+
 // Where an earlier address lands: `from` with an id filled in (and any
 // query or #hash) goes to its new page with the same id, query and hash.
 export function landing(route, id, suffix = "") {
+  if (!hasParam(route.path) && explorerWithoutAsset(route.target)) return ASSETS_LIST + suffix;
   const params = {};
   const names = route.path.match(/:\w+/g) || [];
   // Two parameters take an id "a/b", one part each (as fill does).
@@ -189,5 +200,7 @@ export const REDIRECTS_WITH_QUERY = [
   ["/rcm/studies/sample-rcm-truck?from=email", "/maintenance/rcm/sample-rcm-truck?from=email"],
   ["/strategy/demonstration-test?model=sample-model-bearings-weibull", "/strategy/test-planning?model=sample-model-bearings-weibull"],
   ["/asset-register/positions?place=none", "/asset-register/explorer?arrange=positions&place=none"],
-  ["/maintenance/locations#top", "/asset-register/explorer?arrange=locations#top"],
+  ["/asset-register/positions?place=none#top", "/asset-register/explorer?arrange=positions&place=none#top"],
+  // The Explorer is always one asset: an address with none in it lands on the Assets list.
+  ["/maintenance/locations", "/asset-register"],
 ];

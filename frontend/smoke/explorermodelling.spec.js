@@ -119,7 +119,9 @@ test("update a baseline with a position's one failure, and save it as the positi
   await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("model");
   const option = await dialog.locator("option", { hasText: "Bearing life — Weibull" }).first().getAttribute("value");
   await dialog.getByRole("combobox", { name: "Prior model" }).selectOption(option);
-  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound"); // B-life bounds are one-sided (#818)
+  // A fit with a prior runs on SurPyval's grid: on a shared CI runner it can still be "Working it
+  // out…" after an expect's 10 s (release PR #884), so wait for the answer as saveFit does.
+  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound", { timeout: 60_000 }); // B-life bounds are one-sided (#818)
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
   await saveFit(page, dialog, pump.id);
@@ -443,7 +445,9 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await dialog.getByLabel("Characteristic life (alpha)").fill("4");
   await dialog.getByLabel("Shape (beta)").fill("2");
   await dialog.getByLabel("Unit").selectOption("years");
-  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound"); // B-life bounds are one-sided (#818)
+  // A fit with a prior runs on SurPyval's grid: on a shared CI runner it can still be "Working it
+  // out…" after an expect's 10 s (release PR #884), so wait for the answer as saveFit does.
+  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound", { timeout: 60_000 }); // B-life bounds are one-sided (#818)
   await expect(dialog.getByRole("status")).toContainText("1 failure at");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
