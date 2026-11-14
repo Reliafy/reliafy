@@ -11,8 +11,6 @@ Needs a server on the same release.
 - **Operating plans** on positions: `maintenance get.operating_plan` reads a
   position's plan (its own or the one it inherits); `positions.update` takes
   `operating_plan` and `end_operating_plan`.
-- **One asset at a time**: tree and RCM reads take `within` (an asset), and
-  return only that asset.
 
 ## 0.9.0 (13 Nov 2026)
 
