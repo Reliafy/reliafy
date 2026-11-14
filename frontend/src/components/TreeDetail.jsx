@@ -8,10 +8,10 @@ import OverflowMenu from "./OverflowMenu.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { ancestorsOf, structuralRow } from "../assetTree.js";
 import {
-  EXPLORER_GROUPED_TABS, branchOf, classesInBranch, groupLabel, groupedTabsFor, groupedView, hasTabBar, isDesignRow, isPlainGroup, isProductRow, rowKind,
+  EXPLORER_PANEL_TABS, branchOf, classesInBranch, hasTabBar, isDesignRow, isProductRow, panelTabsFor, panelView, rowKind,
   shownTab, tabsFor, viewTarget,
 } from "../explorerTabs.js";
-import GroupedTabs from "./ui/GroupedTabs.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import TreeSummary from "./TreeSummary.jsx";
 import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
@@ -296,34 +296,45 @@ function GroupedHeaderMenu({ items }) {
 // The panel's tabs (Summary, RCM), under its heading. A row with Summary alone has none; an item
 // class has its one tab, Condition monitoring (a position on an asset has that tab too).
 //
-// With EXPLORER_GROUPED_TABS (explorerTabs.js), the grouped row instead (GroupedTabs: Summary |
-// Analysis ▾ | Operation ▾ | History ▾); `onTab(tab, {view})` then also names the ?mview= of the
-// inner view picked (Packages, Forecast), null for none. `idPrefix`: "td" for the panel's own row.
+// With EXPLORER_PANEL_TABS (explorerTabs.js), the flat row ordered by use (Summary · Maintenance ·
+// Monitoring · RCM · FME(C)A · Models · History), the tabs that don't fit folded into "⋯ N" (the
+// shared Tabs with `overflow`), and a tab's inner views (Maintenance: Tasks · What it needs ·
+// Packages) as a SegmentedControl under the row. `onTab(tab, {view})` then also names the ?mview=
+// of the inner view picked (Packages, Forecast), null for none. `idPrefix`: "td" for the panel's
+// own row.
 export function HeaderTabs({ row, tab, onTab, label = "What to show for this row", idPrefix = "td", className = "tt-tabs" }) {
   const { menu_preview: preview } = useAppConfig();
   const [params] = useSearchParams();
   if (!hasTabBar(row)) return null;
-  if (EXPLORER_GROUPED_TABS) {
+  if (EXPLORER_PANEL_TABS) {
     const opts = { preview: !!preview };
-    const groups = groupedTabsFor(row, opts);
-    const at = groupedView(tab, row, { ...opts, mview: params.get("mview") });
+    const tabs = panelTabsFor(row, opts);
+    const at = panelView(tab, row, { ...opts, mview: params.get("mview") });
+    const here = tabs.find((t) => t.id === at?.tab);
+    const go = (tabId, view = null) => {
+      const to = viewTarget(row, tabId, view, opts);
+      if (to) onTab(to.tab, { view: to.mview });
+    };
     return (
-      <GroupedTabs groups={groups} at={at} label={label} idPrefix={idPrefix} className={className + " tt-gtabs"}
-                   labelOf={groupLabel} isPlain={isPlainGroup}
-                   onChoose={(entry, view) => {
-                     const to = viewTarget(row, entry, view, opts);
-                     if (to) onTab(to.tab, { view: to.mview });
-                   }} />
+      <div className="ptabs">
+        <Tabs tabs={tabs} value={at?.tab} onChange={(id) => { if (id !== at?.tab) go(id); }} label={label} idPrefix={idPrefix}
+              className={className} overflow />
+        {here && here.views.length > 1 && (
+          <SegmentedControl size="sm" className="ptabs-views" label={`${here.label}: what to show`} value={at.view}
+                            onChange={(v) => go(here.id, v)}
+                            options={here.views.map((v) => ({ value: v.id, label: v.label, title: v.title }))} />
+        )}
+      </div>
     );
   }
   return <Tabs tabs={tabsFor(row)} value={shownTab(tab, row)} onChange={onTab} label={label} idPrefix={idPrefix} className={className} wholeTabs />;
 }
 
-// The id of the tab that names the panel (its aria-labelledby): the tab shown, or with grouped
-// tabs the group it's in.
+// The id of the tab that names the panel (its aria-labelledby): the tab shown (with the panel
+// tabs, the one its view is in; never folded into "⋯").
 function panelLabelId(tab, row, mview, preview) {
-  if (!EXPLORER_GROUPED_TABS) return `td-tab-${shownTab(tab, row)}`;
-  return `td-tab-${groupedView(tab, row, { mview, preview })?.group || "summary"}`;
+  if (!EXPLORER_PANEL_TABS) return `td-tab-${shownTab(tab, row)}`;
+  return `td-tab-${panelView(tab, row, { mview, preview })?.tab || "summary"}`;
 }
 
 // `menu`: the "…" items the tab's body gave (through `onMenu`, panelMenu.js),

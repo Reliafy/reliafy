@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getPositionCondition } from "../api.js";
 import { positionRisk } from "../joint.js";
 import { UnitCharts, UnitSummary } from "./model/RiskTable.jsx";
+import { tabPlace } from "../explorerTabs.js";
 import "./PositionRisk.css";
 
 // One position's risk now, the one implementation for both places it shows in
@@ -70,14 +71,14 @@ export default function PositionRisk({ positionId, version, onModelling = null, 
       {say.state === "no-model" && (
         <p className="pr-why">
           A condition and life model gives the chance of failing from an item's age and its condition readings.
-          To link one, open this position's Modelling tab and choose Life model, then “Assign a saved model…”.
+          To link one, open this position's {tabPlace("models")} and choose Life model, then “Assign a saved model…”.
         </p>
       )}
       {say.facts && <p className="hint pr-facts">{say.facts}</p>}
       {onModelling && say.state === "no-model" && (
         <p className="pr-go">
           <button type="button" className="link" onClick={onModelling} title="Show the life models on this position, and link one">
-            Open the Modelling tab
+            Open {tabPlace("models")}
           </button>
         </p>
       )}

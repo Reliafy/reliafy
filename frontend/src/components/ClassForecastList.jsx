@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { getClassForecast, getPositionClasses } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
 import { formatNumber } from "../format.js";
-import { EXPLORER_PARTS_CLASSES_TABS } from "../explorerTabs.js";
+import { EXPLORER_PARTS_CLASSES_TABS, tabPlace } from "../explorerTabs.js";
 import { classesPath } from "../redirects.js";
 
 // The position classes with a fitted life model, each with its expected
@@ -59,7 +59,7 @@ export default function ClassForecastList() {
         <div className="card empty">
           {linked
             ? <p>No class has a fitted life model yet. Fit one from a class's pooled life data on its <Link to={classesPath()}>Classes</Link> page.</p>
-            : <p>No class has a fitted life model yet. Fit one from a class's pooled life data in the Explorer's Modelling tab.</p>}
+            : <p>No class has a fitted life model yet. Fit one from a class's pooled life data in the Explorer's {tabPlace("models")}.</p>}
         </div>
       ) : (
         <div className="lib">

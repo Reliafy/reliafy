@@ -362,8 +362,8 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
     if no_model:
         which = ("None of these positions has a" if no_model == len(rows) else
                  f"{no_model} of these positions {'has' if no_model == 1 else 'have'} no")
-        notes.append(f"{which} condition and life model. To see risk, link one to the position on its Modelling "
-                     "tab.")
+        notes.append(f"{which} condition and life model. To see risk, link one to the position in its "
+                     "Models › Life models.")
     if len(rows) > MAX_BOUNDED:
         notes.append(f"The 90% bounds (each chance at most, median life left at least) are worked out for the "
                      f"first {MAX_BOUNDED} members by name; open any other for its own.")

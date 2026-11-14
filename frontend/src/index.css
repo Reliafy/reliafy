@@ -3273,6 +3273,42 @@ h1 .chip,
   font-weight: 600;
 }
 
+/* Tabs with overflow (ui/Tabs.jsx `overflow`): one row that never scrolls; the tabs that don't
+   fit fold into a last "⋯ N" tab. The row takes the width it's given; a hidden copy measures. */
+.tabs-strip.tabs-fit {
+  position: relative;
+  min-width: 0;
+}
+.tabs-fit > .tabs {
+  overflow: hidden;
+  min-width: 0;
+}
+.tabs-fit .tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-inset);
+}
+.tab.tab-more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+}
+.tab.tab-more.open {
+  color: var(--text);
+}
+.tabs-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 0.25rem;
+  width: max-content;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Sideways-scroll cue (ui/ScrollCue.jsx, #301): a strip with more content past
    an edge fades out at that edge; tab rows add a chevron that scrolls them. */
 .scroll-cue {

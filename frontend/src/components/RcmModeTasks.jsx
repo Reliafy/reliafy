@@ -26,6 +26,7 @@ import InputGroup from "./ui/InputGroup.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { PlusIcon } from "./icons.jsx";
 import TaskTwins from "./TaskTwins.jsx";
+import { tabPlace } from "../explorerTabs.js";
 import { modeRestorationBody, modeRestorationForm, modeRestorationProblem, restorationWords } from "../taskRestoration.js";
 
 // Step 3 of a failure mode's details, "Proactive task or default action" (the
@@ -393,7 +394,7 @@ export default function RcmModeTasks({
               <span className="rim-chips">
                 {t.shared_with ? <Chip title={taskServesTip(t)}>{taskSharedText(t)}</Chip> : null}
                 {t.package && (
-                  <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the LSA tab"
+                  <Link className="chip chip-neutral chip-btn" title={`Done on this work package's visits: open it in ${tabPlace("lsa")}`}
                         to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
                                          { sel: t.package.subject?.id, tab: "lsa", package: t.package.id })}>
                     In: {t.package.name}
@@ -1014,7 +1015,7 @@ function TaskList({ r, lines, label, onPick, ops = null, can = false, onSaid = n
             <span className="rim-tl-chips">
               {t.shared_with ? <Chip title={taskServesTip(t)}>{taskSharedText(t)}</Chip> : null}
               {t.package && (
-                <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the LSA tab"
+                <Link className="chip chip-neutral chip-btn" title={`Done on this work package's visits: open it in ${tabPlace("lsa")}`}
                       to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
                                        { sel: t.package.subject?.id, tab: "lsa", package: t.package.id })}>
                   In: {t.package.name}

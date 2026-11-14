@@ -27,7 +27,7 @@ import LsaTask from "./LsaTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import { PlusIcon } from "./LibRows.jsx";
-import { EXPLORER_GROUPED_TABS, isDesignRow } from "../explorerTabs.js";
+import { EXPLORER_PANEL_TABS, isDesignRow } from "../explorerTabs.js";
 import { ColumnChooser } from "./RcmWorksheet.jsx";
 import "./RcmWorksheet.css";
 import "./Outline.css";
@@ -423,7 +423,7 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
   );
 }
 
-// ---- the packages here (grouped tabs: Maintenance › Packages) -------------------------------
+// ---- the packages here (panel tabs: Maintenance › Packages) -------------------------------
 
 // The work packages on this part of the tree (tasks done together on one visit): name, how often,
 // trade, how many tasks and whether it's paused. A name opens the package in the tab (?package=),
@@ -781,12 +781,12 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       </div>
     );
   }
-  // With grouped tabs the panel's header switches the views (Tasks · What it needs · Packages ·
+  // With the panel tabs the panel's header switches the views (Tasks · What it needs · Packages ·
   // Forecast), so the body draws no switch of its own.
-  if (!maint && !design && EXPLORER_GROUPED_TABS && viewParam.open === "packages") {
+  if (!maint && !design && EXPLORER_PANEL_TABS && viewParam.open === "packages") {
     return <PackagesHere scope={scope} where={where} onOpen={open.setOpen} version={version} />;
   }
-  const viewSwitch = maint && preview && !EXPLORER_GROUPED_TABS ? (
+  const viewSwitch = maint && preview && !EXPLORER_PANEL_TABS ? (
     <SegmentedControl size="sm" className="mt-view" label="Show" value={forecastOn ? "forecast" : "tasks"}
                       onChange={(v) => viewParam.setOpen(v === "forecast" ? "forecast" : null)}
                       options={[{ value: "tasks", label: "Tasks" }, { value: "forecast", label: "Forecast (preview)", title: "A preview of the forecast's layout, with made-up numbers" }]} />
