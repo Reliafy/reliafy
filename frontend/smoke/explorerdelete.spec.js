@@ -123,16 +123,17 @@ test("A location's Delete… takes the places inside it", async ({ page, request
   const site = await post(`${M}/locations`, { name: `Zdel site ${tag}` });
   await post(`${M}/locations`, { name: `Zdel shed ${tag}`, parent_id: site.id });
   await page.setViewportSize({ width: 1280, height: 720 });
-  await open(page, `/asset-register/explorer?all=1&arrange=locations&sel=${site.id}`);
+  await open(page, `/asset-register/explorer?arrange=locations&sel=${site.id}`);
   await row(page, `Zdel site ${tag}`).locator(".tp-nm").click({ button: "right" });
   await rowMenu(page, `Zdel site ${tag}`).getByRole("menuitem", { name: "Delete…" }).click();
   const dialog = page.getByRole("dialog", { name: `Delete “Zdel site ${tag}” and everything inside it?` });
   await expect(dialog.getByTestId("delete-counts")).toContainText("1 location inside it");
   await dialog.getByRole("button", { name: "Delete 2 locations" }).click();
-  await expect(row(page, `Zdel site ${tag}`)).toHaveCount(0);
-  await expect(row(page, `Zdel shed ${tag}`)).toHaveCount(0);
-  await page.locator(".rcm-toast").getByRole("button", { name: "Undo" }).click();
-  await expect(row(page, `Zdel site ${tag}`)).toBeVisible();
-  await expectHealthy(page, problems, { label: "delete a location", root: ".tx" });
+  // The asset opened was the site itself: nothing left to show, so the Assets list, with Undo.
+  await expect(page).toHaveURL(/\/asset-register$/);
+  await expect(page.getByRole("link", { name: `Zdel site ${tag}` })).toHaveCount(0);
+  await page.locator(".undo-toast").getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("link", { name: `Zdel site ${tag}` })).toBeVisible();
+  await expectHealthy(page, problems, { label: "delete a location" });
   await request.post(`${M}/locations/${site.id}/retire`, { data: { cascade: true } });
 });

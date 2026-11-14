@@ -117,18 +117,18 @@ export function assetOfId(data, id) {
 }
 
 // An asset is self-contained (Derryn, 14 Nov 2026: "assets and all their linkages needs to be
-// completely isolated"): a link that lands on the whole-register Explorer naming a row (?sel=, or
-// a fit or RBD pane's position) opens that row's asset on its own (?root=). The asset to open, or
-// null to stay on the whole register: one already open (?root=), the whole register asked for
-// (?all=1: "Show every asset", and rows picked there), the positions at no place (?place=none),
-// nothing named, or a row in no asset. `data`: the whole register's tree read.
+// completely isolated"): a link that lands on the Explorer with no asset in it, naming a row (?sel=,
+// or a fit or RBD pane's position), opens that row's asset on its own (?root=). The asset to open,
+// or null: one already open (?root=), an old ?all=1 link (the whole register, gone: Derryn, 14 Nov
+// 2026; it lands on the Assets list), the positions at no place (?place=none), nothing named, or a
+// row in no asset. `data`: the whole register's tree read, used only to find the asset.
 export function arrivalRoot(data, params, paneId = null) {
   if (!data || params.get("root") || params.get("all") || params.get("place")) return null;
   return assetOfId(data, params.get("sel") || paneId);
 }
 
 // The row id an arrival names that isn't a tree row (an RCM row: a function, a failure mode), so
-// arrivalRoot couldn't place it: null when there's none, or the address keeps the whole register.
+// arrivalRoot couldn't place it: null when there's none, or arrivalRoot would answer null anyway.
 export function arrivalNamed(data, params) {
   if (!data || params.get("root") || params.get("all") || params.get("place")) return null;
   const sel = params.get("sel");

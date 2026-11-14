@@ -262,7 +262,8 @@ test("Assets leaves the products' designs and items' trees out", async ({ page, 
   for (const id of inProducts) expect(places.not_placed.position_ids).not.toContain(id);
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
-    await open(page, "/asset-register/explorer?arrange=positions");
+    // The Explorer is always one asset: each place's tree leaves them out too.
+    await open(page, `/asset-register/explorer?arrange=positions&root=${places.places[0].id}`);
     await expect(page.getByRole("treeitem").first()).toBeVisible();
     await expect(page.getByRole("treeitem", { name: NAME })).toHaveCount(0);
     await open(page, "/asset-register");
@@ -276,8 +277,10 @@ test("Assets leaves the products' designs and items' trees out", async ({ page, 
 test("Assets offers no ready-made product", async ({ page, problems }) => {
   await open(page, "/asset-register");
   await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toBeVisible();
-  // Its ⋯ menu held only the ready-made one, so the header has none now.
-  await expect(page.locator("main").getByRole("button", { name: "More actions" })).toHaveCount(0);
+  // Its ⋯ menu has the Excel import and export (every asset's tree), and no ready-made product.
+  await page.locator(".section-header").getByRole("button", { name: "More actions" }).click();
+  await expect(page.locator(".ovm-menu .ovm-item")).toHaveText(["Import from Excel…", "Export to Excel…"]);
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: /Survey quadcopter|sample truck/ })).toHaveCount(0);
   await page.route("**/api/maintenance/places", (route) => route.fulfill({
     json: { places: [], not_placed: { positions: 0, items: 0, position_ids: [] }, horizon_days: 30 } }));

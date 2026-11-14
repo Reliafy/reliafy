@@ -7,8 +7,10 @@
 * :mod:`backend.maintenance.service` — the domain: positions, locations,
   items, fitments, placements, RCM failure modes and tasks, work orders and
   their actions, and the life data that fitments give.
-* :mod:`backend.maintenance.schedule` — calendar arithmetic for tasks: on
-  the calendar, and by use on an operating schedule.
+* :mod:`backend.maintenance.schedule` — the seam with RePyability's schedule
+  module: the app's stored rules and operating plans as the library's types.
+* :mod:`backend.maintenance.position_forecast` — the forecast on a position and
+  everything inside it.
 
 The design is in the "Reliafy Maintenance plan" doc. Local only for now
 (``MAINTENANCE_ENABLED``).

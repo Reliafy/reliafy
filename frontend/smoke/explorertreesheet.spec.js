@@ -1,5 +1,5 @@
-// The asset tree in a spreadsheet from the Explorer: the tree's ⋯ menu opens Excel import and
-// export beside the tree (no dialog); a CSV is checked (what it will make, problems by row),
+// The asset tree in a spreadsheet: Assets' ⋯ menu (every asset: the Explorer is one asset at a
+// time) and an asset's tree ⋯ menu in the Explorer open Excel import and export (no dialog); a CSV is checked (what it will make, problems by row),
 // imported (all or nothing), and importing it again makes nothing. A position's row menu exports
 // its branch. A phone: the pane takes the screen, and nothing scrolls sideways at 400 px.
 import { test, expect, open, postOk } from "./health.js";
@@ -10,6 +10,11 @@ const shot = async (page, name) => {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` });
 };
 const csv = (tag, text) => ({ name: `plant-${tag}.csv`, mimeType: "text/csv", buffer: Buffer.from(text) });
+
+async function assetsMenu(page, item) {
+  await page.locator(".section-header").getByRole("button", { name: "More actions" }).click();
+  await page.locator(".ovm-menu .ovm-item", { hasText: item }).click();
+}
 
 async function treeMenu(page, item) {
   await page.getByRole("button", { name: /^Tree options/ }).click();
@@ -31,8 +36,8 @@ for (const [width, height, label] of [[1440, 900, "1440"], [400, 860, "400"]]) {
       `${top} > Conveyor CV-1 > Drive pulley,CV-1-DP,Pulley,,,,,`,
       `${top} > Conveyor CV-1 > Tail pulley,CV-1-TP,Pulley,,,,,`,
     ].join("\n") + "\n");
-    await open(page, "/asset-register/explorer?arrange=positions");
-    await treeMenu(page, "Import from Excel…");
+    await open(page, "/asset-register");
+    await assetsMenu(page, "Import from Excel…");
     await expect(pane(page)).toBeVisible();
     await expect(page.getByRole("heading", { name: /Excel import and export/ })).toBeVisible();
     await pane(page).locator("input[type=file]").setInputFiles(good);
@@ -70,7 +75,7 @@ for (const [width, height, label] of [[1440, 900, "1440"], [400, 860, "400"]]) {
   });
 }
 
-test("export the whole tree or a branch from its row menu", async ({ page, request, problems }) => {
+test("export every asset from Assets; an asset opened on its own exports its branch only", async ({ page, request, problems }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const tag = `e${Date.now()}`;
   const plant = await postOk(request, `${M}/positions`, { name: `Plant ${tag}` });
@@ -80,10 +85,21 @@ test("export the whole tree or a branch from its row menu", async ({ page, reque
   const book = await request.get(`${M}/hierarchy/export`);
   expect(book.headers()["content-type"]).toContain("spreadsheetml");
 
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${plant.id}`);
-  await treeMenu(page, "Export to Excel…");
+  // Every asset: from the Assets page.
+  await open(page, "/asset-register");
+  await assetsMenu(page, "Export to Excel…");
   await expect(pane(page)).toBeVisible();
   await expect(pane(page).getByRole("button", { name: "Download Excel" })).toBeVisible();
+  await pane(page).getByRole("button", { name: /^Close/ }).click();
+  await expect(pane(page)).toHaveCount(0);
+
+  // One asset (a position): the tree's ⋯ menu exports that asset, never the whole register's tree.
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${plant.id}`);
+  await expect(page).toHaveURL(new RegExp(`root=${plant.id}`));
+  await treeMenu(page, "Export to Excel…");
+  await expect(pane(page)).toBeVisible();
+  await expect(pane(page).getByRole("radio", { name: `This branch: Plant ${tag}` })).toBeChecked();
+  await expect(pane(page).getByRole("radio", { name: "The whole tree" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(pane(page)).toHaveCount(0);
 

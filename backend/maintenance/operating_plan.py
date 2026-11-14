@@ -26,12 +26,16 @@ the scheduling library)::
 
 Times are the site's wall-clock times (the plan's ``time_zone``), to the minute.
 
-The hours worked out here (``hours_by_day``, ``typical_week``) are a simple
-in-app summary for the screen: clock hours with no daylight saving. The
-scheduling library's forecast replaces them once the app adopts it. One rule
-holds already: where specific runs hand over to the background, the background
-counts only the time the runs don't cover, pro rata, so no hours appear or go
-missing at the handover and each day's total is the sum of its parts.
+Every number of hours comes from RePyability's ``DutyPlan`` (``schedule.py``
+turns this shape into one): ``typical_week`` and the 14-day strip's hours (in
+``Maintenance.operating_plan``), due dates by use and the forecast. Where
+specific runs hand over to a rate, the rate counts only the time they leave, pro
+rata, so no hours appear or go missing at the handover. ``day_runs`` only lays
+out the strip's bars (clock times on each day) for the screen.
+
+An optional ``utilisation`` (0 to 1: the share of the planned running that
+happens) scales every planned hour and start. Reliafy offers one from plan
+against actual (the last 90 days' readings) and never applies it unasked.
 """
 
 from __future__ import annotations
@@ -165,7 +169,7 @@ def check_plan(plan) -> dict:
     added); PlanError, saying what to change, when it can't be saved."""
     if not isinstance(plan, dict):
         raise PlanError("A plan is {background: {...}, specific: [...]}.")
-    extra = sorted(set(plan) - {"background", "specific", "version"})
+    extra = sorted(set(plan) - {"background", "specific", "version", "utilisation"})
     if extra:
         raise PlanError(f"A plan doesn't take {', '.join(extra)}.")
     bg = _background(plan.get("background"))
@@ -189,7 +193,10 @@ def check_plan(plan) -> dict:
     for a, b in zip(spans, spans[1:]):
         if b[0] < a[1]:
             raise PlanError(f"Two lots of specific runs cover the same time ({b[0]} to {a[1]}): merge them.")
-    return {"version": PLAN_VERSION, "background": bg, "specific": specific}
+    out = {"version": PLAN_VERSION, "background": bg, "specific": specific}
+    if plan.get("utilisation") not in (None, "", 1, 1.0):
+        out["utilisation"] = _number(plan["utilisation"], "utilisation", 0.01, 1.0)
+    return out
 
 
 def _day_shifts(bg: dict, day: date) -> list[tuple[datetime, datetime]]:
@@ -282,18 +289,17 @@ def hours_by_day(plan: dict, start: date, days: int = 14) -> list[dict]:
 
 
 def typical_week(plan: dict) -> float | None:
-    """The background's hours in an ordinary week (None for a background of runs only)."""
+    """The background's hours in an ordinary week, from the library (four weeks from a
+    Monday, divided by four; utilisation applied). None for a background of runs only."""
+    from backend.maintenance import schedule
+
     bg = plan["background"]
-    if bg["kind"] == "continuous":
-        return 168.0
-    if bg["kind"] == "rate":
-        return bg["amount"] / RATE_PER[bg["per"]] * 7
-    if bg["kind"] == "shifts":
-        return sum(_hours(_day_shifts(bg, date(2024, 1, 1) + timedelta(days=k))) for k in range(7))
-    if bg["kind"] == "roster":
-        a, b = _day_shifts({**bg, "on": 1, "off": 0}, date(2024, 1, 1))[0]
-        return _hours([(a, b)]) * 7 * bg["on"] / (bg["on"] + bg["off"])
-    return None
+    if bg["kind"] == "runs":
+        return None
+    part = schedule.background_part(bg, utilisation=plan.get("utilisation"))
+    start = datetime(2024, 1, 1)  # a Monday, outside any daylight-saving question (no zone)
+    usage = schedule.DutyPlan(part).forecast(start, start + timedelta(days=28))
+    return float(usage.at(start + timedelta(days=28))["hours"]) / 4
 
 
 def describe(plan: dict) -> str:
@@ -318,6 +324,8 @@ def describe(plan: dict) -> str:
                 days = ", ".join(d[:3] for d in sh["days"])
             parts.append(f"{days}, {sh['start']} to {sh['stop']}")
         text = "; ".join(parts)
+    if plan.get("utilisation"):
+        text += f", {plan['utilisation']:.0%} utilisation"
     runs = sum(len(s["runs"]) for s in plan.get("specific") or [])
     if runs:
         end = max(s["covers"][1] for s in plan["specific"])

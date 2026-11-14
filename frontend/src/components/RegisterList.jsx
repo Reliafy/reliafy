@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { SectionHeader, ShowMe } from "./SectionPage.jsx";
 import ListSearch, { matches } from "./ListSearch.jsx";
 import { RowActions } from "./LibRows.jsx";
+import MoreMenu from "./ui/MoreMenu.jsx";
 import "./RegisterList.css";
 
 // The landing page of a register: Assets (the places you look after) and
@@ -19,10 +20,13 @@ import "./RegisterList.css";
 // the list (Assets' "Not at a place yet"), given the same columns.
 // `empty`: { title, text, sample (a button), more (a line under it) }.
 // `onDelete(row)`: a bin at the end of each row (Delete…); the `after` rows
-// then end in an empty cell of their own.
+// then end in an empty cell of their own. `pane`: work opened from the header's
+// ⋯ menu (Assets' Excel import and export), drawn under the header, above the list.
+// `rowMenu(row)`: a ⋯ menu at the end of each row in place of the bin ([{id,
+// label, danger?, onSelect}]: Assets' Merge into another asset… and Delete…).
 export default function RegisterList({
   title, purpose, help, primary, actions = null, menu, error, rows, noun, count, search, placeholder, columns, name, after = null, empty,
-  className = "", onDelete = null,
+  className = "", onDelete = null, pane = null, rowMenu = null,
 }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -32,6 +36,7 @@ export default function RegisterList({
   return (
     <div className={"app reg-page" + (className ? ` ${className}` : "")}>
       <SectionHeader title={title} purpose={purpose} help={help} primary={primary} actions={actions} menu={menu} />
+      {pane}
       {error && <div className="card error">{error}</div>}
       {rows === null ? (
         !error && <div className="card empty">Loading…</div>
@@ -57,13 +62,13 @@ export default function RegisterList({
               <colgroup>
                 <col className="reg-col-name" />
                 {columns.map((c) => <col key={c.key} className="reg-col" />)}
-                {onDelete && <col className="reg-col-act" />}
+                {(onDelete || rowMenu) && <col className="reg-col-act" />}
               </colgroup>
               <thead>
                 <tr>
                   <th>{one[0].toUpperCase() + one.slice(1)}</th>
                   {columns.map((c) => <th key={c.key} className={c.num ? "num" : undefined}>{c.label}</th>)}
-                  {onDelete && <th><span className="sr-only">Actions</span></th>}
+                  {(onDelete || rowMenu) && <th><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
               <tbody>
@@ -78,7 +83,12 @@ export default function RegisterList({
                       {columns.map((c) => (
                         <td key={c.key} className={c.num ? "num" : undefined} data-label={c.label}>{c.cell(r)}</td>
                       ))}
-                      {onDelete && <RowActions item={r} onDelete={() => onDelete(r)} />}
+                      {rowMenu ? (
+                        // The menu's clicks stay in the menu (the row itself opens the asset).
+                        <td className="lib-actions" onClick={(e) => e.stopPropagation()}>
+                          <MoreMenu label={`Actions for ${n.label}`} items={rowMenu(r)} />
+                        </td>
+                      ) : onDelete && <RowActions item={r} onDelete={() => onDelete(r)} />}
                     </tr>
                   );
                 })}
