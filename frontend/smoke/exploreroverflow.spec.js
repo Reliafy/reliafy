@@ -100,13 +100,14 @@ test("panel tabs at 400 px: the row fits with ⋯, nothing scrolls sideways", as
   const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(sideways).toBeLessThanOrEqual(0);
   // The inner views sit on one line each.
-  const radios = page.getByRole("radiogroup", { name: "Maintenance: what to show" }).getByRole("radio");
-  for (const r of await radios.all()) {
-    const lines = await r.evaluate((el) => {
+  const group = page.getByRole("radiogroup", { name: "Maintenance: what to show" });
+  await expect(group.getByRole("radio")).toHaveCount(3);
+  for (const r of await group.getByRole("radio").all()) {
+    await expect(r).toBeVisible();
+    await expect.poll(() => r.evaluate((el) => {
       const range = document.createRange();
       range.selectNodeContents(el);
       return new Set([...range.getClientRects()].map((b) => Math.round(b.top))).size;
-    });
-    expect(lines).toBe(1);
+    })).toBe(1);
   }
 });
