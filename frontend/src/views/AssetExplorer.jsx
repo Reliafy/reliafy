@@ -1681,7 +1681,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "event-log") setEventFor({ id: r.key, name: r.ref.name });
       else if (id === "tree-export") openSheet("export", { id: r.key, name: r.ref.name || "(no name)" });
       else if (id === "build-item") buildFrom(r.key);
-      else if (id === "make-own") makeOwn(r);
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "isolate-incomplete") isolateIncomplete(r);

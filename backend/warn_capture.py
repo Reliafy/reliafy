@@ -73,6 +73,8 @@ _FRAMES: contextvars.ContextVar[Tuple[_Frame, ...]] = contextvars.ContextVar(
 
 _lock = threading.Lock()
 _original_showwarnmsg = None
+# Set while a warning is being handed on to ``_original_showwarnmsg``.
+_forwarding = threading.local()
 # De-duplication for "default"/"once"/"module" outside any block, reset when the
 # filter list is replaced (as ``catch_warnings`` does).
 _seen_for: Optional[int] = None
@@ -149,7 +151,40 @@ def _raise(msg):
     raise msg.category(msg.message)
 
 
+def _display(msg) -> None:
+    """Show ``msg`` as the standard library's ``_showwarnmsg`` does: through a
+    replaced ``warnings.showwarning`` if there is one, else the current
+    ``_showwarnmsg_impl`` (a ``catch_warnings(record=True)`` list included)."""
+    shown = warnings.showwarning
+    if shown is not getattr(warnings, "_showwarning_orig", shown):
+        shown(msg.message, msg.category, msg.filename, msg.lineno, msg.file, msg.line)
+        return
+    warnings._showwarnmsg_impl(msg)
+
+
+def _forward(msg) -> None:
+    """Hand ``msg`` (already judged by the filters) to the hook we replaced.
+
+    Another library's hook installed after ours may have wrapped ours, and
+    ours it in turn (SurPyval 0.27's thread-local warning collector does,
+    the first time one of its collecting blocks runs): the chain then comes
+    back to :func:`_show`, which would loop and lose the warning. A warning
+    that comes back is shown directly instead."""
+    if getattr(_forwarding, "on", False) or _original_showwarnmsg is None:
+        _display(msg)
+        return
+    _forwarding.on = True
+    try:
+        _original_showwarnmsg(msg)
+    finally:
+        _forwarding.on = False
+
+
 def _show(msg) -> None:
+    if getattr(_forwarding, "on", False):
+        # Back from the hook we forwarded to: it has had its say.
+        _display(msg)
+        return
     frames = _FRAMES.get()
     if frames:
         inner = frames[-1]
@@ -157,7 +192,7 @@ def _show(msg) -> None:
                 or getattr(warnings, "showwarning", None) is not inner.showwarning):
             # A ``catch_warnings(record=True)`` opened inside this block: its
             # filters have already been applied; it gets the warning.
-            _original_showwarnmsg(msg)
+            _forward(msg)
             return
     action = None
     for frame in reversed(frames):
@@ -179,7 +214,7 @@ def _show(msg) -> None:
             return
     if action in ("default", "once", "module") and not _first_time(action, msg):
         return
-    _original_showwarnmsg(msg)
+    _forward(msg)
 
 
 def _install() -> None:

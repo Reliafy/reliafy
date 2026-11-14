@@ -2,7 +2,7 @@
 of the PFDavg and of the dangerous failures, and the common-cause group's.
 
 Checked against RePyability called directly on the same diagram: the shares
-are its ``fussell_vesely`` and ``barlow_proschan_importance``.
+are its ``pfd_breakdown`` (0.17) and ``barlow_proschan_importance``.
 """
 
 import matplotlib
@@ -46,33 +46,59 @@ def _rows(shares):
     return {r["id"]: r for r in shares["elements"]}
 
 
-def test_the_shares_are_repyabilitys_fussell_vesely_and_barlow_proschan():
+def test_the_shares_are_repyabilitys_pfd_breakdown_and_barlow_proschan():
     out = ra.analyze_availability(_sif(), simulate=False)
     safety = out["safety"]
     direct = _direct()
     assert safety["pfd_avg"] == pytest.approx(direct.mean_unavailability(), rel=1e-12)
     shares = safety["shares"]
     rows = _rows(shares)
-    fv, bp = direct.fussell_vesely(), direct.barlow_proschan_importance()
+    pfd, bp = direct.pfd_breakdown().fractions, direct.barlow_proschan_importance()
     for nid in RATES:
-        assert rows[nid]["pfd_share"] == pytest.approx(fv[nid], rel=1e-9)
+        assert rows[nid]["pfd_share"] == pytest.approx(pfd[nid], rel=1e-9)
         assert rows[nid]["failure_share"] == pytest.approx(bp[nid], rel=1e-9)
-    # The common cause is its own row of the dangerous failures, and those add up to 1.
+    # The common cause is its own row of both measures, and each adds up to 1.
     (group,) = shares["common_cause"]
-    assert group["members"] == ["pt1", "pt2"] and group["pfd_share"] is None
+    assert group["members"] == ["pt1", "pt2"]
+    assert group["pfd_share"] == pytest.approx(pfd[("pt1", "pt2")], rel=1e-9)
     assert group["failure_share"] == pytest.approx(bp[("pt1", "pt2")], rel=1e-9)
-    total = sum(r["failure_share"] for r in shares["elements"]) + group["failure_share"]
-    assert total == pytest.approx(1.0, rel=1e-9)
-    assert "isn't split out" in shares["common_cause_note"]
+    for field in ("pfd_share", "failure_share"):
+        total = sum(r[field] for r in shares["elements"]) + group[field]
+        assert total == pytest.approx(1.0, rel=1e-9)
+    assert "common_cause_note" not in shares
     # Largest share of the PFDavg first: the single trip valve.
     assert shares["elements"][0]["id"] == "valve"
+
+
+def test_the_pfd_shares_add_up_to_the_pfd_avg():
+    """The corrected numbers (RePyability 0.17): before, the share of the
+    PFDavg was Fussell–Vesely, which gave each transmitter the pair's whole
+    overlap and the common cause inside each one's share (about 18% each, the
+    shares summing to 118%). Now each transmitter has its own small part, the
+    common cause has its own row, and the parts sum to the PFDavg."""
+    safety = ra.analyze_availability(_sif(), simulate=False)["safety"]
+    shares = safety["shares"]
+    rows = _rows(shares)
+    assert rows["valve"]["pfd_share"] == pytest.approx(0.6553, abs=5e-5)
+    assert rows["ls"]["pfd_share"] == pytest.approx(0.1638, abs=5e-5)
+    assert rows["pt1"]["pfd_share"] == pytest.approx(0.0086, abs=5e-5)
+    assert rows["pt2"]["pfd_share"] == pytest.approx(0.0086, abs=5e-5)
+    (group,) = shares["common_cause"]
+    assert group["pfd_share"] == pytest.approx(0.1637, abs=5e-5)
+    # In PFD terms: the parts add up to the PFDavg itself.
+    parts = [r["pfd_share"] * safety["pfd_avg"] for r in shares["elements"]] + [group["pfd_share"] * safety["pfd_avg"]]
+    assert sum(parts) == pytest.approx(safety["pfd_avg"], rel=1e-9)
+    # Fussell–Vesely, shown here before, overcounts: its shares sum to well over 1.
+    fv = _direct().fussell_vesely()
+    assert sum(fv.values()) > 1.15
 
 
 def test_without_common_cause_there_is_no_group_row():
     shares = ra.analyze_availability(_sif(beta=0), simulate=False)["safety"]["shares"]
     direct = _direct(beta=0)
     assert shares["common_cause"] == [] and "common_cause_note" not in shares
-    assert _rows(shares)["ls"]["pfd_share"] == pytest.approx(direct.fussell_vesely()["ls"], rel=1e-9)
+    assert _rows(shares)["ls"]["pfd_share"] == pytest.approx(direct.pfd_breakdown().fractions["ls"], rel=1e-9)
+    assert sum(r["pfd_share"] for r in shares["elements"]) == pytest.approx(1.0, rel=1e-9)
 
 
 def test_a_diagram_that_is_not_a_safety_function_has_no_shares():
@@ -85,7 +111,7 @@ def test_a_measure_repyability_refuses_is_left_out_with_its_reason():
     class Refuses:
         components = {"pt1": None}
 
-        def fussell_vesely(self, **_):
+        def pfd_breakdown(self, **_):
             raise NotImplementedError("not with these blocks")
 
         def barlow_proschan_importance(self, **_):

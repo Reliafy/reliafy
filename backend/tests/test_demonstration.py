@@ -63,13 +63,13 @@ def test_failures_beyond_three_get_their_own_column():
 
 
 def test_extended_test_with_a_weibull_shape_matches_the_library():
-    from repyability import demonstrated_reliability, demonstration_sample_size
+    from surpyval.test_planning import demonstrated_reliability, demonstration_sample_size
 
     out = demonstration_test(0.95, 0.95, mission_time=1000, test_multiple=2, shape=2, unit="hours")
-    assert out["units"] == demonstration_sample_size(0.95, 0.95, test_multiple=2.0, shape=2.0) == 15
+    assert out["units"] == demonstration_sample_size(0.95, alpha_ci=1 - 0.95, test_multiple=2.0, shape=2.0) == 15
     assert out["test_time_per_unit"] == 2000
     assert out["demonstrated_reliability"] == pytest.approx(
-        demonstrated_reliability(15, 0.95, test_multiple=2.0, shape=2.0))
+        demonstrated_reliability(15, alpha_ci=1 - 0.95, test_multiple=2.0, shape=2.0))
     assert "2,000 hours each (2× the mission)" in out["summary"]
     assert "Weibull shape of 2" in out["summary"]
     assert any("β = 2" in a for a in out["assumptions"])
@@ -85,10 +85,10 @@ def test_extended_test_with_a_weibull_shape_matches_the_library():
 
 
 def test_solving_for_test_time_per_unit_matches_the_library():
-    from repyability import demonstration_test_multiple
+    from surpyval.test_planning import demonstration_test_multiple
 
     out = demonstration_test(0.95, 0.95, mission_time=1000, shape=2, units=20, unit="hours")
-    k = demonstration_test_multiple(0.95, 20, 0.95, shape=2.0)
+    k = demonstration_test_multiple(0.95, 20, shape=2.0, alpha_ci=1 - 0.95)
     assert out["solve_for"] == "test_time" and out["units"] == 20
     assert out["test_multiple"] == pytest.approx(k)
     assert out["test_time_per_unit"] == pytest.approx(1000 * k)
@@ -117,7 +117,7 @@ def test_without_a_mission_time_the_plan_is_in_missions():
 
 
 def test_design_reliability_reports_the_chance_of_passing():
-    from repyability import demonstration_pass_probability
+    from surpyval.test_planning import demonstration_pass_probability
 
     out = demonstration_test(0.95, 0.95, design_reliability=0.99)
     assert out["pass_probability"] == pytest.approx(demonstration_pass_probability(0.99, 59))
@@ -125,11 +125,11 @@ def test_design_reliability_reports_the_chance_of_passing():
 
 
 def test_mtbf_test_matches_the_chi_squared_bound():
-    from repyability import mtbf_test_time
+    from surpyval.test_planning import mtbf_test_time
 
     # The confidence defaults to the app's 90% (it was 95%).
     out = demonstration_test(method="mtbf", mtbf=1000, units=4, unit="hours")
-    assert out["total_test_time"] == pytest.approx(mtbf_test_time(1000.0, confidence=0.9))
+    assert out["total_test_time"] == pytest.approx(mtbf_test_time(1000.0, alpha_ci=1 - 0.9))
     assert out["total_test_time"] == pytest.approx(1000 * stats.chi2.ppf(0.90, 2) / 2)
     assert out["test_time_per_unit"] == pytest.approx(out["total_test_time"] / 4)
     assert out["summary"] == (
@@ -137,7 +137,7 @@ def test_mtbf_test_matches_the_chi_squared_bound():
         "— about 576 hours on each of 4 units."
     )
     totals = out["tradeoff"]["rows"][0]["values"]
-    assert totals[2] == pytest.approx(mtbf_test_time(1000.0, confidence=0.9, failures=2))
+    assert totals[2] == pytest.approx(mtbf_test_time(1000.0, 2, alpha_ci=1 - 0.9))
 
 
 # ---- service: validation --------------------------------------------------------------

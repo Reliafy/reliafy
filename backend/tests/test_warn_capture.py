@@ -196,3 +196,29 @@ def test_a_calendar_replacement_keeps_only_its_own_notes():
     policy, notes = out["result"]
     assert policy == "policy"
     assert notes == ["its own note"]
+
+
+def test_a_library_hook_wrapped_around_ours_does_not_lose_warnings():
+    """SurPyval 0.27 wraps ``warnings._showwarnmsg`` the first time one of its
+    collecting blocks runs, around whatever hook is there (ours); our next
+    block wraps it again. The chain loops back to our hook, which used to drop
+    every warning shown outside a block from then on."""
+    from surpyval.utils import warnings as sv_warnings
+
+    with collect_warnings():
+        pass
+    with sv_warnings.collecting_warnings():
+        pass
+    with collect_warnings():
+        pass
+    with warnings.catch_warnings(record=True) as shown:
+        warnings.simplefilter("default")
+        for _ in range(2):
+            warnings.warn("still shown, once", UserWarning)
+    assert [str(w.message) for w in shown] == ["still shown, once"]
+    with sv_warnings.collecting_warnings() as theirs:
+        warnings.warn("surpyval's", UserWarning)
+    assert [str(w.message) for w in theirs] == ["surpyval's"]
+    with collect_warnings() as ours:
+        warnings.warn("ours", UserWarning)
+    assert [str(w.message) for w in ours] == ["ours"]
