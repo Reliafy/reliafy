@@ -32,7 +32,7 @@ test("putting a pane in the address takes any other out", () => {
 });
 
 test("each pane has its address and its words for leaving it changed", () => {
-  assert.deepEqual(PANE_PARAMS, ["fit", "prior", "predict", "redundancy", "bind", "on", "mission", "rbd"]);
+  assert.deepEqual(PANE_PARAMS, ["fit", "prior", "predict", "redundancy", "bind", "on", "plan", "mission", "rbd"]);
   assert.equal(TABLE_PANES.predict.discard.title, "Discard this prediction?");
   assert.equal(TABLE_PANES.rbd.discard.title, "Discard your changes to this RBD?");
   for (const p of Object.values(TABLE_PANES)) {
@@ -77,4 +77,9 @@ test("picking a row keeps a pane open for that position whole, and closes one fo
   assert.equal(after("rbd=r7&sel=p1", "p1"), "sel=p1");
   assert.equal(after("prior=model%3Am9&on=p1", "p1"), "");
   assert.equal(after("sel=p1", "p1"), "sel=p1");
+});
+
+test("an operating plan opens by its own address (?plan=<position id>)", () => {
+  assert.deepEqual(paneFromQuery(new URLSearchParams("plan=p1")), { kind: "plan", id: "p1" });
+  assert.equal(setPaneQuery(new URLSearchParams("fit=p2"), "plan", "p1").toString(), "plan=p1");
 });

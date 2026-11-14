@@ -8,6 +8,15 @@ import { DueChip, Field, FormModal, TASK_SOURCES, everyText, fmtDate, today } fr
 import { subjectPath, taskUnits, whileStoredText } from "../maintenanceSubjects.js";
 import { AGE_NOTE, TASK_HINT, tooLong } from "../maintenanceText.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
+import HowOften from "./HowOften.jsx";
+import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
+
+// What a task's "how often" shows under it: the next dates, from when it was last done (else today).
+function preview(how, task) {
+  const day = today();
+  const p = howOftenPreview(how, { from: task?.last_done || day, after: !!task?.last_done, anchor: taskAnchor(task, day) });
+  return { dates: p.dates, datesLead: p.lead, datesAfter: p.after, datesNote: p.note };
+}
 
 // What a task on each kind of subject is for, under the Add task form.
 const SUBJECT_NOTES = {
@@ -80,25 +89,22 @@ export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters
   );
 }
 
-function UnitPicker({ units, value, onChange }) {
-  return <select value={value} onChange={onChange}>{units.map((u) => <option key={u} value={u}>{u}</option>)}</select>;
-}
-
 // A scheduled task added by hand: from the maker's manual, a regulation, or practice.
 function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
   const kind = subject.kind;
   const units = taskUnits(kind);
+  const [how, setHow] = useState(() => formFromTask(null));
   const [f, setF] = useState({
-    name: "", interval: "", unit: "months", also: "", also_unit: "months", outcome: "", source: "manual",
+    name: "", outcome: "", source: "manual",
     reference: "", point_id: "", failure_mode_id: "", instructions: "", checklist: "", last_done: "", trade: "",
     while_stored: "run", include_positions: false,
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title={`Add a task to ${subject.name}`} submitLabel="Add task" canSubmit={!!f.name.trim() && !tooLong(f.name) && Number(f.interval) > 0}
+    <FormModal title={`Add a task to ${subject.name}`} submitLabel="Add task" canSubmit={!!f.name.trim() && !tooLong(f.name) && !howOftenProblem(how)}
                onClose={onClose} onSubmit={async () => onDone(await createSubjectTask(subject, {
-                 name: f.name, interval: Number(f.interval), unit: f.unit, outcome: f.outcome || null,
-                 also_interval: f.also ? Number(f.also) : null, also_unit: f.also ? f.also_unit : null,
+                 name: f.name, ...taskBody(how, today()), outcome: f.outcome || null,
+                 also_interval: how.also ? Number(how.also) : null,
                  source: f.source, reference: f.reference, point_id: f.point_id || null, trade: f.trade,
                  failure_mode_id: f.failure_mode_id || null, instructions: f.instructions,
                  checklist: f.checklist.split("\n").map((x) => x.trim()).filter(Boolean), last_done: f.last_done || null,
@@ -108,18 +114,8 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
       <Field label="Task" text={f.name} hint={TASK_HINT}><input autoFocus value={f.name} onChange={set("name")}
              placeholder={kind === "item" ? "e.g. Calibrate, Statutory inspection, Overhaul"
                : kind === "location" ? "e.g. Area walkdown, Ex inspection" : "e.g. Replace sacrificial anode"} /></Field>
-      <Field label="Every">
-        <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={f.interval} onChange={set("interval")} style={{ width: "6rem" }} />
-          <UnitPicker units={units} value={f.unit} onChange={set("unit")} />
-        </div>
-      </Field>
-      <Field label="Or every (whichever comes first, optional)">
-        <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={f.also} placeholder="none" onChange={set("also")} style={{ width: "6rem" }} />
-          <UnitPicker units={units} value={f.also_unit} onChange={set("also_unit")} />
-        </div>
-      </Field>
+      <HowOften value={how} onChange={setHow} units={units} withAlso problem={how.every !== "" ? howOftenProblem(how) : null}
+                {...preview(how, null)} />
       {counters.length > 0 && (
         <Field label="Measurement (for a task by use, optional)">
           <select value={f.point_id} onChange={set("point_id")}>
@@ -182,10 +178,8 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
   const [source, setSource] = useState(task.source);
   const [reference, setReference] = useState(task.reference || "");
   const [name, setName] = useState(task.name);
-  const [interval, setInterval] = useState(String(task.interval));
-  const [unit, setUnit] = useState(task.unit);
-  const [also, setAlso] = useState(task.also_interval ? String(task.also_interval) : "");
-  const [alsoUnit, setAlsoUnit] = useState(task.also_unit || "months");
+  const [how, setHow] = useState(() => formFromTask(task));
+  const unit = how.unit;
   const [instructions, setInstructions] = useState(task.instructions || "");
   const [checklist, setChecklist] = useState((task.checklist || []).join("\n"));
   const [trade, setTrade] = useState(task.trade || "");
@@ -194,10 +188,10 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
   const [meas, setMeas] = useState({ body: null, error: null });
   const [busy, setBusy] = useState(false);
   return (
-    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && !tooLong(name) && Number(interval) > 0 && !meas.error} onClose={onClose}
+    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && !tooLong(name) && !howOftenProblem(how) && !meas.error} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
                  ...(meas.body || {}),
-                 name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
+                 name, ...taskBody(how, taskAnchor(task, today())),
                  instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean), trade,
                  ...(byHand ? { source, reference } : {}),
                  ...(byHand && kind === "position" ? { failure_mode_id: mode || null } : {}),
@@ -208,18 +202,7 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
         <p className="lib-date">On the {kind} <Link to={subjectPath(task.subject)}>{task.subject.name}</Link>.</p>
       )}
       <Field label="Task" text={name} hint={TASK_HINT}><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-      <Field label="Every">
-        <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={interval} onChange={(e) => setInterval(e.target.value)} style={{ width: "6rem" }} />
-          <UnitPicker units={units} value={unit} onChange={(e) => setUnit(e.target.value)} />
-        </div>
-      </Field>
-      <Field label="Or every (whichever comes first, optional)">
-        <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={also} placeholder="none" onChange={(e) => setAlso(e.target.value)} style={{ width: "6rem" }} />
-          <UnitPicker units={units} value={alsoUnit} onChange={(e) => setAlsoUnit(e.target.value)} />
-        </div>
-      </Field>
+      <HowOften value={how} onChange={setHow} units={units} withAlso problem={howOftenProblem(how)} {...preview(how, task)} />
       {kind !== "location" && (
         <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
       )}

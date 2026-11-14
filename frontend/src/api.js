@@ -3901,3 +3901,17 @@ export function copyLibraryEntry(id, entryId, body = {}) {
 function asJsonBody(method, body) {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) };
 }
+
+// How a position runs (its operating plan; operatingPlan.js has the shape). A position's or an
+// item's (an item runs as the position it's fitted to); `root`: the asset opened, so a plan
+// above it is never used.
+export function getOperatingPlan(kind, id, root = null) {
+  return request(`/api/maintenance/${kind === "item" ? "items" : "positions"}/${id}/operating-plan${root ? `?root=${encodeURIComponent(root)}` : ""}`);
+}
+// {plan, name?, time_zone?, from?, notes?}: how it runs from a date (default today).
+export function setOperatingPlan(positionId, body) {
+  return putJson(`/api/maintenance/positions/${positionId}/operating-plan`, body);
+}
+export function endOperatingPlan(positionId, until = null) {
+  return postJson(`/api/maintenance/positions/${positionId}/operating-plan/end`, until ? { until } : {});
+}

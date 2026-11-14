@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  editBody, formProblem, initialForm, outcomeText, packageSentence, patternsFor, taskLabel, visitDay, visitTasksText,
+  editBody, formProblem, initialForm, outcomeText, packageSentence, taskLabel, visitDay, visitTasksText,
 } from "./packagePage.js";
 
 const TODAY = "2026-11-10";
@@ -34,7 +34,7 @@ test("packageSentence: the answer first", () => {
 
 test("the form starts from the package and sends only what changed", () => {
   const form = initialForm(PKG);
-  assert.equal(form.pattern, "weekday");
+  assert.equal(form.how.pattern, "weekday");
   assert.deepEqual(form.rules, { t1: { rule: "every", nth: "" }, t2: { rule: "nth", nth: "4" } });
   assert.deepEqual(editBody(PKG, form), {});
   assert.deepEqual(editBody(PKG, { ...form, name: " New name ", trade: "Fitter", notes: "Bring rags" }),
@@ -44,16 +44,17 @@ test("the form starts from the package and sends only what changed", () => {
 
 test("timing goes as a whole, its pattern replaced or cleared", () => {
   const form = initialForm(PKG);
-  assert.deepEqual(editBody(PKG, { ...form, weekday: "monday" }),
+  const how = (patch) => ({ ...form, how: { ...form.how, ...patch } });
+  assert.deepEqual(editBody(PKG, how({ weekday: "Monday" })),
     { timing: "fixed", every: 1, unit: "weeks", weekday: "monday" });
-  assert.deepEqual(editBody(PKG, { ...form, unit: "months", pattern: "weekday", nth: "-1" }),
+  assert.deepEqual(editBody(PKG, how({ unit: "months", pattern: "nth", nth: "-1" })),
     { timing: "fixed", every: 1, unit: "months", weekday: "saturday", nth: -1 });
-  assert.deepEqual(editBody(PKG, { ...form, unit: "months", pattern: "day", day: "15" }),
+  assert.deepEqual(editBody(PKG, how({ unit: "months", pattern: "day", day: "15" })),
     { timing: "fixed", every: 1, unit: "months", day: 15 });
-  assert.deepEqual(editBody(PKG, { ...form, timing: "from_last_visit", every: "2" }),
+  assert.deepEqual(editBody(PKG, how({ unit: "years", pattern: "nth", nth: "1", weekday: "Tuesday", month: "11" })),
+    { timing: "fixed", every: 1, unit: "years", weekday: "tuesday", nth: 1, month: 11 });
+  assert.deepEqual(editBody(PKG, { ...how({ every: "2" }), timing: "from_last_visit" }),
     { timing: "from_last_visit", every: 2, unit: "weeks", clear_pattern: true });
-  assert.deepEqual(patternsFor({ timing: "fixed", unit: "days" }), ["none"]);
-  assert.deepEqual(patternsFor({ timing: "fixed", unit: "months" }), ["weekday", "day"]);
 });
 
 test("visit rules: each changed task, its covers kept", () => {
@@ -69,7 +70,7 @@ test("visit rules: each changed task, its covers kept", () => {
 test("a layer keeps fixed dates and has no tolerance of its own", () => {
   const layer = { ...PKG, parent: { id: "p0", name: "Weekly" } };
   const form = initialForm(layer);
-  assert.deepEqual(editBody(layer, { ...form, every: "4", tolerance: "3" }),
+  assert.deepEqual(editBody(layer, { ...form, how: { ...form.how, every: "4" }, tolerance: "3" }),
     { timing: "fixed", every: 4, unit: "weeks", weekday: "saturday" });
 });
 
@@ -77,7 +78,7 @@ test("formProblem says what to fix", () => {
   const form = initialForm(PKG);
   assert.equal(formProblem(form, PKG), null);
   assert.match(formProblem({ ...form, name: " " }, PKG), /name/);
-  assert.match(formProblem({ ...form, every: "1.5" }, PKG), /whole number/);
+  assert.match(formProblem({ ...form, how: { ...form.how, every: "1.5" } }, PKG), /whole number/);
   assert.match(formProblem({ ...form, tolerance: "-1" }, PKG), /On time within/);
   assert.match(formProblem({ ...form, rules: { ...form.rules, t2: { rule: "nth", nth: "1" } } }, PKG), /^Grease:/);
 });
@@ -91,7 +92,7 @@ test("outcomeText", () => {
 
 test("the weekday the server capitalises starts the form unchanged", () => {
   const pkg = { ...PKG, cadence: { ...PKG.cadence, weekday: "Saturday" } };
-  assert.equal(initialForm(pkg).weekday, "saturday");
+  assert.equal(initialForm(pkg).how.weekday, "Saturday");
   assert.deepEqual(editBody(pkg, initialForm(pkg)), {});
 });
 

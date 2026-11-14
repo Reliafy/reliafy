@@ -33,7 +33,7 @@ from typing import Any, Dict, Iterator, Optional, Set, Tuple, Union
 
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from dateutil.rrule import DAILY, FR, MO, MONTHLY, SA, SU, TH, TU, WE, WEEKLY, rrule
+from dateutil.rrule import DAILY, FR, MO, MONTHLY, SA, SU, TH, TU, WE, WEEKLY, YEARLY, rrule
 
 
 def _is_number(value) -> bool:
@@ -459,6 +459,9 @@ _WEEKDAYS = {
 #: The weekdays of a month a monthly rule may name: first to fourth, and
 #: last to fourth from last, which every month has.
 _NTHS = (1, 2, 3, 4, -1, -2, -3, -4)
+#: A cadence may also name a fifth (or fifth from last) weekday: months with
+#: none are skipped (a 5th Saturday falls in only four or five months a year).
+_CADENCE_NTHS = _NTHS + (5, -5)
 
 
 def _date(value, name: str) -> date:
@@ -965,6 +968,12 @@ class Cadence:
     last day of a shorter month instead (31 January, 28 February, 31 March),
     as a task's interval in months does.
 
+    Years may have a pattern in a named ``month`` (1 to 12): the ``nth``
+    ``weekday`` of it (the first Tuesday of November) or a ``day`` of it
+    (1 July; the 29th of February falls on the 28th in other years). Years
+    are counted from the anchor's year. ``nth`` may be 5 or -5 (the fifth
+    Saturday): a month with none is skipped.
+
     Examples
     --------
     Every Saturday, and the first Saturday of the month:
@@ -978,6 +987,9 @@ class Cadence:
     ['2026-11-07', '2026-12-05', '2027-01-02']
     >>> monthly.number("2027-01-02")
     3
+    >>> yearly = Cadence(1, "years", "2026-11-14", weekday="Tuesday", nth=1, month=11)
+    >>> [d.isoformat() for d in yearly.dates("2026-11-14", "2029-12-31")]
+    ['2027-11-02', '2028-11-07', '2029-11-06']
     """
 
     every: int
@@ -986,8 +998,9 @@ class Cadence:
     weekday: Optional[str]
     nth: Optional[int]
     day: Optional[int]
+    month: Optional[int] = None
 
-    def __init__(self, every, unit, anchor, *, weekday=None, nth=None, day=None) -> None:
+    def __init__(self, every, unit, anchor, *, weekday=None, nth=None, day=None, month=None) -> None:
         every = _whole_number(every, "every")
         _one_of("unit", unit, CADENCE_UNITS)
         anchor = _date(anchor, "anchor")
@@ -1001,28 +1014,43 @@ class Cadence:
             if unit == "weeks":
                 if nth is not None:
                     raise ValueError("nth goes with months (the first Saturday of the month), not weeks.")
-            elif unit == "months":
-                if not _is_whole(nth) or int(nth) not in _NTHS:
-                    raise ValueError("With a weekday every so many months, nth says which: 1 to 4 (the first "
-                                     f"to the fourth) or -1 to -4 (the last to the fourth from last); got {nth!r}.")
+            elif unit in ("months", "years"):
+                if unit == "years" and month is None:
+                    raise ValueError("A weekday every so many years goes in a month: give month (the first "
+                                     "Tuesday of November: month 11).")
+                if not _is_whole(nth) or int(nth) not in _CADENCE_NTHS:
+                    raise ValueError("With a weekday in the month, nth says which: 1 to 5 (the first to the "
+                                     f"fifth) or -1 to -5 (the last to the fifth from last); got {nth!r}.")
                 nth = int(nth)
             else:
-                raise ValueError("A weekday goes with weeks (every Saturday) or months (the first Saturday of "
-                                 "the month).")
+                raise ValueError("A weekday goes with weeks (every Saturday), months (the first Saturday of "
+                                 "the month) or years (the first Tuesday of November).")
         elif nth is not None:
             raise ValueError("nth goes with a weekday (the first Saturday of the month).")
         if day is not None:
-            if unit != "months":
-                raise ValueError("A day of the month goes with months (the 15th of every month).")
+            if unit not in ("months", "years"):
+                raise ValueError("A day of the month goes with months (the 15th of every month) or years "
+                                 "(1 July).")
+            if unit == "years" and month is None:
+                raise ValueError("A day every so many years goes in a month: give month (1 July: month 7).")
             day = _whole_number(day, "day")
             if day > 31:
                 raise ValueError(f"day must be 1 to 31; got {day!r}.")
+        if month is not None:
+            if unit != "years":
+                raise ValueError("month goes with years (the first Tuesday of November, every year).")
+            if weekday is None and day is None:
+                raise ValueError("A month goes with a weekday and nth, or a day (1 July).")
+            month = _whole_number(month, "month")
+            if month > 12:
+                raise ValueError(f"month must be 1 to 12; got {month!r}.")
         object.__setattr__(self, "every", every)
         object.__setattr__(self, "unit", unit)
         object.__setattr__(self, "anchor", anchor)
         object.__setattr__(self, "weekday", weekday)
         object.__setattr__(self, "nth", nth)
         object.__setattr__(self, "day", day)
+        object.__setattr__(self, "month", month)
 
     def _rule(self) -> Optional[rrule]:
         """The dates as a dateutil rule; None for months or years by the
@@ -1034,7 +1062,17 @@ class Cadence:
             if self.weekday is None:
                 return rrule(WEEKLY, dtstart=start, interval=self.every)
             return rrule(WEEKLY, dtstart=start, interval=self.every, byweekday=_WEEKDAYS[self.weekday])
+        if self.month is not None:
+            if self.weekday is not None:
+                return rrule(YEARLY, dtstart=start, interval=self.every, bymonth=self.month,
+                             byweekday=_WEEKDAYS[self.weekday](self.nth))
+            # The day, or the month's last day when it's shorter (the 29th of February).
+            return rrule(YEARLY, dtstart=start, interval=self.every, bymonth=self.month,
+                         bymonthday=tuple(range(min(self.day, 28), self.day + 1)), bysetpos=-1)
         if self.weekday is not None:
+            if self.nth in (5, -5):
+                return rrule(MONTHLY, dtstart=start, interval=self.every,
+                             byweekday=_WEEKDAYS[self.weekday](self.nth))
             return Monthly(weekday=self.weekday, nth=self.nth)._rule(self.anchor, self.every)
         if self.day is not None:
             return Monthly(day=self.day)._rule(self.anchor, self.every)

@@ -19,7 +19,7 @@ Classes: position classes pool like duties' life data and costs; item classes sa
 or part is. Connections: what feeds what, for redundancy, impact and generated RBDs. Items (serial-numbered \
 things) are fitted to positions; every fitment is history and a row of life data.
 Start with maintenance overview (the position tree, what's due, open work, short spares, the time zone and \
-today). Read maintenance guide (args {topic}) for how-tos: model, register, plan, run, learn, decide, data, classes, \
+today). Read maintenance guide (args {topic}) for how-tos: model, register, plan, operating_plan, run, learn, decide, data, classes, \
 conditions, structure, signals, failures, products, apply. \
 Reads are maintenance get.<kind> / list.<kind>; changes are maintenance <area>.<action>, and guide(action='maintenance.<action>') gives \
 what each takes. Many changes at once (a branch with its RCM, a bulk \
@@ -136,6 +136,32 @@ with it; tasks that counted it as their position's counter keep counting it; an 
 where the counter now is. Consumables added at a position (salt or acid into a pool, a stabiliser) are neither: measurements.record with position_id, value (the quantity) and part_id (a catalogue part, taken out of stock where held) or name and unit, plus on, cost, note, work_order_id. Put the part on the position's parts list with role consumable to list it before its first use.
 8. Conditions (optional): what places and equipment are exposed to (Outdoor, Seawater, Zone 1). Apply them as high \
 up as they're true (a site, a system): what's inside inherits them. See the conditions topic."""),
+    "operating_plan": ("How a position runs (its operating plan), and how often a task falls due on a pattern.", """\
+Operating plans and "how often" patterns.
+- An operating plan says how a position runs: maintenance positions.update (position_id, operating_plan: \
+{plan, name?, time_zone? (default the workspace's), from? (the date it applies from, default today), notes?}). \
+A new plan ends the one before it on its from date; nothing earlier is rewritten. positions.update with \
+end_operating_plan true (until?: the day, default today) stops it: the position runs to the plan above again.
+- plan = {background, specific?}. background (applies wherever nothing more specific is given), one of: \
+{kind: 'continuous'} (all the time); {kind: 'shifts', shifts: [{days: ['Monday', ...], start: '06:00', stop: \
+'22:00'}]} (a repeating week; a stop before its start is the next day); {kind: 'roster', on: 4, off: 4, anchor: \
+'2026-11-16' (the first day on), start: '07:00', stop: '19:00'}; {kind: 'rate', amount: 3, per: day | week | \
+month | year} (operating hours, spread evenly); {kind: 'runs', runs: [['2026-11-14T12:31', \
+'2026-11-15T03:27'], ...]} (only these runs). specific: [{runs: [[on, off], ...], covers?: [from, to]}]: exact \
+runs on top of a background; inside covers (default: the first run's day from 00:00 to the last run's off) they \
+are all the running there is, and the background resumes after them with no gap. Runs may not overlap; times \
+are the site's clock, to the minute.
+- maintenance get.operating_plan (id: a position or an item; root: the asset opened) gives its plan or the \
+nearest above it inside root (inherited_from), its own plans past and planned, hours_per_week (the background's \
+ordinary week) and days: the next 14 days' runs and hours. An item has no plan of its own: it runs as the \
+position it's fitted to. These hours are a simple summary for now (clock hours); they don't yet move due dates.
+- How often, as a pattern: maintenance tasks.create / update take rule: {kind: 'weekly', weekdays: \
+['Saturday']}, {kind: 'monthly', weekday: 'Saturday', nth: 1} (nth 1 to 5, -1 last; a 5th skips months with \
+none) or {kind: 'monthly', day: 15}, {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1} or {kind: \
+'yearly', month: 7, day: 1}; every: N (default 1) for every N weeks, months or years. The task's interval and \
+unit follow it, and it falls due on the rule's dates (the first after it was last done). update rule {} clears \
+it; a new interval also clears it. A work package takes the same with month (packages.create / update: unit \
+years, month, weekday + nth or day). Show the user the next dates before saving."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\
 Planning the maintenance.
 - RCM, step by step, on the position itself (the asset tree is its spine: position > function > performance \

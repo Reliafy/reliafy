@@ -4,10 +4,10 @@
 import { cadenceWords, daysLate } from "./lsaTab.js";
 import { doneText } from "./maintenanceOrders.js";
 import { formatDate } from "./dates.js";
+import { CALENDAR, formFromPackage, howOftenProblem, packageBody } from "./howOften.js";
 
-const UNITS = ["days", "weeks", "months", "years"];
-export const PACKAGE_UNITS = UNITS;
-export const NTHS = [[1, "first"], [2, "second"], [3, "third"], [4, "fourth"], [-1, "last"]];
+// A package's cadence is edited with the shared "How often" control (HowOften.jsx).
+export const PACKAGE_UNITS = CALENDAR;
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -50,17 +50,10 @@ export function ruleOf(task) {
 
 // The Edit pane's starting values, from the package as read.
 export function initialForm(pkg) {
-  const c = pkg?.cadence || {};
-  const pattern = c.day ? "day" : c.weekday ? "weekday" : "none";
   return {
     name: pkg?.name || "",
     timing: pkg?.timing || "fixed",
-    every: String(c.every ?? 1),
-    unit: c.unit || "weeks",
-    pattern,
-    weekday: String(c.weekday || "monday").toLowerCase(),
-    nth: String(c.nth ?? 1),
-    day: String(c.day ?? 1),
+    how: formFromPackage(pkg),
     tolerance: pkg?.tolerance?.amount != null ? String(pkg.tolerance.amount) : "0",
     toleranceUnit: pkg?.tolerance?.unit || "days",
     trade: pkg?.trade || "",
@@ -87,7 +80,6 @@ export function shutdownOf(pkg, form) {
   };
 }
 
-const TIMING_KEYS = ["timing", "every", "unit", "pattern", "weekday", "nth", "day"];
 const whole = (v, lo, hi) => {
   const n = Number(v);
   return v !== "" && Number.isInteger(n) && n >= lo && n <= hi;
@@ -96,8 +88,9 @@ const whole = (v, lo, hi) => {
 // What's wrong with the form, in words, or null.
 export function formProblem(form, pkg) {
   if (!form.name.trim()) return "Give it a name.";
-  if (!whole(form.every, 1, 1000)) return "Every is a whole number, 1 or more.";
-  if (form.pattern === "day" && !whole(form.day, 1, 31)) return "The day of the month is 1 to 31.";
+  if (!whole(form.how.every, 1, 1000)) return "Every is a whole number, 1 or more.";
+  const how = howOftenProblem(form.how, { wholeOnly: true });
+  if (how) return how;
   if (!pkg?.parent && form.toleranceUnit === "days" && !whole(form.tolerance, 0, 366)) return "On time within is a whole number of days, 0 to 366.";
   if (!pkg?.parent && form.toleranceUnit === "hours" && !(Number(form.tolerance) >= 0)) return "On time within is a number of hours, 0 or more.";
   if (form.shutdown) {
@@ -115,14 +108,6 @@ export function formProblem(form, pkg) {
   return null;
 }
 
-// Which pattern the timing can have: a weekday for weeks, a weekday or a date for months, none otherwise.
-export function patternsFor(form) {
-  if (form.timing !== "fixed") return ["none"];
-  if (form.unit === "weeks") return ["weekday"];
-  if (form.unit === "months") return ["weekday", "day"];
-  return ["none"];
-}
-
 // The update's body: only what changed ({} when nothing did). Timing goes as a
 // whole when any part of it changed, its pattern replaced (or cleared).
 export function editBody(pkg, form) {
@@ -131,20 +116,10 @@ export function editBody(pkg, form) {
   if (form.name.trim() !== start.name) body.name = form.name.trim();
   if (form.trade.trim() !== start.trade) body.trade = form.trade.trim();
   if (form.notes !== start.notes) body.notes = form.notes;
-  if (TIMING_KEYS.some((k) => form[k] !== start[k])) {
+  if (form.timing !== start.timing || JSON.stringify(form.how) !== JSON.stringify(start.how)) {
     body.timing = pkg?.parent ? "fixed" : form.timing;
-    body.every = Number(form.every);
-    body.unit = form.unit;
-    const allowed = patternsFor({ ...form, timing: body.timing });
-    const pattern = allowed.includes(form.pattern) ? form.pattern : allowed[0];
-    if (pattern === "weekday") {
-      body.weekday = form.weekday;
-      if (form.unit === "months") body.nth = Number(form.nth);
-    } else if (pattern === "day") {
-      body.day = Number(form.day);
-    } else {
-      body.clear_pattern = true;
-    }
+    // Counted from the last visit: no pattern (the next is the close date plus the interval).
+    Object.assign(body, packageBody(body.timing === "fixed" ? form.how : { ...form.how, pattern: "none" }));
   }
   if (!pkg?.parent && (form.tolerance !== start.tolerance || form.toleranceUnit !== start.toleranceUnit)) {
     body.tolerance = Number(form.tolerance);

@@ -22,6 +22,7 @@ import {
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import RedundancyPane from "../components/RedundancyPane.jsx";
+import OperatingPlanPane from "../components/OperatingPlanPane.jsx";
 import TreeSheetPane from "../components/TreeSheetPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
 import { PANE_PARAMS, TABLE_PANES, keepPaneFor, paneFromQuery, setPaneQuery } from "../tablePane.js";
@@ -906,7 +907,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 
   // The fit or the prediction in the table area: which, and the position it's for (from the
   // address), opened and closed.
-  const paneAt = modelsOn || missionsOn ? paneFromQuery(params) : null;
+  // An operating plan opens the same way from the Measurements and Summary tabs (?plan=).
+  const paneQuery = paneFromQuery(params);
+  const paneAt = modelsOn || missionsOn ? paneQuery
+    : (measOn || tab === "summary") && paneQuery?.kind === "plan" ? paneQuery : null;
   const paneRow = paneAt && whole.rows.has(paneAt.id) ? whole.rows.get(paneAt.id) : null;
   const panePosition = paneRow?.type === "pos"
     ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", position_class: paneRow.ref.position_class || "" } : null;
@@ -1638,7 +1642,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (measOn || modelsOn) {
         if (isMeasRow(r)) return measRowActions(r);
         if (measOn) {
-          return withPin(addsFirst(measAddActions(r, { viewOnly }), designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly })),
+          // How it runs (its operating plan), in the table area: what its hour counters will be forecast from.
+          const plan = r.type === "pos" && !designScope ? [{ id: "plan-open", label: "Operating plan…" }] : [];
+          return withPin(addsFirst([...measAddActions(r, { viewOnly }), ...plan], designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly })),
             [...isolateItem(r), ...pinItem(r)]);
         }
         return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
@@ -1658,6 +1664,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id.startsWith("model-")) return modelAction(r, id);
       if (id.startsWith("mission-")) return missionAction(r, id);
       if (id === "lsa-package") return packageAt(r);
+      if (id === "plan-open") return leavePane().then((ok) => ok && openPane("plan", { id: r.key, name: r.ref.name || "(no name)" }));
       if (id === "maint-add-task") return addTaskAt(r);
       if (id === "pos-here") {
         setNewParent(TOP);
@@ -2585,6 +2592,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                       onRebuild={builtRbdLink(pmodels.links, panePosition.id) && !viewOnly
                         ? () => askRebuild(panePosition, builtRbdLink(pmodels.links, panePosition.id)) : null} />
     </div>
+  ) : paneKind === "plan" ? (
+    <div className="rw tt-side">
+      <OperatingPlanPane key={`${panePosition.id}:${seed?.n || 0}`} position={panePosition} root={root || null} phone={phone}
+                         headingRef={paneHeading} readOnly={viewOnly || null}
+                         onClose={() => leavePane().then((ok) => ok && closePane())}
+                         onDirty={(d) => { paneDirty.current = d; }}
+                         onChanged={(text) => { say(text); setVersion((v) => v + 1); }} />
+    </div>
   ) : paneKind === "bind" && bindingFromParam(paneAt.bind) ? (
     <div className="rw tt-side">
       <CovariateBindPane key={`${paneAt.bind}:${seed?.n || 0}`} binding={bindingFromParam(paneAt.bind)}
@@ -2608,7 +2623,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                    readOnly={viewOnly || null} onClose={() => setSheet(null)}
                    onChanged={(text) => { say(text, "ok", { fade: true }); load(); }} />
   ) : null;
-  const side = sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? measSide : modelsOn ? paneSide || modelSide : missionsOn ? paneSide : phone ? null : summary;
+  const side = sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide
+    : missionsOn ? paneSide : paneSide || (phone ? null : summary);
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an
@@ -2727,7 +2743,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           : missionsOn ? "Missions belong to positions, so the Missions tab shows the positions tree"
           : rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
-      {phone && (sheetSide || summary)}
+      {phone && (sheetSide || (paneSide ? null : summary))}
       <div className="sr-only" role="status" aria-live="polite">{spoken}</div>
       {drag && (
         <div className={"rcm-ghost" + (drag.verdict ? ` is-${drag.verdict.state}` : "")} aria-hidden="true"
