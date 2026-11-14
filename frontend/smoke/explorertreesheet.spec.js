@@ -80,7 +80,7 @@ test("export the whole tree or a branch from its row menu", async ({ page, reque
   const book = await request.get(`${M}/hierarchy/export`);
   expect(book.headers()["content-type"]).toContain("spreadsheetml");
 
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${plant.id}`);
+  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${plant.id}`);
   await treeMenu(page, "Export to Excel…");
   await expect(pane(page)).toBeVisible();
   await expect(pane(page).getByRole("button", { name: "Download Excel" })).toBeVisible();

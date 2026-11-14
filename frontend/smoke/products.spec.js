@@ -363,7 +363,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     await open(page, "/asset-register");
     await page.getByRole("link", { name: "Smoke test depot", exact: true }).click();
-    await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&sel=/);
+    await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&root=[^&]+&sel=/); // the asset alone
     // On a phone the panel is its own screen: the tabs head it.
     if (width < 600) {
       await page.getByRole("treeitem", { name: /^Smoke test depot\b/ }).click();
@@ -388,7 +388,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     await open(page, "/asset-register");
     await page.getByRole("link", { name: "Smoke test depot", exact: true }).click();
-    await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&sel=/);
+    await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&root=[^&]+&sel=/); // the asset alone
     const sel = new URL(page.url()).searchParams.get("sel");
     // On a phone the panel is its own screen: the tabs head it.
     if (width < 600) {

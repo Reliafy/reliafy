@@ -317,10 +317,14 @@ def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
 
 
 @router.get("/tree")
-def tree(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def tree(within: str | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The asset trees for the app's tree pane: every position once, flat, with what
     each row shows (status, and everything inside it rolled up), the locations, the
-    spares placed at them and the items with no home."""
+    spares placed at them and the items with no home. within: one asset alone (a
+    position, or a place), as the Explorer opened on it shows it: nothing of any
+    other asset, and no workspace summary."""
+    if within:
+        return _run(lambda: m.tree_rows(within))
     return _run(lambda: {"summary": summary(m), **m.tree_rows()})
 
 
@@ -554,11 +558,12 @@ def _rcm_read(session, ctx: AccessCtx, fn, *args) -> JSONResponse:
 
 
 @router.get("/rcm")
-def workspace_rcm(session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+def workspace_rcm(within: str | None = None, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
                   m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """Every position's RCM (those with any), for the asset tree's RCM tab, with each
-    decision's evidence check as the reader sees it."""
-    return _rcm_read(session, ctx, m.rcm_all)
+    decision's evidence check as the reader sees it. within: one asset's alone (a
+    position, or a place: everything the Explorer opened on it shows)."""
+    return _rcm_read(session, ctx, m.rcm_all, within or None)
 
 
 @router.get("/positions/{position_id}/rcm")
@@ -1249,15 +1254,29 @@ def _fit_failed(err) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {client_message(err)}"})
 
 
+def _within_ids(m: Maintenance, within: str, ids: list[str] | None) -> list[str]:
+    """The positions of one asset (a position, or a place), cut to ``ids`` when given. Never
+    empty: a list naming no position keeps every reader's "only these" meaning nothing."""
+    inside = m.positions_inside(within)
+    out = sorted(inside if ids is None else inside.intersection(ids))
+    return out or ["-"]
+
+
 @router.get("/position-models")
-def position_models(position_ids: str | None = None, session=Depends(get_session),
+def position_models(position_ids: str | None = None, within: str | None = None, session=Depends(get_session),
                     ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """Every model attached to a position in use (position_ids: only these, comma-separated), each with its
+    """Every model attached to a position in use (position_ids: only these, comma-separated; within: only
+    one asset's positions, a position or a place), each with its
     model's kind, headline numbers with bounds, data counts and a one-word quality, and what uses it (RCM
     decisions linking it as evidence, RBD blocks)."""
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
+    if within:
+        try:
+            ids = _within_ids(m, within, ids)
+        except NotFound:
+            return JSONResponse(status_code=404, content={"detail": "That asset wasn't found."})
     # class_models: the classes with a fitted model, so a position of one with no model of its own
     # can say so (From the class…), and whether the class has failed again since its fit.
     return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids)),
@@ -1265,7 +1284,7 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
 
 
 @router.get("/position-missions")
-def position_missions(position_ids: str | None = None, session=Depends(get_session),
+def position_missions(position_ids: str | None = None, within: str | None = None, session=Depends(get_session),
                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The missions on each position: for every RBD linked to a position (position_ids: only these,
     comma-separated), its missions with their phases, length and last result (rbd_missions.py);
@@ -1276,6 +1295,11 @@ def position_missions(position_ids: str | None = None, session=Depends(get_sessi
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
+    if within:
+        try:
+            ids = _within_ids(m, within, ids)
+        except NotFound:
+            return JSONResponse(status_code=404, content={"detail": "That asset wasn't found."})
 
     def read():
         rows = m.all_position_models(ids)

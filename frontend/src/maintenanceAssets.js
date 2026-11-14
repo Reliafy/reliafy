@@ -17,9 +17,10 @@ export const POSITIONS_PATH = explorerPath("positions");
 // A place's own page.
 export const placePath = (id) => `/asset-register/locations/${id}`;
 
-// Where an asset in the list goes: the Explorer, arranged by locations, with
-// that place picked (opened to it) so you land in the tree.
-export const assetPath = (id) => explorerPath("locations", { sel: id });
+// Where an asset in the list goes: the Explorer opened on that asset alone (?root=:
+// nothing of another asset shows; "Show every asset" there for the whole register),
+// arranged by locations, with the place picked.
+export const assetPath = (id) => explorerPath("locations", { root: id, sel: id });
 
 // The open work orders in a place's area (Maintenance › Orders, filtered by location).
 export const openWorkPath = (id) => ordersPath("open", { location: id });

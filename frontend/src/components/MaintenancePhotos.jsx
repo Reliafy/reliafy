@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   createMaintenancePhotoLink,
   getMaintenanceOverview,
+  getMaintenanceTree,
   getMaintenancePhotoBlob,
   linkMaintenancePhoto,
   listMaintenanceItems,
@@ -15,11 +16,12 @@ import {
   uploadMaintenancePhoto,
 } from "../api.js";
 import {
-  PLACE_KINDS, alsoOnText, photoLabel, photoStep, placeKindWord, placeOptions, placePath, suggestions,
+  PLACE_KINDS, alsoOnText, assetLists, inAsset, photoLabel, photoStep, placeKindWord, placeOptions, placePath, suggestions,
 } from "../maintenancePhotoPlaces.js";
 import Modal from "./Modal.jsx";
 import { Field, FormModal, flatten, fmtDate } from "./MaintenanceParts.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import { EXPLORER_PATH } from "../navigation.js";
 
 // What the picker can choose from, loaded once per kind when it's first asked for.
 const LOADERS = {
@@ -29,10 +31,26 @@ const LOADERS = {
   WorkOrder: () => listMaintenanceWorkOrders().then((d) => ({ workOrders: d.work_orders || [] })),
 };
 
+// The same, inside one asset (the Explorer opened on it): nothing of another asset is offered
+// unless "Any asset" is ticked.
+function assetLoader(kind, within) {
+  const tree = getMaintenanceTree({ within }).then(assetLists);
+  if (kind === "WorkOrder") {
+    return Promise.all([tree, listMaintenanceWorkOrders()])
+      .then(([a, d]) => ({ workOrders: (d.work_orders || []).filter((w) => inAsset(w, a.ids)) }));
+  }
+  return tree.then((a) => ({ positions: a.positions, locations: a.locations, items: a.items }));
+}
+
 // "Link or move" a photo: show it on another position, location, item or work
 // order too, or move it there (off this one). Suggestions first: what this page
 // is related to (a work order's position and location, say).
 function PhotoPlaceModal({ photo, here, hereLabel, related, onClose, onDone }) {
+  // In the Explorer opened on one asset (?root=), the choices are that asset's.
+  const { pathname, search } = useLocation();
+  const within = pathname === EXPLORER_PATH ? new URLSearchParams(search).get("root") : null;
+  const [anyAsset, setAnyAsset] = useState(false);
+  const scope = within && !anyAsset ? within : null;
   const hints = suggestions(related, here.id, photo.also_on);
   const [mode, setMode] = useState("link");
   const [kind, setKind] = useState(hints[0]?.kind || "Position");
@@ -40,18 +58,19 @@ function PhotoPlaceModal({ photo, here, hereLabel, related, onClose, onDone }) {
   const [lists, setLists] = useState({});
   const [loading, setLoading] = useState(false);
 
+  const listKey = `${kind}:${scope || ""}`;
   useEffect(() => {
-    if (lists[kind] !== undefined) return;
+    if (lists[listKey] !== undefined) return;
     let alive = true;
     setLoading(true);
-    LOADERS[kind]()
-      .then((d) => alive && setLists((l) => ({ ...l, [kind]: d })))
-      .catch(() => alive && setLists((l) => ({ ...l, [kind]: {} })))
+    (scope ? assetLoader(kind, scope) : LOADERS[kind]())
+      .then((d) => alive && setLists((l) => ({ ...l, [listKey]: d })))
+      .catch(() => alive && setLists((l) => ({ ...l, [listKey]: {} })))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [kind, lists]);
+  }, [kind, scope, listKey, lists]);
 
-  const options = placeOptions(kind, lists[kind]).filter((o) => o.id !== here.id);
+  const options = placeOptions(kind, lists[listKey]).filter((o) => o.id !== here.id);
   const word = placeKindWord(kind);
   const submit = async () => {
     onDone(mode === "move" ? await moveMaintenancePhoto(photo.id, to, here.id)
@@ -94,6 +113,12 @@ function PhotoPlaceModal({ photo, here, hereLabel, related, onClose, onDone }) {
           {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       </Field>
+      {within && (
+        <label className="maint-place-any">
+          <input type="checkbox" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }} />
+          {" "}Any asset <span className="lib-date">(not only the one open)</span>
+        </label>
+      )}
     </FormModal>
   );
 }
