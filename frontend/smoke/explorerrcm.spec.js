@@ -207,7 +207,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   const tag = `m${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 720 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
+  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.pump.id}&tab=rcm`);
   const fnName = `Function: Pump water ${tag}`;
   const fn = trow(page, `^${fnName}`);
   await trow(page, `^Rcm pump ${tag}`).focus();

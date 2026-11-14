@@ -2444,8 +2444,9 @@ export function getMaintenanceOverview() {
 
 // The asset trees for the tree pane: every position once, flat, with its status,
 // plus the locations, the spares placed at them and the items with no home.
-export function getMaintenanceTree() {
-  return request("/api/maintenance/tree");
+// within: one asset (a position, or a place): that asset alone, nothing of another one.
+export function getMaintenanceTree({ within = null } = {}) {
+  return request(`/api/maintenance/tree${within ? `?within=${encodeURIComponent(within)}` : ""}`);
 }
 
 // Work orders, newest first: status "open" for every one not yet done (most overdue
@@ -2775,8 +2776,8 @@ export function mergeFailureMode(id, intoId) {
 }
 
 // Every position's RCM (those with any), for the Explorer's RCM tab.
-export function getWorkspaceRcm() {
-  return request("/api/maintenance/rcm");
+export function getWorkspaceRcm({ within = null } = {}) {
+  return request(`/api/maintenance/rcm${within ? `?within=${encodeURIComponent(within)}` : ""}`);
 }
 
 // An FMEA / RCM worksheet (Excel or CSV) added to a position's RCM. The
@@ -3682,9 +3683,17 @@ export function getTaskLsa(id) {
 
 // Life models on positions (the Explorer's Modelling tab): every model attached to a
 // position in the tree, described (kind, headline numbers, quality, what uses it).
-export function listPositionModels(positionIds) {
-  const q = positionIds?.length ? `?position_ids=${encodeURIComponent(positionIds.join(","))}` : "";
-  return request(`/api/maintenance/position-models${q}`);
+// ?position_ids= (only these) and ?within= (one asset's positions only), as given.
+function positionsQuery(positionIds, within) {
+  const q = new URLSearchParams();
+  if (positionIds?.length) q.set("position_ids", positionIds.join(","));
+  if (within) q.set("within", within);
+  const text = q.toString();
+  return text ? `?${text}` : "";
+}
+
+export function listPositionModels(positionIds, { within = null } = {}) {
+  return request(`/api/maintenance/position-models${positionsQuery(positionIds, within)}`);
 }
 // One attached model in full (the panel): parameters, plot lines, data, what uses it.
 export function getPositionModel(linkId, { age } = {}) {
@@ -3808,9 +3817,8 @@ export function removeLibraryRecord(libraryId, recordId) {
 // Missions (rbd_missions.py): named phased missions on an RBD, each phase with its duration, the
 // blocks it doesn't need, vote counts and Use / Environment covariate values. A position has the
 // missions of the RBDs linked to it (never a parent's).
-export function listPositionMissions(positionIds) {
-  const q = positionIds?.length ? `?position_ids=${encodeURIComponent(positionIds.join(","))}` : "";
-  return request(`/api/maintenance/position-missions${q}`);
+export function listPositionMissions(positionIds, { within = null } = {}) {
+  return request(`/api/maintenance/position-missions${positionsQuery(positionIds, within)}`);
 }
 const missionPath = (rbdId, missionId = null) =>
   `/api/rbds/${encodeURIComponent(rbdId)}/missions${missionId ? `/${encodeURIComponent(missionId)}` : ""}`;

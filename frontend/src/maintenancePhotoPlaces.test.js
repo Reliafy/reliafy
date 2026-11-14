@@ -60,3 +60,29 @@ test("the photo viewer steps with the arrow keys and wraps", async () => {
   assert.equal(photoLabel(1, 5, "Nameplate"), "Open photo 2 of 5: Nameplate");
   assert.equal(photoLabel(0, 1, ""), "Open photo 1 of 1");
 });
+
+test("assetLists and inAsset: a photo's choices inside one asset", async () => {
+  const { assetLists, inAsset } = await import("./maintenancePhotoPlaces.js");
+  const tree = {
+    positions: [
+      { id: "b", name: "Boiler", parent_id: null, item: { id: "i1", name: "Burner", serial: "B-1" } },
+      { id: "a", name: "Air handler", parent_id: null },
+      { id: "f", name: "Fan", parent_id: "a" },
+      { id: "x", name: "Orphan", parent_id: "elsewhere" },
+    ],
+    locations: [{ id: "site", name: "Site", parent_id: null }, { id: "plant", name: "Plant room", parent_id: "site" }],
+    spares: [{ id: "i2", name: "Spare fan", location_id: "plant" }],
+  };
+  const a = assetLists(tree);
+  assert.deepEqual(a.positions, [
+    { id: "a", name: "Air handler", depth: 0 }, { id: "f", name: "Fan", depth: 1 },
+    { id: "b", name: "Boiler", depth: 0 }, { id: "x", name: "Orphan", depth: 0 },
+  ]);
+  assert.deepEqual(a.locations.map((l) => [l.id, l.parent?.name ?? null]), [["site", null], ["plant", "Site"]]);
+  assert.deepEqual(a.items.map((i) => i.id), ["i1", "i2"]);
+  assert.equal(inAsset({ subject: { id: "f" } }, a.ids), true);
+  assert.equal(inAsset({ subject: { id: "i9" }, position: { id: "b" } }, a.ids), true);
+  assert.equal(inAsset({ location: { id: "plant" } }, a.ids), true);
+  assert.equal(inAsset({ subject: { id: "zzz" }, position: { id: "other" }, location: { id: "far" } }, a.ids), false);
+  assert.equal(inAsset(null, a.ids), false);
+});

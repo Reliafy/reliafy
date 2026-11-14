@@ -50,7 +50,7 @@ async function fromTreeMenu(page, role, name) {
 test("the tree pane: open, close, levels, filter, and the panel for the row picked", async ({ page, request, problems }) => {
   const tag = `a${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
+  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.top.id}`);
   await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
   const tree = page.getByRole("tree", { name: "Positions" });
   await expect(tree).toBeVisible();
@@ -147,7 +147,7 @@ test("the Summary: facts, work as rows, what's inside sorted, and the row's own 
 test("arranged by locations with the switch, and back by positions from the keyboard", async ({ page, request, problems }) => {
   const tag = `b${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`);
+  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.line.id}`);
   await expect(page.locator(".side-item.active")).toHaveText("Assets");
   // The heading: Positions / Locations (the one on shown) and «; no + button. The
   // ⋯ menu sits beside the filter box and has no Arrange by.
@@ -207,16 +207,16 @@ test("adding at the top level from the tree's last row, and the old addresses la
   const tag = `d${Date.now()}`;
   const p = await plant(request, tag);
   // Positions: the last row adds a position at the top level, whatever row is picked.
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`);
+  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.line.id}`);
   const add = page.getByRole("button", { name: "New position", exact: true });
   await add.scrollIntoViewIfNeeded();
   await add.click();
   const pdialog = page.getByRole("dialog", { name: "New position" });
   await expect(pdialog).toBeVisible();
   await pdialog.getByRole("button", { name: "Cancel" }).click();
-  // Locations: the same for a location, its Inside empty (top level).
+  // Locations: the same for a location, its Inside empty (top level). (A top place's row isn't
+  // clicked here: on the whole register it opens that asset on its own, assetisolation.spec.js.)
   await arrangeSwitch(page).getByRole("radio", { name: "Locations" }).click();
-  await row(page, `Tree site ${tag}`).click();
   await page.getByRole("button", { name: "New location", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New location" });
   await expect(dialog.getByRole("combobox")).toHaveValue("");
@@ -232,7 +232,8 @@ test("adding at the top level from the tree's last row, and the old addresses la
   await expectHealthy(page, problems, { label: "adding at the top level" });
 
   // The old Positions, Items and Locations pages, with what their addresses carried
-  // (Items and Flat are gone: the Items page, and by positions).
+  // (Items and Flat are gone: the Items page, and by positions). One naming a row lands on that
+  // row's asset alone (?root= after it: assetisolation.spec.js).
   for (const [from, want, entry] of [
     [`/asset-register/positions?sel=${p.line.id}`, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`, "Assets"],
     ["/asset-register/positions?arrange=flat", "/asset-register/explorer?arrange=positions", "Assets"],
@@ -242,7 +243,7 @@ test("adding at the top level from the tree's last row, and the old addresses la
     ["/maintenance/items", "/items", "Items"],
   ]) {
     await open(page, from);
-    await expect.poll(() => { const u = new URL(page.url()); return u.pathname + u.search; }, { message: from }).toBe(want);
+    await expect.poll(() => { const u = new URL(page.url()); return (u.pathname + u.search).replace(/&root=[^&]+$/, ""); }, { message: from }).toBe(want);
     await expect(page.locator(".side-item.active")).toHaveText(entry);
   }
   await expectHealthy(page, problems, { label: "old addresses" });

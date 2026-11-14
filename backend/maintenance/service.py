@@ -47,6 +47,7 @@ import math
 import re
 import time
 import unicodedata
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
@@ -6232,7 +6233,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid),
                 "fmea": fmea.position_summary(views)}
 
-    def rcm_all(self) -> dict:
+    def rcm_all(self, within: str | None = None) -> dict:
         """The RCM of every live position that has any (functions or failure
         modes), for the asset tree's RCM tab: each position's functions ›
         functional failures › failure modes and its unassigned modes, read in
@@ -6240,13 +6241,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         parents: {position id: the position it sits in, or None} for each
         position listed and every position above one, so a position's rollup
         can count what's inside it (a position carried by an item counts as a
-        top: the asset tree places it through the item's fitment)."""
+        top: the asset tree places it through the item's fitment). With
+        ``within`` (one asset, as positions_inside reads it): that asset's
+        positions alone, the parents stopping at its edge."""
+        keep = self.positions_inside(within) if within is not None else None
         index = self._rcm_index()
         out = []
         live = {}
         for p in self.s.nodes(self.org, "Position"):
             pid = p["id"]
-            if p.get("retired"):
+            if p.get("retired") or (keep is not None and pid not in keep):
                 continue
             live[pid] = p
             if not (index["functions"].get(pid) or index["modes"].get(pid)):
@@ -14006,7 +14010,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         for iid, i in items.items() if iid not in fitted_at and iid not in placed_at],
         }
 
-    def positions_inside(self, root_id: str) -> set[str]:
+    def positions_inside(self, root_id: str, read: dict | None = None) -> set[str]:
         """One asset's positions, as the Explorer opened on it shows them (its ?root=):
         for a position, it and every position the tree nests inside it (one an item
         carries sits in the position that item is fitted to); for a place (a location),
@@ -14015,7 +14019,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         node = self.s.node(self.org, root_id)
         if node is None or node.get("retired") or node["label"] not in ("Position", "Location"):
             raise NotFound(root_id)
-        read = self._tree_read()
+        read = read or self._tree_read()
         rows = read["positions"]
         if node["label"] == "Location":
             kids: dict[str | None, list[str]] = {}
@@ -14053,6 +14057,29 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return latest and latest["value"]
         readings = _manual_readings(self.s, self.org, mp["id"])
         return readings[-1]["value"] if readings else None
+
+    def _tree_within(self, read: dict, within: str) -> dict:
+        """The tree read cut down to one asset (tree_rows' ``within``)."""
+        keep = self.positions_inside(within, read)
+        node = self.s.node(self.org, within)
+        rows = {}
+        for pid, r in read["positions"].items():
+            if pid not in keep:
+                continue
+            # Its parent in another asset: a top of this one.
+            rows[pid] = r if r["parent_id"] is None or r["parent_id"] in keep else {**r, "parent_id": None}
+        if node["label"] == "Location":
+            kids: dict[str | None, list[str]] = {}
+            for loc in read["locations"]:
+                kids.setdefault(loc["parent_id"], []).append(loc["id"])
+            places = _walk_down(within, kids)
+            locations = [{**loc, "parent_id": None} if loc["id"] == within else loc
+                         for loc in read["locations"] if loc["id"] in places]
+        else:
+            locations = [loc for loc in read["locations"] if within in (loc.get("design_of"), loc.get("carried_by"))]
+            places = {loc["id"] for loc in locations}
+        return {**read, "positions": rows, "locations": locations,
+                "spares": [x for x in read["spares"] if x["location_id"] in places], "unhomed": []}
 
     @staticmethod
     def _tree_rollup(rows: dict) -> tuple[dict, dict]:
@@ -14114,7 +14141,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             stack.extend((c, node["children"], i) for i, c in enumerate(kids.get(pid, [])))
         return out
 
-    def tree_rows(self) -> dict:
+    def tree_rows(self, within: str | None = None) -> dict:
         """The asset trees for the app's tree pane, flat: every live position once
         (id, name, parent_id, and when set: tag, position_class, item (with the
         item's own status, when it has any), item_class_id (the fitted item's
@@ -14122,8 +14149,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         (where it is), carried_by, status, inside, context: it has an operating
         context), with the
         locations, the items placed at one now (spares) and the items neither fitted
-        nor placed (unhomed). Empty fields are left out: a big register stays small."""
+        nor placed (unhomed). Empty fields are left out: a big register stays small.
+
+        With ``within`` (one asset: a position, or a place): that asset alone, as
+        positions_inside reads it, so nothing of another asset is sent (an asset is
+        self-contained). A position whose parent is outside it is a top here, and the
+        rollups count only what's inside the asset. A place keeps itself, the places
+        inside it and the spares there; a position keeps its tree's own locations (a
+        product's layout, or the ones a built item carries). No unhomed items: they
+        are in no asset."""
         read = self._tree_read()
+        if within is not None:
+            read = self._tree_within(read, within)
         rows = read["positions"]
         _, inside = self._tree_rollup(rows)
         rcm = self._rcm_index()
@@ -14136,6 +14173,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return {k: v for k, v in d.items() if v} or None if d else None
 
         sets = self._redundancy_marks()
+        if within is not None:  # a set's count is of its members inside this asset
+            counts = Counter(mark["id"] for pid, mark in sets.items() if pid in rows)
+            sets = {pid: {**mark, "n": counts[mark["id"]]} for pid, mark in sets.items() if pid in rows}
         positions = []
         for pid, r in rows.items():
             row = {"id": pid, "name": r["name"], "parent_id": r["parent_id"]}

@@ -34,12 +34,12 @@ import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
 export { MODEL_COLUMNS } from "../explorerModels.js";
 export { MODEL_TREE_HEAD } from "../explorerModels.js";
 
-// Every attached model, read when the tab is on (and again on `load`).
-export function useTreeModels({ on }) {
+// Every attached model, read when the tab is on (and again on `load`); `within`: one asset's only.
+export function useTreeModels({ on, within = null }) {
   const [state, setState] = useState({ links: null, classModels: null, error: null });
-  const load = useCallback(() => listPositionModels()
+  const load = useCallback(() => listPositionModels(null, { within })
     .then((d) => setState({ links: d.links || [], classModels: d.class_models || {}, error: null }))
-    .catch((e) => setState((s) => ({ ...s, error: e.message }))), []);
+    .catch((e) => setState((s) => ({ ...s, error: e.message }))), [within]);
   useEffect(() => { if (on) load(); }, [on, load]);
   // classModels: {class name: {model_id, failures, failures_now}}, the classes with a fitted model.
   return { links: state.links, classModels: state.classModels, error: state.error, load };
