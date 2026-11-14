@@ -27,6 +27,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/strategy")
 
 
+def _with_saved(session, ctx: AccessCtx, model_id, extras: dict | None) -> dict | None:
+    """``extras`` for a calculator: any recipe a client sent dropped, and, for a saved Bayesian
+    update the caller can read (``model_id``), its recipe added, so the calculator works with its
+    posterior predictive (the curve its page shows), not its parameters' middle values."""
+    from backend.services import bayes_life
+    from backend.services import models as models_service
+
+    extras = bayes_life.without_posterior(extras)
+    if not model_id or not isinstance(model_id, str):
+        return extras
+    doc = models_service.get_model(session, model_id, ctx.read_owners)
+    return bayes_life.posterior_extras(doc, extras) if doc is not None else extras
+
+
+def _inputs_with_saved(session, ctx: AccessCtx, inputs: dict) -> dict:
+    """A calculator's inputs (a saved analysis's, or a comparison side) with ``_with_saved``."""
+    if not isinstance(inputs, dict):
+        return inputs
+    out = dict(inputs)
+    for side in ("a", "b"):
+        if isinstance(out.get(side), dict):
+            out[side] = _inputs_with_saved(session, ctx, out[side])
+    if "extras" in out or out.get("model_id"):
+        out["extras"] = _with_saved(session, ctx, out.get("model_id"), out.get("extras"))
+    return out
+
+
+
 @router.post("/optimal-replacement")
 def optimal_replacement_endpoint(
     distribution_id: str = Body(...),
@@ -37,15 +65,20 @@ def optimal_replacement_endpoint(
     extras: dict | None = Body(default=None),
     use_per_year: float | None = Body(default=None),
     units: float | None = Body(default=None),
+    model_id: str | None = Body(default=None, max_length=100),
     user: dict = Depends(get_current_user),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Compute the cost-optimal preventive-replacement interval (and the
-    block-replacement alternative; the saving a year with ``use_per_year``)."""
+    block-replacement alternative; the saving a year with ``use_per_year``).
+    ``model_id``: the saved model the parameters came from (a Bayesian update
+    is then worked out with its posterior predictive)."""
     try:
         return JSONResponse(
             content=strategy_service.optimal_replacement(
                 distribution_id, params, planned_cost, unplanned_cost, unit=unit,
-                extras=extras, use_per_year=use_per_year, units=units,
+                extras=_with_saved(session, ctx, model_id, extras), use_per_year=use_per_year, units=units,
             )
         )
     except StrategyError as exc:
@@ -72,15 +105,18 @@ def calendar_replacement_endpoint(
     mc_samples: int | None = Body(default=None),
     seed: int | None = Body(default=None),
     horizon_months: int | None = Body(default=None),
+    model_id: str | None = Body(default=None, max_length=100),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """The long-run best replacement rule over a calendar of shuts (today is
     time 0). The exact methods (``dp``, ``integration``) answer here and are
     free; ``sampling`` is Pro and runs as a job (202 with ``job`` to poll at
     ``/api/rbd-jobs/{id}``) when the compute queue is configured."""
     inputs = {
-        "distribution_id": distribution_id, "params": params, "extras": extras, "unit": unit, "today": today,
+        "distribution_id": distribution_id, "params": params,
+        "extras": _with_saved(session, ctx, model_id, extras), "unit": unit, "today": today,
         "opportunities": opportunities, "failure_cost": failure_cost, "anytime_cost": anytime_cost,
         "max_age": max_age, "method": method, "mc_samples": mc_samples, "seed": seed,
         "horizon_months": horizon_months,
@@ -111,7 +147,10 @@ def calendar_next_endpoint(
     max_age: float | None = Body(default=None),
     age: float | None = Body(default=None),
     now_cost: float | None = Body(default=None),
+    model_id: str | None = Body(default=None, max_length=100),
     user: dict = Depends(get_current_user),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """One unit in service on the calendar: replace it now, at the next shut,
     between shuts, or run it to failure, with break-even ages (exact, free)."""
@@ -119,7 +158,8 @@ def calendar_next_endpoint(
         return JSONResponse(status_code=422, content={"detail": "Enter the unit's age."})
     try:
         return JSONResponse(content=strategy_calendar.calendar_next(
-            distribution_id, params, age=age, now_cost=now_cost, extras=extras, unit=unit, today=today,
+            distribution_id, params, age=age, now_cost=now_cost, extras=_with_saved(session, ctx, model_id, extras),
+            unit=unit, today=today,
             opportunities=opportunities, failure_cost=failure_cost, anytime_cost=anytime_cost,
             max_age=max_age,
         ))
@@ -161,7 +201,8 @@ def compare_two_endpoint(
     given as a saved model (``model_id``) also gets its B10 and median's 90%
     one-sided lower bounds from that model's own fit."""
     try:
-        result = strategy_service.compare_two(a, b, unit=unit)
+        result = strategy_service.compare_two(_inputs_with_saved(session, ctx, a),
+                                              _inputs_with_saved(session, ctx, b), unit=unit)
         bounds = {k: _saved_bounds(session, side.get("model_id"), ctx) for k, side in (("a", a), ("b", b))
                   if isinstance(side, dict) and side.get("model_id")}
         if any(bounds.values()):
@@ -186,7 +227,10 @@ def failure_finding_endpoint(
     test_duration: float | None = Body(default=None),
     test_cost: float | None = Body(default=None),
     renewed_at_test: bool = Body(default=True),
+    model_id: str | None = Body(default=None, max_length=100),
     user: dict = Depends(get_current_user),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Failure-finding interval for a hidden failure (protective device),
     from the model's curve, with its 90% one-sided bound."""
@@ -194,7 +238,7 @@ def failure_finding_endpoint(
         return JSONResponse(
             content=strategy_service.failure_finding(
                 distribution_id, params, target_availability, unit=unit,
-                extras=extras, test_duration=test_duration, test_cost=test_cost,
+                extras=_with_saved(session, ctx, model_id, extras), test_duration=test_duration, test_cost=test_cost,
                 renewed_at_test=renewed_at_test,
             )
         )
@@ -283,7 +327,8 @@ def save_analysis(
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
     try:
-        doc = strategy_store.save_analysis(session, name, kind, inputs, ctx.write_owner)
+        doc = strategy_store.save_analysis(session, name, kind, _inputs_with_saved(session, ctx, inputs),
+                                           ctx.write_owner)
         access_service.stamp_editor(session, "strategy_analyses", doc.id, ctx)
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})

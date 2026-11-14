@@ -552,6 +552,11 @@ def failure_finding_interval(failure_rate=None, distribution_id: Optional[str] =
     target = _number(target_unavailability, "target unavailability", positive=True, allow_none=True)
     if target is not None and target >= 1:
         raise IntervalError("The target unavailability is a chance, less than 1 (1% is 0.01).")
+    # Not yet a Bayesian update's posterior predictive: RePyability's failure-finding search takes
+    # minutes over its tens of thousands of points, so the parameters' middle values stand here for now.
+    from backend.services import bayes_life
+
+    extras = bayes_life.without_posterior(extras)
     test = _number(test_cost or 0, "cost of a test")
     repair = _number(repair_cost or 0, "cost of a repair")
     demand = _number(demand_rate, "demand rate (demands a year)", allow_none=True)
@@ -647,13 +652,16 @@ def _pct(p: float) -> str:
 def model_inputs(model) -> dict:
     """A saved plain non-repairable model as a calculator's inputs (distribution_id,
     params, extras, unit, name), or an IntervalError saying why it can't be one."""
+    from backend.services import bayes_life
+
     if getattr(model, "kind", None) != "distribution":
         raise IntervalError(f"“{model.name}” is a {model.kind} model: the calculators need a plain life distribution.")
     r = model.results or {}
     return {"model_id": model.id, "name": model.name,
             "distribution_id": r.get("distribution_id") or model.distribution_id,
             "params": [{"name": p.get("name"), "value": p.get("value")} for p in (r.get("params") or [])],
-            "extras": r.get("extras") or None, "unit": r.get("unit") or ""}
+            # A Bayesian update carries its recipe: the calculators use its posterior predictive.
+            "extras": bayes_life.posterior_extras(model, r.get("extras") or None), "unit": r.get("unit") or ""}
 
 
 def _yearly_rate(model_in: dict) -> Optional[float]:
@@ -715,12 +723,14 @@ def starting_inputs(mode: dict, rows: list[dict], fetch, attached: list | None =
     elif evidence.get("type") == "strategy_analysis" and artifact is not None:
         inputs = artifact.inputs or {}
         if artifact.kind == "optimal_replacement" and inputs.get("distribution_id"):
-            out["life_model"] = {"name": artifact.name, "distribution_id": inputs["distribution_id"],
+            out["life_model"] = {"name": artifact.name, "model_id": inputs.get("model_id"),
+                                 "distribution_id": inputs["distribution_id"],
                                  "params": inputs.get("params") or [], "extras": inputs.get("extras"),
                                  "unit": inputs.get("unit") or ""}
             out["costs"] = {"planned_cost": inputs.get("planned_cost"), "unplanned_cost": inputs.get("unplanned_cost")}
         elif artifact.kind == "failure_finding" and inputs.get("distribution_id"):
-            out["device"] = {"name": artifact.name, "distribution_id": inputs["distribution_id"],
+            out["device"] = {"name": artifact.name, "model_id": inputs.get("model_id"),
+                             "distribution_id": inputs["distribution_id"],
                              "params": inputs.get("params") or [], "extras": inputs.get("extras"),
                              "unit": inputs.get("unit") or ""}
         elif artifact.kind in ("on_condition_interval", "failure_finding_interval"):

@@ -72,7 +72,8 @@ export default function FailureFinding() {
       const body = { ...current, ...savedInputs(model) };
       const res = await failureFinding(
         body.distribution_id, body.params, body.target_availability, body.unit, body.extras,
-        { test_duration: body.test_duration, test_cost: body.test_cost, renewed_at_test: body.renewed_at_test },
+        { test_duration: body.test_duration, test_cost: body.test_cost, renewed_at_test: body.renewed_at_test,
+          model_id: body.model_id },
       );
       setResult(res);
       setInputs(body);

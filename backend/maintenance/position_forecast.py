@@ -269,7 +269,10 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         return None, {**brief, "reason": "a covariate, joint or limited-failure model: not laid on dates yet"}
     dist_id = r.get("distribution_id") or getattr(doc, "distribution_id", "")
     try:
-        dist, label = _model_from_params(dist_id, r.get("params") or [], r.get("extras"))
+        from backend.services import bayes_life
+
+        # A Bayesian update: its posterior predictive (the curve its page shows), not its middle values.
+        dist, label = _model_from_params(dist_id, r.get("params") or [], bayes_life.posterior_extras(doc, r.get("extras")))
     except StrategyError as exc:
         return None, {**brief, "reason": f"the model can't be evaluated: {exc}"}
     unit = svc._norm_unit(r.get("unit") or (getattr(doc, "spec", None) or {}).get("unit")) or ""

@@ -429,10 +429,13 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
     if not results.get("params"):
         return {"status": "stale",
                 "reason": "The linked model can't be evaluated as a plain distribution."}
+    # A Bayesian update carries its recipe: the forecast uses its posterior predictive (the curve
+    # its page shows), not its parameters' middle values.
+    from backend.services import bayes_life
+
+    extras = bayes_life.posterior_extras(model, results.get("extras"))
     try:
-        dist, _name = _model_from_params(
-            results.get("distribution_id"), results.get("params"), results.get("extras")
-        )
+        dist, _name = _model_from_params(results.get("distribution_id"), results.get("params"), extras)
     except StrategyError as exc:
         return {"status": "stale", "reason": client_message(exc)}
 
@@ -486,7 +489,8 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
                                                      _forecast_renewals, period_days(base["period_label"]))}
         except fleet_strategy.StrategyInputError as exc:
             return {"status": "stale", "reason": str(exc)}
-        if (results.get("distribution_id") == "exponential" and not surpyval_extras(results.get("extras"))
+        if (results.get("distribution_id") == "exponential" and not surpyval_extras(extras)
+                and bayes_life.POSTERIOR not in (extras or {})
                 and (out.get("strategy") or {}).get("kind") == "run_to_failure"):
             _exact_constant_rate(out, dist, uses, rates, periods, settings.get("failure_cost"))
     for row, (rate, basis) in zip(out["per_item"], chosen):

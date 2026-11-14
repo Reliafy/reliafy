@@ -1001,6 +1001,10 @@ def rcm_interval_failure_finding(body: dict = Body(...), session=Depends(get_ses
             return JSONResponse(status_code=422, content={"detail": client_message(exc)})
         body.update({"distribution_id": given["distribution_id"], "params": given["params"],
                      "extras": given["extras"], "model_unit": body.get("model_unit") or given["unit"]})
+    elif "extras" in body:  # a saved update's recipe only ever comes from the saved model, by model_id
+        from backend.services import bayes_life
+
+        body["extras"] = bayes_life.without_posterior(body["extras"])
     return _interval(rcm_intervals.failure_finding_interval, body, FAILURE_FINDING_INPUTS)
 
 
