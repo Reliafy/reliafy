@@ -158,26 +158,18 @@ class _Exporter:
                 dormancy = ra._standby_dormancy(data, label)
             except ra.AnalysisError as exc:
                 raise _Missing(str(exc)) from None
-            units = [primary] + [spare] * spares
             from backend.services import rbd_standby
 
             try:
                 k = rbd_standby.operating(data, label)
-                if k > 1:
-                    # k-of-n standby (#84), as the analysis builds it.
-                    switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
+                start = rbd_standby.start_probability(data)
+                if not (k == 1 and dormancy >= 1.0 and start == 1.0):
+                    # Cold, warm, or hot with spares that may fail to start, k units
+                    # running (#84), as the analysis builds it.
                     return _serialise(rbd_standby.nonrepairable_model(
-                        data, label, primary, spare, spares, dormancy, switch)), None
+                        data, label, primary, spare, spares, dormancy, start)), None
             except (ra.AnalysisError, TypeError, ValueError) as exc:
                 raise _Missing(str(exc)) from None
-            if dormancy == 0.0:
-                try:
-                    switch = float(data.get("startProb", 1.0))
-                except (TypeError, ValueError):
-                    switch = 1.0
-                return _serialise(StandbyModel(units, k=1, switching_probability=switch)), None
-            if dormancy < 1.0:
-                return _serialise(StandbyModel(units, k=1, dormancy_factor=dormancy)), None
             # Hot standby: active parallel redundancy (as Download as Python).
             same = data.get("standbyModel") in (None, data.get("model"))
             if same:

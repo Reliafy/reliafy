@@ -101,9 +101,10 @@ has block types for the common cases:
 - **Voting node (MooN)** — k-out-of-n voting: the system needs at least *k* of the *n* branches
   feeding the gate. Three sensors where any two must agree is a 2-of-3.
 - **Standby group** — spares that sit dormant (cold, the default) or lightly
-  loaded (warm), or run all the time (hot), until switched in. The risk here is the *switching*: a cold spare's chance of
-  starting is 1 (a perfect switch-over) until you set it, and 0.95–0.99 is
-  typical for generators and pumps.
+  loaded (warm), or run all the time (hot), until switched in. The risk here is the *switching*: the
+  **Chance a spare starts** is 1 (every spare starts) until you set it, and 0.95–0.99 is
+  typical for generators and pumps. A spare that fails to start is skipped and
+  the next one is tried, on cold, warm and hot standby alike.
 - **Series (n identical)** and **Parallel (n identical)** — a shorthand for *n* identical units, so you
   don't draw twenty identical blocks by hand.
 - **Sub-system** — embeds another saved RBD as a single block, so you can build
@@ -150,7 +151,10 @@ system reliability falls to 90%. The table's heading says which.
 
 With **Confidence band** on, the MTTF, B-lives and design life each get a
 one-sided lower bound ("≥ 1,240 at 90%": at least that long, 90% sure), as on a
-model's page.
+model's page. A block on a Bayesian update follows its model page's curve and
+adds its own range of plausible parameters, so the band is then a *credible*
+band (or "confidence and credible" when the diagram has both kinds of block),
+and the note under the chart says so.
 
 **Compare with other designs**, under the results, puts this diagram beside
 other saved non-repairable designs: the reliability at your **Evaluate at t**,

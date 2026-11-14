@@ -20,7 +20,7 @@ export function standbyKind(data) {
   return `warm (${d})`;
 }
 
-// A cold spare's chance of starting on the block: "97%", "100%" (a perfect switch).
+// A spare's chance of starting on the block: "97%", "100%" (a perfect switch).
 export function startWords(p) {
   const v = p == null || p === "" ? 1 : Number(p);
   return Number.isFinite(v) ? `${Number((v * 100).toPrecision(3))}%` : "—";
@@ -310,8 +310,10 @@ export function StructureNode({ id, data: nodeData, type }) {
         <div className="rbd-block-sub one-line">
           {standbyKind(data) + (data.k > 1 ? ` · ${data.k} running` : "") /* k-of-n standby, #84 */ +
             ` · ${data.spares ?? 1} spare${(data.spares ?? 1) === 1 ? "" : "s"}`}
-          {/* A cold spare's chance of starting is part of the answer: shown on the block. */}
-          {standbyKind(data) === "cold" ? ` · starts ${startWords(data.startProb)}` : ""}
+          {/* A spare's chance of starting is part of the answer: shown on the block (cold always,
+              warm or hot once it's set below 100%). */}
+          {standbyKind(data) === "cold" || (!repairable && startWords(data.startProb) !== "100%")
+            ? ` · starts ${startWords(data.startProb)}` : ""}
           {repairable && data.repair_one_at_a_time ? " · one repairer" : ""}
         </div>
         {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true, repairable })}</div>}

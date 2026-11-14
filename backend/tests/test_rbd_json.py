@@ -367,7 +367,7 @@ def test_a_file_written_in_code_imports_as_the_rbd_it_describes():
          ("pack", "spare"), ("spare", "sub"), (0, "copy"), ("copy", "sub"), ("sub", 9)],
         {1: w, 2: w, 3: sp.LogNormal.from_params([7, 0.4], gamma=5),
          "gate": PerfectReliability, ("x", 1): RepeatedNode(w, 3, "parallel"),
-         "pack": StandbyModel([w, w, w], k=1, switching_probability=0.9),
+         "pack": StandbyModel([w, w, w], k=1, start_probability=0.9),
          "spare": RepeatedStandbyNode(sp.Exponential.from_params([1e-3]), 2), "sub": nested, "copy": 1},
         k={"gate": 2},
         ccf_groups=[CCFGroup([1, 2], BetaFactor(0.1, basis="rate"))],

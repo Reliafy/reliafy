@@ -522,10 +522,8 @@ def _convert(blocks: _Sheet, links: Optional[_Sheet]) -> tuple[dict, list[str]]:
                 if switch is not None:
                     if not 0.0 < switch <= 1.0:
                         raise RbdImportError(f"{where}: the switch reliability must be a probability (0–1].")
-                    if dormancy == 0.0:
-                        node["startProb"] = switch
-                    else:
-                        warnings.append(f"{where}: a switch reliability applies to cold standby only — ignored.")
+                    # The chance a spare starts: one that fails to start is skipped and the next tried.
+                    node["startProb"] = switch
             count = _number(rec.get("count"), f"{where}: count")
             if ntype == "component" and count not in (None, 1):
                 warnings.append(
@@ -752,7 +750,7 @@ def _readme() -> list[list[str]]:
         ["Spares", "standby only: number of spare units (default 1)."],
         ["Dormancy", "standby only: 0 = cold (spares don't age), 1 = hot, in between = warm (default 0)."],
         ["Count", "series / parallel only (add the column): how many identical units the block stands for."],
-        ["Switch reliability", "cold standby only (add the column): probability the switch-over works."],
+        ["Switch reliability", "standby only (add the column): the chance a spare starts when switched in; one that fails to start is skipped and the next tried."],
         ["MTTR", "Optional mean time to repair (exponential repair). Give it for every block to import a repairable (availability) diagram."],
         ["Repair distribution", "Optional instead of MTTR, with Repair alpha / Repair beta / Repair mu / Repair sigma / Repair rate columns."],
         ["Unit", "The time unit of the parameters (Hours, Cycles, …). One unit per diagram."],
