@@ -18,7 +18,9 @@ import "./OperatingPlanPane.css";
 // "about 80 hours a week" and a strip of the next two weeks. A position with no plan of its own
 // runs to the nearest above it inside the asset opened ("From Pump station 1"), with "Give this its
 // own plan". Saved as events (operating_plan.set / ended): a new plan from a date ends the one
-// before it there; nothing earlier is rewritten.
+// before it there; nothing earlier is rewritten. Once saved, its hours (the strip, hours a week) are
+// RePyability's, in the plan's time zone; with an hours counter here, plan against actual over the
+// last 90 days offers a utilisation, saved only on "Use 82%".
 //
 //   position {id, name}   root: the asset opened (?root=), so a plan above it is never used
 //   phone, headingRef, onClose, onDirty: TablePane's      onChanged(text): saved or ended
@@ -190,6 +192,20 @@ export default function OperatingPlanPane({ position, root = null, phone = false
       setSaving(false);
     }
   };
+  // Plan against actual's proposal, saved only when asked: the same plan with that utilisation.
+  const applyUtilisation = async (utilisation) => {
+    setSaving(true);
+    setFailed(null);
+    try {
+      await setOperatingPlan(position.id, { plan: { ...data.plan.plan, utilisation }, name: data.plan.name || "" });
+      setN((x) => x + 1);
+      onChanged?.(`${position.name}'s plan now counts ${Math.round(utilisation * 100)}% of its planned hours.`);
+    } catch (e) {
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    } finally {
+      setSaving(false);
+    }
+  };
   const end = async () => {
     const ok = await confirm({
       title: "End this plan?", body: `${position.name} stops running to it from today, and runs to the plan above it (if any) again. It stays in the history.`,
@@ -224,8 +240,28 @@ export default function OperatingPlanPane({ position, root = null, phone = false
                   <>
                     <h3 className="op-sub">The next two weeks · {hoursShort(data.days.reduce((t, d) => t + d.hours, 0))}</h3>
                     <Strip days={data.days} />
+                    <p className="lib-date">Real hours in {plan.time_zone || "the site's"} time{data.hours_basis ? `: ${data.hours_basis}` : ""}. Usage tasks go on dates from these hours.</p>
                   </>
                 )}
+                {data.against_actual && (
+                  <section className="op-actual" aria-label="Plan against actual">
+                    <h3 className="op-sub">Plan against actual</h3>
+                    <p>{data.against_actual.text}</p>
+                    {data.against_actual.proposal && (
+                      own && !readOnly ? (
+                        <p className="op-row op-wrap">
+                          <span className="lib-date">{data.against_actual.proposal.text}</span>
+                          <button type="button" className="secondary sm" disabled={saving} onClick={() => applyUtilisation(data.against_actual.proposal.utilisation)}>
+                            Use {Math.round(data.against_actual.proposal.utilisation * 100)}%
+                          </button>
+                        </p>
+                      ) : (
+                        <p className="lib-date">The plan is {data.inherited_from ? `${data.inherited_from.name}'s` : "not its own"}: give this its own plan to set how much of it runs here.</p>
+                      )
+                    )}
+                  </section>
+                )}
+                {failed && <p className="field-error" role="alert">{failed}</p>}
                 {!readOnly && (
                   <div className="op-actions">
                     <button type="button" className="secondary" onClick={() => edit({ ...formFromPlan(plan, data.today || today), name: own ? plan.name : "" })}>
@@ -279,7 +315,7 @@ export default function OperatingPlanPane({ position, root = null, phone = false
                   <span className="op-key op-specific-key" aria-hidden="true" /> set runs
                   <span className="op-key op-background-key" aria-hidden="true" /> the plan
                   {form.kind === "rate" && <><span className="op-key op-spread-key" aria-hidden="true" /> a rate, spread over the day</>}
-                  {" "}· Clock hours for now; daylight-saving changes aren't counted yet.
+                  {" "}· A quick preview in clock hours; once saved, the hours are worked out in the site&apos;s time zone (daylight saving counted).
                 </p>
               </section>
             )}
