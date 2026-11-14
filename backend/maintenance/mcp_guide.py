@@ -19,7 +19,7 @@ Classes: position classes pool like duties' life data and costs; item classes sa
 or part is. Connections: what feeds what, for redundancy, impact and generated RBDs. Items (serial-numbered \
 things) are fitted to positions; every fitment is history and a row of life data.
 Start with maintenance overview (the position tree, what's due, open work, short spares, the time zone and \
-today). Read maintenance guide (args {topic}) for how-tos: model, register, plan, operating_plan, run, learn, decide, data, classes, \
+today). Read maintenance guide (args {topic}) for how-tos: model, register, plan, operating_plan, forecast, run, learn, decide, data, classes, \
 conditions, structure, signals, failures, products, apply. \
 Reads are maintenance get.<kind> / list.<kind>; changes are maintenance <area>.<action>, and guide(action='maintenance.<action>') gives \
 what each takes. Many changes at once (a branch with its RCM, a bulk \
@@ -151,10 +151,19 @@ month | year} (operating hours, spread evenly); {kind: 'runs', runs: [['2026-11-
 runs on top of a background; inside covers (default: the first run's day from 00:00 to the last run's off) they \
 are all the running there is, and the background resumes after them with no gap. Runs may not overlap; times \
 are the site's clock, to the minute.
+- plan.utilisation? (0.01 to 1): the share of the planned running that happens; every planned hour counts that \
+much. Leave it out for all of it.
 - maintenance get.operating_plan (id: a position or an item; root: the asset opened) gives its plan or the \
 nearest above it inside root (inherited_from), its own plans past and planned, hours_per_week (the background's \
-ordinary week) and days: the next 14 days' runs and hours. An item has no plan of its own: it runs as the \
-position it's fitted to. These hours are a simple summary for now (clock hours); they don't yet move due dates.
+ordinary week), days: the next 14 days' runs and hours (real hours in the plan's time zone; where set runs hand \
+over to a rate, the rate fills only the time they leave), and against_actual: over the last 90 days, the hours \
+the position's hours counter ran as a share of the plan, with a proposal {utilisation} when they differ. Offer \
+it to the user; never save it unasked. An item has no plan of its own: it runs as the position it's fitted to.
+- Tasks by use in operating hours fall due through the plan: the moment the hours counter (from its latest \
+reading) crosses the task's next reading, and the stop after it (limits[].due_moment, stop_after, basis). With \
+no plan here or above, from the counter's recent rate (basis kind rate), as before.
+- Check a plan or a rule before saving it: analyse schedule (rule: its dates; or plan with reading, read_at, \
+due_at: hours by date and when the meter reaches a value). Saves nothing.
 - How often, as a pattern: maintenance tasks.create / update take rule: {kind: 'weekly', weekdays: \
 ['Saturday']}, {kind: 'monthly', weekday: 'Saturday', nth: 1} (nth 1 to 5, -1 last; a 5th skips months with \
 none) or {kind: 'monthly', day: 15}, {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1} or {kind: \
@@ -162,6 +171,26 @@ none) or {kind: 'monthly', day: 15}, {kind: 'yearly', month: 11, weekday: 'Tuesd
 unit follow it, and it falls due on the rule's dates (the first after it was last done). update rule {} clears \
 it; a new interval also clears it. A work package takes the same with month (packages.create / update: unit \
 years, month, weekday + nth or day). Show the user the next dates before saving."""),
+    "forecast": ("A position's forecast: tasks on dates, work, failures and cost per month, and what each rests on.", """\
+The forecast for a position and everything inside it.
+- maintenance get.forecast (id: a position; root: the asset opened, nothing above it is used; period: month | \
+quarter | year, default month; periods: default 12). It runs from today to the end of the last whole period \
+(today's period counts from today). Nothing is saved; nothing is written as a reading.
+- answer: the whole forecast in a line; say it first. rows: per period, hours (the position's own operating \
+hours), tasks, labour_hours (from each task's LSA labour), planned_cost (each task's cost each time), failures \
+and failure_cost (expected), with failures_range / cost_range when one model is forecast, and due: the tasks \
+done that period. totals: the same for the whole forecast, with its range. Ranges are 90%: the 5th to 95th \
+percentile of outcomes; with several positions the total's range assumes they fail independently.
+- tasks: each task's dates (each assumed done on its due date: an interval counts again from then, a pattern \
+keeps its dates; a date set by hand comes first; overdue shows at the start) and rests_on: on the calendar, or \
+the hours map it went by. hours_basis says where the position's hours come from: its operating plan (own or \
+inherited, anchored on the hours counter's latest reading) or the counter's recent rate.
+- models: the life model in use on each position with an item fitted (non-repairable, in operating hours or \
+calendar time), its age, cost per failure (the position class's failure cost, else replacement cost) and \
+rests_on; placeholder true when its parameters were typed in, not fitted from data. not_forecast and \
+not_on_dates say what was left out and why; states say what to do (no plan and no readings; an ended plan; a \
+life in a unit no counter here measures; a placeholder). Report those to the user; never fill a gap in.
+- Systems (a position whose model in use is an RBD) aren't forecast as a whole yet: their blocks' positions are."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\
 Planning the maintenance.
 - RCM, step by step, on the position itself (the asset tree is its spine: position > function > performance \

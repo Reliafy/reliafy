@@ -284,5 +284,5 @@ export function howOftenPreview(form, opts) {
     const dates = nextDates({ ...form, every: form.also, unit: form.alsoUnit, pattern: "none", also: "" }, opts);
     return { dates, lead: `By the ${also.toLocaleString("en-GB")}-${unitWord(form.alsoUnit, 1)} limit`, note: "", after: "or sooner, when the meter gets there first." };
   }
-  return { dates: null, lead: "Next", note: `By ${unitWord(form.unit, 2)}: its dates come from its meter readings.` };
+  return { dates: null, lead: "Next", note: `By ${unitWord(form.unit, 2)}: its dates come from the operating plan where there is one, else its meter readings.` };
 }

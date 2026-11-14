@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.0 (unreleased)
+
+Needs a server on the same release.
+
+- **`analyse schedule`**: a how-often rule's dates (`rule`, `start`, `end`), or an operating
+  plan's hours by day, week or month (`plan`, `reading`, `read_at`, `period`), with the moment a
+  meter reaches a reading (`due_at`) and the stop after it. Saves nothing: check a rule or a plan
+  before saving it.
+- **`maintenance get.forecast`** (Reliafy Maintenance): a position and everything inside it, from
+  today: tasks on dates, work, expected failures and their cost per month, quarter or year
+  (`period`, `periods`), with a 90% range and what each number rests on (`root`: the asset opened).
+- Tasks by use in operating hours fall due through the position's operating plan where it has one
+  (`limits[].due_moment`, `stop_after`, `basis`); `get operating_plan` adds `against_actual`, and
+  a plan takes `utilisation`.
+
 ## 0.9.0 (13 Nov 2026)
 
 Needs a server on the same release.

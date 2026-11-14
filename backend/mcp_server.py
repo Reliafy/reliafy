@@ -854,7 +854,7 @@ ONE_OF = {
     ("analyse", "failure_finding_interval"): "model_id or params, target_availability",
     ("analyse", "calendar_replacement"): "model_id or params, shuts, failure_cost",
     ("analyse", "next_replacement"): "model_id or params, age, shuts, failure_cost",
-    ("analyse", "prediction"): "lines or product_id",
+    ("analyse", "prediction"): "lines or product_id", ("analyse", "schedule"): "rule or plan",
     ("change", "prediction_save"): "name, lines or product_id",
     ("change", "library_add"): "library_id, dataset_id or model_id",
 }
@@ -9685,6 +9685,45 @@ def analyse_maintainability(
     return {"saved": False, **out}
 
 
+def analyse_schedule(
+    ctx: Context,
+    rule: Annotated[Optional[dict[str, Any]], Field(description=(
+        "A task's how-often rule, e.g. {kind: 'monthly', every: 1, weekday: 'Saturday', nth: 1}, {kind: 'yearly', "
+        "month: 11, weekday: 'Tuesday', nth: 1}, {kind: 'weekly', weekdays: ['Monday']}, {kind: 'every', every: "
+        "2, unit: 'weeks'}; anchor? (the date it counts from)."))] = None,
+    plan: Annotated[Optional[dict[str, Any]], Field(description=(
+        "An operating plan: {background: {kind: shifts, shifts: [{days, start, stop}]} | {kind: rate, amount, "
+        "per: day|week|month|year} | {kind: roster, on, off, anchor, start, stop} | {kind: continuous} | {kind: "
+        "runs, runs: [[on, off]]}, specific?: [{runs, covers?}], utilisation?}; maintenance guide topic "
+        "operating_plan."))] = None,
+    start: Annotated[Optional[str], Field(description="First date (default today).")] = None,
+    end: Annotated[Optional[str], Field(description=(
+        "Last date (default a year on for a rule, 28 days for a plan; a plan at most three years)."))] = None,
+    reading: Annotated[Optional[float], Field(description="plan: the hours meter's reading at read_at.")] = None,
+    read_at: Annotated[Optional[str], Field(description="plan: when it was read (default start).")] = None,
+    period: Literal["day", "week", "month"] = "day",
+    due_at: Annotated[Optional[float], Field(description=(
+        "plan: a meter reading; the moment the meter reaches it, and the stop after."))] = None,
+    time_zone: Annotated[Optional[str], Field(description=(
+        "The site's zone, e.g. Australia/Sydney (default yours): plans count real hours across daylight saving."))]
+    = None,
+) -> dict[str, Any]:
+    """A how-often rule's dates, or an operating plan's hours by date; saves nothing. Check a rule or a plan
+    before saving it on a task or a position (maintenance tasks.create / positions.update)."""
+    from backend.services import schedule_calc
+
+    zone = time_zone
+    if zone in (None, ""):
+        try:
+            zone = time_zones.of_owner(_db(), _caller(ctx)["uid"])
+        except Exception:  # noqa: BLE001 - no stored zone: the server's
+            zone = None
+    try:
+        return schedule_calc.compute(rule, plan, start, end, reading, read_at, period, due_at, zone)
+    except schedule_calc.ScheduleError as err:
+        raise ToolError(str(err)) from None
+
+
 def save_maintainability_prediction(
     ctx: Context,
     name: _MaintainabilityName,
@@ -9850,6 +9889,7 @@ _A = {  # new tool -> {action: the function it runs}
         "rbd_mission": _act(analyse_rbd_mission),
         "prediction": _act(predict_parts_count),
         "maintainability": _act(analyse_maintainability),
+        "schedule": _act(analyse_schedule),
     },
     "change": {
         "model_fit": _act(fit_and_save_model),
@@ -9907,10 +9947,10 @@ _action_tool("get", _READ, "Read one item", "kind",
              docs={"id": "The item's id (a job's job_id, an upload's upload_id, a library record's id, a maintainability "
                          "prediction's id)."})
 _action_tool("list", _READ, "List items", "kind",
-             "The user's items of one kind (with samples), what changed, libraries.",
+             "The user's items of one kind (with samples), changes, libraries.",
              _A["list"])
 _action_tool("analyse", _READ, "Analyse", "action",
-             "Every calculation (life, repairable, plans, RBDs); saves nothing.", _A["analyse"], docs={
+             "Every calculation; saves nothing.", _A["analyse"], docs={
     "model_id": ("A saved model id (list kind models): non-repairable for reliability_at, check_life_requirement, "
                  "optimal_replacement and failure_finding_interval; ALT for alt_use_level; joint for "
                  "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul; any for "
