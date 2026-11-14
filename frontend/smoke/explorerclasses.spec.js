@@ -73,12 +73,12 @@ test("Classes on one asset's tree covers only that asset; a class opens on Condi
   const classRow = row(page, `Dosing pump ${tag}`);
   const panel = details(page);
 
-  // Every asset: the class counts the three positions, and its fleet lists them.
-  await open(page, `/asset-register/explorer?arrange=classes&sel=${encodeURIComponent(clsKey)}`);
+  // North's asset by Classes: the class counts North's two positions (not South's), and its fleet lists them.
+  await open(page, `/asset-register/explorer?arrange=classes&root=${north.top.id}&sel=${encodeURIComponent(clsKey)}`);
   await reveal(page, classRow);
   await expect(classRow).toHaveAttribute("aria-selected", "true");
-  await expect(classRow.locator(".tp-cnt")).toHaveText("3 positions");
-  await expect(page.locator(".cf-answer")).toContainText("3 positions");
+  await expect(classRow.locator(".tp-cnt")).toHaveText("2 positions");
+  await expect(page.locator(".cf-answer")).toContainText("2 positions");
 
   // A class has a tab bar with one tab, picked without being asked for.
   const tabs = panel.getByRole("tab");
@@ -139,11 +139,10 @@ test("Classes on one asset's tree covers only that asset; a class opens on Condi
   await expect(panel.getByRole("tab", { name: "Condition monitoring" })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".cf-answer")).toContainText("2 positions");
 
-  // Show every asset: the whole register by Classes again.
-  await page.getByRole("link", { name: "Show every asset" }).click();
-  await expect(page).not.toHaveURL(/root=/);
+  // South's asset: its one position, nothing of North's.
+  await open(page, `/asset-register/explorer?arrange=classes&root=${south.top.id}&sel=${encodeURIComponent(clsKey)}`);
   await reveal(page, classRow);
-  await expect(classRow.locator(".tp-cnt")).toHaveText("3 positions");
+  await expect(classRow.locator(".tp-cnt")).toHaveText("1 position");
 
   await expectHealthy(page, problems, { label: "the Explorer by Classes on one asset" });
 });
@@ -191,13 +190,6 @@ test("an asset opened from Assets, then Classes: only that asset's classes, coun
   await expect(row(page, `Riverside plant ${tag}`)).toBeVisible();
   await expect(row(page, `Pool ${tag}`)).toHaveCount(0);
 
-  // Show every asset: the whole register by Classes, both assets' classes.
-  await sw.getByRole("radio", { name: "Classes" }).click();
-  await page.getByRole("link", { name: "Show every asset" }).click();
-  await expect(page).not.toHaveURL(/root=/);
-  await reveal(page, sharedRow);
-  await expect(sharedRow.locator(".tp-cnt")).toHaveText("3 positions");
-  await reveal(page, row(page, `Pool pump ${tag}`));
   await expectHealthy(page, problems, { label: "Classes on an asset opened from Assets" });
 });
 

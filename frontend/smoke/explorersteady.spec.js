@@ -195,7 +195,7 @@ test("on a phone, switching tabs leaves the title, the tabs, the search box and 
   await page.setViewportSize({ width: 400, height: 800 });
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.pump.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
   // The row picked brought into view first (late in a full run the tree is long and it's far
   // down), so the Summary's scroll is read once it's where it stays, as the tests above do.
   await expect(page.getByRole("treeitem", { name: new RegExp(`^Steady unit 4 ${tag}`) })).toHaveAttribute("aria-selected", "true");

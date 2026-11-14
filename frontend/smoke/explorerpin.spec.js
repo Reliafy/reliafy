@@ -32,7 +32,8 @@ async function plant(request, tag) {
   const sealA = await post(`${M}/positions`, { name: `Works seal A ${tag}`, parent_id: pumpA.id });
   const lineB = await post(`${M}/positions`, { name: `Works line B ${tag}`, parent_id: top.id });
   const pumpB = await post(`${M}/positions`, { name: `Works pump B ${tag}`, parent_id: lineB.id });
-  const other = await post(`${M}/positions`, { name: `Works other ${tag}` });
+  // At the site too, so the site's asset (the Explorer is always one asset) has two top positions.
+  const other = await post(`${M}/positions`, { name: `Works other ${tag}`, location_id: site.id });
   const fn = await post(`${M}/positions/${pumpA.id}/functions`, { text: `Pump water ${tag}` });
   const ff = await post(`${M}/functions/${fn.id}/failures`, { text: `No flow ${tag}` });
   await post(`${M}/positions/${pumpA.id}/failure-modes`, { text: `Seal leaks ${tag}`, functional_failure_id: ff.id });
@@ -63,7 +64,7 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 720 });
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.lineA.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.lineA.id}`);
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-level", "2");
 
   // Right-click the line: Pin this branch (after the changes to the tree, before Delete).
@@ -209,13 +210,14 @@ test("a row outside the branch shows the whole tree again; a pin that's gone qui
   const tag = `o${Date.now()}`;
   const p = await plant(request, tag);
   // ?sel= outside the pinned branch: the whole tree, the row picked, and a note.
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&pin=${p.lineA.id}&sel=${p.other.id}`);
+  // (Line B: in the same asset, outside line A's branch.)
+  await open(page, `/asset-register/explorer?arrange=positions&pin=${p.lineA.id}&sel=${p.lineB.id}`);
   await expect(page.locator(".tt-head").getByRole("status")).toHaveText("Showing the whole tree again");
   await expect(bar(page)).toHaveCount(0);
-  await expect(row(page, `Works other ${tag}`)).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, `Works line B ${tag}`)).toHaveAttribute("aria-selected", "true");
   expect(query(page).get("pin")).toBe(null);
   // A pinned row that isn't there (retired, deleted): no pin, no note.
-  await open(page, `/asset-register/explorer?arrange=positions&pin=not-a-position-${tag}`);
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.top.id}&pin=not-a-position-${tag}`);
   await expect.poll(() => query(page).get("pin")).toBe(null);
   await expect(page.getByRole("tree", { name: "Positions" })).toBeVisible();
   await expect(page.getByText("Showing the whole tree again")).toHaveCount(0);

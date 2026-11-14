@@ -56,6 +56,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import { productPath } from "../products.js";
 import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { explorerPath } from "../assetTree.js";
+import { ASSETS_LIST_PATH } from "../maintenanceAssets.js";
 import { partsPath } from "../redirects.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
@@ -267,7 +268,7 @@ export default function MaintenancePosition() {
       {modal === "delete" && (
         // Gone from the tree with everything inside it: the Explorer shows the toast with Undo.
         <DeleteTreeModal kind="position" id={p.id} name={p.name} onClose={() => setModal(null)}
-                         onDone={(answer, done) => navigate(explorerPath("positions"), { state: { deleted: done } })} />
+                         onDone={(answer, done) => navigate(ASSETS_LIST_PATH, { state: { deleted: done } })} />
       )}
       {modal?.mode && <FailureModeModal p={p} mode={modal.mode} onClose={() => setModal(null)}
                                         onDone={() => { setModal(null); refresh(); }} />}

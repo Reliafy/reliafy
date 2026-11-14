@@ -17,10 +17,34 @@ export const POSITIONS_PATH = explorerPath("positions");
 // A place's own page.
 export const placePath = (id) => `/asset-register/locations/${id}`;
 
+// The Assets list itself: where the Explorer sends an address with no asset (?root=) in it.
+// There's no whole-register Explorer (Derryn, 14 Nov 2026): every asset is opened on its own.
+export const ASSETS_LIST_PATH = "/asset-register";
+
 // Where an asset in the list goes: the Explorer opened on that asset alone (?root=:
-// nothing of another asset shows; "Show every asset" there for the whole register),
-// arranged by locations, with the place picked.
+// nothing of another asset shows), arranged by locations, with the place picked.
 export const assetPath = (id) => explorerPath("locations", { root: id, sel: id });
+
+// What an Explorer address with no asset in it asked for (its tab, a pane to open, a
+// Library record to fit with…), kept while the user picks the asset on the Assets list:
+// the query without the asset or the row (root, sel), an old ?all=1 or ?place. "" for nothing.
+const NOT_CARRIED = ["root", "sel", "all", "place"];
+export function explorerCarry(params) {
+  const q = new URLSearchParams(params);
+  for (const k of NOT_CARRIED) q.delete(k);
+  return q.toString();
+}
+
+// An asset opened from the Assets list with what the Explorer was asked for carried along
+// (explorerCarry): the asset's own address with those keys on top.
+export function assetOpenPath(id, carry = "") {
+  const base = assetPath(id);
+  if (!carry) return base;
+  const [path, query] = base.split("?");
+  const q = new URLSearchParams(query);
+  for (const [k, v] of new URLSearchParams(carry)) if (!NOT_CARRIED.includes(k)) q.set(k, v);
+  return `${path}?${q}`;
+}
 
 // The open work orders in a place's area (Maintenance › Orders, filtered by location).
 export const openWorkPath = (id) => ordersPath("open", { location: id });

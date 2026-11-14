@@ -623,9 +623,10 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `A1 ${tag}` }, on: ago(700) });
   await postOk(request, `${M}/positions/${pump.id}/remove`, { on: ago(350), reason: "failure" });
   await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `A2 ${tag}` }, on: ago(350) });
-  const other = await postOk(request, `${M}/positions`, { name: `Around neighbour ${tag}` });
+  // Inside the pump's asset (the Explorer is always one asset): another row to pick.
+  const other = await postOk(request, `${M}/positions`, { name: `Around neighbour ${tag}`, parent_id: pump.id });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${pump.id}&tab=models`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await headPick(page, "Life model", "Fit a life model…");
   const dialog = page.getByRole("region", { name: "Fit a life model" });
   // In the table area, not a dialog: the tree beside it, the heading naming the position, the address saying so.
@@ -767,9 +768,10 @@ async function predictedController(request, tag) {
 test("Add a prediction… opens in the table area: live result, the part-type list not cut off, Esc, discard, reload, save", async ({ page, request, problems }) => {
   const tag = `pr${Date.now()}`;
   const ctl = await predictedController(request, tag);
-  const other = await postOk(request, `${M}/positions`, { name: `Prediction neighbour ${tag}` });
+  // Inside the board's asset (the Explorer is always one asset): another row to pick.
+  const other = await postOk(request, `${M}/positions`, { name: `Prediction neighbour ${tag}`, parent_id: ctl.id });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${ctl.id}&tab=models`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${ctl.id}&tab=models`);
   await headPick(page, "Prediction", "Add a prediction (parts count)…");
   const pane = page.getByRole("region", { name: "Add a prediction" });
   await expect(pane).toBeVisible();

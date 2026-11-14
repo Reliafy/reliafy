@@ -1,12 +1,12 @@
 // One asset opened on its own (Derryn, 14 Nov 2026: "assets and all their linkages needs to be
 // completely isolated"). Two assets, each a place with positions, connected (the farm's bore feeds
 // the house's hot water), one item class fitted in both, an RCM on each and a spare at each. Opened
-// from the Assets page, or by a link naming a row inside it, or from its top row in the whole
-// register, the Explorer shows that asset alone: no name of the other asset in any arrangement, the
-// filter, the RCM tab, Classes and its fleet, or the Add and Move pickers, at 1440 and 400 px.
-// "Show every asset" and the Explorer's menu entry are the whole register.
+// from the Assets page, or by a link naming a row inside it, the Explorer shows that asset alone: no
+// name of the other asset in any arrangement, the filter, the RCM tab, Classes and its fleet, or the
+// Add and Move pickers, at 1440 and 400 px. There's no whole register (Derryn, 14 Nov 2026: "They
+// have to go out and view all the assets and select one at a time"): no "Show every asset", and an
+// Explorer address with no asset in it (the bare address, an old ?all=1 link) lands on Assets.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { reveal } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -58,13 +58,16 @@ for (const width of [1440, 400]) {
     await open(page, "/asset-register");
     await page.getByRole("link", { name: `Anthony ${tag}` }).click();
     await expect(page).toHaveURL(new RegExp(`root=${a.house.id}`));
-    await expect(page.locator(".tp-notice")).toContainText("One asset");
+    // Always one asset: nothing offers the whole register.
+    await expect(page.getByText("Show every asset")).toHaveCount(0);
+    await expect(page.getByText("One asset", { exact: true })).toHaveCount(0);
     const sw = arrangeSwitch(page);
     const tree = page.getByRole("tree");
     // Locations (as it opens), then Positions, then Classes.
     await expect(tree.getByRole("treeitem", { name: new RegExp(`^Kitchen ${tag}`) })).toBeVisible();
     await noFarm(page, tag, "by Locations");
     await shot(page, `isolation-locations-${width}`);
+    await shot(page, `one-asset-header-${width}`);
     if (width > 600) {
       await sw.getByRole("radio", { name: "Positions" }).click();
       await expect(page).toHaveURL(new RegExp(`root=${a.house.id}`));
@@ -116,17 +119,24 @@ for (const width of [1440, 400]) {
     await shot(page, `isolation-rcm-${width}`);
     expect(await sideways(page)).toBeLessThanOrEqual(1);
 
-    // Show every asset: the whole register, the farm in it.
-    await open(page, `/asset-register/explorer?arrange=locations&root=${a.house.id}&sel=${a.house.id}`);
-    await page.getByRole("link", { name: "Show every asset" }).click();
-    await expect(page).not.toHaveURL(/root=/);
-    await expect(page).toHaveURL(/all=1/);
-    await reveal(page, row(page, `Farm ${tag}`));
+    // The Explorer with no asset in its address: the Assets list, to pick one; picking opens it alone,
+    // with the tab the address asked for.
+    await open(page, "/asset-register/explorer?arrange=positions&tab=rcm");
+    await expect(page).toHaveURL(/\/asset-register$/);
+    await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toBeVisible();
+    await expect(page.getByText("Pick an asset to open it in the Explorer.")).toBeVisible();
+    await shot(page, `one-asset-landing-${width}`);
+    expect(await sideways(page)).toBeLessThanOrEqual(1);
+    await page.getByRole("link", { name: `Farm ${tag}` }).click();
+    await expect(page).toHaveURL(new RegExp(`root=${a.farm.id}`));
+    await expect(page).toHaveURL(/tab=rcm/);
+    await expect(page.getByRole("treegrid").getByRole("row", { name: new RegExp(`^Bore pump ${tag}`) })).toBeVisible();
+    expect((await page.locator("body").innerText()).includes(`Hot water ${tag}`)).toBe(false);
     await expectHealthy(page, problems, { label: `one asset opened from Assets at ${width}` });
   });
 }
 
-test("links that name a row inside an asset land on that asset alone; its top row in the whole register opens it", async ({ page, request, problems }) => {
+test("links that name a row inside an asset land on that asset alone; anything else lands on Assets", async ({ page, request, problems }) => {
   const tag = `isl${Date.now()}`;
   const a = await twoAssets(request, tag);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -134,7 +144,6 @@ test("links that name a row inside an asset land on that asset alone; its top ro
   // A link naming a position deep inside (a work order's, a failure report's): its asset, that row picked.
   await open(page, `/asset-register/explorer?arrange=positions&sel=${a.elem.id}`);
   await expect(page).toHaveURL(new RegExp(`root=${a.house.id}`));
-  await expect(page.locator(".tp-notice")).toContainText("One asset");
   await expect(row(page, `Element ${tag}`)).toHaveAttribute("aria-selected", "true");
   await noFarm(page, tag, "a link to a position");
   // The farm's own link: the farm alone.
@@ -149,26 +158,20 @@ test("links that name a row inside an asset land on that asset alone; its top ro
   await page.goForward();
   await expect(page).toHaveURL(new RegExp(`root=${a.farm.id}`));
 
-  // The whole register (the menu's Explorer) has both; an asset's top row opens it alone.
-  await open(page, "/asset-register/explorer?arrange=locations");
-  await reveal(page, row(page, `Farm ${tag}`));
-  await reveal(page, row(page, `Anthony ${tag}`));
-  await row(page, `Anthony ${tag}`).locator(".tp-nm").click();
-  await expect(page).toHaveURL(new RegExp(`root=${a.house.id}`));
-  await expect(page.locator(".tp-notice")).toContainText("One asset");
-  await expect(row(page, `Kitchen ${tag}`)).toBeVisible();
-  await noFarm(page, tag, "a top row opened from the whole register");
-  await page.goBack();
-  await expect(page).not.toHaveURL(/root=/);
-  // A row inside picked on the whole register stays there (?all=1 keeps it so through a reload).
-  await reveal(page, row(page, `Kitchen ${tag}`));
-  await open(page, `/asset-register/explorer?arrange=locations&all=1&sel=${a.kitchen.id}`);
-  await expect(page).not.toHaveURL(/root=/);
-  await reveal(page, row(page, `Farm ${tag}`));
+  // The bare address and an old whole-register link (?all=1, even naming a row): the Assets list,
+  // never a tree with both assets in it.
+  for (const to of ["/asset-register/explorer", "/asset-register/explorer?arrange=locations",
+    `/asset-register/explorer?arrange=locations&all=1&sel=${a.kitchen.id}`]) {
+    await open(page, to);
+    await expect(page, to).toHaveURL(/\/asset-register$/);
+    await expect(page.getByRole("tree")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: `Anthony ${tag}` })).toBeVisible();
+    await expect(page.getByRole("link", { name: `Farm ${tag}` })).toBeVisible();
+  }
   await expectHealthy(page, problems, { label: "links into one asset" });
-  // An asset that isn't there (deleted, an old link): said so, with the way to the whole register
+  // An asset that isn't there (deleted, an old link): said so, with the way to the Assets list
   // (the 404 behind it is the browser's console line, so after the health check).
   await open(page, "/asset-register/explorer?arrange=locations&root=no-such-asset");
   await expect(page.getByRole("heading", { name: "That asset isn't here" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Show every asset" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "See the assets" }).first()).toBeVisible();
 });
