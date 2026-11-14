@@ -2705,6 +2705,20 @@ def get_operating_plan(kind: str, target_id: str, root: str | None = None,
     return _run(m.operating_plan, target_id, root or None)
 
 
+@router.get("/positions/{position_id}/forecast")
+def position_forecast(position_id: str, root: str | None = None, period: str = "month", periods: int = 12,
+                      session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The forecast for a position and everything inside it (inside root, the asset opened): tasks
+    on dates, work per period, expected failures and cost per period with a 90% range, each saying
+    what it rests on. Also over MCP and the CLI: maintenance get.forecast."""
+    from backend.maintenance import position_forecast as pf
+    from backend.maintenance import position_models as pm
+
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    return _run(pf.position_forecast, m, position_id, root or None, period, periods, fetch)
+
+
 @router.put("/positions/{position_id}/operating-plan")
 def set_operating_plan(position_id: str, body: dict = Body(...),
                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:

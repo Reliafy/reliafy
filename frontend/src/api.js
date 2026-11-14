@@ -3908,6 +3908,13 @@ function asJsonBody(method, body) {
 export function getOperatingPlan(kind, id, root = null) {
   return request(`/api/maintenance/${kind === "item" ? "items" : "positions"}/${id}/operating-plan${root ? `?root=${encodeURIComponent(root)}` : ""}`);
 }
+// The forecast for a position and everything inside it (inside `root`, the asset opened): tasks on
+// dates, work per period, expected failures and cost with a 90% range, and what each rests on.
+export function getPositionForecast(positionId, { root = null, period = "month", periods = 12 } = {}) {
+  const q = new URLSearchParams({ period, periods: String(periods) });
+  if (root) q.set("root", root);
+  return request(`/api/maintenance/positions/${positionId}/forecast?${q}`);
+}
 // {plan, name?, time_zone?, from?, notes?}: how it runs from a date (default today).
 export function setOperatingPlan(positionId, body) {
   return putJson(`/api/maintenance/positions/${positionId}/operating-plan`, body);

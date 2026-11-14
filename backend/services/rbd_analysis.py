@@ -86,7 +86,13 @@ class _ReducedModel:
 
     def sf(self, x) -> np.ndarray:
         x = np.asarray(x, dtype=float)
-        sfs = [np.asarray(m.sf(x), dtype=float) for m in self.models]
+        # n identical units are one model object: work it out once (a Bayesian update's posterior
+        # predictive is a mixture over its posterior, costly to evaluate).
+        once: dict = {}
+        for m in self.models:
+            if id(m) not in once:
+                once[id(m)] = np.asarray(m.sf(x), dtype=float)
+        sfs = [once[id(m)] for m in self.models]
         if self.kind == "series":
             out = np.ones_like(sfs[0])
             for s in sfs:
@@ -399,6 +405,49 @@ def _nonparametric_reliability(model: dict, where: str, resolve_model):
     raise AnalysisError(nonparametric_message(model, where))
 
 
+# Per resolver (one request), each saved model id's Bayesian fit or None, so a diagram's
+# blocks resolve each saved model once however often the diagram is built.
+_BAYES_SEEN: "weakref.WeakKeyDictionary[Any, dict]" = weakref.WeakKeyDictionary()
+
+
+def saved_bayesian_fit(model: Optional[dict], resolve_model):
+    """The SurPyval Bayesian fit of the saved Bayesian-update model a block picks, or None (another
+    model, a hand-entered one, or one that can't be resolved here)."""
+    if not isinstance(model, dict) or model.get("source") != "saved" or resolve_model is None:
+        return None
+    if model.get("kind") not in (None, "distribution"):
+        return None
+    model_id = model.get("modelId") or model.get("model_id")
+    if not model_id:
+        return None
+    try:
+        seen = _BAYES_SEEN.setdefault(resolve_model, {})
+    except TypeError:  # a resolver that can't be weakly referenced: resolve every time
+        seen = {}
+    if model_id not in seen:
+        from backend.services import bayes_life
+
+        try:
+            entry = resolve_model(model_id)
+        except Exception:  # noqa: BLE001 - an unresolvable model keeps its stored parameters
+            entry = None
+        seen[model_id] = bayes_life.bayesian_fit((entry or {}).get("model"))
+    return seen[model_id]
+
+
+def bayesian_life(model: Optional[dict], resolve_model):
+    """A block on a saved Bayesian update, as the model's posterior predictive (RePyability's
+    ``PosteriorPredictive``, 0.17): the curve the model's own page shows, with the uncertainty in
+    its parameters averaged in. Not the distribution at the parameters' middle values (the stored
+    ``params``), which is a tidier, more optimistic curve. None for any other block."""
+    fit = saved_bayesian_fit(model, resolve_model)
+    if fit is None:
+        return None
+    from repyability import PosteriorPredictive
+
+    return PosteriorPredictive(fit)
+
+
 def _build_distribution(
     model: Optional[dict],
     where: str,
@@ -444,6 +493,9 @@ def _build_distribution(
             return rbd_mixture.build(model, where)
         except rbd_mixture.MixtureError as exc:
             raise AnalysisError(str(exc)) from None
+    bayesian = bayesian_life(model, resolve_model)
+    if bayesian is not None:
+        return bayesian
     dist_id = model.get("distribution_id")
     entry = DISTRIBUTIONS.get(dist_id)
     if entry is None:
@@ -525,28 +577,16 @@ def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
     dormancy = _standby_dormancy(data, label)
     from backend.services import rbd_standby
 
-    if rbd_standby.operating(data, label) > 1:
-        # k-of-n standby (#84): k units running, the spares idle.
-        try:
-            switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
-        except (TypeError, ValueError):
-            switch = 1.0
-        return rbd_standby.nonrepairable_model(data, label, primary, spare, spares, dormancy, switch)
-    if dormancy == 0.0:
-        # Cold standby: spares are dormant until switched in (k=1 operating).
-        try:
-            switch = float(data.get("startProb", 1.0))
-        except (TypeError, ValueError):
-            switch = 1.0
-        return StandbyModel(units, k=1, switching_probability=switch)
-    if dormancy < 1.0:
-        # Warm standby: an idle spare ages at `dormancy` × its operating rate
-        # (cumulative exposure) and can fail latent, dead before it's needed.
-        # Numerical for any units since RePyability 0.11 (one operating), no
-        # longer a fit to simulated lifetimes.
-        return StandbyModel(units, k=1, dormancy_factor=dormancy)
-    # Hot standby: every unit runs from t=0 -> active parallel redundancy.
-    return _ReducedModel(units, "parallel")
+    start = rbd_standby.start_probability(data)
+    if rbd_standby.operating(data, label) == 1 and dormancy >= 1.0 and start == 1.0:
+        # Hot standby whose spares always start: every unit runs from t=0 ->
+        # active parallel redundancy.
+        return _ReducedModel(units, "parallel")
+    # Cold (dormant until switched in), warm (an idle spare ages at `dormancy` x
+    # its operating rate and can fail latent) or hot, k units running (#84), each
+    # spare starting with the block's "Chance a spare starts": one that fails to
+    # start is skipped and the next tried (RePyability 0.17's start_probability).
+    return rbd_standby.nonrepairable_model(data, label, primary, spare, spares, dormancy, start)
 
 
 def _standby_dormancy(data: dict, label: str) -> float:
@@ -1127,9 +1167,6 @@ def validate_graph(
             errors.append(f"The diagram could not be analysed: {client_message(exc)}")
 
     warnings.extend(design_warnings(graph, labels))
-    from backend.services import rbd_standby
-
-    warnings.extend(rbd_standby.warnings(graph))  # switching on warm/hot spares (#84)
 
     repairable = bool(graph.get("repairable"))
     if repairable:

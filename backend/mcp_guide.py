@@ -194,7 +194,7 @@ operation, running or not). per_demand is a probability on each demand (a start,
 - Quote the mean with its 5th to 95th percentile range (the source's spread: gamma for a rate, beta for a \
 demand), and the evidence (failures, demands or hours).
 - In an RBD block: a rate is an exponential (failure_rate = the mean, x 24 per day, x 8,760 per year). A \
-per-demand probability p is a cold-standby spare's startProb (1 - p), or a proof-tested item's failure on test. \
+per-demand probability p is a standby spare's startProb (1 - p), or a proof-tested item's failure on test. \
 Converting a calendar rate to hours of running needs the hours a year it runs: ask the user, never guess.
 - Every input a record needs is a covariate (get kind library_record lists covariates: key, unit, role, default, \
 limits): a pipe's length_ft; clock (calendar or operating) and running_hours_per_year to change a rate's clock; \

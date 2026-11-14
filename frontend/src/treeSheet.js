@@ -72,8 +72,10 @@ export function importBlocker(r, { viewOnly = null } = {}) {
 // What the toast says once it's in.
 export const doneText = (r) => (r?.summary ? `Imported. ${r.summary}` : "Imported.");
 
-// The export's choice: the whole tree, or the branch it was opened from.
-export function exportChoices(branch) {
-  return [{ id: "all", label: "The whole tree" },
+// The export's choice: the whole tree, or the branch it was opened from. `whole`: false with
+// one asset open (the Explorer's ?root=), where the whole register's tree isn't offered (and
+// with no branch either, there's nothing to export: []).
+export function exportChoices(branch, { whole = true } = {}) {
+  return [...(whole ? [{ id: "all", label: "The whole tree" }] : []),
     ...(branch ? [{ id: "branch", label: `This branch: ${branch.name || "(no name)"}` }] : [])];
 }

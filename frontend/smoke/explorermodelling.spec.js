@@ -119,7 +119,9 @@ test("update a baseline with a position's one failure, and save it as the positi
   await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("model");
   const option = await dialog.locator("option", { hasText: "Bearing life — Weibull" }).first().getAttribute("value");
   await dialog.getByRole("combobox", { name: "Prior model" }).selectOption(option);
-  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound"); // B-life bounds are one-sided (#818)
+  // A fit with a prior runs on SurPyval's grid: on a shared CI runner it can still be "Working it
+  // out…" after an expect's 10 s (release PR #884), so wait for the answer as saveFit does.
+  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound", { timeout: 60_000 }); // B-life bounds are one-sided (#818)
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
   await saveFit(page, dialog, pump.id);
@@ -443,7 +445,9 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await dialog.getByLabel("Characteristic life (alpha)").fill("4");
   await dialog.getByLabel("Shape (beta)").fill("2");
   await dialog.getByLabel("Unit").selectOption("years");
-  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound"); // B-life bounds are one-sided (#818)
+  // A fit with a prior runs on SurPyval's grid: on a shared CI runner it can still be "Working it
+  // out…" after an expect's 10 s (release PR #884), so wait for the answer as saveFit does.
+  await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound", { timeout: 60_000 }); // B-life bounds are one-sided (#818)
   await expect(dialog.getByRole("status")).toContainText("1 failure at");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
@@ -623,9 +627,10 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `A1 ${tag}` }, on: ago(700) });
   await postOk(request, `${M}/positions/${pump.id}/remove`, { on: ago(350), reason: "failure" });
   await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `A2 ${tag}` }, on: ago(350) });
-  const other = await postOk(request, `${M}/positions`, { name: `Around neighbour ${tag}` });
+  // Inside the pump's asset (the Explorer is always one asset): another row to pick.
+  const other = await postOk(request, `${M}/positions`, { name: `Around neighbour ${tag}`, parent_id: pump.id });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${pump.id}&tab=models`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await headPick(page, "Life model", "Fit a life model…");
   const dialog = page.getByRole("region", { name: "Fit a life model" });
   // In the table area, not a dialog: the tree beside it, the heading naming the position, the address saying so.
@@ -767,9 +772,10 @@ async function predictedController(request, tag) {
 test("Add a prediction… opens in the table area: live result, the part-type list not cut off, Esc, discard, reload, save", async ({ page, request, problems }) => {
   const tag = `pr${Date.now()}`;
   const ctl = await predictedController(request, tag);
-  const other = await postOk(request, `${M}/positions`, { name: `Prediction neighbour ${tag}` });
+  // Inside the board's asset (the Explorer is always one asset): another row to pick.
+  const other = await postOk(request, `${M}/positions`, { name: `Prediction neighbour ${tag}`, parent_id: ctl.id });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${ctl.id}&tab=models`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${ctl.id}&tab=models`);
   await headPick(page, "Prediction", "Add a prediction (parts count)…");
   const pane = page.getByRole("region", { name: "Add a prediction" });
   await expect(pane).toBeVisible();

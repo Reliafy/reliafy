@@ -155,3 +155,65 @@ def test_rest_reads_take_within_and_send_one_asset(client):
     assert _ok(client.get("/api/maintenance/position-models", params={"within": farm}))["links"] == []
     assert _ok(client.get("/api/maintenance/position-missions", params={"within": farm}))["links"] == []
     assert client.get("/api/maintenance/position-models", params={"within": "nope"}).status_code == 404
+
+
+# ---- merging one asset into another, and back (Derryn, 14 Nov 2026: "Alternately, they can merge one
+# asset into another"). The app does it with the tree's own moves (frontend/src/assetMerge.js): a place
+# goes inside a location of the other asset (location parent_id), a top position inside one of its
+# positions (parent_id) or at one of its locations (location_id). Make this its own asset clears them.
+
+def _assets(m):
+    return {p["name"] for p in m.places()["places"]}
+
+
+def test_a_place_merged_into_another_asset_comes_with_everything_and_splits_off_again(m):
+    ids = _two_assets(m)
+    before_farm = _names(m.tree_rows(within=ids["farm"]))
+    assert {"96 Anthony Street", "Farm"} <= _assets(m)
+
+    # Merge: the farm goes inside the house's kitchen.
+    m.update_location(ids["farm"], parent_id=ids["kitchen"])
+    live = m.s.snapshot()
+    m.s.rebuild()
+    assert m.s.snapshot() == live
+    assert "Farm" not in _assets(m) and "96 Anthony Street" in _assets(m)
+    positions, locations, spares, _ = _names(m.tree_rows(within=ids["house"]))
+    assert {"Bore pump", "Hot water", "Element"} <= positions
+    assert {"Farm", "Kitchen"} <= locations and {"Farm spare", "Spare element"} <= spares
+    # Its history and RCM came along: the pump's failure mode and fitted item are still on it.
+    assert "Impeller wears" in str(m.rcm_all(within=ids["house"]))
+    assert m.position(ids["pump"])["fitted"]["item"]["name"] == "Pump unit"
+
+    # Make this its own asset: back as it was.
+    m.update_location(ids["farm"], parent_id=None)
+    live = m.s.snapshot()
+    m.s.rebuild()
+    assert m.s.snapshot() == live
+    assert {"96 Anthony Street", "Farm"} <= _assets(m)
+    assert _names(m.tree_rows(within=ids["farm"])) == before_farm
+    assert "Bore pump" not in _names(m.tree_rows(within=ids["house"]))[0]
+
+
+def test_a_top_position_merged_inside_a_position_and_at_a_location_then_its_own_again(m):
+    ids = _two_assets(m)
+    skid = m.create_position("Skid")["id"]
+    m.create_position("Skid motor", parent_id=skid)
+    assert "Skid" in _names(m.tree_rows(within=skid))[0]
+
+    # Inside the house's hot water: the house's tree has it; it's no asset of its own.
+    m.update_position(skid, parent_id=ids["hws"])
+    assert {"Skid", "Skid motor"} <= _names(m.tree_rows(within=ids["house"]))[0]
+    assert "Skid" not in _names(m.tree_rows(within=ids["farm"]))[0]
+    # Back: a top position at no place again (its own asset).
+    m.update_position(skid, parent_id=None)
+    assert "Skid" not in _names(m.tree_rows(within=ids["house"]))[0]
+    assert {"Skid", "Skid motor"} == _names(m.tree_rows(within=skid))[0]
+
+    # At the farm (a location): the farm's tree has it.
+    m.update_position(skid, location_id=ids["farm"])
+    assert {"Skid", "Skid motor"} <= _names(m.tree_rows(within=ids["farm"]))[0]
+    m.update_position(skid, location_id=None)
+    assert "Skid" not in _names(m.tree_rows(within=ids["farm"]))[0]
+    live = m.s.snapshot()
+    m.s.rebuild()
+    assert m.s.snapshot() == live

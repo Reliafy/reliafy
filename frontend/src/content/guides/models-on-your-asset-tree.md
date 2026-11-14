@@ -312,10 +312,8 @@ path.
 
 **Classes** covers one asset at a time: the one the row you have picked is in
 (the place it's at, as on the **Assets** page, or else its top position), or
-the asset's tree you have open. The **One asset** note shows above the tree, and
-the classes, their counts and the table list the positions inside that asset
-and nothing else. With nothing picked, or after **Show every asset**, it's the
-whole register.
+the asset's tree you have open. The classes, their counts and the table list
+the positions inside that asset and nothing else.
 
 A position has the **Condition monitoring** tab too, however the tree is
 arranged (**Positions**, **Locations** or **Classes**). It shows that one

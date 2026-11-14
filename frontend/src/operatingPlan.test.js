@@ -60,3 +60,12 @@ test("a saved plan reads back into the same form", () => {
   const again = planFromForm(formFromPlan({ plan, name: "x" }, "2026-11-16")).plan;
   assert.deepEqual(again, plan);
 });
+
+test("a plan keeps its utilisation through the form and says it", () => {
+  const form = formFromPlan({ plan: { version: 1, background: { kind: "rate", amount: 3, per: "day" }, specific: [], utilisation: 0.82 } }, "2026-11-14");
+  assert.equal(form.utilisation, 0.82);
+  const { plan } = planFromForm(form);
+  assert.equal(plan.utilisation, 0.82);
+  assert.equal(planWords(plan), "About 3 hours a day, 82% utilisation");
+  assert.equal(planFromForm({ ...form, utilisation: null }).plan.utilisation, undefined);
+});

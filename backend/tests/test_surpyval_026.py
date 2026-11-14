@@ -1,6 +1,7 @@
-"""SurPyval 0.26 (with RePyability 0.16): the pins, the names 0.26 removed or
+"""SurPyval 0.26 (with RePyability 0.16): the names 0.26 removed or
 deprecated, saved models from 0.25 that must still load, and the
-expectations that moved since 0.23.
+expectations that moved since 0.23. (The current pins are guarded in
+``test_library_pins.py``.)
 
 Every call into SurPyval goes through its current names, so these run clean
 with SurPyval's own deprecations as errors (the suite does that everywhere:
@@ -46,18 +47,6 @@ def strict():
         yield
     finally:
         ctx.__exit__(None, None, None)
-
-
-def test_the_pins_are_surpyval_0_27_and_repyability_0_17():
-    """Reliafy runs SurPyval 0.27, the version RePyability 0.17 targets (the
-    rest of this file is about what 0.26 changed, and still holds on 0.27)."""
-    import importlib.metadata as md
-
-    import repyability
-
-    assert sp.__version__ == "0.27" and md.version("surpyval") == "0.27"
-    assert repyability.__version__ == "0.17" and md.version("repyability") == "0.17"
-    assert rbd_export.detect_versions() == {"surpyval": "0.27", "repyability": "0.17"}
 
 
 # ---------------------------------------------------------------------------

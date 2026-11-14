@@ -21,7 +21,7 @@ Compact node (what an assistant writes and reads)::
      "duty": 0.25,                            # repairable: runs a quarter of the time (life in operating time)
      # a per-action cost may be a range, drawn uniformly: "repair": {"min": 150, "max": 250}
      "n": 2, "k": 3, "spares": 1, "cold": true,
-     "standbyModel": {...}, "startProb": 0.98,  # cold standby: spare's own model, switch reliability
+     "standbyModel": {...}, "startProb": 0.98,  # spare's own model (cold); chance a spare starts
      "dormancy": 0.3,                         # standby: 0 cold, 1 hot, between = warm
      "subsystem_rbd_id": "<saved rbd id>",
      "covariate_schedules": {"load_pct": {"expression": "90 if t % 24 < 8 else 30"}}}  # #52

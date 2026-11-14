@@ -115,8 +115,10 @@ def test_one_tool_with_every_areas_actions(env):
     assert close and close.group(1) == "work_order_id"
     # What every agent loads on connecting: the one-line intro plus each action's required
     # arguments, and the action enum. Each action adds about 40 characters to both; the
-    # failure_reports area (Nov 2026) took them to about 7,000 and 5,200; with signals too, 7,400 and 5,500.
-    assert len(t.description) < 7_800 and len(json.dumps(t.input_schema)) < 5_800
+    # failure_reports area (Nov 2026) took them to about 7,000 and 5,200; with signals too, 7,400 and 5,500;
+    # get.forecast (Nov 2026) took the enum to 5,812 (the maintenance tool is operators' only; the core
+    # tools' 8,000 stays as it is).
+    assert len(t.description) < 7_800 and len(json.dumps(t.input_schema)) < 5_900
     for action, (required, optional, _) in table.items():
         own = mcp_server.ACTION_SCHEMAS[("maintenance", action)]
         assert set((required + " " + optional).split()) == set(own["properties"]), action
@@ -293,7 +295,7 @@ def test_the_guide_by_topic(env):
     index, pages, bad = _session(env["token"], flow)
     assert set(index["topics"]) == {"start", "model", "register", "plan", "run", "learn", "modelling", "decide", "data",
                                     "classes", "conditions", "structure", "signals", "failures", "products", "apply",
-                                    "operating_plan"}
+                                    "operating_plan", "forecast"}
     apply = pages["apply"]["guide"]
     assert "maintenance apply" in apply and "@p" in apply and "confirm" in apply and "dry_run" in apply
     structure = pages["structure"]["guide"]

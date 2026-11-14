@@ -32,7 +32,7 @@ import { NewPositionModal } from "./MaintenanceHome.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
 import { countsText, inheritedText } from "../maintenanceLocations.js";
-import { openWorkPath } from "../maintenanceAssets.js";
+import { ASSETS_LIST_PATH, openWorkPath } from "../maintenanceAssets.js";
 import { subjectBadge } from "../maintenanceSubjects.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import {
@@ -55,11 +55,9 @@ import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { isNotFound } from "../components/loadFailed.js";
-import { explorerPath } from "../assetTree.js";
 import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { NewPartModal } from "../components/PartForms.jsx";
 import { partsInBranch } from "../explorerTabs.js";
-import { EXPLORER_LABEL } from "../navigation.js";
 import { itemTreePath, productPath } from "../products.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
@@ -160,7 +158,7 @@ export function MaintenanceLocation() {
   // positions: adding one here is its main action, and the new position is at this place.
   const canHoldPositions = !!loc && !loc.design_of && !loc.carried_by;
   const addPosition = () => setModal("position");
-  if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={explorerPath("locations")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
+  if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={ASSETS_LIST_PATH} label="Go to Assets" /></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
   // (positions, items there now and the place itself), not only the positions'.
@@ -241,9 +239,9 @@ export function MaintenanceLocation() {
       )}
       {modal === "rename" && <RenameLocation loc={loc} onClose={() => setModal(null)} onDone={(d) => { setLoc(d); setModal(null); }} />}
       {modal === "delete" && (
-        // Gone with the places inside and the positions there: the Explorer shows the toast with Undo.
+        // Gone with the places inside and the positions there: the Assets list shows the toast with Undo.
         <DeleteTreeModal kind="location" id={loc.id} name={loc.name} onClose={() => setModal(null)}
-                         onDone={(answer, done) => navigate(explorerPath("locations"), { state: { deleted: done } })} />
+                         onDone={(answer, done) => navigate(ASSETS_LIST_PATH, { state: { deleted: done } })} />
       )}
     </div>
   );

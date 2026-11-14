@@ -100,6 +100,8 @@ export function formFromPlan(brief, today) {
     runs: bg.kind === "runs" ? runsText(bg.runs) : "",
     specific: runsText(specific.flatMap((s) => s.runs)),
     name: brief?.name || "", from: today, notes: brief?.notes || "",
+    // The share of the planned running that happens (kept as it was; offered from plan against actual).
+    utilisation: p?.utilisation ?? null,
   };
 }
 
@@ -138,6 +140,11 @@ export function planFromForm(form) {
     background = { kind: "runs", runs };
   }
   const plan = { version: 1, background, specific: [] };
+  if (form.utilisation != null && form.utilisation !== "" && Number(form.utilisation) < 1) {
+    const u = Number(form.utilisation);
+    if (!(u > 0)) return { problem: "Utilisation is a share more than 0 (1 is all of it)." };
+    plan.utilisation = u;
+  }
   if (form.kind !== "runs" && form.specific.trim()) {
     const { runs, problems } = parseRuns(form.specific);
     if (problems.length) return { problem: problems[0] };
@@ -269,6 +276,7 @@ export function planWords(plan) {
       return `${run ? `${s.days[0]} to ${s.days[s.days.length - 1]}` : s.days.map((d) => d.slice(0, 3)).join(", ")}, ${s.start} to ${s.stop}`;
     }).join("; ");
   }
+  if (plan.utilisation) text += `, ${Math.round(plan.utilisation * 100)}% utilisation`;
   const n = (plan.specific || []).reduce((t, s) => t + s.runs.length, 0);
   if (n) text += `; ${n} set run${n === 1 ? "" : "s"} first`;
   return text;

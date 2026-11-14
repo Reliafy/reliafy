@@ -662,9 +662,17 @@ def _url(value) -> str:
 def add_interval(day: str, interval: float, unit: str) -> str | None:
     """``day`` plus ``interval`` calendar units, or None for a unit of use
     (hours, cycles, km), which needs a meter to schedule. None too when the
-    date would fall outside the calendar."""
+    date would fall outside the calendar. Whole days, weeks, months and years
+    are RePyability's ``Recurrence.every`` (months keep the day, a shorter
+    month its last day), so "due" is the library's everywhere; a fraction of a
+    week, month or year is counted in days."""
     unit = _norm_unit(unit) or "days"
     try:
+        if unit in CALENDAR_UNITS and float(interval).is_integer() and interval >= 1:
+            from backend.maintenance.schedule import Recurrence
+
+            found = Recurrence.every(int(interval), unit, day[:10]).after(day[:10])
+            return found.isoformat() if found and found.isoformat() <= LATEST_DAY else None
         start = date.fromisoformat(day)
         if unit == "days":
             return (start + timedelta(days=round(interval))).isoformat()
@@ -6431,15 +6439,88 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         readings = _readings(self.s, self.org, meter, self.tz)
         if not readings:
             return {"limit": limit, "next_due": None, "note": "needs counter readings"}
+        holder = subject if subject.get("label") == "Position" else None
+        mapped = self._usage_map(holder["id"], meter, readings) if holder else None
         return {"limit": limit, **self._due_from(task, interval, readings, base, {
-            "id": meter["id"], "name": meter["name"], "unit": meter["unit"]})}
+            "id": meter["id"], "name": meter["name"], "unit": meter["unit"]}, mapped=mapped)}
+
+    def _reading_moment(self, r: dict, zone: str | None) -> datetime:
+        """When a reading was taken, as wall-clock time at the site: its time of day where it
+        has one, else the start of its day."""
+        if r.get("at"):
+            tz = time_zones.zone(zone) if zone else self.tz
+            return _moment(r).astimezone(tz or timezone.utc).replace(tzinfo=None, second=0, microsecond=0)
+        return datetime.fromisoformat(r["on"][:10])
+
+    def _usage_map(self, position_id: str, counter: dict, readings: list[dict], root: str | None = None,
+                   start: str | None = None, end: str | None = None) -> dict | None:
+        """The map between dates and a counter's readings from the position's operating plan
+        (its own or the nearest above, inside ``root``), anchored on the counter's latest
+        reading: {usage (RePyability's UsageForecast), meter, basis {kind: plan, text, plan,
+        inherited_from, reading {value, on}, ended}}. None when no plan applies, or the plan
+        doesn't drive this counter (it drives hours, and starts for runs). Ten years ahead
+        unless ``end`` is given; from the reading (or ``start``, if earlier)."""
+        from backend.maintenance.schedule import Rate
+
+        duty = self.duty_of(position_id, root)
+        if duty is None or not readings:
+            return None
+        unit = _norm_unit(counter.get("unit"))
+        meter = "hours" if unit == "hours" else "starts" if unit in ("starts", "start") else None
+        if meter is None or meter not in duty["plan"].meters():
+            return None
+        memo = self._memo.setdefault("usage_map", {})
+        key = (position_id, root, counter.get("id"), start, end, len(readings), readings[-1]["value"])
+        if key in memo:
+            return memo[key]
+        last = readings[-1]
+        read_at = self._reading_moment(last, duty["time_zone"])
+        value, carried = float(last["value"]), None
+        first_from = datetime.fromisoformat(duty["records"][0]["from"][:10])
+        if read_at < first_from:
+            # Read before the plan starts: carried to the plan's first day at the recent rate.
+            rate = _rate(readings)
+            if rate and rate > 0:
+                value += rate * (first_from - read_at).total_seconds() / 86_400
+                carried = {"to": first_from.date().isoformat(), "rate_per_day": round(rate, 3)}
+            read_at = first_from
+        today = datetime.fromisoformat(self.today())
+        # From ``start`` exactly when given (a forecast's "now"); else from the reading, so a
+        # crossing between it and today shows as overdue.
+        lo = datetime.fromisoformat(start) if start else min(read_at, today)
+        hi = datetime.fromisoformat(end) if end else max(today, read_at) + timedelta(days=round(10 * 365.25))
+        try:
+            usage = duty["plan"].forecast(lo, hi, readings={meter: value}, read_at=read_at)
+        except (ValueError, TypeError) as err:
+            logging.getLogger(__name__).warning("operating plan forecast failed: %s", err)
+            memo[key] = None
+            return None
+        where = f", from {duty['inherited_from']['name']}" if duty["inherited_from"] else ""
+        unit_word = " h" if meter == "hours" else " starts"
+        reading_text = f"{float(last['value']):,.6g}{unit_word} on {_short_day(last['on'][:10])}"
+        text = f"{'Hours' if meter == 'hours' else 'Starts'} from the operating plan ({duty['text']}{where}), " \
+               f"anchored on the reading of {reading_text}"
+        if carried:
+            text += f", carried to {_short_day(carried['to'])} at the recent rate"
+        if duty["ended"]:
+            text += f"; the plan ended on {_short_day(duty['ended'])}: nothing runs after it"
+        out = {"usage": usage, "meter": meter, "duty": duty,
+               "basis": {"kind": "plan", "text": text, "plan": duty["text"],
+                         "inherited_from": duty["inherited_from"], "ended": duty["ended"],
+                         "reading": {"value": last["value"], "on": last["on"][:10]}, "carried": carried,
+                         # A rate is an assumption; runs, shifts and rosters are exact.
+                         "exact": not any(isinstance(p, Rate) for p in duty["plan"].background)}}
+        memo[key] = out
+        return out
 
     @staticmethod
     def _due_from(task: dict, interval: float, readings: list[dict], base: str, counter: dict,
-                  accruing: bool = True) -> dict:
+                  accruing: bool = True, mapped: dict | None = None) -> dict:
         """A limit by use from a counter's readings: the reading it falls due at, and the
-        day it was crossed or, from the recent rate, will be (not while ``accruing`` is
-        False: an item out of service adds no use)."""
+        day it was crossed or will be: through the position's operating plan where it has
+        one (``mapped``: the moment the meter crosses it and the stop after), else from the
+        recent rate (not while ``accruing`` is False: an item out of service adds no use).
+        ``basis`` says which."""
         start = task.get("last_done_reading")
         if start is None:
             start = _reading_at(readings, base)
@@ -6452,9 +6533,23 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                            "rate_per_day": rate and round(rate, 3)}}
         if last["value"] >= target:
             crossed = next((r["on"] for r in readings if r["value"] >= target), last["on"])
-            return {**out, "next_due": crossed}
+            return {**out, "next_due": crossed, "basis": {"kind": "readings", "text": "Already reached by the readings"}}
         if not accruing:
             return {**out, "next_due": None, "note": "not fitted anywhere: it adds no use until it's fitted again"}
+        if mapped is not None:
+            crossing = mapped["usage"].when(**{mapped["meter"]: target})
+            out["basis"] = mapped["basis"]
+            if crossing.moment is None:
+                return {**out, "next_due": None,
+                        "note": ("the operating plan has ended before then" if mapped["basis"]["ended"]
+                                 else "not reached within 10 years on the operating plan")}
+            stop = crossing.next_stop_after
+            out |= {"next_due": crossing.moment.date().isoformat(),
+                    "due_moment": crossing.moment.strftime("%Y-%m-%dT%H:%M"),
+                    "stop_after": stop.strftime("%Y-%m-%dT%H:%M") if stop else None}
+            if crossing.earliest and crossing.latest and crossing.earliest != crossing.latest:
+                out["due_range"] = [crossing.earliest.date().isoformat(), crossing.latest.date().isoformat()]
+            return out
         if not rate or rate <= 0:
             return {**out, "next_due": None, "note": "needs two readings to project a date"}
         days = (target - last["value"]) / rate
@@ -6462,7 +6557,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             next_due = (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()
         except (OverflowError, ValueError):
             return {**out, "next_due": None, "note": "too far ahead to put a date on"}
-        return {**out, "next_due": next_due}
+        return {**out, "next_due": next_due,
+                "basis": {"kind": "rate", "text": f"From the recent meter rate ({rate:,.3g} {counter['unit']} a day; "
+                                                  "no operating plan here)"}}
 
     def item_usage(self, item_id: str, unit: str) -> dict | None:
         """The use an item has had in ``unit``, from the counters of the positions it
@@ -10312,6 +10409,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
+                         # Where a date by use came from (the operating plan, or the meter's recent rate).
+                         "due_basis": next((lim["basis"]["text"] for lim in view["limits"]
+                                            if lim.get("basis") and lim.get("next_due") == view["next_due"]), None),
                          "why_not": why_not, "resources": view["resources"],
                          "instructions": task.get("instructions") or "",
                          # Where it came from: an RCM decision's (no source of its own) or added
@@ -11050,49 +11150,157 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return at[0]["id"] if at else None
         raise Invalid("An operating plan goes on a position (an item runs as the position it's fitted to).")
 
+    def _plan_source(self, node_id: str, root: str | None = None, day: str | None = None):
+        """Which plan ``node_id`` runs to on ``day`` (default today): (holder: the position
+        whose own plans are its own, the plan record in force or None, inherited_from {id,
+        name}: the position above it the plan is on, or None). Its own when it has
+        one in force; else the nearest position above with one in
+        force, looked for only inside ``root`` (the asset opened)."""
+        day = day or self.today()
+        holder = self._plan_holder(node_id, root)
+        if holder is None:
+            return None, None, None
+        current = self._plan_on(holder, day)
+        if current is not None:
+            return holder, current, None
+        node_id, seen = holder, {holder}
+        while not (root and node_id == root):
+            parent = self._parent(node_id)
+            if parent is None or (root and parent["id"] == root and parent["label"] == "Item"):
+                break
+            if parent["label"] == "Item":
+                node_id = self._plan_holder(parent["id"], root)  # the position it's fitted to
+            elif parent["label"] == "Position":
+                node_id = parent["id"]
+            else:
+                break
+            if not node_id or node_id in seen:
+                break
+            seen.add(node_id)
+            found = self._plan_on(node_id, day)
+            if found:
+                return holder, found, {"id": node_id, "name": self._any(node_id).get("name", "")}
+        return holder, None, None
+
+    def _outages_of(self, position_id: str) -> list:
+        """The position's (and those above it) current out-of-service spans as (start, end)
+        wall-clock moments: no running then (open-ended: to the calendar's end)."""
+        out = []
+        for node_id in [position_id] + self._ancestor_ids(position_id):
+            entry = (self.s.node(self.org, node_id) or {}).get("out_of_service")
+            if entry and entry.get("from"):
+                end = entry.get("until") or LATEST_DAY
+                out.append((datetime.fromisoformat(entry["from"][:10]), datetime.fromisoformat(end[:10])))
+        return out
+
+    def duty_of(self, node_id: str, root: str | None = None) -> dict | None:
+        """The library's duty plan a position (or the item on one) runs to: {plan (DutyPlan),
+        holder, current (the record in force today, or None), inherited_from, records (the
+        holder's dated plans), time_zone, text, ended (the day its last plan ended, when none
+        runs now or later)}; None when no plan applies. Memoised per read."""
+        from backend.maintenance import operating_plan as op
+        from backend.maintenance import schedule
+
+        memo = self._memo.setdefault("duty", {})
+        key = (node_id, root)
+        if key in memo:
+            return memo[key]
+        holder, current, source = self._plan_source(node_id, root)
+        out = None
+        if holder is not None:
+            records = self._plans_on(source["id"] if source else holder)
+            if records:
+                today = self.today()
+                live = [r for r in records if not (r.get("until") and r["until"] <= r["from"])]
+                zone = (current or live[-1] if live else records[-1]).get("time_zone") or self.time_zone
+                ended = None
+                if current is None and not any(r["from"] > today for r in live):
+                    ended = max((r.get("until") or "") for r in records) or None
+                try:
+                    dp = schedule.duty_plan(live, zone, self._outages_of(holder))
+                except (ValueError, TypeError) as err:  # a plan the library can't take: say so, use the rate
+                    dp, ended = None, None
+                    logging.getLogger(__name__).warning("operating plan not usable: %s", err)
+                if dp is not None:
+                    out = {"plan": dp, "holder": holder, "current": current, "inherited_from": source,
+                           "records": live, "time_zone": zone, "ended": ended,
+                           "text": op.describe(current["plan"]) if current else
+                           op.describe(live[-1]["plan"]) if live else ""}
+        memo[key] = out
+        return out
+
     def operating_plan(self, position_id: str, root: str | None = None) -> dict:
         """How a position (or the item fitted to one) runs: its own plan today, or the
         nearest above it inside the asset opened (``root``), saying where it came from;
         its own plans past and planned; the hours from it in a typical week and a strip of
-        the next 14 days (a simple summary until the scheduling library's forecast)."""
+        the next 14 days (RePyability's UsageForecast, in the plan's time zone: real hours,
+        and where set runs hand over to a rate, only the time they leave, pro rata); and,
+        with an hours counter here, plan against actual over the last 90 days."""
         from backend.maintenance import operating_plan as op
 
         today = self.today()
         asked = self._any(position_id)
-        holder = self._plan_holder(position_id, root)
+        holder, current, source = self._plan_source(position_id, root)
         own = self._plans_on(holder) if holder else []
-        current, source = (self._plan_on(holder, today) if holder else None), None
-        if current is None and holder:
-            node_id, seen = holder, {holder}
-            while not (root and node_id == root):
-                parent = self._parent(node_id)
-                if parent is None or (root and parent["id"] == root and parent["label"] == "Item"):
-                    break
-                if parent["label"] == "Item":
-                    node_id = self._plan_holder(parent["id"], root)  # the position it's fitted to
-                elif parent["label"] == "Position":
-                    node_id = parent["id"]
-                else:
-                    break
-                if not node_id or node_id in seen:
-                    break
-                seen.add(node_id)
-                found = self._plan_on(node_id, today)
-                if found:
-                    current = found
-                    source = {"id": node_id, "name": self._any(node_id).get("name", "")}
-                    break
         out = {"position": {"id": asked["id"], "name": asked.get("name", ""), "kind": asked["label"].lower()},
                "plan": current and self._plan_brief(current, today),
                "inherited_from": source,
                "own": [self._plan_brief(p, today) for p in own],
-               "time_zone": self.time_zone, "today": today, "days": []}
+               "time_zone": self.time_zone, "today": today, "days": [], "against_actual": None}
         if asked["label"] == "Item":
             out["note"] = "An item runs as the position it's fitted to." if holder else \
                 "Not fitted anywhere: it runs to no plan."
-        if current:
-            out["days"] = [{**d, "hours": round(d["hours"], 2)}
-                           for d in op.hours_by_day(current["plan"], date.fromisoformat(today), 14)]
+        duty = self.duty_of(position_id, root) if current else None
+        if current and duty:
+            start = date.fromisoformat(today)
+            usage = duty["plan"].forecast(start, start + timedelta(days=14))
+            hours = usage.by_period("day").usage.get("hours") or ()
+            out["days"] = [{**d, "hours": round(float(hours[k]) if k < len(hours) else d["hours"], 2)}
+                           for k, d in enumerate(op.hours_by_day(current["plan"], start, 14))]
+            out["hours_basis"] = usage.describe()
+            if holder is not None and asked["label"] == "Position":
+                out["against_actual"] = self._plan_against_actual(position_id, duty)
+        return out
+
+    def _plan_against_actual(self, position_id: str, duty: dict) -> dict | None:
+        """The plan against the position's hours counter over the last 90 days: the hours it
+        ran (from the readings) as a share of the hours the plan gives over the same days.
+        Offered as the plan's utilisation, never applied: {from, to, planned_hours,
+        actual_hours, share, text, proposal {utilisation}}; None without two readings 14 days
+        or more apart in that window, or when the plan gives no hours there."""
+        counter = _counter_on(self.s, self.org, position_id, "hours")
+        if counter is None:
+            return None
+        readings = _readings(self.s, self.org, counter, self.tz)
+        today = self.today()
+        lo = (date.fromisoformat(today) - timedelta(days=90)).isoformat()
+        inside = [r for r in readings if lo <= r["on"] <= today]
+        before = [r for r in readings if r["on"] < lo]
+        if before:
+            inside = [before[-1]] + inside
+        if len(inside) < 2:
+            return None
+        a, b = max(inside[0]["on"], lo), inside[-1]["on"]
+        if (date.fromisoformat(b) - date.fromisoformat(a)).days < 14:
+            return None
+        start_value = _reading_at(readings, a)
+        actual = float(inside[-1]["value"]) - float(start_value if start_value is not None else inside[0]["value"])
+        try:
+            planned = float(duty["plan"].forecast(a, b).at(b).get("hours") or 0.0)
+        except (KeyError, ValueError):
+            return None
+        if planned <= 0:
+            return None
+        share = max(0.0, actual / planned)
+        text = (f"Ran {share:.0%} of the plan from {_short_day(a)} to {_short_day(b)}: {actual:,.0f} h against "
+                f"{planned:,.0f} h planned.")
+        out = {"from": a, "to": b, "planned_hours": round(planned, 1), "actual_hours": round(actual, 1),
+               "share": round(share, 3), "text": text, "proposal": None}
+        current_u = (duty["current"] or {}).get("plan", {}).get("utilisation") or 1.0
+        if 0.05 <= share < 0.97 and abs(share - current_u) >= 0.03:
+            out["proposal"] = {"utilisation": round(min(share, 1.0), 2),
+                               "text": f"Use {min(share, 1.0):.0%} as the plan's utilisation (each planned hour "
+                                       f"counts {min(share, 1.0):.2f})? Nothing changes until you save it."}
         return out
 
     def set_operating_plan(self, position_id: str, plan, name="", time_zone=None, from_=None, notes="") -> dict:

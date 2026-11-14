@@ -5,8 +5,10 @@ the class's fitted non-repairable model (:func:`loop.fit_class_model`). Its age 
 long the item has been in that position: days on the calendar for a model in
 calendar units (the same life the class's life data counts), else the use the
 position's counter in the model's unit has added since the item went in. It
-adds that much each period: the period's days, or the counter's recent rate
-(the fleet ingest's EWMA estimate over the last year of readings). A position
+adds that much each period: the period's days; for a unit of use, its operating
+plan's average over the horizon where the position has (or inherits) one
+(RePyability's duty map, ``Maintenance._usage_map``), else the counter's recent
+rate (the fleet ingest's EWMA estimate over the last year of readings). A position
 with nothing fitted, or with no counter rate to go on, is listed, not forecast.
 
 The forecast is the fleet forecast's renewals engine
@@ -104,14 +106,35 @@ def _counter_rate(readings: list[dict]) -> tuple[float | None, int]:
     return (max(0.0, float(rate)), n) if n and rate is not None else (None, 0)
 
 
-def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str) -> dict:
-    """Age and rate in a unit of use, from the position's counter in that unit:
-    {age, per_day, counter} or {reason} when they can't be had."""
+def _plan_rate(m: Maintenance, position_id: str, counter: dict, readings: list[dict], horizon_days: float):
+    """Use per day over the forecast's horizon from the position's operating plan (its own or
+    the nearest above), through RePyability's duty map; None when no plan drives this counter."""
+    if not horizon_days:
+        return None
+    today = date.fromisoformat(m.today())
+    end = (today + timedelta(days=round(horizon_days))).isoformat()
+    mapped = m._usage_map(position_id, counter, readings, start=today.isoformat(), end=end)
+    if mapped is None:
+        return None
+    usage, meter = mapped["usage"], mapped["meter"]
+    added = float(usage.at(end)[meter]) - float(usage.at(today.isoformat())[meter])
+    return max(0.0, added / horizon_days), mapped["basis"]
+
+
+def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str, horizon_days: float = 0.0) -> dict:
+    """Age and rate in a unit of use, from the position's counter in that unit: {age,
+    per_day, counter, basis} or {reason} when they can't be had. The rate is the operating
+    plan's average over the horizon where the position has a plan (or inherits one), else
+    the counter's recent rate."""
     counter = svc._counter_on(m.s, m.org, position_id, unit)
     if counter is None:
         return {"reason": f"no {unit} counter on this position"}
     readings = svc._readings(m.s, m.org, counter, m.tz)
     per_day, _n = _counter_rate(readings)
+    planned = _plan_rate(m, position_id, counter, readings, horizon_days) if readings else None
+    basis = "counter"
+    if planned is not None:
+        per_day, basis = planned[0], "plan"
     if per_day is None:
         return {"reason": f"its {unit} counter needs two readings at least a day apart in the last year "
                           "for a usage rate"}
@@ -124,7 +147,7 @@ def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str) -> dict
     last = readings[-1]
     # Read some days ago: what it has added since, at its rate.
     ahead = max(0, (date.fromisoformat(m.today()) - date.fromisoformat(last["on"])).days) * per_day
-    return {"age": max(0.0, float(last["value"]) - float(start) + ahead), "per_day": per_day,
+    return {"age": max(0.0, float(last["value"]) - float(start) + ahead), "per_day": per_day, "basis": basis,
             "counter": {"id": counter["id"], "name": counter["name"], "reading": last["value"], "read_on": last["on"]}}
 
 
@@ -278,11 +301,12 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
             per = svc._DAYS_PER[unit]
             row.update(age=_calendar_age(m, p["id"], fitment) / per, rate=days / per, rate_basis="calendar")
         else:
-            use = _use_age(m, p["id"], fitment, unit)
+            use = _use_age(m, p["id"], fitment, unit, days * periods)
             if "reason" in use:
                 skipped.append({"position": brief, "item": row["item"], "reason": use["reason"]})
                 continue
-            row.update(age=use["age"], rate=use["per_day"] * days, rate_basis="counter", counter=use["counter"])
+            # rate_basis: "plan" (its operating plan's average over the horizon) or "counter" (recent rate).
+            row.update(age=use["age"], rate=use["per_day"] * days, rate_basis=use["basis"], counter=use["counter"])
         units.append(row)
 
     word = f"{period}{'s' if periods != 1 else ''}"

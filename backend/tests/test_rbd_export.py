@@ -226,7 +226,7 @@ def test_series_parallel_standby_subsystem_graph_matches_app(tmp_path):
     code = rbd_export.to_python(graph, "Mixed", resolve_subsystem=resolve_sub,
                                 exported_at=WHEN)
     assert 'RepeatedNode(bearings_unit, 3, "series")' in code
-    assert "StandbyModel(" in code and "switching_probability=0.9" in code
+    assert "StandbyModel(" in code and "start_probability=0.9" in code
     assert "WORKING_NODES = {\"pin\"}" in code
     res, _ = _run(code, tmp_path)
 
@@ -408,7 +408,7 @@ def test_output_is_deterministic_and_self_describing():
     assert head.startswith(name)
     assert "Exported from Reliafy <https://reliafy.com>".lower() in head.lower().replace("\n", " ")
     assert "on 2026-09-26 (UTC)" in head
-    assert 'pip install "surpyval==0.27"' in head and "RePyability.git@v0.17" in head
+    assert 'pip install "surpyval==0.27"' in head and "RePyability.git@v0.18" in head
     assert "SurPyval.git" not in head
     assert "--no-deps" in head and "surpyval==0.27" in head
     assert "python instrument_air_2oo3_compressors_cold_standby_dryer_ccf.py" in head
@@ -430,7 +430,7 @@ def test_imports_only_what_is_used():
 
 
 def test_versions_come_from_the_build_pins():
-    assert rbd_export.detect_versions() == {"surpyval": "0.27", "repyability": "0.17"}
+    assert rbd_export.detect_versions() == {"surpyval": "0.27", "repyability": "0.18"}
 
 
 def test_a_commit_pin_is_not_read_as_a_version(tmp_path, monkeypatch):
@@ -447,6 +447,23 @@ def test_a_commit_pin_is_not_read_as_a_version(tmp_path, monkeypatch):
     assert found["surpyval"] == "9.8"
     assert found["repyability"] == rbd_export._installed("repyability")
 
+
+
+def test_a_commit_pin_reads_the_tag_its_comment_names(tmp_path, monkeypatch):
+    """A commit pin with "RePyability v0.18" beside it prints @v0.18 (the tag
+    users can install), whatever happens to be installed locally."""
+    (tmp_path / "Dockerfile").write_text(
+        "# - RePyability v9.7 is pinned by its tag's commit\n"
+        'pip install "git+https://github.com/x/RePyability.git@1f7701c956eb"\n')
+    (tmp_path / "requirements.txt").write_text("surpyval==9.8\n")
+    monkeypatch.setattr(rbd_export, "_REPO_ROOT", tmp_path)
+    rbd_export.detect_versions.cache_clear()
+    try:
+        found = rbd_export.detect_versions()
+    finally:
+        rbd_export.detect_versions.cache_clear()
+    assert found == {"surpyval": "9.8", "repyability": "9.7"}
+    assert rbd_export.install_commands(found)[-1].endswith('RePyability.git@v9.7"')
 
 def test_names_are_safe_identifiers_and_unique():
     graph = {

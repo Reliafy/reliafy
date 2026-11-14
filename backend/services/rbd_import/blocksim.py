@@ -913,10 +913,8 @@ class _Converter:
         if sw is not None:
             p_switch = sw.get("p_switch")
             if p_switch is not None and p_switch < 1.0:
-                if cold:
-                    data["startProb"] = p_switch
-                else:
-                    self.warn(f"The switch of “{label}” succeeds with probability {_fmt(p_switch)}; Reliafy applies switch reliability to cold standby only, so it was ignored.")
+                # Reliafy's "Chance a spare starts", on cold, warm and hot standby alike.
+                data["startProb"] = p_switch
             if sw.get("quiescent_model"):
                 self.warn(f"The switch of “{label}” can itself fail over time in BlockSim; Reliafy only models its success probability on demand.")
             if (sw.get("delay") or 0) > 0:

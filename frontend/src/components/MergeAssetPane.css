@@ -1,0 +1,15 @@
+/* MergeAssetPane.jsx: Merge into another asset, in the Explorer's table area (TablePane.css). Two
+   pickers (the Move to… list's look) and the preview; everything wraps, nothing scrolls the page
+   sideways at 400 px. */
+.rw-panel.merge-pane { flex: 1 1 auto; width: auto; min-width: 0; border: 0; border-top: 1px solid var(--border);
+  border-radius: 0; padding: 0; gap: 0; overflow: auto; }
+.rw-panel.merge-pane.table-pane-phone { position: fixed; inset: 0; z-index: 90; border: 0; background: var(--bg-surface); }
+.merge-asset { padding: var(--space-4) var(--space-5) var(--space-5); display: flex; flex-direction: column; gap: var(--space-4);
+  min-width: 0; max-width: 52rem; }
+.ma-intro { margin: 0; max-width: 46rem; }
+.ma-step { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.ma-title { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600; }
+.ma-search { max-width: 24rem; width: 100%; box-sizing: border-box; }
+.ma-list { max-height: min(40vh, 320px); }
+.ma-say { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.ma-actions { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }

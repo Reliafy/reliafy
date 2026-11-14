@@ -6,9 +6,8 @@ import {
 } from "../api.js";
 import { Field, FormModal, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import HowOften from "./HowOften.jsx";
-import ForecastPreview from "./ForecastPreview.jsx";
+import PositionForecast from "./PositionForecast.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { useAppConfig } from "../ConfigProvider.jsx";
 import { CALENDAR, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
 import Chip from "./ui/Chip.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
@@ -596,7 +595,8 @@ function TaskCell({ t, col, onPackage, onTask, maint = false }) {
   }
   if (col === "due") {
     if (!t.next_due) return null;
-    return <span className={t.overdue ? "pk-overdue" : undefined} title={t.overdue ? "Overdue" : undefined}>{fmtDate(t.next_due)}</span>;
+    const why = [t.overdue ? "Overdue" : null, t.due_basis].filter(Boolean).join(". ");
+    return <span className={t.overdue ? "pk-overdue" : undefined} title={why || undefined}>{fmtDate(t.next_due)}</span>;
   }
   if (col === "package") {
     if (t.package) {
@@ -627,11 +627,12 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const taskOpen = useOpenParam(maint ? "mtask" : "task");
   const adding = useOpenParam("addtask");
   const ratesOpen = useOpenParam("rates");
-  // Tasks / Forecast (?mview=forecast): the Forecast view is a preview of its layout with made-up
-  // numbers, shown only where the menu preview is on (MENU_PREVIEW), until the forecast is built.
+  // Tasks / Forecast (?mview=forecast): the forecast for a position and everything inside it
+  // (PositionForecast.jsx), inside the asset opened (?root=). The Maintenance tab is operators' only.
   const viewParam = useOpenParam("mview");
-  const { menu_preview: preview } = useAppConfig();
-  const forecastOn = maint && preview && viewParam.open === "forecast";
+  const [search] = useSearchParams();
+  const forecastable = maint && row.type === "pos";
+  const forecastOn = forecastable && viewParam.open === "forecast";
   // Held here as well as in the address, so the box answers at once.
   const belowParam = useOpenParam("below");
   const [belowOn, setBelowOn] = useState(belowParam.open === "1");
@@ -739,16 +740,16 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       </div>
     );
   }
-  const viewSwitch = maint && preview ? (
+  const viewSwitch = forecastable ? (
     <SegmentedControl size="sm" className="mt-view" label="Show" value={forecastOn ? "forecast" : "tasks"}
                       onChange={(v) => viewParam.setOpen(v === "forecast" ? "forecast" : null)}
-                      options={[{ value: "tasks", label: "Tasks" }, { value: "forecast", label: "Forecast (preview)", title: "A preview of the forecast's layout, with made-up numbers" }]} />
+                      options={[{ value: "tasks", label: "Tasks" }, { value: "forecast", label: "Forecast", title: "The work, failures and costs to come here and inside it, by month" }]} />
   ) : null;
   if (forecastOn) {
     return (
       <div className="td-tab-page pk-panel rw">
-        <div className="pk-bar">{viewSwitch}</div>
-        <ForecastPreview today={today} where={row.ref.name || "this position"} />
+        <PositionForecast positionId={row.key} name={row.ref.name || "this position"} root={search.get("root") || null}
+                          bar={viewSwitch} />
       </div>
     );
   }

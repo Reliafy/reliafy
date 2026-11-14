@@ -52,7 +52,7 @@ from backend.services import rbd_analysis, rbd_ccf, rbd_next_failure, rbd_repeat
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.27", "repyability": "0.17"}
+_DEFAULT_VERSIONS = {"surpyval": "0.27", "repyability": "0.18"}
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
 # Names the script itself uses at module level; block variables avoid them
@@ -95,11 +95,13 @@ def detect_versions() -> dict:
     """
     # Only a version reads as one: the Dockerfile pins RePyability by commit,
     # and a commit hash that starts with a digit (1f7701c9...) isn't a version.
+    # Its comment names the tag that commit is ("RePyability v0.18"), or the
+    # pin itself is a tag ("RePyability.git@v0.18").
     surpyval = _pin_from(
         _REPO_ROOT / "requirements.txt", r"(?m)^surpyval==([0-9]+\.[0-9][\w.\-]*)"
     ) or _installed("surpyval")
     repyability = _pin_from(
-        _REPO_ROOT / "Dockerfile", r"RePyability\.git@v([0-9]+\.[0-9][\w.\-]*)"
+        _REPO_ROOT / "Dockerfile", r"RePyability(?:\.git@| )v([0-9]+\.[0-9][\w.\-]*)"
     ) or _installed("repyability")
     return {
         "surpyval": surpyval or _DEFAULT_VERSIONS["surpyval"],
@@ -281,6 +283,66 @@ def _effective_spec(model: Optional[dict], resolve_model) -> Optional[dict]:
     return merged
 
 
+def bayes_recipe(model: Optional[dict], resolve_model) -> Optional[dict]:
+    """The recipe (distribution, unit, history and prior) of the saved Bayesian update a block
+    picks, or None: the same blocks ``rbd_analysis.saved_bayesian_fit`` takes as their model's
+    posterior predictive. A model that can't be read keeps the block's own parameters there, and
+    so here."""
+    if not isinstance(model, dict) or model.get("source") != "saved" or resolve_model is None:
+        return None
+    if model.get("kind") not in (None, "distribution"):
+        return None
+    model_id = model.get("modelId") or model.get("model_id")
+    if not model_id:
+        return None
+    try:
+        saved = resolve_model(model_id)
+    except Exception:  # noqa: BLE001 - treated as unresolvable
+        return None
+    recipe = (saved or {}).get("bayes")
+    if not recipe or not recipe.get("x") or recipe.get("priors") is None:
+        return None
+    from backend.services import bayes_life
+
+    return recipe if recipe.get("distribution_id") in bayes_life.DISTS else None
+
+
+def bayes_fit(recipe: dict):
+    """The SurPyval Bayesian fit a recipe rebuilds (the app's own refit, unwrapped). NumPy's global
+    random state is left as it was, so a seeded time scale draws what the app's does."""
+    from backend.services import bayes_life
+
+    state = np.random.get_state()
+    try:
+        live = bayes_life.rebuild({"distribution_id": recipe["distribution_id"], "unit": recipe.get("unit"),
+                                   "bayes": recipe})
+    finally:
+        np.random.set_state(state)
+    return bayes_life.bayesian_fit(live)
+
+
+def _wrapped(value: Any, indent: str, lead: int = 0, tail: int = 0, width: int = 79) -> list[str]:
+    """``value`` as a Python literal over lines that fit ``width``: inline where it fits,
+    otherwise a dict or list with one item per line, four spaces in. The first line carries
+    no indent (``lead`` characters come before it on its line, ``tail`` after the last)."""
+    from backend.services import python_export as px
+
+    flat = px.literal(value)
+    if lead + len(flat) + tail <= width or not isinstance(value, (dict, list)) or not value:
+        return [flat]
+    inner = indent + "    "
+    lines = ["{" if isinstance(value, dict) else "["]
+    items = value.items() if isinstance(value, dict) else ((None, v) for v in value)
+    for k, v in items:
+        head = f"{px.literal(k)}: " if k is not None else ""
+        sub = _wrapped(v, inner, len(inner) + len(head), 1, width)
+        lines.append(f"{inner}{head}{sub[0]}")
+        lines.extend(sub[1:])
+        lines[-1] += ","
+    lines.append(indent + ("}" if isinstance(value, dict) else "]"))
+    return lines
+
+
 def _describe(model: dict) -> str:
     return _one_line(model.get("distribution") or model.get("name") or "model")
 
@@ -396,6 +458,7 @@ class _Script:
         self.uses_surv = False
         self.uses_missing = False
         self.uses_lfp = False  # a block written with lfp_p= (SurPyval >= 0.23)
+        self.uses_bayes = False  # a saved Bayesian update, refitted with fit_bayes
         self.uses_stand_in = False
         self.lines: list[str] = []  # block definitions, in order
         self.subsystems: dict[str, str] = {}  # rbd id -> variable
@@ -416,8 +479,49 @@ class _Script:
         self.lines.append(")")
         return var
 
+    def bayesian(self, recipe: dict, spec: dict, label: str, var: str, prefix_comment: str = "") -> str:
+        """Emit a saved Bayesian update: refit from its history and prior (SurPyval's
+        ``fit_bayes``, exact on a grid, so the same numbers every run) and take its posterior
+        predictive (RePyability's ``PosteriorPredictive``), as the app does."""
+        from backend.services import bayes_life
+
+        dist_id = recipe["distribution_id"]
+        attr = _surpyval_attr(dist_id) or bayes_life.DISTS[dist_id].__name__
+        self.uses_surv = True
+        self.uses_bayes = True
+        self.imports.add("PosteriorPredictive")
+        name = _one_line(spec.get("name") or "")
+        self.comment(f"{prefix_comment or label}: a Bayesian update of a {bayes_life.LABELS[dist_id]} "
+                     f"baseline{f' - saved model {_lit(name)}' if name else ''}.")
+        self.comment("Its posterior predictive, the curve the model's page shows: the life of a new unit "
+                     "with the uncertainty in the parameters averaged in (not the distribution at the "
+                     "parameters' middle values). Refitted from the history and prior saved with it.")
+        fit_var = self.names.make(f"{var}_fit")
+        x = np.asarray(recipe["x"], dtype=float).reshape(-1, 2).tolist()
+        c = [int(v) for v in np.ravel(recipe.get("c") or [])]
+        L = self.lines
+        L.append(f"{fit_var} = surv.{attr}.fit_bayes(")
+        for comment, call, value in (
+                ("Each time as (shortest, longest): equal for an exact time, a span for inspection data.",
+                 "np.array", x),
+                ("0 = failed, 1 = still running.", "np.array", c),
+                ("The prior: the baseline, weighed by how much it was trusted.", "priors=PriorSpec.from_dict",
+                 recipe["priors"])):
+            L.extend(_comment(comment, "    "))
+            parts = _wrapped(value, "    ", lead=4 + len(call) + 1, tail=2)
+            parts[0] = f"    {call}({parts[0]}"
+            parts[-1] += "),"
+            L.extend(parts)
+        L.append(f"    unit={_lit(recipe.get('unit') or None)},")
+        L.append(")")
+        L.append(f"{var} = PosteriorPredictive({fit_var})")
+        return var
+
     def dist(self, spec, label, var, prefix_comment: str = "") -> str:
         """Emit ``var = surv.X.from_params(...)`` (or a placeholder)."""
+        recipe = bayes_recipe(spec, self.resolve_model)
+        if recipe is not None:
+            return self.bayesian(recipe, spec, label, var, prefix_comment)
         spec = _effective_spec(spec, self.resolve_model)
         try:
             expr, desc = _dist_expr(spec, label, self.unit)
@@ -544,66 +648,34 @@ class _Script:
         from backend.services import rbd_standby
 
         k = rbd_standby.operating(data, label)
-        if k > 1:
-            # k-of-n standby (#84): k units running, the spares idle.
-            reason = rbd_standby.limit_message(label, k, dormancy, not same)
+        start = rbd_standby.start_probability(data)
+        if not (k == 1 and dormancy >= 1.0 and start == 1.0):
+            # Cold, warm, or hot with spares that may fail to start; k units
+            # running (#84). A spare that fails to start is skipped and the
+            # next one tried (start_probability).
+            reason = rbd_standby.limit_for(data, label)
             if reason:
                 return self.missing(var, reason, label)
             self.imports.add("StandbyModel")
             kind = "cold" if dormancy == 0.0 else "hot" if dormancy >= 1.0 else "warm"
-            try:
-                switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
-            except (TypeError, ValueError):
-                switch = 1.0
-            option = (f"switching_probability={_num(switch)}" if dormancy == 0.0
-                      else f"dormancy_factor={_num(dormancy)}")
-            self.comment(f"{label}: {kind} standby - {k} units running and {spares} idle "
-                         f"spare{'s' if spares != 1 else ''}; it fails when fewer than {k} can run.")
-            self.lines.append(f"{var} = StandbyModel(")
-            self.lines.append(f"    [{', '.join([duty] * k + [spare] * spares)}],")
-            self.lines.append(f"    k={k},")
-            self.lines.append(f"    {option},")
-            self.lines.append(")")
-            return var
-        if 0.0 < dormancy < 1.0:
-            self.imports.add("StandbyModel")
-            self.comment(
-                f"{label}: warm standby - the duty unit plus {spares} idle "
-                f"spare{'s' if spares != 1 else ''} that age at {dormancy:g} x "
-                "the operating rate while waiting (and can fail before "
-                "they're needed)."
-            )
-            units = ", ".join([duty] + [spare] * spares)
-            line = f"{var} = StandbyModel([{units}], k=1, " \
-                   f"dormancy_factor={_num(dormancy)})"
+            ageing = (f", ageing at {dormancy:g} x the operating rate while waiting (and able to fail "
+                      "before they're needed)" if 0.0 < dormancy < 1.0 else "")
+            starts = (f" Each spare starts with probability {start:g}; one that doesn't is skipped and the "
+                      "next tried." if start < 1.0 else "")
+            self.comment(f"{label}: {kind} standby - {k} unit{'s' if k != 1 else ''} running and {spares} "
+                         f"idle spare{'s' if spares != 1 else ''}{ageing}; it fails when fewer than {k} can "
+                         f"run.{starts}")
+            options = [f"k={k}"]
+            if dormancy > 0.0:
+                options.append(f"dormancy_factor={_num(dormancy)}")
+            if start < 1.0:
+                options.append(f"start_probability={_num(start)}")
+            units = ", ".join([duty] * k + [spare] * spares)
+            line = f"{var} = StandbyModel([{units}], {', '.join(options)})"
             if len(line) > 79:
                 self.lines.append(f"{var} = StandbyModel(")
                 self.lines.append(f"    [{units}],")
-                self.lines.append("    k=1,")
-                self.lines.append(f"    dormancy_factor={_num(dormancy)},")
-                self.lines.append(")")
-            else:
-                self.lines.append(line)
-            return var
-        if dormancy == 0.0:
-            try:
-                switch = float(data.get("startProb", 1.0))
-            except (TypeError, ValueError):
-                switch = 1.0
-            self.imports.add("StandbyModel")
-            self.comment(
-                f"{label}: cold standby - the duty unit plus {spares} "
-                f"dormant spare{'s' if spares != 1 else ''}, switched in on "
-                f"failure (each start succeeds with probability {switch:g})."
-            )
-            units = ", ".join([duty] + [spare] * spares)
-            line = f"{var} = StandbyModel([{units}], k=1, " \
-                   f"switching_probability={_num(switch)})"
-            if len(line) > 79:
-                self.lines.append(f"{var} = StandbyModel(")
-                self.lines.append(f"    [{units}],")
-                self.lines.append("    k=1,")
-                self.lines.append(f"    switching_probability={_num(switch)},")
+                self.lines.extend(f"    {o}," for o in options)
                 self.lines.append(")")
             else:
                 self.lines.append(line)
@@ -812,12 +884,20 @@ def _default_t_max(graph: dict, resolve_model, resolve_subsystem,
                     his.append(hi)
             continue
         data = dict(data)
+        fits = {}  # a saved Bayesian update: its refitted fit, so the scale is its predictive's
         for key in ("model", "standbyModel"):
+            recipe = bayes_recipe(data.get(key), resolve_model)
+            if recipe is not None:
+                model_id = data[key].get("modelId") or data[key].get("model_id")
+                try:
+                    fits[model_id] = {"model": bayes_fit(recipe)}
+                except Exception:  # noqa: BLE001 - the block's own parameters below
+                    pass
             if data.get(key):
                 data[key] = _effective_spec(data[key], resolve_model)
         try:
             model, _ = rbd_analysis._node_reliability(
-                {**node, "data": data}, None, set(), None, None
+                {**node, "data": data}, None, set(), fits.get if fits else None, None
             )
             hi = rbd_analysis._model_hi(model)
         except Exception:  # noqa: BLE001 - the script raises for this block
@@ -854,8 +934,10 @@ def to_python(
 
     ``resolve_model(model_id)`` returns a saved model's summary —
     ``{"name", "kind", "distribution_id", "distribution", "params",
-    "extras", "unit"}`` — or ``None``; it fills in a saved-model block's
-    fitted parameters when the block doesn't carry them.
+    "extras", "unit"}``, plus ``"bayes"`` (the recipe) for a Bayesian update
+    — or ``None``; it fills in a saved-model block's fitted parameters when
+    the block doesn't carry them, and a Bayesian update is refitted from its
+    recipe and written as its posterior predictive.
     ``resolve_subsystem(rbd_id)`` returns a nested diagram's graph (or
     ``None``); without it sub-system blocks become explanatory placeholders.
     ``versions`` overrides :func:`detect_versions` and ``exported_at`` the
@@ -996,6 +1078,8 @@ def _imports(script: _Script, repairable: bool) -> str:
            "import numpy as np"]
     if script.uses_surv or (repairable and script.uses_stand_in):
         out.append("import surpyval as surv")
+    if script.uses_bayes:
+        out.append("from surpyval.bayes.prior import PriorSpec")
     names = sorted(script.imports)
     if names:
         line = "from repyability import " + ", ".join(names)

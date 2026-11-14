@@ -325,3 +325,42 @@ def test_n_draws_sizing():
         [_node(f"s{i}", _saved("m1", FIT), "standby", cold=True) for i in range(3)], []
     )
     assert rbd_uncertainty.n_draws_for(standby) == 200
+
+
+def test_offset_fit_band_uses_each_draws_own_offset(client):
+    """An offset (3-parameter) fit's draws are refits to resampled data, each
+    with its own offset (RePyability 0.17). The band must take every draw as
+    it is: pairing the redrawn shape and scale with the fitted offset made
+    the 90% band on R(900 h) about 0.46 to 1.00 where the draws give about
+    0.76 to 0.91."""
+    from repyability.rbd.uncertainty import draw_models
+
+    rng = np.random.default_rng(3)
+    x = 431 + rng.weibull(2.29, 40) * 1029
+    csv = io.BytesIO(pd.DataFrame({"t": x}).to_csv(index=False).encode())
+    r = client.post(
+        "/api/models",
+        data={"name": "Offset fit", "distribution": "weibull", "x": "t", "unit": "hours", "offset": "true"},
+        files={"file": ("d.csv", csv, "text/csv")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    res = body["results"]
+    assert res["extras"]["gamma"] > 0
+    block = {
+        "source": "saved", "kind": body["kind"], "modelId": body["id"], "name": body["name"],
+        "distribution": res["distribution"], "distribution_id": res["distribution_id"],
+        "params": res["params"], "extras": res["extras"],
+    }
+    graph = _graph([_node("a", block)], _edges(("input", "a"), ("a", "output")))
+    out = client.post("/api/rbds/analyze", json={"graph": graph, "band": {"level": 0.9, "times": [900]}})
+    assert out.status_code == 200, out.text
+    at = out.json()["band"]["targets"]["reliability"][0]
+
+    # The library's own draws of the same fit, taken as they are.
+    fit = surv.Weibull.fit(x, offset=True)
+    models = draw_models(fit, "fit", 2000, np.random.default_rng(1), "a")
+    sf = np.array([float(np.ravel(m.sf(900.0))[0]) for m in models])
+    lo, hi = np.percentile(sf, [5, 95])
+    assert at["lower"] == pytest.approx(lo, abs=0.03)
+    assert at["upper"] == pytest.approx(hi, abs=0.03)

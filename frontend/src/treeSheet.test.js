@@ -48,3 +48,8 @@ test("export offers the branch it was opened from", () => {
   assert.deepEqual(exportChoices(null).map((c) => c.id), ["all"]);
   assert.deepEqual(exportChoices({ id: "p", name: "Unit 2" }).map((c) => c.label), ["The whole tree", "This branch: Unit 2"]);
 });
+
+test("one asset open: its branch only, never the whole register's tree", () => {
+  assert.deepEqual(exportChoices({ id: "p", name: "Unit 2" }, { whole: false }).map((c) => c.id), ["branch"]);
+  assert.deepEqual(exportChoices(null, { whole: false }), []);
+});

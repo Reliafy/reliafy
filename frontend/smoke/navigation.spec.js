@@ -111,8 +111,12 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await expect(page).toHaveURL(/\/systems\/rbds$/);
   await open(page, "/systems/fault-trees");
   await expect(page).toHaveURL(/\/systems\/fault-trees$/);
+  // The Explorer is always one asset: an address with no asset in it (the FME(C)A's old one
+  // included) lands on the Assets list to pick one, and the asset picked opens on that tab.
   await open(page, "/systems/fmeca");
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=fmea(&|$)/);
+  await expect(page).toHaveURL(/\/asset-register$/);
+  await expect(page.getByText("Pick an asset to open it in the Explorer.")).toBeVisible();
+  await expect(page.locator("tr.lib-row a.lib-name").first()).toHaveAttribute("href", /root=.*tab=fmea|tab=fmea.*root=/);
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
   // RCM studies are a page under Maintenance.
   await open(page, "/maintenance/rcm");
@@ -128,18 +132,21 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   // Its landing page has no links line: Parts and stock and Classes are tabs of the tree, hidden for now.
   await expect(page.getByRole("navigation", { name: "The asset register" })).toHaveCount(0);
   await expect(mainMenu(page).getByRole("link", { name: /^(Parts and stock|Classes)$/ })).toHaveCount(0);
-  // Their old addresses land on the Explorer's Summary (no tab), still under Assets: nothing dead.
+  // Their old addresses land on the Assets list (no tab), still under Assets: nothing dead.
   for (const old of ["/asset-register/parts", "/asset-register/classes", "/systems/structure"]) {
     await open(page, old);
-    await expect(page).toHaveURL(/\/asset-register\/explorer(\?|$)/);
-    await expect(page).not.toHaveURL(/tab=(parts|classes)/);
+    await expect(page).toHaveURL(/\/asset-register$/);
     await expect(page.getByRole("tab", { name: "Parts and stock" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
     await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
   }
-  // A stale address that names one of the hidden tabs shows Summary too.
+  // A stale address that names one of the hidden tabs: the asset picked opens on Summary.
   await open(page, "/asset-register/explorer?tab=parts&scope=all");
+  await expect(page).toHaveURL(/\/asset-register$/);
+  await page.locator("tr.lib-row a.lib-name").first().click();
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?.*root=/);
   await expect(page.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Parts and stock" })).toHaveCount(0);
   // Decisions and Strategy open in place. Risk lists Condition monitoring; a
   // tracked fleet's page lights it and names it.
   await mainMenu(page).getByRole("button", { name: "Decisions", exact: true }).click();

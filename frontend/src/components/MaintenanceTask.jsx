@@ -4,7 +4,7 @@ import {
   createSubjectTask, getMaintenancePosition, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
   setTradeRate, unlinkTaskFailureMode, updateMaintenanceTask,
 } from "../api.js";
-import { Field, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
+import { Field, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import HowOften from "./HowOften.jsx";
 import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
@@ -63,6 +63,28 @@ function RateBoxes({ trades, rates, onRates, disabled }) {
           <input type="number" min="0" step="any" inputMode="decimal" value={rates[t] ?? ""} disabled={disabled}
                  aria-label={`Hourly rate for ${t}`} onChange={(e) => onRates({ ...rates, [t]: e.target.value })} />
         </label>
+      ))}
+    </div>
+  );
+}
+
+// When a saved task by use is next due and where that date comes from: the moment the meter reaches
+// its next reading through the position's operating plan (and the stop after it), or the meter's
+// recent rate. Calendar limits need no words (the dates show under How often).
+function DueBasis({ task }) {
+  const lines = (task.limits || []).filter((l) => l.basis && (l.next_due || l.note));
+  if (!lines.length) return null;
+  return (
+    <div className="lib-date mt-due-basis" role="note">
+      {lines.map((l, i) => (
+        <p key={i} className="mt-note">
+          {l.next_due ? (
+            <>Due by use {l.due_moment ? `at ${l.due_moment.slice(11)} on ${fmtDate(l.next_due)}` : `on ${fmtDate(l.next_due)}`}
+              {l.due_at_reading != null ? ` (at ${l.due_at_reading.toLocaleString("en-GB")} ${l.counter?.unit || ""})` : ""}
+              {l.stop_after && l.stop_after !== l.due_moment ? `; it stops at ${l.stop_after.slice(11)}${l.stop_after.slice(0, 10) !== l.next_due ? ` on ${fmtDate(l.stop_after.slice(0, 10))}` : ""}` : ""}. </>
+          ) : <>{l.note[0].toUpperCase() + l.note.slice(1)}. </>}
+          {l.basis.text}.
+        </p>
       ))}
     </div>
   );
@@ -190,6 +212,7 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
           <legend>How often</legend>
           <HowOften value={f.how} onChange={setHow} units={units} withAlso disabled={send.busy} problem={howProblem}
                     dates={shown.dates} datesLead={shown.lead} datesAfter={shown.after} datesNote={shown.note} />
+          {task && <DueBasis task={task} />}
         </fieldset>
         <Field label="What kind of task">
           <select value={f.outcome} onChange={set("outcome")}>{KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>

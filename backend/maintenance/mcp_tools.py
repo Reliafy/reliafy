@@ -67,6 +67,7 @@ HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_models.li
                "maintenance_list.tree",
                "maintenance_parts.import_bom", "maintenance_parts.build_positions",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
+               "maintenance_get.forecast",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
                "maintenance_apply")
 
@@ -128,6 +129,8 @@ GET_KINDS: Table = {
     "operating_plan": ("id", "root", """How a position (or the item fitted to one) runs: its own plan, or
         the nearest above it inside root (the asset opened), with inherited_from; hours a week and the next 14
         days."""),
+    "forecast": ("id", "root period periods", """id = a position. It and everything inside it: tasks on
+        dates, work, failures and cost per period with a 90% range (guide topic forecast)."""),
     "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
         from_precision / to_precision for rough dates), failure modes (from RCM, by hand or ad hoc),
         class_failure_modes (seen at other positions of its class), tasks with last-done / next-due and trade,
@@ -1261,7 +1264,7 @@ def register() -> None:
                             "item_class: true for the class's fleet (its positions, with risk now) in place of "
                             "the class record."))] = None,
                         root: Annotated[str | None, Field(description=(
-                            "operating_plan: the asset opened; plans above it aren't used."))] = None
+                            "operating_plan, forecast: the asset opened; nothing above it is used."))] = None
                         ) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance overview, maintenance list.… and the records themselves."""
@@ -1299,6 +1302,14 @@ def register() -> None:
             return run(m.task_measurement, rid, position_id)
         if kind == "operating_plan":
             return run(m.operating_plan, rid, root)
+        if kind == "forecast":
+            from backend.maintenance import position_forecast
+            from backend.maintenance import position_models as pm
+
+            reader = _reader(_caller(ctx))
+            fetch = pm.fetcher(_db(), reader.read_owners, reader.hidden)
+            return run(position_forecast.position_forecast, m, rid, root, _d(period, "month"), _d(periods, 12),
+                       fetch)
         if kind == "item_class" and fleet:
             from backend.maintenance import class_fleet
 

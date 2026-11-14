@@ -18,8 +18,10 @@ import RbdMeanCheck from "./RbdMeanCheck.jsx";
 // Configure a standby-redundancy block: the active unit's non-repairable model, the
 // number of spares, and how the idle spares age — cold (not at all), warm (at a
 // fraction of the running rate, the dormancy factor) or hot (like a running
-// unit). Cold standby also takes the start-success probability and an optional
-// separate non-repairable model for the spares.
+// unit). Every kind takes the chance a spare starts when switched in (a spare
+// that fails to start is skipped and the next one tried; in a repairable
+// diagram, cold only), and cold standby an optional separate non-repairable
+// model for the spares.
 const KINDS = [
   { id: "cold", label: "Cold", hint: "Idle spares don't age; each must start when switched in." },
   { id: "warm", label: "Warm", hint: "Idle spares age at a fraction of the running rate, and can fail before they're needed." },
@@ -30,11 +32,11 @@ function initialKind(initial) {
   const d = initial?.dormancy ?? (initial?.cold ? 0 : 1);
   return d <= 0 ? "cold" : d >= 1 ? "hot" : "warm";
 }
-// A spare's chance of starting when switched in, as first offered on a cold
-// standby: a perfect switch-over, with a hint at typical real values under
-// the field. Anything set before is kept.
+// A spare's chance of starting when switched in, as first offered: every spare
+// starts, with a hint at typical real values under the field. Anything set
+// before is kept.
 export const COLD_START_DEFAULT = 1;
-export const COLD_START_HINT = "Spares don't always start: 0.95–0.99 is typical for generators and pumps.";
+export const COLD_START_HINT = "Spares don't always start: 0.95–0.99 is typical for generators and pumps. A spare that fails to start is skipped and the next one is tried.";
 
 export default function StandbyModal({ initial, onClose, onSubmit, repairable = false, crews = false }) {
   const unit = useContext(RbdUnitContext) || "";
@@ -52,22 +54,27 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
     initial?.dormancy > 0 && initial?.dormancy < 1 ? initial.dormancy : 0.2
   );
   const cold = kind === "cold";
-  const wasCold = initialKind(initial) === "cold";
-  const [startProb, setStartProb] = useState(wasCold ? initial?.startProb ?? 1 : COLD_START_DEFAULT);
+  const [startProb, setStartProb] = useState(initial?.startProb ?? COLD_START_DEFAULT);
   const [standbyModel, setStandbyModel] = useState(initial?.standbyModel ?? null);
 
   const sparesNum = Number(spares);
   const probNum = Number(startProb);
   const validSpares = Number.isInteger(sparesNum) && sparesNum >= 1;
-  const validProb = !cold || (probNum >= 0 && probNum <= 1);
+  // A repairable diagram's standby group takes a start chance on cold spares only.
+  const takesStart = cold || !repairable;
+  const validProb = !takesStart || (probNum >= 0 && probNum <= 1);
   const dormNum = Number(dormancy);
   const validDorm = kind !== "warm" || (dormNum > 0 && dormNum < 1);
   const runNum = Number(running);
   const validRunning = Number.isInteger(runNum) && runNum >= 1;
-  // What the engine can't work out exactly for a non-repairable block (#84).
+  // What the engine can't work out exactly for a non-repairable block (#84):
+  // exact whenever every unit has a constant failure rate (exponential).
   const ownSpare = cold && !repairable && !!standbyModel;
-  const limit = repairable || !validRunning || runNum < 2 ? null
-    : kind === "warm" ? "Warm spares with 2 or more units running can't be worked out exactly yet — make them cold or hot, or run one unit."
+  const allExponential = [model, ownSpare ? standbyModel : null].filter(Boolean)
+    .every((m) => m.distribution_id === "exponential");
+  const limit = repairable || !validRunning || runNum < 2 || allExponential ? null
+    : kind === "warm" ? "Warm spares with 2 or more units running can be worked out exactly only with exponential lives — make them cold, run one unit, or use exponential lives."
+    : kind === "hot" && probNum < 1 ? "Hot spares that may fail to start, with 2 or more units running, can be worked out exactly only with exponential lives — set the chance a spare starts to 1, run one unit, or use exponential lives."
     : ownSpare && runNum >= 3 ? "Cold spares with a model of their own work with at most 2 units running — give them the running units' model, or run fewer."
     : null;
   // The group's throughput while it works (#122): the block is up, and
@@ -85,7 +92,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
       k: runNum > 1 ? runNum : null,
       cold,
       dormancy: cold ? 0 : kind === "hot" ? 1 : dormNum,
-      startProb: cold ? probNum : 1,
+      startProb: takesStart ? probNum : 1,
       // A repairable group's units are identical: no separate spare model.
       standbyModel: cold && !repairable ? standbyModel : null,
       capacity: cap.value,
@@ -158,8 +165,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
               />
             </label>
           )}
-          {cold && (
-            <label className="param-field" title="The chance a spare starts when it's switched in: 1 is a perfect switch-over, 0.99 one failed start in 100 demands.">
+          {takesStart && (
+            <label className="param-field" title="The chance a spare starts when it's switched in. A spare that fails to start is skipped and the next one is tried. 1 means every spare starts; 0.99 is one failed start in 100.">
               <span>Chance a spare starts</span>
               <input
                 type="number" inputMode="decimal"
@@ -172,7 +179,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             </label>
           )}
         </div>
-        {cold && <p className="hint standby-start-hint">{COLD_START_HINT}</p>}
+        {takesStart && <p className="hint standby-start-hint">{COLD_START_HINT}</p>}
         <div className="standby-kind">
           <SegmentedControl
             label="Standby type"
@@ -198,7 +205,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             type: "standby",
             data: {
               label: initial?.label, model, spares: sparesNum, k: runNum, dormancy: cold ? 0 : kind === "hot" ? 1 : dormNum,
-              cold, startProb: cold ? probNum : 1, standbyModel: cold ? standbyModel : null,
+              cold, startProb: takesStart ? probNum : 1, standbyModel: cold ? standbyModel : null,
             },
           } : null} />
         )}

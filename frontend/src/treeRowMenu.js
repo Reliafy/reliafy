@@ -193,3 +193,20 @@ export function moveTargets(things, id) {
   }
   return out;
 }
+
+// One asset open in the Explorer (?root=, never a product's design): its top row's menu has Merge into
+// another asset… (Derryn, 14 Nov 2026: the way to see two assets together is to make one part of the
+// other), and every row inside it Make this its own asset… (the way back). Both go after Move to… (or
+// before Export this branch… and Delete… where there's no Move to…). `items`: summaryActions' list.
+export const ASSET_MERGE = { id: "asset-merge", label: "Merge into another asset…" };
+export const ASSET_SEPARATE = { id: "asset-separate", label: "Make this its own asset…" };
+export function withAssetMoves(items, r, { root = null, viewOnly = null } = {}) {
+  if (!root || !r || (r.type !== "pos" && r.type !== "loc")) return items;
+  if (r.type === "pos" && r.ref?.carried_by) return items; // it goes with its item
+  const add = write(r.key === root ? ASSET_MERGE : ASSET_SEPARATE, viewOnly);
+  const out = [...items];
+  const move = out.findIndex((it) => it.id === "tree-move");
+  const at = move >= 0 ? move + 1 : out.findIndex((it) => it.id === "tree-export" || it.id === "tree-delete");
+  out.splice(at >= 0 ? at : out.length, 0, add);
+  return out;
+}

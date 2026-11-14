@@ -4,6 +4,7 @@
 import { test, expect, open, expectHealthy } from "./health.js";
 import {
   appRoutes, hasParam, fill, idSource, landing, MAX_IDS, REDIRECTS_WITH_QUERY, expectsChart,
+  ASSETS_LIST, explorerWithoutAsset,
 } from "./routes.js";
 import { RBDS_LABEL, RBDS_PATH } from "../src/navigation.js";
 
@@ -37,6 +38,9 @@ for (const route of appRoutes()) {
           // An earlier address: on its new page, with its id.
           const want = landing(route, record.id);
           await expect.poll(() => new URL(page.url()).pathname, { message: `${path} → ${want}` }).toBe(want);
+        } else if (!route.redirect && explorerWithoutAsset(path)) {
+          // The bare Explorer address: no asset in it, so it lands on the Assets list.
+          await expect.poll(() => new URL(page.url()).pathname, { message: `${path} → ${ASSETS_LIST}` }).toBe(ASSETS_LIST);
         } else if (!route.redirect) {
           // Not bounced elsewhere (the shell sends an unknown route to /home).
           expect(new URL(page.url()).pathname, `${path} redirected`).toBe(path);
