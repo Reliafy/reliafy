@@ -23,6 +23,9 @@ This file doesn't repeat them: it says what isn't obvious from the code.
     now go in `src/redirects.js`.
   - `smoke/` — Playwright browser smoke suite (`npm run smoke`).
 - `docs/` — API and maintenance design notes (graph, feeds, scheduling).
+- `docs/design-system/` — the design system: `tokens.json` (every colour,
+  size and space, light and dark), the rules (`README.md`) and one guideline
+  per shared component (`components/`).
 - `tools/lock_requirements.sh` — regenerates `requirements.lock`.
 
 ## Running locally
@@ -161,6 +164,21 @@ always be rebuilt. See [docs/maintenance-graph.md](docs/maintenance-graph.md).
 
 ## UI
 
+- **Nothing in the UI is built without the design system** (Derryn, 14 Nov
+  2026). Before any UI change, read `docs/design-system/README.md` and the
+  guideline in `docs/design-system/components/` for every shared component you
+  touch or add; build with its tokens, roles and components only. A UI PR that
+  doesn't follow it isn't merged. Why: the app had drifted into one-off
+  colours, sizes and controls.
+- Colours, type, spacing, radii, shadows and control heights come from
+  `docs/design-system/tokens.json`. Change a value there, then run
+  `npm run tokens` (in `frontend/`) to regenerate `src/tokens.css`; never edit
+  `tokens.css` by hand (`tokensSync.test.js` fails). Why: one source, so the
+  app and the design system can't drift apart again.
+- Rules use the roles (`--text`, `--bg-surface`, `--accent`, `--danger-text`,
+  `--space-4`, `fs-N` with `lh-N`…), not raw hex or ramp steps. Coloured text
+  takes the `-text` role. A new shared component, or a change to one, updates
+  its guideline in `docs/design-system/components/` in the same PR.
 - Wide tables go inside `<div className="maint-scroll">` (`views/Maintenance.css`).
   Nothing may scroll the page sideways at 400 px wide.
 - After a cross-cutting UI edit (shared component, imports, layout), open every
