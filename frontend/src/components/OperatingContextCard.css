@@ -2,15 +2,15 @@
    (OperatingContextCard.jsx): text clamped to about six lines, edited in place. */
 .td-ctx .td-ctx-text {
   font-size: var(--fs-14);
-  color: var(--ink);
-  line-height: 1.5;
+  color: var(--text);
+  line-height: var(--lh-14);
   max-width: 80ch;
 }
 .td-ctx .td-ctx-note { margin-left: auto; }
 .td-ctx .td-ctx-note + .psec-act { margin-left: 0; }
-.td-ctx-edit { display: flex; flex-direction: column; gap: var(--sp-2); }
+.td-ctx-edit { display: flex; flex-direction: column; gap: var(--space-2); }
 .td-ctx-edit .ctl-area { min-height: calc(4 * 1.5em + 14px); line-height: 1.5; }
-.td-ctx-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
+.td-ctx-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
 @media (max-width: 720px), (hover: none) {
   .td-ctx-actions button.sm { min-height: 40px; }
 }

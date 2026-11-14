@@ -7,7 +7,7 @@
 .pct-suffix {
   position: absolute;
   right: 0.6rem;
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: var(--fs-14);
   pointer-events: none;
 }
@@ -16,10 +16,10 @@
   flex-direction: column;
   gap: 0.3rem;
   max-width: 220px;
-  color: var(--ink);
+  color: var(--text);
   font-size: var(--fs-13);
   font-weight: 400;
 }
-.pct-msg-error { color: var(--danger); }
+.pct-msg-error { color: var(--danger-text); }
 .pct-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .pct-btn { padding: 0.3rem 0.6rem; font-size: var(--fs-13); min-height: 32px; }

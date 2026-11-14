@@ -34,8 +34,8 @@ test("mount() may return a cleanup function, a handle or nothing", () => {
   assert.deepEqual(asHandle(undefined), { unmount: null, update: null });
 });
 
-test("theme tokens: only set ones, trimmed", () => {
-  const style = { getPropertyValue: (n) => ({ "--acc": " #2f6df6 ", "--ink": "#14171c" })[n] || "" };
-  assert.deepEqual(readTokens(style), { "--ink": "#14171c", "--acc": "#2f6df6" });
+test("theme tokens: only set ones, trimmed, with the names before v2", () => {
+  const style = { getPropertyValue: (n) => ({ "--accent": " #235edf ", "--text": "#1b1915" })[n] || "" };
+  assert.deepEqual(readTokens(style), { "--text": "#1b1915", "--accent": "#235edf", "--ink": "#1b1915", "--acc": "#235edf" });
   assert.deepEqual(readTokens(null), {});
 });

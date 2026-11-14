@@ -33,7 +33,7 @@ export default function StrategyReplacement() {
         label="Replacement mode"
         value={mode}
         onChange={pick}
-        style={{ marginBottom: "var(--sp-4)" }}
+        style={{ marginBottom: "var(--space-4)" }}
         options={[
           { value: "age", label: "Age replacement" },
           { value: "calendar", label: "Shutdown calendar" },

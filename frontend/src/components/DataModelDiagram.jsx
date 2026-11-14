@@ -9,9 +9,9 @@ import { caption, nodeSize, WARN } from "../dataModel.js";
 // The parent drives it through the ref: fit(), relayout(), png() (a data URL)
 // and positions() (where each node is, for the Arrows export).
 
-const INK = "#14171c";
-const MUTED = "#5f6670";
-const ACC = "#2f6df6";
+const INK = "#1b1915";
+const MUTED = "#5f5e57";
+const ACC = "#235edf";
 const SURF = "#ffffff";
 
 const STYLE = [

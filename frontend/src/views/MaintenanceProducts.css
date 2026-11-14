@@ -3,7 +3,7 @@
 /* A product's Summary (ProductSummary.jsx): what was just built. */
 .pp-said {
   margin: 4px 0 8px;
-  color: var(--ok, var(--accent));
+  color: var(--success, var(--accent));
   font-weight: 600;
 }
 
@@ -28,7 +28,7 @@
   overflow: auto;
   margin: 6px 0 0;
   padding: 8px 8px 8px 24px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.9em;
   overflow-wrap: anywhere;

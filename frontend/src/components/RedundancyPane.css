@@ -3,16 +3,16 @@
 .redundancy { padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 12px; overflow: auto; min-width: 0; }
 .redundancy-intro { margin: 0; max-width: 46rem; }
 .redundancy-sets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.redundancy-set { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; border: 1px solid var(--line);
-  border-radius: var(--r-sm, 8px); padding: 8px 10px; background: var(--surf); min-width: 0; }
-.redundancy-set.is-editing { border-color: var(--accent, var(--line)); }
+.redundancy-set { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px); padding: 8px 10px; background: var(--bg-surface); min-width: 0; }
+.redundancy-set.is-editing { border-color: var(--accent, var(--border)); }
 .redundancy-set-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 14rem; min-width: 0; }
 .redundancy-set-name { overflow-wrap: anywhere; }
 .redundancy-set-how { font-size: var(--fs-13); }
 .redundancy-set-members { font-size: var(--fs-12, 12px); overflow-wrap: anywhere; }
 .redundancy-set-tools { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .redundancy-set-tools button { min-height: 36px; }
-.redundancy-form { border: 1px solid var(--line); border-radius: var(--r-sm, 8px); padding: 10px 12px 12px;
+.redundancy-form { border: 1px solid var(--border); border-radius: var(--radius-md, 8px); padding: 10px 12px 12px;
   display: flex; flex-direction: column; gap: 12px; min-width: 0; max-width: 46rem; }
 .redundancy-form-title { margin: 0; font-size: var(--fs-14, 14px); }
 .redundancy-form fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -28,4 +28,4 @@
 .redundancy-field small { font-weight: 400; }
 .redundancy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .redundancy-badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px;
-  line-height: 18px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; vertical-align: middle; }
+  line-height: 18px; border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; vertical-align: middle; }

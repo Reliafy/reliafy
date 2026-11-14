@@ -5,8 +5,8 @@
 .rbd-targets-controls { justify-content: flex-start; margin-bottom: 8px; }
 .rbd-targets-controls .calc-t input { width: 9rem; }
 .rbd-targets-method { min-width: 13rem; }
-.rbd-targets-about { margin: 0 0 8px; font-size: var(--fs-14); color: var(--ink); max-width: 72ch; }
-.rbd-targets-about .muted { color: var(--muted); }
+.rbd-targets-about { margin: 0 0 8px; font-size: var(--fs-14); color: var(--text); max-width: 72ch; }
+.rbd-targets-about .muted { color: var(--text-secondary); }
 .rbd-targets-help,
 .rbd-targets-advanced { margin: 0 0 12px; }
 .rbd-targets-help > summary,
@@ -14,8 +14,8 @@
   cursor: pointer;
   font-size: var(--fs-14);
   font-weight: 500;
-  color: var(--acc);
-  border-radius: var(--r-sm);
+  color: var(--accent-text);
+  border-radius: var(--radius-md);
 }
 .rbd-targets-help-scroll { overflow-x: auto; margin-top: 8px; }
 .rbd-targets-help-table td,
@@ -26,7 +26,7 @@
 .rbd-targets-table th { vertical-align: middle; white-space: nowrap; }
 .rbd-targets-out td { font-variant-numeric: tabular-nums; }
 .rbd-targets-table thead th:first-child { text-align: left; }
-.rbd-targets-up { font-weight: 600; color: var(--ink); }
+.rbd-targets-up { font-weight: 600; color: var(--text); }
 .rbd-targets-result { margin-top: 16px; display: flex; flex-direction: column; gap: 12px; }
 .rbd-targets-result.stale { opacity: 0.6; }
 .rbd-targets-result .hint { margin: 0; }

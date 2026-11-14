@@ -1,11 +1,11 @@
 /* The degradation model page's own bits (the frame is model/ModelFrame.css). */
-.gof-card .gofh.deg-subhead { border-top: 1px solid var(--line2); }
+.gof-card .gofh.deg-subhead { border-top: 1px solid var(--border-subtle); }
 .life-reading .deg-to-calc { display: inline-block; margin-top: 6px; }
 .deg-params .mini-table tr.deg-part th {
   text-align: left;
   font-weight: 600;
-  color: var(--ink);
-  background: var(--surf-2);
+  color: var(--text);
+  background: var(--bg-subtle);
   position: static;
 }
 .deg-induced-inputs { padding-top: 4px; }

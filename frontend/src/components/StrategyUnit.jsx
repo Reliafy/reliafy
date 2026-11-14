@@ -10,7 +10,7 @@ export default function StrategyUnit({ model, unit, onUnit }) {
     return (
       <div className="calc-t">
         <span>Unit</span>
-        <span className="strategy-unit-fixed" title="The model's time unit" style={{ color: "var(--ink)", fontSize: "var(--fs-14)", padding: "0.45rem 0" }}>{unitInText(model.unit)} (the model's)</span>
+        <span className="strategy-unit-fixed" title="The model's time unit" style={{ color: "var(--text)", fontSize: "var(--fs-14)", padding: "0.45rem 0" }}>{unitInText(model.unit)} (the model's)</span>
       </div>
     );
   }

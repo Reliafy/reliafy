@@ -80,8 +80,8 @@ export function Trend({ point, values = null }) {
          aria-label={`${point.name}: last ${rs.length} values, ${fmtValue(rs[0].value)} to ${fmtValue(last.value)}`}>
       {line(point.alarm_above)}
       {line(point.alarm_below)}
-      <path d={d} fill="none" stroke="var(--acc)" strokeWidth="1.5" strokeLinejoin="round" />
-      <circle cx={x(rs.length - 1)} cy={y(last.value)} r="2" fill="var(--acc)" />
+      <path d={d} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinejoin="round" />
+      <circle cx={x(rs.length - 1)} cy={y(last.value)} r="2" fill="var(--accent)" />
     </svg>
   );
 }

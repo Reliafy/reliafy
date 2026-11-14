@@ -34,9 +34,9 @@ export function UseBars({ values = [], unit = "", name = "" }) {
          aria-label={`${name}: added by month, ${values.map((v) => `${v.at} ${qtyText(v.value, unit)}`).join(", ")}`}>
       {values.map((v, i) => {
         const h = v.value ? Math.max(2, (v.value / max) * (H - 4)) : 0;
-        return <rect key={v.at} x={i * w + 2} y={H - 1 - h} width={Math.max(2, w - 4)} height={h} rx="1.5" fill="var(--acc)" />;
+        return <rect key={v.at} x={i * w + 2} y={H - 1 - h} width={Math.max(2, w - 4)} height={h} rx="1.5" fill="var(--accent)" />;
       })}
-      <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} stroke="var(--line)" strokeWidth="1" />
+      <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} stroke="var(--border)" strokeWidth="1" />
     </svg>
   );
 }

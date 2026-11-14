@@ -1,7 +1,7 @@
 /* Libraries: the built-in handbooks' pages (LibraryPages.jsx) and the user's own (Libraries.jsx). */
 .lib-sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 .lib-source { color: inherit; text-decoration: none; display: flex; flex-direction: column; gap: 6px; }
-.lib-source:hover { border-color: var(--acc); }
+.lib-source:hover { border-color: var(--accent); }
 .lib-h { font-size: var(--fs-16); margin: 0 0 6px; }
 .lib-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 .lib-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
@@ -10,39 +10,39 @@
    only with the maintenance pages, so this page carries its own rule. */
 .lib-scroll { overflow-x: auto; max-width: 100%; position: relative; }
 .lib-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
-.lib-table th, .lib-table td { padding: 5px 8px; border-bottom: 1px solid var(--line2); text-align: left; vertical-align: top; }
+.lib-table th, .lib-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; }
 .lib-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lib-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .lib-actions-col { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-end; max-width: 360px; }
-.lib-why { font-size: var(--fs-13); color: var(--muted); margin: 0; }
+.lib-why { font-size: var(--fs-13); color: var(--text-secondary); margin: 0; }
 .lib-actions-col .lib-why { text-align: right; }
 @media (max-width: 720px) { .lib-actions-col { align-items: flex-start; } .lib-actions-col .lib-why { text-align: left; } }
 .lib-record { display: flex; flex-direction: column; gap: 12px; }
 .lib-picker { display: flex; flex-direction: column; gap: 8px; }
 .evidence-option.off { opacity: 0.6; }
 /* "Yours" and "Published" in sentence case, as every other list's sections. */
-.lib-section { font-size: var(--fs-14); font-weight: 600; color: var(--muted); margin: 18px 0 8px; }
+.lib-section { font-size: var(--fs-14); font-weight: 600; color: var(--text-secondary); margin: 18px 0 8px; }
 .lib-notes { white-space: pre-wrap; }
 
 /* A covariate source (NSWC-11): its intro, the Navy's statement, and a record's formula and factors. */
-.lib-disclaimer { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 8px; padding: 0.5rem 0.75rem; }
+.lib-disclaimer { background: var(--warning-bg); border: 1px solid var(--warning-border); border-radius: 8px; padding: 0.5rem 0.75rem; }
 .lib-formula code { white-space: normal; overflow-wrap: anywhere; }
 .lib-h3 { font-size: 1rem; margin: 1rem 0 0.4rem; }
-.lib-cov-mode + .lib-cov-mode { border-top: 1px solid var(--line2); }
+.lib-cov-mode + .lib-cov-mode { border-top: 1px solid var(--border-subtle); }
 .lib-view { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Libraries (Libraries.jsx, PublicLibraryPage.jsx, components/LibraryEntries.jsx): the cards, a
    library's about block, its entries (each opening in place) and the Sharing panel. */
-.lib-card-purpose { margin: 0; color: var(--muted); }
+.lib-card-purpose { margin: 0; color: var(--text-secondary); }
 .lib-sources .lib-h { overflow-wrap: anywhere; }
 .lib-about { display: flex; flex-direction: column; gap: 8px; }
 .lib-dl { display: grid; gap: 6px; margin: 0; }
 .lib-dl > div { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 8px; }
-.lib-dl dt { color: var(--muted); }
+.lib-dl dt { color: var(--text-secondary); }
 .lib-dl dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 480px) { .lib-dl > div { grid-template-columns: 1fr; gap: 0; } }
 .lib-entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.lib-entry { border-top: 1px solid var(--line2); padding: 10px 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; scroll-margin-top: 72px; }
+.lib-entry { border-top: 1px solid var(--border-subtle); padding: 10px 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; scroll-margin-top: 72px; }
 .lib-entry:first-child { border-top: 0; }
 .lib-entry-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .lib-entry-name { font-weight: 600; text-align: left; min-height: 32px; overflow-wrap: anywhere; }
@@ -55,20 +55,20 @@
 .lib-made { margin: 0; flex-basis: 100%; }
 .lib-signin { display: inline-flex; align-items: center; min-height: 32px; font-size: var(--fs-13); }
 .lib-detail { padding: 6px 0 0 1.2em; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.lib-detail-line { margin: 0; color: var(--muted); }
+.lib-detail-line { margin: 0; color: var(--text-secondary); }
 .lib-share { display: flex; flex-direction: column; gap: 10px; }
 .lib-share fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .lib-share legend { font-weight: 600; margin-bottom: 4px; }
 .lib-share-choice { display: flex; gap: 8px; align-items: flex-start; min-height: 32px; }
 .lib-share-choice input { margin-top: 3px; }
 .lib-ws { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.lib-ws li { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line2); border-radius: 6px; padding: 2px 4px 2px 8px; max-width: 100%; }
+.lib-ws li { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 2px 4px 2px 8px; max-width: 100%; }
 .lib-ws code { overflow-wrap: anywhere; }
 .libs-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .libs-row > input { flex: 1 1 200px; min-width: 0; }
 .lib-builtin-links { margin: 0 0 10px; }
 .lib-preview-note { margin: 0; }
-.lib-quiet { margin: 0; color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
+.lib-quiet { margin: 0; color: var(--text-secondary); font-size: var(--fs-13); overflow-wrap: anywhere; }
 
 /* The library page's Add… menu (Upload data…, and where to add something already saved). */
 .lib-add { position: relative; display: inline-flex; }
@@ -76,6 +76,6 @@
 .lib-add .ds-menu { left: auto; right: 0; min-width: 0; width: 240px; max-width: calc(100vw - 32px); }
 .lib-add .ds-menu-h { white-space: normal; }
 .lib-add .lib-add-link { display: block; padding: 7px 18px; font-size: 13px; border-radius: 6px; }
-.lib-add .lib-add-link:hover, .lib-add .lib-add-link:focus { background: var(--surf-2); }
+.lib-add .lib-add-link:hover, .lib-add .lib-add-link:focus { background: var(--bg-subtle); }
 .ds-added-lib { margin: 0 0 12px; font-size: 14px; }
 .ds-library { display: flex; flex-direction: column; gap: 6px; }

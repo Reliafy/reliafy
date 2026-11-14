@@ -3,7 +3,7 @@
 .dsp {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: var(--sp-4, 16px);
+  gap: var(--space-4, 16px);
   align-items: start;
 }
 @media (max-width: 900px) {
@@ -17,9 +17,9 @@
 .dsp-scroll {
   max-height: 440px;
   overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surf);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 .dsp-group-h {
   position: sticky;
@@ -28,9 +28,9 @@
   padding: 6px 12px;
   font-size: var(--fs-12);
   font-weight: 600;
-  color: var(--muted);
-  background: var(--surf-2, var(--bg));
-  border-bottom: 1px solid var(--line);
+  color: var(--text-secondary);
+  background: var(--bg-subtle, var(--bg-canvas));
+  border-bottom: 1px solid var(--border);
 }
 .dsp-count { font-weight: 400; margin-left: 4px; }
 .dsp-row {
@@ -42,10 +42,10 @@
   row-gap: 4px;
   padding: 9px 12px;
   border: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--text);
   text-align: left;
   font-weight: 400;
   white-space: normal;
@@ -53,24 +53,24 @@
   cursor: pointer;
 }
 .dsp-row:last-child { border-bottom: 0; }
-.dsp-row:hover:not(:disabled) { background: var(--bg); }
-.dsp-row:focus-visible { outline: 2px solid var(--focus, var(--acc)); outline-offset: -2px; }
-.dsp-row.on { background: var(--acc-t); box-shadow: inset 3px 0 0 var(--acc); }
+.dsp-row:hover:not(:disabled) { background: var(--bg-canvas); }
+.dsp-row:focus-visible { outline: 2px solid var(--focus-ring, var(--accent)); outline-offset: -2px; }
+.dsp-row.on { background: var(--accent-subtle); box-shadow: inset 3px 0 0 var(--accent); }
 .dsp-row.off { cursor: not-allowed; opacity: 1; }
 .dsp-row.off .dsp-name, .dsp-row.off .dsp-rows, .dsp-row.off .dsp-date, .dsp-row.off .dsp-tags { opacity: 0.55; }
 .dsp-name { grid-area: name; font-size: var(--fs-14); font-weight: 600; overflow-wrap: anywhere; }
-.dsp-rows { grid-area: rows; font-size: var(--fs-13); color: var(--muted); text-align: right; white-space: nowrap; }
+.dsp-rows { grid-area: rows; font-size: var(--fs-13); color: var(--text-secondary); text-align: right; white-space: nowrap; }
 .dsp-tags { grid-area: tags; display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
-.dsp-date { grid-area: date; font-size: var(--fs-12); color: var(--muted); text-align: right; white-space: nowrap; align-self: center; }
-.dsp-why { grid-area: why; font-size: var(--fs-12); color: var(--muted); }
-.dsp-quiet { color: var(--muted); font-size: var(--fs-13); margin: 0; }
-.dsp-quiet-inline { color: var(--muted); font-size: var(--fs-13); }
+.dsp-date { grid-area: date; font-size: var(--fs-12); color: var(--text-secondary); text-align: right; white-space: nowrap; align-self: center; }
+.dsp-why { grid-area: why; font-size: var(--fs-12); color: var(--text-secondary); }
+.dsp-quiet { color: var(--text-secondary); font-size: var(--fs-13); margin: 0; }
+.dsp-quiet-inline { color: var(--text-secondary); font-size: var(--fs-13); }
 .dsp-pane {
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 12px 14px;
-  background: var(--surf);
+  background: var(--bg-surface);
 }
 .dsp-pane-empty { padding: 24px 0; text-align: center; }
 .dsp-glance { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -78,7 +78,7 @@
 .dsp-glance-h b { font-size: var(--fs-16); overflow-wrap: anywhere; }
 .dsp-preview { max-width: 100%; overflow-x: auto; }
 .dsp-reads { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: var(--fs-13); }
-.dsp-reads dt { color: var(--muted); }
+.dsp-reads dt { color: var(--text-secondary); }
 .dsp-reads dd { margin: 0; overflow-wrap: anywhere; }
 .dsp-use { display: flex; justify-content: flex-end; }
 /* Narrow wherever it sits (a dialog, a side pane): the pane goes under the list. */

@@ -6,21 +6,21 @@
 .rbd-mix-mode {
   margin: 0;
   padding: 8px 12px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   min-width: 0;
 }
-.rbd-mix-mode > legend { padding: 0 4px; font-size: var(--fs-13); font-weight: 600; color: var(--ink); }
+.rbd-mix-mode > legend { padding: 0 4px; font-size: var(--fs-13); font-weight: 600; color: var(--text); }
 .rbd-mix-rest output {
   display: block;
   padding: 8px 0;
   font-size: var(--fs-14);
-  color: var(--muted);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .rbd-mean-check { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.rbd-mean-check b { font-weight: 600; color: var(--ink); }
-.rbd-mean-check-off { color: var(--warn); }
-.rbd-limit { color: var(--warn); }
+.rbd-mean-check b { font-weight: 600; color: var(--text); }
+.rbd-mean-check-off { color: var(--warning-text); }
+.rbd-limit { color: var(--warning-text); }
 .ccf-model { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
 .rbd-rq .seg, .ccf-model .seg, .ccf-model .seg-field { align-self: flex-start; }

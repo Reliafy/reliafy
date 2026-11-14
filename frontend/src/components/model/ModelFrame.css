@@ -25,11 +25,11 @@
   margin: 4px 0 0;
   max-width: none;
   font-size: var(--fs-14);
-  line-height: 1.5;
-  color: var(--ink);
+  line-height: var(--lh-14);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.mf-answer .mf-sep { color: var(--faint); }
+.mf-answer .mf-sep { color: var(--text-disabled); }
 .mf-answer-part { white-space: nowrap; }
 @media (max-width: 720px) {
   .mf-answer-part { white-space: normal; }
@@ -85,12 +85,12 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 8px 8px 4px;
 }
-.mf-plot-title { margin: 2px 4px 4px; font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
+.mf-plot-title { margin: 2px 4px 4px; font-size: var(--fs-14); font-weight: 600; color: var(--text); }
 .mf-plot-controls { flex: none; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 6px 4px 4px; }
 .mf-plot-controls .plot-option-row { margin: 0; }
 
@@ -154,21 +154,21 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--surf);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
   padding: 12px 14px 10px;
   overflow: hidden;
 }
 .mf-check-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.mf-check-q { margin: 0; font-size: var(--fs-14); font-weight: 600; line-height: 1.35; color: var(--ink); }
-.mf-check-term { font-weight: 400; color: var(--muted); }
+.mf-check-q { margin: 0; font-size: var(--fs-14); font-weight: 600; line-height: var(--lh-14); color: var(--text); }
+.mf-check-term { font-weight: 400; color: var(--text-secondary); }
 .mf-verdict { flex: none; }
-.mf-check-verdict { flex: none; margin: 6px 0 4px; font-size: var(--fs-13); line-height: 1.45; color: var(--muted); }
+.mf-check-verdict { flex: none; margin: 6px 0 4px; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .mf-check-plot { flex: 1 1 auto; min-height: 140px; display: flex; flex-direction: column; }
 .mf-check-plot .plot-fill { min-height: 130px; }
 .mf-check-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; font-size: var(--fs-13); }
-.mf-check-foot { flex: none; padding-top: 6px; font-size: var(--fs-12); color: var(--muted); }
+.mf-check-foot { flex: none; padding-top: 6px; font-size: var(--fs-12); color: var(--text-secondary); }
 .mf-check-foot .muted-line { margin: 0; }
 .mf-check .mini-table { width: 100%; }
 
@@ -221,16 +221,16 @@
 .mf-card-head > span { display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .mf-card-title { margin: 0; font-size: inherit; font-weight: inherit; }
 .mf-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.mf-scroll:focus-visible { outline: none; box-shadow: inset var(--focus); }
+.mf-scroll:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
 .mf-scroll .mini-table,
 .mf-scroll .calc-table { width: 100%; }
-.mf-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--surf); }
+.mf-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--bg-surface); }
 .gof-card .mf-scroll .mini-table th:first-child,
 .gof-card .mf-scroll .mini-table td:first-child { padding-left: 16px; }
 .gof-card .mf-scroll .mini-table th:last-child,
 .gof-card .mf-scroll .mini-table td:last-child { padding-right: 16px; }
 .mf-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mf-note { margin: 0; padding: 10px 16px 12px; font-size: var(--fs-13); line-height: 1.5; color: var(--muted); }
+.mf-note { margin: 0; padding: 10px 16px 12px; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .mf-note + .mf-note { padding-top: 0; }
 .mf-flex-none { flex: none; }
 
@@ -255,15 +255,15 @@
   gap: 8px 12px;
   margin: 0 0 8px;
   padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surf-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
 }
 .calc-cov-row .calc-cov { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.calc-cov-row .calc-cov > span { font-size: var(--fs-12); color: var(--muted); }
+.calc-cov-row .calc-cov > span { font-size: var(--fs-12); color: var(--text-secondary); }
 .calc-cov-row .calc-cov input { width: 7.5em; padding: 5px 8px; font-size: var(--fs-13); }
 .calc-cov-row .calc-cov .sel-trigger { padding: 5px 8px; font-size: var(--fs-13); min-width: 7em; }
-.calc-cov-row .calc-cov-row-label { align-self: center; font-size: var(--fs-13); font-weight: 600; color: var(--ink); }
+.calc-cov-row .calc-cov-row-label { align-self: center; font-size: var(--fs-13); font-weight: 600; color: var(--text); }
 .calc-cov-row .calc-cov-combos { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .calc-cov-row .calc-cov-actions { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
 .calc-cov-row button.secondary.sm { padding: 5px 10px; font-size: var(--fs-13); }
@@ -271,9 +271,9 @@
 
 /* Effects: the hazard-ratio chart and the effects in words. */
 .mf-effects-words { list-style: none; margin: 0; padding: 0; }
-.mf-effects-words li { padding: 10px 16px; border-bottom: 1px solid var(--line2); font-size: var(--fs-13); line-height: 1.5; color: var(--ink); }
+.mf-effects-words li { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text); }
 .mf-effects-words li:last-child { border-bottom: none; }
-.mf-effects-words .mf-effect-p { color: var(--muted); }
+.mf-effects-words .mf-effect-p { color: var(--text-secondary); }
 .mf-l1 .mf-effects-table { flex: 0 1 auto; max-height: 42%; }
 
 /* Condition and life. Risk now: the risk table and the chosen unit in words
@@ -294,12 +294,12 @@
 .mf-joint-risk > .chart-pair { flex: 1 0 300px; }
 .mf-joint-risk-words { min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; }
 .mf-joint-risk-words > * { flex: none; margin: 0; }
-.mf-joint-risk .joint-risk tr.is-selected td { background: var(--acc-t); }
+.mf-joint-risk .joint-risk tr.is-selected td { background: var(--accent-subtle); }
 .mf-joint-risk .joint-risk tbody tr { cursor: pointer; }
 /* A unit's name and its figures stay on one line, so every row is one line high. */
 .mf-joint-risk .joint-risk tbody td { white-space: nowrap; }
 .mf-unit { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1 1 auto; }
-.joint-unit-sum { flex: none; margin: 0; font-size: var(--fs-14); line-height: 1.5; }
+.joint-unit-sum { flex: none; margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); }
 .detail-panel .model-chars-card .model-chars-blives { display: block; padding: 0 16px 14px; }
 .mf-check .mini-table th, .mf-check .mini-table td { padding-left: 0; }
 .mf-joint-calc { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; }
@@ -341,7 +341,7 @@
 }
 
 /* A check's headline figure (Harrell's C, the Brier score). */
-.mf-big-number { margin: 6px 0 2px; font-size: var(--fs-28); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.mf-big-number { margin: 6px 0 2px; font-size: var(--fs-24); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .mf-check-body .muted-line { margin: 0; }
 
 /* The fit wizard's result: the answer line and Use this model over the tabs. */
@@ -367,7 +367,7 @@ button.use-model-primary { white-space: nowrap; }
 html.print-layout .app.model-frame { height: auto !important; overflow: visible !important; }
 
 /* A visible focus on the model tabs (the arrow keys move between them). */
-.mf-tabs .tab:focus-visible { outline: none; box-shadow: inset var(--focus); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.mf-tabs .tab:focus-visible { outline: none; box-shadow: inset var(--focus-ring); border-radius: var(--radius-md) var(--radius-md) 0 0; }
 
 /* The model's own assumption checks: what to try, under the table. */
 .model-checks-advice { margin: 0; padding-left: 1.1rem; }
@@ -376,8 +376,8 @@ html.print-layout .app.model-frame { height: auto !important; overflow: visible 
 .compare-guidance { margin-top: 6px; }
 
 /* A library model's failure rate and its spread across plants, in words first. */
-.mf-note.model-chars-spread { color: var(--ink); font-size: var(--fs-14); }
+.mf-note.model-chars-spread { color: var(--text); font-size: var(--fs-14); }
 .calc-spread-words { margin: -4px 0 8px; }
 
 /* A chance's 90% upper bound under it in the risk table. */
-.joint-risk .joint-risk-up { display: block; font-size: var(--fs-12); color: var(--muted); margin-top: 2px; }
+.joint-risk .joint-risk-up { display: block; font-size: var(--fs-12); color: var(--text-secondary); margin-top: 2px; }

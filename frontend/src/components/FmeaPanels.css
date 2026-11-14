@@ -4,7 +4,7 @@
    signal (the word is always beside it). */
 
 /* S, O and D side by side (they're read together); one under another on a phone. */
-.fm-scores { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+.fm-scores { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
 @media (max-width: 480px) { .fm-scores { grid-template-columns: 1fr; } }
 .fm-preview {
   display: flex;
@@ -29,14 +29,14 @@
   min-height: 22px;
   padding: 0 4px;
   margin: 0 -4px;
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tt-h .tt-sortbtn:hover { background: var(--acc-hover); color: var(--ink); }
-.tt-h .tt-sortbtn:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.tt-h .tt-sortbtn:hover { background: var(--accent-wash); color: var(--text); }
+.tt-h .tt-sortbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tt-h.is-sorted .tt-sortbtn { color: var(--text); }
 .tt-sortarrow { font-size: 10px; }
 
@@ -50,7 +50,7 @@
 }
 .fm-matrix th {
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text-secondary);
   padding: 2px 4px;
   text-align: center;
   white-space: nowrap;
@@ -64,25 +64,25 @@
   height: 26px;
   min-width: 30px;
   text-align: center;
-  border: 1px solid var(--line2);
+  border: 1px solid var(--border-subtle);
   border-radius: 4px;
-  background: var(--surf-2);
-  color: var(--muted);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
 }
 .fm-matrix td.fm-cell.has { color: var(--text); font-weight: 600; }
 .fm-matrix td.ap-H, .fm-swatch.ap-H { background: var(--danger-bg, rgba(220, 60, 60, 0.18)); border-color: var(--danger, #c0392b); }
-.fm-matrix td.ap-M, .fm-swatch.ap-M { background: var(--warn-bg); border-color: var(--warn-line); }
-.fm-matrix td.ap-L, .fm-swatch.ap-L { background: var(--surf); border-color: var(--line); }
+.fm-matrix td.ap-M, .fm-swatch.ap-M { background: var(--warning-bg); border-color: var(--warning-border); }
+.fm-matrix td.ap-L, .fm-swatch.ap-L { background: var(--bg-surface); border-color: var(--border); }
 .fm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 6px 0 0; }
-.fm-swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--line); border-radius: 3px; vertical-align: middle; }
+.fm-swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 3px; vertical-align: middle; }
 .fm-key { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .fm-key-note { flex: 1 1 100%; }
 
 /* The modes ranked by Cm: each one's name on a line of its own, its figures under it in columns
    (they fit the panel beside the table at its narrowest, 300 px, with no sideways scroll). */
-.fm-rank { width: 100%; border-collapse: collapse; font-size: var(--fs-12); margin-top: var(--sp-2); }
-.fm-rank th, .fm-rank td { padding: 3px 5px; border-bottom: 1px solid var(--line2); text-align: left; vertical-align: top; }
-.fm-rank thead th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.fm-rank { width: 100%; border-collapse: collapse; font-size: var(--fs-12); margin-top: var(--space-2); }
+.fm-rank th, .fm-rank td { padding: 3px 5px; border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; }
+.fm-rank thead th { color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
 .fm-rank .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fm-rank .fm-rank-nm th { padding-top: 6px; padding-bottom: 0; border-bottom: 0; font-size: var(--fs-13); font-weight: 400; overflow-wrap: anywhere; }
 .fm-rank .fm-rank-nm .link { text-align: left; }
@@ -90,11 +90,11 @@
 /* The print view (FmeaPrint.jsx): one plain full-width worksheet. */
 .fm-print { max-width: none; }
 .fm-print .fm-sheet { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
-.fm-print .fm-sheet th, .fm-print .fm-sheet td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
-.fm-print .fm-sheet th { background: var(--surf-2); font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
+.fm-print .fm-sheet th, .fm-print .fm-sheet td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; vertical-align: top; }
+.fm-print .fm-sheet th { background: var(--bg-subtle); font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
 .fm-print .fm-sheet td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fm-print .fm-sheet tr.fm-fn td { background: var(--surf-2); font-weight: 600; }
-.fm-print-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: var(--sp-3); }
+.fm-print .fm-sheet tr.fm-fn td { background: var(--bg-subtle); font-weight: 600; }
+.fm-print-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: var(--space-3); }
 .fm-print-head h1 { margin: 0; font-size: var(--fs-20, 1.25rem); }
 .fm-print-head .fm-print-acts { display: flex; gap: 8px; }
 @media print {
