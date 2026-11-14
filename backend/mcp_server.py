@@ -6476,8 +6476,12 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
         # Each parameter's fitted interval rides along, so the answers carry their bounds and ranges.
         params = [{**p, **({"ci": q["ci"]} if isinstance(q.get("ci"), list) else {})}
                   for p, q in zip(_plain_params(r), r.get("params") or [])]
+        # A Bayesian update carries its recipe, so the calculators use its posterior predictive.
+        from backend.services import bayes_life
+
         return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": params,
-                "extras": r.get("extras") or None, "unit": unit or r.get("unit") or ""}
+                "extras": bayes_life.posterior_extras(m, r.get("extras") or None),
+                "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
     # Params are checked by SurPyval name in the strategy service (an
@@ -6508,12 +6512,18 @@ def _sig(x: Optional[float]) -> Optional[float]:
     return None if x is None else float(f"{x:.4g}")
 
 
+def _is_posterior(extras) -> bool:
+    from backend.services.strategy import is_posterior
+
+    return is_posterior(extras)
+
+
 def _weibull_beta_ci(db, uid: str, model_id: Optional[str], inputs: dict) -> Optional[tuple[float, float, float]]:
     """``(beta, lower, upper)``: a saved Weibull model's shape and its fit's 90%
     interval — None for inline params, another distribution, or a fit that
     gave β no interval."""
-    if not model_id or inputs.get("distribution_id") != "weibull":
-        return None
+    if not model_id or inputs.get("distribution_id") != "weibull" or _is_posterior(inputs.get("extras")):
+        return None  # a Bayesian update's answer already allows for how unsure its shape is
     m = models_service.get_model(db, model_id, _owners(uid))
     beta = next((p for p in ((m.results or {}).get("params") or []) if p.get("name") == "beta"), None) if m else None
     ci = (beta or {}).get("ci")

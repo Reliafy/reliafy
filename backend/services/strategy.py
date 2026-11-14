@@ -79,7 +79,30 @@ def _life_metrics(model) -> dict:
     return metrics
 
 
+def _without_posterior(extras: dict | None) -> dict | None:
+    from backend.services import bayes_life
+
+    return bayes_life.without_posterior(extras)
+
+
+def is_posterior(extras: dict | None) -> bool:
+    """Whether ``extras`` carry a saved Bayesian update's recipe (``bayes_life.posterior_extras``)."""
+    return isinstance(extras, dict) and bool(extras.get("posterior"))
+
+
 def _model_from_params(distribution_id: str, params: list, extras: dict | None = None):
+    """The life a calculator works with: the distribution at ``params`` (with a fitted offset,
+    limited-failure share or zero inflation from ``extras``), or, for a saved Bayesian update
+    (its recipe in ``extras``, put there by the server), its posterior predictive: the curve its
+    page shows, not the distribution at the parameters' middle values."""
+    if is_posterior(extras):
+        from backend.services import bayes_life
+
+        entry = DISTRIBUTIONS.get(extras["posterior"].get("distribution_id") or distribution_id)
+        try:
+            return bayes_life.predictive(extras["posterior"]), (entry or {}).get("name") or "Bayesian update"
+        except Exception as exc:  # noqa: BLE001 - said in words
+            raise StrategyError(f"This Bayesian update couldn't be rebuilt from its data and prior: {exc}") from exc
     entry = DISTRIBUTIONS.get(distribution_id)
     if entry is None:
         raise StrategyError(
@@ -233,6 +256,11 @@ def _no_optimum_text(reason: str, distribution_id: str, params: list, point: dic
         f"{close}"
     )
 
+#: Said instead of a range or a bound for a saved Bayesian update: the answer already rests on
+#: its posterior predictive, which averages in how unsure the parameters are.
+_POSTERIOR_NOTE = ("This model is a Bayesian update: the answer uses its posterior predictive (the curve on its "
+                   "page), which already allows for how unsure its parameters are, so no separate range is given.")
+
 
 def _replacement_range(
     distribution_id: str,
@@ -250,8 +278,12 @@ def _replacement_range(
     bound, the others held at their estimates, and the best age is found again
     (by the same library call as the answer itself). That is a sensitivity
     range, not a confidence interval for the age: it is said so in the note.
-    Returns ``(range, note)``; the range is None when no parameter has bounds.
+    Returns ``(range, note)``; the range is None when no parameter has bounds,
+    and for a saved Bayesian update (its answer already averages in how unsure
+    the parameters are).
     """
+    if is_posterior(extras):
+        return None, _POSTERIOR_NOTE
     cases = []
     for i, param in enumerate(params or []):
         bounds = _param_bounds(param)
@@ -426,7 +458,8 @@ def optimal_replacement(
     time_range, range_note = _replacement_range(
         distribution_id, params, extras, cp, cu, lfp, point, unit_s
     )
-    block = None if lfp else _block_replacement(nr, cp, cu, grid, point["run_to_failure_cost_rate"])
+    block = None if lfp else _block_replacement(nr, cp, cu, grid, point["run_to_failure_cost_rate"],
+                                                fine=is_posterior(extras))
     a_year = _positive_or_none(use_per_year, "The use a year")
     fleet = _positive_or_none(units, "The number of units")
     yearly = None
@@ -478,14 +511,18 @@ def _positive_or_none(value, label: str) -> Optional[float]:
     return v
 
 
-def _block_replacement(nr, cp: float, cu: float, grid: np.ndarray, rtf_rate: Optional[float]) -> Optional[dict]:
+def _block_replacement(nr, cp: float, cu: float, grid: np.ndarray, rtf_rate: Optional[float],
+                       fine: bool = False) -> Optional[dict]:
     """Block (group) replacement: every unit replaced at fixed times ``T``
     apart, failures replaced as they come. Its long-run cost rate is
     ``(cp + cu M(T)) / T``, ``M`` the expected failures of a position in
     ``T`` from new, renewals included: the reliability library's renewal
     count (``NonRepairable.failures``, exact). The best ``T`` is found on the
     curve's grid, then refined. None when the library can't count renewals
-    for this model."""
+    for this model. ``fine``: refine on a fine grid around the best point in
+    one more call (a Bayesian update's posterior predictive, whose renewal
+    count takes a few seconds a call), rather than by a search that calls it
+    a few dozen times."""
     from scipy.optimize import minimize_scalar
 
     def rate(t):
@@ -498,11 +535,19 @@ def _block_replacement(nr, cp: float, cu: float, grid: np.ndarray, rtf_rate: Opt
             curve = rate(grid)
             i = int(np.nanargmin(curve))
             lo, hi = grid[max(i - 1, 0)], grid[min(i + 1, len(grid) - 1)]
-            found = minimize_scalar(lambda t: float(rate(t)[0]), bounds=(lo, hi), method="bounded",
-                                    options={"xatol": 1e-6 * hi})
+            if fine:
+                near = np.linspace(lo, hi, 201)
+                near_rate = rate(near)
+                j = int(np.nanargmin(near_rate))
+                t_best, r_best = float(near[j]), float(near_rate[j])
+            else:
+                found = minimize_scalar(lambda t: float(rate(t)[0]), bounds=(lo, hi), method="bounded",
+                                        options={"xatol": 1e-6 * hi})
+                t_best, r_best = float(found.x), float(found.fun)
     except Exception:  # noqa: BLE001 - no renewal count for this model
         return None
-    t_best, r_best = (float(found.x), float(found.fun)) if found.fun <= curve[i] else (float(grid[i]), float(curve[i]))
+    if not r_best <= curve[i]:
+        t_best, r_best = float(grid[i]), float(curve[i])
     saving = (rtf_rate - r_best) / rtf_rate if rtf_rate else 0.0
     pays = bool(saving > _MIN_SAVING) and i < len(grid) - 1
     return {
@@ -874,6 +919,8 @@ def _ffi_bound(distribution_id, params, extras, target_u, renewed, duration, sca
     the rate's 90% one-sided upper bound exactly."""
     from backend.levels import Z, rescale
 
+    if is_posterior(extras):
+        return None, _POSTERIOR_NOTE.replace("range", "bound")
     cases = []
     for i, param in enumerate(params or []):
         bounds = _param_bounds(param)
@@ -954,6 +1001,10 @@ def failure_finding(
         raise StrategyError("The cost per test must be a number, at least 0.")
     renewed = renewed_at_test is not False
 
+    # Not yet a Bayesian update's posterior predictive: RePyability's failure-finding search takes
+    # minutes over its tens of thousands of points, so it keeps the parameters' middle values here
+    # until the library is fast enough (see bayes_life.without_posterior).
+    extras = _without_posterior(extras)
     model, name = _model_from_params(distribution_id, params, extras)
     mttf = _scalar(model.mean())
     if mttf is None or not np.isfinite(mttf) or mttf <= 0:

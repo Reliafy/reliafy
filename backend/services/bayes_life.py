@@ -762,3 +762,167 @@ def _upper_time(model, dist_id: str | None) -> float:
     if dist is None:
         raise ValueError("Couldn't place this update's time range.")
     return float(np.ravel(dist.qf(0.99, *np.ravel(model.params)))[0])
+
+
+# ---- a saved update in the calculators and forecasts ------------------------------------
+#: The key in a model's ``extras`` that carries a saved update's recipe (the history and the
+#: prior) to the calculators. Put there by the server from a saved model it read
+#: (``posterior_extras``), never taken from a client.
+POSTERIOR = "posterior"
+
+
+def posterior_extras(doc, extras: dict | None = None) -> dict | None:
+    """``extras`` plus a saved Bayesian update's recipe (``{"posterior": ...}``), so a calculator
+    or forecast given its parameters works with its posterior predictive, the curve its page
+    shows, not the distribution at the parameters' middle values. ``extras`` unchanged for any
+    other model (or None)."""
+    spec = getattr(doc, "spec", None) or {}
+    if spec.get("method") != METHOD or not spec.get("bayes"):
+        return extras
+    b = spec["bayes"]
+    recipe = {"distribution_id": spec.get("distribution_id") or getattr(doc, "distribution_id", None),
+              "unit": spec.get("unit") or None, "x": b["x"], "c": b["c"], "priors": b["priors"]}
+    return {**(extras or {}), POSTERIOR: recipe}
+
+
+def without_posterior(extras: dict | None) -> dict | None:
+    """A client's ``extras`` with any recipe dropped: only the server puts one there."""
+    if not isinstance(extras, dict) or POSTERIOR not in extras:
+        return extras
+    return {k: v for k, v in extras.items() if k != POSTERIOR} or None
+
+
+_PREDICTIVE_CACHE: "dict[str, Any]" = {}
+_PREDICTIVE_KEEP = 8
+
+
+def predictive(recipe: dict):
+    """A recipe's posterior predictive (RePyability's ``PosteriorPredictive``, the curve the
+    model page shows; a gamma posterior's closed-form Lomax kept finite), refitted once and
+    kept for a few requests. NumPy's global random state is left as it was."""
+    import json
+
+    from repyability import PosteriorPredictive
+
+    key = json.dumps(recipe, sort_keys=True, default=str)
+    found = _PREDICTIVE_CACHE.get(key)
+    if found is None:
+        state = np.random.get_state()
+        try:
+            live = rebuild({"distribution_id": recipe["distribution_id"], "unit": recipe.get("unit"),
+                            "bayes": recipe})
+        finally:
+            np.random.set_state(state)
+        found = PosteriorPredictive(bayesian_fit(live))
+        _PREDICTIVE_CACHE[key] = found
+        while len(_PREDICTIVE_CACHE) > _PREDICTIVE_KEEP:
+            try:
+                _PREDICTIVE_CACHE.pop(next(iter(_PREDICTIVE_CACHE)), None)
+            except (RuntimeError, StopIteration):  # another request changed it meanwhile
+                break
+    return found
+
+
+#: A posterior with more points than this is tabulated for the searches (see TabulatedPredictive).
+_TABULATE_ABOVE = 2000
+_TABULATED: "dict[int, Any]" = {}
+
+
+def for_searches(model):
+    """``model``, but a posterior predictive with many points tabulated (``TabulatedPredictive``)
+    for a calculation that evaluates it at tens of thousands of times, such as the failure-finding
+    searches; any other model as it is. Kept with the predictive it came from."""
+    from repyability import PosteriorPredictive
+
+    if not isinstance(model, PosteriorPredictive) or len(model.points) <= _TABULATE_ABOVE:
+        return model
+    found = _TABULATED.get(id(model))
+    if found is None or found.life is not model:
+        found = TabulatedPredictive(model)
+        _TABULATED[id(model)] = found
+        while len(_TABULATED) > _PREDICTIVE_KEEP:
+            try:
+                _TABULATED.pop(next(iter(_TABULATED)), None)
+            except (RuntimeError, StopIteration):
+                break
+    return found
+
+
+class TabulatedPredictive:
+    """A posterior predictive tabulated once, for the calculators and forecasts.
+
+    A grid posterior has tens of thousands of points, so each value of the predictive is a sum
+    over all of them: fine for a curve, far too slow for a calculator that asks for thousands of
+    values (a failure-finding search took minutes). Here the cumulative hazard is worked out
+    once, exactly, at 2,001 times spread evenly in log time from the predictive's 1e-10 quantile
+    to its 1 - 1e-10 one, and read between them by a monotone cubic in Weibull-plot coordinates
+    (log cumulative hazard against log time, nearly straight for a mixture of Weibulls), past
+    the ends along the end slopes. Reliability agrees with the predictive's own to about 1e-8,
+    the chance of failing to about 2e-6 of itself and the hazard to about 2e-5 of itself; the mean
+    is the predictive's own. Draws invert the tabulated curve with NumPy's global random state,
+    as the predictive's do."""
+
+    NODES = 2001
+
+    def __init__(self, life):
+        from scipy.interpolate import PchipInterpolator
+
+        self.life = life
+        lo = float(np.ravel(life.qf(1e-10))[0])
+        hi = float(np.ravel(life.qf(1 - 1e-10))[0])
+        if not (np.isfinite(lo) and np.isfinite(hi) and 0 < lo < hi):
+            raise ValueError("The update's predictive couldn't be tabulated.")
+        u = np.linspace(math.log(lo), math.log(hi), self.NODES)
+        z = np.log(np.asarray(life.Hf(np.exp(u)), dtype=float).ravel())
+        keep = np.concatenate([[True], np.diff(z) > 0])  # strictly increasing, for the inverse
+        u, z = u[keep], z[keep]
+        self._z = PchipInterpolator(u, z, extrapolate=True)
+        self._dz = self._z.derivative()
+        self._u = PchipInterpolator(z, u, extrapolate=True)
+        self._h0 = float(np.ravel(life.hf(0.0))[0])
+        self._mean = float(life.mean())
+
+    def _zs(self, x):
+        x = np.asarray(x, dtype=float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            z = np.where(x > 0, self._z(np.log(np.where(x > 0, x, 1.0))), -np.inf)
+        return x, z
+
+    def Hf(self, x):  # noqa: N802 - SurPyval's name
+        _, z = self._zs(x)
+        return np.exp(z)
+
+    def sf(self, x):
+        _, z = self._zs(x)
+        return np.exp(-np.exp(z))
+
+    def ff(self, x):
+        _, z = self._zs(x)
+        return -np.expm1(-np.exp(z))
+
+    def hf(self, x):
+        x, z = self._zs(x)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            pos = np.where(x > 0, x, 1.0)
+            h = np.exp(z) * self._dz(np.log(pos)) / pos
+        return np.where(x > 0, h, self._h0)
+
+    def df(self, x):
+        return self.hf(x) * self.sf(x)
+
+    def cs(self, x, given):
+        x, given = np.asarray(x, dtype=float), np.asarray(given, dtype=float)
+        return self.sf(x + given) / self.sf(given)
+
+    def qf(self, p):
+        p = np.asarray(p, dtype=float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            z = np.log(-np.log1p(-np.clip(p, 0.0, 1.0)))
+            t = np.exp(self._u(np.where(np.isfinite(z), z, 0.0)))
+        return np.where(p <= 0, 0.0, np.where(p >= 1, np.inf, t))
+
+    def mean(self):
+        return self._mean
+
+    def random(self, size):
+        return self.qf(np.random.uniform(size=size))

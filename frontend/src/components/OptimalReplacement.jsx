@@ -69,7 +69,7 @@ export default function OptimalReplacement() {
       };
       const res = await optimalReplacement(
         body.distribution_id, body.params, body.planned_cost, body.unplanned_cost, body.unit, body.extras,
-        { use_per_year: body.use_per_year, units: body.units },
+        { use_per_year: body.use_per_year, units: body.units, model_id: body.model_id },
       );
       setResult(res);
       setInputs(body);

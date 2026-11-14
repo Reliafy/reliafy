@@ -86,6 +86,8 @@ export function buildRequest({ model, unit, today, shuts, failureCost, anytimeCo
       distribution_id: model.distribution_id,
       params: model.params,
       extras: model.extras || null,
+      // A saved Bayesian update is worked out with its posterior predictive (found by id).
+      ...(model.source === "saved" && model.modelId ? { model_id: model.modelId } : {}),
       unit: timeUnit(unit),
       today,
       opportunities,

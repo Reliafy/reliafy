@@ -129,7 +129,8 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     }
     if (calc.key === "ff") {
       const device = form.device === "model" && form.model
-        ? { distribution_id: form.model.distribution_id, params: form.model.params, model_unit: form.model.unit || null, extras: form.model.extras || null }
+        ? { distribution_id: form.model.distribution_id, params: form.model.params, model_unit: form.model.unit || null,
+            extras: form.model.extras || null, ...(form.model.model_id ? { model_id: form.model.model_id } : {}) }
         : { failure_rate: n(form.failure_rate) };
       return {
         ...device, target_unavailability: blank(form.target) ? null : n(form.target) / 100,
@@ -178,7 +179,8 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
       else if (calc.key === "ff") out = await rcmFailureFindingInterval(b);
       else {
         const m = b.model;
-        out = await optimalReplacement(m.distribution_id, m.params, b.planned_cost, b.unplanned_cost, m.unit, m.extras);
+        out = await optimalReplacement(m.distribution_id, m.params, b.planned_cost, b.unplanned_cost, m.unit, m.extras,
+          { model_id: m.model_id || null });
       }
       if (alive.current) setResult({ out, sent: b });
     } catch (e) {
@@ -199,7 +201,8 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     const sent = result.sent;
     const inputs = calc.key === "fixed"
       ? { distribution_id: sent.model.distribution_id, params: sent.model.params, planned_cost: sent.planned_cost,
-          unplanned_cost: sent.unplanned_cost, unit: sent.model.unit || null, extras: sent.model.extras || null }
+          unplanned_cost: sent.unplanned_cost, unit: sent.model.unit || null, extras: sent.model.extras || null,
+          ...(sent.model.model_id ? { model_id: sent.model.model_id } : {}) }
       : { ...Object.fromEntries(Object.entries(sent).filter(([, v]) => v !== null)), unit: use.unit };
     const line = rationale(calc.key, { ...sent, target_assumed: form.targetAssumed && Number(form.target) === 1,
       model_name: sent.model?.name }, result.out, use);

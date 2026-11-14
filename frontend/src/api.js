@@ -288,6 +288,9 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
       extras: extras || null,
       use_per_year: more.use_per_year ?? null,
       units: more.units ?? null,
+      // The saved model the parameters came from: a Bayesian update is worked out with its
+      // posterior predictive (the curve its page shows), not its parameters' middle values.
+      model_id: more.model_id ?? null,
     }),
   });
 }
@@ -1735,6 +1738,7 @@ export function failureFinding(distributionId, params, targetAvailability, unit,
       test_duration: more.test_duration ?? null,
       test_cost: more.test_cost ?? null,
       renewed_at_test: more.renewed_at_test ?? true,
+      model_id: more.model_id ?? null,
     }),
   });
 }
