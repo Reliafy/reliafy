@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "prerender": "vite build --config vite.ssr.config.js && node scripts/prerender.mjs",
     "capture:guides": "node scripts/capture-guides.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "tokens": "node scripts/build-tokens.mjs"
   },
   "dependencies": {
     "cytoscape": "^3.34.3",

@@ -619,7 +619,7 @@ test("arrivalRoot, arrivalNamed, opensAsset and rcmPositionOf: what opens one as
   assert.equal(arrivalRoot(data, q("arrange=positions&sel=elem")), "anthony");
   assert.equal(arrivalRoot(data, q("arrange=locations&sel=farm")), "farm");
   assert.equal(arrivalRoot(data, q("tab=models&fit=motor"), "motor"), "boat");
-  // Not: one open already, the whole register asked for, the positions at no place, nothing named.
+  // Not: one open already, an old ?all=1 link (the Assets list), the positions at no place, nothing named.
   assert.equal(arrivalRoot(data, q("root=farm&sel=elem")), null);
   assert.equal(arrivalRoot(data, q("all=1&sel=elem")), null);
   assert.equal(arrivalRoot(data, q("place=none&sel=boat")), null);

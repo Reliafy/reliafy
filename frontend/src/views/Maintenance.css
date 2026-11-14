@@ -673,3 +673,10 @@ tr.field-report-open {
 /* A place with no positions yet: the sentence, then its main action under it. */
 .maint-empty-add { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .maint-head { flex-wrap: wrap; gap: 8px; }
+
+/* Assets' Excel import and export (TreeSheetPane): a card under the header, above the list
+   (on a phone it takes the screen, TreeSheetPane.css). */
+.reg-sheet { margin-bottom: var(--space-4); }
+.reg-sheet .rw-panel.tree-sheet-pane:not(.table-pane-phone) { border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-surface); }
+.reg-sheet .rw-panel.is-expanded > .table-pane-head { max-width: none; }

@@ -413,9 +413,10 @@ def test_lognormal_band_has_no_spike_and_matches_an_independent_bound():
     x = np.asarray(curves["x"], dtype=float)
     live = degradation.get_live(cache_id)
     raw = np.asarray(live.cb(x, on="sf", alpha_ci=0.1, bound="two-sided"), dtype=float)[:, 0]
-    # The library's raw band dips (to ~0) near the curve's start: what made the
-    # Calculator read "90% band 6,000-41,900 km".
-    assert np.nanmin(raw[:60]) < 0.5
+    # SurPyval 0.26's raw band dipped (to ~0) near the curve's start: what made
+    # the Calculator read "90% band 6,000-41,900 km". 0.27's doesn't; the app's
+    # band below holds either way.
+    assert np.nanmin(raw[:60]) > 0.5
     for key in ("lower", "upper", "life_lower"):
         v = np.asarray(curves[key], dtype=float)
         assert np.all(np.diff(v) <= 1e-12), key  # never rises with distance

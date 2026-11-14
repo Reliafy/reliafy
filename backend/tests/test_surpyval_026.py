@@ -48,15 +48,16 @@ def strict():
         ctx.__exit__(None, None, None)
 
 
-def test_the_pins_are_surpyval_0_26_and_repyability_0_16():
-    """Reliafy runs SurPyval 0.26, the version RePyability 0.16 targets."""
+def test_the_pins_are_surpyval_0_27_and_repyability_0_17():
+    """Reliafy runs SurPyval 0.27, the version RePyability 0.17 targets (the
+    rest of this file is about what 0.26 changed, and still holds on 0.27)."""
     import importlib.metadata as md
 
     import repyability
 
-    assert sp.__version__ == "0.26" and md.version("surpyval") == "0.26"
-    assert repyability.__version__ == "0.16" and md.version("repyability") == "0.16"
-    assert rbd_export.detect_versions() == {"surpyval": "0.26", "repyability": "0.16"}
+    assert sp.__version__ == "0.27" and md.version("surpyval") == "0.27"
+    assert repyability.__version__ == "0.17" and md.version("repyability") == "0.17"
+    assert rbd_export.detect_versions() == {"surpyval": "0.27", "repyability": "0.17"}
 
 
 # ---------------------------------------------------------------------------

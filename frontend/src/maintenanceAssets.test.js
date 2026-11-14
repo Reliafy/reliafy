@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  NOT_PLACED_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
+  ASSETS_LIST_PATH, NOT_PLACED_PATH, assetOpenPath, assetPath, explorerCarry, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "./maintenanceAssets.js";
 
 test("a place's page, its open work and the positions at no place", () => {
@@ -44,4 +44,14 @@ test("locationChoices: every place depth first, A to Z, labelled with its path",
     { id: "b", label: "Riverside › Pump hall" },
   ]);
   assert.deepEqual(locationChoices(null), []);
+});
+
+test("an Explorer address with no asset lands on the Assets list, keeping what it asked for", () => {
+  assert.equal(ASSETS_LIST_PATH, "/asset-register");
+  const q = (s) => new URLSearchParams(s);
+  assert.equal(explorerCarry(q("all=1&sel=p1&arrange=positions&tab=rcm")), "arrange=positions&tab=rcm");
+  assert.equal(explorerCarry(q("all=1")), "");
+  assert.equal(assetOpenPath("l1", ""), assetPath("l1"));
+  assert.equal(assetOpenPath("l1", "arrange=positions&tab=models&fit_prior=r9&root=x"),
+    "/asset-register/explorer?arrange=positions&root=l1&sel=l1&tab=models&fit_prior=r9");
 });

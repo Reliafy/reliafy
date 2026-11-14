@@ -207,7 +207,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   const tag = `m${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 720 });
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.pump.id}&tab=rcm`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
   const fnName = `Function: Pump water ${tag}`;
   const fn = trow(page, `^${fnName}`);
   await trow(page, `^Rcm pump ${tag}`).focus();
@@ -273,7 +273,10 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await page.locator(".tp-scroll").evaluate((el) => { el.scrollTop += 60; });
   await expect(menu).toHaveCount(0);
   // Near the window's right edge it stays on screen.
-  await reveal(page, fn); // the scroll closed the menu; the row back in view (other specs' plants may sit above it)
+  // The scroll closed the menu; back to the top, so the row isn't under the sticky rows above it
+  // (the tree is one asset's, short enough that the scroll above leaves it there), then in view.
+  await page.locator(".tp-scroll").evaluate((el) => { el.scrollTop = 0; });
+  await reveal(page, fn);
   const box = await fn.boundingBox();
   await page.mouse.click(Math.min(1276, box.x + box.width - 2), box.y + box.height / 2, { button: "right" });
   const mbox = await menu.boundingBox();
@@ -940,11 +943,12 @@ test("one click on a function, failure or mode picks that row first time: with a
   test.setTimeout(180_000);
   const mode = `Failure mode: Seal leaks Low flow Pump water ${tag}`;
   const all = [mode, `Functional failure: No flow Contain the water ${tag}`, `Function: Contain the water ${tag}`];
+  // The Explorer is always one asset: the plant's.
   const tries = [
-    { label: "filter", url: `/asset-register/explorer?arrange=positions&tab=rcm`, filter: true, rows: all },
+    { label: "filter", url: `/asset-register/explorer?arrange=positions&tab=rcm&root=${p.top.id}`, filter: true, rows: all },
     { label: "no filter", url: `/asset-register/explorer?arrange=positions&tab=rcm&sel=${p.pump.id}`, rows: [mode] },
-    { label: "pinned", url: `/asset-register/explorer?arrange=positions&tab=rcm&pin=${p.pump.id}`, filter: true, rows: [mode] },
-    { label: "phone filter", url: `/asset-register/explorer?arrange=positions&tab=rcm`, filter: true, phone: true, rows: [mode, all[2]] },
+    { label: "pinned", url: `/asset-register/explorer?arrange=positions&tab=rcm&root=${p.top.id}&pin=${p.pump.id}`, filter: true, rows: [mode] },
+    { label: "phone filter", url: `/asset-register/explorer?arrange=positions&tab=rcm&root=${p.top.id}`, filter: true, phone: true, rows: [mode, all[2]] },
     { label: "phone", url: `/asset-register/explorer?arrange=positions&tab=rcm&sel=${p.pump.id}`, phone: true, rows: [mode] },
   ];
   for (const t of tries) {

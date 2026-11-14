@@ -50,7 +50,7 @@ async function fromTreeMenu(page, role, name) {
 test("the tree pane: open, close, levels, filter, and the panel for the row picked", async ({ page, request, problems }) => {
   const tag = `a${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.top.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
   await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
   const tree = page.getByRole("tree", { name: "Positions" });
   await expect(tree).toBeVisible();
@@ -106,11 +106,10 @@ test("the tree pane: open, close, levels, filter, and the panel for the row pick
   await expect(row(page, `Tree motor ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expectHealthy(page, problems, { label: "the tree pane" });
 
-  // Remembered: the menu's address comes back to the same arrangement and row.
+  // The bare address names no asset: the Assets list, to pick one (the Explorer is always one asset).
   await open(page, "/asset-register/explorer");
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions$/);
-  await expect(row(page, `Tree motor ${tag}`)).toHaveAttribute("aria-selected", "true");
-  await expect(details(page).getByRole("heading", { name: `Tree motor ${tag}` })).toBeVisible();
+  await expect(page).toHaveURL(/\/asset-register$/);
+  await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toBeVisible();
 });
 
 test("the Summary: facts, work as rows, what's inside sorted, and the row's own changes", async ({ page, request, problems }) => {
@@ -147,7 +146,7 @@ test("the Summary: facts, work as rows, what's inside sorted, and the row's own 
 test("arranged by locations with the switch, and back by positions from the keyboard", async ({ page, request, problems }) => {
   const tag = `b${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.line.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`);
   await expect(page.locator(".side-item.active")).toHaveText("Assets");
   // The heading: Positions / Locations (the one on shown) and «; no + button. The
   // ⋯ menu sits beside the filter box and has no Arrange by.
@@ -162,7 +161,7 @@ test("arranged by locations with the switch, and back by positions from the keyb
   await page.keyboard.press("Escape");
 
   await sw.getByRole("radio", { name: "Locations" }).click();
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations$/);
+  await expect(page).toHaveURL(new RegExp(`/asset-register/explorer\\?arrange=locations&.*root=${p.site.id}$`));
   await expect(page.getByRole("tree", { name: "Locations" })).toBeVisible();
   await expect(sw.getByRole("radio", { name: "Locations" })).toHaveAttribute("aria-checked", "true");
   await expect(page.locator(".side-item.active")).toHaveText("Assets");
@@ -188,7 +187,7 @@ test("arranged by locations with the switch, and back by positions from the keyb
   await expect(page.getByRole("heading", { name: `Tree spare ${tag}` })).toBeVisible();
   // Its breadcrumb goes back to the Explorer, by locations (where it's kept), with it picked.
   await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Explorer", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/asset-register/explorer\\?arrange=locations&sel=${p.spare.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/asset-register/explorer\\?arrange=locations&sel=${p.spare.id}&root=${p.site.id}$`));
   await expect(row(page, `Tree spare ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expectHealthy(page, problems, { label: "a spare by locations" });
 
@@ -203,32 +202,31 @@ test("arranged by locations with the switch, and back by positions from the keyb
   await expectHealthy(page, problems, { label: "back by positions" });
 });
 
-test("adding at the top level from the tree's last row, and the old addresses land", async ({ page, request, problems }) => {
+test("adding at the top of the asset from the tree's last row, and the old addresses land", async ({ page, request, problems }) => {
   const tag = `d${Date.now()}`;
   const p = await plant(request, tag);
-  // Positions: the last row adds a position at the top level, whatever row is picked.
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.line.id}`);
-  const add = page.getByRole("button", { name: "New position", exact: true });
+  // Positions: the last row adds a position at the top of the asset (at its place), whatever row is picked.
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`);
+  const add = page.getByRole("button", { name: `New position at Tree site ${tag}`, exact: true });
   await add.scrollIntoViewIfNeeded();
   await add.click();
   const pdialog = page.getByRole("dialog", { name: "New position" });
   await expect(pdialog).toBeVisible();
   await pdialog.getByRole("button", { name: "Cancel" }).click();
-  // Locations: the same for a location, its Inside empty (top level). (A top place's row isn't
-  // clicked here: on the whole register it opens that asset on its own, assetisolation.spec.js.)
+  // Locations: a location inside the asset's place.
   await arrangeSwitch(page).getByRole("radio", { name: "Locations" }).click();
-  await page.getByRole("button", { name: "New location", exact: true }).click();
+  await page.getByRole("button", { name: `New location inside Tree site ${tag}`, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New location" });
-  await expect(dialog.getByRole("combobox")).toHaveValue("");
+  await expect(dialog.getByRole("combobox")).toHaveValue(p.site.id);
   await dialog.getByLabel("Name").fill(`Tree new place ${tag}`);
   await dialog.getByRole("button", { name: "Create" }).click();
   await expect(dialog).toHaveCount(0);
   const made = row(page, `Tree new place ${tag}`);
   await expect(made).toHaveAttribute("aria-selected", "true");
-  await expect(made).toHaveAttribute("aria-level", "1");
+  await expect(made).toHaveAttribute("aria-level", "2");
   // Filtering: no add row (what's added might not match).
   await page.getByLabel("Filter the tree").fill(tag);
-  await expect(page.getByRole("button", { name: "New location", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: `New location inside Tree site ${tag}`, exact: true })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "adding at the top level" });
 
   // The old Positions, Items and Locations pages, with what their addresses carried
@@ -236,8 +234,9 @@ test("adding at the top level from the tree's last row, and the old addresses la
   // row's asset alone (?root= after it: assetisolation.spec.js).
   for (const [from, want, entry] of [
     [`/asset-register/positions?sel=${p.line.id}`, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`, "Assets"],
-    ["/asset-register/positions?arrange=flat", "/asset-register/explorer?arrange=positions", "Assets"],
-    ["/asset-register/explorer?arrange=items", "/asset-register/explorer?arrange=positions", "Assets"],
+    // Naming no row: the Assets list (the Explorer is always one asset).
+    ["/asset-register/positions?arrange=flat", "/asset-register", "Assets"],
+    ["/asset-register/explorer?arrange=items", "/asset-register", "Assets"],
     ["/asset-register/items", "/items", "Items"],
     [`/asset-register/locations?sel=${p.site.id}`, `/asset-register/explorer?arrange=locations&sel=${p.site.id}`, "Assets"],
     ["/maintenance/items", "/items", "Items"],
@@ -391,8 +390,10 @@ test("items don't get the card, and the RCM tab doesn't show it", async ({ page,
   const tag = `i${Date.now()}`;
   const p = await ctxPlant(request, tag);
   await request.patch(`${M}/positions/${p.pump.id}`, { data: { operating_context: `Dusty; runs on demand ${tag}.` } });
-  // An item's row: one with no home yet, under Locations.
+  // An item's row: a spare kept at a place, under Locations (an item with no home is in no asset).
   const loose = await (await request.post(`${M}/items`, { data: { name: `Ctx loose ${tag}` } })).json();
+  const store = await (await request.post(`${M}/locations`, { data: { name: `Ctx store ${tag}` } })).json();
+  await request.post(`${M}/items/${loose.id}/place`, { data: { location_id: store.id } });
   await open(page, `/asset-register/explorer?arrange=locations&sel=${loose.id}`);
   const panel = details(page);
   await expect(panel.getByRole("heading", { name: `Ctx loose ${tag}` })).toBeVisible();
@@ -411,7 +412,7 @@ test("on a phone: the card fits and edits in place", async ({ page, request, pro
   const tag = `p${Date.now()}`;
   const p = await ctxPlant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
-  await open(page, `/asset-register/explorer?arrange=positions`);
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}`);
   await page.getByRole("treeitem", { name: new RegExp(`^Ctx pump ${tag}`) }).locator(".tp-nm").click();
   const card = page.getByRole("region", { name: "Details" }).getByRole("region", { name: "Operating context" });
   await card.getByRole("button", { name: "Add the operating context", exact: true }).click();
