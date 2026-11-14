@@ -44,7 +44,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git build-essential \
     && python -m pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir --require-hashes -r requirements.lock \
-    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@8b1c7a63ce4129a8f376b62089fad634fe5af4e3" \
+    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@b2a98cc5784b21ebde75a2491c874878413453c0" \
     && pip install --no-cache-dir --no-deps "firebase-admin==7.7.0" \
     && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability, access_parser, defusedxml, openpyxl" \
     && find /usr/local/lib/python3.11/site-packages -depth -type d \( -name tests -o -name test \) \

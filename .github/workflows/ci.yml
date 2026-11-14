@@ -32,8 +32,8 @@ jobs:
       # pillow-heif encodes the tests' HEIC photos; the app only decodes (pi-heif, in the lock).
       - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0" && pip install pytest==9.1.1 pytest-xdist==3.8.0 pillow-heif==1.8.1
       # RePyability isn't in requirements.txt: like the Dockerfile, install the
-      # pinned commit (RePyability dev until v0.18 is tagged) --no-deps so it can't re-resolve surpyval from PyPI.
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@8b1c7a63ce4129a8f376b62089fad634fe5af4e3"
+      # pinned commit (v0.18) --no-deps so it can't re-resolve surpyval from PyPI.
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@b2a98cc5784b21ebde75a2491c874878413453c0"
       # The slowest tests are listed, so a slower run says where the time went.
       - run: pytest backend/tests -n auto --dist loadfile --durations=40
 
@@ -75,7 +75,7 @@ jobs:
           cache-dependency-path: requirements.lock
       # The backend's packages as the backend job (and the Dockerfile) install them.
       - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0"
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@8b1c7a63ce4129a8f376b62089fad634fe5af4e3"
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@b2a98cc5784b21ebde75a2491c874878413453c0"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
