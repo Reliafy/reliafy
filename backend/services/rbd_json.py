@@ -116,7 +116,17 @@ class _Exporter:
 
     def dist(self, model: Optional[dict], label: str):
         """A frozen SurPyval distribution for a block's model, or
-        :class:`_Missing`."""
+        :class:`_Missing`. A saved Bayesian update is its posterior
+        predictive (refitted from its history and prior), as the analysis
+        takes it, which RePyability's JSON holds whole."""
+        recipe = rbd_export.bayes_recipe(model, self.resolve_model)
+        if recipe is not None:
+            from repyability import PosteriorPredictive
+
+            try:
+                return PosteriorPredictive(rbd_export.bayes_fit(recipe))
+            except Exception:  # noqa: BLE001 - the block's own parameters below, as the analysis
+                pass
         spec = self.spec(model)
         if not spec:
             raise _Missing(f"“{label}” has no non-repairable model")
