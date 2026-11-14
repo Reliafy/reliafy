@@ -281,6 +281,7 @@ def _export_resolvers(db, owner_id):
         if model is None:
             return None
         results = model.results or {}
+        spec = model.spec or {}
         return {
             "name": model.name,
             "kind": results.get("kind") or model.kind,
@@ -290,6 +291,11 @@ def _export_resolvers(db, owner_id):
             "extras": results.get("extras"),
             "unit": results.get("unit"),
             "base_distribution_id": results.get("base_distribution_id"),
+            # A Bayesian update's recipe (the history and the prior): the downloads refit it and
+            # use its posterior predictive, as the analysis does, not its parameters' middle values.
+            **({"bayes": {"distribution_id": spec.get("distribution_id") or model.distribution_id,
+                          "unit": spec.get("unit") or None, **spec["bayes"]}}
+               if spec.get("method") == "bayesian_update" and spec.get("bayes") else {}),
         }
 
     return resolve_model, resolve_subsystem
