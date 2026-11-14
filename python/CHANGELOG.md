@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.10.0 (14 Nov 2026)
+
+Needs a server on the same release.
+
+- **How often** patterns on maintenance tasks: `maintenance tasks.create` and
+  `tasks.update` take `rule` (a weekday of the month, or a named month each
+  year, e.g. the first Tuesday of November), and task reads return `rule` and
+  `rule_text`.
+- **Operating plans** on positions: `maintenance get.operating_plan` reads a
+  position's plan (its own or the one it inherits); `positions.update` takes
+  `operating_plan` and `end_operating_plan`.
+- **One asset at a time**: tree and RCM reads take `within` (an asset), and
+  return only that asset.
+
 ## 0.9.0 (13 Nov 2026)
 
 Needs a server on the same release.
