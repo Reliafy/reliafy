@@ -30,6 +30,9 @@ WORKDIR /code
 #
 # - Python packages come from requirements.lock: exact versions with hashes,
 #   generated from requirements.txt by tools/lock_requirements.sh.
+# - RePyability v0.18 is pinned by its tag's commit (tag v0.18 = b2a98cc5).
+#   Keep "RePyability vX.Y" here in step with the commit below: Download as
+#   Python reads it to print the user's install line (rbd_export.detect_versions).
 # - RePyability is installed --no-deps, after the rest, so our pinned
 #   surpyval stays authoritative (it declares surpyval>=0.27, uncapped, and
 #   --no-deps stops pip re-resolving it to a newer one; see requirements.txt).
