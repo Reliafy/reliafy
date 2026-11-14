@@ -15,6 +15,11 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 const LEVELS = [0.8, 0.9, 0.95, 0.99];
 const pct = (level) => `${Math.round(level * 100)}%`;
 
+// What the band is, as RePyability says (band.kind): a confidence band from fits'
+// covariances, a credible band from Bayesian updates' posteriors, or both at once.
+export const bandWord = (band) =>
+  band?.kind === "credible" ? "credible" : band?.kind === "mixed" ? "confidence and credible" : "confidence";
+
 const fmtLife = (v) =>
   v == null ? "beyond the axis" : Math.abs(v) >= 1e-4 || v === 0 ? Number(v.toPrecision(4)).toLocaleString("en-US") : v.toExponential(2);
 
@@ -59,7 +64,7 @@ export function bandTraces(band, x, active) {
     {
       x, y: upper, mode: "lines", type: "scatter", line: { width: 0 },
       fill: "tonexty", fillcolor: BAND_FILL,
-      name: `${pct(band.level)} confidence band`, hoverinfo: "skip",
+      name: `${pct(band.level)} ${bandWord(band)} band`, hoverinfo: "skip",
     },
   ];
 }
@@ -104,8 +109,10 @@ export function BandNote({ band }) {
         </p>
       ) : (
         <p>
-          <b>Shaded: {pct(band.level)} confidence band</b> from {band.n_draws?.toLocaleString()} draws of
-          the fitted models' parameters (from each fit's covariance). Blocks using the same saved
+          <b>Shaded: {pct(band.level)} {bandWord(band)} band</b> from {band.n_draws?.toLocaleString()} draws of
+          the fitted models' parameters ({band.kind === "credible" ? "from each Bayesian update's posterior"
+            : band.kind === "mixed" ? "from each fit's covariance, and each Bayesian update's posterior"
+            : "from each fit's covariance"}). Blocks using the same saved
           model share each draw. Carrying uncertainty:{" "}
           {[...byModel].map(([model, labels]) => `${labels.join(", ")} (${model})`).join(" · ")}.
         </p>

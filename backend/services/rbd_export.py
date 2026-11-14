@@ -546,66 +546,34 @@ class _Script:
         from backend.services import rbd_standby
 
         k = rbd_standby.operating(data, label)
-        if k > 1:
-            # k-of-n standby (#84): k units running, the spares idle.
-            reason = rbd_standby.limit_message(label, k, dormancy, not same)
+        start = rbd_standby.start_probability(data)
+        if not (k == 1 and dormancy >= 1.0 and start == 1.0):
+            # Cold, warm, or hot with spares that may fail to start; k units
+            # running (#84). A spare that fails to start is skipped and the
+            # next one tried (start_probability).
+            reason = rbd_standby.limit_for(data, label)
             if reason:
                 return self.missing(var, reason, label)
             self.imports.add("StandbyModel")
             kind = "cold" if dormancy == 0.0 else "hot" if dormancy >= 1.0 else "warm"
-            try:
-                switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
-            except (TypeError, ValueError):
-                switch = 1.0
-            option = (f"switching_probability={_num(switch)}" if dormancy == 0.0
-                      else f"dormancy_factor={_num(dormancy)}")
-            self.comment(f"{label}: {kind} standby - {k} units running and {spares} idle "
-                         f"spare{'s' if spares != 1 else ''}; it fails when fewer than {k} can run.")
-            self.lines.append(f"{var} = StandbyModel(")
-            self.lines.append(f"    [{', '.join([duty] * k + [spare] * spares)}],")
-            self.lines.append(f"    k={k},")
-            self.lines.append(f"    {option},")
-            self.lines.append(")")
-            return var
-        if 0.0 < dormancy < 1.0:
-            self.imports.add("StandbyModel")
-            self.comment(
-                f"{label}: warm standby - the duty unit plus {spares} idle "
-                f"spare{'s' if spares != 1 else ''} that age at {dormancy:g} x "
-                "the operating rate while waiting (and can fail before "
-                "they're needed)."
-            )
-            units = ", ".join([duty] + [spare] * spares)
-            line = f"{var} = StandbyModel([{units}], k=1, " \
-                   f"dormancy_factor={_num(dormancy)})"
+            ageing = (f", ageing at {dormancy:g} x the operating rate while waiting (and able to fail "
+                      "before they're needed)" if 0.0 < dormancy < 1.0 else "")
+            starts = (f" Each spare starts with probability {start:g}; one that doesn't is skipped and the "
+                      "next tried." if start < 1.0 else "")
+            self.comment(f"{label}: {kind} standby - {k} unit{'s' if k != 1 else ''} running and {spares} "
+                         f"idle spare{'s' if spares != 1 else ''}{ageing}; it fails when fewer than {k} can "
+                         f"run.{starts}")
+            options = [f"k={k}"]
+            if dormancy > 0.0:
+                options.append(f"dormancy_factor={_num(dormancy)}")
+            if start < 1.0:
+                options.append(f"start_probability={_num(start)}")
+            units = ", ".join([duty] * k + [spare] * spares)
+            line = f"{var} = StandbyModel([{units}], {', '.join(options)})"
             if len(line) > 79:
                 self.lines.append(f"{var} = StandbyModel(")
                 self.lines.append(f"    [{units}],")
-                self.lines.append("    k=1,")
-                self.lines.append(f"    dormancy_factor={_num(dormancy)},")
-                self.lines.append(")")
-            else:
-                self.lines.append(line)
-            return var
-        if dormancy == 0.0:
-            try:
-                switch = float(data.get("startProb", 1.0))
-            except (TypeError, ValueError):
-                switch = 1.0
-            self.imports.add("StandbyModel")
-            self.comment(
-                f"{label}: cold standby - the duty unit plus {spares} "
-                f"dormant spare{'s' if spares != 1 else ''}, switched in on "
-                f"failure (each start succeeds with probability {switch:g})."
-            )
-            units = ", ".join([duty] + [spare] * spares)
-            line = f"{var} = StandbyModel([{units}], k=1, " \
-                   f"switching_probability={_num(switch)})"
-            if len(line) > 79:
-                self.lines.append(f"{var} = StandbyModel(")
-                self.lines.append(f"    [{units}],")
-                self.lines.append("    k=1,")
-                self.lines.append(f"    switching_probability={_num(switch)},")
+                self.lines.extend(f"    {o}," for o in options)
                 self.lines.append(")")
             else:
                 self.lines.append(line)

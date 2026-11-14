@@ -200,13 +200,13 @@ def redundancy_units(m: Maintenance, children: list[dict], nodes: list[dict], no
                         "data": {"redundancy_group": g["id"], "positions": [mm["id"] for mm in members],
                                  **({"model_source": (first.get("data") or {}).get("model_source")}
                                     if (first.get("data") or {}).get("model_source") else {})}}
-                if spb is not None and dormancy == 0.0:
+                if spb is not None:  # cold, warm or hot: a spare that fails to start is skipped
                     node["startProb"] = spb
                 nodes[:] = [x for x in nodes if x["id"] not in set(bids)] + [node]
                 units.append({"id": sid, "kind": "standby", "members": bids})
                 words = {0.0: "cold"}.get(dormancy, "hot" if dormancy == 1.0 else f"warm, ageing at {_pct(dormancy)}")
-                start = (f", each starting when switched in with a {_pct(spb)} chance" if spb is not None and
-                         dormancy == 0.0 else "")
+                start = (f", each starting when switched in with a {_pct(spb)} chance" if spb is not None
+                         else "")
                 notes.append(f"{g['name']} is one standby block ({words}): {need} of {', '.join(brief['members'])} "
                              f"running, the other{'s' if n - need > 1 else ''} waiting{start}.")
                 used.append({**brief, "drawn": "standby"})

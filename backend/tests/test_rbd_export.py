@@ -226,7 +226,7 @@ def test_series_parallel_standby_subsystem_graph_matches_app(tmp_path):
     code = rbd_export.to_python(graph, "Mixed", resolve_subsystem=resolve_sub,
                                 exported_at=WHEN)
     assert 'RepeatedNode(bearings_unit, 3, "series")' in code
-    assert "StandbyModel(" in code and "switching_probability=0.9" in code
+    assert "StandbyModel(" in code and "start_probability=0.9" in code
     assert "WORKING_NODES = {\"pin\"}" in code
     res, _ = _run(code, tmp_path)
 
