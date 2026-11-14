@@ -164,6 +164,12 @@ always be rebuilt. See [docs/maintenance-graph.md](docs/maintenance-graph.md).
 
 ## UI
 
+- **Nothing in the UI is built without the design system** (Derryn, 14 Nov
+  2026). Before any UI change, read `docs/design-system/README.md` and the
+  guideline in `docs/design-system/components/` for every shared component you
+  touch or add; build with its tokens, roles and components only. A UI PR that
+  doesn't follow it isn't merged. Why: the app had drifted into one-off
+  colours, sizes and controls.
 - Colours, type, spacing, radii, shadows and control heights come from
   `docs/design-system/tokens.json`. Change a value there, then run
   `npm run tokens` (in `frontend/`) to regenerate `src/tokens.css`; never edit
