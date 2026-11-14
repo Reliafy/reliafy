@@ -1,6 +1,6 @@
 /* Reliafy design tokens (design system v2).
-   Generated from the design system's tokens.json: change a value there and
-   paste this file again, rather than editing it by hand.
+   Generated from docs/design-system/tokens.json by `npm run tokens`:
+   change a value there, never here (tokensSync.test.js checks).
    - Ramps (neutral, blue, green, amber, red, teal, violet, pink; 50–950): the
      raw colours. Step N has the same lightness in every hue: 600 is the first
      text-safe step, 500 the first with 3:1, 700 coloured text on its own tint.
