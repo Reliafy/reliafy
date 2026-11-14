@@ -215,8 +215,8 @@ test("the assets are the top-level places, and the positions at none stay reacha
 
   await open(page, "/asset-register");
   await depot.getByRole("link", { name: "Smoke test depot", exact: true }).click();
-  // An asset opens in the Explorer, arranged by locations, with the asset picked.
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&sel=/);
+  // An asset opens on its own in the Explorer (?root=, #871), arranged by locations, with the asset picked.
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&root=([^&]+)&sel=\1(&|$)/);
   await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
   await expect(page.getByRole("treeitem", { name: /^Smoke test depot\b/ })).toBeVisible();
   await expect(page.locator(".td-title")).toContainText("Smoke test depot");
