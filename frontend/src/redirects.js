@@ -22,11 +22,12 @@ import { ORDERS_PATH } from "./maintenanceOrders.js";
 //
 // Parts and stock and Classes are hidden tabs of the Explorer for now
 // (explorerTabs.js, EXPLORER_PARTS_CLASSES_TABS): while they are, their old
-// pages' addresses land on the Explorer with no tab (its Summary, still under
-// Assets) and carry no ?scope, ?show or ?class, which only those tabs read.
+// pages' addresses land on the Assets list (the Explorer is always one asset,
+// picked there) and carry no ?scope, ?show or ?class, which only those tabs read.
 // Switched on again, they open the tabs as they were.
 const EXPLORER = "/asset-register/explorer";
-const tabAt = (query) => (EXPLORER_PARTS_CLASSES_TABS ? `${EXPLORER}?${query}` : EXPLORER);
+const ASSETS = "/asset-register";
+const tabAt = (query) => (EXPLORER_PARTS_CLASSES_TABS ? `${EXPLORER}?${query}` : ASSETS);
 
 // Where Assets' Parts and stock and Classes live now, for links: the same
 // place their old addresses redirect to, without the extra hop. A class's

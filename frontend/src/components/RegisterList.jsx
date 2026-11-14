@@ -19,10 +19,11 @@ import "./RegisterList.css";
 // the list (Assets' "Not at a place yet"), given the same columns.
 // `empty`: { title, text, sample (a button), more (a line under it) }.
 // `onDelete(row)`: a bin at the end of each row (Delete…); the `after` rows
-// then end in an empty cell of their own.
+// then end in an empty cell of their own. `pane`: work opened from the header's
+// ⋯ menu (Assets' Excel import and export), drawn under the header, above the list.
 export default function RegisterList({
   title, purpose, help, primary, actions = null, menu, error, rows, noun, count, search, placeholder, columns, name, after = null, empty,
-  className = "", onDelete = null,
+  className = "", onDelete = null, pane = null,
 }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -32,6 +33,7 @@ export default function RegisterList({
   return (
     <div className={"app reg-page" + (className ? ` ${className}` : "")}>
       <SectionHeader title={title} purpose={purpose} help={help} primary={primary} actions={actions} menu={menu} />
+      {pane}
       {error && <div className="card error">{error}</div>}
       {rows === null ? (
         !error && <div className="card empty">Loading…</div>

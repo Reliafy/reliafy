@@ -224,9 +224,9 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   const addRow = page.locator(".tp-addrow");
   const packaging = page.locator(".pk-panel").getByRole("region", { name: "Package the tasks" });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?all=1&arrange=positions&sel=${p.pool.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
   // Summary: the tree ends with its quiet "+ New position" row.
-  await expect(addRow).toHaveText("+New position");
+  await expect(addRow).toHaveText(`+New position at Menu site ${tag}`);
 
   // LSA: the tree ends at its last row, and a position's menu leads with the tab's own action.
   await page.getByRole("tab", { name: "LSA" }).click();
@@ -266,7 +266,7 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   await expect(page.getByRole("treegrid", { name: /and their RCM/ }).getByRole("row", { name: new RegExp(`^Menu circulation ${tag}`) })).toBeVisible();
   await expect(addRow).toHaveCount(0);
   await page.getByRole("tab", { name: "Summary" }).click();
-  await expect(addRow).toHaveText("+New position");
+  await expect(addRow).toHaveText(`+New position at Menu site ${tag}`);
 
   // A phone: the ⋯ opens the same menu, and the drafts fill the screen without scrolling it sideways.
   await page.setViewportSize({ width: 400, height: 860 });

@@ -16,11 +16,12 @@ import "./TreeSheetPane.css";
 //
 //   start      "import" or "export": which part comes first
 //   branch     {id, name}: the branch "Export this branch…" opened it on (else null)
+//   whole      whether the whole tree can be exported (false with one asset open: its branches only)
 //   onChanged(text)  an import went in (the tree is read again)
 //   readOnly   the reason the workspace can't be changed (view only), or null
 //   phone, headingRef, onClose: TablePane's
 
-export default function TreeSheetPane({ start = "import", branch = null, phone = false, headingRef = null, onClose,
+export default function TreeSheetPane({ start = "import", branch = null, whole = true, phone = false, headingRef = null, onClose,
   onChanged, readOnly = null }) {
   const [file, setFile] = useState(null);
   const [report, setReport] = useState(null);
@@ -163,7 +164,7 @@ export default function TreeSheetPane({ start = "import", branch = null, phone =
       {branch && (
         <fieldset className="ts-scope">
           <legend className="ts-label">What to export</legend>
-          {exportChoices(branch).map((c) => (
+          {exportChoices(branch, { whole }).map((c) => (
             <label key={c.id} className="ts-choice">
               <input type="radio" name="ts-scope" value={c.id} checked={scope === c.id} onChange={() => setScope(c.id)} />
               {c.label}
@@ -187,7 +188,8 @@ export default function TreeSheetPane({ start = "import", branch = null, phone =
     <TablePane title="Excel import and export" subject={branch?.name || "Asset tree"} phone={phone}
                busy={importing} headingRef={headingRef} onClose={onClose} className="tree-sheet-pane">
       <div className="tree-sheet">
-        {start === "export" ? <>{exportPart}{importPart}</> : <>{importPart}{exportPart}</>}
+        {!whole && !branch ? importPart
+          : start === "export" ? <>{exportPart}{importPart}</> : <>{importPart}{exportPart}</>}
       </div>
     </TablePane>
   );

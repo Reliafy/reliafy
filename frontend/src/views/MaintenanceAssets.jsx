@@ -6,8 +6,10 @@ import { PlusIcon } from "../components/LibRows.jsx";
 import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
 import { NewLocationModal } from "./MaintenanceLists.jsx";
+import TreeSheetPane from "../components/TreeSheetPane.jsx";
+import usePhone from "../usePhone.js";
 import {
-  NOT_PLACED_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
+  NOT_PLACED_PATH, assetOpenPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
 import "./Maintenance.css";
 
@@ -32,10 +34,37 @@ export default function MaintenanceAssets() {
   const [deleting, setDeleting] = useState(null);
   const location = useLocation();
   const [deleted, setDeleted] = useState(() => location.state?.deleted || null);
+  // Sent here from the Explorer with no asset in its address (the Explorer is always one asset):
+  // say to pick one, and open it with what that address asked for (its tab, a pane).
+  const [fromExplorer] = useState(() => (typeof location.state?.fromExplorer === "string" ? location.state.fromExplorer : null));
   useEffect(() => {
     // Shown once: a reload of the page doesn't bring the toast back.
-    if (location.state?.deleted) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    if (location.state?.deleted || location.state?.fromExplorer != null) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Excel import and export of every asset's tree (the Explorer is one asset at a time, so the
+  // whole register's sheet lives here): under the header, in the list's place on a phone.
+  const phone = usePhone();
+  const [sheet, setSheet] = useState(null);
+  const openSheet = (start) => setSheet((x) => ({ start, n: (x?.n || 0) + 1 }));
+  const menu = (
+    <>
+      <button type="button" className="ovm-item" onClick={() => openSheet("import")}>Import from Excel…</button>
+      <button type="button" className="ovm-item" onClick={() => openSheet("export")}>Export to Excel…</button>
+    </>
+  );
+  useEffect(() => {
+    if (!sheet) return undefined;
+    const esc = (e) => { if (e.key === "Escape") setSheet(null); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [sheet]);
+  const sheetPane = sheet && (
+    <div className="reg-sheet">
+      <TreeSheetPane key={sheet.n} start={sheet.start} phone={phone} onClose={() => setSheet(null)}
+                     onChanged={() => reload()} />
+    </div>
+  );
 
   const rest = view?.not_placed;
   const horizon = view?.horizon_days ?? 30;
@@ -67,11 +96,13 @@ export default function MaintenanceAssets() {
   return (
     <>
       <RegisterList
-        title="Assets" purpose="The places you look after, and everything at each one."
-        help={HELP} primary={newAsset}
+        title="Assets"
+        purpose={fromExplorer != null ? "Pick an asset to open it in the Explorer. Each asset opens on its own."
+          : "The places you look after, and everything at each one."}
+        help={HELP} primary={newAsset} menu={menu} pane={sheetPane}
         error={error} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
         count={assetsSummary(view)} search={(p) => [p.name, p.description]}
-        name={(p) => ({ to: assetPath(p.id), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
+        name={(p) => ({ to: assetOpenPath(p.id, fromExplorer || ""), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
         columns={columns} after={notPlaced || null} onDelete={setDeleting}
         empty={{
           title: "No assets yet",
