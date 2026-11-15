@@ -341,6 +341,7 @@ _UNIT_ALIASES = {
     "kilometre": "km", "kilometres": "km", "kilometer": "km", "kilometers": "km",
     "mile": "miles", "mi": "miles",
     "operating hours": "hours", "op hrs": "hours",
+    "fh": "hours", "flight hours": "hours", "flight hour": "hours",
 }
 
 

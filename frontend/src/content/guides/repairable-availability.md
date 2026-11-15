@@ -102,9 +102,11 @@ rule and fills it in, marked **Suggested**. Change it if you like; **Find the
 best replacement rule** puts the suggestion back.
 
 The section also says how the block's long-run availability is worked out. A
-repair that doesn't make the unit as good as new has no exact long-run answer
-yet, so these blocks are usually **Simulated · Pro**. A constant rate is
-worked out exactly, for free.
+Crow-AMSAA or Duane model with a replacement rule is worked out exactly, and a
+Cox-Lewis one numerically, both for free; so is a constant rate. A renewal
+model (ARA, ARI, G1, generalised renewal), whose repairs make the unit only
+partly as good as new, has no exact long-run answer, so those blocks are
+**Simulated · Pro**.
 
 ## Validate, then calculate
 

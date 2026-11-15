@@ -69,6 +69,17 @@ items. Under **Life model**:
   the failure modes it's for; failures by other modes count as still running.
 - **Assign a saved model…** links a model from your library, or a sample.
 - **From the class…** links the model fitted to the position's class.
+  A class's model counts lives in days, or in a counter's unit when its
+  positions have one (their own, or one above them: a belt's flight hours are
+  its air vehicle's). Pick it with **Count lives in** on the class's panel
+  (the Explorer's **Classes** tab). Each life is then what the counter went
+  up by while the item was fitted. A failure between two readings is fitted
+  as a range, from the least to the most use it can have had; a life the
+  readings can't bound (no reading after the failure, say) is left out, and
+  the panel says how many and why. Its proposals are for tasks by that use
+  (every 50 hours), and **What the plan costs** turns its cost per hour into
+  a cost a year through each position's operating plan, or its counter's
+  recent rate.
 - **Enter parameters…** saves a model from numbers you have (a data sheet, a
   handbook) and attaches it. An exponential takes an MTBF (what handbooks
   give) or a failure rate, in the unit you pick; a figure that can't be what

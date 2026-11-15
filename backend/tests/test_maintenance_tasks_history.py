@@ -59,7 +59,7 @@ def test_a_task_by_use_with_a_second_limit_and_its_counter(m):
     hours = m.add_point(pid, "Hour meter", kind="counter", unit="hours")["id"]
     elsewhere = m.add_point(other, "Hour meter", kind="counter", unit="hours")["id"]
     cycles = m.add_point(pid, "Starts", kind="counter", unit="cycles")["id"]
-    with pytest.raises(Invalid, match="same position"):
+    with pytest.raises(Invalid, match="a position above or below it"):
         m.create_task(pid, "Oil change", 250, "hours", point_id=elsewhere)
     with pytest.raises(Invalid, match="counts cycles"):
         m.create_task(pid, "Oil change", 250, "hours", point_id=cycles)

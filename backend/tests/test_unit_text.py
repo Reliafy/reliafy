@@ -108,3 +108,33 @@ def test_demonstration_reads_singular_for_one_hour():
     assert r["summary"].startswith("Test 22 units for 1 hour each")
     assert [row["label"] for row in r["tradeoff"]["rows"]] == ["1 hour (1×)"]
     assert strategy_store.demonstration_headline(r) == "22 units × 1 hour, 0 failures"
+
+
+def _fh_block(nid, duty=None, unit="flight hours"):
+    data = {"label": nid.title(), "model": {"name": f"{nid} life", "unit": unit}}
+    if duty is not None:
+        data["duty"] = duty
+    return {"id": nid, "type": "component", "data": data}
+
+
+def test_a_duty_turns_the_diagram_clock_into_flight_hours():
+    """A repairable diagram in hours whose blocks run 3% of the time, with
+    models fitted in flight hours: the duty counts their life in running time,
+    so no block is warned about. A block with no Runs share is, in one
+    accurate line; a model in days is still unconverted."""
+    graph = {"unit": "Hours", "repairable": True,
+             "nodes": [_fh_block("engine", 0.03), _fh_block("belt", 0.03), _fh_block("radio"),
+                       _fh_block("seal", 0.03, unit="Days")]}
+    warnings = rbd_analysis.unit_warnings(graph)
+    assert not any("Engine" in w or "Belt" in w for w in warnings)
+    (radio,) = [w for w in warnings if "Radio" in w]
+    assert "running all the time" in radio and "Runs" in radio and "not converted" not in radio
+    (seal,) = [w for w in warnings if "Seal" in w]
+    assert "not converted" in seal
+
+
+def test_a_non_repairable_diagram_still_warns_about_flight_hours():
+    """The Runs share is read by availability (repairable) diagrams only."""
+    graph = {"unit": "Hours", "nodes": [_fh_block("engine", 0.03)]}
+    (warning,) = rbd_analysis.unit_warnings(graph)
+    assert "not converted" in warning

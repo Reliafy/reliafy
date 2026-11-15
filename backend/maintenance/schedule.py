@@ -18,11 +18,6 @@ turns the shapes the app stores into the library's:
 
 Nothing stored is rewritten: the stored dicts stay as they are and are read
 through these adapters (round trips in ``test_maintenance_forecast_engine.py``).
-
-TODO(RePyability 0.18): ``repyability.schedule`` first ships in RePyability 0.18.
-Until the libraries pull request bumps the pins (requirements.txt, the lock, the
-Dockerfile's RePyability commit and the ci / guide-screenshots / content-draft
-workflows), this module needs RePyability from its ``dev`` branch.
 """
 
 from __future__ import annotations

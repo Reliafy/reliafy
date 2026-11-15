@@ -304,6 +304,22 @@ def test_a_point_retires_unless_a_task_or_alarm_depends_on_it(m):
     _same_after_rebuild(m)
 
 
+def test_a_new_task_may_count_the_counter_on_the_position_above(m):
+    """tasks.create takes a counter on the position above (an air vehicle's
+    flight hours for its engine's task), as tasks.update and the guide say;
+    one on an unrelated position is still refused."""
+    av = m.create_position("AV-01")["id"]
+    engine = m.create_position("PMU engine", parent_id=av)["id"]
+    fh = m.add_point(av, "Airframe hours", "counter", "hours")["id"]
+    task = m.create_task(engine, "Engine overhaul", 400, "hours", point_id=fh)
+    assert m.s.node(m.org, task["id"])["point_id"] == fh
+    other = m.create_position("AV-02")["id"]
+    far = m.add_point(other, "AV-02 hours", "counter", "hours")["id"]
+    with pytest.raises(Invalid, match="isn't on PMU engine, a position above or below it"):
+        m.create_task(engine, "Belt check", 50, "hours", point_id=far)
+    _same_after_rebuild(m)
+
+
 # ---- classes, conditions, manufacturers, groups, connections ----------------------------------
 
 def test_classes_and_conditions_restore_under_a_live_parent(m):

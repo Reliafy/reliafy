@@ -1342,11 +1342,12 @@ export function importFaultTreeFile(file) {
 
 // A phased mission (#160): the (unsaved) graph's phases worked out — mission
 // reliability, each phase's failure probability, the riskiest phase.
-export function rbdPhases(graph) {
+// ``currentState``: the blocks' states now (As of now), so the mission flies from their ages.
+export function rbdPhases(graph, currentState = null) {
   return request("/api/rbds/phases", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ graph }),
+    body: JSON.stringify(currentState ? { graph, current_state: currentState } : { graph }),
   });
 }
 
@@ -3004,8 +3005,11 @@ export function updateMaintenanceLocation(id, body) {
 export function getPositionClasses() {
   return request("/api/maintenance/classes");
 }
-export function getClassLifeData(positionClass) {
-  return request(`/api/maintenance/classes/life-data?position_class=${encodeURIComponent(positionClass)}`);
+// unit: days (lives on the calendar, the default) or a counter's unit (hours, km) for lives by use.
+export function getClassLifeData(positionClass, unit) {
+  const q = new URLSearchParams({ position_class: positionClass });
+  if (unit && unit !== "days") q.set("unit", unit);
+  return request(`/api/maintenance/classes/life-data?${q}`);
 }
 
 export function addMaintenanceMeter(positionId, name, unit) {
@@ -3063,8 +3067,9 @@ export function setClassCosts(body) {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
-export function fitClassModel(positionClass, distribution = "weibull") {
-  return postJson("/api/maintenance/classes/fit", { position_class: positionClass, distribution });
+// unit: days or a counter's unit; left out, a refit keeps the class's unit.
+export function fitClassModel(positionClass, distribution = "weibull", unit) {
+  return postJson("/api/maintenance/classes/fit", { position_class: positionClass, distribution, ...(unit ? { unit } : {}) });
 }
 export function decideProposal(id, accept, note = "") {
   return postJson(`/api/maintenance/proposals/${id}/${accept ? "accept" : "reject"}`, { note });

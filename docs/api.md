@@ -386,9 +386,12 @@ order)`, duration` (the whole mission)`, unit, result?}`. On an RBD: `GET /api/r
 expected_updated_at?}`; `GET` adds the blocks, vote nodes and every open
 covariate with the blocks it feeds and, per phase, the value each block uses
 and where it comes from), and `POST /api/rbds/{id}/missions/{mission}/calculate
-{phases?}`: the chance of completing it, each phase's failure probability,
+{phases?, current_state?}`: the chance of completing it, each phase's failure probability,
 reliability at its end and weakest block (the one whose failures end the most
-missions in that phase). A phase missing a value waits: `reliability` is null,
+missions in that phase). `current_state` (`{node: {failed: true} | {age}}`)
+flies it from the blocks' states now: an aged block starts at its age and keeps
+it through standby phases, a failed block stays failed, and the notes open with
+"As of now" (such a result isn't kept for the lists). A phase missing a value waits: `reliability` is null,
 `through` says how far the mission was worked out and `needs` which blocks need
 what. Over MCP: `analyse rbd_mission` and `change rbd_mission`.
 `fit: true` with `data` (`position`, `class`, or `both`: the position's history

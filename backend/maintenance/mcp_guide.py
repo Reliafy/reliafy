@@ -97,7 +97,8 @@ Building the register.
 2. Positions: maintenance positions.create, top down (parent_id), with position_class for like duties, \
 operating_context for how it's used (load, environment, hours; the description stays one line on what it is) and \
 location_id where it physically is (set it on a system's top position; the ones inside inherit it). Many alike: \
-build one, then maintenance positions.copy (failure modes, tasks and parts lists come too). RCM: see the plan \
+build one, then maintenance positions.copy (beside the original unless parent_id says where; failure modes, \
+tasks and parts lists come too). RCM: see the plan \
 topic.
 3. Items: maintenance fitments.fit (position_id, plus a new item by item_name / serial / manufacturer, or by \
 part_id, or an existing item_id), with on = the date it went in ('2022' if that's all that's known). Earlier \
@@ -485,9 +486,17 @@ Learning from the history.
 1. maintenance get.class_life_data, id = the position class: every fitment at every position of the \
 class, pooled. x = days in service, c = 0 failed or 1 censored; where a date was rough, xl / xr bound the life \
 and a failure is c = 2 (interval censored).
+   By use (flight hours, km, cycles): unit = the counter's unit. Each life is what the position's counter in \
+that unit (its own, or the nearest above it: a belt's hours are its air vehicle's) went up by while the item was \
+fitted. Between readings the counter is known only to lie between them, so a failure is c = 2 with xl / xr unless \
+readings on the days pin it; anything not failed is censored at the use it surely had. excluded lists the lives \
+the readings can't bound (no counter, no reading while fitted, a failure after the last reading), with why: they \
+aren't counted. Say how many were left out.
 2. maintenance reliability.set_class_costs (what a planned replacement and a failure cost; the availability a \
 hidden function must reach), then fit_class_model (Pro; needs at least 2 failures on record, or 1 with distribution 'exponential'): it fits a life \
-distribution, saves it as a model and proposes task intervals from it and the costs.
+distribution, saves it as a model (on the class, with its unit) and proposes task intervals from it and the \
+costs. unit: days (default) or a counter's unit, as in step 1; a refit keeps the class's unit. A model in days \
+proposes for calendar tasks; a model by use, for tasks by that use.
 3. maintenance list.proposals: each proposed change with its reason. Show them to the user; only when the \
 user says so, maintenance proposals.accept (or reject, with a note). Never accept one on your own judgement.
 4. maintenance get.task: why a task is what it is (where it came from, every change, the proposals behind \
@@ -578,7 +587,10 @@ replacement interval, a failure rate for failure finding, a degradation model's 
 Deciding with the numbers.
 - maintenance get.plan_economics, id = the position class (optional interval for a what-if, unit, \
 horizon_years, discount_rate): what the class's replacement plan costs a year, now, at the best interval and \
-running to failure, each with its net present cost. Needs the class's fitted model and costs (learn topic).
+running to failure, each with its net present cost. Needs the class's fitted model and costs (learn topic). \
+A model by use costs per unit of use and turns it into a year through each position's operating plan (else its \
+counter's recent rate): use_per_year shows each, not_costed the positions with no rate; unit defaults to the \
+model's (a calendar what-if is converted through each position's rate).
 - maintenance get.class_forecast, id = the position class (period month / quarter / year, periods, default \
 12 months): failures expected from the positions' fitted items with a 90% range (P5–P95), per period too, counting \
 replacements that fail again (headline: say it as given); at_risk, positions by chance of failing next period; \

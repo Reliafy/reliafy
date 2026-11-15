@@ -23,6 +23,7 @@ import pytest  # noqa: E402
 from backend.services import rbd_analysis as ra  # noqa: E402
 from backend.services import rbd_export  # noqa: E402
 from backend.services import samples  # noqa: E402
+from backend.tests.test_library_pins import REPYABILITY, SURPYVAL  # noqa: E402
 from backend.tests.test_public_links import A, B, client  # noqa: E402,F401 - fixture
 
 WHEN = datetime(2026, 9, 26, tzinfo=timezone.utc)
@@ -408,9 +409,9 @@ def test_output_is_deterministic_and_self_describing():
     assert head.startswith(name)
     assert "Exported from Reliafy <https://reliafy.com>".lower() in head.lower().replace("\n", " ")
     assert "on 2026-09-26 (UTC)" in head
-    assert 'pip install "surpyval==0.27"' in head and "RePyability.git@v0.18" in head
+    assert f'pip install "surpyval=={SURPYVAL}"' in head and f"RePyability.git@v{REPYABILITY}" in head
     assert "SurPyval.git" not in head
-    assert "--no-deps" in head and "surpyval==0.27" in head
+    assert "--no-deps" in head and f"surpyval=={SURPYVAL}" in head
     assert "python instrument_air_2oo3_compressors_cold_standby_dryer_ccf.py" in head
     # One commented variable per block, with its label.
     assert "# Compressor A: Weibull(alpha=12000 Hours, beta=1.6)" in a
@@ -430,7 +431,7 @@ def test_imports_only_what_is_used():
 
 
 def test_versions_come_from_the_build_pins():
-    assert rbd_export.detect_versions() == {"surpyval": "0.27", "repyability": "0.18"}
+    assert rbd_export.detect_versions() == {"surpyval": SURPYVAL, "repyability": REPYABILITY}
 
 
 def test_a_commit_pin_is_not_read_as_a_version(tmp_path, monkeypatch):
@@ -450,7 +451,7 @@ def test_a_commit_pin_is_not_read_as_a_version(tmp_path, monkeypatch):
 
 
 def test_a_commit_pin_reads_the_tag_its_comment_names(tmp_path, monkeypatch):
-    """A commit pin with "RePyability v0.18" beside it prints @v0.18 (the tag
+    """A commit pin with "RePyability vX.Y" beside it prints @vX.Y (the tag
     users can install), whatever happens to be installed locally."""
     (tmp_path / "Dockerfile").write_text(
         "# - RePyability v9.7 is pinned by its tag's commit\n"

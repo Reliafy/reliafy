@@ -19,12 +19,14 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 
 const pct = reliabilityPercent;
 
-export default function RbdPhasesResult({ graph, active, name, onEdit }) {
+// ``currentState``: the calculator's As of now (the blocks' ages), so the mission flies from them.
+export default function RbdPhasesResult({ graph, active, name, onEdit, currentState = null }) {
   const phases = graph?.phases;
   const eligible = !!phases?.length && !graph.repairable && !isNetwork(graph) && !diagramGap(graph);
+  const now = currentState && Object.keys(currentState).length ? currentState : null;
   const sig = useMemo(
-    () => JSON.stringify({ g: graphSignature(graph), p: phases || null, c: graph?.ccf_groups || null }),
-    [graph, phases]
+    () => JSON.stringify({ g: graphSignature(graph), p: phases || null, c: graph?.ccf_groups || null, s: now }),
+    [graph, phases, now]
   );
   const [state, setState] = useState({ sig: null, result: null, error: null, loading: false });
   const latest = useRef(null);
@@ -34,7 +36,7 @@ export default function RbdPhasesResult({ graph, active, name, onEdit }) {
     const timer = window.setTimeout(() => {
       latest.current = sig;
       setState((s) => ({ ...s, loading: true }));
-      rbdPhases(graph)
+      rbdPhases(graph, now)
         .then((result) => latest.current === sig && setState({ sig, result, error: null, loading: false }))
         .catch((e) => latest.current === sig && setState({ sig, result: null, error: e.message, loading: false }));
     }, 300);
@@ -92,7 +94,8 @@ function MissionAnswer({ result, unit, name, dim }) {
     : ", worked out exactly";
   const sentence = (
     <>
-      The mission succeeds with probability <b>{pct(result.reliability)}</b>{how}.
+      {result.current_state ? "From the blocks' ages now, the" : "The"} mission succeeds with
+      probability <b>{pct(result.reliability)}</b>{how}.
       {risky && rows.length > 1 && (
         <> <b>{risky.name}</b> is the riskiest phase: <b>{formatPercent(risky.failure_probability, { sig: 3 })}</b> of missions fail in it.</>
       )}

@@ -116,6 +116,13 @@ export function lifeOutcomeText(row, fmt = (d) => d) {
 }
 
 // What a row's days column means when it's a range.
+// A life counted by use (hours from a counter): a range when the failure fell between readings.
+export function useLifeTitle(row) {
+  if (row?.xl != null && row.xl !== row.xr) return "Failed between two counter readings: the least and most use it can have had";
+  if (row?.c === 1) return "The use it surely had, to the counter's last reading";
+  return undefined;
+}
+
 export function daysTitle(row) {
   if (row?.found_failed) return "Failed some time between the last good check and the finding: the shortest and longest life";
   if (row?.xl != null) return "The dates are known only roughly: the shortest and longest life they allow";
