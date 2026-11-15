@@ -42,10 +42,12 @@ Graph format::
 
 How each figure is worked out follows RePyability's own
 ``analysis_routes()``: exact or numerical figures are free, simulated ones
-are Pro. On RePyability 0.18 a block on a non-constant repairable model has no
-exact long-run values (a repair doesn't renew it), so its long-run
-availability is simulated; when RePyability works them out exactly, the
-route (and the price) follows with no change here.
+are Pro. Since RePyability 0.19 a minimally repaired block (Crow-AMSAA,
+Duane, Cox-Lewis) with a replacement rule has exact long-run values (each
+replacement ends a renewal cycle; Cox-Lewis by quadrature, "numerical"), so
+it is free; a block repaired imperfectly (ARA, ARI, G1, generalised renewal)
+is still simulated. The route (and the price) follows RePyability with no
+change here.
 """
 
 from __future__ import annotations

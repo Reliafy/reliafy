@@ -8,10 +8,10 @@ pandas
 numpy
 # SurPyval from PyPI, pinned to the version the RePyability below targets
 # (each tagged release is published to PyPI from its tag).
-surpyval==0.27
+surpyval==0.28
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git commit (tag v0.18, which requires SurPyval 0.27), so the SurPyval
-# pin above stays authoritative: it declares surpyval>=0.27 (uncapped), but
+# git commit (tag v0.19, which requires SurPyval 0.28), so the SurPyval
+# pin above stays authoritative: it declares surpyval>=0.28 (uncapped), but
 # --no-deps also stops pip re-resolving it to a newer surpyval. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are

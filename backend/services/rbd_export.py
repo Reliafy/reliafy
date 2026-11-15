@@ -52,7 +52,7 @@ from backend.services import rbd_analysis, rbd_ccf, rbd_next_failure, rbd_repeat
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.27", "repyability": "0.18"}
+_DEFAULT_VERSIONS = {"surpyval": "0.28", "repyability": "0.19"}
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
 # Names the script itself uses at module level; block variables avoid them

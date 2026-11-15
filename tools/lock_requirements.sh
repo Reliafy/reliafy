@@ -15,6 +15,9 @@ trap 'rm -f "$input"' EXIT
 grep -viE '^firebase-admin' requirements.txt > "$input"
 printf '%s\n' google-auth cachecontrol "pyjwt[crypto]" requests httpx >> "$input"
 
+# Start from the current lock, so only what requirements.txt changed moves
+# (uv keeps the versions it finds in the output file unless told to upgrade).
+grep -vE "^#" requirements.lock > requirements.lock.tmp
 uv pip compile "$input" \
   --python-version 3.11 --python-platform x86_64-unknown-linux-gnu \
   --generate-hashes --no-header --no-annotate --quiet \

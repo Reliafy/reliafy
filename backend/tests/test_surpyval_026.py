@@ -74,8 +74,11 @@ def test_the_backend_uses_none_of_the_names_0_26_removed_or_deprecated():
 
 def test_the_ph_test_comes_from_diagnose_with_no_deprecation(strict):
     """The proportional-hazards test is ``diagnose()``'s
-    ``proportional_hazards`` table: the numbers ``check_ph()`` gave, on every
-    transform, without its DeprecationWarning (``strict``)."""
+    ``proportional_hazards`` table: the numbers ``check_ph()`` gave (SurPyval
+    0.28 removed it; ``diagnostics.zph_table`` is the same table), on every
+    transform, with no warning (``strict``)."""
+    from surpyval.univariate.regression.proportional_hazards import diagnostics
+
     from backend import regression_diagnostics as rd
 
     rng = np.random.default_rng(11)
@@ -87,9 +90,7 @@ def test_the_ph_test_comes_from_diagnose_with_no_deprecation(strict):
     cox = sp.CoxPH.fit_from_df(df, x_col="t", c_col="c", Z_cols=["z", "age"])
     for transform in ("km", "rank", "identity", "log"):
         got = rd.ph_test(cox, transform=transform)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            want = cox.check_ph(transform=transform)
+        want = diagnostics.zph_table(cox, transform=transform)
         assert got["global"]["p"] == pytest.approx(float(want.loc["GLOBAL", "p"]), rel=1e-12)
         assert {r["covariate"]: r["statistic"] for r in got["rows"]} == pytest.approx(
             {k: float(v) for k, v in want["statistic"].drop("GLOBAL").items()}, rel=1e-12)
