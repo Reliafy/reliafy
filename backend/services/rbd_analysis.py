@@ -1934,6 +1934,8 @@ def _system_mttf(rbd, system, base_hi: float, s: float, overrides: dict) -> tupl
             pass
     try:
         return _mttf(system, base_hi, s, **overrides), None
+    except AnalysisError as exc:  # e.g. a covariate schedule too fine to follow that far (rbd_tvc)
+        return None, f"The MTTF isn't given: {exc}"
     except Exception:  # noqa: BLE001
         return None, None
 
