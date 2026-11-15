@@ -1197,3 +1197,29 @@ def test_generate_with_a_package_raises_only_that_packages_visit(env):
     assert out["raised"] is True and [t["name"] for t in out["work_order"]["tasks"]] == ["Check seal"]
     rows = listed.get("work_orders", listed) if isinstance(listed, dict) else listed
     assert len(rows) == 1
+
+
+def test_a_class_model_by_use_over_mcp(env):
+    """unit on class_life_data, fit_class_model and plan_economics: the belts' lives in
+    flight hours from their air vehicles' counters (test_maintenance_class_life_by_use)."""
+    from backend.maintenance.service import Maintenance
+    from backend.routers import maintenance as router
+    from backend.tests.test_maintenance_class_life_by_use import FLEET, _fleet
+
+    m = Maintenance(router._store, UID, UID)
+    _fleet(m)
+    m.set_class_costs("Generator belt", planned_cost=200, failure_cost=3000)
+
+    async def flow(client):
+        pooled = _ok(await _get(client, "class_life_data", "Generator belt", unit="FH"))
+        fit = _ok(await _do(client, "maintenance", "reliability.fit_class_model", position_class="Generator belt",
+                            unit="hours"))
+        econ = _ok(await _get(client, "plan_economics", "Generator belt"))
+        bad = await _get(client, "class_life_data", "Generator belt", unit="months")
+        return pooled, fit, econ, bad
+
+    pooled, fit, econ, bad = _session(env["token"], flow)
+    assert pooled["unit"] == "hours" and pooled["excluded"] == [] and len(pooled["counters"]) == len(FLEET)
+    assert fit["model"]["unit"] == "hours" and fit["proposals"]
+    assert econ["unit"] == "hours" and econ["positions"] == len(FLEET)
+    assert bad.is_error and "counted in days" in bad.content[0].text
