@@ -175,3 +175,38 @@ test("links that name a row inside an asset land on that asset alone; anything e
   await expect(page.getByRole("heading", { name: "That asset isn't here" })).toBeVisible();
   await expect(page.getByRole("link", { name: "See the assets" }).first()).toBeVisible();
 });
+
+// A house whose positions tree starts above the address (Derryn, 15 Nov 2026: opened at the
+// address by Positions, it listed the positions flat, as if the hierarchy had gone). House and
+// Climate control are at no place; the air conditioner is in a bedroom. The way up shows, muted,
+// and a branch of the same tree at the farm never does.
+for (const width of [1440, 400]) {
+  test(`a place by positions keeps the positions tree above it (${width} px)`, async ({ page, request, problems }) => {
+    const tag = `via${width}${Date.now()}`;
+    const a = await twoAssets(request, tag);
+    const post = (path, body) => postOk(request, `${M}${path}`, body);
+    const top = await post("/positions", { name: `House ${tag}` });
+    const climate = await post("/positions", { name: `Climate control ${tag}`, parent_id: top.id });
+    const bedroom = await post("/locations", { name: `Bedroom 3 ${tag}`, parent_id: a.house.id });
+    await post("/positions", { name: `Bedroom 3 AC ${tag}`, parent_id: climate.id, location_id: bedroom.id });
+    await post("/positions", { name: `Farm shed ${tag}`, parent_id: top.id, location_id: a.farm.id });
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, `/asset-register/explorer?arrange=positions&root=${a.house.id}`);
+    const houseRow = row(page, `House ${tag}`);
+    await expect(houseRow).toBeVisible();
+    await expect(houseRow).toHaveAttribute("aria-level", "1");
+    await expect(houseRow).toHaveClass(/\bdim\b/);
+    if ((await houseRow.getAttribute("aria-expanded")) === "false") await houseRow.locator(".tp-chev").click();
+    const climateRow = row(page, `Climate control ${tag}`);
+    await expect(climateRow).toHaveAttribute("aria-level", "2");
+    if ((await climateRow.getAttribute("aria-expanded")) === "false") await climateRow.locator(".tp-chev").click();
+    const ac = row(page, `Bedroom 3 AC ${tag}`);
+    await expect(ac).toHaveAttribute("aria-level", "3");
+    await expect(row(page, `Hot water ${tag}`)).toHaveAttribute("aria-level", "1");
+    await expect(page.getByText(`Farm shed ${tag}`)).toHaveCount(0);
+    await noFarm(page, tag, "by Positions with the way up");
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
+    await shot(page, `place-positions-way-up-${width}`);
+    await expectHealthy(page, problems);
+  });
+}
