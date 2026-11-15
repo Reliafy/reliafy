@@ -48,7 +48,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from backend.services import covariate_binding as cb
-from backend.services import rbd_phases
+from backend.services import rbd_phases, rbd_tvc
 from backend.services.rbd_analysis import AnalysisError
 
 #: The diagram's own mission (``graph["phases"]``) read as one of its missions.
@@ -621,6 +621,7 @@ def combine(bound: list[dict], covs: list[Optional[dict]], starts: list[float]) 
                 if len(track) > 1:
                     schedules[key] = {"table": [{"t": t, "value": v} for t, v in track]}
             data["covariate_schedules"] = schedules
+            data[rbd_tvc.MISSION_STEPS] = True  # one row a step: may be longer than a typed table
             merged_covs[nid] = rows[0]
         elif m0.get("distribution_id") == "exponential":
             rates = [float(((m or {}).get("params") or [{}])[0].get("value") or 0.0) for m in models]

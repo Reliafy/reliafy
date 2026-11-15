@@ -303,3 +303,12 @@ def test_the_summed_survival_is_surpyvals_and_gives_an_mttf():
     out = ra.analyze(g, t_max=4000, resolve_model=lambda _: entry, at_times=[2000])
     assert out["at"]["sf"][0] == pytest.approx(0.8322, abs=5e-4)
     assert out["mttf"] is not None and 3000 < out["mttf"] < 5000
+
+
+def test_a_long_phase_schedule_has_as_many_steps_as_it_needs(pump, exp_ph):
+    """A day/night duty over 2,000 hours is 167 steps, more than a typed table may have: the
+    mission's own table of steps isn't held to that limit, and gives the cyclic schedule's figure."""
+    one = [{"name": "Run", "duration": 2000, "values": {"load": {"expression": "2 if t % 24 < 16 else 1"}}}]
+    got = rbd_missions.analyze(None, [], pump, one, inputs_for=lambda b: [])
+    node = rbd_tvc.build_node(exp_ph, {"load": {"expression": "2 if t % 24 < 16 else 1"}}, None, "Pump")
+    assert got["reliability"] == pytest.approx(float(node.sf(np.array([2000.0]))[0]), rel=1e-9)
