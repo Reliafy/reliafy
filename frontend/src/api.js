@@ -1342,11 +1342,12 @@ export function importFaultTreeFile(file) {
 
 // A phased mission (#160): the (unsaved) graph's phases worked out — mission
 // reliability, each phase's failure probability, the riskiest phase.
-export function rbdPhases(graph) {
+// ``currentState``: the blocks' states now (As of now), so the mission flies from their ages.
+export function rbdPhases(graph, currentState = null) {
   return request("/api/rbds/phases", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ graph }),
+    body: JSON.stringify(currentState ? { graph, current_state: currentState } : { graph }),
   });
 }
 

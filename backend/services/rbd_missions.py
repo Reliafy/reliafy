@@ -640,7 +640,8 @@ def needs_message(needs: list[dict]) -> str:
 
 
 def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None,
-            inputs_for: Optional[Callable[[dict], list]] = None, weakest: bool = True) -> dict:
+            inputs_for: Optional[Callable[[dict], list]] = None, weakest: bool = True,
+            current_state: Optional[dict] = None) -> dict:
     """A mission over ``graph``: rbd_phases.analyze_phases's result (the chance of completing it,
     each phase's failure probability, reliability at its end and weakest block), its phases' values
     reaching the blocks. A phase still missing a value: the mission is worked out up to it,
@@ -701,7 +702,8 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
                             "same values in every phase.")
     resolve_subsystem, resolve_model = rbds_service.resolvers(db, owner_id)
     out = rbd_phases.analyze_phases(merged, resolve_subsystem, resolve_model, merged_covs or None,
-                                    phases=clean[:gap], varying=varying, weakest=weakest)
+                                    phases=clean[:gap], varying=varying, weakest=weakest,
+                                    current_state=current_state)
     out["duration"] = duration(clean)
     if gap < len(clean):
         last = out["phases"][-1]
