@@ -40,6 +40,11 @@ test("panel tabs: the flat row, inner views, an old address", async ({ page, req
   await expect(page).toHaveURL(/mview=packages/);
   await expect(page.getByRole("button", { name: "Smoke test weekly round" }).first()).toBeVisible();
   await expectHealthy(page, problems, { root: ".tx" });
+  // Forecast (a position's): the Maintenance tab's ?mview=forecast, the tab row's views switching it.
+  await views.getByRole("radio", { name: "Forecast" }).click();
+  await expect(page).toHaveURL(/tab=maintenance.*mview=forecast|mview=forecast.*tab=maintenance/);
+  await expect(page.getByRole("region", { name: "Forecast" })).toBeVisible();
+  await expect(tabs.getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
 
   // An old address: ?tab=condition is Monitoring › Life left.
   await open(page, at(id, "&tab=condition"));
@@ -101,7 +106,7 @@ test("panel tabs at 400 px: the row fits with ⋯, nothing scrolls sideways", as
   expect(sideways).toBeLessThanOrEqual(0);
   // The inner views sit on one line each.
   const group = page.getByRole("radiogroup", { name: "Maintenance: what to show" });
-  await expect(group.getByRole("radio")).toHaveCount(3);
+  await expect(group.getByRole("radio")).toHaveCount(4); // Tasks · What it needs · Packages · Forecast
   for (const r of await group.getByRole("radio").all()) {
     await expect(r).toBeVisible();
     await expect.poll(() => r.evaluate((el) => {

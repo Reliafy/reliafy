@@ -85,8 +85,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.getByRole("tab", { name: "RCM" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Parts", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
-    // A product has its own Failure reports tab: the reports on the items built from it.
-    await expect(page.getByRole("tab", { name: "Failure reports" })).toHaveCount(1);
+    // A product has its own Field reports tab: the reports on the items built from it (in the row
+    // or folded into "⋯ N", whose name lists it).
+    await expect(page.getByRole("tab", { name: /Field reports/ })).toHaveCount(1);
     await expect(page.getByRole("tab", { name: "Signals" })).toHaveCount(0);
     // The product's facts, in place of an asset's (nothing fitted, no location, no work).
     const facts = page.getByRole("region", { name: "Facts", exact: true });
@@ -371,9 +372,10 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     if (width < 600) {
       await page.getByRole("treeitem", { name: /^Smoke test depot\b/ }).click();
     }
-    // A location has Summary, RCM, FME(C)A, Failure reports and Measurements; not Parts and stock or Classes.
+    // A location has Summary, Maintenance, Monitoring, RCM, FME(C)A and History; not Parts and stock
+    // or Classes. History is in the row or folded into "⋯ N" (whose name lists it).
     await expect(page.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("tab", { name: "Failure reports" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /History/ }).first()).toBeVisible();
     await expect(page.getByRole("tab", { name: "Parts and stock" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
     await shot(page, `${width}-tabs-without-parts-classes`);

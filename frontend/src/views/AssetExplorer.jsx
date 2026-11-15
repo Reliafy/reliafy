@@ -963,7 +963,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // Merge into another asset… (the asset's top row, or ?merge=1 from the Assets list's row menu): in the
   // table area on the Summary tab, the address saying so, so a reload keeps it open.
   const openMerge = () => {
-    setQuery_((q) => { q.set("merge", "1"); q.delete(tabKey); });
+    setQuery_((q) => { q.set("merge", "1"); q.delete(tabKey); q.delete("mview"); });
     setTimeout(() => mergeHeading.current?.focus({ preventScroll: true }), 0);
   };
   const closeMerge = () => setQuery_((q) => q.delete("merge"));

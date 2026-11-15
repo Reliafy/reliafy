@@ -31,7 +31,7 @@ Tabs are `text-secondary` 14px at 500; the active tab is `accent-text` at 600 wi
 
 ## Inner views
 
-A tab whose panel has a few views of one thing (Maintenance: Tasks · What it needs · Packages) shows them as a `SegmentedControl` (size "sm") under the tab row: views, not more tabs. Labels are short enough to sit on one line at 400px; put detail such as "(preview)" in the hover text. On a phone (560px and below) the options share the width in equal parts.
+A tab whose panel has a few views of one thing (Maintenance: Tasks · What it needs · Packages · Forecast) shows them as a `SegmentedControl` (size "sm") under the tab row: views, not more tabs. Labels are short enough to sit on one line at 400px; put the detail in the hover text. On a phone (560px and below) the options share the width in equal parts.
 
 ## Keyboard
 

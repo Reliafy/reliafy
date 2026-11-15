@@ -40,7 +40,8 @@ test("LSA: search and sort the tasks below, tick two and package them", async ({
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
-  await page.getByRole("tab", { name: "LSA" }).click();
+  await page.getByRole("tab", { name: "Maintenance", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Maintenance: what to show" }).getByRole("radio", { name: "What it needs" }).click();
   await expect.poll(() => query(page).get("tab")).toBe("lsa");
   await expect(rows(page)).toHaveCount(3);
   await expect(panel(page).getByRole("columnheader")).toHaveText(

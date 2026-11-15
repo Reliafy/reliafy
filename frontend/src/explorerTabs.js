@@ -246,8 +246,8 @@ export function classesInBranch(display, branch) {
 // The panel's tabs as one flat row, ordered by use, the ones that don't fit folded into a last
 // "⋯ N" tab (the shared Tabs with `overflow`):
 //   Summary · Maintenance · Monitoring · RCM · FME(C)A · Models · History
-// Maintenance has inner views Tasks · What it needs (the LSA tab) · Packages · Forecast (a preview,
-// only with MENU_PREVIEW); Monitoring has Readings (Measurements) · Life left (Condition
+// Maintenance has inner views Tasks · What it needs (the LSA tab) · Packages · Forecast (a
+// position's, on an asset); Monitoring has Readings (Measurements) · Life left (Condition
 // monitoring: the chance of failing soon and the life left); Models has Life models (the Modelling
 // tab) · Missions. History is the Failure reports; on a product's design it's "Field reports" (the
 // reports on the items built from the product).
@@ -270,7 +270,9 @@ export const PANEL_TABS = [
       { id: "needs", label: "What it needs", tab: "lsa", title: "What each task needs to be done: labour, tools, spares and method" },
       // Packaging happens on the built items, so a design's rows haven't it (asset).
       { id: "packages", label: "Packages", tab: "lsa", mview: "packages", asset: true, title: "The work packages here: tasks done together on one visit" },
-      { id: "forecast", label: "Forecast", tab: "maintenance", mview: "forecast", preview: true, title: "Forecast (preview): the forecast's layout, with made-up numbers" },
+      // The forecast for a position and everything inside it (PositionForecast.jsx): a position's
+      // only (kinds), and not a design's (no due dates or fitted items there to forecast from).
+      { id: "forecast", label: "Forecast", tab: "maintenance", mview: "forecast", kinds: ["pos"], asset: true, title: "The work, failures and costs to come here and inside it, by month" },
     ],
   },
   {
@@ -293,7 +295,8 @@ export const PANEL_TABS = [
 ];
 
 // The tabs a row has: [{id, label, title, views: [{id, label, tab, mview, title}]}], each with
-// only the views the row has, and no tab without one. `preview`: MENU_PREVIEW is on (Forecast).
+// only the views the row has, and no tab without one. `preview`: MENU_PREVIEW is on (a view marked
+// `preview` shows only then; none is today). A view's `kinds` limits it to those kinds of row.
 export function panelTabsFor(row, { preview = false } = {}) {
   const tabs = tabsFor(row);
   const has = new Map(tabs.map((t) => [t.id, t]));
@@ -301,7 +304,8 @@ export function panelTabsFor(row, { preview = false } = {}) {
   const used = new Set();
   const out = [];
   for (const p of PANEL_TABS) {
-    const views = p.views.filter((v) => has.has(v.tab) && !(v.preview && !preview) && !(v.asset && design))
+    const views = p.views.filter((v) => has.has(v.tab) && !(v.preview && !preview) && !(v.asset && design)
+      && !(v.kinds && !v.kinds.includes(row.type)))
       .map((v) => ({ ...v, label: v.label || p.label, title: v.title || has.get(v.tab).title }));
     if (!views.length) continue;
     views.forEach((v) => used.add(v.tab));
