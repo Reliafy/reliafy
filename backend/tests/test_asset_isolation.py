@@ -76,6 +76,48 @@ def test_the_tree_within_a_place_is_that_asset_alone(m):
     assert "inside" not in {p["name"]: p for p in m.tree_rows(within=ids["farm"])["positions"]}["Bore pump"]
 
 
+def test_a_place_sends_the_way_up_to_its_positions_so_the_tree_keeps_its_shape(m):
+    """15 Nov 2026: a house's positions tree starts at no place (House > Climate control), its
+    leaves are set at rooms. Opened at the address, the tree listed the leaves flat, as if the
+    hierarchy had gone. The parents on the way up come too, as context: names only, never their
+    other branches, never another asset's."""
+    ids = _two_assets(m)
+    house_pos = m.create_position("House")["id"]
+    climate = m.create_position("Climate control", parent_id=house_pos)["id"]
+    vehicles = m.create_position("Vehicles", parent_id=house_pos)["id"]
+    bedroom = m.create_location("Bedroom 3", parent_id=ids["house"])["id"]
+    ac = m.create_position("Bedroom 3 air conditioner", parent_id=climate, location_id=bedroom)["id"]
+    m.create_position("Car", parent_id=vehicles, location_id=ids["kitchen"])
+    # Another asset's branch under the same top: never sent to the house.
+    shed = m.create_position("Farm shed", parent_id=house_pos, location_id=ids["farm"])["id"]
+    m.create_position("Shed light", parent_id=shed)
+
+    read = m.tree_rows(within=ids["house"])
+    by = {p["name"]: p for p in read["positions"]}
+    # The asset itself is unchanged: the same positions, still tops here, with a way up.
+    assert set(by) == {"Hot water", "Element", "Pump gauge at the house", "Bedroom 3 air conditioner", "Car"}
+    assert by["Bedroom 3 air conditioner"]["parent_id"] is None
+    assert by["Bedroom 3 air conditioner"]["via"] == climate
+    assert by["Car"]["via"] == vehicles
+    # The gauge's parent is the farm's pump (at the farm): another asset's, so no way up.
+    assert "via" not in by["Pump gauge at the house"] and "via" not in by["Hot water"]
+    up = {a["name"]: a for a in read["ancestors"]}
+    assert set(up) == {"House", "Climate control", "Vehicles"}
+    assert up["House"]["parent_id"] is None
+    assert up["Climate control"]["parent_id"] == house_pos and up["Vehicles"]["parent_id"] == house_pos
+    assert set(up["House"]) == {"id", "name", "parent_id"}  # names only: no status, no counts
+    assert ac in {p["id"] for p in read["positions"]}
+
+    # The farm gets its own way up only.
+    farm = m.tree_rows(within=ids["farm"])
+    assert {a["name"] for a in farm["ancestors"]} == {"House"}
+    assert {p["name"]: p.get("via") for p in farm["positions"]}["Farm shed"] == house_pos
+    # A position's own tree has nothing above it to send.
+    assert "ancestors" not in m.tree_rows(within=house_pos)
+    # The whole register is unchanged.
+    assert "ancestors" not in m.tree_rows()
+
+
 def test_the_tree_within_a_position_is_its_tree_alone(m):
     ids = _two_assets(m)
     positions, locations, spares, unhomed = _names(m.tree_rows(within=ids["pump"]))

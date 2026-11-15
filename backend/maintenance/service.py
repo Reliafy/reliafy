@@ -14518,12 +14518,52 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """The tree read cut down to one asset (tree_rows' ``within``)."""
         keep = self.positions_inside(within, read)
         node = self.s.node(self.org, within)
+        every = read["positions"]
         rows = {}
-        for pid, r in read["positions"].items():
+        for pid, r in every.items():
             if pid not in keep:
                 continue
-            # Its parent in another asset: a top of this one.
-            rows[pid] = r if r["parent_id"] is None or r["parent_id"] in keep else {**r, "parent_id": None}
+            # Its parent in another asset: a top of this one. A place's (below) says
+            # which (via), so the Positions arrangement can show it under its parents.
+            if r["parent_id"] is None or r["parent_id"] in keep:
+                rows[pid] = r
+            else:
+                rows[pid] = {**r, "parent_id": None}
+                if node["label"] == "Location":
+                    rows[pid]["via"] = r["parent_id"]
+        ancestors = []
+        if node["label"] == "Location":
+            # A place lists the positions there, but its positions tree usually starts
+            # above it (House > Climate control, at no place, over the air conditioner in
+            # a bedroom). Without those parents the tree would read flat, as if its
+            # hierarchy had gone. So the way up from each top here is sent too, names
+            # only: the positions on the path to one inside, never their other branches.
+            # The way up stops at a position at another asset's place (a farm's pump over
+            # a gauge set at the house): only parents at no place, or at a place this one
+            # is inside (a site over the address), are this asset's to show.
+            parent_place = {loc["id"]: loc["parent_id"] for loc in read["locations"]}
+            above, at = set(), parent_place.get(within)
+            while at and at not in above:
+                above.add(at)
+                at = parent_place.get(at)
+
+            def ours(r: dict) -> bool:
+                return not r["location"] or r["location"]["id"] in above
+
+            seen: set[str] = set()
+            for r in rows.values():
+                up = r.get("via")
+                while up and up not in keep and up not in seen and up in every and ours(every[up]):
+                    seen.add(up)
+                    a = every[up]
+                    ancestors.append({"id": up, "name": a["name"], "parent_id": a["parent_id"]})
+                    up = a["parent_id"]
+            # Each link points only at a row that's sent: a cut way up ends in a top.
+            sent = keep | seen
+            ancestors = sorted(({**a, "parent_id": a["parent_id"] if a["parent_id"] in sent else None} for a in ancestors),
+                               key=lambda a: a["name"].lower())
+            rows = {pid: r if "via" not in r or r["via"] in seen else {k: v for k, v in r.items() if k != "via"}
+                    for pid, r in rows.items()}
         if node["label"] == "Location":
             kids: dict[str | None, list[str]] = {}
             for loc in read["locations"]:
@@ -14534,7 +14574,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         else:
             locations = [loc for loc in read["locations"] if within in (loc.get("design_of"), loc.get("carried_by"))]
             places = {loc["id"] for loc in locations}
-        return {**read, "positions": rows, "locations": locations,
+        return {**read, "positions": rows, "locations": locations, "ancestors": ancestors,
                 "spares": [x for x in read["spares"] if x["location_id"] in places], "unhomed": []}
 
     @staticmethod
@@ -14613,7 +14653,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         rollups count only what's inside the asset. A place keeps itself, the places
         inside it and the spares there; a position keeps its tree's own locations (a
         product's layout, or the ones a built item carries). No unhomed items: they
-        are in no asset."""
+        are in no asset.
+
+        A place also sends ``ancestors`` ({id, name, parent_id}): the positions above its
+        tops, on the way up to them only and at no place of another asset, so its
+        Positions arrangement keeps its shape (House > Climate control > the bedroom's air
+        conditioner); a top under one says which (``via``). They are context, not part of
+        the asset: not in ``positions``, nor in any count."""
         read = self._tree_read()
         if within is not None:
             read = self._tree_within(read, within)
@@ -14640,6 +14686,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             for key in ("tag", "position_class", "location_id", "location", "carried_by"):
                 if r[key]:
                     row[key] = r[key]
+            if r.get("via"):  # its parent, outside this place (one of `ancestors`)
+                row["via"] = r["via"]
             if r["item"]:
                 row["item"] = {k: r["item"][k] for k in ("id", "name", "serial") if r["item"].get(k)}
                 item_status = lean(r["item_status"])
@@ -14661,8 +14709,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         def thing(d: dict) -> dict:
             return {k: v for k, v in {**d, "status": lean(d["status"])}.items() if v or k == "parent_id"}
 
-        return {"today": self.today(), "positions": positions, "locations": [thing(x) for x in read["locations"]],
-                "spares": [thing(x) for x in read["spares"]], "unhomed": [thing(x) for x in read["unhomed"]]}
+        out = {"today": self.today(), "positions": positions, "locations": [thing(x) for x in read["locations"]],
+               "spares": [thing(x) for x in read["spares"]], "unhomed": [thing(x) for x in read["unhomed"]]}
+        if read.get("ancestors"):
+            out["ancestors"] = read["ancestors"]
+        return out
 
     def _redundancy_marks(self) -> dict:
         """{position id: {id, name, k, n, mode, standby}} for every member of a live redundancy group."""

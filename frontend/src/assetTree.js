@@ -231,6 +231,11 @@ export const NO_HOME = {
   unit: { name: "Not placed on the item", note: "Positions not placed at one of the item's own locations: they're where the item is kept" },
 };
 
+// A position above a place's positions, shown by Positions for what they're
+// part of (buildDisplay): a muted row, keyed apart from the position itself.
+export const VIA = { via: true, note: "Not at this place: shown for what the positions here are part of" };
+export const viaKey = (id) => `via:${id}`;
+
 // The last group in Classes: positions with nothing fitted, or whose item has
 // no item class.
 export const NO_CLASS = { name: "No class", note: "Positions with nothing fitted, or whose item has no item class" };
@@ -266,6 +271,33 @@ export function buildDisplay(data, mode) {
     kidsOf.get(k).push(p);
   }
   for (const list of kidsOf.values()) list.sort(byName);
+  // By positions, a place opened on its own (?root=) shows its positions under
+  // the positions above them (data.ancestors: House > Climate control, at no
+  // place, over a bedroom's air conditioner; a top here names its own in `via`),
+  // so the tree keeps its shape. They're context, not part of the place: a
+  // muted heading row each (VIA), never a position row, so no tab, count,
+  // picker or action takes them for one. Other arrangements leave them out.
+  const up = new Map(mode === "positions" ? (data?.ancestors || []).map((a) => [a.id, a]) : []);
+  const upKids = new Map(); // what an ancestor hangs under (an ancestor, a position here, or null: a top)
+  const viaTops = new Map(); // an ancestor's positions here
+  for (const a of up.values()) {
+    const k = a.parent_id ?? null;
+    if (!upKids.has(k)) upKids.set(k, []);
+    upKids.get(k).push(a);
+  }
+  for (const p of kidsOf.get(null) || []) {
+    if (!p.via || !up.has(p.via)) continue;
+    if (!viaTops.has(p.via)) viaTops.set(p.via, []);
+    viaTops.get(p.via).push(p);
+  }
+  const addVia = (a, parent) => {
+    const key = viaKey(a.id);
+    if (!add(key, "group", { ...VIA, name: a.name }, parent)) return;
+    for (const x of [...(upKids.get(a.id) || []), ...(viaTops.get(a.id) || [])].sort(byName)) {
+      if (up.get(x.id) === x) addVia(x, key); // another ancestor
+      else addPosTree(x, key, false);
+    }
+  };
   // A position and everything inside it; with skipPlaced, a child set at a
   // location of its own goes under that location instead.
   const addPosTree = (p, parent, skipPlaced) => {
@@ -274,6 +306,7 @@ export function buildDisplay(data, mode) {
       if (skipPlaced && placedHere(c)) continue;
       addPosTree(c, p.id, skipPlaced);
     }
+    for (const a of upKids.get(p.id) || []) addVia(a, p.id);
   };
   // Positions an item carries while the item is fitted nowhere, by item.
   const loose = new Map();
@@ -359,7 +392,12 @@ export function buildDisplay(data, mode) {
       for (const p of rest) add(p.id, "pos", p, "G:noclass");
     }
   } else {
-    for (const p of tops) addPosTree(p, null, false);
+    // Tops and the topmost ancestors, by name together.
+    const first = [...tops.filter((p) => !viaTops.has(p.via)), ...(upKids.get(null) || [])].sort(byName);
+    for (const x of first) {
+      if (up.get(x.id) === x) addVia(x, null);
+      else addPosTree(x, null, false);
+    }
     if (loose.size) {
       add("G:loose", "group", { name: "On items fitted nowhere", note: "Positions an item carries, while the item isn't fitted" });
       for (const { item } of [...loose.values()].sort((a, b) => byName(a.item, b.item))) addItem(item, "G:loose", false);
