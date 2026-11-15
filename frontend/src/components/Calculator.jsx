@@ -271,7 +271,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const xHiNum = xMax !== "" && !Number.isNaN(Number(xMax)) ? Number(xMax) : null;
   const manualX = xLoNum != null || xHiNum != null;
   // A time past the end of the curves (they stop at the 99% life) is still answered: the curves are
-  // worked out again out to just beyond it, rather than the answer reading "—" (#418).
+  // worked out again out to just beyond it, rather than the answer reading "—".
   const autoHi = manualX ? null : autoRangeEnd(functions, timeMode ? null : Number(t) + (Number(condInput) || 0));
   const effHi = xHiNum ?? autoHi;
   const evalRange = manualX ? { xMin: xLoNum, xMax: xHiNum } : autoHi != null ? { xMin: null, xMax: autoHi } : undefined;

@@ -58,7 +58,7 @@ test("the same number typed as text is the same request; a new range is a new on
   assert.equal(curveIsCurrent(markPending(two, 1, "k")[0]), true);
 });
 
-test("a time past the end of the curves widens them to a round number beyond it (#418)", () => {
+test("a time past the end of the curves widens them to a round number beyond it", () => {
   const fns = { evaluate_path: "/api/models/m/evaluate", curves: { x: [0, 900, 1842] } };
   assert.equal(autoRangeEnd(fns, 3000), 3600);   // 3000 h asked, curves stop at 1842 h
   assert.equal(autoRangeEnd(fns, 20000), 24000);

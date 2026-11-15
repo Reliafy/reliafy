@@ -480,7 +480,7 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   await expectHealthy(page, problems, { label: "model calculator", chart: true });
 });
 
-// A model entered from parameters (no data, no fit) answers in the Calculator too (#418): the
+// A model entered from parameters (no data, no fit) answers in the Calculator too: the
 // model's own times, a time past the end of its curves, and a plain note instead of bounds.
 test("the Calculator answers for a model entered from parameters", async ({ page, request, problems }) => {
   const made = await postOk(request, "/api/models/from-params", {

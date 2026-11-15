@@ -449,7 +449,7 @@ def public_results(model: Model) -> dict:
             functions["residuals_path"] = f"/api/models/{model.id}/residuals"
         results["functions"] = functions
     elif functions and is_params_only(model):
-        # Made from parameters (#418): the model is its parameters, so the calculator answers from them —
+        # Made from parameters: the model is its parameters, so the calculator answers from them —
         # exact times at a reliability, curves over any axis — with no bounds: there's no fit behind it.
         functions = dict(functions)
         functions["evaluate_path"] = f"/api/models/{model.id}/evaluate"

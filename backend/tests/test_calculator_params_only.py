@@ -1,4 +1,4 @@
-"""The Calculator on a model made from parameters alone (no data, no fit) — planning #418.
+"""The Calculator on a model made from parameters alone (no data, no fit).
 
 Such a model has no dataset to refit and no saved fit to restore, so every
 calculator request that needed the live model answered "Model not found": the
