@@ -664,3 +664,53 @@ def test_the_tabs_csv_with_the_causes_column_imports_again_adding_nothing(m):
     out = rcm_sheet.run(m, pool, t, rcm_sheet.default_options(t), dry_run=False)
     assert out["ok"] and m.s.event_count(ORG) == events
     assert out["counts"]["links_existing"] == 1
+
+
+def test_the_exports_run_to_failure_basis_column_reads_back_as_the_decision(m):
+    """The export writes run to failure as Decision "Run to failure" plus its basis in its own
+    column: imported onto another position, that's the same decision, not a note asking for a map."""
+    pid = m.create_position("Feed pump")["id"]
+    exported = ("Position,Function,Functional failure,Failure mode,Consequence,Decision,Run-to-failure basis,Task\n"
+                "Feed pump,Pump slurry,Pumps none,Suction blocked,Operational,Run to failure,random,\n"
+                "Feed pump,,,Casing worn through,Operational,Run to failure,uneconomic,\n").encode()
+    table = rcm_sheet.read_table(exported, "Feed pump RCM.csv")
+    opts = rcm_sheet.default_options(table)
+    assert opts["mapping"]["rtf_basis"] == "Run-to-failure basis"
+    out = rcm_sheet.run(m, pid, table, opts, dry_run=False)
+    assert out["ok"] and out["counts"]["decisions"] == 2 and not out["warnings"], out
+    ws = m.rcm_worksheet(pid, "this")["positions"][0]
+    decided = {fm["text"]: fm["decision"] for fn in ws["functions"] for f in fn["failures"] for fm in f["modes"]}
+    assert decided["Suction blocked"]["rtf_basis"] == "random"
+    assert decided["Casing worn through"]["rtf_basis"] == "uneconomic"
+
+
+def test_an_aiag_style_fmea_maps_its_abbreviated_columns(m):
+    """A typical FMEA form: title rows above the header, Sev / Occur / Detec / R.P.N. and one
+    "Responsibility & Target Completion Date" column."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["POTENTIAL FAILURE MODE AND EFFECTS ANALYSIS"])
+    ws.append(["System: Slurry pump", None, "FMEA Number: 1450"])
+    ws.append([])
+    ws.append(["Item / Function", "Potential Failure Mode", "Potential Effect(s) of Failure", "Sev",
+               "Potential Cause(s)/ Mechanism(s) of Failure", "Occur", "Current Design Controls Prevention",
+               "Current Design Controls Detection", "Detec", "R.P.N.", "Recommended Action(s)",
+               "Responsibility & Target Completion Date", "Action due"])
+    ws.append(["Impeller", "Impeller worn", "Reduced flow", 7, "Abrasion", 6, "Hard liner", "Flow trend", 4, 168,
+               "Monthly flow check", "Planner 30/06/2024", "30/06/2024"])
+    ws.append([None, "Impeller cracked", "Pump trips", 8, "Cavitation", 3, None, "Vibration", 5, 120,
+               None, None, "next June"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    table = rcm_sheet.read_table(buf.getvalue(), "fmea.xlsx")
+    mapping = rcm_sheet.default_options(table)["mapping"]
+    assert (mapping["detection"], mapping["occurrence"], mapping["rpn"], mapping["detection_method"],
+            mapping["action_owner"]) == ("Detec", "Occur", "R.P.N.", "Current Design Controls Detection",
+                                         "Responsibility & Target Completion Date")
+    pid = m.create_position("Slurry pump")["id"]
+    out = rcm_sheet.run(m, pid, table, rcm_sheet.default_options(table), dry_run=True)
+    # Only the unreadable date is a problem (30/06/2024 reads day first), and the message says
+    # which column and what's in it.
+    assert out["errors"] == ["Row 6, Action due “next June”: The due date is a date (YYYY-MM-DD)."]

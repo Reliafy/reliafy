@@ -768,6 +768,19 @@ def csv_filename(filename: str, sheet: str, n_sheets: int = 1) -> str:
 # ---------------------------------------------------------------------------
 
 
+def serial_day(text: Any) -> str | None:
+    """An Excel date that came through as its number (a cell formatted as General, or a
+    CSV saved from one: 45366 is 2024-03-15) as YYYY-MM-DD; None for anything else. Only
+    five-digit numbers from 20000 to 80000 (1954 to 2119) count, so a year or a count
+    is never read as a date."""
+    t = str(text if text is not None else "").strip()
+    if not re.fullmatch(r"\d{5}(\.0+)?", t) or not 20_000 <= float(t) <= 80_000:
+        return None
+    from datetime import date, timedelta
+
+    return (date(1899, 12, 30) + timedelta(days=int(float(t)))).isoformat()
+
+
 def norm(text: Any) -> str:
     """Lower-case words separated by single spaces ("Non-Operational" ->
     "non operational", "MTTF (h)" -> "mttf h"). Greek letters are kept, so a

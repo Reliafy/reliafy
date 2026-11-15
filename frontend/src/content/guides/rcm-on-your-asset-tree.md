@@ -502,7 +502,10 @@ worksheet…** in the position's row menu (or in the **⋯** menu at the top
 right of its panel). Drop in the workbook or CSV, pick the
 sheet and header row for a workbook, and map its columns: **Function**,
 **Functional failure**, **Failure mode**, **Effects**, **Consequence**,
-**Decision / task type**, **Task**, **Interval** and **Interval unit**. Each
+**Decision / task type**, **Task**, **Interval** and **Interval unit**. A
+run-to-failure row needs its basis: give it in a **Run-to-failure basis**
+column (*random* or *uneconomic*, as the export writes it) or pick it when
+you map the decision values. Each
 level's notes and rationale has its own column: **Function notes**,
 **Standard notes** (for the performance standard on the same row),
 **Functional failure notes** and **Notes** (or **Failure mode notes**) for

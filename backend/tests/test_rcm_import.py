@@ -145,9 +145,10 @@ def test_scores_out_of_range_are_row_errors_and_a_wrong_rpn_only_warns():
     mapping = excel.guess_mapping(header, rcm_import.FIELDS)
     out = rcm_import.build_tree(header, rows, {"mapping": mapping}, keep_rows=True)
     assert out["errors"] == [
-        "Row 3: Severity is a whole number from 1 (no effect) to 10 (hazardous without warning).",
-        "Row 4: Occurrence is a whole number from 1 (almost never) to 10 (almost certain).",
-        "Row 5: The due date is a date (YYYY-MM-DD).",
+        # Each names the column and what's in it, so the cell can be found.
+        "Row 3, S “11”: Severity is a whole number from 1 (no effect) to 10 (hazardous without warning).",
+        "Row 4, O “x”: Occurrence is a whole number from 1 (almost never) to 10 (almost certain).",
+        "Row 5, Due date “soon”: The due date is a date (YYYY-MM-DD).",
     ]
     [warning] = [w for w in out["warnings"] if "RPN" in w]
     assert "1 row (row 5)" in warning and "isn't kept" in warning
