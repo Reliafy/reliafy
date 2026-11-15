@@ -84,6 +84,22 @@ def test_a_copy_reads_the_tree_first_and_is_capped(store, monkeypatch):
     assert len(store.log.since(0)) == before  # nothing written
 
 
+def test_a_copy_goes_beside_the_original_unless_told_otherwise(store):
+    """With no parent given, a copy goes inside the original's parent (a second
+    pump beside the first), not to the top level; top_level puts it there."""
+    m = Maintenance(store, UID)
+    root = m.create_position("Station")
+    pump = m.create_position("Pump A", parent_id=root["id"])
+    beside = m.copy_position(pump["id"], "Pump B")
+    assert m._parent(beside["id"])["id"] == root["id"]
+    top = m.copy_position(pump["id"], "Pump spare", top_level=True)
+    assert m._parent(top["id"]) is None
+    station2 = m.copy_position(root["id"], "Station 2")  # already at the top: stays there
+    assert m._parent(station2["id"]) is None
+    with pytest.raises(Invalid, match="not both"):
+        m.copy_position(pump["id"], "Pump C", parent_id=root["id"], top_level=True)
+
+
 # ---- text, numbers and dates -----------------------------------------------------------------
 
 def test_text_is_capped_by_field(store):

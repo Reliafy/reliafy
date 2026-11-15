@@ -3157,14 +3157,23 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             parent = self._parent(parent["id"])
         return out
 
-    def copy_position(self, position_id: str, name, parent_id=None, mapping: dict | None = None) -> dict:
+    def copy_position(self, position_id: str, name, parent_id=None, mapping: dict | None = None,
+                      top_level: bool = False) -> dict:
         """Copy a position and everything inside it: the positions, their
         failure modes (with their RCM: functions, functional failures, decisions), their
         tasks and their parts lists, and the locations set on them (not items, stock or
         work orders). For a second pump station like the first, or a template.
+        The copy goes inside ``parent_id``; with none, beside the original (inside
+        the same parent position), or at the top level when ``top_level`` (or when
+        the original is at the top, or inside an item).
         mapping: when given, filled with each copied position's id -> its copy's."""
         source = self._get(position_id, "Position")
         new_name = _text(name, "copy's name", required=True)
+        if parent_id and top_level:
+            raise Invalid("Give the position to copy it into, or ask for the top level, not both.")
+        if not parent_id and not top_level:
+            parent = self._parent(position_id)
+            parent_id = parent["id"] if parent and parent.get("label") == "Position" else None
         if parent_id:
             self._get(parent_id, "Position")
             if parent_id == position_id or position_id in self._ancestor_ids(parent_id):

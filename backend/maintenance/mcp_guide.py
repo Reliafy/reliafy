@@ -97,7 +97,8 @@ Building the register.
 2. Positions: maintenance positions.create, top down (parent_id), with position_class for like duties, \
 operating_context for how it's used (load, environment, hours; the description stays one line on what it is) and \
 location_id where it physically is (set it on a system's top position; the ones inside inherit it). Many alike: \
-build one, then maintenance positions.copy (failure modes, tasks and parts lists come too). RCM: see the plan \
+build one, then maintenance positions.copy (beside the original unless parent_id says where; failure modes, \
+tasks and parts lists come too). RCM: see the plan \
 topic.
 3. Items: maintenance fitments.fit (position_id, plus a new item by item_name / serial / manufacturer, or by \
 part_id, or an existing item_id), with on = the date it went in ('2022' if that's all that's known). Earlier \

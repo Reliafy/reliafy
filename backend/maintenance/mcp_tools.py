@@ -292,9 +292,11 @@ POSITIONS: Table = {
         (location_id: positions inside without their own follow) or clear_location true to inherit its parent's
         again. operating_plan: how it runs (guide topic operating_plan); end_operating_plan true stops its own
         plan from until (default today)."""),
-    "copy": ("position_id name", "parent_id", """Copy a position and everything inside it (positions, failure
-        modes, tasks, parts lists, locations set on them; not items, stock or work orders) under a new name.
-        Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
+    "copy": ("position_id name", "parent_id move_to_top_level", """Copy a position and everything inside it
+        (positions, failure modes, tasks, parts lists, locations set on them; not items, stock or work orders)
+        under a new name. It goes beside the original (same parent) unless parent_id says where, or
+        move_to_top_level true. Repeat it to build many like structures; then update the copy's location_id if
+        it's elsewhere."""),
     "retire": ("position_id", "reason cascade dry_run", """Take it out of the plant (kept in the history). Nothing
         fitted, no work order open. cascade true deletes it with everything inside: items fitted there are taken
         out and kept (never retired), open work orders cancelled, tasks retired; dry_run true only counts."""),
@@ -1508,7 +1510,7 @@ def register() -> None:
                               name: str | None = None,
                               parent_id: Annotated[str | None, Field(description=(
                                   "create / update / copy: the position (or, for create, the item) it goes "
-                                  "inside."))] = None,
+                                  "inside. copy: default beside the original."))] = None,
                               tag: str | None = None, position_class: str | None = None,
                               description: str | None = None, operating_context: str | None = None,
                               location_id: str | None = None, move_to_top_level: bool | None = None,
@@ -1559,7 +1561,7 @@ def register() -> None:
                 return m.position(position_id)
             return run(update)
         if action == "copy":
-            return run(m.copy_position, position_id, name, parent_id)
+            return run(m.copy_position, position_id, name, parent_id, None, bool(move_to_top_level))
         if action == "retire":
             return run(m.retire_position, position_id, reason or "", bool(cascade), bool(dry_run))
         if action == "restore":
