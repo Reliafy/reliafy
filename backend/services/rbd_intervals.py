@@ -176,18 +176,19 @@ def maintained(graph: dict) -> dict:
     for node in (graph or {}).get("nodes") or []:
         if node.get("type") != "component":
             continue
-        data = node.get("data") or {}
+        data = rm.with_task_basis(node.get("data") or {})
         pm, test = data.get("preventive"), data.get("inspection")
         row = {"id": node.get("id"), "label": _label(node)}
         try:
             if isinstance(pm, dict) and (pm.get("policy") or "age") == "age":
-                out["replacement"].append({**row, "interval": float(pm.get("interval"))})
+                out["replacement"].append({**row, "interval": float(pm.get("interval")),
+                                           **_basis(data, "preventive")})
             elif isinstance(test, dict):
                 interval = float(test.get("interval"))
                 offset = 0.0 if _blank(test.get("offset")) else float(test.get("offset"))
                 coverage = test.get("coverage")
                 partial = not _blank(coverage) and float(coverage) < 1.0
-                entry = {**row, "interval": interval, "offset": offset}
+                entry = {**row, "interval": interval, "offset": offset, **_basis(data, "inspection")}
                 if partial:
                     full = test.get("full_test")
                     entry["coverage"] = float(coverage)
@@ -197,6 +198,24 @@ def maintained(graph: dict) -> dict:
         except (TypeError, ValueError):
             continue  # an unset or bad interval: the build reports it
     return out
+
+
+def _basis(data: dict, key: str) -> dict:
+    """What a task's times are counted in (#365): ``basis`` ("calendar" or
+    "operating", running hours) and, for running hours, the block's share of
+    the time it runs (``duty``, 1 when Runs is blank). RePyability takes and
+    gives a task's intervals in its own unit, so the plan answers in it."""
+    if not rm.running_hours(data, key):
+        return {"basis": "calendar"}
+    try:
+        duty = rm.duty_fraction(data, "")
+    except AnalysisError:
+        duty = None
+    return {"basis": "operating", "duty": duty or 1.0}
+
+
+def _round2(x: float) -> float:
+    return float(f"{x:.2g}")
 
 
 def calendar(graph: dict) -> Optional[list[float]]:
@@ -300,7 +319,10 @@ def _allowed(opts: dict, graph: dict, rows: list[dict], found: dict) -> Optional
         elif isinstance(given, list):
             options_ = _dividing(row, list(given), True)
         elif base is not None:
-            options_ = _dividing(row, sorted({*base, row["interval"]}), False)
+            # A test in running hours chooses among the calendar's in running hours (monthly at its
+            # Runs share, to two figures: 4383 h a half-year at 25% is 1,100 running hours).
+            own = base if row.get("basis") != "operating" else [_round2(v * row["duty"]) for v in base]
+            options_ = _dividing(row, sorted({*own, row["interval"]}), False)
         else:
             options_ = None
         if options_ is None:
@@ -445,15 +467,9 @@ def apply_plan(graph: dict, rows: list[dict]) -> dict:
             if row.get("never"):
                 data.pop("preventive", None)
             else:
-                new = {**data["preventive"], "interval": float(row["interval"])}
-                if new.get("operating_interval") is not None:
-                    # Given in operating time: kept so, through the block's duty.
-                    duty = data.get("duty")
-                    if isinstance(duty, (int, float)) and not isinstance(duty, bool) and 0 < duty <= 1:
-                        new["operating_interval"] = float(row["interval"]) * float(duty)
-                    else:
-                        new.pop("operating_interval")
-                data["preventive"] = new
+                # In the task's own unit, as the plan answers (a running-hours task stays one).
+                pm = rm.with_task_basis(data)["preventive"]
+                data["preventive"] = {**pm, "interval": float(row["interval"])}
         elif isinstance(data.get("inspection"), dict):
             new = {**data["inspection"], "interval": float(row["interval"])}
             if row.get("offset"):
@@ -469,7 +485,8 @@ def _rows(chosen: list[dict], intervals: dict, offsets: Optional[dict], schedule
     for row in chosen:
         value = float(intervals[row["id"]])
         r: dict[str, Any] = {"id": row["id"], "label": row["label"], "interval_now": row["interval"],
-                             "interval": None if math.isinf(value) else value, "never": math.isinf(value)}
+                             "interval": None if math.isinf(value) else value, "never": math.isinf(value),
+                             "basis": row.get("basis") or "calendar"}
         changed = math.isinf(value) or abs(value - row["interval"]) > 1e-9 * row["interval"]
         if schedule == "proof_test":
             if offsets is not None and row["id"] in offsets:
@@ -482,6 +499,15 @@ def _rows(chosen: list[dict], intervals: dict, offsets: Optional[dict], schedule
         r["changed"] = bool(changed)
         out.append(r)
     return out
+
+
+def unit_words(unit: str, basis: Optional[str] = None) -> str:
+    """" hours" or, for a task counted in running hours, " running hours"
+    (" running time" with no unit; "" for a calendar task with none)."""
+    words = unit_in_text(unit) if unit else ""
+    if basis == "operating":
+        return f" running {words}" if words else " running time"
+    return f" {words}" if words else ""
 
 
 def _ccf_count(graph: dict) -> int:
@@ -556,10 +582,16 @@ def optimise(graph: dict, resolve_model=None, **raw) -> dict:
     for row in rows:
         if row.get("coverage") is not None and row.get("full_test"):
             notes.append(f"{row['label']}'s tests find {row['coverage']:.0%} of failures and a full test every "
-                         f"{row['full_test']:,.6g}{(' ' + unit_in_text(unit)) if unit else ''} finds the rest, so its "
+                         f"{row['full_test']:,.6g}{unit_words(unit, row.get('basis'))} finds the rest, so its "
                          "interval is chosen among those that divide it.")
+    for row in rows:
+        row["unit_words"] = unit_words(unit, row["basis"]).strip()
+        if row["basis"] == "operating" and row.get("interval") is not None:
+            notes.append(f"{row['label']}'s {'test' if schedule == 'proof_test' else 'replacement'} is counted in "
+                         f"running hours: best every {row['interval']:,.4g}{unit_words(unit, 'operating')}.")
     # The blocks with this schedule left out of the choice (#257): kept as drawn.
-    fixed = [{k: r[k] for k in ("id", "label", "interval", "offset", "coverage") if r.get(k) is not None}
+    fixed = [{k: r[k] for k in ("id", "label", "interval", "offset", "coverage", "basis")
+              if r.get(k) is not None and not (k == "basis" and r[k] == "calendar")}
              for r in found[schedule] if r["id"] not in ids]
     changed = any(r["changed"] for r in rows)
     together = result.pop("together", None)

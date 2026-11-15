@@ -18,6 +18,7 @@ Compact node (what an assistant writes and reads)::
      "costs": {"repair": 200, "replace": 1500, "downtime": 50, "acquisition": 20000},
      "preventive": {"policy": "age", "interval": 580, "duration": 7, "cost": 1000},
      "inspection": {"interval": 8760, "duration": 0, "cost": 300},  # hidden failures
+     # a task counted in running hours: "basis": "operating" in preventive or inspection
      "duty": 0.25,                            # repairable: runs a quarter of the time (life in operating time)
      # a per-action cost may be a range, drawn uniformly: "repair": {"min": 150, "max": 250}
      "n": 2, "k": 3, "spares": 1, "cold": true,
@@ -643,6 +644,18 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         data.pop("repair_quality")  # perfect repair is the default (#68)
     if data.get("maintenance_group") is not None and not isinstance(data["maintenance_group"], str):
         raise GraphError(f"{where}: maintenance_group must be a group name.")
+    if data.get("preventive") or data.get("inspection"):
+        # A task's unit (#365): "calendar" or "operating" (running hours); a replacement saved with
+        # operating_interval is read as a running-hours one, with the same numbers.
+        from backend.services import rbd_maintenance
+
+        data = rbd_maintenance.with_task_basis(data)
+        for key in ("preventive", "inspection"):
+            basis = (data.get(key) or {}).get("basis")
+            if basis is not None and basis not in rbd_maintenance.BASES:
+                raise GraphError(f"{where}: {key}.basis must be “calendar” or “operating” (running hours).")
+            if basis == "calendar":
+                data[key] = {k: v for k, v in data[key].items() if k != "basis"}
     for key in ("preventive", "inspection"):
         spec = data.get(key)
         if spec and isinstance(spec.get("duration"), dict):

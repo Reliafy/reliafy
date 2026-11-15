@@ -5,13 +5,15 @@
 //
 // It edits the node data RePyability already takes (backend/services/rbd_maintenance.py):
 //   data.preventive = {policy: "age"|"block"|"condition", interval, duration, cost,
-//                      threshold, inspection_cost, opportunity, operating_interval}
-//   data.inspection = {interval, duration, cost, offset, coverage, full_test}   (proof tests)
+//                      threshold, inspection_cost, opportunity, basis}
+//   data.inspection = {interval, duration, cost, offset, coverage, full_test, basis}   (proof tests)
 //   data.maintenance_group, data.crew_priority
 //   data.duty       = the share of the time it runs, in (0, 1]: its life is in operating time
-// A replacement may be given in operating time (operating_interval, "every 500 running hours"):
-// its interval on the diagram's clock is that over the duty, and with no duty it's refused with a
-// plain note (the backend does the same, and is the judge).
+// A task is counted on the calendar or in running hours (basis "operating", "every 500 running
+// hours"), stored as entered: its times (interval, early renewal, first test, full test) are in that
+// unit and RePyability puts them onto the diagram's clock through the duty. Runs blank is "all the
+// time", so running hours are calendar hours. Blocks saved before the basis kept a replacement's
+// running hours in operating_interval: withTaskBasis reads them as a running-hours task.
 import { hoursPerUnit, unitAbbr } from "./components/rbdModelText.js";
 
 // What the installed library takes, when the server doesn't say (a tree plan carries its own
@@ -89,7 +91,42 @@ export function dutyWords(duty, unit = "") {
 export const operatingAllowed = (unit) => hoursPerUnit(unit) != null;
 export const toCalendar = (operating, duty) => (finite(operating) && finite(duty) && duty > 0 ? operating / duty : null);
 export const toOperating = (calendar, duty) => (finite(calendar) && finite(duty) ? calendar * duty : null);
-export const intervalBasis = (data = {}) => (data.preventive && !isBlank(data.preventive.operating_interval) ? "operating" : "calendar");
+// The times of a task that its basis applies to.
+export const TASK_TIMES = { preventive: ["interval", "opportunity"], inspection: ["interval", "offset", "full_test"] };
+const roundTime = (v) => Number(Number(v).toPrecision(12));
+
+// The block's data with its task in the current shape: a replacement saved with operating_interval
+// (before tasks had a basis) as a running-hours task, its early-renewal age (then on the calendar)
+// moved into running hours, so the numbers are the same. The backend does the same on read.
+export function withTaskBasis(data = {}) {
+  const pm = data.preventive;
+  if (!pm || !("operating_interval" in pm)) return data;
+  const { operating_interval: hours, ...rest } = pm;
+  if (isBlank(hours)) return { ...data, preventive: rest };
+  const next = { ...rest, basis: "operating", interval: Number(hours) };
+  if (!isBlank(rest.opportunity) && hasDuty(data) && Number(data.duty) < 1) next.opportunity = roundTime(Number(rest.opportunity) * Number(data.duty));
+  return { ...data, preventive: next };
+}
+
+// "operating" (running hours) or "calendar": what the block's task is counted in.
+export const intervalBasis = (data = {}) => (schedule(withTaskBasis(data))?.basis === "operating" ? "operating" : "calendar");
+
+// "running h" / "h": a task time's unit in words.
+export const basisUnit = (basis, u) => (basis === "operating" ? `running ${u || "time"}`.trim() : u);
+
+// One of a task's times on the diagram's calendar (running hours over Runs; Runs blank is all the time).
+export function onCalendar(value, data = {}) {
+  if (!finite(value)) return null;
+  if (intervalBasis(data) !== "operating") return Number(value);
+  return hasDuty(data) ? Number(value) / Number(data.duty) : Number(value);
+}
+
+// "= 2,000 h on the calendar at Runs 25%" under a running-hours time, or "" when it's the same number.
+export function calendarNote(value, data = {}, u = "") {
+  if (intervalBasis(data) !== "operating" || !finite(value)) return "";
+  if (!hasDuty(data) || Number(data.duty) >= 1) return "the same on the calendar: it runs all the time";
+  return `= ${fmt(onCalendar(value, data))}${u ? ` ${u}` : ""} on the calendar at Runs ${fmt(Number(data.duty) * 100)}%`;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Costs: a number or a min–max range ("300–700"), drawn uniformly at each action
@@ -151,11 +188,13 @@ const clean = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => 
 // can't be in a maintenance group (nobody knows it has failed when the group stops), so its group
 // goes; a test's extras (first test, coverage) and a replacement's (threshold, early renewal) stay
 // with their kind.
-export function setTask(data, task) {
+export function setTask(raw, task) {
+  const data = withTaskBasis(raw);
   const base = drop(data, "preventive", "inspection");
   if (task === "none") return base;
   const was = schedule(data) || {};
-  const common = clean({ interval: was.interval, duration: was.duration, cost: was.cost });
+  // The unit goes with the interval, which is kept.
+  const common = clean({ interval: was.interval, basis: was.basis, duration: was.duration, cost: was.cost });
   if (task === "test") {
     const kept = data.inspection ? data.inspection : common;
     return drop({ ...base, inspection: kept }, "maintenance_group");
@@ -164,7 +203,6 @@ export function setTask(data, task) {
   const pm = clean({
     ...common,
     policy: task,
-    operating_interval: prev.operating_interval,
     threshold: task === "condition" ? prev.threshold : null,
     inspection_cost: task === "condition" ? prev.inspection_cost : null,
     opportunity: task === "age" ? prev.opportunity : null,
@@ -173,7 +211,8 @@ export function setTask(data, task) {
 }
 
 // Set a field of the block's schedule (duration, cost, threshold, ...); null removes it.
-export function setScheduleField(data, key, value) {
+export function setScheduleField(raw, key, value) {
+  const data = withTaskBasis(raw);
   const which = data.inspection ? "inspection" : data.preventive ? "preventive" : null;
   if (!which) return data;
   const next = { ...data[which], [key]: value };
@@ -181,42 +220,40 @@ export function setScheduleField(data, key, value) {
   return { ...data, [which]: next };
 }
 
-// Set the interval, on the calendar or in operating time. In operating time the calendar interval
-// follows from the duty; with Runs blank the block runs all the time, so it's the same number.
-export function setInterval(data, value, basis = "calendar") {
+// Set the interval, in the task's unit: on the calendar or in running hours (basis "operating"),
+// stored as entered; RePyability puts running hours onto the calendar through Runs.
+export function setInterval(raw, value, basis = intervalBasis(raw)) {
+  const data = withTaskBasis(raw);
   const which = data.inspection ? "inspection" : data.preventive ? "preventive" : null;
   if (!which) return data;
-  if (which === "inspection" || basis === "calendar") {
-    const next = drop({ ...data[which], interval: value }, "operating_interval");
-    if (value == null) delete next.interval;
-    return { ...data, [which]: next };
-  }
-  const calendar = hasDuty(data) ? toCalendar(value, Number(data.duty)) : value;
-  const next = { ...data.preventive, operating_interval: value, interval: calendar };
-  if (value == null) delete next.operating_interval;
-  if (calendar == null) delete next.interval;
-  return { ...data, preventive: next };
+  const next = { ...data[which], interval: value };
+  if (value == null) delete next.interval;
+  if (basis === "operating") next.basis = "operating";
+  else delete next.basis;
+  return { ...data, [which]: next };
 }
 
-// Switch the interval's basis, keeping the same schedule where the duty allows.
-export function setIntervalBasis(data, basis) {
-  const pm = data.preventive;
-  if (!pm || basis === intervalBasis(data)) return data;
-  if (basis === "operating") {
-    const operating = hasDuty(data) ? toOperating(pm.interval, Number(data.duty)) : pm.interval;
-    return setInterval(data, operating != null ? Number(operating.toPrecision(12)) : null, "operating");
+// Switch the task's unit, keeping the same schedule: its times (interval, early renewal, first test,
+// full test) move through Runs (blank: all the time, the same numbers).
+export function setIntervalBasis(raw, basis) {
+  const data = withTaskBasis(raw);
+  const which = data.inspection ? "inspection" : data.preventive ? "preventive" : null;
+  if (!which || basis === intervalBasis(data)) return data;
+  const d = hasDuty(data) ? Number(data.duty) : 1;
+  const next = { ...data[which] };
+  for (const k of TASK_TIMES[which]) {
+    if (finite(next[k]) && !isBlank(next[k])) next[k] = roundTime(basis === "operating" ? Number(next[k]) * d : Number(next[k]) / d);
   }
-  return setInterval(data, pm.interval ?? null, "calendar");
+  if (basis === "operating") next.basis = "operating";
+  else delete next.basis;
+  return { ...data, [which]: next };
 }
 
-// Set the duty (a fraction, or null to run all the time); a replacement given in operating time
-// moves with it.
-export function setDuty(data, duty) {
-  let out = duty == null || Number(duty) >= 1 ? drop(data, "duty") : { ...data, duty: Number(duty) };
-  if (out.preventive && !isBlank(out.preventive.operating_interval)) {
-    out = setInterval(out, Number(out.preventive.operating_interval), "operating");
-  }
-  return out;
+// Set the duty (a fraction, or null to run all the time). A task in running hours keeps its
+// running hours; its calendar times move with Runs.
+export function setDuty(raw, duty) {
+  const data = withTaskBasis(raw);
+  return duty == null || Number(duty) >= 1 ? drop(data, "duty") : { ...data, duty: Number(duty) };
 }
 
 export function setGroup(data, name) {
@@ -230,19 +267,20 @@ export function setCrewPriority(data, value) {
 // ---------------------------------------------------------------------------------------------
 // What's wrong with a row, in plain words (the backend checks the same before it calculates)
 // ---------------------------------------------------------------------------------------------
-export function rowProblems(data = {}, unit = "") {
+export function rowProblems(raw = {}, unit = "") {
   const out = [];
+  const data = withTaskBasis(raw);
   const task = taskOf(data);
   if (!isBlank(data.duty) && !hasDuty(data)) out.push("Runs is the share of the time it runs: more than 0% and at most 100%.");
   if (task === "none") return out;
   const s = schedule(data) || {};
   const operating = intervalBasis(data) === "operating";
-  if (operating) {
+  if (!finite(s.interval) || Number(s.interval) <= 0) {
     // Runs blank is "all the time": running time is calendar time, nothing more to set.
-    if (!finite(s.operating_interval) || Number(s.operating_interval) <= 0) out.push("Set how often, in running time.");
-    else if (!operatingAllowed(unit)) out.push("Running time needs the diagram in a time unit (hours, days, …).");
-  } else if (!finite(s.interval) || Number(s.interval) <= 0) {
-    out.push(task === "condition" ? "Set how often it's inspected." : task === "test" ? "Set how often it's tested." : "Set how often it's replaced.");
+    out.push(operating ? "Set how often, in running time."
+      : task === "condition" ? "Set how often it's inspected." : task === "test" ? "Set how often it's tested." : "Set how often it's replaced.");
+  } else if (operating && unit && !operatingAllowed(unit)) {
+    out.push("Running time needs the diagram in a time unit (hours, days, …): count the task on the calendar, or change the unit.");
   }
   const every = Number(s.interval);
   if (task === "condition") {
@@ -281,14 +319,18 @@ function durationWords(d, unit) {
 
 // "Replace at age every 4,380 h (2,190 running h), takes 8 h, as new". The block dialog's summary,
 // and the canvas chip's title.
-export function taskSummary(data = {}, unit = "") {
+export function taskSummary(raw = {}, unit = "") {
+  const data = withTaskBasis(raw);
   const task = taskOf(data);
   if (task === "none") return "Run to failure";
   const s = schedule(data) || {};
   const u = unitSuffix(unit);
-  const every = finite(s.interval) ? `every ${fmt(s.interval)}${u}` : "interval not set";
-  const running = intervalBasis(data) === "operating" && finite(s.operating_interval)
-    ? ` (${fmt(s.operating_interval)} running${u})` : "";
+  const operating = intervalBasis(data) === "operating";
+  const every = !finite(s.interval) ? "interval not set"
+    : operating ? `every ${fmt(s.interval)} running${u || " time"}` : `every ${fmt(s.interval)}${u}`;
+  // A running-hours task's calendar interval, through the Runs share it relies on.
+  const running = operating && finite(s.interval) && hasDuty(data) && Number(data.duty) < 1
+    ? ` (${fmt(onCalendar(s.interval, data))}${u} on the calendar at Runs ${fmt(Number(data.duty) * 100)}%)` : "";
   const parts = [`${taskLabel(task)} ${every}${running}`, durationWords(s.duration, unit)];
   if (task !== "test") parts.push("as new");
   return parts.join(", ");

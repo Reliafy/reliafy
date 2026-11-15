@@ -305,14 +305,19 @@ test("the maintenance plan edits planned work and duty in place", async ({ page,
   const plan = page.getByRole("region", { name: "Maintenance plan" });
   await expect(plan).toBeVisible();
   await plan.getByLabel("Component 1: task").selectOption("age");
-  await plan.getByLabel("Component 1: interval in").selectOption("operating");
+  await plan.getByLabel("Component 1: counted in").selectOption("operating");
   await plan.getByLabel("Component 1: every").fill("500");
   // Runs blank is "all the time" since #829: running time is calendar time, nothing to fix.
   await expect(plan.locator(".rbd-plan-problem")).toHaveCount(0);
   await plan.getByLabel("Component 1: runs, % of the time").fill("25");
   await expect(plan.locator(".rbd-plan-problem")).toHaveCount(0);
-  await expect(plan).toContainText("= 2,000");
+  await expect(plan).toContainText("= 2,000 h on the calendar at Runs 25%");
   await expect(page.locator(".rbd-chip", { hasText: "25%" })).toBeVisible();
+  // A proof test takes running hours too (#365): the unit stays with the interval.
+  await plan.getByLabel("Component 1: task").selectOption("test");
+  await expect(plan.getByLabel("Component 1: counted in")).toHaveValue("operating");
+  await expect(plan).toContainText("= 2,000 h on the calendar at Runs 25%");
+  await expect(page.locator(".rbd-chip", { hasText: "running" })).toBeVisible();
   await page.setViewportSize({ width: 400, height: 860 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await expectHealthy(page, problems, { label: "maintenance plan" });

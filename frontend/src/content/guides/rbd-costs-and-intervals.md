@@ -46,10 +46,13 @@ Each row has:
   interval, whatever its age: a package on fixed dates), **Inspect on condition** (inspected, and replaced when the
   chance of failing before the next inspection is too high) or **Proof test**
   (its failures stay hidden until a test finds them).
-- **Every**: how often. A replacement can be given in **running** time, such
-  as every 500 running hours. It's turned into calendar time through **Runs**,
-  and the row shows the result. With **Runs** blank, the row asks for it rather
-  than guess.
+- **Every**: how often, and what it counts. Pick **running** hours beside the
+  number for a task counted in hours of use, such as a replacement every 500
+  running hours or a proof test every 2,000. It's kept as you typed it and put
+  on the calendar through **Runs**; the row shows the calendar time it comes to
+  ("= 2,000 h on the calendar at Runs 25%"). A proof test's first test and full
+  test, and early renewal at a group stop, count in the same unit. Switching
+  the unit converts the numbers, so the schedule stays the same.
 - **Takes**: how long the task takes the block off-line. Blank means no
   downtime.
 - **Cost**: per task. A range such as **300–700** is drawn afresh each time.
@@ -144,6 +147,12 @@ For the pumps, the cheapest age is **1,823 hours** rather than 1,500. The
 running cost falls from 7.99 to 7.92 an hour, and the availability barely
 moves. A small saving: the 1,500-hour plan was already close. If the
 intervals as drawn are already the best, it says so.
+
+Each interval comes back in its task's own unit: a proof test counted in
+running hours gets its best interval in running hours ("every 2,000 running
+hours"), and blank **Intervals to choose from** uses the monthly to
+four-yearly calendar at the block's **Runs** share. **What to improve** reads
+those intervals in running hours too.
 
 **Apply to diagram** writes the intervals on the blocks without saving.
 Review them, then save. With fewer crews than jobs, the intervals are chosen as if no

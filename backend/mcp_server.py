@@ -3751,6 +3751,13 @@ class PreventiveRestoration(BaseModel):
         "kijima1/kijima2: the share of the age left after a task (0 = as new, 1 = as before)."))
 
 
+#: A task's unit (#365), on Preventive and ProofTest.
+_BASIS_DESCRIPTION = (
+    "What the task's times (interval, opportunity, offset, full_test) count: calendar (default, the diagram's "
+    "clock) or operating = the block's running hours, put onto the clock through its duty (blank duty = runs "
+    "all the time). Interval answers come back in this unit.")
+
+
 class Preventive(BaseModel):
     model_config = ConfigDict(extra="forbid")
     policy: Literal["age", "block", "condition"] = Field("age", description=(
@@ -3758,10 +3765,10 @@ class Preventive(BaseModel):
         "condition = inspected every interval (in no time) and replaced when its chance of failing before the "
         "next inspection exceeds threshold."))
     interval: Optional[float] = Field(None, gt=0, description=(
-        "Replacement interval (age/block) or inspection interval (condition). Give this or operating_interval."))
+        "Replacement interval (age/block) or inspection interval (condition), in basis's unit."))
+    basis: Optional[Literal["calendar", "operating"]] = Field(None, description=_BASIS_DESCRIPTION)
     operating_interval: Optional[float] = Field(None, gt=0, description=(
-        "Instead of interval: the interval in the block's operating time, turned into the diagram's clock "
-        "through the block's duty (needs duty)."))
+        "Older form of interval with basis operating; prefer those."))
     duration: Optional[float] = Field(None, ge=0, description="Time off-line per replacement; 0/omit = instant.")
     cost: Optional[Cost] = Field(None, description="Per replacement.")
     threshold: Optional[float] = Field(None, ge=0, le=1, description=(
@@ -3781,7 +3788,8 @@ class Preventive(BaseModel):
 
 class ProofTest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    interval: float = Field(gt=0, description="Proof-test interval.")
+    interval: float = Field(gt=0, description="Proof-test interval, in basis's unit.")
+    basis: Optional[Literal["calendar", "operating"]] = Field(None, description=_BASIS_DESCRIPTION)
     duration: Optional[float] = Field(None, ge=0, description="Time off-line per test; 0/omit = instant (exact "
                                                               "values need instant tests and instant repair).")
     cost: Optional[Cost] = Field(None, description="Per test.")
@@ -5998,7 +6006,7 @@ def _save_imported_trees(db, user, diagrams, name, save, only) -> dict[str, Any]
 # What a lever row carries in analyse rbd_sensitivity's answer (the app's row has more).
 _SENSITIVITY_ROW_KEYS = ("rank", "id", "block", "name", "lever", "change", "value", "shown_value", "shown_to",
                          "effect_basis", "cost_to_change", "benefit_per_cost", "per_unit_cost", "plain",
-                         "interval", "distinguishable", "unranked", "limit", "limited")
+                         "interval", "distinguishable", "unranked", "limit", "limited", "running")
 
 
 def _sensitivity_summary(payload: dict, limit: int) -> dict:
@@ -6286,7 +6294,10 @@ def _interval_ops(graph: dict, rows: list[dict]) -> list[dict]:
     """change rbd_edit ops that put a plan on the saved diagram (update_node
     replaces a whole schedule, so each carries the block's own with the new
     interval and first test)."""
-    nodes = {n.get("id"): (n.get("data") or {}) for n in graph.get("nodes") or []}
+    from backend.services import rbd_maintenance
+
+    # Each task in its current shape: a running-hours one keeps its basis, the interval in its unit (#365).
+    nodes = {n.get("id"): rbd_maintenance.with_task_basis(n.get("data") or {}) for n in graph.get("nodes") or []}
     ops = []
     for row in rows:
         if not row.get("changed"):
@@ -6317,7 +6328,8 @@ def _intervals_summary(payload: dict, graph: Optional[dict] = None) -> dict:
                 "crews": payload.get("crews"), "message": payload.get("message")
                 + " Call again with assume_unlimited_crews=true (and simulate_with_crews=true to see the effect)."}
     rows = [{k: r.get(k) for k in ("id", "label", "interval_now", "interval", "never", "offset_now", "offset",
-                                   "changed", "coverage", "full_test") if k in r} for r in payload.get("blocks") or []]
+                                   "changed", "coverage", "full_test", "unit_words") if k in r}
+            for r in payload.get("blocks") or []]
     out: dict[str, Any] = {
         "available": True,
         **{k: payload.get(k) for k in ("schedule", "unit", "safety_function", "target", "basis", "stagger",

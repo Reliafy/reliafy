@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CloseIcon } from "./icons.jsx";
+import InputGroup, { Addon } from "./ui/InputGroup.jsx";
 import { unitAbbr } from "./rbdModelText.js";
 import { costLabel, workspaceCurrency } from "../money.js";
 import {
   PENDING_WORDS, RESTORATIONS, TASKS, costText, dutyText, dutyWords, fmt, hasDuty, intervalBasis, operatingAllowed, parseCost,
   parseDuty, parseNumber, parsePercent, percentText, planColumns, planCounts, planRows, rowProblems, schedule, setCrewPriority, setDuty,
-  setGroup, setInterval, setIntervalBasis, setScheduleField, setTask, taskLabel, taskOf, toCalendar,
+  setGroup, setInterval, setIntervalBasis, setScheduleField, setTask, taskLabel, taskOf, basisUnit, calendarNote,
+  withTaskBasis,
 } from "../rbdMaintenancePlan.js";
 import { goneText, mergeTreeData, setTreeSetting, treeRowProblems, treeTaskPath } from "../rbdTreePlan.js";
 import { packagePath } from "../maintenanceOrders.js";
@@ -184,10 +186,10 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
 
 // One block: its row, then (when open) its task's extra settings, then what's left to set.
 function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
-  const { data, task } = row;
+  const { task } = row;
+  const data = withTaskBasis(row.data);
   const s = schedule(data) || {};
   const problems = rowProblems(data, unit);
-  const preventive = task !== "none" && task !== "test";
   // Running time can be chosen before a number is typed, so the row remembers the choice until then.
   const dataBasis = intervalBasis(data);
   const [basis, setBasis] = useState(dataBasis);
@@ -195,7 +197,8 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
     if (dataBasis === "operating") setBasis("operating");
     else if (s.interval != null) setBasis("calendar");
   }, [dataBasis, s.interval]);
-  const operating = preventive && basis === "operating";
+  const operating = task !== "none" && basis === "operating";
+  const note = operating ? calendarNote(s.interval, data, u) : "";
   const modelled = s.duration != null && typeof s.duration === "object";
   const extras = task === "condition" || task === "test" || (task === "age" && data.maintenance_group);
   const name = row.label;
@@ -221,22 +224,22 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
         <td className="rbd-plan-every">
           {task === "none" ? <span className="muted">—</span> : (
             <>
-              <span className="rbd-plan-with-suffix">
-                <DraftInput value={String((operating ? s.operating_interval : s.interval) ?? "")}
+              {/* The interval and its unit as one control (InputGroup): calendar or running hours. */}
+              <InputGroup label={`${name}: interval and its unit`} className="rbd-plan-every-group">
+                <DraftInput value={String(s.interval ?? "")}
                             parse={(t) => parseNumber(t, { positive: true })} placeholder="—"
-                            label={`${name}: every`} className="rbd-plan-num"
+                            label={`${name}: every`} className="ctl rbd-plan-num"
                             onCommit={(v) => onChange(setInterval(data, v, operating ? "operating" : "calendar"))} />
-                {preventive && operatingAllowed(unit) ? (
-                  <select value={operating ? "operating" : "calendar"} aria-label={`${name}: interval in`}
-                          className="rbd-plan-basis" onChange={(e) => { setBasis(e.target.value); onChange(setIntervalBasis(data, e.target.value)); }}>
+                {operatingAllowed(unit) || operating ? (
+                  <select value={operating ? "operating" : "calendar"} aria-label={`${name}: counted in`}
+                          title="On the calendar, or in the block's running hours (through Runs)"
+                          className="ctl ctl-unit rbd-plan-basis" onChange={(e) => { setBasis(e.target.value); onChange(setIntervalBasis(data, e.target.value)); }}>
                     <option value="calendar">{u || "calendar"}</option>
-                    <option value="operating">running {u}</option>
+                    <option value="operating">{basisUnit("operating", u)}</option>
                   </select>
-                ) : <span>{u}</span>}
-              </span>
-              {operating && hasDuty(data) && (
-                <small className="muted">= {fmt(toCalendar(Number(s.operating_interval), Number(data.duty)))} {u} on the calendar</small>
-              )}
+                ) : u ? <Addon>{u}</Addon> : null}
+              </InputGroup>
+              {note && <small className="muted">{note}</small>}
             </>
           )}
         </td>
@@ -291,7 +294,7 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
       {open && extras && (
         <tr className="rbd-plan-extra">
           <td colSpan={span}>
-            <div className="rbd-plan-pin"><ExtraFields data={data} task={task} name={name} u={u} onChange={onChange} /></div>
+            <div className="rbd-plan-pin"><ExtraFields data={data} task={task} name={name} u={operating ? basisUnit("operating", u) : u} onChange={onChange} /></div>
           </td>
         </tr>
       )}
@@ -363,12 +366,13 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
           )}
         </td>
         <td>
-          {!plan ? <span className="muted">—</span> : plan.interval != null ? num(plan.interval) : plan.operating_interval != null ? (
-            <>
-              {num(plan.operating_interval, `running ${u}`)}
-              {hasDuty(data) && <small className="muted">= {fmt(toCalendar(plan.operating_interval, Number(data.duty)))} {u} on the calendar</small>}
-            </>
-          ) : <span className="muted">not set</span>}
+          {!plan ? <span className="muted">—</span> : plan.interval == null ? <span className="muted">not set</span>
+            : plan.basis === "operating" ? (
+              <>
+                {num(plan.interval, basisUnit("operating", u))}
+                <small className="muted">{calendarNote(plan.interval, { ...data, preventive: { basis: "operating" }, inspection: undefined }, u)}</small>
+              </>
+            ) : num(plan.interval)}
           {plan && <small className="muted">{used.interval_words}</small>}
         </td>
         <td>{!plan ? <span className="muted">—</span> : plan.task === "condition" ? num(settings.duration) : plan.duration == null ? <span className="muted">none</span> : num(plan.duration)}</td>
@@ -413,7 +417,7 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
       {open && extras && (
         <tr className="rbd-plan-extra">
           <td colSpan={span}>
-            <div className="rbd-plan-pin"><TreeFields data={data} task={plan.task} name={name} u={u} settings={settings} onChange={onChange} /></div>
+            <div className="rbd-plan-pin"><TreeFields data={data} task={plan.task} name={name} u={plan.basis === "operating" ? basisUnit("operating", u) : u} settings={settings} onChange={onChange} /></div>
           </td>
         </tr>
       )}

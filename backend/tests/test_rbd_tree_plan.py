@@ -68,7 +68,7 @@ def test_a_fixed_interval_task_is_an_age_replacement_in_the_diagrams_unit(m, db)
     assert plans["position"]["id"] == plant
     row = plans["blocks"][_block_of(_graph(db, rbd), "Pump A")["id"]]
     assert row["used"] == task["id"] and row["position"]["name"] == "Pump A"
-    assert row["plan"] == {"task": "age", "interval": 6 * 730.5, "operating_interval": None, "duration": 8.0,
+    assert row["plan"] == {"task": "age", "interval": 6 * 730.5, "basis": "calendar", "duration": 8.0,
                            "cost": 1200, "inspection_cost": None, "group": None}
     assert row["restoration"]["kind"] == "as_new" and row["restoration"]["words"] == "As new"
     assert row["tasks"][0]["crew"] == "Fitter ×2 · 8 h of labour"
@@ -135,10 +135,14 @@ def test_running_hours_go_through_the_duty(m, db):
     graph = _graph(db, rbd)
     plans = tp.plans_for_graph(m, rbd, graph)
     row = plans["blocks"][_block_of(graph, "Pump A")["id"]]
-    assert row["plan"]["interval"] is None and row["plan"]["operating_interval"] == 500
+    assert row["plan"]["interval"] == 500 and row["plan"]["basis"] == "operating"
     _block_of(graph, "Pump A")["data"]["duty"] = 0.25
     data = _block_of(tp.apply(graph, plans), "Pump A")["data"]
-    assert rbd_maintenance.preventive_spec(data, "Pump A")["interval"] == 2000
+    assert data["preventive"]["basis"] == "operating" and data["preventive"]["interval"] == 500
+    # Counted in running hours: RePyability takes 500 with the basis and puts it on the calendar (2000 h).
+    spec = rbd_maintenance.preventive_spec(data, "Pump A")
+    assert spec["interval"] == 500 and spec["basis"] == "operating"
+    assert rbd_maintenance.calendar_interval(data["preventive"], data, "Pump A") == 2000
 
 
 def test_a_task_change_changes_its_version(m, db):
@@ -455,7 +459,7 @@ def test_expanded_into_a_repairable_diagram_the_tasks_inside_reach_the_plan(api)
     labels = {b: next(n["data"]["label"] for n in flat["nodes"] if n["id"] == b) for b in plan["blocks"]}
     assert sorted(labels.values()) == ["Motor A", "Motor B", "Pump A", "Pump B"]
     row = next(r for b, r in plan["blocks"].items() if labels[b] == "Pump A")
-    assert row["used"] == task["id"] and row["plan"]["task"] == "age" and 12000.0 in (row["plan"]["interval"], row["plan"]["operating_interval"])
+    assert row["used"] == task["id"] and row["plan"]["task"] == "age" and row["plan"]["interval"] == 12000.0
     uses = api.get(f"{M}/rbd-plan-uses", params={"task_ids": task["id"]}).json()["uses"]
     assert [(u["rbd"]["id"], u["block"]["label"]) for u in uses] == [(rbd["id"], "Pump A")]
     assert api.post("/api/rbds/validate", json={"graph": flat}).json()["valid"] is True
