@@ -10851,10 +10851,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"first_due": _day(start, "start date")}
 
     def _task_counter(self, point_id: str, node: dict, units) -> dict:
-        """A counter chosen for a task, checked: on the task's own subject, in its unit."""
+        """A counter chosen for a task, checked, in its unit: a position's task may
+        count one on the position, a position above or below it, or the item fitted
+        to one of those (as tasks.update and a move allow); an item's task its own."""
         point = self._counter(point_id)
         on = self.s.out(self.org, point_id, "ON")
-        if not on or on[0]["id"] != node["id"]:
+        if node["label"] == "Position":
+            if self._point_fit(point, node["id"]) is None:
+                raise Invalid(f"{point['name']} isn't on {node['name']}, a position above or below it, or the item "
+                              "fitted to one of those: pick one that is.")
+        elif not on or on[0]["id"] != node["id"]:
             raise Invalid(f"The counter must be on the same {node['label'].lower()} as the task.")
         if _norm_unit(point.get("unit")) not in units:
             by_use = [u for u in units if u and not _is_calendar(u)]
