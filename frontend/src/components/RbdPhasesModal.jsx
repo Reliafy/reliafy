@@ -173,12 +173,12 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
                               <span title={`${c.name}${c.unit ? ` (${c.unit})` : ""}`}>{c.name}{c.unit ? ` (${c.unit})` : ""}</span>
                               <PhaseCovValue cov={c} value={v} onChange={(x) => setValue(row, c.name, x)} unit={unit} duration={row.duration}
                                              constant={choice ? (
-                                <select aria-label={c.name} value={isSchedule(v) ? "" : v} onChange={(e) => setValue(row, c.name, e.target.value)}>
+                                <select aria-label={`${c.name}${c.unit ? ` (${c.unit})` : ""}`} value={isSchedule(v) ? "" : v} onChange={(e) => setValue(row, c.name, e.target.value)}>
                                   <option value="">Not set</option>
                                   {c.choices.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
                                 </select>
                               ) : (
-                                <input type="number" inputMode="decimal" step="any" aria-label={c.name} value={isSchedule(v) ? "" : v}
+                                <input type="number" inputMode="decimal" step="any" aria-label={`${c.name}${c.unit ? ` (${c.unit})` : ""}`} value={isSchedule(v) ? "" : v}
                                        placeholder={fallback != null ? covValueText(fallback, "") : "needs a value"}
                                        onChange={(e) => setValue(row, c.name, e.target.value === "" ? "" : Number(e.target.value))} />
                               )} />

@@ -54,7 +54,7 @@ export default function PhaseCovValue({ cov, value, onChange, constant, unit, du
   };
   return (
     <div className="phase-cov-value">
-      <SegmentedControl size="sm" label={`${cov.name}: one value or a schedule over the phase`} options={MODES}
+      <SegmentedControl size="sm" label={`One value or a schedule over the phase for ${cov.name}`} options={MODES}
                         value={mode} onChange={(m) => !disabled && choose(m)} />
       {mode === "constant" ? constant : (
         <RbdCovariateSchedule field={field} draft={draft} onDraft={edit} unit={unit} tMax={Number(duration) || null}
