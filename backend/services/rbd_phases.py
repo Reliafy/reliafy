@@ -42,7 +42,16 @@ exposed in that phase: its clock stops for the phase (it neither ages nor
 fails in it) and the phase's diagram keeps it, working if it was still working
 when the phase began. Its age carries on when it next runs. The result says so
 (``STANDBY_NOTE``). A block whose covariates change by phase can't also stand
-by (its life is already a function of the mission's clock).
+by (its life is already a function of the mission's clock). ``dormancy``
+(``{"c2": 0.1}``) makes a standby block warm: idle, it ages at that fraction of
+the clock (0 cold, the default; 1 hot, as if running), RePyability's
+``BlockSetting(dormancy_factor=...)``.
+
+A block can be ``guaranteed`` working in a phase (``"guaranteed": ["c4"]``):
+it runs and ages there but can't fail in it (RePyability's ``"guaranteed"``
+state), so its hazard over the phase is never spent; one already failed stays
+failed. Each block is in one state per phase: working (the default), standby,
+guaranteed or not needed.
 
 Blocks pinned working or failed are perfectly reliable or failed throughout.
 Covariates set per phase (``values``, ``block_values``) reach the blocks whose
@@ -102,6 +111,12 @@ STANDBY_NOTE = ("Standby: the block is there but not running, so it neither ages
                 "the phase isn't counted.")
 
 
+WARM_NOTE = ("Warm standby: a block given a dormancy ages and can fail while idle at that fraction of the clock "
+             "(0 cold, 1 as if running).")
+GUARANTEED_NOTE = ("Guaranteed working: the block runs and ages in that phase but can't fail in it (its wear is "
+                   "carried on); a block that failed earlier stays failed.")
+
+
 class PhaseError(ValueError):
     """A ``phases`` setting that can't be read (user-facing text)."""
 
@@ -138,6 +153,29 @@ def _votes(value, where: str) -> dict[str, int]:
         if not math.isfinite(number) or number != int(number) or number < 1:
             raise PhaseError(f"{where}: votes for '{key}' must be a whole number of at least 1.")
         out[str(key)] = int(number)
+    return out
+
+
+def _dormancy(value, where: str, standby: list[str]) -> dict[str, float]:
+    """{block id: how fast it ages while idle on standby, 0 (cold) to 1 (hot)}: kept only for the
+    blocks on standby in the phase (a block's setting goes with its state); 0 is the default, so
+    left out."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise PhaseError(f"{where}: dormancy maps a standby block's id to how fast it ages while idle (0 to 1).")
+    out = {}
+    for key, f in value.items():
+        if isinstance(f, bool):
+            raise PhaseError(f"{where}: the dormancy of '{key}' must be a number from 0 to 1.")
+        try:
+            number = float(f)
+        except (TypeError, ValueError):
+            raise PhaseError(f"{where}: the dormancy of '{key}' must be a number from 0 to 1.") from None
+        if not math.isfinite(number) or number < 0 or number > 1:
+            raise PhaseError(f"{where}: the dormancy of '{key}' must be a number from 0 to 1.")
+        if str(key) in standby and number > 0:
+            out[str(key)] = number
     return out
 
 
@@ -242,6 +280,16 @@ def parse_phases(raw) -> list[dict]:
             raise PhaseError(f"{where}: a block is either on standby or not needed, not both ({', '.join(both)}).")
         if standby:
             clean["standby"] = standby
+        guaranteed = _ids(phase.get("guaranteed"), where, "guaranteed")
+        both = [b for b in guaranteed if b in not_needed or b in standby]
+        if both:
+            raise PhaseError(f"{where}: a block is in one state in a phase: guaranteed working, standby or not "
+                             f"needed, not two ({', '.join(both)}).")
+        if guaranteed:
+            clean["guaranteed"] = guaranteed
+        dormancy = _dormancy(phase.get("dormancy"), where, standby)
+        if dormancy:
+            clean["dormancy"] = dormancy
         votes = _votes(phase.get("votes"), where)
         if votes:
             clean["votes"] = votes
@@ -323,7 +371,8 @@ def validation_warnings(graph: dict) -> list[str]:
             feeding[e["target"]] = feeding.get(e["target"], 0) + 1
     out = []
     for phase in phases:
-        gone = [b for b in [*phase.get("not_needed", []), *phase.get("standby", [])] if b not in nodes]
+        gone = [b for b in [*phase.get("not_needed", []), *phase.get("standby", []), *phase.get("guaranteed", [])]
+                if b not in nodes]
         if gone:
             out.append(f"Phase “{phase['name']}” lists blocks that aren't in the diagram any more "
                        f"({', '.join(gone)}); they're ignored.")
@@ -348,46 +397,89 @@ def _stand_in(nid: str, j: int) -> str:
 
 
 class _Paused:
-    """A block's life with its clock stopped while it stands by: at mission time ``t`` it has run
-    ``t`` less the time spent on standby before ``t``, so R(t) = R₀(running time). Standby phases
-    (``paused``: [(start, end)] of the mission's clock) neither age it nor fail it."""
+    """A block's life on the mission's clock with its phase states applied (one model through the
+    whole mission). On standby (``paused``: [(start, end, dormancy)] of the mission's clock) it is
+    idle: it runs at ``dormancy`` of the clock (0, cold: its clock stops, it neither ages nor
+    fails), so at mission time ``t`` it has run ``t`` less the idle time not counted. Guaranteed
+    working (``guaranteed``: [(start, end)]) it runs and ages but can't fail: the hazard of those
+    stretches isn't spent, so R(t) = R₀(r(t)) · Π R₀(r(s)) / R₀(r(e)) over the guaranteed stretches
+    [s, e] begun by ``t`` (``e`` capped at ``t``)."""
 
-    def __init__(self, base, paused):
+    def __init__(self, base, paused, guaranteed=()):
         self.base = base
         self.dist = getattr(base, "dist", None)
-        spans = sorted((float(a), float(b)) for a, b in paused if b > a)
+        spans = sorted((float(sp[0]), float(sp[1]), float(sp[2]) if len(sp) > 2 else 0.0)
+                       for sp in paused if sp[1] > sp[0])
         merged: list = []
-        for a, b in spans:
-            if merged and a <= merged[-1][1]:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        for a, b, f in spans:
+            if merged and a <= merged[-1][1] and f == merged[-1][2]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], b), f)
             else:
-                merged.append((a, b))
+                merged.append((a, b, f))
         self.paused = merged
+        held = sorted((float(a), float(b)) for a, b in guaranteed if b > a)
+        joined: list = []
+        for a, b in held:
+            if joined and a <= joined[-1][1]:
+                joined[-1] = (joined[-1][0], max(joined[-1][1], b))
+            else:
+                joined.append((a, b))
+        self.guaranteed = joined
 
     def running(self, x) -> np.ndarray:
         """The time the block has run by mission time ``x``."""
         x = np.atleast_1d(np.asarray(x, dtype=float))
         out = x.copy()
-        for a, b in self.paused:
-            out -= np.clip(x - a, 0.0, b - a)
+        for a, b, f in self.paused:
+            out -= (1.0 - f) * np.clip(x - a, 0.0, b - a)
         return np.maximum(out, 0.0)
 
-    def sf(self, x) -> np.ndarray:
+    def _base_sf(self, x) -> np.ndarray:
         return np.ravel(np.asarray(self.base.sf(self.running(x)), dtype=float))
 
+    def sf(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        out = self._base_sf(x)
+        for a, b in self.guaranteed:
+            lo = np.minimum(x, a)
+            hi = np.minimum(x, b)
+            s_lo = self._base_sf(lo)
+            s_hi = self._base_sf(hi)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ratio = np.where(s_hi > 0, s_lo / np.where(s_hi > 0, s_hi, 1.0), 1.0)
+            out = out * ratio
+        return np.clip(out, 0.0, 1.0)
+
     def ff(self, x) -> np.ndarray:
-        return np.ravel(np.asarray(self.base.ff(self.running(x)), dtype=float))
+        return 1.0 - self.sf(x)
 
     def random(self, size) -> np.ndarray:
-        """A life drawn in running time, put on the mission's clock: each standby span that starts
-        before the block has run out adds its length."""
+        """A life on the mission's clock. Cold standby only: drawn in running time and moved on by
+        each standby span begun before it ran out. Otherwise the same draw's survival level
+        (R₀ at the running-time life) found on this block's own curve, by bisection."""
         life = np.ravel(np.asarray(self.base.random(size), dtype=float))
-        out = life.copy()
-        done = 0.0  # standby time before each span
-        for a, b in self.paused:
-            out = np.where(life > a - done, out + (b - a), out)
-            done += b - a
-        return out
+        if not self.guaranteed and all(f == 0.0 for _, _, f in self.paused):
+            out = life.copy()
+            done = 0.0  # standby time before each span
+            for a, b, _ in self.paused:
+                out = np.where(life > a - done, out + (b - a), out)
+                done += b - a
+            return out
+        level = np.ravel(np.asarray(self.base.sf(life), dtype=float))
+        end = max([b for _, b, _ in self.paused] + [b for _, b in self.guaranteed] + [1.0])
+        lo = np.zeros_like(life)
+        hi = np.full_like(life, end)
+        for _ in range(60):  # widen until each draw's level is reached
+            short = self.sf(hi) > level
+            if not short.any():
+                break
+            hi = np.where(short, hi * 2.0, hi)
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            alive = self.sf(mid) > level
+            lo = np.where(alive, mid, lo)
+            hi = np.where(alive, hi, mid)
+        return np.where(level <= 0, np.inf, hi)
 
     def cs(self, x, X) -> np.ndarray:
         from backend.services.rbd_analysis import conditional_survival
@@ -396,16 +488,33 @@ class _Paused:
 
 
 def _standby_spans(phases: list[dict], repeats: dict) -> dict:
-    """{block id: [(start, end)]}: the stretches of the mission's clock each block stands by in
-    (a repeated block's copy names its original)."""
+    """{block id: [(start, end, dormancy)]}: the stretches of the mission's clock each block stands
+    by in, and how fast it ages there (a repeated block's copy names its original)."""
     out: dict = {}
     start = 0.0
     for phase in phases:
         end = start + float(phase["duration"])
+        dormancy = phase.get("dormancy") or {}
         for nid in phase.get("standby", []):
+            out.setdefault(repeats.get(nid, nid), []).append((start, end, float(dormancy.get(nid) or 0.0)))
+        start = end
+    return out
+
+
+def _guaranteed_spans(phases: list[dict], repeats: dict) -> dict:
+    """{block id: [(start, end)]}: the stretches each block is guaranteed working in."""
+    out: dict = {}
+    start = 0.0
+    for phase in phases:
+        end = start + float(phase["duration"])
+        for nid in phase.get("guaranteed", []):
             out.setdefault(repeats.get(nid, nid), []).append((start, end))
         start = end
     return out
+
+
+def has_guaranteed(phases) -> bool:
+    return any(p.get("guaranteed") for p in phases or [])
 
 
 def has_standby(phases) -> bool:
@@ -486,14 +595,17 @@ def build_mission(
     for nid in perfect:
         if nid in base:
             base[nid] = PerfectReliability
-    # Blocks on standby in some phases: their clocks stop there (one model through the mission,
-    # so every phase's diagram shares it).
-    for nid, spans in _standby_spans(phases, repeats).items():
+    # Blocks on standby in some phases: their clocks stop (or slow) there (one model through the
+    # mission, so every phase's diagram shares it).
+    # Blocks guaranteed working in some phases: their hazard there isn't spent.
+    standby_spans = _standby_spans(phases, repeats)
+    held_spans = _guaranteed_spans(phases, repeats)
+    for nid in sorted(set(standby_spans) | set(held_spans)):
         model = base.get(nid)
         if model is None or isinstance(model, str) or model is PerfectReliability or model is PerfectUnreliability \
                 or node_types.get(nid) == "knode":
             continue
-        base[nid] = _Paused(model, spans)
+        base[nid] = _Paused(model, standby_spans.get(nid, []), held_spans.get(nid, []))
 
     built = []
     for j, phase in enumerate(phases):
@@ -610,6 +722,9 @@ def analyze_phases(
         sb = [labels.get(n, n) for n in phase.get("standby", []) if n in labels]
         if sb:
             row["standby"] = sb
+        gu = [labels.get(n, n) for n in phase.get("guaranteed", []) if n in labels]
+        if gu:
+            row["guaranteed"] = gu
         votes = [{"id": n, "label": labels.get(n, n), "n": v} for n, v in (phase.get("votes") or {}).items()
                  if n in labels]
         if votes:
@@ -635,6 +750,10 @@ def analyze_phases(
         out["notes"].append(NOT_NEEDED_NOTE)
     if has_standby(phases):
         out["notes"].append(STANDBY_NOTE)
+        if any(p.get("dormancy") for p in phases):
+            out["notes"].append(WARM_NOTE)
+    if has_guaranteed(phases):
+        out["notes"].append(GUARANTEED_NOTE)
     if interval is not None:
         out["interval"] = interval
         out["bound_note"] = SIM_RANGE_NOTE.format(n=interval["n_samples"], level=levels.pct(interval.get("confidence") or SIM_CONFIDENCE))
@@ -906,9 +1025,10 @@ def python_section(body: str, graph: dict, script) -> str:
         note = ("# The diagram's phased mission isn't exported: a phased mission doesn't model\n"
                 "# common-cause groups (Reliafy doesn't analyse it either).")
         return f"{head}\n\n\n{note}\n\n\nif __name__ == \"__main__\":\n    main()\n"
-    if has_standby(phases):
+    if has_standby(phases) or has_guaranteed(phases):
         note = ("# The diagram's phased mission isn't exported: some of its blocks stand by in\n"
-                "# some phases (their clocks stop there), which this script doesn't model.")
+                "# some phases, or are guaranteed working in some phases, which this script\n"
+                "# doesn't model.")
         return f"{head}\n\n\n{note}\n\n\nif __name__ == \"__main__\":\n    main()\n"
     ids = {n.get("id") for n in graph.get("nodes") or []}
     knodes = {n.get("id") for n in graph.get("nodes") or [] if n.get("type") == "knode"}

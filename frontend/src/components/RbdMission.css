@@ -54,3 +54,9 @@
   .rbd-network-controls .calc-t { flex: 1 1 140px; }
   .rbd-network-controls .sel-trigger { min-width: 0; width: 100%; }
 }
+/* Each block's state and each covariate's value in a phase (the same settings as the Explorer's mission tree). */
+.rbd-phase-states { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 6px 12px; }
+.rbd-phase-state { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.rbd-phase-state > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbd-phase-state select, .rbd-phase-state input { width: 9.5rem; flex: none; }
+.rbd-phase-state.is-off > span { text-decoration: line-through; color: var(--text-secondary); }

@@ -318,6 +318,8 @@ def summary(graph: dict, mission: dict, results: Optional[dict] = None) -> dict:
     got = (results or {}).get(mission["id"])
     if isinstance(got, dict) and got.get("signature") == signature(graph, phases):
         out["result"] = {k: got.get(k) for k in ("reliability", "method", "complete", "at", "through")}
+        if got.get("phases"):
+            out["result"]["phases"] = list(got["phases"])
         if got.get("placeholders"):  # the blocks it rests on a placeholder for, and the figure without them
             out["result"]["placeholders"] = list(got["placeholders"])
             out["result"]["without_placeholders"] = got.get("without_placeholders")
@@ -332,6 +334,11 @@ def result_record(graph: dict, phases: list, result: dict) -> dict:
     if result.get("placeholders"):
         out["placeholders"] = [p["label"] for p in result["placeholders"]]
         out["without_placeholders"] = (result.get("without_placeholders") or {}).get("reliability")
+    # Each phase's own: the chance of getting through it once started, and the mission's at its end
+    # (for the Explorer's phase rows and their details).
+    out["phases"] = [{"name": p.get("name"), "waiting": bool(p.get("waiting")),
+                      "conditional_failure": p.get("conditional_failure"),
+                      "reliability_at_end": p.get("reliability_at_end")} for p in result.get("phases") or []]
     return out
 
 
@@ -371,6 +378,9 @@ def gather(graph: dict, inputs_for: Callable[[dict], list]) -> dict:
     for n in (graph or {}).get("nodes") or []:
         data = n.get("data") or {}
         model = data.get("model") or {}
+        if model.get("kind") == "regression" and not (data.get("repeat_of")):
+            _regression_rows(rows, n, conditions)
+            continue
         if model.get("kind") != "bound":
             continue
         nid = n.get("id")
@@ -404,6 +414,48 @@ def gather(graph: dict, inputs_for: Callable[[dict], list]) -> dict:
     order = {"use": 0, "environment": 1}
     out = sorted(rows.values(), key=lambda r: (order.get(r["role"], 2), r["name"].casefold()))
     return {"rows": out, "problems": problems}
+
+
+def _regression_rows(rows: dict, n: dict, conditions: list) -> None:
+    """A block on a saved regression (proportional-hazards) model put straight in the diagram: each
+    of its covariates is a row a phase can set, like a bound block's open input (the builder's "Set
+    covariates" lists the same ones). Its value otherwise is the diagram's (matched by name) or the
+    fit's default."""
+    data = n.get("data") or {}
+    model = data.get("model") or {}
+    nid = n.get("id")
+    label = data.get("label") or nid
+    own = data.get("covariate_values") or {}
+    for f in model.get("covariates") or []:
+        if not isinstance(f, dict) or not f.get("name"):
+            continue
+        name = str(f["name"])
+        number = (f.get("type") or "number") == "number"
+        unit = f.get("unit") or ""
+        role = f.get("role") or cb._guess_role(name)
+        hit = next((c for c in conditions if isinstance(c, dict) and _norm(c.get("name")) == _norm(name)), None)
+        gk = (_norm(name), cb._unit(unit), role)
+        row = rows.get(gk)
+        if row is None:
+            choices = None if number else [{"code": str(c), "label": str(c)} for c in f.get("choices") or f.get("levels") or []]
+            row = rows[gk] = {
+                "name": name, "role": role, "unit": unit, "kind": "number" if number else "choice",
+                "choices": choices, "limits": [], "help": "A covariate of the proportional-hazards model.",
+                "symbol": None, "diagram": hit.get("value") if hit else None, "blocks": []}
+        value = own.get(name)
+        row["blocks"].append({"id": nid, "label": label, "key": name, "own": None if value in (None, "") else value,
+                              "default": f.get("default"), "regression": True})
+
+
+def regression_values(rows: list[dict]) -> dict:
+    """{block id: {covariate: value}} for the plain regression blocks of one phase's rows
+    (:func:`phase_rows`): the value each uses there, where it has one."""
+    out: dict = {}
+    for row in rows:
+        for b in row["blocks"]:
+            if b.get("regression") and b.get("used") is not None:
+                out.setdefault(b["id"], {})[b["key"]] = b["used"]
+    return out
 
 
 def _phase_value(phase: dict, name: str):
@@ -563,6 +615,11 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
     bound, covs, needs = [], [], []
     for p in clean:
         g, c, lines = cb.bind_graph(phase_graph(graph, p, rows), inputs_for, covariates)
+        reg = regression_values(phase_rows(rows, p))
+        if reg:
+            c = dict(c or {})
+            for nid, vals in reg.items():
+                c[nid] = {**(c.get(nid) or {}), **vals}
         if lines:
             needs.append({"phase": p["name"], "lines": lines})
         if needs:
@@ -639,6 +696,58 @@ def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callab
 
 
 
+# ---- what the Explorer's tree shows under each phase -------------------------------------------
+
+#: A block's state in a phase, as its phase stores it (working is the default: no rule).
+RULE_STATES = ("standby", "guaranteed", "not_needed")
+
+
+def phase_rules(phase: dict, labels: dict) -> list[dict]:
+    """A phase's node status rules: one per block not left Working, in the diagram's block order
+    ({block, label, state, dormancy (standby only)}); blocks no longer in the diagram are left out."""
+    out = []
+    dormancy = phase.get("dormancy") or {}
+    states = {}
+    for state in RULE_STATES:
+        for b in phase.get(state) or []:
+            states.setdefault(b, state)
+    for b, label in labels.items():
+        if b in states:
+            row = {"block": b, "label": label, "state": states[b]}
+            if states[b] == "standby":
+                row["dormancy"] = float(dormancy.get(b) or 0.0)
+            out.append(row)
+    return out
+
+
+def tree_info(graph: dict, mission: dict, rows: list[dict]) -> dict:
+    """What the tree hangs under a mission's phases: {blocks: [{id, label}] (those a rule can
+    set), covariates: [{name, role, unit, kind, choices, feeds: [labels]}] (every covariate a life
+    model of the diagram leaves open, the same list the builder sets), phase_settings: per phase
+    {covariates: [{name, value (the phase's own, or None), used (what its blocks take when they
+    agree), source, missing (labels of blocks with no value at all)}], rules: phase_rules,
+    votes}}. Automatic: built from the diagram's models every time, never stored."""
+    nodes = (graph or {}).get("nodes") or []
+    labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id") for n in nodes
+              if n.get("type") not in ("input", "output", "knode") and not (n.get("data") or {}).get("repeat_of")}
+    covs = [{"name": r["name"], "role": r["role"], "unit": r["unit"], "kind": r["kind"], "choices": r.get("choices"),
+             "feeds": [b["label"] for b in r["blocks"]]} for r in rows]
+    settings = []
+    for p in mission.get("phases") or []:
+        got = []
+        for r in phase_rows(rows, p):
+            used = {json.dumps(b["used"], default=str) for b in r["blocks"] if b["used"] is not None}
+            sources = {b["source"] for b in r["blocks"] if b["source"]}
+            one = len(used) == 1
+            got.append({"name": r["name"], "value": r["value"],
+                        "used": next((b["used"] for b in r["blocks"] if b["used"] is not None), None) if one else None,
+                        "source": next(iter(sources)) if len(sources) == 1 else ("mixed" if sources else None),
+                        "missing": r["missing"]})
+        settings.append({"covariates": got, "rules": phase_rules(p, labels), "votes": p.get("votes") or {}})
+    return {"blocks": [{"id": k, "label": v} for k, v in labels.items()], "covariates": covs,
+            "phase_settings": settings}
+
+
 # ---- the missions on positions (the Explorer's Missions tab) ---------------------------------
 
 def position_missions(m, db, owners, hidden=frozenset(), position_ids=None) -> list[dict]:
@@ -647,6 +756,16 @@ def position_missions(m, db, owners, hidden=frozenset(), position_ids=None) -> l
     missions: [summary]}; then each mission's own RBD (``mission_of``) as a row of its position
     with no link (``link_id`` None) and that one mission."""
     from backend.services import rbds as rbds_service
+
+    inputs_for = _inputs_cache(lambda b: cb.inputs_of(b, db, owners))
+
+    def with_tree(graph, x, results) -> dict:
+        out = summary(graph, x, results)
+        try:
+            out.update(tree_info(graph, x, gather(graph, inputs_for)["rows"]))
+        except Exception:  # pragma: no cover - a diagram the tree can't read still lists its missions
+            pass
+        return out
 
     def brief(rbd, graph) -> dict:
         return {"id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "",
@@ -664,7 +783,7 @@ def position_missions(m, db, owners, hidden=frozenset(), position_ids=None) -> l
             graph = rbd.graph or {}
             doc = db.rbds.find_one({"_id": rbd.id}, {"mission_results": 1}) or {}
             row["rbd"] = brief(rbd, graph)
-            row["missions"] = [summary(graph, x, doc.get("mission_results") or {}) for x in missions_of(graph)]
+            row["missions"] = [with_tree(graph, x, doc.get("mission_results") or {}) for x in missions_of(graph)]
         out.append(row)
     live = {p["id"] for p in m.s.nodes(m.org, "Position") if not p.get("retired")}
     wanted = live & set(position_ids) if position_ids is not None else live
@@ -682,7 +801,7 @@ def position_missions(m, db, owners, hidden=frozenset(), position_ids=None) -> l
         graph = rbd.graph or {}
         out.append({"position_id": mission_of(graph)["position_id"], "link_id": None, "in_use": False,
                     "rbd": brief(rbd, graph),
-                    "missions": [summary(graph, x, doc.get("mission_results") or {}) for x in missions_of(graph)]})
+                    "missions": [with_tree(graph, x, doc.get("mission_results") or {}) for x in missions_of(graph)]})
     return out
 
 

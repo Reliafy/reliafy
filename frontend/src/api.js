@@ -3777,6 +3777,13 @@ export function getBoundBlocks(graph) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
   });
 }
+// Every covariate a mission phase of this (unsaved) diagram can set: {rows: [{name, role, unit, kind,
+// choices, blocks}], problems}. The same list the Explorer's tree hangs under each phase.
+export function getPhaseCovariates(graph) {
+  return request("/api/rbds/phases/covariates", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
+  });
+}
 // A record's rate under its covariates (any library record: a pipe's length, the clock, the demands
 // a year, a handbook part's environment and quality, an NSWC-11 model's conditions), or a
 // component's chance of failing over a period: {ok, result, warnings} or {ok: false, problems, missing}.

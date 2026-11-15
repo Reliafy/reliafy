@@ -15,6 +15,7 @@ import { FitPane } from "../components/FitLifeModel.jsx";
 import PredictionPane from "../components/PredictionPane.jsx";
 import RbdPane from "../components/RbdPane.jsx";
 import MissionPane, { NewMissionPane } from "../components/MissionPane.jsx";
+import MissionSide, { phaseRowChange } from "../components/MissionSide.jsx";
 import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, MissionRollup, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
 import {
   NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
@@ -32,7 +33,7 @@ import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftMod
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  createPositionMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getWorkspaceRcm, getPositionRcm, getRcmOptions,
+  createPositionMission, deleteMission, getMission, updateMission, calculateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getWorkspaceRcm, getPositionRcm, getRcmOptions,
   hasFmeaExcel, linkPositionModel, restoreRcm, restoreTree, updateMaintenanceLocation, updateMaintenancePosition,
 } from "../api.js";
 import MergeAssetPane from "../components/MergeAssetPane.jsx";
@@ -454,6 +455,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
   const [notesAt, setNotesAt] = useState(null); // a function's notes asked for in full: {key, at}
   const [panel, setPanel] = useState(false); // its details beside the table
+  const [missionAddRule, setMissionAddRule] = useState(null); // a phase row whose details open on Add node status rule
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
   // The details filling the table's room, the tree column kept beside them
@@ -1060,12 +1062,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                phone ? { state: { treeDetail: key } } : undefined);
       return;
     }
-    // The Missions tab: a click on a mission or phase row opens it, as a model row opens on the
-    // Modelling tab (the same mission open already: left as it is, unsaved edits and all).
-    if (missionsOn && opts.go && !phone && isMissionRow(r)) {
+    // The Missions tab: a click on a mission, phase, covariate or rule row shows its details beside
+    // the tree (Derryn, 15 Nov 2026), as a model row's do on the Modelling tab; a double-click or
+    // Enter opens the mission editor. The editor open already on that mission: left as it is.
+    if (missionsOn && opts.go && isMissionRow(r) && paneKind === "mission" && paneAt?.mission === missionParam(r.ref.rbd.id, r.ref.mission.id)) {
       pick(key, opts);
-      const open = paneKind === "mission" && paneAt?.mission === missionParam(r.ref.rbd.id, r.ref.mission.id);
-      if (!open) openMissionRow(r);
       return;
     }
     if (panePosition && key !== panePosition.id) {
@@ -1497,7 +1498,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     openPane("mission", { id: positionId, name: pr?.ref.name || "(no name)" }, { rbd: missionParam(rbdId, missionId), start: phase == null ? {} : { phase } });
   };
   // A mission or phase row opened (a double-click, Enter, Open…): a phase opens the mission on it.
-  const openMissionRow = (r) => openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id, isPhaseRow(r) ? r.ref.phase.index : null);
+  const openMissionRow = (r) => openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id, r.ref.phase ? r.ref.phase.index : null);
   // A phase added, moved or deleted from the tree: the saved mission read, changed with the pane's
   // phase helpers (changedPhases) and saved through the mission's update route. `change`: editable
   // rows in, rows out. Resolves with the phases saved, or null (nothing saved; said why).
@@ -1516,6 +1517,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         return null;
       }
       await updateMission(rbd.id, mission.id, { phases, expected_updated_at: detail.rbd?.updated_at });
+      // Worked out again, so the tree's figures follow the change (kept on the RBD for the lists).
+      await calculateMission(rbd.id, mission.id).catch(() => null);
       say(done(phases));
       pmissions.load();
       return phases;
@@ -1601,6 +1604,29 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const pr = whole.rows.get(pid);
     const position = { id: pid, name: pr?.ref.name || "(no name)", position_class: pr?.ref.position_class || "" };
     if (id === "mission-open" || id === "mission-phase-open") return openMissionRow(r);
+    // Under a phase: its covariates (set in their details) and node status rules.
+    if (id === "mission-rule-add") {
+      setMissionAddRule(r.key);
+      pick(r.key, { go: true });
+      return undefined;
+    }
+    if (id === "mission-cov-set" || id === "mission-rule-edit") return pick(r.key, { go: true });
+    if (id === "mission-cov-clear") {
+      const c = phaseRowChange(r, id);
+      return changeMissionPhases(r, c.change, () => c.text);
+    }
+    if (id === "mission-rule-delete") {
+      return confirm({
+        title: `Delete the rule for ${r.ref.rule.label}?`,
+        body: `${r.ref.rule.label} goes back to working in ${r.ref.phase.name}. Other phases and the RBD stay as they are.`,
+        confirmLabel: "Delete the rule", cancelLabel: "Keep it", destructive: true,
+      }).then((ok) => {
+        if (!ok) return null;
+        const c = phaseRowChange(r, id);
+        pending.current = phaseKey(r.ref.rbd.id, r.ref.mission.id, r.ref.phase.index);
+        return changeMissionPhases(r, c.change, () => c.text);
+      });
+    }
     if (id === "mission-phase-add") return addPhase(r);
     if (id === "mission-phase-earlier" || id === "mission-phase-later") return stepPhase(r, id === "mission-phase-earlier" ? -1 : 1);
     if (id === "mission-phase-delete") return removePhase(r);
@@ -2568,6 +2594,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                  onClose={closeDetails} headingRef={detailsHeading} onMenu={setTabMenu} onAction={modelAction} />
     </div>
   ) : null;
+  // The Missions tab with a mission, phase, covariate or rule row picked: its details beside the
+  // table (a sheet on a phone).
+  const missionRow = missionsOn && panel && isMissionRow(focusRow) ? focusRow : null;
+  const missionSide = missionRow ? (
+    <div className="rw tt-side">
+      {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
+      <MissionSide key={missionRow.key} r={missionRow} phone={phone} expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
+                   onClose={closeDetails} headingRef={detailsHeading} onMenu={setTabMenu} onAction={missionAction}
+                   viewOnly={viewOnly || null} addRule={missionAddRule === missionRow.key}
+                   onSelect={(k) => { reveal(k); setPanel(true); }}
+                   onChanged={(text) => { if (text) say(text); setMissionAddRule(null); pmissions.load(); }} />
+    </div>
+  ) : null;
   // The fit or the prediction in the table area (a wide screen), or the whole screen with Back (a
   // phone). A reloaded "Refresh the prediction…" (no seed) refreshes the position's prediction
   // rather than adding a second one.
@@ -2677,7 +2716,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                    onChanged={(text) => { say(text, "ok", { fade: true }); load(); }} />
   ) : null;
   const side = mergeSide && !phone ? mergeSide : sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide
-    : missionsOn ? paneSide : paneSide || (phone ? null : summary);
+    : missionsOn ? paneSide || missionSide : paneSide || (phone ? null : summary);
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an

@@ -31,8 +31,13 @@ For each phase, give a **Name** and a **Duration** in the diagram's unit.
 **Add phase** adds the next one, and the arrows reorder them. Open a phase's
 summary line to say what it needs:
 
-- **Blocks needed in this phase**: every block is needed unless you click it
-  off. A block that isn't needed is struck through.
+- **Each block in this phase**: **Working** (the default), **Standby**,
+  **Guaranteed working** (it runs and ages but can't fail in the phase) or
+  **Not needed** (struck through).
+- **Covariate values in this phase**: one for each covariate the diagram's life
+  models take (a proportional-hazards, accelerated life or covariate model).
+  Leave one blank to use the diagram's value or the model's default. These are
+  the same values the Explorer's Missions tab shows under each phase.
 - **Working inputs needed** for each voting node: how many of its inputs
   must work in this phase. Leave it blank to use the node's own setting.
 
