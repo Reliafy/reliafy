@@ -320,6 +320,11 @@ def _store_model(model, grid: np.ndarray, fields: list) -> str:
     return model_id
 
 
+def store_live(model, grid) -> str:
+    """Keep a model built elsewhere (from parameters, say) live for the calculator; returns its cache id."""
+    return _store_model(model, np.asarray(grid, dtype=float), [])
+
+
 def bind_owner(model_id: str | None, owner: str) -> None:
     """Tie a stored model to the account that fitted it, so the calculator
     endpoints only serve it back to that account."""
@@ -2232,12 +2237,14 @@ def param_values(distribution_id: str, params: list, where: str = "") -> list[fl
         raise FitError(f"{prefix}no parameter values supplied — {takes}.")
 
     def number(p) -> float:
+        # A bare number (the shorthand [1200, 2.5]) or {"name", "value"}.
+        label = p.get("name", "?") if isinstance(p, dict) else "?"
         try:
-            v = float(p["value"])
+            v = float(p["value"] if isinstance(p, dict) else p)
         except (KeyError, TypeError, ValueError):
-            raise FitError(f"{prefix}parameter '{p.get('name', '?')}' must be a number.") from None
+            raise FitError(f"{prefix}parameter '{label}' must be a number.") from None
         if not math.isfinite(v):
-            raise FitError(f"{prefix}parameter '{p.get('name', '?')}' must be a finite number.")
+            raise FitError(f"{prefix}parameter '{label}' must be a finite number.")
         return v
 
     named = [p for p in params if isinstance(p, dict) and p.get("name") not in (None, "")]

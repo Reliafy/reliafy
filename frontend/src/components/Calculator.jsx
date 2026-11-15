@@ -14,7 +14,7 @@ import { boundWords, checkTime, perUnit, precisePercent, timeAtValue, timeInWord
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
-import { applyAnswer, curveIsCurrent, markPending, requestKey } from "../calcSeries.js";
+import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, requestKey } from "../calcSeries.js";
 import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } from "../rateSpread.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
@@ -270,7 +270,11 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const xLoNum = xMin !== "" && !Number.isNaN(Number(xMin)) ? Number(xMin) : null;
   const xHiNum = xMax !== "" && !Number.isNaN(Number(xMax)) ? Number(xMax) : null;
   const manualX = xLoNum != null || xHiNum != null;
-  const evalRange = manualX ? { xMin: xLoNum, xMax: xHiNum } : undefined;
+  // A time past the end of the curves (they stop at the 99% life) is still answered: the curves are
+  // worked out again out to just beyond it, rather than the answer reading "—" (#418).
+  const autoHi = manualX ? null : autoRangeEnd(functions, timeMode ? null : Number(t) + (Number(condInput) || 0));
+  const effHi = xHiNum ?? autoHi;
+  const evalRange = manualX ? { xMin: xLoNum, xMax: xHiNum } : autoHi != null ? { xMin: null, xMax: autoHi } : undefined;
   // The axis now, beside its button: "Auto", or the range that's set.
   const axisUnit = unit ? ` ${unitInText(unit)}` : "";
   const axisWords = !manualX ? "Auto"
@@ -296,7 +300,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   useEffect(() => {
     if (!ciValid || bound === "none") return undefined;
     const timers = banded.map((s) => {
-      const wantKey = `${active}|${ciAlpha}|${bound}|${xLoNum}|${xHiNum}|${hasCov ? JSON.stringify(s.values) : ""}`;
+      const wantKey = `${active}|${ciAlpha}|${bound}|${xLoNum}|${effHi}|${hasCov ? JSON.stringify(s.values) : ""}`;
       const have = bands[s.id];
       if (have?.key === wantKey && (have.data || have.error)) return null; // already have this band
       // Debounced so typing a level (or a covariate) doesn't spam the backend.
@@ -310,7 +314,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
     });
     return () => timers.forEach((id) => id && clearTimeout(id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ciValid, active, ciAlpha, bound, confidencePath, xLoNum, xHiNum, bandValues]);
+  }, [ciValid, active, ciAlpha, bound, confidencePath, xLoNum, effHi, bandValues]);
   // No error left over from a level that has since been changed to a bad one.
   const bandError = ciValid ? banded.map((s) => bands[s.id]?.error).find(Boolean) : null;
 
@@ -411,7 +415,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
     if (!rangeReady.current) { rangeReady.current = true; return; }
     seriesRef.current.forEach((s) => runEval(s.id, s.values));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [xLoNum, xHiNum, evaluatePath]);
+  }, [xLoNum, effHi, evaluatePath]);
 
   const updateValue = (id, name, value) => {
     const current = series.find((s) => s.id === id);
@@ -572,7 +576,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
               <b aria-live="polite">{tarTimes[0] != null ? fmtTime(tarTimes[0])
                 : tarPoint?.between ? `between ${formatNumber(tarPoint.between[0])} and ${fmtTime(tarPoint.between[1])}`
                 : working ? WORKING : "—"}</b>
-              {spread && !lifePath && rValid && (() => {
+              {spread && !confidencePath && rValid && (() => {
                 const r = spreadTime(spread, rNum / 100);
                 return r ? <span className="calc-answer-ci"> — {spreadRangeText(r.lower, r.upper, fmtTime)}</span> : null;
               })()}
@@ -613,7 +617,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
       {timeMode && lifePath && tar.key === tarKey && tar.error && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>Couldn't compute the time: {tar.error}</p>
       )}
-      {timeMode && tarPoint && tar.data?.bounds_note && ci.bound !== "none" && (
+      {/* No confidence path (made from parameters): the note beside the inputs says why already. */}
+      {timeMode && confidencePath && tarPoint && tar.data?.bounds_note && ci.bound !== "none" && (
         <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>{tar.data.bounds_note}</p>
       )}
       {timeMode && tarPoint?.lower_note && ci.bound !== "none" && (
@@ -760,7 +765,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                     aria-label={`${cond > 0 ? "For a further" : "At"} time${unit ? ` (${unitInText(unit)})` : ""}`}
                     value={t}
                     min={0}
-                    max={xMaxView}
+                    max={evaluatePath ? undefined : xMaxView}
                     step="any"
                     aria-invalid={!tCheck.ok || undefined}
                     onChange={(e) => setT(e.target.value)}

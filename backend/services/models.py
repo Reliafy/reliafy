@@ -448,7 +448,47 @@ def public_results(model: Model) -> dict:
         if model.kind == "regression":  # the residual plots (#61)
             functions["residuals_path"] = f"/api/models/{model.id}/residuals"
         results["functions"] = functions
+    elif functions and is_params_only(model):
+        # Made from parameters (#418): the model is its parameters, so the calculator answers from them —
+        # exact times at a reliability, curves over any axis — with no bounds: there's no fit behind it.
+        functions = dict(functions)
+        functions["evaluate_path"] = f"/api/models/{model.id}/evaluate"
+        functions["life_path"] = f"/api/models/{model.id}/life"
+        if not results.get("rate_uncertainty"):  # a library rate shows its spread across plants instead
+            functions["bands_note"] = PARAMS_ONLY_BOUNDS_NOTE
+        results["functions"] = functions
     return results
+
+
+#: Why a model made from parameters has no confidence bounds, wherever it's asked.
+PARAMS_ONLY_BOUNDS_NOTE = ("No confidence bounds: this model was entered from parameters, not fitted to data, "
+                           "so there's nothing to base them on.")
+
+
+def is_params_only(model: Model) -> bool:
+    """A model made from parameters alone: no data and no fit, just the distribution's parameters."""
+    return bool((model.results or {}).get("params_only") or (model.spec or {}).get("params_only"))
+
+
+def _params_live(model: Model) -> str | None:
+    """A params-only model's live distribution, rebuilt from its parameters: the cache id, or None when it
+    isn't one (or its parameters no longer make a model)."""
+    if not is_params_only(model):
+        return None
+    import numpy as np
+
+    results = model.results or {}
+    dist_id = results.get("distribution_id") or model.distribution_id
+    entry = fitting.DISTRIBUTIONS.get(dist_id) or fitting.DISCRETE.get(dist_id)
+    if entry is None or not results.get("params"):
+        return None
+    try:
+        live = entry["dist"].from_params(fitting.param_values(dist_id, results["params"]),
+                                         **fitting.surpyval_extras(results.get("extras")))
+    except Exception:  # noqa: BLE001 - parameters that make no model: not found, as before
+        return None
+    grid = ((results.get("functions") or {}).get("curves") or {}).get("x") or []
+    return fitting.store_live(live, np.asarray(grid, dtype=float))
 
 
 def rate_uncertainty_of(model: Model) -> dict | None:
@@ -504,6 +544,8 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
                     cache_id = fitting.restore_live(model.serialized)
                 except Exception:  # noqa: BLE001 - fall back to a fresh fit
                     cache_id = None
+            if cache_id is None:
+                cache_id = _params_live(model)  # no data to refit: the model is its parameters
             if cache_id is None:
                 cache_id = _refit(model)
             _LIVE[model_id] = cache_id
@@ -633,6 +675,9 @@ def evaluate_at(db, model: Model, times, owner_id, covariates: dict | None = Non
 def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max=None) -> dict:
     """Confidence bounds of a saved model's function (configurable level /
     bound), re-fitting on demand if the live model isn't cached."""
+    model = get_model(db, model_id, owner_id)
+    if model is not None and is_params_only(model):
+        raise fitting.FitError(PARAMS_ONLY_BOUNDS_NOTE)
     return fitting.confidence_bounds(
         _live_cache_id(db, model_id, owner_id),
         on=params.get("on", "sf"),
@@ -658,7 +703,10 @@ def life(db, model_id: str, body: dict, owner_id) -> dict:
     no_max = bool((model.results or {}).get("no_finite_maximum"))
     if regression_bands.is_regression(entry):  # at the body's covariates (#54)
         return regression_bands.life_answer(entry.get("model"), entry["fields"], body, no_finite_maximum=no_max)
-    return life_bounds.answer(entry.get("model"), body, no_finite_maximum=no_max)
+    out = life_bounds.answer(entry.get("model"), body, no_finite_maximum=no_max)
+    if is_params_only(model) and out.get("bounds_note"):
+        out["bounds_note"] = PARAMS_ONLY_BOUNDS_NOTE
+    return out
 
 
 def compare(db, model: Model) -> dict:
