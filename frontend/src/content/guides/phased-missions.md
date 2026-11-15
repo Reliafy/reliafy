@@ -31,9 +31,11 @@ For each phase, give a **Name** and a **Duration** in the diagram's unit.
 **Add phase** adds the next one, and the arrows reorder them. Open a phase's
 summary line to say what it needs:
 
-- **Each block in this phase**: **Working** (the default), **Standby**,
-  **Guaranteed working** (it runs and ages but can't fail in the phase) or
-  **Not needed** (struck through).
+- **Each block in this phase**: **Working** (the default), **Standby** (idle
+  until the phase needs it, then running; set how fast it ages while idle and
+  its chance of starting on the Explorer's Missions tab), **Guaranteed
+  working** (it runs and ages but can't fail in the phase) or **Not needed**
+  (struck through).
 - **Covariate values in this phase**: one for each covariate the diagram's life
   models take (a proportional-hazards, accelerated life or covariate model).
   Leave one blank to use the diagram's value or the model's default, or choose

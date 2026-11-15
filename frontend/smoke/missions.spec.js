@@ -198,7 +198,9 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   await pane.getByRole("button", { name: "Calculate" }).click();
   const answer = pane.locator(".mission-answer");
   await expect(answer).toContainText("The mission completes with probability", { timeout: 30_000 });
-  await expect(answer).toContainText("Standby: the block is there but not running");
+  await expect(answer).toContainText("Standby: the block is idle until the phase needs it");
+  // A18: one curve through the whole mission (simulated here: Weibull spares, so its band too).
+  await expect(pane.locator(".mission-curve .js-plotly-plot")).toBeVisible({ timeout: 20_000 });
   await pane.getByRole("button", { name: "Save" }).click();
   await expect(pane.getByRole("button", { name: "Save" })).toBeDisabled();
   await shot(page, "mission-result-1440", true);

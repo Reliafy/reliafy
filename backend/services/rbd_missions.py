@@ -299,6 +299,10 @@ def signature(graph: dict, phases: list) -> str:
     body = {"nodes": nodes, "edges": edges, "unit": (graph or {}).get("unit") or "",
             "conditions": (graph or {}).get("conditions") or [], "ccf": (graph or {}).get("ccf_groups") or [],
             "phases": phases}
+    if any(isinstance(p, dict) and p.get("standby") for p in phases or []):
+        # A18 (16 Nov 2026): standby is now RePyability's true standby, so a result kept from the
+        # old stand-in no longer holds (missions without standby keep theirs: same numbers).
+        body["standby"] = "phased-mission"
     return hashlib.sha1(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()[:20]
 
 
@@ -700,6 +704,11 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
         raise AnalysisError(f"{', '.join(labels.get(b, b) for b in both)}: its covariates change from phase to phase, "
                             "so it can't also stand by in a phase. Set it Working or Not needed there, or give it the "
                             "same values in every phase.")
+    own = sorted({b for p in clean[:gap] for b in (p.get("models") or {})} & varying)
+    if own:
+        labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id") for n in graph.get("nodes") or []}
+        raise AnalysisError(f"{', '.join(labels.get(b, b) for b in own)}: its covariates change from phase to phase, "
+                            "so it can't also take a life model of a phase's own. Give it one or the other.")
     resolve_subsystem, resolve_model = rbds_service.resolvers(db, owner_id)
     out = rbd_phases.analyze_phases(merged, resolve_subsystem, resolve_model, merged_covs or None,
                                     phases=clean[:gap], varying=varying, weakest=weakest,
@@ -767,9 +776,11 @@ RULE_STATES = ("standby", "guaranteed", "not_needed")
 
 def phase_rules(phase: dict, labels: dict) -> list[dict]:
     """A phase's node status rules: one per block not left Working, in the diagram's block order
-    ({block, label, state, dormancy (standby only)}); blocks no longer in the diagram are left out."""
+    ({block, label, state, dormancy and start_probability (standby only)}); blocks no longer in the
+    diagram are left out."""
     out = []
     dormancy = phase.get("dormancy") or {}
+    starts = phase.get("start_probability") or {}
     states = {}
     for state in RULE_STATES:
         for b in phase.get(state) or []:
@@ -779,6 +790,7 @@ def phase_rules(phase: dict, labels: dict) -> list[dict]:
             row = {"block": b, "label": label, "state": states[b]}
             if states[b] == "standby":
                 row["dormancy"] = float(dormancy.get(b) or 0.0)
+                row["start_probability"] = float(starts.get(b, 1.0))
             out.append(row)
     return out
 

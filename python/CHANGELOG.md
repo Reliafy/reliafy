@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.12.1 (unreleased)
+## 0.12.2 (unreleased)
+
+Needs a server on the same release.
+
+- **Missions with true standby**: missions are worked out by RePyability's
+  `PhasedMission.from_diagram`. A block on `standby` in a phase is idle until the phase needs it,
+  then runs; `MissionPhase` gains `start_probability` (`{block: 0–1}`, the chance a standby block
+  starts when called on) and `models` (`{block: {distribution_id, params}}`, a life model for the
+  phase, its age carried in and out) in `change rbd_mission`, `rbd_create` and `rbd_edit`. Results
+  with standby are lower than before (the old stand-in stopped the spare's clock); missions without
+  standby give the same numbers. `analyse rbd_mission` gives each phase's `drivers`; a mission with
+  standby blocks whose lives have no constant rate is simulated (seeded), which needs Pro
+  (`code: pro_required` otherwise). The REST twins and the CLI take the same.
+
+## 0.12.1
 
 Needs a server on the same release.
 

@@ -115,6 +115,7 @@ from backend.library import entries as lib_entries
 from backend.library import user as user_library
 from backend.mcp_actions import Table, check, choice
 from backend.mcp_actions import describe as describe_actions
+from backend.errors import client_message
 from backend.services import access as access_service
 from backend.services import dataset_reading
 from backend.services import alt as alt_service
@@ -240,6 +241,14 @@ def _quota_message(plan: str, quota: int) -> str:
     reset = billing_service.next_day_start()
     return (f"You've used all {quota:,} Reliafy tool calls included per day on the {_PLAN_NAMES[plan]} "
             f"plan. The limit resets at 00:00 UTC ({_until(reset)}). " + _upgrade_path())
+
+
+def _mission_pro(exc: Exception) -> dict:
+    """A mission only a simulation can work out, for a caller without Pro: what stops it and where
+    to upgrade (the exact figures elsewhere in the answer still stand)."""
+    _soft_refusal("pro_only")
+    return {"available": False, "code": "pro_required",
+            "message": f"{client_message(exc)} Upgrade at {_billing_url()}."}
 
 
 def _simulation_message(plan: str) -> str:
@@ -3937,11 +3946,18 @@ class MissionPhase(BaseModel):
     not_needed: Optional[list[str]] = Field(None, description=(
         "Block ids this phase doesn't need (they still age and can fail, and stay failed for later phases)."))
     standby: Optional[list[str]] = Field(None, description=(
-        "Block ids standing by in this phase: not running, so they don't age or fail in it."))
+        "Block ids on standby in this phase, in the order they're called on: idle until the phase needs "
+        "them (a block they back up fails), then running to the phase's end."))
     guaranteed: Optional[list[str]] = Field(None, description=(
         "Block ids guaranteed working in this phase: they run and age but can't fail in it."))
     dormancy: Optional[dict[str, float]] = Field(None, description=(
         "standby block id -> how fast it ages while idle, 0 (cold, default) to 1 (hot)."))
+    start_probability: Optional[dict[str, float]] = Field(None, description=(
+        "standby block id -> the chance it starts when called on, 0 to 1 (default 1); one that fails "
+        "to start has failed for the rest of the mission."))
+    models: Optional[dict[str, dict[str, Any]]] = Field(None, description=(
+        "block id -> its life model in this phase, {distribution_id, params: [{name, value}]} as a "
+        "block's model; it runs on it through the phase, its age carried in and out."))
     votes: Optional[dict[str, int]] = Field(None, description=(
         "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
     values: Optional[dict[str, Union[float, str, dict[str, Any]]]] = Field(None, description=(
@@ -5089,9 +5105,13 @@ def analyze_rbd(
             out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
         if rbd_phases.has_phases(graph):  # #160: the phased mission, alongside
             try:
-                # From the blocks' ages now, like the rest of the answer (as of now).
-                out["phased_mission"] = rbd_phases.agent_summary(
-                    rbd_phases.analyze_for_owner(db, graph, owners, current_state=state))
+                # From the blocks' ages now, like the rest of the answer (as of now). Simulated
+                # (standby without constant rates) for Pro only, like every simulation.
+                with rbd_standby.simulation("run" if entitled else None):
+                    out["phased_mission"] = rbd_phases.agent_summary(
+                        rbd_phases.analyze_for_owner(db, graph, owners, current_state=state))
+            except rbd_standby.SimulationNeedsPro as exc:
+                out["phased_mission"] = _mission_pro(exc)
             except AnalysisError as exc:
                 out["phased_mission"] = {"available": False, "message": str(exc)}
         return _summary_only(out) if summary_only else out
@@ -5271,13 +5291,14 @@ def analyse_rbd_mission(
     current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
         "Blocks' states now, keyed by node id, as analyse rbd's non-repairable current_state ({failed: true} "
         "or {age: <time it has run>}); blocks left out are new. The mission then flies from now: each aged "
-        "block starts it at its age and keeps ageing through standby phases, and a failed block stays failed. "
+        "block starts it at its age, and a failed block stays failed. "
         "Omit to fly it from new."))] = None,
 ) -> dict[str, Any]:
     """A mission's chance of completing: each phase's failure probability, reliability at its end and
     weakest block, plus the Use / Environment covariates its phases can set (the blocks each feeds). A
     phase missing a value waits: needs says which blocks need what. current_state flies it from the
-    blocks' states now (the notes say "As of now")."""
+    blocks' states now (the notes say "As of now"). Exact answers are free; a mission with blocks on
+    standby whose lives have no constant failure rate is simulated (seeded), which needs Pro."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     rbd = _get_rbd(db, user["uid"], rbd_id)
@@ -5285,15 +5306,22 @@ def analyse_rbd_mission(
     every = rbd_missions.missions_of(graph)
     state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
              if current_state else None)
+    from backend.services import rbd_standby
+
+    # A mission only a simulation can work out (standby without constant rates): Pro.
+    entitled = billing_service.premium_compute_allowed(db, user)
     if mission_id is None:
         rows = []
         for m in every:
             try:
-                got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False, current_state=state)
+                with rbd_standby.simulation("run" if entitled else None):
+                    got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False, current_state=state)
                 rows.append({**rbd_missions.summary(graph, m), "mission_reliability": got["reliability"],
                              **({"needs": got["needs"]} if got.get("needs") else {}),
                              **({"placeholders": [p["label"] for p in got["placeholders"]],
                                  "note": rbd_phases.placeholder_note(got)} if got.get("placeholders") else {})})
+            except rbd_standby.SimulationNeedsPro as exc:
+                rows.append({**rbd_missions.summary(graph, m), **_mission_pro(exc)})
             except AnalysisError as exc:
                 rows.append({**rbd_missions.summary(graph, m), "message": str(exc)})
         out = {"rbd_id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "", "missions": rows,
@@ -5307,8 +5335,11 @@ def analyse_rbd_mission(
                         f"{', '.join(repr(m['id']) for m in every) or 'none'}.")
     detail = rbd_missions.detail(db, owners, graph, mission)
     try:
-        result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"],
-                                                               current_state=state))
+        with rbd_standby.simulation("run" if entitled else None):
+            result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"],
+                                                                   current_state=state))
+    except rbd_standby.SimulationNeedsPro as exc:
+        result = _mission_pro(exc)
     except AnalysisError as exc:
         result = {"available": False, "message": str(exc)}
     covariates = [{"name": r["name"], "role": r["role"], "unit": r["unit"],

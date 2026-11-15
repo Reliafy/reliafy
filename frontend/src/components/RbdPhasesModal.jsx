@@ -33,6 +33,8 @@ const fromStored = (p) => ({
   standby: [...(p.standby || [])],
   guaranteed: [...(p.guaranteed || [])],
   dormancy: { ...(p.dormancy || {}) },
+  start_probability: { ...(p.start_probability || {}) },
+  models: p.models || null,
 });
 
 export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions = [], onClose, onSubmit }) {
