@@ -113,11 +113,11 @@ def _number(value, what: str) -> float:
     return v
 
 
-def _table(raw, period, name: str, field: Optional[dict]) -> dict:
+def _table(raw, period, name: str, field: Optional[dict], max_rows: int = MAX_TABLE_ROWS) -> dict:
     if not isinstance(raw, list) or not raw:
         raise ScheduleError(f"{name}: a phase table needs at least one row, from time 0.")
-    if len(raw) > MAX_TABLE_ROWS:
-        raise ScheduleError(f"{name}: a phase table can have at most {MAX_TABLE_ROWS} rows.")
+    if len(raw) > max_rows:
+        raise ScheduleError(f"{name}: a phase table can have at most {max_rows} rows.")
     categorical = bool(field) and field.get("type") != "number"
     rows = []
     for k, row in enumerate(raw):
@@ -156,7 +156,7 @@ def _table(raw, period, name: str, field: Optional[dict]) -> dict:
     return out
 
 
-def normalise(raw, fields: Optional[list] = None) -> Optional[dict]:
+def normalise(raw, fields: Optional[list] = None, max_rows: int = MAX_TABLE_ROWS) -> Optional[dict]:
     """The stored schedules, checked; None for none. ``fields`` (the block
     model's covariate inputs) names the covariates there are; without them
     only the shapes and expressions are checked. Raises
@@ -189,7 +189,7 @@ def normalise(raw, fields: Optional[list] = None) -> Optional[dict]:
                 raise ScheduleError(f"{name}: {exc}") from None
             out[name] = {"expression": expr.text}
         else:
-            out[name] = _table(spec["table"], spec.get("period"), name, field)
+            out[name] = _table(spec["table"], spec.get("period"), name, field, max_rows)
     return out or None
 
 
@@ -410,7 +410,9 @@ class Plan:
         if unknown:
             raise ScheduleError(f"Unknown covariate(s): {', '.join(unknown)}. This model's covariates are "
                                 f"{', '.join(by_name)}.")
-        checked = normalise(schedules, fields) or {}
+        # A mission's steps (#372) can make a long table; the user's own tables keep MAX_TABLE_ROWS
+        # where they're saved (on_node, check_static).
+        checked = normalise(schedules, fields, MAX_SEGMENTS) or {}
         self.model = model
         self.fields = list(fields)
         self.tracks = [_Track(f["name"], f, checked.get(f["name"]), _constant(f, constants)) for f in fields]
@@ -727,11 +729,16 @@ def _hot(data: dict) -> bool:
         return False
 
 
-def check_static(schedules: dict, model: Optional[dict], label: str) -> None:
+#: The key a mission puts on a block whose schedule it built from its phases' steps (#372): its
+#: table may be long (one row a step), so it is checked against MAX_SEGMENTS, not MAX_TABLE_ROWS.
+MISSION_STEPS = "_mission_steps"
+
+
+def check_static(schedules: dict, model: Optional[dict], label: str, max_rows: int = MAX_TABLE_ROWS) -> None:
     """Structural checks without the fitted model (diagram validation)."""
     fields = (model or {}).get("covariates") or None
     try:
-        normalise(schedules, fields)
+        normalise(schedules, fields, max_rows)
     except ScheduleError as exc:
         raise ScheduleError(f"{label}: {exc}") from None
 
@@ -760,7 +767,7 @@ def attach(data: dict, ntype: str, label: str, cov_values: Optional[dict]):
         return cov_values
     try:
         refuse(data, ntype, label, repairable=False)
-        check_static(schedules, model, label)
+        check_static(schedules, model, label, MAX_SEGMENTS if data.get(MISSION_STEPS) else MAX_TABLE_ROWS)
     except ScheduleError as exc:
         raise _analysis_error(str(exc)) from None
     out = Values(cov_values or {})
