@@ -169,8 +169,8 @@ def generic_engine_fields(payload: Any) -> Any:
 def scrub(value: Any, names: dict, keys: Optional[dict] = None) -> Any:
     """``value`` (JSON-like, or a tuple of them) with each identifier in
     ``names`` replaced by its label in every string, and each key in
-    ``keys`` replaced by its value there (dropped where that is None).
-    Numbers and everything else are returned as they are."""
+    ``keys`` replaced by its value there (dropped where that is None) when
+    it holds a string. Numbers and everything else are returned as they are."""
     keys = keys or {}
     if not names and not keys:
         return value
@@ -181,7 +181,9 @@ def scrub(value: Any, names: dict, keys: Optional[dict] = None) -> Any:
         if isinstance(v, dict):
             out = {}
             for k, item in v.items():
-                if k in keys:
+                # An identifier is a string. A dict or list under the same key
+                # is something else (a block whose id is "engine"): kept.
+                if k in keys and (item is None or isinstance(item, str)):
                     if keys[k] is not None:
                         out[k] = keys[k]
                     continue

@@ -37,6 +37,7 @@ import { hoursPerUnit } from "./rbdModelText.js";
 import { RBD_EVALUATE_AT_EVENT } from "../rbdBuilderOps.js";
 import { answerAtTime, formatProbability, formatReliability, importanceHeading, lifeBoundText } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { importanceRows } from "../rbdImportance.js";
 import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
@@ -490,32 +491,6 @@ const IMP_COLS = [
 
 // The columns only the simulation fills.
 const SIM_COLS = new Set(["failure_criticality", "restoration_criticality"]);
-
-function importanceRows(result) {
-  const imp = result.importance || {};
-  const crit = result.criticality || {};
-  const ids = Object.keys(imp);
-  const rows = ids.map((id) => {
-    const i = imp[id] || {};
-    const c = crit[id] || {};
-    return {
-      id,
-      label: i.label || c.label || id,
-      pinned: i.pinned || null,
-      birnbaum: i.birnbaum,
-      // Never fall back to the library's success-oriented criticality: under
-      // this column's name it would show 100% for every series block.
-      crit: i.unavailability_criticality,
-      risk_achievement_worth: i.risk_achievement_worth,
-      structural: i.structural,
-      // No simulation entry means the block never tripped/restored the system.
-      failure_criticality: crit[id] ? c.failure_criticality : null,
-      restoration_criticality: crit[id] ? c.restoration_criticality : null,
-    };
-  });
-  rows.sort((a, b) => (b.crit ?? -1) - (a.crit ?? -1) || String(a.label).localeCompare(String(b.label)));
-  return rows;
-}
 
 
 function DowntimeBars({ rows, title, note }) {
@@ -1180,6 +1155,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
                       <td className="calc-row-label">
                         {b.label}
                         {b.pinned && <span className="rbd-avail-pin">pinned {b.pinned}</span>}
+                        {b.note && <span className="rbd-avail-pin">{b.note}</span>}
                       </td>
                       {impCols.map((c) => (
                         <td key={c.key}>{c.fmt(b[c.key])}</td>
