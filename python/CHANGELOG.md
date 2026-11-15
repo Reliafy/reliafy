@@ -13,6 +13,12 @@ Needs a server on the same release.
   standby give the same numbers. `analyse rbd_mission` gives each phase's `drivers`; a mission with
   standby blocks whose lives have no constant rate is simulated (seeded), which needs Pro
   (`code: pro_required` otherwise). The REST twins and the CLI take the same.
+- **RBD tasks in running hours**: a repairable block's `preventive` and `inspection` (proof test)
+  take `basis`, `calendar` (the default) or `operating`: the task's times (interval, opportunity,
+  offset, full_test) are then the block's running hours, put onto the calendar through its `duty`.
+  `analyse rbd_optimise_intervals` and `rbd_sensitivity` answer in the task's own unit (each row's
+  `basis` / `unit_words`, a lever's `running`). `preventive.operating_interval` still works and
+  reads as `interval` with `basis: operating`. The REST twins and the CLI take it too.
 
 ## 0.12.1
 

@@ -2976,6 +2976,9 @@ def _component_message(text: str, labels: dict) -> str:
     from backend.services import rbd_tvc  # a block on a covariate schedule (#372): the library's words, no code
 
     text = rbd_tvc.plain_refusal(text)
+    from backend.services import rbd_maintenance  # a task in running hours it can't take (#365)
+
+    text = rbd_maintenance.plain_refusal(text)
     # A common-cause group whose members differ, in plain words.
     same = _CCF_NOT_IDENTICAL.match(text)
     if same:

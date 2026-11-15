@@ -2,6 +2,7 @@ import { useState } from "react";
 import { unitInText } from "./unitText.js";
 import { unitAbbr } from "./rbdModelText.js";
 import { costLabel, workspaceCurrency } from "../money.js";
+import { intervalBasis, withTaskBasis } from "../rbdMaintenancePlan.js";
 
 // A repairable block's costs and maintenance (#99, #100, #156, #157). The block
 // dialog edits its costs and crew priority here; its planned work (schedule,
@@ -10,7 +11,8 @@ import { costLabel, workspaceCurrency } from "../money.js";
 // Stored on the node as
 //   data.costs      = {repair, replace, downtime, acquisition}   (numbers, optional)
 //   data.preventive = {policy: "age"|"block", interval, duration, cost,
-//                      opportunity}               (age: renewed early at a group stop)
+//                      opportunity, basis}        (age: renewed early at a group stop;
+//                                                  basis "operating": in running hours)
 //                   | {policy: "condition", interval, threshold, inspection_cost,
 //                      duration, cost}             (replaced on condition at inspections)
 //   data.inspection = {interval, duration, cost,   (hidden failures, proof-tested)
@@ -321,8 +323,11 @@ export function BlockCostSection({ initial, onChange, unit = "", crews = false, 
 
 // A repairable block's maintenance as chips (#314): one neutral style, an icon
 // each — proof test ⏱, scheduled replacement ↻, condition-based ◎, group ⧉.
-export function maintenanceChips(data, unit) {
-  const u = unitAbbr(unit) ? ` ${unitAbbr(unit)}` : "";
+export function maintenanceChips(raw, unit) {
+  const data = withTaskBasis(raw);
+  const abbr = unitAbbr(unit) ? ` ${unitAbbr(unit)}` : "";
+  // A task counted in running hours says so on its chip (#365).
+  const u = intervalBasis(data) === "operating" ? ` running${abbr || " time"}` : abbr;
   const out = [];
   const pm = data.preventive;
   const test = data.inspection;
@@ -334,7 +339,6 @@ export function maintenanceChips(data, unit) {
       title: cbm
         ? `Inspected every ${fmt(pm.interval)}${u}, replaced when P(failing before the next inspection) > ${pm.threshold}`
         : `Scheduled ${pm.policy === "block" ? "block" : "age"} replacement every ${fmt(pm.interval)}${u}`
-          + (pm.operating_interval != null ? ` (${fmt(pm.operating_interval)}${u} of running time)` : "")
           + (pm.opportunity != null ? `, renewed early from age ${fmt(pm.opportunity)}${u} at a group stop` : ""),
     });
   }

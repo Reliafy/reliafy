@@ -51,6 +51,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 
 from backend.maintenance.service import Maintenance
 
@@ -88,6 +89,19 @@ def _hours_per(unit: str | None) -> float | None:
     from backend.units import normalize_unit
 
     return _HOURS_IN.get(normalize_unit(unit or "") or "")
+
+
+#: A by-use counter that counts hours of running: running, flight, operating or engine hours.
+_USE_HOURS = re.compile(r"^(?:running|run|flight|flying|operating|engine|machine)[\s_-]*h(?:ou)?rs?$", re.I)
+
+
+def _use_hours(unit: str | None) -> float | None:
+    """Hours in one of a by-use counter's ``unit``: an hour of running for hours, running hours or
+    flight hours; None for a counter that isn't hours (cycles, km, starts, ...)."""
+    hours = _hours_per(unit)
+    if hours is not None:
+        return hours
+    return 1.0 if _USE_HOURS.match(str(unit or "").strip()) else None
 
 
 def _tidy(v: float | None) -> float | None:
@@ -129,8 +143,9 @@ def task_plan(m: Maintenance, view: dict, unit: str, can: dict | None = None) ->
     """What one task gives a block in a diagram whose clock is ``unit``.
 
     ``view``: the task as read (Maintenance._task_view). Returns {id, name, kind, kind_words,
-    modelled (it has an RCM kind), plan: {task: age|block|condition|test, interval,
-    operating_interval, duration, cost, inspection_cost, group} or None, interval_words, crew,
+    modelled (it has an RCM kind), plan: {task: age|block|condition|test, interval, basis (calendar, or
+    operating: running hours, a task by use on an hours counter), duration, cost, inspection_cost, group}
+    or None, interval_words, crew,
     package, flags (what's blank, in words), notes}."""
     task = m.s.node(m.org, view["id"], "Task") or {}
     kind = task_kind(m, task)
@@ -159,21 +174,20 @@ def task_plan(m: Maintenance, view: dict, unit: str, can: dict | None = None) ->
                                 "can't be in a maintenance group (nobody knows it has failed when the group stops).")
         else:
             group = root.get("name") or entry["package"].get("name")
-    plan: dict = {"task": plan_task, "interval": None, "operating_interval": None, "duration": None, "cost": None,
+    plan: dict = {"task": plan_task, "interval": None, "basis": "calendar", "duration": None, "cost": None,
                   "inspection_cost": None, "group": group}
-    diagram_h, every_h = _hours_per(unit), _hours_per(every_unit)
+    by_use = bool(view.get("by_use") or view.get("basis") == "operating")
+    diagram_h, every_h = _hours_per(unit), (_use_hours(every_unit) if by_use else _hours_per(every_unit))
     if diagram_h is None:
         out["flags"].append(f"The diagram's clock ({unit or 'no unit'}) isn't a time, so {words} can't be put on it.")
     elif every_h is None:
         out["flags"].append(f"{words.capitalize()} counts {every_unit}, which the diagram's clock can't take.")
-    elif view.get("by_use") or view.get("basis") == "operating":
-        if plan_task == "test":
-            out["flags"].append(f"A proof test {words} of running time can't be modelled yet: give the task a "
-                                "calendar interval.")
-        else:  # running hours: the block's duty turns them into calendar time
-            plan["operating_interval"] = _tidy(every * every_h / diagram_h)
     else:
+        # By use on a running-hours (or flight-hours) counter: a task in running hours (#365), which
+        # RePyability puts onto the clock through the block's duty; otherwise on the calendar.
         plan["interval"] = _tidy(every * every_h / diagram_h)
+        if by_use:
+            plan["basis"] = "operating"
     if view.get("also_interval"):
         out["notes"].append(f"It's also due every {view['also_interval']:g} {view.get('also_unit') or ''}, "
                             "whichever comes first: only the first limit is modelled.")
@@ -544,12 +558,13 @@ def merge(data: dict, row: dict) -> dict:
     own = {k: v for k, v in ((data or {}).get("tree_settings") or {}).items() if k in SETTINGS[plan["task"]]
            and v not in (None, "")}
     pick = lambda d: {k: v for k, v in d.items() if v not in (None, "")}  # noqa: E731
+    basis = "operating" if plan.get("basis") == "operating" else None  # running hours (#365)
     if plan["task"] == "test":
-        out["inspection"] = pick({"interval": plan["interval"], "duration": plan["duration"], "cost": plan["cost"],
-                                  **own})
+        out["inspection"] = pick({"interval": plan["interval"], "basis": basis, "duration": plan["duration"],
+                                  "cost": plan["cost"], **own})
         out.pop("maintenance_group", None)
         return out
-    pm = {"policy": plan["task"], "interval": plan["interval"], "operating_interval": plan["operating_interval"]}
+    pm = {"policy": plan["task"], "interval": plan["interval"], "basis": basis}
     if plan["task"] == "condition":
         pm.update(inspection_cost=plan["inspection_cost"])
         pm.update(own)
@@ -560,7 +575,7 @@ def merge(data: dict, row: dict) -> dict:
         if plan.get(key) is not None:
             pm[key] = plan[key]
     if plan.get("shutdown") is not None:  # the shut gives its calendar and how long it takes
-        for key in ("interval", "operating_interval", "duration", "opportunity"):
+        for key in ("interval", "basis", "duration", "opportunity"):
             pm.pop(key, None)
     out["preventive"] = pick(pm)
     if plan.get("group"):

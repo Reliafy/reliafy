@@ -167,7 +167,8 @@ Pro; result.simulated says so). Repairable diagrams: a standby group's units are
 may carry costs, preventive (age / block / condition replacement), inspection (hidden failures found by proof \
 tests: offset staggers, coverage + full_test for partial tests), maintenance_group, crew_priority, \
 repair_quality (Kijima: simulated figures), duty (0-1, the share of the time it runs, shown as 'Runs X% of \
-the time': its model is then a life in operating time; intervals stay on the clock); the diagram repair_crews, \
+the time': its model is then a life in operating time; a task's intervals stay on the clock unless its \
+basis is operating, counted in running hours through the duty); the diagram repair_crews, \
 safety_function + target_sil (needs proof \
 tests), costs (downtime_rate, horizon, discount_rate) and production (capacity demand). Common cause: \
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
@@ -314,7 +315,8 @@ past simulations.
 free; simulated Pro); costs_to_change with order benefit_per_cost ranks by benefit per cost; measure gives \
 over_time, shares, joint, rate or uncertainty. Quote `top` with its basis.
 - rbd_optimise_intervals chooses age-replacement or proof-test intervals together (lowest cost, or a target \
-availability / PFDavg / SIL, or a cost cap), returns edit_rbd_ops to apply with change rbd_edit. rbd_cheapest_design: \
+availability / PFDavg / SIL, or a cost cap), each in its task's unit (basis operating: running hours), and \
+returns edit_rbd_ops to apply with change rbd_edit. rbd_cheapest_design: \
 the redundancy with the lowest total cost (needs block acquisition prices, a horizon and a downtime_rate; \
 trains copy whole chains). rbd_compare: design B against A (change rbd_clone A, edit, compare). rbd_allocate_targets: \
 what each block needs for a system target. rbd_fault_tree: ranked cut sets with common causes. These answer only; apply a choice \
