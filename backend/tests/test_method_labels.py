@@ -224,3 +224,17 @@ def test_engine_fields_and_registered_engine_names_are_made_generic(monkeypatch)
     assert out["precision"] == {"engine": "simulation", "n_simulations": 20}
     # The plain engine's name is an ordinary word: left alone in text.
     assert method_labels.hide_engine_names("Download as Python.", "python") == "Download as Python."
+
+
+def test_a_block_whose_id_is_engine_keeps_its_figures():
+    """A diagram with a block called "engine" (an aircraft's): its importance
+    row is keyed by that id, and is the block's figures, not an engine name to
+    hide. Only a string under an ``engine`` key is an identifier."""
+    row = {"label": "PMU engine", "birnbaum": 0.97, "unavailability_criticality": 0.06}
+    saved = {"importance": {"engine": row, "belt": {"label": "Belt"}},
+             "per_node": [{"id": "engine", "share": 0.1}],
+             "precision": {"engine": "turbo-x"}}
+    out = method_labels.generic_engine_fields(saved)
+    assert out["importance"]["engine"] == row
+    assert out["per_node"] == [{"id": "engine", "share": 0.1}]
+    assert out["precision"] == {"engine": "simulation"}
