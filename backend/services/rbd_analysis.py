@@ -1300,15 +1300,48 @@ def _validate_graph(
     }
 
 
+# A unit of running time: "flight hours", "operating hrs", "engine hours", "FH".
+_OPERATING_UNIT = re.compile(
+    r"^(?:flight|flying|flown|operating|operation|engine|run|running|service|power[- ]?on|machine|motor|pump"
+    r"|block|air|hobbs|tach)\s+(.+)$", re.I)
+_OPERATING_ABBREV = {"fh": "hour", "fhs": "hour", "oh": "hour", "ehrs": "hour", "eh": "hour", "rh": "hour"}
+
+
+def _operating_base(unit) -> Optional[str]:
+    """The clock unit a unit of running time counts in ("flight hours" →
+    "hour"), or None when it isn't one."""
+    text = str(unit or "").strip()
+    if text.lower().rstrip(".") in _OPERATING_ABBREV:
+        return _OPERATING_ABBREV[text.lower().rstrip(".")]
+    m = _OPERATING_UNIT.match(text)
+    return normalize_unit(m.group(1)) if m else None
+
+
+def _runs_part_time(data: dict) -> bool:
+    """Whether the block's Runs share (duty) is set below 100%."""
+    try:
+        duty = float(data.get("duty"))
+    except (TypeError, ValueError):
+        return False
+    return 0.0 < duty < 1.0
+
+
 def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
     """Warn when a block's saved non-repairable model was fitted in a different time unit
     from the diagram's. Parameters are read in the diagram's unit, so e.g. a
     model fitted in months dropped into an hours diagram is off by ~730x.
     Nothing is converted; blank units on either side are unknown, not a
-    mismatch."""
+    mismatch.
+
+    A model in running time ("flight hours") on a repairable diagram in the
+    same clock unit ("hours") is no mismatch when the block's Runs share
+    (duty) is set: its life is counted in operating time, which runs at that
+    share of the diagram's clock. Without a Runs share it is read as if it
+    ran all the time, and the warning says to set one."""
     diagram = normalize_unit(graph.get("unit"))
     if diagram is None:
         return []
+    repairable = bool(graph.get("repairable"))
     out = []
     for node in graph.get("nodes") or []:
         data = node.get("data") or {}
@@ -1318,11 +1351,22 @@ def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
         model_unit = normalize_unit(model.get("unit"))
         if model_unit is None or model_unit == diagram:
             continue
+        running = _operating_base(model.get("unit")) == diagram
+        if running and repairable and _runs_part_time(data):
+            continue  # the duty turns the diagram's clock into running time
         label = (labels or {}).get(node.get("id")) or data.get("label") or node.get("id")
         name = f" “{model['name']}”" if model.get("name") else ""
         in_diagram = unit_in_text(graph.get("unit"))
+        fitted = unit_in_text(model.get("unit"))
+        if running and repairable:
+            out.append(
+                f"“{label}” uses the saved model{name}, fitted in {fitted}, on a diagram in {in_diagram}: "
+                f"with no Runs share set it is read as running all the time (each of the diagram's {in_diagram} "
+                f"counted as one of its {fitted}). Set the share of the time it runs (Runs, %) in the "
+                "maintenance plan, or use a model in the diagram's unit.")
+            continue
         out.append(
-            f"“{label}” uses the saved model{name}, fitted in {unit_in_text(model.get('unit'))}, but the "
+            f"“{label}” uses the saved model{name}, fitted in {fitted}, but the "
             f"diagram's unit is {in_diagram} — its parameters are read as "
             f"{in_diagram}, not converted. Use a model in the diagram's unit, or "
             "change the diagram's unit.")
