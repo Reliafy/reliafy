@@ -373,7 +373,9 @@ test("a standby block as plants run it: words, units that differ, refusal and si
   // Units that differ: a spare on its own model.
   await dialog.getByText("Units that differ").click();
   await expect(dialog.getByText("Running unit 1")).toBeVisible();
-  await dialog.getByRole("radiogroup", { name: "Spare: which model" }).getByRole("radio", { name: "Its own" }).click();
+  // exact: "Every spare: which model" holds the words "Spare: which model" too.
+  await dialog.getByRole("radiogroup", { name: "Spare: which model", exact: true })
+    .getByRole("radio", { name: "Its own" }).click();
   await expect(dialog.getByText("Spare's non-repairable model")).toBeVisible();
   // Another spare: the words follow.
   await dialog.locator(".standby-settings input[type=number]").nth(1).fill("2");

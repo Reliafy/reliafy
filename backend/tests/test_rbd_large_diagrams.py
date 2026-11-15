@@ -232,4 +232,7 @@ def test_warm_standby_exports_with_its_dormancy_factor():
 
     code = rbd_export.to_python(_standby_graph(dormancy=0.4), "Warm pumps")
     assert "StandbyModel([pumps_unit, pumps_unit], k=1, dormancy_factor=0.4)" in code
-    assert "warm standby" in code
+    # The comment says the arrangement in plant words (since standby as plants run it).
+    comments = " ".join(line.lstrip("# ") for line in code.splitlines() if line.startswith("#"))
+    assert "standby - 1 running, 1 warm spare ageing at 40% while waiting" in comments
+    assert "doesn't start" not in comments  # every spare starts here

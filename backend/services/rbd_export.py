@@ -700,8 +700,9 @@ class _Script:
             if reason and not data.get("simulate"):
                 return self.missing(var, f"{reason} {rbd_standby.SIMULATE_OFFER}", label)
             self.imports.add("StandbyModel")
+            starts = " A spare that doesn't start is skipped and the next tried." if start < 1.0 else ""
             self.comment(f"{label}: standby - {rbd_standby.describe(data, label)}; it fails when fewer than "
-                         f"{k} can run. A spare that doesn't start is skipped and the next tried.")
+                         f"{k} can run.{starts}")
             options = [f"k={k}"]
             if dormancy > 0.0:
                 options.append(f"dormancy_factor={_num(dormancy)}")
