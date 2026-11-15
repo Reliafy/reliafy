@@ -32,22 +32,39 @@ def _time(value) -> float | None:
 def phased_mission(
     graph: dict = Body(..., embed=True),
     covariates: dict = Body(default={}),
+    current_state: dict | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """A non-repairable graph's phased mission (its ``phases``): the mission
     reliability, each phase's failure probability and the reliability at its
     end, and the riskiest phase. Exact, or simulated where the mission is too
-    large (the result says which). Quick, so not plan-gated."""
+    large (the result says which). Quick, so not plan-gated. ``current_state``:
+    the blocks' states now (as the diagram's calculation takes them), so the
+    mission flies from their ages."""
     try:
         return JSONResponse(content=rbd_phases.analyze_for_owner(session, graph, ctx.read_owners,
-                                                                 covariates=covariates or None))
+                                                                 covariates=covariates or None,
+                                                                 current_state=current_state or None))
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse a phased mission")
         return JSONResponse(status_code=500, content={
             "detail": "Failed to analyse the phased mission. The error has been logged."})
+
+
+@router.post("/rbds/phases/covariates")
+def phase_covariates(graph: dict = Body(..., embed=True), session=Depends(get_session),
+                     ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """Every covariate a phase of this (unsaved) diagram can set: one row per covariate a block's
+    life model leaves open (bound NSWC-11, ALT and PH blocks, and saved regression models), with the
+    blocks each feeds. The same list the Explorer's tree hangs under each phase (rbd_missions.gather)."""
+    from backend.services import covariate_binding as cb
+    from backend.services import rbd_missions
+
+    got = rbd_missions.gather(graph or {}, rbd_missions._inputs_cache(lambda b: cb.inputs_of(b, session, ctx.read_owners)))
+    return JSONResponse(content=got)
 
 
 @router.post("/rbds/network")
@@ -219,11 +236,15 @@ def delete_mission(rbd_id: str, mission_id: str, session=Depends(get_session),
 
 @router.post("/rbds/{rbd_id}/missions/{mission_id}/calculate")
 def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(default=None, embed=True),
+                      current_state: dict | None = Body(default=None, embed=True),
                       session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """The chance of completing the mission, each phase's failure probability and reliability at
     its end, and each phase's weakest block. ``phases``: work out these (unsaved edits) instead of
-    the saved ones. A phase still missing a value waits; the result says which blocks need what.
-    Quick, so not plan-gated. A result for the saved phases is kept for the lists."""
+    the saved ones. ``current_state``: the blocks' states now (``{node_id: {"failed": true} |
+    {"age": t}}``, as ``POST /api/rbds/phases`` takes them), so the mission flies from their ages
+    ("As of now" in the notes). A phase still missing a value waits; the result says which blocks
+    need what. Quick, so not plan-gated. A from-new result for the saved phases is kept for the
+    lists; an as-of-now one isn't."""
     from backend.services import access as access_service
     from backend.services import rbd_missions
 
@@ -236,7 +257,7 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
         return JSONResponse(status_code=404, content={"detail": "That mission isn't on this RBD (deleted?)."})
     use = mission["phases"] if phases is None else phases
     try:
-        result = rbd_missions.analyze(session, ctx.read_owners, graph, use)
+        result = rbd_missions.analyze(session, ctx.read_owners, graph, use, current_state=current_state or None)
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
@@ -248,7 +269,7 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
         same = rbd_phases.parse_phases(use) == saved_phases
     except rbd_phases.PhaseError:
         same = False
-    if same and access_service.can_write(ctx, rbd.owner_id):
+    if same and not current_state and access_service.can_write(ctx, rbd.owner_id):
         record = rbd_missions.result_record(graph, saved_phases, result)
         session.rbds.update_one({"_id": rbd.id}, {"$set": {f"mission_results.{mission_id}": record}})
     return JSONResponse(content={"mission": {"id": mission["id"], "name": mission["name"]}, **result})

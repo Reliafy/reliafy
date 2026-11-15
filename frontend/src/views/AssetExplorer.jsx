@@ -15,6 +15,7 @@ import { FitPane } from "../components/FitLifeModel.jsx";
 import PredictionPane from "../components/PredictionPane.jsx";
 import RbdPane from "../components/RbdPane.jsx";
 import MissionPane, { NewMissionPane } from "../components/MissionPane.jsx";
+import MissionSide, { phaseRowChange } from "../components/MissionSide.jsx";
 import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, MissionRollup, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
 import {
   NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
@@ -32,9 +33,11 @@ import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftMod
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  createPositionMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getWorkspaceRcm, getPositionRcm, getRcmOptions,
-  hasFmeaExcel, linkPositionModel, restoreRcm, restoreTree,
+  createPositionMission, deleteMission, getMission, updateMission, calculateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getWorkspaceRcm, getPositionRcm, getRcmOptions,
+  hasFmeaExcel, linkPositionModel, restoreRcm, restoreTree, updateMaintenanceLocation, updateMaintenancePosition,
 } from "../api.js";
+import MergeAssetPane from "../components/MergeAssetPane.jsx";
+import { mergeSourceKind, separateChange, separateConfirm } from "../assetMerge.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
 import TreeDetail, { HeaderTabs, SlimHeader, forgetPositions, prefetchPosition, rememberChange, usePosition } from "../components/TreeDetail.jsx";
@@ -91,8 +94,9 @@ import {
 } from "../assetTree.js";
 import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
-import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
-import { addsFirst, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withPin } from "../treeRowMenu.js";
+import { EXPLORER_LABEL } from "../navigation.js";
+import { ASSETS_LIST_PATH, explorerCarry } from "../maintenanceAssets.js";
+import { addsFirst, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
@@ -238,11 +242,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // inside that asset, and nothing else's (a design has nothing fitted, so no Classes).
   const [read, setData] = useState(null);
   // The tree read is for the root it was read with: a new root (Classes on the picked row's asset,
-  // an asset opened on its own, "Show every asset") takes the address at its word until its own read
+  // an asset opened on its own) takes the address at its word until its own read
   // is in, and the last tree isn't drawn meanwhile (another asset's rows never show in this one's).
   const [dataRoot, setDataRoot] = useState(root);
   const data = dataRoot === root ? read : null;
   const scopedClasses = !!root && scopeHasClasses(data, { ownPage: !!rootProp });
+  // An asset opened on its own (never a product's design, which has its own page): it can be merged
+  // into another asset, and a row inside it made its own asset (assetMerge.js).
+  const assetTree = !!root && !rootProp && data?.scope?.kind !== "design";
+  const unitBranch = root && data?.scope?.kind === "unit" ? { id: root, name: data.scope.name || "(no name)" } : null;
   const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: tableOn, scoped: !!root, classes: scopedClasses });
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
@@ -296,6 +304,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // Excel import and export (TreeSheetPane): {start: "import" | "export", branch: {id, name} | null, n}, in the
   // panel's place beside the tree (no modal), or null. Not a row's: it stays open while rows are picked.
   const [sheet, setSheet] = useState(null);
+  const mergeHeading = useRef(null);
   const sheetHeading = useRef(null);
   // The Summary tab's row menu: the row a new position or location goes
   // inside, and the row being renamed, moved or retired ({kind, row}).
@@ -369,11 +378,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     // One asset open (?root=): read that asset alone, so nothing of another one is sent.
     getMaintenanceTree({ within: root })
       .then((d) => {
-        // A link that named a row lands on that row's asset, on its own (arrivalRoot): no
-        // whole register drawn first.
+        // There's no whole-register Explorer (Derryn, 14 Nov 2026: "If they want to see every
+        // asset, they can't. They have to go out and view all the assets and select one at a
+        // time."). A link that named a row lands on that row's asset, on its own (arrivalRoot);
+        // anything else (the bare address, an old ?all=1 link, a row in no asset) lands on the
+        // Assets list, to pick one. The register's read only says where to go: it's never drawn.
+        // (?place=none, the positions at no place, is the one view without a root.)
         if (!root) {
           const { params: now, location: at, navigate: go, root: rootNow } = here.current;
           if (rootNow) return undefined; // one asset opened meanwhile: its own read is on its way
+          // What the address asked for (a tab, a pane, a Library record to fit) comes along, to
+          // the asset picked there.
+          const toAssets = () => (now.get("place") ? show(d)
+            : go(ASSETS_LIST_PATH, { replace: true, state: { fromExplorer: explorerCarry(now) } }));
           const isolate = (to) => {
             const q = new URLSearchParams(now);
             q.set("root", to);
@@ -389,9 +406,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
               const pos = rcmPositionOf(rcm, named);
               const asset = pos ? assetOfId(d, pos) : null;
               if (asset) return isolate(asset);
-              return show(d);
-            }, () => show(d));
+              return toAssets();
+            }, toAssets);
           }
+          return toAssets();
         }
         return show(d);
       })
@@ -437,6 +455,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
   const [notesAt, setNotesAt] = useState(null); // a function's notes asked for in full: {key, at}
   const [panel, setPanel] = useState(false); // its details beside the table
+  const [missionAddRule, setMissionAddRule] = useState(null); // a phase row whose details open on Add node status rule
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
   // The details filling the table's room, the tree column kept beside them
@@ -584,13 +603,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const focusRow = focus != null ? display.rows.get(focus) : null;
   // The position the selection is on (a function, failure or mode: its position).
   const selPos = isRcmRow(focusRow) || isMeasRow(focusRow) || isModelRow(focusRow) || isMissionRow(focusRow) ? positionOf(focusRow) : focus;
-
-  // On the whole register, a row named in the address is one picked here, not a link to its
-  // asset (arrivalRoot): ?all=1 says so, so a reload or Back stays on the whole register.
-  useEffect(() => {
-    if (root || !data || dataRoot !== root || !params.get("sel") || params.get("all") || params.get("place")) return;
-    setQuery_((q) => q.set("all", "1"));
-  }, [root, data, dataRoot, params, setQuery_]);
 
   // A link on the page that names another row (?sel=: a task's row from the LSA tab's
   // Serves, a task's package): that row is revealed once it's in the tree, before the
@@ -948,6 +960,28 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
   const openFit = (position, opts) => openPane("fit", position, opts);
   // Excel import and export beside the tree, on the Summary tab (the plain tree).
+  // Merge into another asset… (the asset's top row, or ?merge=1 from the Assets list's row menu): in the
+  // table area on the Summary tab, the address saying so, so a reload keeps it open.
+  const openMerge = () => {
+    setQuery_((q) => { q.set("merge", "1"); q.delete(tabKey); });
+    setTimeout(() => mergeHeading.current?.focus({ preventScroll: true }), 0);
+  };
+  const closeMerge = () => setQuery_((q) => q.delete("merge"));
+  // Make this its own asset…: the row leaves this asset (its parent, and a position's own place,
+  // cleared: the tree's own moves), then the Explorer opens on it, its own asset now.
+  const separateRow = async (r) => {
+    const change = separateChange(r);
+    if (!change) return;
+    const ok = await confirm({
+      ...separateConfirm(r, data?.scope?.name),
+      pendingLabel: "Moving…", failedWhat: "make it its own asset",
+      run: () => (change.kind === "location" ? updateMaintenanceLocation(change.id, change.body) : updateMaintenancePosition(change.id, change.body)),
+    });
+    if (!ok) return;
+    const links = ok?.links_removed ? ` ${ok.note || ""}` : "";
+    navigate(explorerPath(r.type === "loc" ? "locations" : "positions", { root: r.key, sel: r.key }),
+             { state: { note: { text: `${r.ref.name || "(no name)"} is its own asset now.${links}`.trim(), fade: !links } } });
+  };
   const openSheet = (start, branch = null) => {
     if (tableOn) setTab("summary");
     setSheet((x) => ({ start, branch, n: (x?.n || 0) + 1 }));
@@ -1044,12 +1078,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                phone ? { state: { treeDetail: key } } : undefined);
       return;
     }
-    // The Missions tab: a click on a mission or phase row opens it, as a model row opens on the
-    // Modelling tab (the same mission open already: left as it is, unsaved edits and all).
-    if (missionsOn && opts.go && !phone && isMissionRow(r)) {
+    // The Missions tab: a click on a mission, phase, covariate or rule row shows its details beside
+    // the tree (Derryn, 15 Nov 2026), as a model row's do on the Modelling tab; a double-click or
+    // Enter opens the mission editor. The editor open already on that mission: left as it is.
+    if (missionsOn && opts.go && isMissionRow(r) && paneKind === "mission" && paneAt?.mission === missionParam(r.ref.rbd.id, r.ref.mission.id)) {
       pick(key, opts);
-      const open = paneKind === "mission" && paneAt?.mission === missionParam(r.ref.rbd.id, r.ref.mission.id);
-      if (!open) openMissionRow(r);
       return;
     }
     if (panePosition && key !== panePosition.id) {
@@ -1481,7 +1514,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     openPane("mission", { id: positionId, name: pr?.ref.name || "(no name)" }, { rbd: missionParam(rbdId, missionId), start: phase == null ? {} : { phase } });
   };
   // A mission or phase row opened (a double-click, Enter, Open…): a phase opens the mission on it.
-  const openMissionRow = (r) => openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id, isPhaseRow(r) ? r.ref.phase.index : null);
+  const openMissionRow = (r) => openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id, r.ref.phase ? r.ref.phase.index : null);
   // A phase added, moved or deleted from the tree: the saved mission read, changed with the pane's
   // phase helpers (changedPhases) and saved through the mission's update route. `change`: editable
   // rows in, rows out. Resolves with the phases saved, or null (nothing saved; said why).
@@ -1500,6 +1533,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         return null;
       }
       await updateMission(rbd.id, mission.id, { phases, expected_updated_at: detail.rbd?.updated_at });
+      // Worked out again, so the tree's figures follow the change (kept on the RBD for the lists).
+      await calculateMission(rbd.id, mission.id).catch(() => null);
       say(done(phases));
       pmissions.load();
       return phases;
@@ -1585,6 +1620,29 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const pr = whole.rows.get(pid);
     const position = { id: pid, name: pr?.ref.name || "(no name)", position_class: pr?.ref.position_class || "" };
     if (id === "mission-open" || id === "mission-phase-open") return openMissionRow(r);
+    // Under a phase: its covariates (set in their details) and node status rules.
+    if (id === "mission-rule-add") {
+      setMissionAddRule(r.key);
+      pick(r.key, { go: true });
+      return undefined;
+    }
+    if (id === "mission-cov-set" || id === "mission-rule-edit") return pick(r.key, { go: true });
+    if (id === "mission-cov-clear") {
+      const c = phaseRowChange(r, id);
+      return changeMissionPhases(r, c.change, () => c.text);
+    }
+    if (id === "mission-rule-delete") {
+      return confirm({
+        title: `Delete the rule for ${r.ref.rule.label}?`,
+        body: `${r.ref.rule.label} goes back to working in ${r.ref.phase.name}. Other phases and the RBD stay as they are.`,
+        confirmLabel: "Delete the rule", cancelLabel: "Keep it", destructive: true,
+      }).then((ok) => {
+        if (!ok) return null;
+        const c = phaseRowChange(r, id);
+        pending.current = phaseKey(r.ref.rbd.id, r.ref.mission.id, r.ref.phase.index);
+        return changeMissionPhases(r, c.change, () => c.text);
+      });
+    }
     if (id === "mission-phase-add") return addPhase(r);
     if (id === "mission-phase-earlier" || id === "mission-phase-later") return stepPhase(r, id === "mission-phase-earlier" ? -1 : 1);
     if (id === "mission-phase-delete") return removePhase(r);
@@ -1630,7 +1688,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       // (an item on the LSA tab) shows Summary, so it gets the Summary menu.
       if (!tableOn) {
         const at = shownTab(tab, r);
-        return menuOnTab(at, designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), {
+        const own = withAssetMoves(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), r, { root: assetTree ? root : null, viewOnly });
+        return menuOnTab(at, designActions(own, designScope, { row: r, viewOnly }), {
           lead: at === "lsa" ? lsaLead(r, { design: isDesignRow(r), viewOnly })
             : at === "maintenance" ? maintenanceLead(r, { viewOnly }) : [],
           pin: [...isolateItem(r), ...pinItem(r)],
@@ -1694,7 +1753,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "event-log") setEventFor({ id: r.key, name: r.ref.name });
       else if (id === "tree-export") openSheet("export", { id: r.key, name: r.ref.name || "(no name)" });
       else if (id === "build-item") buildFrom(r.key);
-      else if (id === "make-own") makeOwn(r);
+      else if (id === "asset-merge") openMerge();
+      else if (id === "asset-separate") separateRow(r);
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "isolate-incomplete") isolateIncomplete(r);
@@ -1874,6 +1934,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [sheetOpen]);
+  // Esc with Merge into another asset open: closes it the same way (the address loses ?merge).
+  const mergeOpen = !!params.get("merge");
+  const closeMergeRef = useRef(null);
+  closeMergeRef.current = () => setQuery_((q) => q.delete("merge"));
+  useEffect(() => {
+    if (!mergeOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented || hasOpenLayer(document)) return;
+      closeMergeRef.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mergeOpen]);
   // The dialog stays open (Apply saying "Saving…") until the server has it;
   // a refusal shows in the dialog, with everything as it was typed.
   // A cost typed for a new task goes on the task the decision made (where the Maintenance
@@ -1944,7 +2017,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return;
     }
     // Classes covers one asset, the one the picked row is in (Derryn, 11 Nov 2026: "an asset
-    // should be self contained"); with nothing picked, the whole register. "Show every asset" there.
+    // should be self contained"). Only the positions at no place (?place=none) get here unrooted.
     const asset = m === "classes" ? assetOf(data, focus != null ? display.rows.get(focus) : null) : null;
     if (asset) {
       navigate(explorerPath(m, { root: asset, sel: keep, tab: nextTab === "summary" ? null : nextTab }));
@@ -2091,7 +2164,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="card empty">
       <h2>That asset isn&apos;t here</h2>
       <p>It may have been deleted, or the link is an old one.</p>
-      <p><Link to={explorerPath(mode)}>Show every asset</Link></p>
+      <p><Link to={ASSETS_LIST_PATH}>See the assets</Link></p>
     </div>
   ) : error?.notAllowed ? (
     <div className="card empty">
@@ -2151,15 +2224,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
     : "";
 
-  const notice = root && !rootProp ? (
-    <p className="tp-notice">
-      <span className="maint-badge">One asset</span>{" "}
-      <Link to={explorerPath(mode, { all: "1", sel: selPos, tab: tab === "summary" ? null : tab })}>Show every asset</Link>
-    </p>
-  ) : notPlaced && (
+  // The Explorer is always one asset (?root=), so there's nothing to say about that; only the
+  // positions at no place (?place=none) say what they are, with the way back to the assets.
+  const notice = !root && notPlaced && (
     <p className="tp-notice">
       <span className="maint-badge">Not at a location yet</span>{" "}
-      <Link to={explorerPath(mode)} replace>Show every position</Link>
+      <Link to={ASSETS_LIST_PATH}>Back to the assets</Link>
     </p>
   );
 
@@ -2542,6 +2612,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                  onClose={closeDetails} headingRef={detailsHeading} onMenu={setTabMenu} onAction={modelAction} />
     </div>
   ) : null;
+  // The Missions tab with a mission, phase, covariate or rule row picked: its details beside the
+  // table (a sheet on a phone).
+  const missionRow = missionsOn && panel && isMissionRow(focusRow) ? focusRow : null;
+  const missionSide = missionRow ? (
+    <div className="rw tt-side">
+      {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
+      <MissionSide key={missionRow.key} r={missionRow} phone={phone} expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
+                   onClose={closeDetails} headingRef={detailsHeading} onMenu={setTabMenu} onAction={missionAction}
+                   viewOnly={viewOnly || null} addRule={missionAddRule === missionRow.key}
+                   onSelect={(k) => { reveal(k); setPanel(true); }}
+                   onChanged={(text) => { if (text) say(text); setMissionAddRule(null); pmissions.load(); }} />
+    </div>
+  ) : null;
   // The fit or the prediction in the table area (a wide screen), or the whole screen with Back (a
   // phone). A reloaded "Refresh the prediction…" (no seed) refreshes the position's prediction
   // rather than adding a second one.
@@ -2635,14 +2718,23 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <FitPane key={`${panePosition.id}:${seed?.n || 0}`} {...fitAt} {...paneProps} />
     </div>
   ) : null;
+  const mergeKind = assetTree ? mergeSourceKind(data?.scope) : null;
+  const mergeSide = mergeKind && params.get("merge") && !tableOn ? (
+    <MergeAssetPane key={root} source={{ id: root, name: data.scope.name || "", kind: mergeKind }} data={data} phone={phone}
+                    headingRef={mergeHeading} readOnly={viewOnly || null} onClose={closeMerge}
+                    // The merged part is revealed once the target's tree is in (its ?sel= is the same id as before).
+                    onDone={({ target, text }) => { pending.current = root; navigate(explorerPath(mergeKind === "place" ? "locations" : "positions", { root: target.id, sel: root }),
+                                                           { state: { note: { text, fade: true } } }); }} />
+  ) : null;
   // Excel import and export: in the panel's place (Summary tab), its own screen on a phone.
+  // One asset open: its branches only, never the whole register's tree.
   const sheetSide = sheet && !tableOn ? (
-    <TreeSheetPane key={sheet.n} start={sheet.start} branch={sheet.branch} phone={phone} headingRef={sheetHeading}
+    <TreeSheetPane key={sheet.n} start={sheet.start} branch={sheet.branch} whole={!root} phone={phone} headingRef={sheetHeading}
                    readOnly={viewOnly || null} onClose={() => setSheet(null)}
                    onChanged={(text) => { say(text, "ok", { fade: true }); load(); }} />
   ) : null;
-  const side = sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide
-    : missionsOn ? paneSide : paneSide || (phone ? null : summary);
+  const side = mergeSide && !phone ? mergeSide : sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide
+    : missionsOn ? paneSide || missionSide : paneSide || (phone ? null : summary);
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an
@@ -2678,7 +2770,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   })();
 
   return (
-    <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && (detailKey || sheetSide) && !tableOn ? " show-detail" : "")
+    <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && (detailKey || sheetSide || mergeSide) && !tableOn ? " show-detail" : "")
       + (full ? " is-full" : "") + (tableOn ? " tx-table" : "")}>
       <TreePane
         title={title}
@@ -2718,9 +2810,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         level={level}
         changed={changed}
         onReset={resetView}
-        menuActions={[...(data && !root && mode !== "locations" ? [
+        // Excel in and out: the asset opened (never a product's design). An asset that's a
+        // position exports as its branch; one that's a place exports a branch from a row's ⋯ menu.
+        menuActions={[...(data && (!root || assetTree) && mode !== "locations" ? [
           { id: "tree-import", label: "Import from Excel…", onSelect: () => openSheet("import") },
-          { id: "tree-export", label: "Export to Excel…", onSelect: () => openSheet("export") },
+          ...(!root || unitBranch ? [{ id: "tree-export", label: "Export to Excel…", onSelect: () => openSheet("export", unitBranch) }] : []),
           { id: "import", label: "Import a fitment history…", onSelect: () => setModal("import") },
         ] : []), ]}
         notice={notice}
@@ -2761,7 +2855,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           : missionsOn ? `Missions belong to positions, so ${tabPlace("missions")} shows the positions tree`
           : rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
-      {phone && (sheetSide || (paneSide ? null : summary))}
+      {phone && (mergeSide || sheetSide || (paneSide ? null : summary))}
       <div className="sr-only" role="status" aria-live="polite">{spoken}</div>
       {drag && (
         <div className={"rcm-ghost" + (drag.verdict ? ` is-${drag.verdict.state}` : "")} aria-hidden="true"
@@ -2880,9 +2974,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                            const row = rowModal.row;
                            setRowModal(null);
                            // The tree's own top (a product's design, or a tree opened on its own): nothing left
-                           // to show here, so Products (or the whole Explorer) shows the toast.
+                           // to show here, so Products (or the Assets list) shows the toast.
                            if (root && row.key === root) {
-                             navigate(rootProp ? PRODUCTS_PATH : EXPLORER_PATH, { state: { deleted: done } });
+                             navigate(rootProp ? PRODUCTS_PATH : ASSETS_LIST_PATH, { state: { deleted: done } });
                              return;
                            }
                            const up = row.ref.parent_id && display.rows.has(row.ref.parent_id) ? row.ref.parent_id : null;

@@ -106,7 +106,7 @@ export default function MaintenanceOrders() {
         <div className="card empty">
           <h2>Nothing here yet</h2>
           <p>
-            Add a position by hand, or build the tree on the <Link to="/asset-register/explorer">Explorer</Link>, where
+            Add a position by hand, or build the tree on an asset in <Link to="/asset-register">Assets</Link>, where
             each position's RCM gives it its tasks.
           </p>
           <div className="maint-row" style={{ justifyContent: "center", marginTop: "1rem" }}>

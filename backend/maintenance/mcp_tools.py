@@ -67,6 +67,7 @@ HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_models.li
                "maintenance_list.tree",
                "maintenance_parts.import_bom", "maintenance_parts.build_positions",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
+               "maintenance_get.forecast",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
                "maintenance_apply")
 
@@ -128,6 +129,8 @@ GET_KINDS: Table = {
     "operating_plan": ("id", "root", """How a position (or the item fitted to one) runs: its own plan, or
         the nearest above it inside root (the asset opened), with inherited_from; hours a week and the next 14
         days."""),
+    "forecast": ("id", "root period periods", """id = a position. It and everything inside it: tasks on
+        dates, work, failures and cost per period with a 90% range (guide topic forecast)."""),
     "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
         from_precision / to_precision for rough dates), failure modes (from RCM, by hand or ad hoc),
         class_failure_modes (seen at other positions of its class), tasks with last-done / next-due and trade,
@@ -182,14 +185,15 @@ GET_KINDS: Table = {
                          "moved there)."),
     "package": ("id", "", """A work package: cadence, tolerance, layers, its tasks (visit rule, what each
         covers, last done, next due), next visits, open work order with lateness, recent work orders."""),
-    "class_life_data": ("id", "", """id = a position class's name. Every fitment at every position of the
+    "class_life_data": ("id", "unit", """id = a position class's name. Every fitment at every position of the
         class, pooled: x = days in service, c = 0 failed or 1 censored; rough dates add xl / xr (a failure is
-        then c = 2, interval censored)."""),
+        then c = 2, interval censored). unit = a counter's unit (hours, km) for lives by use; excluded lists
+        lives the readings can't bound."""),
     "plan_economics": ("id", "interval unit horizon_years discount_rate", """id = a position class's name.
         What its replacement plan costs a year: the current plan, the best interval, running to failure and
         (with interval) a what-if, each with its net present cost over horizon_years (default 10) at
         discount_rate (default 0.07). Needs the class's fitted model and costs. unit: days, weeks, months
-        (default), years."""),
+        (default), years; or the model's unit of use (its default for a model by use)."""),
     "class_forecast": ("id", "period periods service_level lead_time_days review_days", """id = a position
         class's name. Its failure forecast from the register, with each spare's stock levels (guide topic
         decide)."""),
@@ -289,9 +293,11 @@ POSITIONS: Table = {
         (location_id: positions inside without their own follow) or clear_location true to inherit its parent's
         again. operating_plan: how it runs (guide topic operating_plan); end_operating_plan true stops its own
         plan from until (default today)."""),
-    "copy": ("position_id name", "parent_id", """Copy a position and everything inside it (positions, failure
-        modes, tasks, parts lists, locations set on them; not items, stock or work orders) under a new name.
-        Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
+    "copy": ("position_id name", "parent_id move_to_top_level", """Copy a position and everything inside it
+        (positions, failure modes, tasks, parts lists, locations set on them; not items, stock or work orders)
+        under a new name. It goes beside the original (same parent) unless parent_id says where, or
+        move_to_top_level true. Repeat it to build many like structures; then update the copy's location_id if
+        it's elsewhere."""),
     "retire": ("position_id", "reason cascade dry_run", """Take it out of the plant (kept in the history). Nothing
         fitted, no work order open. cascade true deletes it with everything inside: items fitted there are taken
         out and kept (never retired), open work orders cancelled, tasks retired; dry_run true only counts."""),
@@ -705,10 +711,11 @@ RELIABILITY: Table = {
         class (same currency), and the availability a hidden function must reach (e.g. 0.99): proposed
         intervals are optimised against them. replacement_cost: the default for items with none of their
         own. Returns the class."""),
-    "fit_class_model": ("position_class", "distribution", """Pro. Fit a life distribution (weibull default, best,
+    "fit_class_model": ("position_class", "distribution unit", """Pro. Fit a life distribution (weibull default, best,
         lognormal, exponential, gamma) to every fitment of the class's positions, save it as a model and
         propose task intervals from it and the costs. Needs at least 2 failures (exponential: 1, a constant
-        failure rate while there's little history). Then generate_rbd uses it for the class's blocks."""),
+        failure rate while there's little history). unit: days (default) or a counter's unit (hours, km) for
+        lives by use (a refit keeps the class's unit). Then generate_rbd uses it for the class's blocks."""),
 }
 
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
@@ -1242,7 +1249,10 @@ def register() -> None:
                             "manufacturer_match: the maker as written."))] = None,
                         interval: Annotated[float | None, Field(
                             description="plan_economics: a what-if interval.")] = None,
-                        unit: Literal["days", "weeks", "months", "years"] | None = None,
+                        unit: Annotated[str | None, Field(description=(
+                            "plan_economics: days, weeks, months or years, or the model's unit of use. "
+                            "class_life_data: a counter's unit (hours, km) for lives by use."), max_length=40)]
+                        = None,
                         horizon_years: float | None = None, discount_rate: float | None = None,
                         period: Literal["month", "quarter", "year"] | None = None,
                         periods: int | None = None,
@@ -1261,7 +1271,7 @@ def register() -> None:
                             "item_class: true for the class's fleet (its positions, with risk now) in place of "
                             "the class record."))] = None,
                         root: Annotated[str | None, Field(description=(
-                            "operating_plan: the asset opened; plans above it aren't used."))] = None
+                            "operating_plan, forecast: the asset opened; nothing above it is used."))] = None
                         ) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance overview, maintenance list.… and the records themselves."""
@@ -1283,8 +1293,10 @@ def register() -> None:
                 raise ToolError("Photo link not found.")
             return photo_links().public(doc)
         if kind == "plan_economics":
-            return run(loop.economics, m, rid, interval, _d(unit, "months"), _d(horizon_years, 10),
+            return run(loop.economics, m, rid, interval, unit or None, _d(horizon_years, 10),
                        _d(discount_rate, 0.07))
+        if kind == "class_life_data":
+            return run(m.class_life_data, rid, unit or None)
         if kind in ("class_forecast", "spares_plan"):
             def go():
                 fc = forecast.class_forecast(m, rid, _d(period, "month"), _d(periods, 12), service_level,
@@ -1299,6 +1311,14 @@ def register() -> None:
             return run(m.task_measurement, rid, position_id)
         if kind == "operating_plan":
             return run(m.operating_plan, rid, root)
+        if kind == "forecast":
+            from backend.maintenance import position_forecast
+            from backend.maintenance import position_models as pm
+
+            reader = _reader(_caller(ctx))
+            fetch = pm.fetcher(_db(), reader.read_owners, reader.hidden)
+            return run(position_forecast.position_forecast, m, rid, root, _d(period, "month"), _d(periods, 12),
+                       fetch)
         if kind == "item_class" and fleet:
             from backend.maintenance import class_fleet
 
@@ -1497,7 +1517,7 @@ def register() -> None:
                               name: str | None = None,
                               parent_id: Annotated[str | None, Field(description=(
                                   "create / update / copy: the position (or, for create, the item) it goes "
-                                  "inside."))] = None,
+                                  "inside. copy: default beside the original."))] = None,
                               tag: str | None = None, position_class: str | None = None,
                               description: str | None = None, operating_context: str | None = None,
                               location_id: str | None = None, move_to_top_level: bool | None = None,
@@ -1548,7 +1568,7 @@ def register() -> None:
                 return m.position(position_id)
             return run(update)
         if action == "copy":
-            return run(m.copy_position, position_id, name, parent_id)
+            return run(m.copy_position, position_id, name, parent_id, None, bool(move_to_top_level))
         if action == "retire":
             return run(m.retire_position, position_id, reason or "", bool(cascade), bool(dry_run))
         if action == "restore":
@@ -2467,7 +2487,10 @@ def register() -> None:
                                 availability_target: float | None = None, replacement_cost: ReplacementCost = None,
                                 clear_replacement_cost: bool | None = None,
                                 distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] | None
-                                = None) -> dict[str, Any]:
+                                = None,
+                                unit: Annotated[str | None, Field(description=(
+                                    "fit_class_model: days, or a counter's unit (hours, km) for lives by use."),
+                                    max_length=40)] = None) -> dict[str, Any]:
         """A position class's costs and its fitted non-repairable model: what turns the history into proposed task
         intervals (maintenance guide topic learn). Read the pooled data first with maintenance get.class_life_data
         ; plan_economics there costs the plan."""
@@ -2483,7 +2506,7 @@ def register() -> None:
         from backend import fitting
 
         try:
-            return run(loop.fit_class_model, m, _db(), position_class, _d(distribution, "weibull"))
+            return run(loop.fit_class_model, m, _db(), position_class, _d(distribution, "weibull"), unit or None)
         except fitting.FitError as err:
             raise ToolError(f"The fit didn't work: {err}") from None
 

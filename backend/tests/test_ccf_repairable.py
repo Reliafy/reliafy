@@ -275,19 +275,17 @@ def test_crews_never_claim_the_groups():
     assert "repair crews" in out["safety"]["common_cause"]["note"]
 
 
-def test_as_of_now_falls_back_but_the_pfdavg_keeps_them():
-    """Started from a state, a member's group can't be followed (its chains
-    start every member new): the run leaves the groups out, while the
-    PFDavg, a long-run value, keeps them."""
+def test_as_of_now_keeps_the_groups():
+    """Started from a state, a member's group is followed from the members'
+    states (RePyability 0.17; before, the run left the groups out), and the
+    PFDavg, a long-run value, keeps them as it always did."""
     g = {**_graph(), "safety_function": True}
     state = ra.parse_current_state(g, {"pa": {"down": True, "since": 2.0}})
     out = ra.analyze_availability(g, state=state, n_simulations=40)
-    assert out["common_cause"]["included"] is False and "current state" in out["common_cause"]["reason"]
+    assert out["common_cause"]["included"] is True and out["common_cause"]["reason"] is None
     assert out["safety"]["common_cause"]["included"] is True
     assert out["safety"]["pfd_avg"] == pytest.approx(_direct().mean_unavailability(), rel=1e-12)
-    note = rbd_policies.common_cause_note(g, out)
-    assert note["availability_with_common_cause"] == pytest.approx(1 - out["safety"]["pfd_avg"], rel=1e-12)
-    # A state on a block outside the group keeps them.
+    # A state on a block outside the group keeps them too.
     other = ra.analyze_availability(g, state=ra.parse_current_state(g, {"ctl": {"age": 10.0}}), n_simulations=40)
     assert other["common_cause"]["included"] is True
 

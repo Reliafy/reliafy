@@ -140,6 +140,10 @@ def _date(value, what: str, row: int) -> str | None:
         return None
     import pandas as pd
 
+    from backend.services.excel import serial_day
+
+    if serial_day(text):  # an Excel date stored as its number
+        return serial_day(text)
     try:
         return pd.to_datetime(text, dayfirst=not re.match(r"^\d{4}-", text)).date().isoformat()
     except (ValueError, TypeError, OverflowError):

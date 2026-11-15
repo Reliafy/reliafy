@@ -37,6 +37,7 @@ import { hoursPerUnit } from "./rbdModelText.js";
 import { RBD_EVALUATE_AT_EVENT } from "../rbdBuilderOps.js";
 import { answerAtTime, formatProbability, formatReliability, importanceHeading, lifeBoundText } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { importanceRows } from "../rbdImportance.js";
 import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
@@ -490,32 +491,6 @@ const IMP_COLS = [
 
 // The columns only the simulation fills.
 const SIM_COLS = new Set(["failure_criticality", "restoration_criticality"]);
-
-function importanceRows(result) {
-  const imp = result.importance || {};
-  const crit = result.criticality || {};
-  const ids = Object.keys(imp);
-  const rows = ids.map((id) => {
-    const i = imp[id] || {};
-    const c = crit[id] || {};
-    return {
-      id,
-      label: i.label || c.label || id,
-      pinned: i.pinned || null,
-      birnbaum: i.birnbaum,
-      // Never fall back to the library's success-oriented criticality: under
-      // this column's name it would show 100% for every series block.
-      crit: i.unavailability_criticality,
-      risk_achievement_worth: i.risk_achievement_worth,
-      structural: i.structural,
-      // No simulation entry means the block never tripped/restored the system.
-      failure_criticality: crit[id] ? c.failure_criticality : null,
-      restoration_criticality: crit[id] ? c.restoration_criticality : null,
-    };
-  });
-  rows.sort((a, b) => (b.crit ?? -1) - (a.crit ?? -1) || String(a.label).localeCompare(String(b.label)));
-  return rows;
-}
 
 
 function DowntimeBars({ rows, title, note }) {
@@ -1180,6 +1155,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
                       <td className="calc-row-label">
                         {b.label}
                         {b.pinned && <span className="rbd-avail-pin">pinned {b.pinned}</span>}
+                        {b.note && <span className="rbd-avail-pin">{b.note}</span>}
                       </td>
                       {impCols.map((c) => (
                         <td key={c.key}>{c.fmt(b[c.key])}</td>
@@ -1425,7 +1401,7 @@ const WINDOW_PRESETS = [
 
 export default function RbdCalculator({
   graph, validation, stale: checkStale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
-  onNodeData = null, onConditions = null,
+  onNodeData = null, onConditions = null, onCurrentState = null,
 }) {
   const [result, setResult] = useState(null);
   // The diagram the shown result is for. A result is never shown as current
@@ -1669,6 +1645,8 @@ export default function RbdCalculator({
       runGuard.current.finish(token);
       setResult(res);
       setResultSig(sentSig);
+      // The blocks' states the figures are from, for the phased mission beside them.
+      if (onCurrentState && !graph.repairable) onCurrentState(res.current_state || null);
       if (res.free_sims) setQuickOffer(res.free_sims);
       if (res.job) {
         // The exact figures now; the simulation is queued on the calculation
@@ -1703,6 +1681,8 @@ export default function RbdCalculator({
         // the free quick run where it's offered.
         setResult(null);
         setQuickOffer(err.data?.quick || null);
+        // A standby block set to be simulated (#363): the library's plain refusal and what Pro adds.
+        if (err.data?.simulated_block) setCapMessage(err.message);
         setNeedsPro(true);
         setPhase("idle");
         return;
@@ -2187,10 +2167,16 @@ export default function RbdCalculator({
           onApply={(v, schedules) => {
             setCovValues(v);
             // #52: schedules live on their blocks, saved with the diagram.
+            // In a repairable diagram (#372) the simulation reads a scheduled block's other covariates
+            // from the block itself, so their values are saved with it too.
+            const keepValues = (n) => !!graph.repairable && !!schedules?.[n.id];
             const changed = Object.fromEntries(
               covNodes
-                .filter((n) => JSON.stringify(n.schedules || null) !== JSON.stringify(schedules?.[n.id] || null))
-                .map((n) => [n.id, { covariate_schedules: schedules?.[n.id] || null }])
+                .filter((n) => JSON.stringify(n.schedules || null) !== JSON.stringify(schedules?.[n.id] || null) || keepValues(n))
+                .map((n) => [n.id, {
+                  covariate_schedules: schedules?.[n.id] || null,
+                  ...(keepValues(n) ? { covariate_values: v?.[n.id] || null } : {}),
+                }])
             );
             if (onNodeData && Object.keys(changed).length) onNodeData(changed);
             setShowCov(false);

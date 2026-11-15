@@ -12,6 +12,7 @@ import { SectionHeader } from "../components/SectionPage.jsx";
 import ListSearch from "../components/ListSearch.jsx";
 import { ClassPicker } from "../components/MaintenanceItemClasses.jsx";
 import { explorerPath } from "../assetTree.js";
+import { ASSETS_LIST_PATH } from "../maintenanceAssets.js";
 import {
   PRODUCTS_GUIDE, PRODUCTS_PATH, itemFilters, itemPagePath, itemTreePath, productPath, statusText,
 } from "../products.js";
@@ -74,7 +75,7 @@ export default function MaintenanceItemsList() {
             fit one to a position in your assets.</p>
           <div className="section-empty-action">
             <button onClick={() => navigate(PRODUCTS_PATH)}>Go to Products</button>
-            <button className="secondary" onClick={() => navigate(explorerPath("positions"))}>Go to the Explorer</button>
+            <button className="secondary" onClick={() => navigate(ASSETS_LIST_PATH)}>Go to Assets</button>
           </div>
         </div>
       ) : (

@@ -1,33 +1,23 @@
 # Maintenance scheduling: use cases
 
-This record moved here from RePyability (`repyability/maintenance/README.md`,
-derrynknife/RePyability #319), with the scheduling code it describes, now
-`backend/maintenance/schedule.py`. The split, agreed with the
-maintainer: **RePyability is about timelines, Reliafy about calendars.**
-RePyability works in model time, from a state (ages, phases, meter
-readings as numbers), and keeps the quantitative questions: RCM's per
-failure mode, a failure's consequences at system level, and the
-probabilities a forecast is made of. Dates, calendars, operating schedules,
-financial years and the forecast by date belong here.
+**RePyability computes; Reliafy records** (Nov 2026). RePyability's models work in model
+time, and its `repyability.schedule` module connects model time to the calendar:
+recurrence rules (which dates), duty plans (how many operating hours by when), and
+forecasts through them (tasks on dates; failures and costs by calendar period). It takes
+dates, rules, plans, readings and a time zone as plain data and returns plain data; it
+never reads the clock, stores anything or knows a workspace. Reliafy holds the records
+(tasks, operating plans, readings as recorded, fitments, work orders, the hierarchy),
+decides what "today" and the time zone are, works out the state from the history (ages,
+last done, the recent rate), and turns the answers into screens and work orders.
 
-So, below:
-
-- **here** (`backend/maintenance/schedule.py`): calendar tasks and monthly rules
-  (UC-2 to UC-4), and tasks by use on an asset's operating schedule
-  (UC-10);
-- **in RePyability**, in model time: a part's failures from its age (UC-5,
-  `Component` there becoming a method of `NonRepairable`) and the choice at
-  a planned replacement (UC-6, `ReplacementPlan`, being reworked as a
-  comparison of options);
-- **requirements for the forecaster here**, answered by hand only:
-  forecasting a system's work by month (UC-1), costs over a timeline
-  with their range (UC-8)
-  and by financial year with their outcomes (UC-9). Where the code
-  examples below import from `repyability.maintenance`, they are
-  RePyability's model-time pieces;
-- **built here on RePyability's calendar policy:** shut, off-schedule and
-  failure prices (UC-7), laid on real dates by
-  `backend/services/strategy_calendar.py`.
+So `backend/maintenance/schedule.py` is now a thin seam over the library: it reads the
+shapes the app stores (a package's cadence, a task's rule, an operating plan) into the
+library's types, and nothing stored is rewritten. The scheduling code this record first
+described (UC-2 to UC-4 and UC-10: calendar tasks, monthly rules, tasks by use on an
+operating schedule) went back to RePyability with its tests, widened; the use cases
+below keep their history. Earlier, the split was "RePyability is about timelines,
+Reliafy about calendars", and the code lived here; the sections below say "here" in
+that sense.
 
 The use cases follow as they were recorded.
 
@@ -1003,11 +993,35 @@ Saturday of every month, the first Tuesday of November every year.
   background with no end (`continuous`, `shifts`, `roster`, `rate`, `runs`) and specific runs on
   top, each covering its own span. A position with no plan of its own runs to the nearest above it,
   looked for only inside the asset opened; an item runs as the position it's fitted to.
-- The hours the app shows from a plan (a typical week, the next two weeks) are a simple summary in
-  clock hours. Where specific runs hand over to the background, the background counts only the time
-  the runs don't cover, pro rata, so no hours appear or go missing at the handover. Due dates by use
-  still come from meter readings; putting them on dates through the plan, and the forecast by
-  month, come with the scheduling library.
+- Every number of hours comes from RePyability's `DutyPlan` (`schedule.duty_plan` turns a position's
+  dated plans into one, in the plan's time zone: real hours across daylight saving). Where specific
+  runs hand over to a rate, the rate fills only the time they leave, pro rata, so no hours appear or
+  go missing at the handover. A plan may carry `utilisation` (0.01 to 1). Plan against actual: over
+  the last 90 days, the hours the position's hours counter ran as a share of the plan's hours over
+  the same days, offered as the plan's utilisation and never applied unasked.
+- Due dates: a calendar interval steps by `Recurrence.every` (`add_interval`), a pattern by the
+  rule's `Recurrence`, and a task by use in operating hours through the position's plan (its own or
+  the nearest above): the moment its hours counter, counted on from its latest reading, crosses the
+  task's next reading, and the stop after it. A reading older than the plan's first day is carried
+  to that day at the recent rate. With no plan, the counter's recent rate gives the date, as before;
+  the task's `limits[].basis` says which. The daily run, the task lists and the class forecast use
+  the same calls, so "due" means one thing everywhere.
+
+## The forecast on a position
+
+`backend/maintenance/position_forecast.py`: a position and everything inside it (inside the asset
+opened), from today to the end of the last whole period. Tasks on dates are the library's
+`Task.due` (each assumed done on its due date; an interval counts again from then, a pattern keeps
+its dates; a date set by hand comes first); work per period is `work_by_period` per position,
+summed; failures per period are `failures_by_period` for the life model in use on each position
+with an item fitted (non-repairable, in operating hours through the position's hours map, or in
+calendar time), at the position class's failure cost. Ranges are the 5th to 95th percentile (90%,
+two-sided); one part's are exact, and the range of a sum over positions assumes they fail
+independently (sampled from each part's distribution of failures), as the result says. Nothing is
+stored or written as a reading. It answers `GET /api/maintenance/positions/{id}/forecast`,
+`maintenance get.forecast` and the Explorer's Maintenance tab (its Forecast view). Not yet: the
+forecast of a system as a whole (an RBD in use), lives in units of use other than operating hours,
+and package visits as the dates tasks are done on.
 
 ## Tasks raised by an event
 

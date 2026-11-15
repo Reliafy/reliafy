@@ -1,16 +1,15 @@
 import Chip from "./ui/Chip.jsx";
-import { BLOCK_STATES, blockState, withBlockState } from "../explorerMissions.js";
+import { BLOCK_STATES, STATE_SHORT, blockState, withBlockState } from "../explorerMissions.js";
 
 // Each block's state in each phase of a mission (MissionPane.jsx): a grid with a row per block of
-// the mission's RBD and a column per phase, each cell Working (the default), Standby or Not
-// needed, changed in place. Wide missions scroll inside the grid's own box, never the page.
+// the mission's RBD and a column per phase, each cell Working (the default), Standby, Guaranteed
+// working or Not needed, changed in place (a warm standby's dormancy is set on its rule in the tree). Wide missions scroll inside the grid's own box, never the page.
 //
 // A block with no model (a placeholder stands in) says so beside its name.
 //
 //   blocks: [{id, label, placeholder}]   phases: the pane's editable phases ({key, name, standby, not_needed})
 //   readOnly                onChange(phaseKey, {standby, not_needed})
 
-const SHORT = { working: "Working", standby: "Standby", off: "Not needed" };
 
 export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = false, onChange }) {
   if (!blocks.length) return null;
@@ -18,7 +17,7 @@ export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = 
     <section className="mission-grid" aria-labelledby="mission-grid-h">
       <h3 className="mission-k" id="mission-grid-h">Blocks in each phase</h3>
       {phases.length === 0 ? (
-        <p className="rim-tquiet">Add a phase to set which blocks run, stand by or aren't needed in it.</p>
+        <p className="rim-tquiet">Add a phase to set which blocks run, stand by, are guaranteed or aren't needed in it.</p>
       ) : (
         <div className="maint-scroll mission-grid-scroll">
           <table className="mission-grid-table">
@@ -47,7 +46,7 @@ export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = 
                                 aria-label={`${b.label} in ${p.name || `phase ${i + 1}`}`}
                                 title={BLOCK_STATES.find((s) => s.id === state)?.title}
                                 onChange={(e) => onChange?.(p.key, withBlockState(p, b.id, e.target.value))}>
-                          {BLOCK_STATES.map((s) => <option key={s.id} value={s.id}>{SHORT[s.id]}</option>)}
+                          {BLOCK_STATES.map((s) => <option key={s.id} value={s.id}>{STATE_SHORT[s.id]}</option>)}
                         </select>
                       </td>
                     );

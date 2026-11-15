@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import re
 import uuid
 from datetime import datetime, timezone
@@ -890,9 +891,31 @@ def _censor_column(df: pd.DataFrame) -> str | None:
     return None
 
 
-def detect_tags(df: pd.DataFrame) -> dict:
-    """``{"tags": [...], "use_for": [...]}`` for a dataset's columns."""
+def _reading_roles(df: pd.DataFrame, reading: dict | None) -> dict | None:
+    """The columns a saved reading names, when it names its life columns (x or
+    the xl/xr range) and every one is in the table; else None (the columns
+    are guessed instead)."""
+    if not isinstance(reading, dict) or not (reading.get("x") or reading.get("xl")):
+        return None
+    roles = {r: str(reading.get(r) or "") for r in ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e")}
+    named = [c for c in roles.values() if c] + [str(c) for c in reading.get("z") or []]
+    if any(c not in df.columns for c in named):
+        return None
+    return roles
+
+
+def detect_tags(df: pd.DataFrame, reading: dict | None = None) -> dict:
+    """``{"tags": [...], "use_for": [...]}`` for a dataset's columns.
+
+    ``reading``: the dataset's saved reading (which column is which, and what
+    the status values mean). When it names the life columns, the tags and the
+    summary read the table the way a fit from it does: its item, time and
+    status columns, its c_invert / c_map and its count column, rather than a
+    guess from the column names. Only its columns are looked at."""
     df = df.dropna(how="all")  # a blank row in a sheet is no unit (the fit skips it too)
+    roles = _reading_roles(df, reading)
+    if roles is not None:
+        return _detect_with_reading(df, reading, roles)
     tags: set[str] = set()
     unit = _unit_column(df)
     censor = _censor_column(df)
@@ -964,6 +987,140 @@ def detect_tags(df: pd.DataFrame) -> dict:
             "time_unit": _time_unit(times)}
 
 
+def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
+    """``detect_tags`` for a table with a saved reading (see there)."""
+    unit = roles["i"] or None
+    times = [roles["x"]] if roles["x"] else [roles["xl"], roles["xr"]]
+    interval = bool(roles["xl"])
+    tags: set[str] = set()
+    if roles["m"]:
+        tags.add("Measurements")
+    if reading.get("z"):
+        tags.add("Covariates")
+    # Events of a repairable unit: the reading's time rises along each item's
+    # rows. Ages since each part was fitted (one life per row) don't, nor does
+    # inspection data (a range per row is one life found failed or passed).
+    repeat = False
+    start_stop = bool(roles["tl"] and roles["tr"])
+    if unit and not interval and not roles["m"] and not start_stop:
+        rows = df[[unit, roles["x"]]].dropna()
+        steps = rows.groupby(unit)[roles["x"]].diff().dropna()
+        repeat = bool(len(steps)) and bool((steps > 0).all())
+    if repeat:
+        tags.add("Repairable")
+    elif roles["c"] or reading.get("all_failed") or not roles["m"]:
+        tags.add("Non-repairable")
+    covs = "Covariates" in tags
+    use_for: list[str] = []
+    if roles["m"]:
+        if roles["c"]:
+            use_for += ["Condition and life model", "Degradation model", "Non-repairable model"]
+        else:
+            use_for += ["Degradation model", "Condition and life model (once life data is added)"]
+    elif roles["c"] and unit and start_stop:
+        use_for.append("Non-repairable model with time-varying covariates")
+    elif repeat:
+        use_for.append("Repairable model" + (" with covariates" if covs else ""))
+    else:
+        use_for.append("Non-repairable model" + (" with covariates" if covs else ""))
+        use_for.append("Condition and life model (once measurements are added)")
+    out_tags = [t for t in TAGS if t in tags]
+    return {"tags": out_tags, "use_for": use_for, "summary": _reading_summary(df, reading, roles, out_tags),
+            "time_unit": _time_unit(times)}
+
+
+def reading_codes(df: pd.DataFrame, reading: dict, roles: dict | None = None) -> pd.Series | None:
+    """Each row's censor code (0 failed, 1 still running, -1, 2) as a fit from
+    the dataset's reading reads it: its status column with c_map or c_invert,
+    "every row failed", and an xl/xr range read as inspection data. None when
+    the reading doesn't say which rows failed, or a row can't be read."""
+    from backend import fitting  # local: only the summary needs it
+
+    roles = roles or _reading_roles(df, reading)
+    if roles is None:
+        return None
+    c = roles["c"]
+    codes = None
+    try:
+        if c:
+            if reading.get("c_map"):
+                codes = pd.to_numeric(fitting.map_censor_column(df, c, reading["c_map"])[c], errors="coerce")
+            elif reading.get("c_invert"):
+                codes = fitting.invert_censor_column(df, c)[c]
+            elif not pd.api.types.is_numeric_dtype(df[c]):
+                # Words with no map saved: what each says ("Failed", "Running").
+                codes = df[c].map(lambda v: None if pd.isna(v) else status_code(str(v).strip(), c))
+                codes = pd.to_numeric(codes, errors="coerce")
+            else:
+                codes = pd.to_numeric(df[c], errors="coerce")
+            if codes.isna().any():
+                return None
+        elif reading.get("all_failed"):
+            codes = pd.Series(0, index=df.index)
+        if roles["xl"]:
+            frame, mapping = df, {k: v for k, v in roles.items() if v and k in ("x", "xl", "xr")}
+            if roles["x"]:
+                # An exact value on some rows, a range on others: one range each.
+                frame = df.assign(_codes=codes) if codes is not None else df
+                frame, mapping = fitting.combine_exact_and_ranges(frame, mapping)
+                codes = frame["_codes"] if codes is not None else None
+            read = fitting.read_interval_rows(
+                frame[mapping["xl"]].to_numpy(dtype=float), frame[mapping["xr"]].to_numpy(dtype=float),
+                None if codes is None else codes.to_numpy(dtype=float))
+            lo, hi = read["xl"], read["xr"]
+            got = read.get("c")
+            codes = pd.Series(list(got) if got is not None else [0 if a == b else 2 for a, b in zip(lo, hi)],
+                              index=frame.index)
+    except FitError:
+        return None
+    return codes
+
+
+def _reading_summary(df: pd.DataFrame, reading: dict, roles: dict, tags: list[str]) -> str:
+    """The list's count for a table read by its saved reading: "10 avs · 0
+    failed", "10 avs · 19 lives · 9 failed between inspections",
+    "10 trucks · 71 failures", "30 bearings · 193 readings"."""
+    unit = roles["i"] or None
+    noun = _noun(_id_column(df, unit))
+    n_units = int(df[unit].nunique(dropna=True)) if unit else len(df)
+    units = f"{n_units:,} {_plural(noun, n_units)}"
+    if "Measurements" in tags:
+        return f"{units} · {len(df):,} readings"
+    codes = reading_codes(df, reading, roles)
+    weights = pd.Series(1.0, index=df.index)
+    if roles["n"]:
+        values = pd.to_numeric(df[roles["n"]], errors="coerce")
+        if values.notna().all() and (values >= 0).all():
+            weights = values.astype(float)
+    if codes is not None and len(codes) != len(df):
+        codes = None
+    if codes is not None:
+        codes = pd.Series(codes.to_numpy(), index=df.index)
+
+    def count(mask) -> int:
+        return int(round(float(weights[mask].sum())))
+
+    if "Repairable" in tags:
+        if codes is None:
+            return units
+        n = count(codes == 0)
+        return f"{units} · {n:,} {_plural('failure', n)}"
+    lives = count(pd.Series(True, index=df.index))
+    parts = [units]
+    if unit and lives != n_units:
+        parts.append(f"{lives:,} {'life' if lives == 1 else 'lives'}")
+    elif not unit:
+        parts = [f"{lives:,} {_plural(noun, lives)}"]
+    if codes is None:
+        return " · ".join(parts)
+    failed, ranged = count(codes == 0), count(codes.isin((-1, 2)))
+    if failed or not ranged:
+        parts.append(f"{failed:,} failed")
+    if ranged:
+        parts.append(f"{ranged:,} failed between inspections")
+    return " · ".join(parts)
+
+
 def with_measurements(primary: dict, part: DatasetPart, readings: dict | None = None) -> dict:
     """The tags of a dataset with both parts: its table's, plus Measurements
     for the part; "use for" leads with condition and life; the summary adds
@@ -987,21 +1144,31 @@ _TIME_UNITS = frozenset({"second", "minute", "hour", "day", "week", "month", "ye
 
 
 def _time_unit(times: list[str]) -> str | None:
-    """The unit the time column names, as SurPyval normalises it ("engine_hours"
-    → "hour"), or None. A suggestion for fitting; the model stores the unit."""
+    """The unit the time column names ("engine_hours" → "hour"), or None. A
+    suggestion for fitting; the model stores the unit.
+
+    SurPyval reads the words with pint: ``same_unit`` says whether a word
+    names one of the units here. (Up to 0.26 ``normalise_unit`` gave pint's
+    name for a word; from 0.27 it keeps the label as typed, #1218 there.)"""
     try:
-        from surpyval.utils.units import normalise_unit
+        from surpyval.utils.units import same_unit
     except ImportError:  # an older SurPyval: no units
         return None
     for col in times:
         for word in re.split(r"[_\s\-()/]+", col):
-            try:
-                u = normalise_unit(word) if word else None
-            except Exception:  # noqa: BLE001 - not a unit
-                u = None
-            if u in _TIME_UNITS:
-                return u
+            if not word:
+                continue
+            for unit in _TIME_UNIT_ORDER:
+                try:
+                    if same_unit(word, unit):
+                        return unit
+                except Exception:  # noqa: BLE001 - not a unit
+                    break
     return None
+
+
+#: The units in a fixed order, so the answer never depends on set order.
+_TIME_UNIT_ORDER = tuple(sorted(_TIME_UNITS))
 
 
 _GENERIC_ID_RE = re.compile(r"^(id|ids|unit|units|item|items|serial|sn|tag|no|number|name|asset_id|unit_id|item_id)$", re.IGNORECASE)
@@ -1266,6 +1433,7 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
 
 
 _TAG_CACHE: dict[str, dict] = {}
+_READING_KEYS = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "c_invert", "c_map", "all_failed", "unit")
 
 
 def with_reading_covariates(detected: dict, z: list[str]) -> dict:
@@ -1298,12 +1466,17 @@ def dataset_tags(dataset: Dataset) -> dict:
     in), cached by its content (datasets are content-addressed, so the
     checksums name the tables)."""
     part = dataset.measurements
-    z = None if not isinstance(dataset.reading, dict) else sorted(str(c) for c in dataset.reading.get("z") or [])
+    reading = dataset.reading if isinstance(dataset.reading, dict) else None
+    z = None if reading is None else sorted(str(c) for c in reading.get("z") or [])
+    # The reading decides how the rows are counted (which column says failed,
+    # and which way round), so a changed reading is a new entry.
+    read_key = "" if reading is None else json.dumps(
+        {k: reading.get(k) for k in (*_READING_KEYS, "z")}, sort_keys=True, default=str)
     key = ((dataset.checksum or dataset.id) + (f"|{part.checksum}" if part is not None else "")
-           + ("" if z is None else "|z:" + "\x1f".join(z)))
+           + ("" if z is None else "|z:" + "\x1f".join(z)) + ("" if not read_key else "|r:" + read_key))
     if key not in _TAG_CACHE:
         try:
-            out = detect_tags(load_dataframe(dataset))
+            out = detect_tags(load_dataframe(dataset), reading)
             if z is not None:
                 out = with_reading_covariates(out, z)
             if part is not None:

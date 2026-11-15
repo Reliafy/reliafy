@@ -5,8 +5,10 @@ A block that references a saved, maximum-likelihood fitted model carries that
 fit's parameter uncertainty: each of ``n_draws`` draws gives it plausible
 parameters from the fit's own covariance (surpyval's ``covariance()``), drawn by
 RePyability's ``"fit"`` sampler on scales that keep every draw valid (log for
-a positive parameter, logit for one in (0, 1); an offset, zero-inflation or
-LFP parameter keeps its fitted value). The system reliability is computed
+a positive parameter, logit for one in (0, 1)). An offset (3-parameter) fit's
+draws are the library's refits to resampled data, each with its own offset, and
+a limited-failure or zero-inflated fit's draws carry their own shares: every
+draw is used as the library made it, never paired with the fitted offset. The system reliability is computed
 exactly for every draw and the band is the equal-tailed percentile interval
 over the draws, per time. The MTTF and B-lives get their intervals from the
 same draws.
@@ -28,6 +30,12 @@ A saved model from a library rate record (NRC/INL) has no fit to draw from:
 its source gives the failure rate as a gamma (or lognormal) across plants, and
 each draw takes its rate from that (``rate_draws``); the block says so.
 
+A block on a saved Bayesian update is its posterior predictive (see
+``rbd_analysis.bayesian_life``); its draws are the posterior itself
+(RePyability 0.17), each the plain distribution at a posterior point, so the
+band over them is a *credible* band, and ``kind`` says "confidence",
+"credible" or "mixed" as RePyability's ``band`` does.
+
 Saved models persist their fitted surpyval model (with its covariance), so no
 refit is needed; older saved models without it are refitted once from their
 dataset by the existing refit-on-demand path and cached. Blocks with
@@ -48,7 +56,7 @@ from backend.levels import LIFE_BOUND
 from backend.services import rbd_analysis as ra
 from repyability import UncertaintyResult
 from repyability.rbd.helper_classes import PerfectReliability
-from repyability.rbd.uncertainty import draw_models
+from repyability.rbd.uncertainty import CONFIDENCE, CREDIBLE, GIVEN, band as band_kind, draw_models
 from repyability.utils.wrappers import conditional_survival
 
 DEFAULT_LEVEL = 0.90  # two-sided, the app's rule (backend.levels); a request may ask for another
@@ -82,11 +90,33 @@ SOURCE_SPREAD = ("failure rate drawn from the source's spread across plants (a l
 class _SavedDraws:
     """The draws of one saved fitted model, shared by every block using it."""
 
-    def __init__(self, model_id: str, live, params: list, from_source: bool = False):
+    def __init__(self, model_id: str, live, params: list, from_source: bool = False,
+                 extras: Optional[list] = None, kind: str = CONFIDENCE):
         self.model_id = model_id
         self.live = live
         self.params = params  # n_draws parameter vectors (dist param order)
         self.from_source = from_source  # drawn from a library record's spread, not a fit
+        # What drawing it makes of the band (RePyability's words): "confidence" from a fit's
+        # covariance, "credible" from a Bayesian update's posterior, "given" from a source's spread.
+        self.kind = GIVEN if from_source else kind
+        # Per draw, the offset / LFP / zero-inflation shares the draw itself carries
+        # (Reliafy's names: gamma, p, f0); None where the model has none.
+        self.extras = extras
+
+
+def _draw_extras(live, drawn) -> Optional[dict]:
+    """The extra fitted quantities of one draw, in Reliafy's stored names: an
+    offset fit's draw is a refit with its own ``gamma`` (RePyability 0.17), and
+    an LFP or zero-inflated fit's draw its own ``p`` / ``f0``. None when the
+    fitted model has none of them."""
+    out = {}
+    if getattr(live, "offset", False) or getattr(drawn, "offset", False):
+        out["gamma"] = float(getattr(drawn, "gamma"))
+    if getattr(live, "lfp", False) or getattr(drawn, "lfp", False):
+        out["p"] = float(getattr(drawn, "lfp_p"))
+    if getattr(live, "zi", False) or getattr(drawn, "zi", False):
+        out["f0"] = float(getattr(drawn, "f0"))
+    return out or None
 
 
 def rate_draws(rate: dict, n: int, rng) -> Optional[np.ndarray]:
@@ -133,6 +163,23 @@ class _Collector:
         except Exception:  # noqa: BLE001 - a refit that fails leaves it fixed
             entry = None
         live = (entry or {}).get("model")
+        from backend.services import bayes_life
+
+        fit = bayes_life.bayesian_fit(live)
+        if fit is not None:
+            # A Bayesian update: its draws are its posterior itself (RePyability 0.17), each the plain
+            # distribution at a posterior point, so the band is a credible band.
+            from repyability import PosteriorPredictive
+
+            rng = np.random.default_rng([self.seed, zlib.crc32(model_id.encode())])
+            try:
+                models = draw_models(PosteriorPredictive(fit), "fit", self.n_draws, rng, label)
+            except ValueError as exc:
+                return str(exc).split(": ", 1)[-1]
+            params = [list(np.atleast_1d(np.asarray(m.params, dtype=float))) for m in models]
+            extras = [_draw_extras(m, m) for m in models]
+            return _SavedDraws(model_id, live, params, kind=CREDIBLE,
+                               extras=extras if any(e is not None for e in extras) else None)
         if live is None or not hasattr(getattr(live, "dist", None), "from_params"):
             return _UNREADABLE
         rate = (entry or {}).get("rate_uncertainty")
@@ -155,7 +202,9 @@ class _Collector:
         except ValueError as exc:
             return str(exc).split(": ", 1)[-1]
         params = [list(np.atleast_1d(np.asarray(m.params, dtype=float))) for m in models]
-        return _SavedDraws(model_id, live, params)
+        extras = [_draw_extras(live, m) for m in models]
+        return _SavedDraws(model_id, live, params,
+                           extras=extras if any(e is not None for e in extras) else None)
 
 
 def _saved_id(model: Optional[dict]) -> Optional[str]:
@@ -183,26 +232,36 @@ def _matches(model: dict, live) -> bool:
     return len(values) == len(fitted) and np.allclose(values, fitted, rtol=1e-6, atol=0.0)
 
 
-def _drawn_model(model: dict, params: list) -> dict:
-    """The block's non-repairable model with draw ``params`` in place of its own."""
+def _drawn_model(model: dict, params: list, extras: Optional[dict] = None) -> dict:
+    """The block's non-repairable model with draw ``params`` in place of its
+    own, and the draw's own offset / shares (``extras``) where it has them."""
     dist = DISTRIBUTIONS[model["distribution_id"]]["dist"]
     names = list(getattr(dist, "parameter_names", []) or [])
     return {
         "source": "params",
         "distribution_id": model["distribution_id"],
         "params": [{"name": n, "value": float(v)} for n, v in zip(names, params)],
-        "extras": model.get("extras"),
+        "extras": {**(model.get("extras") or {}), **extras} if extras else model.get("extras"),
     }
 
 
-def _model_slots(node: dict) -> list[str]:
-    """The ``data`` keys holding a non-repairable model the node is built from."""
+def _model_slots(node: dict) -> list[tuple]:
+    """Where in ``data`` the node's non-repairable models sit (paths: a key,
+    or a standby unit's list and index, :func:`rbd_standby.model_paths`)."""
     ntype = node.get("type")
     if ntype in ("component", "series", "parallel"):
-        return ["model"]
+        return [("model",)]
     if ntype == "standby":
-        return ["model", "standbyModel"]
+        from backend.services import rbd_standby
+
+        return rbd_standby.model_paths(node.get("data") or {}) or [("model",)]
     return []
+
+
+def _slot(data: dict, path: tuple):
+    from backend.services import rbd_standby
+
+    return rbd_standby.get_path(data, path)
 
 
 def _is_slow_standby(node: dict) -> bool:
@@ -307,10 +366,10 @@ def _draw_graph(
         slots = _model_slots(node)
         if not slots or base is PerfectReliability:
             continue  # voting gates / placeholders: nothing to draw
-        swaps: dict[str, _SavedDraws] = {}
+        swaps: dict[tuple, _SavedDraws] = {}
         reasons: list[str] = []
         for slot in slots:
-            model = data.get(slot)
+            model = _slot(data, slot)
             if not model:
                 continue
             kind = model.get("kind")
@@ -327,7 +386,7 @@ def _draw_graph(
                 got = collector.draws(model_id, label)
                 if not isinstance(got, _SavedDraws):
                     reasons.append(got)
-                elif not _matches(model, got.live):
+                elif got.kind != CREDIBLE and not _matches(model, got.live):
                     reasons.append(_STALE)
                 else:
                     swaps[slot] = got
@@ -339,15 +398,19 @@ def _draw_graph(
         for i in range(n):
             new_data = dict(data)
             for slot, saved in swaps.items():
-                new_data[slot] = _drawn_model(data[slot], saved.params[i])
+                from backend.services import rbd_standby
+
+                rbd_standby.set_path(new_data, slot, _drawn_model(
+                    _slot(data, slot), saved.params[i], saved.extras[i] if saved.extras else None))
             node_i = {**node, "data": new_data}
             rel, _ = ra._node_reliability(node_i, None, set(), resolve_model, covariates)
             models.append(rel)
         drawn[nid] = models
         entry = {"id": nid, "label": label,
-                 "models": sorted({(data[slot].get("name") or "saved model")
+                 "models": sorted({(_slot(data, slot).get("name") or "saved model")
                                    for slot in swaps}),
-                 "model_ids": sorted({s.model_id for s in swaps.values()})}
+                 "model_ids": sorted({s.model_id for s in swaps.values()}),
+                 "kind": band_kind(s.kind for s in swaps.values())}
         if any(s.from_source for s in swaps.values()):
             entry["from_source"] = SOURCE_SPREAD
         if reasons:  # e.g. a standby spare with hand-entered parameters
@@ -370,7 +433,7 @@ def _count_slow_standby(graph: dict, resolve_subsystem, visited=frozenset()) -> 
                 if sub:
                     count += _count_slow_standby(sub, resolve_subsystem, visited | {ref})
         elif _is_slow_standby(node) and any(
-            _saved_id(data.get(s)) for s in ("model", "standbyModel")
+            _saved_id(_slot(data, s)) for s in _model_slots(node)
         ):
             count += 1
     return count
@@ -500,6 +563,8 @@ def system_band(
     )
     out: dict = {
         "level": level,
+        # "confidence", "credible" (Bayesian updates' posteriors) or "mixed", as RePyability says.
+        "kind": band_kind(b["kind"] for b in collector.uncertain) if collector.uncertain else CONFIDENCE,
         "n_draws": n,
         "seed": seed,
         "uncertain": collector.uncertain,

@@ -1246,7 +1246,7 @@ def fit_class_model(body: dict = Body(...), session=Depends(get_session),
 
     try:
         return _run(loop.fit_class_model, m, session, str(body.get("position_class") or ""),
-                    body.get("distribution") or "weibull")
+                    body.get("distribution") or "weibull", body.get("unit") or None)
     except fitting.FitError as err:
         return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {client_message(err)}"})
 
@@ -1529,7 +1529,7 @@ def unlink_position_model(link_id: str, m: Maintenance = Depends(maintenance_wri
 
 
 @router.get("/classes/economics")
-def class_economics(position_class: str, interval: float | None = None, unit: str = "months",
+def class_economics(position_class: str, interval: float | None = None, unit: str | None = None,
                     horizon_years: float = 10, discount_rate: float = 0.07,
                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
     from backend.maintenance import loop
@@ -1645,8 +1645,9 @@ def position_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
 
 
 @router.get("/classes/life-data")
-def class_life_data(position_class: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(m.class_life_data, position_class)
+def class_life_data(position_class: str, unit: str | None = None,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.class_life_data, position_class, unit or None)
 
 
 @router.post("/positions/{position_id}/points")
@@ -2703,6 +2704,20 @@ def get_operating_plan(kind: str, target_id: str, root: str | None = None,
     if kind not in ("positions", "items"):
         raise HTTPException(status_code=404, detail="Not found.")
     return _run(m.operating_plan, target_id, root or None)
+
+
+@router.get("/positions/{position_id}/forecast")
+def position_forecast(position_id: str, root: str | None = None, period: str = "month", periods: int = 12,
+                      session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The forecast for a position and everything inside it (inside root, the asset opened): tasks
+    on dates, work per period, expected failures and cost per period with a 90% range, each saying
+    what it rests on. Also over MCP and the CLI: maintenance get.forecast."""
+    from backend.maintenance import position_forecast as pf
+    from backend.maintenance import position_models as pm
+
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    return _run(pf.position_forecast, m, position_id, root or None, period, periods, fetch)
 
 
 @router.put("/positions/{position_id}/operating-plan")

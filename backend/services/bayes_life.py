@@ -399,6 +399,17 @@ class _StableLomax:
         return self._at(x, lambda t: self._a / (self._b + t) * np.exp(-self._a * np.log1p(t / self._b)))
 
 
+def bayesian_fit(live):
+    """The SurPyval Bayesian fit behind a live model (unwrapping the app's Lomax wrapper), or None
+    for any other model. RePyability (0.17) takes the fit as a life: its posterior predictive, the
+    curve the model page shows, with the closed-form Lomax for a gamma posterior, kept finite at
+    large scales."""
+    from surpyval.bayes import BayesianParametric
+
+    fit = live._model if isinstance(live, _StableLomax) else live
+    return fit if isinstance(fit, BayesianParametric) else None
+
+
 def rebuild(spec: dict):
     """A saved update's model, refitted from its recipe (the data and the prior)."""
     from surpyval.bayes.prior import PriorSpec

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import {
-  BLOCK_STATES, MAX_PHASES, answerText, leaveOut, placeholderTitle, placeholderWarning, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
+  BLOCK_STATES, MAX_PHASES, covKey, ruleKey, isCovRow, isRuleRow, covStatus, ruleText, ruleState, phaseSettingsText, answerText, leaveOut, placeholderTitle, placeholderWarning, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
   isPhaseRow, latestOnly, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
   phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
   withBlockValue, withNewPhase, withoutPhase, withValue,
@@ -113,7 +113,17 @@ test("each block's state in a phase: working by default, standby or not needed, 
   assert.equal(blockState(phase, "c"), "standby");
   phase = { ...phase, ...withBlockState(phase, "c", "working") };
   assert.deepEqual([phase.standby, phase.not_needed], [[], []]);
-  assert.deepEqual(BLOCK_STATES.map((x) => x.label), ["Working", "Standby", "Not needed"]);
+  assert.deepEqual(BLOCK_STATES.map((x) => x.label), ["Working", "Standby", "Guaranteed working", "Not needed"]);
+  // Guaranteed working, and a warm standby's dormancy (kept with standby only).
+  phase = { ...phase, ...withBlockState(phase, "c", "guaranteed") };
+  assert.equal(blockState(phase, "c"), "guaranteed");
+  phase = { ...phase, ...withBlockState(phase, "c", "standby", 0.2) };
+  assert.deepEqual([phase.standby, phase.guaranteed, phase.dormancy], [["c"], [], { c: 0.2 }]);
+  phase = { ...phase, ...withBlockState(phase, "c", "off") };
+  assert.deepEqual([phase.not_needed, phase.dormancy], [["c"], {}]);
+  const kept = cleanPhases([editablePhase({ name: "B", duration: 1, guaranteed: ["b"], standby: ["c"], dormancy: { c: 0.5, b: 0.3 } })],
+    { blocks: [{ id: "b" }, { id: "c" }] }).phases[0];
+  assert.deepEqual(kept, { name: "B", duration: 1, standby: ["c"], guaranteed: ["b"], dormancy: { c: 0.5 } });
   assert.deepEqual([...fadedIn({ not_needed: ["a"], standby: ["b"] })], ["a", "b"]);
   // Saved: blocks no longer in the RBD dropped; a block in both lists is not needed.
   const { phases } = cleanPhases([editablePhase({ name: "A", duration: 1, standby: ["b", "gone", "c"], not_needed: ["c"] })],
@@ -242,17 +252,17 @@ test("menus: a mission's starts with Add a phase; a phase's opens, moves and del
   assert.deepEqual(ids(missionKey("r1", "m1")), ["mission-phase-add", "—", "mission-open", "mission-rbd", "mission-delete"]);
   const full = { ...d.rows.get(missionKey("r1", "m1")), ref: { ...d.rows.get(missionKey("r1", "m1")).ref, mission: { phases: MAX_PHASES } } };
   assert.equal(missionRowActions(full)[0].disabled, true);
-  assert.deepEqual(ids(phaseKey("r1", "m1", 1)), ["mission-phase-open", "mission-phase-earlier", "mission-phase-later", "mission-phase-delete"]);
-  const first = missionRowActions(d.rows.get(phaseKey("r1", "m1", 0)));
-  const last = missionRowActions(d.rows.get(phaseKey("r1", "m1", 2)));
-  assert.deepEqual(first.map((a) => a.label), ["Open…", "Move earlier", "Move later", "Delete…"]);
+  assert.deepEqual(ids(phaseKey("r1", "m1", 1)), ["mission-rule-add", "—", "mission-phase-open", "mission-phase-earlier", "mission-phase-later", "mission-phase-delete"]);
+  const first = missionRowActions(d.rows.get(phaseKey("r1", "m1", 0))).slice(2);
+  const last = missionRowActions(d.rows.get(phaseKey("r1", "m1", 2))).slice(2);
+  assert.deepEqual(first.map((a) => a.label), ["Open in the mission editor…", "Move earlier", "Move later", "Delete…"]);
   assert.equal(first[1].disabled, true);
   assert.equal(first[2].disabled, undefined);
   assert.equal(last[2].disabled, true);
   assert.equal(last.at(-1).danger, true);
   // View only: the changes greyed with the reason; Open… stays.
-  const vo = missionRowActions(d.rows.get(phaseKey("r1", "m1", 1)), { viewOnly: "View only." });
-  assert.deepEqual(vo.map((a) => !!a.disabled), [false, true, true, true]);
+  const vo = missionRowActions(d.rows.get(phaseKey("r1", "m1", 1)), { viewOnly: "View only." }).filter((a) => !a.separator);
+  assert.deepEqual(vo.map((a) => !!a.disabled), [true, false, true, true, true]);
   assert.equal(missionRowActions(d.rows.get(missionKey("r1", "m1")), { viewOnly: "View only." })[0].reason, "View only.");
   // A position's menu starts with Add a mission.
   assert.equal(positionMissionActions(d.rows.get("drone"))[0].label, "Add a mission");
@@ -302,4 +312,79 @@ test("a leaf whose model can't be a block says so; a chance past 99.99% isn't a 
   assert.equal(p(1), "100%");
   assert.equal(p(0.9), "90.0%");
   assert.equal(line({}, { blocks: [] }), "Every block in use, wired as in the RBD");
+});
+
+// ---- under each phase: covariates (automatic) and node status rules (by hand) --------------------
+
+const TREE_LINK = (covariates, settings) => [{
+  position_id: "drone", link_id: "l1", rbd: { id: "r1", name: "Drone RBD", unit: "Hours" },
+  missions: [{
+    id: "m1", name: "Survey", phases: 2, phase_names: ["Take-off", "Cruise"], phase_durations: [0.1, 2], duration: 2.1, unit: "Hours",
+    blocks: [{ id: "a", label: "Motor" }, { id: "b", label: "Camera" }],
+    covariates, phase_settings: settings,
+    result: { reliability: 0.95, phases: [{ name: "Take-off", conditional_failure: 0.01, reliability_at_end: 0.99 }, { name: "Cruise", waiting: true }] },
+  }],
+}];
+
+test("a covariate row hangs under every phase for each covariate the RBD's models leave open", () => {
+  const none = graftMissions(buildDisplay(DATA, "positions"), TREE_LINK([], [{ covariates: [], rules: [] }, { covariates: [], rules: [] }]));
+  assert.deepEqual(none.rows.get(phaseKey("r1", "m1", 0)).kids, []);
+  // A PH block added to the RBD: its covariate under both phases, nothing typed by hand.
+  const cov = { name: "Air temperature", role: "environment", unit: "°C", kind: "number", feeds: ["Motor"] };
+  const d = graftMissions(buildDisplay(DATA, "positions"), TREE_LINK([cov], [
+    { covariates: [{ name: "Air temperature", value: 35, used: 35, source: "phase", missing: [] }], rules: [] },
+    { covariates: [{ name: "Air temperature", value: null, used: null, source: null, missing: ["Motor"] }], rules: [] },
+  ]));
+  for (const i of [0, 1]) assert.deepEqual(d.rows.get(phaseKey("r1", "m1", i)).kids, [covKey("r1", "m1", i, "Air temperature")]);
+  const set = d.rows.get(covKey("r1", "m1", 0, "Air temperature"));
+  assert.equal(set.type, "mcov");
+  assert.ok(isMissionRow(set) && isCovRow(set));
+  assert.deepEqual(covStatus(set.ref.cov), { text: "35 °C", flag: null, title: "Set for this phase" });
+  const unset = d.rows.get(covKey("r1", "m1", 1, "Air temperature"));
+  assert.equal(covStatus(unset.ref.cov).flag, "needs");
+  assert.equal(covStatus({ value: null, used: 20, unit: "%", source: "default", missing: [] }).text, "Not set · uses 20%");
+  // Its menu sets or clears the value; nothing deletes it (it comes from the RBD).
+  assert.deepEqual(missionRowActions(set).map((a) => a.id), ["mission-cov-set", "mission-cov-clear"]);
+  assert.equal(missionRowActions(unset)[1].disabled, true);
+  // The phase knows its own result, and what's set.
+  const p0 = d.rows.get(phaseKey("r1", "m1", 0)).ref;
+  assert.equal(p0.result.completes, 0.99);
+  assert.equal(d.rows.get(phaseKey("r1", "m1", 1)).ref.result.waiting, true);
+  assert.equal(phaseSettingsText(p0.settings), "1 of 1 covariate set · Every block working");
+});
+
+test("node status rules: a row each, after the covariates; edit and delete from the menu", () => {
+  const d = graftMissions(buildDisplay(DATA, "positions"), TREE_LINK([], [
+    { covariates: [], rules: [{ block: "b", label: "Camera", state: "standby", dormancy: 0.2 }, { block: "a", label: "Motor", state: "guaranteed" }] },
+    { covariates: [], rules: [{ block: "b", label: "Camera", state: "not_needed" }] },
+  ]));
+  assert.deepEqual(d.rows.get(phaseKey("r1", "m1", 0)).kids, [ruleKey("r1", "m1", 0, "b"), ruleKey("r1", "m1", 0, "a")]);
+  const r = d.rows.get(ruleKey("r1", "m1", 0, "b"));
+  assert.ok(isRuleRow(r));
+  assert.equal(ruleText(r.ref.rule), "Standby (warm, ages at 20%)");
+  assert.equal(ruleText(d.rows.get(ruleKey("r1", "m1", 0, "a")).ref.rule), "Guaranteed working");
+  assert.equal(ruleText(d.rows.get(ruleKey("r1", "m1", 1, "b")).ref.rule), "Not needed");
+  assert.deepEqual(missionRowActions(r).map((a) => a.id), ["mission-rule-edit", "mission-rule-delete"]);
+  assert.equal(phaseSettingsText(d.rows.get(phaseKey("r1", "m1", 0)).ref.settings), "2 node status rules");
+  // A phase's menu adds one (greyed when the RBD has no blocks).
+  assert.equal(missionRowActions(d.rows.get(phaseKey("r1", "m1", 0)))[0].id, "mission-rule-add");
+  // Saving a rule goes through the same phase lists the builder edits.
+  const phase = { name: "Take-off", duration: 0.1 };
+  const changed = { ...phase, ...withBlockState(phase, "b", ruleState("not_needed")) };
+  assert.deepEqual(changed.not_needed, ["b"]);
+});
+
+// ---- a covariate that follows a schedule within a phase (#372) ----
+test("a phase's schedule is kept, typed as it is and said in words", async () => {
+  const { isSchedule, typed, covValueText, cleanPhases, withValue, covStatus } = await import("./explorerMissions.js");
+  const sched = { expression: "100 if t % 24 < 16 else 40" };
+  assert.equal(isSchedule(sched), true);
+  assert.equal(isSchedule(80), false);
+  assert.equal(typed(sched), sched);
+  assert.equal(covValueText(sched, "%"), "follows 100 if t % 24 < 16 else 40");
+  assert.equal(covValueText({ table: [{ t: 0, value: "a" }, { t: 5, value: "b" }], period: 10 }), "follows a table of 2 steps, repeating every 10");
+  const { phases, errors } = cleanPhases([withValue({ name: "Run", duration: 48 }, "flow", sched)]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(phases[0].values, { flow: sched });
+  assert.equal(covStatus({ value: sched, unit: "%" }).text, "follows 100 if t % 24 < 16 else 40");
 });

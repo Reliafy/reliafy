@@ -185,9 +185,7 @@ FREE_MAX_FAULT_TREES = _int("FREE_MAX_FAULT_TREES", 1)
 # enough to do one useful study each on Free.
 FREE_MAX_RELIABILITY_PREDICTIONS = _int("FREE_MAX_RELIABILITY_PREDICTIONS", 1)
 FREE_MAX_MAINTAINABILITY_PREDICTIONS = _int("FREE_MAX_MAINTAINABILITY_PREDICTIONS", 1)
-# A user's own data libraries (backend/library/user.py): each library is one
-# saved item, whatever it holds; the records inside it don't count.
-FREE_MAX_LIBRARIES = _int("FREE_MAX_LIBRARIES", 1)
+# Libraries aren't capped: making one is part of Pro (billing.libraries_allowed).
 
 # Retired Agent plan (US$2/month, MCP only; sold briefly in October 2026, no
 # longer offered — MCP is part of Pro). Existing subscribers keep these caps,
@@ -203,7 +201,6 @@ AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
 AGENT_MAX_FAULT_TREES = _int("AGENT_MAX_FAULT_TREES", 25)
 AGENT_MAX_RELIABILITY_PREDICTIONS = _int("AGENT_MAX_RELIABILITY_PREDICTIONS", 25)
 AGENT_MAX_MAINTAINABILITY_PREDICTIONS = _int("AGENT_MAX_MAINTAINABILITY_PREDICTIONS", 25)
-AGENT_MAX_LIBRARIES = _int("AGENT_MAX_LIBRARIES", 10)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
 # Pro (billing.premium_compute_allowed) on every surface.
 

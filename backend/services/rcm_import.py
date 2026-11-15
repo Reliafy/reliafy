@@ -36,6 +36,7 @@ into the ``functions → failures → modes`` tree that
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Any, Optional
 
 from backend.maintenance import fmea
@@ -96,25 +97,28 @@ FIELDS = [
      "synonyms": ["next higher effect", "next level effect", "next effect", "next higher level effect"]},
     {"id": "detection_method", "label": "Detection method",
      "help": "FMEA: how the failure is detected, or the current controls.",
-     "synonyms": ["detection method", "current controls", "controls", "prevention controls", "detection controls", "detection methods"]},
+     "synonyms": ["detection method", "current controls", "controls", "prevention controls", "detection controls", "detection methods",
+                  "current design controls detection", "current process controls detection", "current controls detection"]},
     {"id": "severity", "label": "Severity",
      "help": "FMEA score, a whole number 1 (no effect) to 10 (hazardous, no warning).",
      "synonyms": ["severity", "sev", "s"]},
     {"id": "occurrence", "label": "Occurrence",
      "help": "FMEA score, a whole number 1 (almost never) to 10 (almost certain).",
-     "synonyms": ["occurrence", "occ", "o", "probability", "likelihood"]},
+     "synonyms": ["occurrence", "occ", "occur", "o", "probability", "likelihood"]},
     {"id": "detection", "label": "Detection",
      "help": "FMEA score, a whole number 1 (almost certain to detect) to 10 (cannot detect).",
-     "synonyms": ["detection", "detectability", "det", "d"]},
+     "synonyms": ["detection", "detectability", "det", "detec", "d"]},
     {"id": "rpn", "label": "RPN (checked, not stored)",
      "help": "The sheet's risk priority number is compared with severity × occurrence × detection; a mismatch is a warning. Reliafy works it out itself.",
-     "synonyms": ["rpn", "risk priority number"]},
+     "synonyms": ["rpn", "r.p.n.", "risk priority number"]},
     {"id": "action", "label": "Recommended action",
      "help": "FMEA: what to do about it (the RCM task is the Task column).",
      "synonyms": ["recommended action", "recommended actions"]},
     {"id": "action_owner", "label": "Action owner",
      "help": "Who owns the recommended action.",
-     "synonyms": ["action owner", "owner", "responsibility", "responsible", "responsible person"]},
+     "synonyms": ["action owner", "owner", "responsibility", "responsible", "responsible person",
+                  # AIAG's one column for both: the name and the date stay together as the owner
+                  "responsibility target completion date", "responsibility and target completion date"]},
     {"id": "action_due", "label": "Action due",
      "help": "When the action is due (a date).",
      "synonyms": ["action due", "target date", "due date", "target completion date", "due"]},
@@ -148,6 +152,10 @@ FIELDS = [
     {"id": "outcome", "label": "Decision / task type",
      "help": "On-condition, fixed-interval, run-to-failure… — values are mapped below.",
      "synonyms": ["task type", "decision", "maintenance strategy", "strategy", "task category", "maintenance type", "policy", "maintenance policy", "action type", "task class", "decision outcome"]},
+    {"id": "rtf_basis", "label": "Run-to-failure basis",
+     "help": "Optional: why a run-to-failure row runs to failure: random (failures come at random) or uneconomic "
+             "(prevention costs more than the failure). The export writes it.",
+     "synonyms": ["run-to-failure basis", "run to failure basis", "rtf basis"]},
     {"id": "task", "label": "Task",
      "help": "The proposed RCM task (the FMEA's recommended action is its own column).",
      "synonyms": ["task", "proposed task", "maintenance task", "recommended task", "action", "actions", "task description", "pm task", "mitigation"]},
@@ -338,6 +346,31 @@ def _text(value: Any) -> str:
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     return " ".join(str(value).split()) if "\n" not in str(value) else str(value).strip()
+
+
+def _day_first(raw: Any) -> Any:
+    """A date written 30/06/2024 (or 30-06-2024, 30.06.24) as 2024-06-30; anything else as it is."""
+    m = re.fullmatch(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})", str(raw).strip()) if isinstance(raw, str) else None
+    if not m:
+        return raw
+    d, mo, y = (int(x) for x in m.groups())
+    y += 2000 if y < 100 else 0
+    try:
+        return date(y, mo, d).isoformat()
+    except ValueError:
+        return raw
+
+
+def guess_rtf_basis(raw: Any) -> Optional[str]:
+    """``random`` or ``uneconomic`` from a Run-to-failure basis cell."""
+    t = norm(raw)
+    if not t:
+        return None
+    if "random" in t:
+        return "random"
+    if "economic" in t or "cost" in t:
+        return "uneconomic"
+    return None
 
 
 def _choice(raw: Any, explicit: dict, guess) -> Optional[str]:
@@ -547,10 +580,13 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             raw = clip(cell(r, f)) if f in _SCORE_TEXT else r[col[f]]
             if raw is None or (isinstance(raw, str) and not raw.strip()):
                 continue
+            if f == "action_due":
+                raw = _day_first(raw)
             try:
                 mode[f] = fmea.clean_value(f, raw)
             except fmea.FmeaError as err:
-                errors.append(f"Row {rnum}: {err}")
+                # The column and what's in it, so the cell can be found and fixed.
+                errors.append(f"Row {rnum}, {mapping[f]} “{_text(raw)[:40]}”: {err}")
         if col["rpn"] is not None and _text(r[col["rpn"]]):
             computed = fmea.rpn(mode.get("severity"), mode.get("occurrence"), mode.get("detection"))
             try:
@@ -573,6 +609,10 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         interval, text_unit = parse_interval(raw_interval)
         unit = cell(r, "interval_unit") or text_unit or ""
         outcome = _choice(r[outcome_col], outcome_map, guess_outcome) if outcome_col is not None else None
+        if outcome is None and outcome_col is not None and _text(r[outcome_col]) not in outcome_map \
+                and needs_choice(r[outcome_col]) and guess_rtf_basis(cell(r, "rtf_basis")):
+            # Run to failure with its basis in its own column (as the export writes it).
+            outcome = "rtf:" + guess_rtf_basis(cell(r, "rtf_basis"))
         if outcome:
             decision: dict = {"outcome": outcome, "evidence": None}
             if outcome.startswith("rtf:"):
@@ -640,9 +680,10 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             f"{'were' if len(skipped) != 1 else 'was'} skipped (row{'s' if len(skipped) != 1 else ''} {listed}).")
     if stashed_tasks:
         warnings.append(
-            f"{stashed_tasks} failure mode{'s have' if stashed_tasks != 1 else ' has'} a task but no "
-            "decision type, so the task was kept in the mode's notes — map the decision type "
-            "values to turn them into decisions.")
+            f"{stashed_tasks} failure mode{'s have' if stashed_tasks != 1 else ' has'} no decision type "
+            "Reliafy can read (a task, interval or decision cell it couldn't map), so "
+            f"{'they were' if stashed_tasks != 1 else 'it was'} kept in the mode's notes — map the decision "
+            "type values to turn them into decisions.")
     if truncated:
         warnings.append(f"{truncated} very long cell{'s were' if truncated != 1 else ' was'} shortened to {MAX_TEXT:,} characters.")
     if rpn_mismatch:
@@ -687,6 +728,14 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         "consequence": _values(rows, col["consequence"], guess_consequence, CONSEQUENCE_CHOICES),
         "outcome": _values(rows, outcome_col, guess_outcome, OUTCOME_CHOICES),
     }
+    if outcome_col is not None and col["rtf_basis"] is not None:
+        # A run-to-failure value whose rows all give one basis: that's the guess.
+        for item in values["outcome"]:
+            if item["guess"] is None and item.get("hint"):
+                bases = {guess_rtf_basis(cell(r, "rtf_basis")) for r in rows if _text(r[outcome_col]) == item["value"]}
+                if len(bases) == 1 and None not in bases:
+                    item["guess"] = "rtf:" + bases.pop()
+                    item.pop("hint")
     for key in ("consequence", "outcome"):
         c = col["consequence"] if key == "consequence" else outcome_col
         if c is not None and len({_text(r[c]) for r in rows} - {""}) > MAX_LISTED_VALUES:

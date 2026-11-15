@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import ast
 import math
-import time
 from typing import Optional
 
 import simpleeval
@@ -56,9 +55,13 @@ BASE_POINTS = 2048
 MAX_POINTS = 50_000
 MAX_CHANGE_SHARE = 0.25
 _GOLDEN = (math.sqrt(5.0) - 1.0) / 2.0
-# Wall-clock guard for one materialisation (every evaluation is bounded, so
-# this only matters for the largest windows).
-TIME_LIMIT_S = 3.0
+# Work budgets, counted in evaluations of the expression (each one is
+# bounded) rather than seconds, so the same schedule gets the same answer on
+# a fast laptop, a loaded CI runner or a busy instance: one materialisation
+# (the sampled grid and the bisections; the P-101 daily-and-30-day duty
+# takes about 26,000 over its 720 h repeat), and the repeat search (#372).
+MAX_EVALUATIONS = 300_000
+MAX_PERIOD_EVALUATIONS = 150_000
 
 NAMES = ("t", "pi", "e")
 
@@ -285,6 +288,95 @@ def _period(tree: ast.Expression) -> Optional[float]:
     return periods.pop()
 
 
+#: The longest repeat looked for, the candidates tried and the checks (#372).
+MAX_FOUND_PERIOD = 1e6
+MAX_CANDIDATES = 24
+PERIOD_SAMPLES = 600
+#: Repeats found, by expression text (the check takes a moment).
+_FOUND: dict = {}
+#: Shifts (in periods) a candidate must repeat at, beyond those reaching ten
+#: times the expression's largest time constant.
+PERIOD_SHIFTS = (1, 2, 3, 5, 10, 100, 1000, 10_000, 100_000)
+
+
+def _lcm(a: float, b: float) -> Optional[float]:
+    """The least common multiple of two positive times when their ratio is a
+    simple fraction (720 for 24 and 720, 72 for 24 and 36), else None."""
+    from fractions import Fraction
+
+    ratio = Fraction(a / b).limit_denominator(1000)
+    if ratio == 0 or abs(float(ratio) - a / b) > 1e-9 * (a / b):
+        return None
+    return a * ratio.denominator
+
+
+def _scale_constants(tree: ast.Expression) -> list:
+    """Every positive constant beside a time (divisors, moduli, comparison
+    bounds, and the reciprocal of a multiplier): the scales the expression
+    can change on, for the repeat check's reach."""
+    out = list(_time_constants(tree))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+            for side in (node.left, node.right):
+                if isinstance(side, ast.Constant) and isinstance(side.value, (int, float)) and side.value:
+                    v = abs(float(side.value))
+                    if math.isfinite(v) and v < 1:
+                        out.append(1.0 / v)
+    return [v for v in out if math.isfinite(v) and v > 0]
+
+
+def _common_period(expr: "Expression", tree: ast.Expression) -> Optional[float]:
+    """A repeat ``P`` for an expression not written with one ``t % P``: the
+    common period of several ``t % P`` terms (720 for ``t % 24`` and
+    ``t % 720``) or of steps such as ``floor(t) / 24`` and ``floor(t / 24) /
+    30`` inside a repeating function. Candidates come from the expression's
+    time constants (each, the products and the common multiples of pairs);
+    the shortest that the value repeats on, checked at many shifts out to
+    ten times its largest time scale and beyond, is taken. None when there
+    is none (the path is then laid out step by step)."""
+    consts = sorted({round(c, 12) for c in _time_constants(tree)})
+    if not consts:
+        return None
+    cands = set(consts)
+    for i, a in enumerate(consts):
+        for b in consts[i + 1:]:
+            cands.add(a * b)
+            m = _lcm(a, b)
+            if m:
+                cands.add(m)
+    total = consts[0]
+    for c in consts[1:]:
+        total = _lcm(total, c) if total else None
+        if total is None:
+            break
+    if total:
+        cands.add(total)
+    reach = 10.0 * max(_scale_constants(tree))
+    limit = expr.evaluations + MAX_PERIOD_EVALUATIONS
+    for p in sorted(c for c in cands if 0 < c <= MAX_FOUND_PERIOD)[:MAX_CANDIDATES]:
+        shifts = sorted({*PERIOD_SHIFTS, max(1, int(math.ceil(reach / p)))})
+        step = p / PERIOD_SAMPLES
+        points = [step * (i + 0.5 * ((i * _GOLDEN) % 1.0)) for i in range(PERIOD_SAMPLES)]
+        try:
+            base = [expr(t) for t in points]
+            ok = True
+            for k in shifts:
+                for t, v in zip(points, base):
+                    w = expr(t + k * p)
+                    if not (v == w or abs(v - w) <= 1e-7 * max(1.0, abs(v))):
+                        ok = False
+                        break
+                if not ok or expr.evaluations > limit:
+                    break
+        except ExpressionError:
+            ok = False
+        if ok and expr.evaluations <= limit:
+            return float(p)
+        if expr.evaluations > limit:
+            return None
+    return None
+
+
 def _time_constants(tree: ast.Expression) -> list:
     """Positive constants that set the time scale of a step: divisors,
     moduli and comparison bounds."""
@@ -326,6 +418,8 @@ class Expression:
                 "floor(…) or ceil(…), e.g. 60 + 5 * floor(t / 500), or use a comparison, e.g. "
                 "60 if t < 1000 else 90.")
         self.text = text
+        #: Evaluations so far: the work budgets count these, not seconds.
+        self.evaluations = 0
         self.uses_t = any(isinstance(n, ast.Name) and n.id == "t" for n in ast.walk(tree))
         self.period = _period(tree) if self.uses_t else None
         self.time_constants = _time_constants(tree)
@@ -336,8 +430,15 @@ class Expression:
             operators=dict(_OPERATORS), functions=functions,
             names={"t": 0.0, "pi": math.pi, "e": math.e})
         self(0.0)  # a value at the start, or the reason there is none
+        if self.uses_t and self.period is None:
+            if text not in _FOUND:
+                if len(_FOUND) > 512:
+                    _FOUND.clear()
+                _FOUND[text] = _common_period(self, tree)
+            self.period = _FOUND[text]
 
     def __call__(self, t: float) -> float:
+        self.evaluations += 1
         self._evaluator.names["t"] = float(t)
         try:
             v = self._evaluator.eval(self.text, previously_parsed=self._tree)
@@ -383,17 +484,18 @@ def change_points(expr: Expression, t0: float, t1: float) -> tuple[list, list]:
     # stepped over.
     jitter = [t + step * (0.1 + 0.8 * ((i * _GOLDEN) % 1.0)) for i, t in enumerate(regular)]
     grid = sorted({*regular, *(t for t in jitter if t < t1), *(c for c in expr.time_constants if t0 < c < t1), t1})
-    deadline = time.monotonic() + TIME_LIMIT_S
-    values = []
-    for i, t in enumerate(grid):
-        if i % 2048 == 0 and time.monotonic() > deadline:
-            raise ExpressionError("That schedule takes too long to work out over this window.")
-        values.append(expr(t))
+    limit = expr.evaluations + MAX_EVALUATIONS
+    too_long = "That schedule takes too long to work out over this window."
+    if len(grid) > MAX_EVALUATIONS:
+        raise ExpressionError(too_long)
+    values = [expr(t) for t in grid]
     changes = [i for i in range(len(grid) - 1) if values[i] != values[i + 1]]
     if len(changes) > MAX_CHANGE_SHARE * len(grid):
         raise ExpressionError(
             f"The value changes too often to follow over 0 to {_fmt(t1)}: more than once every "
-            f"{_fmt(step * 2)}. Use a slower schedule, or a repeating one written with t % period.")
+            f"{_fmt(step * 2)}. Use a slower schedule. If it repeats, write every t as t % P with the one "
+            "repeat P (e.g. floor(t % 720) / 24 and floor((t % 720) / 24) / 30 for a daily and a 30-day "
+            "cycle), so it's followed one cycle at a time.")
     times, out = [float(t0)], [values[0]]
     for i in changes:
         lo, hi, a, b = grid[i], grid[i + 1], values[i], values[i + 1]
@@ -407,8 +509,8 @@ def change_points(expr: Expression, t0: float, t1: float) -> tuple[list, list]:
             lo, a = edge, after
         else:
             raise ExpressionError(f"The value changes too often near t = {_fmt(lo)} to follow.")
-        if time.monotonic() > deadline:
-            raise ExpressionError("That schedule takes too long to work out over this window.")
+        if expr.evaluations > limit:
+            raise ExpressionError(too_long)
     return times, out
 
 

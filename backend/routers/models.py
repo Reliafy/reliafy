@@ -275,6 +275,8 @@ def _upload_library(session, ctx: AccessCtx, library_id: str | None):
 
     if not (library_id or "").strip():
         return None
+    if not billing_service.libraries_allowed(session, ctx.user):
+        return JSONResponse(status_code=402, content=billing_service.LIBRARIES_PRO_PAYLOAD)
     try:
         return lib_entries.upload_target(session, library_id.strip(), ctx.write_owner)
     except lib_entries.LibraryNotFound:

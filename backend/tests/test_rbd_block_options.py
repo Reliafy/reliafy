@@ -249,17 +249,17 @@ def test_k_of_n_standby_is_repyabilitys_standby_model(dormancy):
     assert out["mttf"] == pytest.approx(direct.mean(), rel=1e-3)
 
 
-def test_cold_k_of_n_standby_with_imperfect_switching():
+def test_cold_k_of_n_standby_with_spares_that_may_not_start():
     g = _series(_standby(dormancy=0, cold=True, startProb=0.9))
     out = ra.analyze(g, at_times=[80.0])
     w = sp.Weibull.from_params([100, 2])
     assert out["at"]["sf"][0] == pytest.approx(
-        float(StandbyModel([w, w, w], k=2, switching_probability=0.9).sf(80.0)), rel=1e-6)
+        float(StandbyModel([w, w, w], k=2, start_probability=0.9).sf(80.0)), rel=1e-6)
 
 
 @pytest.mark.parametrize("data, needle", [
     ({"dormancy": 0.5}, "warm standby with 2 units running"),
-    ({"dormancy": 0, "cold": True, "k": 3, "spares": 1, "standbyModel": W(150, 2)}, "spare model of its own"),
+    ({"dormancy": 0, "cold": True, "k": 3, "spares": 1, "standbyModel": W(150, 2)}, "units that differ"),
 ])
 def test_k_of_n_standby_limits_are_said_plainly(data, needle):
     errors = ra.validate_graph(_series(_standby(**data)))["errors"]
@@ -269,9 +269,12 @@ def test_k_of_n_standby_limits_are_said_plainly(data, needle):
     assert not any(needle in e for e in ra.validate_graph(rep)["errors"])
 
 
-def test_switching_on_warm_spares_is_warned_of():
-    warnings_ = ra.validate_graph(_series(_standby(k=1, dormancy=0.5, startProb=0.9)))["warnings"]
-    assert any("start-success probability applies to cold standby only" in w for w in warnings_)
+def test_start_chance_on_warm_spares_is_used_not_warned_of():
+    g = _series(_standby(k=1, dormancy=0.5, startProb=0.9))
+    assert not any("start" in w.lower() for w in ra.validate_graph(g)["warnings"])
+    w = sp.Weibull.from_params([100, 2])
+    assert ra.analyze(g, at_times=[80.0])["at"]["sf"][0] == pytest.approx(
+        float(StandbyModel([w, w], dormancy_factor=0.5, start_probability=0.9).sf(80.0)), rel=1e-6)
 
 
 def test_repairable_k_of_n_standby_group(tmp_path):

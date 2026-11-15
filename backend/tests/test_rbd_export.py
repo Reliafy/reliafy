@@ -23,6 +23,7 @@ import pytest  # noqa: E402
 from backend.services import rbd_analysis as ra  # noqa: E402
 from backend.services import rbd_export  # noqa: E402
 from backend.services import samples  # noqa: E402
+from backend.tests.test_library_pins import REPYABILITY, SURPYVAL  # noqa: E402
 from backend.tests.test_public_links import A, B, client  # noqa: E402,F401 - fixture
 
 WHEN = datetime(2026, 9, 26, tzinfo=timezone.utc)
@@ -226,7 +227,7 @@ def test_series_parallel_standby_subsystem_graph_matches_app(tmp_path):
     code = rbd_export.to_python(graph, "Mixed", resolve_subsystem=resolve_sub,
                                 exported_at=WHEN)
     assert 'RepeatedNode(bearings_unit, 3, "series")' in code
-    assert "StandbyModel(" in code and "switching_probability=0.9" in code
+    assert "StandbyModel(" in code and "start_probability=0.9" in code
     assert "WORKING_NODES = {\"pin\"}" in code
     res, _ = _run(code, tmp_path)
 
@@ -408,9 +409,9 @@ def test_output_is_deterministic_and_self_describing():
     assert head.startswith(name)
     assert "Exported from Reliafy <https://reliafy.com>".lower() in head.lower().replace("\n", " ")
     assert "on 2026-09-26 (UTC)" in head
-    assert 'pip install "surpyval==0.26"' in head and "RePyability.git@v0.16" in head
+    assert f'pip install "surpyval=={SURPYVAL}"' in head and f"RePyability.git@v{REPYABILITY}" in head
     assert "SurPyval.git" not in head
-    assert "--no-deps" in head and "surpyval==0.26" in head
+    assert "--no-deps" in head and f"surpyval=={SURPYVAL}" in head
     assert "python instrument_air_2oo3_compressors_cold_standby_dryer_ccf.py" in head
     # One commented variable per block, with its label.
     assert "# Compressor A: Weibull(alpha=12000 Hours, beta=1.6)" in a
@@ -430,8 +431,40 @@ def test_imports_only_what_is_used():
 
 
 def test_versions_come_from_the_build_pins():
-    assert rbd_export.detect_versions() == {"surpyval": "0.26", "repyability": "0.16"}
+    assert rbd_export.detect_versions() == {"surpyval": SURPYVAL, "repyability": REPYABILITY}
 
+
+def test_a_commit_pin_is_not_read_as_a_version(tmp_path, monkeypatch):
+    """The Dockerfile pins RePyability by commit; a hash starting with a digit
+    must fall back to the installed version, not become "1f7701c9..."."""
+    (tmp_path / "Dockerfile").write_text('pip install "git+https://github.com/x/RePyability.git@1f7701c956eb"\n')
+    (tmp_path / "requirements.txt").write_text("surpyval==9.8\n")
+    monkeypatch.setattr(rbd_export, "_REPO_ROOT", tmp_path)
+    rbd_export.detect_versions.cache_clear()
+    try:
+        found = rbd_export.detect_versions()
+    finally:
+        rbd_export.detect_versions.cache_clear()
+    assert found["surpyval"] == "9.8"
+    assert found["repyability"] == rbd_export._installed("repyability")
+
+
+
+def test_a_commit_pin_reads_the_tag_its_comment_names(tmp_path, monkeypatch):
+    """A commit pin with "RePyability vX.Y" beside it prints @vX.Y (the tag
+    users can install), whatever happens to be installed locally."""
+    (tmp_path / "Dockerfile").write_text(
+        "# - RePyability v9.7 is pinned by its tag's commit\n"
+        'pip install "git+https://github.com/x/RePyability.git@1f7701c956eb"\n')
+    (tmp_path / "requirements.txt").write_text("surpyval==9.8\n")
+    monkeypatch.setattr(rbd_export, "_REPO_ROOT", tmp_path)
+    rbd_export.detect_versions.cache_clear()
+    try:
+        found = rbd_export.detect_versions()
+    finally:
+        rbd_export.detect_versions.cache_clear()
+    assert found == {"surpyval": "9.8", "repyability": "9.7"}
+    assert rbd_export.install_commands(found)[-1].endswith('RePyability.git@v9.7"')
 
 def test_names_are_safe_identifiers_and_unique():
     graph = {

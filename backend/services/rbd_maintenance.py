@@ -100,7 +100,7 @@ RANGED_COSTS = ("repair", "replace")
 POLICIES = ("age", "block", "condition")
 #: Block fields beyond the models that make a block a component spec.
 EXTRA_KEYS = ("instant_repair", "costs", "preventive", "inspection", "maintenance_group", "crew_priority",
-              "repair_quality", "duty")
+              "repair_quality", "duty", "replacement")
 #: The default simulation window covers at least this many of the longest
 #: maintenance or test interval in the diagram.
 HORIZON_INTERVALS = 10
@@ -400,11 +400,21 @@ def repairable_component(data: dict, label: str, reliability, resolve_model=None
     costs, instant repair or maintenance — then a component spec dict."""
     from backend.services.rbd_analysis import NonRepairable, _repair_distribution
 
+    from backend.services import rbd_repairable_blocks
+
     repair = "instant" if data.get("instant_repair") else _repair_distribution(data, label, resolve_model)
-    if not has_extras(data):
+    process = rbd_repairable_blocks.block_has(data)
+    if not has_extras(data) and not process:
         return NonRepairable(reliability, repair)
     spec: dict[str, Any] = {"reliability": reliability, "repairability": repair}
     spec.update(block_costs(data, label))
+    if process:
+        # Its replacement rule (#367): after N repairs is RePyability's replace_after; at an age is the
+        # block's age replacement, checked and built as any other.
+        rule_keys, rule_pm = rbd_repairable_blocks.spec_entries(data, label, resolve_model)
+        spec.update(rule_keys)
+        if rule_pm is not None:
+            data = {**data, "preventive": rule_pm}
     preventive = preventive_spec(data, label, resolve_model)
     inspection = inspection_spec(data, label, resolve_model)
     if preventive and inspection:

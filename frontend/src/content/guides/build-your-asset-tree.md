@@ -31,18 +31,30 @@ Your asset tree has three kinds of thing in it:
 
 Choose an asset's name on the **Assets** page and the **Explorer** opens on
 that asset alone: its tree, search, tabs and pickers show nothing from any
-other asset. The **One asset** note above the tree has **Show every asset** for
-the whole register; the **Explorer** menu entry opens the whole register too.
+other asset. The **Explorer** always shows one asset. To look at another, go
+back to **Assets** and choose it there.
+
+To see two assets together, merge one into the other. Choose **Merge into
+another asset…** from the asset's **⋯** on the **Assets** page (or from its top
+row's menu in the Explorer). Pick the asset it joins and where in that asset's
+tree it goes; the pane says what comes along before you choose **Merge**.
+Everything inside it keeps its history, readings, tasks, RCM and fitted items.
+To split it off again, choose **Make this its own asset…** from its row's menu.
 
 ## Add positions inside positions
 
-A pump set has a pump and a motor inside it. Open the
-**Explorer** (under Assets), pick the pump set and choose **New
+A pump set has a pump and a motor inside it. Open its asset from **Assets**
+(it opens in the **Explorer**), pick the pump set and choose **New
 position inside** from its row's menu (right-click, or its **⋯**). A position
 inside another is wherever that one is, unless you give it a place of its own.
 
 In the Explorer arranged by **Locations**, a place's menu has **New position
 here** too: the new position is at that place.
+
+Open an asset at a place and arrange it by **Positions**, and the tree still
+shows the groupings its positions sit in (a *House*, its *Climate control*),
+even when those groupings have no place of their own. They're shown muted:
+they're there to show where things belong, not things at that place.
 
 ## Fit the items
 
@@ -68,7 +80,8 @@ adding positions one by one.
 3. Choose **Import from Excel…** in the same menu (or on an empty Explorer)
    and pick the file. Reliafy checks every row first and shows what will
    happen ("Will create 312 positions, 40 locations, 18 classes and 290
-   items") and any problems, by row, with what to fix.
+   items") and any problems, by row, with what to fix. Notes, such as a tag
+   that's on two rows, don't stop the import.
 4. Choose **Import**. It all goes in, or nothing does.
 
 Importing the same file again changes nothing: each row finds its position by

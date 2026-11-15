@@ -1,6 +1,7 @@
-"""SurPyval 0.26 (with RePyability 0.16): the pins, the names 0.26 removed or
+"""SurPyval 0.26 (with RePyability 0.16): the names 0.26 removed or
 deprecated, saved models from 0.25 that must still load, and the
-expectations that moved since 0.23.
+expectations that moved since 0.23. (The current pins are guarded in
+``test_library_pins.py``.)
 
 Every call into SurPyval goes through its current names, so these run clean
 with SurPyval's own deprecations as errors (the suite does that everywhere:
@@ -48,17 +49,6 @@ def strict():
         ctx.__exit__(None, None, None)
 
 
-def test_the_pins_are_surpyval_0_26_and_repyability_0_16():
-    """Reliafy runs SurPyval 0.26, the version RePyability 0.16 targets."""
-    import importlib.metadata as md
-
-    import repyability
-
-    assert sp.__version__ == "0.26" and md.version("surpyval") == "0.26"
-    assert repyability.__version__ == "0.16" and md.version("repyability") == "0.16"
-    assert rbd_export.detect_versions() == {"surpyval": "0.26", "repyability": "0.16"}
-
-
 # ---------------------------------------------------------------------------
 # What 0.26 removed or deprecated
 # ---------------------------------------------------------------------------
@@ -84,8 +74,11 @@ def test_the_backend_uses_none_of_the_names_0_26_removed_or_deprecated():
 
 def test_the_ph_test_comes_from_diagnose_with_no_deprecation(strict):
     """The proportional-hazards test is ``diagnose()``'s
-    ``proportional_hazards`` table: the numbers ``check_ph()`` gave, on every
-    transform, without its DeprecationWarning (``strict``)."""
+    ``proportional_hazards`` table: the numbers ``check_ph()`` gave (SurPyval
+    0.28 removed it; ``diagnostics.zph_table`` is the same table), on every
+    transform, with no warning (``strict``)."""
+    from surpyval.univariate.regression.proportional_hazards import diagnostics
+
     from backend import regression_diagnostics as rd
 
     rng = np.random.default_rng(11)
@@ -97,9 +90,7 @@ def test_the_ph_test_comes_from_diagnose_with_no_deprecation(strict):
     cox = sp.CoxPH.fit_from_df(df, x_col="t", c_col="c", Z_cols=["z", "age"])
     for transform in ("km", "rank", "identity", "log"):
         got = rd.ph_test(cox, transform=transform)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            want = cox.check_ph(transform=transform)
+        want = diagnostics.zph_table(cox, transform=transform)
         assert got["global"]["p"] == pytest.approx(float(want.loc["GLOBAL", "p"]), rel=1e-12)
         assert {r["covariate"]: r["statistic"] for r in got["rows"]} == pytest.approx(
             {k: float(v) for k, v in want["statistic"].drop("GLOBAL").items()}, rel=1e-12)

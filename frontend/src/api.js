@@ -1204,6 +1204,28 @@ export function checkBlockMean(node, unit = "") {
   });
 }
 
+// A standby block's arrangement in words and how it's worked out (#363): ``route`` "exact" or
+// "numerical" (free), or "simulated" with RePyability's plain ``reason`` (Pro, when the block is
+// set to be simulated). ``node`` is the block as the builder stores it. Quick and free.
+export function standbyRoute(node) {
+  return request("/api/rbds/standby-route", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node }),
+  });
+}
+
+// A block on a fitted repairable model (#367): the model in words, whether it can wear out (and so
+// needs a replacement rule), the suggested rule and how its long-run availability is worked out
+// (exact/simulated, Free/Pro). ``node`` is the block as the builder stores it. Quick and free.
+export function rbdRepairableBlock(node, unit = "", repairable = true) {
+  return request("/api/rbds/repairable-block", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node, unit, repairable }),
+  });
+}
+
 // The cheapest design of a repairable diagram (#99): how many copies of each
 // priced block own it for ``horizon`` at the lowest total cost, optionally at
 // least ``minAvailability`` available. Returns { current, design, graph, ... };
@@ -1320,11 +1342,12 @@ export function importFaultTreeFile(file) {
 
 // A phased mission (#160): the (unsaved) graph's phases worked out — mission
 // reliability, each phase's failure probability, the riskiest phase.
-export function rbdPhases(graph) {
+// ``currentState``: the blocks' states now (As of now), so the mission flies from their ages.
+export function rbdPhases(graph, currentState = null) {
   return request("/api/rbds/phases", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ graph }),
+    body: JSON.stringify(currentState ? { graph, current_state: currentState } : { graph }),
   });
 }
 
@@ -2982,8 +3005,11 @@ export function updateMaintenanceLocation(id, body) {
 export function getPositionClasses() {
   return request("/api/maintenance/classes");
 }
-export function getClassLifeData(positionClass) {
-  return request(`/api/maintenance/classes/life-data?position_class=${encodeURIComponent(positionClass)}`);
+// unit: days (lives on the calendar, the default) or a counter's unit (hours, km) for lives by use.
+export function getClassLifeData(positionClass, unit) {
+  const q = new URLSearchParams({ position_class: positionClass });
+  if (unit && unit !== "days") q.set("unit", unit);
+  return request(`/api/maintenance/classes/life-data?${q}`);
 }
 
 export function addMaintenanceMeter(positionId, name, unit) {
@@ -3041,8 +3067,9 @@ export function setClassCosts(body) {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
-export function fitClassModel(positionClass, distribution = "weibull") {
-  return postJson("/api/maintenance/classes/fit", { position_class: positionClass, distribution });
+// unit: days or a counter's unit; left out, a refit keeps the class's unit.
+export function fitClassModel(positionClass, distribution = "weibull", unit) {
+  return postJson("/api/maintenance/classes/fit", { position_class: positionClass, distribution, ...(unit ? { unit } : {}) });
 }
 export function decideProposal(id, accept, note = "") {
   return postJson(`/api/maintenance/proposals/${id}/${accept ? "accept" : "reject"}`, { note });
@@ -3766,6 +3793,13 @@ export function getBoundBlocks(graph) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
   });
 }
+// Every covariate a mission phase of this (unsaved) diagram can set: {rows: [{name, role, unit, kind,
+// choices, blocks}], problems}. The same list the Explorer's tree hangs under each phase.
+export function getPhaseCovariates(graph) {
+  return request("/api/rbds/phases/covariates", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
+  });
+}
 // A record's rate under its covariates (any library record: a pipe's length, the clock, the demands
 // a year, a handbook part's environment and quality, an NSWC-11 model's conditions), or a
 // component's chance of failing over a period: {ok, result, warnings} or {ok: false, problems, missing}.
@@ -3907,6 +3941,13 @@ function asJsonBody(method, body) {
 // above it is never used.
 export function getOperatingPlan(kind, id, root = null) {
   return request(`/api/maintenance/${kind === "item" ? "items" : "positions"}/${id}/operating-plan${root ? `?root=${encodeURIComponent(root)}` : ""}`);
+}
+// The forecast for a position and everything inside it (inside `root`, the asset opened): tasks on
+// dates, work per period, expected failures and cost with a 90% range, and what each rests on.
+export function getPositionForecast(positionId, { root = null, period = "month", periods = 12 } = {}) {
+  const q = new URLSearchParams({ period, periods: String(periods) });
+  if (root) q.set("root", root);
+  return request(`/api/maintenance/positions/${positionId}/forecast?${q}`);
 }
 // {plan, name?, time_zone?, from?, notes?}: how it runs from a date (default today).
 export function setOperatingPlan(positionId, body) {

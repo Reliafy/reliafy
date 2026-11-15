@@ -403,7 +403,8 @@ test("saved items open at their new addresses", () => {
 // "x" for an id). The whole table: a row missing here or in redirects.js fails.
 // Parts and stock and Classes are hidden Explorer tabs for now: their old
 // addresses land on the Explorer with no tab; switched on, they open the tabs.
-const tabbed = (query, search = "") => (EXPLORER_PARTS_CLASSES_TABS ? `/asset-register/explorer?${query}` : `/asset-register/explorer${search}`);
+// Hidden, they land on the Assets list (the Explorer is always one asset, picked there).
+const tabbed = (query, search = "") => (EXPLORER_PARTS_CLASSES_TABS ? `/asset-register/explorer?${query}` : `/asset-register${search}`);
 
 const OLD_TO_NEW = [
   ["/modelling", "/models"],
@@ -477,11 +478,11 @@ const OLD_TO_NEW = [
   ["/systems/structure", tabbed("tab=parts&scope=all&show=structure")],
 ];
 
-test("while Parts and stock and Classes are hidden, their old addresses land on the Explorer's Summary, no dead tab", () => {
+test("while Parts and stock and Classes are hidden, their old addresses land on the Assets list, no dead tab", () => {
   assert.equal(EXPLORER_PARTS_CLASSES_TABS, false);
   for (const from of ["/maintenance/parts", "/maintenance/classes", "/maintenance/classes/x", "/asset-register/parts",
     "/asset-register/classes", "/asset-register/classes/x", "/systems/structure"]) {
-    assert.equal(movedTo(from), "/asset-register/explorer", from);
+    assert.equal(movedTo(from), "/asset-register", from);
   }
 });
 

@@ -7,7 +7,8 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import Field from "../components/ui/Field.jsx";
 import { Select, TextInput } from "../components/ui/Controls.jsx";
 import { SectionHeader, ShowMe } from "../components/SectionPage.jsx";
-import { StorageCapNotice } from "../components/StorageCap.jsx";
+import ProTag from "../components/ProTag.jsx";
+import { LIBRARIES_PRO_TITLE, LIBRARIES_PRO_TEXT, LibrariesProNotice } from "../components/LibrariesPro.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { LibraryFormDialog } from "../components/LibraryParts.jsx";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
@@ -70,7 +71,10 @@ export default function LibrariesHome() {
     return () => { live = false; };
   }, []);
   const groups = useMemo(() => groupLibraries((d?.libraries || []).filter((l) => libraryMatches(l, q))), [d, q]);
-  const newButton = <button type="button" onClick={() => setMaking(true)}>New library…</button>;
+  // Making a library is Pro (public libraries are free to use): without it New library… carries the
+  // Pro tag and opens the upgrade prompt.
+  const locked = d?.signed_in === true && d?.can_make === false;
+  const newButton = <button type="button" onClick={() => setMaking(true)}>New library…{locked && <> <ProTag always /></>}</button>;
   const anyYours = (d?.libraries || []).some((l) => l.relation === "yours");
   return (
     <div className="app">
@@ -78,7 +82,6 @@ export default function LibrariesHome() {
       <SectionHeader title="All libraries" help={HELP} primary={newButton}
                      purpose="Collections of data and models to keep, share with other workspaces or publish, and the built-in handbooks." />
       {error && <div className="card error" role="alert">{error}</div>}
-      <StorageCapNotice kind="libraries" one="library" many="libraries" refreshKey={d} />
       {d === null && !error && <div className="card empty">Loading…</div>}
       {d && (
         <>
@@ -93,8 +96,9 @@ export default function LibrariesHome() {
                 <section key={key} aria-labelledby={`lib-${key}`}>
                   <h2 id={`lib-${key}`} className="lib-section">{title}</h2>
                   <div className="card empty section-empty">
-                    <h3 className="lib-h">No libraries of your own yet</h3>
-                    <p>A library keeps copies of your datasets and models together, to share with your team or publish.</p>
+                    <h3 className="lib-h">{locked ? LIBRARIES_PRO_TITLE : "No libraries of your own yet"}</h3>
+                    <p>{locked ? LIBRARIES_PRO_TEXT
+                      : "A library keeps copies of your datasets and models together, to share with your team or publish."}</p>
                     <div className="section-empty-action">{newButton}</div>
                     <p className="section-empty-more"><ShowMe help={HELP} /></p>
                   </div>
@@ -367,6 +371,15 @@ export function LibraryPage() {
       setError(e.message);
     }
   };
+  // Without Pro the owner can still take back what they shared.
+  const makePrivate = async () => {
+    try {
+      const x = await setLibraryVisibility(lib.id, { visibility: "private" });
+      setLib((l) => ({ ...l, ...x, entries: x.entries || l.entries }));
+    } catch (e) {
+      setError(e.message);
+    }
+  };
   const setEntries = (fn) => setLib((l) => {
     const entries = fn(l.entries || []);
     const data = entries.filter((e) => e.type === "data").length;
@@ -384,13 +397,16 @@ export function LibraryPage() {
                         <Link className="lib-signin" to={`${libraryPath(lib.id)}?as=public`}>Preview as public</Link>
                       )}
                       {canEdit && <button type="button" className="secondary" onClick={() => { clearAdded(); setEditing(true); }}>Edit…</button>}
+                      {lib.pro_needed && lib.visibility !== "private" && (
+                        <button type="button" className="secondary" onClick={makePrivate}>Make private</button>
+                      )}
                       {canEdit && (
                         <button type="button" className="secondary" onClick={() => { clearAdded(); setSharing((s) => !s); }}
                                 aria-expanded={sharing}>Sharing…</button>
                       )}
                     </>
                   )}
-                  menu={canEdit && <button type="button" className="ovm-item danger" onClick={onDelete}>Delete…</button>}
+                  menu={(canEdit || lib?.can_delete) && <button type="button" className="ovm-item danger" onClick={onDelete}>Delete…</button>}
                   id={lib?.id} />
       {error && <div className="card error" role="alert">{error}</div>}
       {!lib && !error && <div className="card empty">Loading…</div>}
@@ -401,6 +417,12 @@ export function LibraryPage() {
                           onSaved={(x) => { setLib((l) => ({ ...l, ...x, entries: x.entries || l.entries })); setSharing(false); }} />
           )}
           {added && <AddedToLibrary library={added} />}
+          {lib.pro_needed && (
+            <LibrariesProNotice>
+              This library stays yours to read, copy from, make private or delete. Adding to it, editing and sharing it
+              need Pro.
+            </LibrariesProNotice>
+          )}
           <LibraryAbout lib={lib} />
           <section className="card" aria-labelledby="lib-entries-h">
             <h2 id="lib-entries-h" className="lib-h">Entries</h2>

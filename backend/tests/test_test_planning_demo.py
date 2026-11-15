@@ -1,32 +1,20 @@
-"""The demonstration-test calculator moved from RePyability's ``demonstration``
-module to SurPyval 0.25's ``test_planning``. Its answers must not change: run
-the calculator on a grid of inputs on both engines and compare the whole
-response, every number exactly. Also the failure-terminated MTBF option the
-move brought in."""
+"""The demonstration-test calculator runs on SurPyval's ``test_planning``
+(it moved there from RePyability's ``demonstration`` module in SurPyval 0.25).
+While both engines existed, these tests ran the calculator on a grid of inputs
+on each and compared every number; RePyability 0.17 deprecates its module (0.18
+removes it), so the grid now only checks that it reaches every function the
+calculator calls. Also the failure-terminated MTBF option the move brought in."""
 from __future__ import annotations
 
 import itertools
 
 import pytest
-from repyability import demonstration as old_engine
 from surpyval import test_planning as tp
 
 from backend.services import demo_engine
 from backend.services import strategy as st
 from backend.services.strategy import StrategyError, demonstration_test
 from backend.tests.test_demonstration import client  # noqa: F401  (the REST fixture)
-
-
-def _both(monkeypatch, **kwargs):
-    """The calculator's answer (or refusal) on the old engine, then the new."""
-    out = []
-    for engine in (old_engine, demo_engine):
-        monkeypatch.setattr(st, "_demo_engine", lambda engine=engine: engine)
-        try:
-            out.append(("ok", demonstration_test(**kwargs)))
-        except StrategyError as exc:
-            out.append(("error", str(exc)))
-    return out
 
 
 ATTRIBUTE = [
@@ -59,12 +47,6 @@ MTBF = [
 ] + [
     dict(method="mtbf", mtbf=1000, confidence=0.9, design_mtbf=2500, failures=2),
 ]
-
-
-@pytest.mark.parametrize("kwargs", ATTRIBUTE + MTBF)
-def test_old_and_new_engines_give_identical_plans(monkeypatch, kwargs):
-    old, new = _both(monkeypatch, **kwargs)
-    assert old == new
 
 
 def test_the_grid_covers_every_engine_function(monkeypatch):
@@ -132,25 +114,3 @@ def test_rest_endpoints_take_failure_terminated(client):  # noqa: F811
     # The default response is the same as before: no new key.
     res = client.post("/api/strategy/demonstration-test", json={"method": "mtbf", "mtbf": 1000, "failures": 1})
     assert "failure_terminated" not in res.json()
-
-
-@pytest.mark.parametrize("body", [
-    {"reliability": 0.95, "confidence": 0.95, "mission_time": 1000, "test_multiple": 2, "shape": 2,
-     "unit": "hours", "design_reliability": 0.99},
-    {"reliability": 0.9, "confidence": 0.9, "design_reliability": 0.98, "producer_risk": 0.2},
-    {"b_life": 10, "mission_time": 800, "shape": 2.2, "shape_interval": [1.6, 3.0], "units": 20},
-    {"method": "mtbf", "mtbf": 5000, "confidence": 0.9, "failures": 1, "unit": "hours", "units": 4},
-    {"method": "mtbf", "mtbf": 5000, "confidence": 0.9, "design_mtbf": 12000, "producer_risk": 0.1},
-])
-def test_public_rest_response_is_unchanged(client, monkeypatch, body):  # noqa: F811
-    """/api/v1/strategy/demonstration-test answers byte for byte as it did on
-    RePyability."""
-    raw = client.post("/api/tokens", json={"name": "test"}).json()["token"]
-    auth = {"Authorization": f"Bearer {raw}"}
-    answers = []
-    for engine in (old_engine, demo_engine):
-        monkeypatch.setattr(st, "_demo_engine", lambda engine=engine: engine)
-        res = client.post("/api/v1/strategy/demonstration-test", headers=auth, json=body)
-        assert res.status_code == 200, res.text
-        answers.append(res.content)
-    assert answers[0] == answers[1]

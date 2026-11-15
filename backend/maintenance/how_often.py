@@ -17,16 +17,16 @@ reader take it unchanged)::
     {"kind": "yearly",  "every": 1, "month": 11, "weekday": "Tuesday", "nth": 1}   # or "day": 1
     (each may carry "anchor": "2026-11-14", the date it counts from, and "version": 1)
 
-This is a thin seam: the dates come from ``schedule.Cadence`` today, and from
-the scheduling library's own rule type once the app adopts it, reading the same
-dicts.
+The dates come from RePyability's ``Recurrence`` (through ``schedule.Cadence``):
+``to_library`` writes a rule as the library saves one and ``from_library`` reads
+it back, so a stored rule is never rewritten.
 """
 
 from __future__ import annotations
 
 from datetime import date
 
-from backend.maintenance.schedule import Cadence
+from backend.maintenance.schedule import Cadence, Recurrence
 
 RULE_VERSION = 1
 RULE_KINDS = ("every", "weekly", "monthly", "yearly")
@@ -175,3 +175,39 @@ def describe(rule: dict) -> str:
     else:
         which = f"{which} of {month}"
     return f"{which}, every year" if n == 1 else f"{which}, every {n} years"
+
+
+def recurrence(rule: dict, anchor) -> Recurrence:
+    """The rule as the library's ``Recurrence``, counted from ``anchor`` (the rule's own wins)."""
+    return cadence(rule, anchor).recurrence
+
+
+def to_library(rule: dict, anchor=None) -> dict:
+    """The rule as RePyability saves a ``Recurrence`` (``to_dict``)."""
+    return recurrence(rule, anchor or rule.get("anchor")).to_dict()
+
+
+def from_library(data: dict) -> dict:
+    """A library ``Recurrence`` dict (or the older package and task shapes it reads) in
+    this module's shape, checked; ValueError for a rule this shape can't say (given
+    dates, several weekdays, seasons or exclusions)."""
+    rec = Recurrence.from_dict(data)
+    if rec.rule == "on" or rec.season is not None or rec.excluding:
+        raise ValueError("Given dates, seasons and excluded dates aren't in a task's rule yet.")
+    out: dict = {"kind": rec.rule, "every": rec.every_n}
+    if rec.rule == "every":
+        out["unit"] = rec.unit
+    elif rec.rule == "weekly":
+        if len(rec.weekdays) != 1:
+            raise ValueError("A task's weekly rule names one weekday.")
+        out["weekdays"] = [WEEKDAYS[rec.weekdays[0]]]
+    else:
+        if rec.month is not None:
+            out["month"] = rec.month
+        if rec.day is not None:
+            out["day"] = rec.day
+        else:
+            out["weekday"], out["nth"] = WEEKDAYS[rec.weekdays[0]], rec.nth
+    if rec.anchor is not None:
+        out["anchor"] = rec.anchor.isoformat()
+    return check_rule(out)

@@ -86,7 +86,13 @@ class _ReducedModel:
 
     def sf(self, x) -> np.ndarray:
         x = np.asarray(x, dtype=float)
-        sfs = [np.asarray(m.sf(x), dtype=float) for m in self.models]
+        # n identical units are one model object: work it out once (a Bayesian update's posterior
+        # predictive is a mixture over its posterior, costly to evaluate).
+        once: dict = {}
+        for m in self.models:
+            if id(m) not in once:
+                once[id(m)] = np.asarray(m.sf(x), dtype=float)
+        sfs = [once[id(m)] for m in self.models]
         if self.kind == "series":
             out = np.ones_like(sfs[0])
             for s in sfs:
@@ -399,6 +405,49 @@ def _nonparametric_reliability(model: dict, where: str, resolve_model):
     raise AnalysisError(nonparametric_message(model, where))
 
 
+# Per resolver (one request), each saved model id's Bayesian fit or None, so a diagram's
+# blocks resolve each saved model once however often the diagram is built.
+_BAYES_SEEN: "weakref.WeakKeyDictionary[Any, dict]" = weakref.WeakKeyDictionary()
+
+
+def saved_bayesian_fit(model: Optional[dict], resolve_model):
+    """The SurPyval Bayesian fit of the saved Bayesian-update model a block picks, or None (another
+    model, a hand-entered one, or one that can't be resolved here)."""
+    if not isinstance(model, dict) or model.get("source") != "saved" or resolve_model is None:
+        return None
+    if model.get("kind") not in (None, "distribution"):
+        return None
+    model_id = model.get("modelId") or model.get("model_id")
+    if not model_id:
+        return None
+    try:
+        seen = _BAYES_SEEN.setdefault(resolve_model, {})
+    except TypeError:  # a resolver that can't be weakly referenced: resolve every time
+        seen = {}
+    if model_id not in seen:
+        from backend.services import bayes_life
+
+        try:
+            entry = resolve_model(model_id)
+        except Exception:  # noqa: BLE001 - an unresolvable model keeps its stored parameters
+            entry = None
+        seen[model_id] = bayes_life.bayesian_fit((entry or {}).get("model"))
+    return seen[model_id]
+
+
+def bayesian_life(model: Optional[dict], resolve_model):
+    """A block on a saved Bayesian update, as the model's posterior predictive (RePyability's
+    ``PosteriorPredictive``, 0.17): the curve the model's own page shows, with the uncertainty in
+    its parameters averaged in. Not the distribution at the parameters' middle values (the stored
+    ``params``), which is a tidier, more optimistic curve. None for any other block."""
+    fit = saved_bayesian_fit(model, resolve_model)
+    if fit is None:
+        return None
+    from repyability import PosteriorPredictive
+
+    return PosteriorPredictive(fit)
+
+
 def _build_distribution(
     model: Optional[dict],
     where: str,
@@ -424,6 +473,12 @@ def _build_distribution(
         return _nonparametric_reliability(model, where, resolve_model)
     if model.get("kind") == "joint":
         return _joint_reliability(model, where, resolve_model)
+    if model.get("kind") == "repairable":
+        # A fitted repairable model (rbd_repairable_blocks): how a unit fails between replacements,
+        # which only an availability (repairable) diagram takes.
+        raise AnalysisError(f"{where} has a repairable model (how a unit fails between replacements), which "
+                            "needs a repairable diagram — switch the diagram to availability, or pick a "
+                            "non-repairable model.")
     if model.get("kind") == "bound":
         # Covariates left open at its position (covariate_binding.py): made concrete before the
         # analysis from the block's and the diagram's values. Still bound here: they're not all set.
@@ -444,6 +499,9 @@ def _build_distribution(
             return rbd_mixture.build(model, where)
         except rbd_mixture.MixtureError as exc:
             raise AnalysisError(str(exc)) from None
+    bayesian = bayesian_life(model, resolve_model)
+    if bayesian is not None:
+        return bayesian
     dist_id = model.get("distribution_id")
     entry = DISTRIBUTIONS.get(dist_id)
     if entry is None:
@@ -513,40 +571,33 @@ def _loadshare_model(data: dict, label: str, resolve_model=None):
 
 
 def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
-    """Build the reliability of a standby node from its builder data."""
-    primary = _build_distribution(data.get("model"), label, resolve_model, cov_values)
-    spares = int(data.get("spares") or 1)
-    spare_src = data.get("standbyModel") or data.get("model")
-    spare = _build_distribution(
-        spare_src, f"{label} (spare)", resolve_model, cov_values
-    )
-    units = [primary] + [spare for _ in range(max(spares, 0))]
-
-    dormancy = _standby_dormancy(data, label)
+    """Build the reliability of a standby node from its builder data: its
+    ``k`` running units and its spares, each on the block's model or one of
+    its own (:func:`backend.services.rbd_standby.unit_specs`)."""
     from backend.services import rbd_standby
 
-    if rbd_standby.operating(data, label) > 1:
-        # k-of-n standby (#84): k units running, the spares idle.
-        try:
-            switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
-        except (TypeError, ValueError):
-            switch = 1.0
-        return rbd_standby.nonrepairable_model(data, label, primary, spare, spares, dormancy, switch)
-    if dormancy == 0.0:
-        # Cold standby: spares are dormant until switched in (k=1 operating).
-        try:
-            switch = float(data.get("startProb", 1.0))
-        except (TypeError, ValueError):
-            switch = 1.0
-        return StandbyModel(units, k=1, switching_probability=switch)
-    if dormancy < 1.0:
-        # Warm standby: an idle spare ages at `dormancy` × its operating rate
-        # (cumulative exposure) and can fail latent, dead before it's needed.
-        # Numerical for any units since RePyability 0.11 (one operating), no
-        # longer a fit to simulated lifetimes.
-        return StandbyModel(units, k=1, dormancy_factor=dormancy)
-    # Hot standby: every unit runs from t=0 -> active parallel redundancy.
-    return _ReducedModel(units, "parallel")
+    units = rbd_standby.build_units(
+        data, label, lambda spec, where: _build_distribution(spec, where, resolve_model, cov_values))
+    dormancy = _standby_dormancy(data, label)
+    start = rbd_standby.start_probability(data)
+    if rbd_standby.operating(data, label) == 1 and dormancy >= 1.0 and start == 1.0:
+        # Hot standby whose spares always start: every unit runs from t=0 ->
+        # active parallel redundancy.
+        return _ReducedModel(units, "parallel")
+    # Cold (dormant until switched in), warm (an idle spare ages at `dormancy` x
+    # its operating rate and can fail latent) or hot, k units running (#84), each
+    # spare starting with the block's "Chance a spare starts": one that fails to
+    # start is skipped and the next tried (RePyability 0.17's start_probability).
+    # Where RePyability only simulates it, refused, or simulated when asked for.
+    return rbd_standby.nonrepairable_model(data, label, units, dormancy, start)
+
+
+def _unit_models(data: dict) -> list:
+    """Every non-repairable model on a block's data (a standby block's
+    spare and per-unit models included)."""
+    from backend.services import rbd_standby
+
+    return [rbd_standby.get_path(data, p) for p in rbd_standby.model_paths(data)]
 
 
 def _standby_dormancy(data: dict, label: str) -> float:
@@ -593,7 +644,7 @@ def _node_reliability(
         return model, None
 
     if ntype in ("series", "parallel", "standby", "loadshare") and (
-            is_joint(data.get("model")) or is_joint(data.get("standbyModel"))):
+            any(is_joint(m) for m in _unit_models(data))):
         raise AnalysisError(JOINT_ONE_UNIT.format(where=label))
 
     if ntype == "knode":
@@ -996,6 +1047,27 @@ def validate_graph(
     graph: dict,
     resolve_subsystem: Optional[Callable[[str], dict]] = None,
 ) -> dict:
+    """:func:`_validate_graph`, a standby block set to be simulated taken
+    for its structure (a few lifetimes) and named in a warning: it's
+    simulated, with Pro, when the diagram is calculated."""
+    from backend.services import rbd_standby
+
+    with rbd_standby.simulation("check") as simulated:
+        out = _validate_graph(graph, resolve_subsystem)
+    if simulated and not graph.get("repairable"):
+        labels = list(dict.fromkeys(b.label for b in simulated))
+        out["simulated_blocks"] = labels
+        out["analytic"] = False
+        out["non_analytic_nodes"] = {
+            **(out.get("non_analytic_nodes") or {}),
+            **{label: f"standby, simulated from {rbd_standby.SIM_LIVES:,} lifetimes with Pro" for label in labels}}
+    return out
+
+
+def _validate_graph(
+    graph: dict,
+    resolve_subsystem: Optional[Callable[[str], dict]] = None,
+) -> dict:
     """Check whether a builder graph is a valid, analytically solvable RBD.
 
     Never raises for an *expected* problem (a malformed diagram); instead it
@@ -1067,6 +1139,12 @@ def validate_graph(
         # A node pinned working/failed is overridden in analysis, so it needs
         # no non-repairable model — don't flag one as missing here.
         pinned = (node.get("data") or {}).get("state") in ("working", "failed")
+        if graph.get("repairable") and ntype == "component" and \
+                ((node.get("data") or {}).get("model") or {}).get("kind") == "repairable":
+            # A fitted repairable model (#367): checked with the repairable blocks below, the structure
+            # here with a stand-in.
+            reliabilities[nid] = PerfectReliability
+            continue
         try:
             reliability, k_required = _node_reliability(
                 node, resolve_subsystem, visited
@@ -1127,9 +1205,6 @@ def validate_graph(
             errors.append(f"The diagram could not be analysed: {client_message(exc)}")
 
     warnings.extend(design_warnings(graph, labels))
-    from backend.services import rbd_standby
-
-    warnings.extend(rbd_standby.warnings(graph))  # switching on warm/hot spares (#84)
 
     repairable = bool(graph.get("repairable"))
     if repairable:
@@ -1168,8 +1243,9 @@ def validate_graph(
                     f"“{lbl}” has no repair-time distribution. Repairable diagrams "
                     "analyse availability, so every component needs one (double-click "
                     "the block to set it), or mark it as repaired instantly.")
-        from backend.services import rbd_maintenance, rbd_policies
+        from backend.services import rbd_maintenance, rbd_policies, rbd_repairable_blocks
 
+        errors.extend(rbd_repairable_blocks.validation_errors(graph))
         errors.extend(rbd_maintenance.validation_errors(graph))
         errors.extend(rbd_policies.validation_errors(graph))
         from backend.services import rbd_sim_guard
@@ -1224,15 +1300,48 @@ def validate_graph(
     }
 
 
+# A unit of running time: "flight hours", "operating hrs", "engine hours", "FH".
+_OPERATING_UNIT = re.compile(
+    r"^(?:flight|flying|flown|operating|operation|engine|run|running|service|power[- ]?on|machine|motor|pump"
+    r"|block|air|hobbs|tach)\s+(\S.*)$", re.I)
+_OPERATING_ABBREV = {"fh": "hour", "fhs": "hour", "oh": "hour", "ehrs": "hour", "eh": "hour", "rh": "hour"}
+
+
+def _operating_base(unit) -> Optional[str]:
+    """The clock unit a unit of running time counts in ("flight hours" →
+    "hour"), or None when it isn't one."""
+    text = str(unit or "").strip()[:64]  # a unit name is short; bound the match
+    if text.lower().rstrip(".") in _OPERATING_ABBREV:
+        return _OPERATING_ABBREV[text.lower().rstrip(".")]
+    m = _OPERATING_UNIT.match(text)
+    return normalize_unit(m.group(1)) if m else None
+
+
+def _runs_part_time(data: dict) -> bool:
+    """Whether the block's Runs share (duty) is set below 100%."""
+    try:
+        duty = float(data.get("duty"))
+    except (TypeError, ValueError):
+        return False
+    return 0.0 < duty < 1.0
+
+
 def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
     """Warn when a block's saved non-repairable model was fitted in a different time unit
     from the diagram's. Parameters are read in the diagram's unit, so e.g. a
     model fitted in months dropped into an hours diagram is off by ~730x.
     Nothing is converted; blank units on either side are unknown, not a
-    mismatch."""
+    mismatch.
+
+    A model in running time ("flight hours") on a repairable diagram in the
+    same clock unit ("hours") is no mismatch when the block's Runs share
+    (duty) is set: its life is counted in operating time, which runs at that
+    share of the diagram's clock. Without a Runs share it is read as if it
+    ran all the time, and the warning says to set one."""
     diagram = normalize_unit(graph.get("unit"))
     if diagram is None:
         return []
+    repairable = bool(graph.get("repairable"))
     out = []
     for node in graph.get("nodes") or []:
         data = node.get("data") or {}
@@ -1242,11 +1351,22 @@ def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
         model_unit = normalize_unit(model.get("unit"))
         if model_unit is None or model_unit == diagram:
             continue
+        running = _operating_base(model.get("unit")) == diagram
+        if running and repairable and _runs_part_time(data):
+            continue  # the duty turns the diagram's clock into running time
         label = (labels or {}).get(node.get("id")) or data.get("label") or node.get("id")
         name = f" “{model['name']}”" if model.get("name") else ""
         in_diagram = unit_in_text(graph.get("unit"))
+        fitted = unit_in_text(model.get("unit"))
+        if running and repairable:
+            out.append(
+                f"“{label}” uses the saved model{name}, fitted in {fitted}, on a diagram in {in_diagram}: "
+                f"with no Runs share set it is read as running all the time (each of the diagram's {in_diagram} "
+                f"counted as one of its {fitted}). Set the share of the time it runs (Runs, %) in the "
+                "maintenance plan, or use a model in the diagram's unit.")
+            continue
         out.append(
-            f"“{label}” uses the saved model{name}, fitted in {unit_in_text(model.get('unit'))}, but the "
+            f"“{label}” uses the saved model{name}, fitted in {fitted}, but the "
             f"diagram's unit is {in_diagram} — its parameters are read as "
             f"{in_diagram}, not converted. Use a model in the diagram's unit, or "
             "change the diagram's unit.")
@@ -1858,6 +1978,8 @@ def _system_mttf(rbd, system, base_hi: float, s: float, overrides: dict) -> tupl
             pass
     try:
         return _mttf(system, base_hi, s, **overrides), None
+    except AnalysisError as exc:  # e.g. a covariate schedule too fine to follow that far (rbd_tvc)
+        return None, f"The MTTF isn't given: {exc}"
     except Exception:  # noqa: BLE001
         return None, None
 
@@ -2141,11 +2263,18 @@ def analyze(
     the probability basis evaluated past the small probabilities it is meant
     for), in Reliafy's words, and why the MTTF is missing when it is.
     """
+    from backend.services import rbd_standby
+
     args = (graph, resolve_subsystem, t_max, covariates, resolve_model, conditional_age, at_times, band,
             current_state, target_reliability, evaluate_at)
     with collect_warnings(UserWarning, message=_CCF_WARNING.pattern) as caught:
         # Every time, not once per place: each analysis builds its own RBD.
         result, labels, notes = _analyze(*args)
+    # Standby blocks simulated (where the caller allows it, rbd_standby.simulation).
+    simulated = rbd_standby.simulated_summary(rbd_standby.simulated_now())
+    if simulated:
+        result["simulated"] = simulated
+        notes.append(simulated["note"])
     relayed = []
     for w in caught:
         if issubclass(w.category, UserWarning) and _CCF_WARNING.match(str(w.message)):
@@ -2410,6 +2539,14 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
             result["mean_residual_life"] = mrl
     if target is not None:
         result["design_life"] = _design_life(rbd, system, target, s, overrides, now=bool(state))
+    from backend.services import rbd_standby as _rs
+
+    if band is not None and _rs.simulated_now():
+        # A simulated block rebuilt once per draw of its fitted parameters would be
+        # thousands of simulations: the band is left out, and the result says so.
+        notes.append("The confidence band from the fitted blocks' uncertainty isn't worked out for a diagram with "
+                     "a simulated standby block. Make the block exact to see it.")
+        band = None
     if band is not None:
         from backend.services import rbd_uncertainty
 
@@ -2595,6 +2732,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     gate_ids: set = set()  # synthetic voting gates — excluded from downtime
     working_nodes: set = set()
     broken_nodes: set = set()
+    schedule_notes: list = []
 
     for node in nodes:
         nid = node.get("id")
@@ -2633,12 +2771,38 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             # The override fixes its state; the stand-in is never consulted.
             components[nid] = _always_up()
             continue
-        if data.get("covariate_schedules"):  # #52: a schedule can't follow repairs
+        scheduled = None
+        if data.get("covariate_schedules"):  # #52/#372: the load follows the plant's clock
             from backend.services import rbd_tvc
 
-            rbd_tvc.refuse_repairable(data, label)
-        if any(is_joint(data.get(k)) for k in ("model", "standbyModel")):
+            scheduled = rbd_tvc.repairable_schedule(data, ntype, label, resolve_model)
+        if any(is_joint(m) for m in _unit_models(data)):
             raise AnalysisError(JOINT_REPAIRABLE.format(where=label))
+        from backend.services import rbd_repairable_blocks
+
+        if rbd_repairable_blocks.block_has(data) or data.get(rbd_repairable_blocks.KEY):
+            # A fitted repairable model and its replacement rule (#367): the live surpyval model is the
+            # component's life and repair, which RePyability takes as it is.
+            process = (rbd_repairable_blocks.build(data.get("model"), f"“{label}”", resolve_model)
+                       if rbd_repairable_blocks.block_has(data) else None)
+            problems = rbd_repairable_blocks.check(data, label, ntype, True, process)
+            if problems:
+                raise AnalysisError(problems[0])
+            components[nid] = rbd_maintenance.repairable_component(data, label, process, resolve_model)
+            continue
+        if scheduled is not None:
+            # RePyability's repairable "covariates" (#372): the live regression model is the life, run
+            # under the schedule on the diagram's clock; repairs reset age, never the schedule.
+            live, schedule, notes = scheduled
+            spec = (rbd_maintenance.repairable_component(data, label, live, resolve_model)
+                    if rbd_maintenance.has_extras(data) else None)
+            if not isinstance(spec, dict):
+                spec = {"reliability": live, "repairability": "instant" if data.get("instant_repair")
+                        else _repair_distribution(data, label, resolve_model)}
+            spec["covariates"] = schedule
+            components[nid] = spec
+            schedule_notes.extend(notes)
+            continue
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
         if ntype == "standby":
             # A duty unit plus spares, each repaired on its own (#156).
@@ -2683,6 +2847,8 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             ) from exc
 
     rbd = build(groups if with_ccf else None)
+    if any(isinstance(c, dict) and "covariates" in c for c in components.values()):
+        _SCHEDULED[rbd] = list(dict.fromkeys(schedule_notes))
     if groups:
         from backend.services import rbd_ccf
 
@@ -2704,6 +2870,26 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
                             "mode": "long_run" if with_ccf == "long_run" else "all",
                             "frequency_reason": _with_labels(frequency, labels) if frequency else None}
     return rbd, labels, gate_ids, working_nodes, broken_nodes
+
+
+#: The built RBDs with a block on a covariate schedule (#372), and the
+#: schedules' warnings (values held at the fitted range, a path held after
+#: its layout); weakly keyed, so it goes with the RBD.
+_SCHEDULED: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def covariate_schedule_summary(rbd) -> Optional[dict]:
+    """``{"note", "warnings"}`` for an RBD with a block on a covariate
+    schedule (the plain words every repairable result carries), else None."""
+    try:
+        notes = _SCHEDULED.get(rbd)
+    except TypeError:
+        return None
+    if notes is None:
+        return None
+    from backend.services import rbd_tvc
+
+    return {"note": rbd_tvc.REPAIRABLE_NOTE, "warnings": list(notes)}
 
 
 #: Whether each built RBD has its diagram's common-cause groups in it (see
@@ -2787,6 +2973,9 @@ def _component_message(text: str, labels: dict) -> str:
     """RePyability's message about a component, naming blocks by label."""
     for nid, label in labels.items():
         text = text.replace(f"'{nid}'", f"“{label}”")
+    from backend.services import rbd_tvc  # a block on a covariate schedule (#372): the library's words, no code
+
+    text = rbd_tvc.plain_refusal(text)
     # A common-cause group whose members differ, in plain words.
     same = _CCF_NOT_IDENTICAL.match(text)
     if same:
@@ -3553,6 +3742,7 @@ def analyze_availability(
         "curve": curve,
         **extras,
         **({"common_cause": common_cause} if common_cause is not None else {}),
+        **({"covariate_schedule": sched} if (sched := covariate_schedule_summary(rbd)) is not None else {}),
         # Whether the figures above include a simulation (``simulate=False``:
         # the exact long-run figures only), and the state it started from.
         "has_simulation": res is not None,
@@ -3625,6 +3815,11 @@ def _settling_time(model: dict, repair: Optional[dict], now: Optional[dict] = No
     block's state now: a running block of age ``a`` has its remaining life
     (the mean residual life at ``a``) left to run instead of a whole one; a
     block down for ``since`` has its remaining repair to finish first."""
+    if model.get("kind") == "repairable":  # a fitted repairable model (#367): one replacement cycle
+        from backend.services import rbd_repairable_blocks
+
+        mttr = _spec_mean(repair) if isinstance(repair, dict) else None
+        return rbd_repairable_blocks.settling_time({"model": model}, mttr)
     life = _spec_mean(model)
     if life is None:
         return None
@@ -3637,6 +3832,14 @@ def _settling_time(model: dict, repair: Optional[dict], now: Optional[dict] = No
     if now and now.get("age"):
         life = _residual_mean(model, float(now["age"])) or life
     return wait + life + (mttr or 0.0)
+
+
+def _repairable_settling(data: dict) -> Optional[float]:
+    """A block on a fitted repairable model (#367): one replacement cycle and a repair."""
+    from backend.services import rbd_repairable_blocks
+
+    repair = data.get("repair")
+    return rbd_repairable_blocks.settling_time(data, _spec_mean(repair) if isinstance(repair, dict) else None)
 
 
 def _availability_horizon(graph: dict, state: Optional[dict] = None) -> float:
@@ -3659,7 +3862,8 @@ def _availability_horizon(graph: dict, state: Optional[dict] = None) -> float:
     settle = {
         nid: t for nid, data in nodes.items()
         if isinstance(data.get("model"), dict)
-        and (t := _settling_time(data["model"], data.get("repair"), state.get(nid))) is not None
+        and (t := (_repairable_settling(data) if (data["model"].get("kind") == "repairable")
+                   else _settling_time(data["model"], data.get("repair"), state.get(nid)))) is not None
     }
     if not settle:
         return max(1000.0, floor)

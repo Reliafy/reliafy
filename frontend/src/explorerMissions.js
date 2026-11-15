@@ -27,11 +27,20 @@ import { tabPlace } from "./explorerTabs.js";
 
 export const MISSION_TYPE = "mission";
 export const PHASE_TYPE = "phase";
-// A row of the Missions tab's own: a mission, or one of its phases.
-export const isMissionRow = (r) => r?.type === MISSION_TYPE || r?.type === PHASE_TYPE;
+// Under each phase (Derryn, 15 Nov 2026): one row per covariate a life model of the mission's RBD
+// leaves open (automatic: they come and go with the RBD's models, never typed in), then one row
+// per node status rule (a block's state in the phase, added by hand; a block with none is Working).
+export const MCOV_TYPE = "mcov";
+export const MRULE_TYPE = "mrule";
+// A row of the Missions tab's own: a mission, one of its phases, or a phase's covariate or rule.
+export const isMissionRow = (r) => [MISSION_TYPE, PHASE_TYPE, MCOV_TYPE, MRULE_TYPE].includes(r?.type);
 export const isPhaseRow = (r) => r?.type === PHASE_TYPE;
+export const isCovRow = (r) => r?.type === MCOV_TYPE;
+export const isRuleRow = (r) => r?.type === MRULE_TYPE;
 export const missionKey = (rbdId, missionId) => `MS:${rbdId}:${missionId}`;
 export const phaseKey = (rbdId, missionId, i) => `MP:${rbdId}:${missionId}:${i}`;
+export const covKey = (rbdId, missionId, i, name) => `MC:${rbdId}:${missionId}:${i}:${encodeURIComponent(name)}`;
+export const ruleKey = (rbdId, missionId, i, block) => `MR:${rbdId}:${missionId}:${i}:${encodeURIComponent(block)}`;
 // Phases a mission can have (the pane's Add a phase stops there too).
 export const MAX_PHASES = 50;
 
@@ -61,9 +70,9 @@ export function parseMissionParam(value) {
 }
 
 export const MISSION_COLUMNS = [
-  { id: "phases", label: "Phases", width: 230, title: "How many phases, and their names" },
+  { id: "phases", label: "Phases or setting", width: 230, title: "A mission's phases; a phase's place in it; under a phase, a covariate's value or a block's state in it" },
   { id: "duration", label: "Length", width: 130, num: true, title: "A phase's own length; a mission's is every phase added up. In the RBD's unit" },
-  { id: "reliability", label: "Completes", width: 190, num: true, title: "The chance the mission completes, once worked out" },
+  { id: "reliability", label: "Completes", width: 190, num: true, title: "The chance the mission completes, once worked out; a phase's, the chance of getting through it once started" },
   { id: "rbd", label: "RBD", width: 200, title: "The diagram the mission is flown on" },
 ];
 export const MISSION_TREE_HEAD = "Position, and its missions";
@@ -143,13 +152,36 @@ export function graftMissions(display, links = [], hasModel = [], otherModel = [
             search: [m.name, ...names, link.rbd.name].filter(Boolean).join(" ").toLowerCase(),
           },
         });
-        names.forEach((name, i) => rows.set(kids[i], {
-          key: kids[i], type: PHASE_TYPE, parent: key, kids: [], depth: p.depth + 2, own: noStatus(), sum: noStatus(),
-          ref: {
-            name, phase: { index: i, name, of: names.length, duration: lengths[i] ?? null }, mission: m, rbd: link.rbd, position_id: pk,
-            search: String(name || "").toLowerCase(),
-          },
-        }));
+        names.forEach((name, i) => {
+          const set = (m.phase_settings || [])[i] || { covariates: [], rules: [] };
+          const covs = (m.covariates || []).map((c) => ({ ...c, ...((set.covariates || []).find((x) => x.name === c.name) || {}) }));
+          const under = [];
+          const phaseRef = { index: i, name, of: names.length, duration: lengths[i] ?? null };
+          for (const c of covs) {
+            const ck = covKey(link.rbd.id, m.id, i, c.name);
+            under.push(ck);
+            rows.set(ck, {
+              key: ck, type: MCOV_TYPE, parent: kids[i], kids: [], depth: p.depth + 3, own: noStatus(), sum: noStatus(),
+              ref: { name: c.name, cov: c, phase: phaseRef, mission: m, rbd: link.rbd, position_id: pk, search: String(c.name).toLowerCase() },
+            });
+          }
+          for (const rule of set.rules || []) {
+            const rk = ruleKey(link.rbd.id, m.id, i, rule.block);
+            under.push(rk);
+            rows.set(rk, {
+              key: rk, type: MRULE_TYPE, parent: kids[i], kids: [], depth: p.depth + 3, own: noStatus(), sum: noStatus(),
+              ref: { name: rule.label, rule, phase: phaseRef, mission: m, rbd: link.rbd, position_id: pk, search: String(rule.label).toLowerCase() },
+            });
+          }
+          rows.set(kids[i], {
+            key: kids[i], type: PHASE_TYPE, parent: key, kids: under, depth: p.depth + 2, own: noStatus(), sum: noStatus(),
+            ref: {
+              name, phase: phaseRef, settings: { covariates: covs, rules: set.rules || [], votes: set.votes || {} },
+              result: phaseResult(m.result, i), mission: m, rbd: link.rbd, position_id: pk,
+              search: String(name || "").toLowerCase(),
+            },
+          });
+        });
         keys.push(key);
         p.msum.missions += 1;
       }
@@ -232,12 +264,29 @@ export const phaseLengthText = (p, unit) => (p?.duration == null ? "" : lengthTe
 // earlier, Move later, Delete…) and a position's (Add a mission, Open the RBD, Build…).
 export function missionRowActions(r, { viewOnly = null } = {}) {
   const off = viewOnly ? { disabled: true, reason: viewOnly, title: viewOnly } : {};
+  // A covariate row: set in its details (it comes from the RBD's models, so it can't be deleted).
+  if (isCovRow(r)) {
+    const none = r.ref.cov.value == null;
+    return [
+      { id: "mission-cov-set", label: none ? "Set the value…" : "Change the value…", ...off },
+      { id: "mission-cov-clear", label: "Clear the value", ...(viewOnly ? off : none ? { disabled: true, reason: "It has no value of its own in this phase.", title: "It has no value of its own in this phase." } : {}) },
+    ];
+  }
+  if (isRuleRow(r)) {
+    return [
+      { id: "mission-rule-edit", label: "Edit…", ...off },
+      { id: "mission-rule-delete", label: "Delete…", danger: true, ...off },
+    ];
+  }
   if (isPhaseRow(r)) {
     const { index, of } = r.ref.phase;
     const first = "It's the first phase already.";
     const last = "It's the last phase already.";
     return [
-      { id: "mission-phase-open", label: "Open…" },
+      { id: "mission-rule-add", label: "Add node status rule…", ...(viewOnly ? off : (r.ref.mission.blocks || []).length ? {}
+        : { disabled: true, reason: "The mission's RBD has no blocks yet.", title: "The mission's RBD has no blocks yet." }) },
+      { separator: true },
+      { id: "mission-phase-open", label: "Open in the mission editor…" },
       { id: "mission-phase-earlier", label: "Move earlier", ...(viewOnly ? off : index === 0 ? { disabled: true, reason: first, title: first } : {}) },
       { id: "mission-phase-later", label: "Move later", ...(viewOnly ? off : index >= of - 1 ? { disabled: true, reason: last, title: last } : {}) },
       { id: "mission-phase-delete", label: "Delete…", danger: true, ...off },
@@ -248,7 +297,7 @@ export function missionRowActions(r, { viewOnly = null } = {}) {
     { id: "mission-phase-add", label: "Add a phase",
       ...(viewOnly ? off : (r?.ref?.mission?.phases || 0) >= MAX_PHASES ? { disabled: true, reason: full, title: full } : {}) },
     { separator: true },
-    { id: "mission-open", label: "Open" },
+    { id: "mission-open", label: "Open in the mission editor" },
     { id: "mission-rbd", label: r?.ref?.rbd?.mission_rbd ? "Open its RBD" : "Show the RBD" },
     { id: "mission-delete", label: "Delete…", ...off },
   ];
@@ -294,6 +343,8 @@ export function editablePhase(p = {}) {
     duration: p.duration ?? "",
     not_needed: [...(p.not_needed || [])],
     standby: [...(p.standby || [])],
+    guaranteed: [...(p.guaranteed || [])],
+    dormancy: { ...(p.dormancy || {}) },
     votes: { ...(p.votes || {}) },
     values: { ...(p.values || {}) },
     block_values: Object.fromEntries(Object.entries(p.block_values || {}).map(([k, v]) => [k, { ...v }])),
@@ -316,9 +367,24 @@ export function movePhase(phases, i, dir) {
   return out;
 }
 
-// A value typed as a number when it is one; text (a choice) otherwise; null for blank.
+// A phase's covariate value that follows a schedule over the phase (#372): {expression} in the
+// phase's own time t, or {table: [{t, value}], period?}.
+export function isSchedule(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v) && ("expression" in v || "table" in v);
+}
+// A schedule in words, short: "follows 100 if t % 24 < 16 else 40" / "follows a table of 3 steps".
+export function scheduleWords(v) {
+  if (!isSchedule(v)) return "";
+  if (v.expression != null) return `follows ${v.expression}`;
+  const n = (v.table || []).length;
+  return `follows a table of ${n} step${n === 1 ? "" : "s"}${v.period ? `, repeating every ${fmt(Number(v.period))}` : ""}`;
+}
+
+// A value typed as a number when it is one; text (a choice) otherwise; a schedule as it is; null
+// for blank.
 export function typed(v) {
   if (v == null) return null;
+  if (isSchedule(v)) return v;
   const s = String(v).trim();
   if (s === "") return null;
   const n = Number(s);
@@ -364,6 +430,14 @@ export function cleanPhases(rows, { blocks = [], votes = [] } = {}) {
     if (nn.length) out.not_needed = [...new Set(nn)];
     const sb = (r.standby || []).filter((id) => ids.has(id) && !nn.includes(id));
     if (sb.length) out.standby = [...new Set(sb)];
+    const gu = (r.guaranteed || []).filter((id) => ids.has(id) && !nn.includes(id) && !sb.includes(id));
+    if (gu.length) out.guaranteed = [...new Set(gu)];
+    const dorm = {};
+    for (const [id, f] of Object.entries(r.dormancy || {})) {
+      const x = Number(f);
+      if (sb.includes(id) && Number.isFinite(x) && x > 0) dorm[id] = Math.min(x, 1);
+    }
+    if (Object.keys(dorm).length) out.dormancy = dorm;
     const v = {};
     for (const [id, n] of Object.entries(r.votes || {})) {
       if (!voteIds.has(id) || String(n ?? "").trim() === "") continue;
@@ -412,24 +486,94 @@ export const withoutPhase = (rows, i) => rows.filter((_, j) => j !== i);
 // `standby` and `not_needed` lists; one or neither).
 export const BLOCK_STATES = [
   { id: "working", label: "Working", title: "Running and needed: it ages and can fail in this phase" },
-  { id: "standby", label: "Standby", title: "There but not running: it neither ages nor fails in this phase, and counts as working if it was working when the phase began" },
+  { id: "standby", label: "Standby", title: "There but not running: idle it doesn't age (cold) or ages at its dormancy (warm), and counts as working if it was working when the phase began" },
+  { id: "guaranteed", label: "Guaranteed working", title: "Running and ageing, but it can't fail in this phase (one that failed earlier stays failed)" },
   { id: "off", label: "Not needed", title: "The phase works without it; its clock keeps running, so a failure now is found by a later phase that needs it" },
 ];
+// Short words for a cell or a row.
+export const STATE_SHORT = { working: "Working", standby: "Standby", guaranteed: "Guaranteed", off: "Not needed" };
+// A rule's state as the server names it (phase_rules: not_needed) and as the grid does (off).
+export const ruleState = (s) => (s === "not_needed" ? "off" : s);
 export function blockState(phase, id) {
   if ((phase?.standby || []).includes(id)) return "standby";
+  if ((phase?.guaranteed || []).includes(id)) return "guaranteed";
   if ((phase?.not_needed || []).includes(id)) return "off";
   return "working";
 }
-// The phase's lists with block `id` set to `state`: {standby, not_needed} (a patch for the phase).
-export function withBlockState(phase, id, state) {
+// The phase's lists with block `id` set to `state`: {standby, guaranteed, not_needed, dormancy} (a
+// patch for the phase). `dormancy` (0–1) goes with standby only; another state drops it.
+export function withBlockState(phase, id, state, dormancy = null) {
   const standby = (phase?.standby || []).filter((x) => x !== id);
+  const guaranteed = (phase?.guaranteed || []).filter((x) => x !== id);
   const notNeeded = (phase?.not_needed || []).filter((x) => x !== id);
-  if (state === "standby") standby.push(id);
+  const dorm = { ...(phase?.dormancy || {}) };
+  delete dorm[id];
+  if (state === "standby") {
+    standby.push(id);
+    const f = Number(dormancy ?? phase?.dormancy?.[id] ?? 0);
+    if (Number.isFinite(f) && f > 0) dorm[id] = Math.min(f, 1);
+  } else if (state === "guaranteed") guaranteed.push(id);
   else if (state === "off") notNeeded.push(id);
-  return { standby, not_needed: notNeeded };
+  return { standby, guaranteed, not_needed: notNeeded, dormancy: dorm };
+}
+// "Standby (warm, ages at 20%)", "Guaranteed working", "Not needed".
+export function ruleText(rule) {
+  const s = ruleState(rule?.state);
+  if (s === "standby") return Number(rule.dormancy) > 0 ? `Standby (warm, ages at ${fmt(Number(rule.dormancy) * 100)}%)` : "Standby (cold)";
+  return BLOCK_STATES.find((x) => x.id === s)?.label || "Working";
 }
 // The blocks shown faded in a phase's drawing: those it doesn't need and those standing by.
 export const fadedIn = (phase) => new Set([...(phase?.not_needed || []), ...(phase?.standby || [])]);
+
+// ---- the tree's phase details: its covariates, rules and result ----------------------------------
+
+// A phase's own result from the mission's kept result (summary.result.phases): {completes (the
+// chance of getting through it once started), atEnd (the mission still going at its end),
+// waiting}; null before the mission is worked out.
+export function phaseResult(result, i) {
+  const row = result?.phases?.[i];
+  if (!row) return null;
+  if (row.waiting) return { waiting: true, completes: null, atEnd: null };
+  return { waiting: false, completes: row.conditional_failure == null ? null : 1 - row.conditional_failure, atEnd: row.reliability_at_end ?? null };
+}
+
+// A covariate value with its unit: "35 °C", "12%", "Desert" (a choice).
+export function covValueText(v, unit) {
+  if (v == null || v === "") return "—";
+  if (isSchedule(v)) return scheduleWords(v);
+  const u = String(unit || "").trim();
+  const num = typeof v === "number" ? fmt(v) : String(v);
+  if (!u) return num;
+  return u === "%" ? `${num}%` : `${num} ${u}`;
+}
+// What a covariate row says about its value in the phase: {text, flag ("needs" when a block has
+// no value at all, "unset" when the phase has none of its own and a fallback stands in, else
+// null), title}.
+export function covStatus(cov) {
+  if (cov?.value != null) return { text: covValueText(cov.value, cov.unit), flag: null, title: "Set for this phase" };
+  if ((cov?.missing || []).length) {
+    return { text: "Needs a value", flag: "needs", title: `No value: ${cov.missing.join(", ")} can't be worked out in this phase until it has one` };
+  }
+  const from = { default: "the model's default", diagram: "the RBD's value", own: "the block's own value", override: "a block's own value in this phase", mixed: "each block's own" }[cov?.source] || "a fallback";
+  return {
+    text: cov?.used != null ? `Not set · uses ${covValueText(cov.used, cov.unit)}` : "Not set",
+    flag: "unset",
+    title: `Not set for this phase: ${from} stands in`,
+  };
+}
+// A phase's line in its details: "2 covariates set, 1 needs a value · 1 rule".
+export function phaseSettingsText(settings) {
+  const covs = settings?.covariates || [];
+  const set = covs.filter((c) => c.value != null).length;
+  const needs = covs.filter((c) => c.value == null && (c.missing || []).length).length;
+  const parts = [];
+  if (covs.length) parts.push(`${set} of ${count(covs.length, "covariate")} set${needs ? `, ${needs} need${needs === 1 ? "s" : ""} a value` : ""}`);
+  const rules = (settings?.rules || []).length;
+  parts.push(rules ? count(rules, "node status rule") : "Every block working");
+  return parts.join(" · ");
+}
+// The phase with one covariate's value set (blank clears it): its stored values changed.
+export const withCovValue = (phase, name, value) => withValue(phase, name, value);
 
 // ---- a phase's covariates: what each block uses and where it comes from ------------------------
 
@@ -479,6 +623,13 @@ export function feedsText(row) {
   return `Feeds ${list} (${count(names.length, "block")})`;
 }
 
+// A covariate row's blocks: "Feeds Pump A and Pump B".
+export function feedsList(cov) {
+  const names = cov?.feeds || [];
+  if (!names.length) return "";
+  return `Feeds ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`}`;
+}
+
 // The blocks still without a value in a phase: [labels], each once.
 export const phaseNeeds = (rows) => [...new Set(rows.flatMap((r) => r.missing || []))];
 
@@ -490,6 +641,8 @@ export function phaseLine(phase, { blocks = [], votes = [] } = {}) {
   const parts = [skipped.length ? `Doesn't need ${skipped.length === 1 ? labelOf.get(skipped[0]) : `${skipped.length} blocks`}`
     : standing.length ? "Every block working or standing by" : "Every block in use, wired as in the RBD"];
   if (standing.length) parts.push(`${standing.length === 1 ? labelOf.get(standing[0]) : `${standing.length} blocks`} on standby`);
+  const held = (phase.guaranteed || []).filter((id) => labelOf.has(id));
+  if (held.length) parts.push(`${held.length === 1 ? labelOf.get(held[0]) : `${held.length} blocks`} guaranteed working`);
   for (const v of votes) {
     const n = phase.votes?.[v.id];
     if (String(n ?? "").trim() !== "") parts.push(`${v.label}: ${n} of ${v.inputs}`);

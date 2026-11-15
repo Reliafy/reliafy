@@ -206,6 +206,10 @@ def _pro_only_message(tool: str) -> str:
                 "WeibullJointPH.fit_from_df(df, x_col=..., markers_col=..., c_col=...), one row per unit with its "
                 "readings as {age: value} — 0 = failed, 1 = still running). Or upgrade to Pro at "
                 f"{_billing_url()} (or call get kind upgrade_link for a payment link) to fit and save it here.")
+    if tool in _LIBRARY_TOOLS:
+        return (f"Making and sharing libraries is part of Reliafy Pro ({PRO_PRICE}) and isn't included on this plan. "
+                "Public libraries stay free: list kind libraries, get kind library and change library_use copy "
+                f"from them. Upgrade at {_billing_url()} (or call get kind upgrade_link for a payment link).")
     if tool in _FIT_TOOLS:
         return (f"Fitting in Reliafy is part of Reliafy Pro ({PRO_PRICE}) and isn't included on this plan. "
                 "Fit the data locally with SurPyval instead (pip install surpyval; e.g. "
@@ -410,7 +414,10 @@ DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in
 _FIT_TOOLS = {"analyse.fit", "analyse.bayes_update", "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent",
               "analyse.fit_joint", "change.model_fit_joint"}
 _FLEET_TOOLS = {"list.fleets", "analyse.fleet_forecast", "list.fleet_alerts", "change.fleet_create_alert"}
-PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
+# Making, filling, editing, sharing and publishing libraries (Derryn, 15 Nov 2026); reading and using
+# public libraries stays on every plan, and deleting one's own library (change library_delete) too.
+_LIBRARY_TOOLS = {"change.library_create", "change.library_update", "change.library_add", "change.library_remove"}
+PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS | _LIBRARY_TOOLS
 # Never gated or counted: the way to Pro, seeing where the allowance stands
 # and the how-tos must work when a limit is hit.
 UNGATED_TOOLS = {"get.upgrade_link", "get.account", "guide", "report_problem.report", "report_problem.status",
@@ -854,7 +861,7 @@ ONE_OF = {
     ("analyse", "failure_finding_interval"): "model_id or params, target_availability",
     ("analyse", "calendar_replacement"): "model_id or params, shuts, failure_cost",
     ("analyse", "next_replacement"): "model_id or params, age, shuts, failure_cost",
-    ("analyse", "prediction"): "lines or product_id",
+    ("analyse", "prediction"): "lines or product_id", ("analyse", "schedule"): "rule or plan",
     ("change", "prediction_save"): "name, lines or product_id",
     ("change", "library_add"): "library_id, dataset_id or model_id",
 }
@@ -3389,6 +3396,8 @@ def upload_dataset(
     user, db = _caller(ctx), _db()
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
+    if library_id and user.get("mcp_plan", "pro") != "pro":
+        raise Refusal(_pro_only_message("change.library_add"), "pro_only")
     lib = _own_library(db, user["uid"], library_id) if library_id else None
     split = (dataset_col or "").strip()
     if not split:
@@ -3659,6 +3668,18 @@ class BlockModel(BaseModel):
         "A saved non-repairable model id (list kind models) instead of inline params: a parametric (or proportional-hazards) "
         "model — a saved mixture fit included — not a non-parametric one (Kaplan-Meier etc.), which RBD blocks "
         "don't take."))
+    repairable_model_id: Optional[str] = Field(None, description=(
+        "Repairable diagrams, component blocks: a saved repairable model id (list kind recurrent) as how the "
+        "unit fails between replacements: Crow-AMSAA, Duane, Cox-Lewis, HPP, ARA, ARI, G1 or generalised "
+        "renewal. Not a proportional-intensity model. Pair with the node's replacement rule; guide('rbds')."))
+    repairable_form: Optional[Literal["crow_amsaa", "duane", "cox_lewis", "hpp", "ara", "ari", "g1", "grp_i",
+                                      "grp_ii"]] = Field(None, description=(
+        "Or a repairable model typed in: its form, with params by SurPyval name — crow_amsaa [alpha, beta], "
+        "duane [alpha, b], cox_lewis [alpha, beta], hpp [lambda], ara [rho, alpha, beta], g1/grp_i/grp_ii "
+        "[q, alpha, beta] (Weibull life), ari [rho, alpha, beta] (Crow-AMSAA baseline)."))
+    repairable_options: Optional[dict[str, Union[int, str]]] = Field(None, description=(
+        "repairable_form ara/ari: {m: repairs remembered (or 'all')}; ari: {baseline: crow_amsaa | duane | "
+        "cox_lewis}."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
     joint_unit: Optional["JointUnit"] = Field(None, description=(
         "With a saved condition-based (joint) model: the unit this block is (non-repairable diagrams)."))
@@ -3824,6 +3845,20 @@ class RepairQuality(BaseModel):
         "repair cost is charged at every failure, its replacement cost at the replacement)."))
 
 
+class Replacement(BaseModel):
+    """When a block on a repairable model is replaced with a new one (#367)."""
+    model_config = ConfigDict(extra="forbid")
+    rule: Literal["none", "age", "repairs"] = Field(description=(
+        "age = replaced at an age; repairs = replaced at the next failure after this many repairs; none = never "
+        "(allowed only when the model never wears out: HPP, or a non-rising shape or trend)."))
+    age: Optional[float] = Field(None, gt=0, description="rule age: the age it's replaced at (diagram unit).")
+    repairs: Optional[int] = Field(None, ge=0, le=999, description=(
+        "rule repairs: repairs before it's replaced (0 = replaced at every failure)."))
+    duration: Optional[float] = Field(None, ge=0, description="rule age: how long a planned replacement takes.")
+    cost: Optional[float] = Field(None, ge=0, description=(
+        "rule age: what a planned replacement costs (default: the block's replacement cost)."))
+
+
 class RbdNode(BaseModel):
     id: str = Field(description="Unique node id. The diagram needs exactly one 'input' and one 'output' node.")
     type: Literal["input", "output", "component", "series", "parallel", "knode", "standby", "subsystem"] = Field(
@@ -3839,13 +3874,20 @@ class RbdNode(BaseModel):
     n: Optional[int] = Field(None, description="series/parallel: number of identical units; knode: number REQUIRED to work.")
     k: Optional[int] = Field(None, description=(
         "knode: number of branches feeding the gate. standby: number of units RUNNING (default 1), e.g. k=2 with "
-        "spares=1 for a 2-of-3 duty/standby train; warm spares need k=1 (no exact figures otherwise), and a "
-        "spare's own model works with k up to 2."))
+        "spares=1 for a 2-of-3 duty/standby train. Any k with exponential lives; guide('rbds') for the rest."))
     spares: Optional[int] = Field(None, description="standby: number of spares.")
     cold: Optional[bool] = Field(None, description="standby: true = cold (spares don't age while idle).")
     dormancy: Optional[float] = Field(None, ge=0, le=1, description=(
         "standby: how fast an idle spare ages relative to a running one — 0 cold, 1 hot, "
         "in between warm (e.g. 0.2 for a spare kept warm and pressurised). Overrides `cold`."))
+    startProb: Optional[float] = Field(None, ge=0, le=1, description="standby: chance a spare starts (default 1).")
+    standbyModel: Optional[BlockModel] = Field(None, description="standby: every spare's own model.")
+    runningModels: Optional[list[Optional[BlockModel]]] = Field(None, description=(
+        "standby: running units' own models in order, null = the block's model."))
+    spareModels: Optional[list[Optional[BlockModel]]] = Field(None, description=(
+        "standby: spares' own models in switch-in order, null = standbyModel/model."))
+    simulate: Optional[bool] = Field(None, description=(
+        "standby with no exact reliability: simulate it (Pro) instead of refusing."))
     subsystem_rbd_id: Optional[str] = Field(None, description="subsystem: the saved RBD id to embed.")
     # Repairable diagrams: a block's costs and maintenance (#99, #100, #156, #157).
     instant_repair: Optional[bool] = Field(None, description="Repairable component: repaired in zero time (still "
@@ -3871,6 +3913,9 @@ class RbdNode(BaseModel):
         "at the N-th failure. Such a block has no exact long-run figures: analyse rbd simulates them (and "
         "says why). Not on standby groups, blocks replaced on condition or common-cause members' exact figures. Not "
         "yet with a mixture (two-failure-mode) life: that can't be simulated quickly, so it's refused."))
+    replacement: Optional[Replacement] = Field(None, description=(
+        "Repairable component on a repairable model (model.repairable_model_id or repairable_form): when it's "
+        "replaced with a new one. Required unless the model never wears out; guide('rbds')."))
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description=_CAPACITY_DESCRIPTION)
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Non-repairable component/series/parallel block on a saved covariate (regression) model: covariates "
@@ -3893,13 +3938,18 @@ class MissionPhase(BaseModel):
         "Block ids this phase doesn't need (they still age and can fail, and stay failed for later phases)."))
     standby: Optional[list[str]] = Field(None, description=(
         "Block ids standing by in this phase: not running, so they don't age or fail in it."))
+    guaranteed: Optional[list[str]] = Field(None, description=(
+        "Block ids guaranteed working in this phase: they run and age but can't fail in it."))
+    dormancy: Optional[dict[str, float]] = Field(None, description=(
+        "standby block id -> how fast it ages while idle, 0 (cold, default) to 1 (hot)."))
     votes: Optional[dict[str, int]] = Field(None, description=(
         "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
-    values: Optional[dict[str, Union[float, str]]] = Field(None, description=(
+    values: Optional[dict[str, Union[float, str, dict[str, Any]]]] = Field(None, description=(
         "Use / Environment covariate name -> its value in this phase, set once for every block it feeds "
-        "(analyse rbd_mission lists them)."))
-    block_values: Optional[dict[str, dict[str, Union[float, str]]]] = Field(None, description=(
-        "block id -> {input key: value}: one block's own values in this phase, over values."))
+        "(analyse rbd_mission lists them); or a schedule over the phase, t from the phase's start: "
+        "{expression: '100 if t % 24 < 16 else 40'} or {table: [{t, value}], period?}."))
+    block_values: Optional[dict[str, dict[str, Union[float, str, dict[str, Any]]]]] = Field(None, description=(
+        "block id -> {input key: value or schedule}: one block's own values in this phase, over values."))
 
 
 class NetworkTerminals(BaseModel):
@@ -4209,12 +4259,13 @@ class UpdateNodeOp(_Op):
     repair_one_at_a_time: Optional[bool] = None
     duty: Optional[float] = Field(None, gt=0, le=1)
     repair_quality: Optional[RepairQuality] = Field(None, description="Replaces the block's repair quality.")
+    replacement: Optional[Replacement] = Field(None, description="Replaces the block's replacement rule.")
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description="Replaces the capacity.")
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Replaces the block's covariate schedules (#52; see change rbd_create's node)."))
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
                                  "instant_repair", "repair_one_at_a_time", "repair_quality", "capacity",
-                                 "covariate_schedules", "duty"]]] = Field(
+                                 "covariate_schedules", "duty", "replacement"]]] = Field(
         None, description="Remove these block settings.")
 
 
@@ -5009,13 +5060,27 @@ def analyze_rbd(
 
         state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
                  if current_state else None)
-        result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
-                                            at_times=times, current_state=state,
-                                            target_reliability=target_reliability, evaluate_at=evaluate_at,
-                                            band=({"level": confidence, "b_lives": b_lives,
-                                                   "times": [t for t in times or [] if t > 0][:8] or None}
-                                                  if confidence is not None else None))
+        from backend.services import rbd_standby
+
+        # A standby block set to be simulated (no exact reliability): Pro, like every simulation.
+        entitled = billing_service.premium_compute_allowed(db, user)
+        try:
+            with rbd_standby.simulation("run" if entitled else None):
+                result = rbds_service.analyze_graph(
+                    db, graph, owners, t_max=t_max, conditional_age=conditional_age,
+                    at_times=times, current_state=state,
+                    target_reliability=target_reliability, evaluate_at=evaluate_at,
+                    band=({"level": confidence, "b_lives": b_lives,
+                           "times": [t for t in times or [] if t > 0][:8] or None}
+                          if confidence is not None else None))
+        except rbd_standby.SimulationNeedsPro as exc:
+            _soft_refusal("pro_only")
+            reason = str(exc).split(" It's set to be simulated")[0]
+            return {**head, "kind": "reliability", "available": False, "code": "pro_required",
+                    "message": f"{reason} {rbd_standby.PRO_MESSAGE} Upgrade at {_billing_url()}."}
         out = {**head, "available": True, **_reliability_summary(result, graph, times, include_curves)}
+        if result.get("simulated"):
+            out["simulated"] = result["simulated"]
         produced = None if current_state else _production_answer(db, graph, owners, times[-1] if times else None)
         if produced is not None:
             out["production"] = produced
@@ -5024,7 +5089,9 @@ def analyze_rbd(
             out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
         if rbd_phases.has_phases(graph):  # #160: the phased mission, alongside
             try:
-                out["phased_mission"] = rbd_phases.agent_summary(rbd_phases.analyze_for_owner(db, graph, owners))
+                # From the blocks' ages now, like the rest of the answer (as of now).
+                out["phased_mission"] = rbd_phases.agent_summary(
+                    rbd_phases.analyze_for_owner(db, graph, owners, current_state=state))
             except AnalysisError as exc:
                 out["phased_mission"] = {"available": False, "message": str(exc)}
         return _summary_only(out) if summary_only else out
@@ -5201,35 +5268,47 @@ def analyse_rbd_mission(
     mission_id: Annotated[Optional[str], Field(description=(
         "A mission of the diagram (get kind rbd lists them; 'mission' is the diagram's own phases). Omit for "
         "every mission's chance of completing."))] = None,
+    current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
+        "Blocks' states now, keyed by node id, as analyse rbd's non-repairable current_state ({failed: true} "
+        "or {age: <time it has run>}); blocks left out are new. The mission then flies from now: each aged "
+        "block starts it at its age and keeps ageing through standby phases, and a failed block stays failed. "
+        "Omit to fly it from new."))] = None,
 ) -> dict[str, Any]:
     """A mission's chance of completing: each phase's failure probability, reliability at its end and
     weakest block, plus the Use / Environment covariates its phases can set (the blocks each feeds). A
-    phase missing a value waits: needs says which blocks need what."""
+    phase missing a value waits: needs says which blocks need what. current_state flies it from the
+    blocks' states now (the notes say "As of now")."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     rbd = _get_rbd(db, user["uid"], rbd_id)
     graph = rbd.graph or {}
     every = rbd_missions.missions_of(graph)
+    state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
+             if current_state else None)
     if mission_id is None:
         rows = []
         for m in every:
             try:
-                got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False)
+                got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False, current_state=state)
                 rows.append({**rbd_missions.summary(graph, m), "mission_reliability": got["reliability"],
                              **({"needs": got["needs"]} if got.get("needs") else {}),
                              **({"placeholders": [p["label"] for p in got["placeholders"]],
                                  "note": rbd_phases.placeholder_note(got)} if got.get("placeholders") else {})})
             except AnalysisError as exc:
                 rows.append({**rbd_missions.summary(graph, m), "message": str(exc)})
-        return {"rbd_id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "", "missions": rows,
-                "url": _url(f"/systems/b/{rbd.id}")}
+        out = {"rbd_id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "", "missions": rows,
+               "url": _url(f"/systems/b/{rbd.id}")}
+        if state:
+            out["note"] = rbd_phases.AS_OF_NOW_NOTE
+        return out
     mission = rbd_missions.find(graph, mission_id)
     if mission is None:
         raise ToolError(f"“{rbd.name}” has no mission '{mission_id}': it has "
                         f"{', '.join(repr(m['id']) for m in every) or 'none'}.")
     detail = rbd_missions.detail(db, owners, graph, mission)
     try:
-        result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"]))
+        result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"],
+                                                               current_state=state))
     except AnalysisError as exc:
         result = {"available": False, "message": str(exc)}
     covariates = [{"name": r["name"], "role": r["role"], "unit": r["unit"],
@@ -8954,11 +9033,11 @@ def get_account(ctx: Context) -> dict[str, Any]:
     elif plan == "free":
         note = (f"Reliafy Free: {quota:,} tool calls a month to try Reliafy from an AI agent (get kind account, "
                 "guide, get kind upgrade_link, change upload_send_part and library lookups aren't counted), within the storage "
-                "limits shown. Fitting and fleets are Pro-only.")
+                "limits shown. Fitting, fleets and making libraries are Pro-only.")
     else:
         note = (f"Reliafy Agent (a retired plan, kept until the subscription ends): {quota:,} tool calls a day "
                 "(get kind account, guide, get kind upgrade_link, change upload_send_part and library lookups aren't counted) and "
-                "the storage limits shown. Fitting and fleets are Pro-only.")
+                "the storage limits shown. Fitting, fleets and making libraries are Pro-only.")
     return {
         "plan": plan,
         "plan_name": _PLAN_NAMES[plan],
@@ -9239,9 +9318,8 @@ def get_library(ctx: Context, library_id: _LibraryId, entry_id: Annotated[Option
 def create_library(ctx: Context, name: _LibraryName, description: _LibraryDescription = None,
                    notes: _LibraryNotes = None, source: _LibrarySource = None,
                    citation: _LibraryCitation = None) -> dict[str, Any]:
-    """A new, private, empty library (one saved item toward the Free plan's limit); change library_add fills it."""
+    """A new, private, empty library (Pro); change library_add fills it."""
     user, db = _caller(ctx), _db()
-    _cap(db, user, user_library.COLLECTION, "libraries")
     lib = _library_call(lib_entries.create, db, user["uid"], name, description or "", notes or "", source or "",
                         citation or "")
     return {"saved": True, "library_id": lib["_id"], **_library_out(db, user["uid"], lib)}
@@ -9685,6 +9763,45 @@ def analyse_maintainability(
     return {"saved": False, **out}
 
 
+def analyse_schedule(
+    ctx: Context,
+    rule: Annotated[Optional[dict[str, Any]], Field(description=(
+        "A task's how-often rule, e.g. {kind: 'monthly', every: 1, weekday: 'Saturday', nth: 1}, {kind: 'yearly', "
+        "month: 11, weekday: 'Tuesday', nth: 1}, {kind: 'weekly', weekdays: ['Monday']}, {kind: 'every', every: "
+        "2, unit: 'weeks'}; anchor? (the date it counts from)."))] = None,
+    plan: Annotated[Optional[dict[str, Any]], Field(description=(
+        "An operating plan: {background: {kind: shifts, shifts: [{days, start, stop}]} | {kind: rate, amount, "
+        "per: day|week|month|year} | {kind: roster, on, off, anchor, start, stop} | {kind: continuous} | {kind: "
+        "runs, runs: [[on, off]]}, specific?: [{runs, covers?}], utilisation?}; maintenance guide topic "
+        "operating_plan."))] = None,
+    start: Annotated[Optional[str], Field(description="First date (default today).")] = None,
+    end: Annotated[Optional[str], Field(description=(
+        "Last date (default a year on for a rule, 28 days for a plan; a plan at most three years)."))] = None,
+    reading: Annotated[Optional[float], Field(description="plan: the hours meter's reading at read_at.")] = None,
+    read_at: Annotated[Optional[str], Field(description="plan: when it was read (default start).")] = None,
+    period: Literal["day", "week", "month"] = "day",
+    due_at: Annotated[Optional[float], Field(description=(
+        "plan: a meter reading; the moment the meter reaches it, and the stop after."))] = None,
+    time_zone: Annotated[Optional[str], Field(description=(
+        "The site's zone, e.g. Australia/Sydney (default yours): plans count real hours across daylight saving."))]
+    = None,
+) -> dict[str, Any]:
+    """A how-often rule's dates, or an operating plan's hours by date; saves nothing. Check a rule or a plan
+    before saving it on a task or a position (maintenance tasks.create / positions.update)."""
+    from backend.services import schedule_calc
+
+    zone = time_zone
+    if zone in (None, ""):
+        try:
+            zone = time_zones.of_owner(_db(), _caller(ctx)["uid"])
+        except Exception:  # noqa: BLE001 - no stored zone: the server's
+            zone = None
+    try:
+        return schedule_calc.compute(rule, plan, start, end, reading, read_at, period, due_at, zone)
+    except schedule_calc.ScheduleError as err:
+        raise ToolError(str(err)) from None
+
+
 def save_maintainability_prediction(
     ctx: Context,
     name: _MaintainabilityName,
@@ -9850,6 +9967,7 @@ _A = {  # new tool -> {action: the function it runs}
         "rbd_mission": _act(analyse_rbd_mission),
         "prediction": _act(predict_parts_count),
         "maintainability": _act(analyse_maintainability),
+        "schedule": _act(analyse_schedule),
     },
     "change": {
         "model_fit": _act(fit_and_save_model),
@@ -9907,10 +10025,10 @@ _action_tool("get", _READ, "Read one item", "kind",
              docs={"id": "The item's id (a job's job_id, an upload's upload_id, a library record's id, a maintainability "
                          "prediction's id)."})
 _action_tool("list", _READ, "List items", "kind",
-             "The user's items of one kind (with samples), what changed, libraries.",
+             "The user's items of one kind (with samples), changes, libraries.",
              _A["list"])
 _action_tool("analyse", _READ, "Analyse", "action",
-             "Every calculation (life, repairable, plans, RBDs); saves nothing.", _A["analyse"], docs={
+             "Every calculation; saves nothing.", _A["analyse"], docs={
     "model_id": ("A saved model id (list kind models): non-repairable for reliability_at, check_life_requirement, "
                  "optimal_replacement and failure_finding_interval; ALT for alt_use_level; joint for "
                  "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul; any for "

@@ -75,6 +75,18 @@ def test_time_unit_from_the_time_column():
     assert tags([[1.0, 0], [2.0, 1]], ["x", "c"])["time_unit"] is None
 
 
+def test_time_unit_reads_the_column_words_with_pint():
+    """SurPyval 0.27 keeps a unit label as typed, so the app compares each
+    word with its units (``same_unit``) rather than reading a normalised name."""
+    from backend.services.datasets import _time_unit
+
+    assert _time_unit(["odometer_km"]) == "kilometer"
+    assert _time_unit(["cycles"]) == "cycle"
+    assert _time_unit(["age (years)"]) == "year"
+    assert _time_unit(["Days"]) == "day"
+    assert _time_unit(["time_to_failure"]) is None
+
+
 def test_outcome_once_per_unit_with_readings_is_life_data_with_measurements():
     rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u, None if k < 3 else u % 2] for u in range(4) for k in range(4)]
     out = tags(rows, ["bearing", "hours", "vibration_mm_s", "censored"])
@@ -179,3 +191,97 @@ def test_covariates_tag_follows_the_reading():
     out = dataset_tags(with_z)
     assert out["tags"] == ["Non-repairable", "Covariates"]
     assert out["use_for"][0] == "Non-repairable model with covariates"
+
+
+# --- The saved reading decides how rows are counted (demo review, Nov 2026) ---
+
+def _saved(rows, cols, reading, key):
+    from backend.schema import Dataset
+    from backend.services.datasets import dataset_tags
+
+    csv = pd.DataFrame(rows, columns=cols).to_csv(index=False).encode()
+    return dataset_tags(Dataset(id=key, name=key, checksum=key, data=csv, reading=reading))
+
+
+_INSPECTION_COLS = ["av", "fitted_at_airframe_fh", "age_last_clean_fh", "age_found_fh", "status", "event"]
+_INSPECTION_READING = {"xl": "age_last_clean_fh", "xr": "age_found_fh", "c": "status", "i": "av",
+                       "unit": "flight hours", "not_used": ["fitted_at_airframe_fh", "event"]}
+
+
+def test_no_findings_count_as_none_failed():
+    """A column named "status" reads 1 = failed by its name alone, but the
+    saved reading says 0 = failed (no c_invert): ten units still in service are
+    no failures, as the fit reads them."""
+    rows = [[f"AV-{i:02d}", 20.0 * i, 270.0 + i, 270.0 + i, 1, "still in service"] for i in range(1, 11)]
+    out = _saved(rows, _INSPECTION_COLS, _INSPECTION_READING, "reading-no-findings")
+    assert out["summary"] == "10 avs · 0 failed"
+    assert out["tags"] == ["Non-repairable"]
+
+
+def test_c_invert_and_c_map_are_read():
+    rows = [[f"P-{i}", 100 + i, 1 if i < 3 else 0] for i in range(10)]
+    cols = ["pump", "hours", "flag"]
+    out = _saved(rows, cols, {"x": "hours", "c": "flag", "c_invert": True}, "reading-invert")
+    assert out["summary"] == "10 pumps · 3 failed"
+    out = _saved(rows, cols, {"x": "hours", "c": "flag"}, "reading-plain")
+    assert out["summary"] == "10 pumps · 7 failed"
+    words = [[f"P-{i}", 100 + i, "Broke" if i < 4 else "OK"] for i in range(10)]
+    out = _saved(words, cols, {"x": "hours", "c": "flag", "c_map": {"Broke": 0, "OK": 1}}, "reading-map")
+    assert out["summary"] == "10 pumps · 4 failed"
+
+
+def test_inspection_lives_are_not_repairable():
+    """Several inspection lives per air vehicle (a range each, 2 = found
+    between inspections) are non-repairable lives, not a repairable system's
+    events, whatever the airframe hours column does."""
+    rows = [["AV-01", 193.8, 231.2, 256.2, 2, "found"], ["AV-01", 450, 114.9, 114.9, 1, "in service"],
+            ["AV-02", 186.7, 138.3, 163.3, 2, "found"], ["AV-02", 350, 176.7, 176.7, 1, "in service"],
+            ["AV-03", 157.9, 92.1, 117.1, 2, "found"], ["AV-03", 275, 125, 150, 2, "found"],
+            ["AV-03", 425, 78.2, 78.2, 1, "in service"]]
+    out = _saved(rows, _INSPECTION_COLS, _INSPECTION_READING, "reading-inspection-lives")
+    assert out["tags"] == ["Non-repairable"]
+    assert out["summary"] == "3 avs · 7 lives · 4 failed between inspections"
+
+
+def test_part_lives_per_vehicle_are_not_repairable():
+    """Propeller removals: hours on each propeller (resetting at each fit) with
+    the airframe hours beside them. The reading's x doesn't rise along a
+    vehicle's rows, so these are part lives, not repairable events."""
+    rows = [["AV-01", 0, 45.9, 0], ["AV-01", 45.9, 16, 0], ["AV-01", 61.9, 64.1, 0], ["AV-01", 126, 429.1, 1],
+            ["AV-02", 0, 191.5, 0], ["AV-02", 191.5, 60.2, 0], ["AV-02", 251.7, 135.9, 1]]
+    cols = ["av", "fitted_at_airframe_fh", "fh_on_part", "status"]
+    out = _saved(rows, cols, {"x": "fh_on_part", "c": "status", "i": "av", "not_used": ["fitted_at_airframe_fh"]},
+                 "reading-part-lives")
+    assert out["tags"] == ["Non-repairable"]
+    assert out["summary"] == "2 avs · 7 lives · 5 failed"
+
+
+def test_an_events_table_with_no_readings_is_not_measurements():
+    """An events table read as component ages, every row a failure, with
+    repair hours not used: no measured value (m), so not Measurements."""
+    rows = [["AV-01", 45.9, 45.9, 0.5], ["AV-01", 61.9, 16, 1.8], ["AV-02", 76, 76, 4],
+            ["AV-02", 120, 44, 3], ["AV-03", 26.4, 26.4, 0.7]]
+    cols = ["asset", "airframe_fh", "component_age_fh", "repair_h"]
+    reading = {"x": "component_age_fh", "i": "asset", "all_failed": True, "not_used": ["airframe_fh", "repair_h"]}
+    out = _saved(rows, cols, reading, "reading-events")
+    assert "Measurements" not in out["tags"]
+    assert out["tags"] == ["Non-repairable"]
+    assert out["summary"] == "3 assets · 5 lives · 5 failed"
+
+
+def test_recurrent_events_still_repairable_with_a_reading():
+    rows = [[f"T{u}", 100 * k + u, 0 if k < 3 else 1] for u in range(3) for k in range(1, 5)]
+    out = _saved(rows, ["truck", "engine_hours", "censored"], {"x": "engine_hours", "c": "censored", "i": "truck"},
+                 "reading-recurrent")
+    assert out["tags"] == ["Repairable"]
+    assert out["summary"] == "3 trucks · 6 failures"
+
+
+def test_one_numbered_system_history_is_repairable():
+    """A fleet history in cumulative hours (system 1, every row a defect, up
+    to an observed-to time) is a repairable system's events."""
+    rows = [[1, t, 4429.2, "Belt"] for t in (278.2, 365.5, 422.5, 427.9, 900.0)]
+    reading = {"x": "time", "tr": "observed_to", "i": "system", "e": "cause", "all_failed": True}
+    out = _saved(rows, ["system", "time", "observed_to", "cause"], reading, "reading-one-system")
+    assert out["tags"] == ["Repairable"]
+    assert out["summary"] == "1 system · 5 failures"

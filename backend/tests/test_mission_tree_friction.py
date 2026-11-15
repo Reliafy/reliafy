@@ -95,7 +95,7 @@ def test_the_missions_read_names_positions_whose_model_cant_be_a_block(m, db):
         read_owners = OWNERS
         hidden = set()
 
-    resp = router.position_missions(None, db, Ctx(), m)
+    resp = router.position_missions(None, session=db, ctx=Ctx(), m=m)
     import json
 
     body = json.loads(resp.body)

@@ -11,7 +11,7 @@ import io
 import numpy as np
 import pandas as pd
 import pytest
-from repyability import demonstration as demo
+from surpyval import test_planning as tp
 from surpyval import Weibull
 
 from backend import fitting, life_bounds
@@ -140,7 +140,7 @@ def test_a_b_life_requirement_is_the_reliability_over_that_life():
     longer = demonstration_test(confidence=0.9, mission_time=50_000, b_life=10, test_multiple=2, shape=2,
                                 unit="cycles")
     assert "(2× the life)" in longer["summary"]
-    assert longer["units"] == demo.demonstration_sample_size(0.9, 0.9, 0, test_multiple=2, shape=2)
+    assert longer["units"] == tp.demonstration_sample_size(0.9, 0, alpha_ci=1 - 0.9, test_multiple=2, shape=2)
 
 
 def test_a_b_life_needs_its_life_and_one_target():
@@ -172,12 +172,12 @@ def test_a_poorly_known_beta_warns():
                               shape_interval=[lo, hi], shape_model="Five seals", unit="cycles")
     s = plan["shape_sensitivity"]
     assert s["relevant"] and s["uses"] == "estimate" and s["unsafe"] == "lower"
-    # What the planned units show if β is really at its lower bound: RePyability's own number.
+    # What the planned units show if β is really at its lower bound: SurPyval's own number.
     n = plan["units"]
     assert s["at_lower"]["demonstrated"] == pytest.approx(
-        demo.demonstrated_reliability(n, 0.9, 0, test_multiple=3, shape=lo))
+        tp.demonstrated_reliability(n, 0, alpha_ci=1 - 0.9, test_multiple=3, shape=lo))
     assert s["at_lower"]["demonstrated"] < 0.9
-    assert s["at_lower"]["units"] == demo.demonstration_sample_size(0.9, 0.9, 0, test_multiple=3, shape=lo)
+    assert s["at_lower"]["units"] == tp.demonstration_sample_size(0.9, 0, alpha_ci=1 - 0.9, test_multiple=3, shape=lo)
     assert s["at_lower"]["units"] >= 1.25 * n
     assert s["warning"].startswith("β is poorly known")
     assert f"would need {s['at_lower']['units']} units, not {n}" in s["warning"]
@@ -204,7 +204,7 @@ def test_solving_for_test_time_warns_with_the_time_needed():
     plan = demonstration_test(confidence=0.9, mission_time=1000, b_life=10, units=3, shape=est,
                               shape_interval=[lo, hi], unit="cycles")
     s = plan["shape_sensitivity"]
-    need = demo.demonstration_test_multiple(0.9, 3, 0.9, 0, shape=lo)
+    need = tp.demonstration_test_multiple(0.9, 3, 0, shape=lo, alpha_ci=1 - 0.9)
     assert s["at_lower"]["test_multiple"] == pytest.approx(need)
     assert "each unit would need" in s["warning"]
 

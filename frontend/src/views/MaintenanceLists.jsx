@@ -32,7 +32,7 @@ import { NewPositionModal } from "./MaintenanceHome.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
 import { countsText, inheritedText } from "../maintenanceLocations.js";
-import { openWorkPath } from "../maintenanceAssets.js";
+import { ASSETS_LIST_PATH, openWorkPath } from "../maintenanceAssets.js";
 import { subjectBadge } from "../maintenanceSubjects.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import {
@@ -55,11 +55,9 @@ import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { isNotFound } from "../components/loadFailed.js";
-import { explorerPath } from "../assetTree.js";
 import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { NewPartModal } from "../components/PartForms.jsx";
 import { partsInBranch } from "../explorerTabs.js";
-import { EXPLORER_LABEL } from "../navigation.js";
 import { itemTreePath, productPath } from "../products.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
@@ -160,7 +158,7 @@ export function MaintenanceLocation() {
   // positions: adding one here is its main action, and the new position is at this place.
   const canHoldPositions = !!loc && !loc.design_of && !loc.carried_by;
   const addPosition = () => setModal("position");
-  if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={explorerPath("locations")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
+  if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={ASSETS_LIST_PATH} label="Go to Assets" /></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
   // (positions, items there now and the place itself), not only the positions'.
@@ -241,9 +239,9 @@ export function MaintenanceLocation() {
       )}
       {modal === "rename" && <RenameLocation loc={loc} onClose={() => setModal(null)} onDone={(d) => { setLoc(d); setModal(null); }} />}
       {modal === "delete" && (
-        // Gone with the places inside and the positions there: the Explorer shows the toast with Undo.
+        // Gone with the places inside and the positions there: the Assets list shows the toast with Undo.
         <DeleteTreeModal kind="location" id={loc.id} name={loc.name} onClose={() => setModal(null)}
-                         onDone={(answer, done) => navigate(explorerPath("locations"), { state: { deleted: done } })} />
+                         onDone={(answer, done) => navigate(ASSETS_LIST_PATH, { state: { deleted: done } })} />
       )}
     </div>
   );
@@ -377,16 +375,20 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [classError, setClassError] = useState(null);
+  // What the open class's lives are counted in: days, or a counter's unit (flight hours). Starts at its model's.
+  const [lifeUnit, setLifeUnit] = useState(null);
   useEffect(() => {
     getPositionClasses().then((d) => setClasses(d.classes)).catch((e) => setError(e.message));
   }, []);
+  useEffect(() => { setLifeUnit(null); }, [open]);
+  const byName = new Map((classes || []).map((c) => [c.position_class, c]));
+  const unit = lifeUnit || byName.get(open)?.model?.unit || "days";
   useEffect(() => {
     setClassError(null);
-    if (!open) return;
+    if (!open || classes === null) return;
     setData(null);
-    getClassLifeData(open).then(setData).catch((e) => setClassError(e.message));
-  }, [open]);
-  const byName = new Map((classes || []).map((c) => [c.position_class, c]));
+    getClassLifeData(open, unit).then(setData).catch((e) => setClassError(e.message));
+  }, [open, unit, classes === null]);  // eslint-disable-line react-hooks/exhaustive-deps
   const rows = all ? (classes || []).map((c) => ({ ...c, here: here.find((h) => h.position_class === c.position_class)?.here || 0 }))
     : here.map((h) => ({ positions: 0, fitments: 0, failures: 0, ...byName.get(h.position_class), ...h }));
   const missing = open && isNotFound(classError);
@@ -434,14 +436,29 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
       {open && !missing && (
         <>
           <div className="maint-row"><button type="button" className="secondary sm" onClick={() => onOpen?.(null)}>Close {open}</button></div>
-          <ClassPanel name={open} onChanged={() => getPositionClasses().then((d) => setClasses(d.classes))} />
+          <ClassPanel name={open} unit={unit} onUnit={setLifeUnit}
+                      onChanged={() => getPositionClasses().then((d) => setClasses(d.classes))} />
           <section className="card">
             <div className="maint-head">
-              <h2>{open}: pooled life data</h2>
+              <h2>{open}: pooled life data{unit !== "days" ? ` in ${unit}` : ""}</h2>
               {data && <span className="lib-date">{data.failures} failures · {data.suspensions} suspensions
-                {data.uncertain ? ` · ${data.uncertain} with dates known only roughly (fitted as ranges)` : ""}</span>}
+                {data.uncertain ? (data.unit ? ` · ${data.uncertain} failed between readings (fitted as ranges)`
+                  : ` · ${data.uncertain} with dates known only roughly (fitted as ranges)`) : ""}
+                {data.excluded?.length ? ` · ${data.excluded.length} left out` : ""}</span>}
             </div>
-            {data === null ? <p className="lib-date">Loading…</p> : <div className="maint-scroll"><LifeTable rows={data.rows} showPosition /></div>}
+            {data?.note && <p className="lib-date">{data.note}</p>}
+            {data === null ? <p className="lib-date">Loading…</p> : <div className="maint-scroll"><LifeTable rows={data.rows} showPosition unit={data.unit || "days"} /></div>}
+            {data?.excluded?.length > 0 && (
+              <details className="lib-date" style={{ marginTop: "0.5rem" }}>
+                <summary>Left out: {data.excluded.length} fitment{data.excluded.length === 1 ? "" : "s"} the readings can’t count</summary>
+                <div className="maint-scroll"><table className="lib-table">
+                  <thead><tr><th>Position</th><th>Item</th><th>In</th><th>Why</th></tr></thead>
+                  <tbody>{data.excluded.map((r) => (
+                    <tr key={r.fitment_id}><td>{r.position}</td><td>{r.item}</td><td className="lib-date">{fmtDate(r.from)}</td><td>{r.reason}</td></tr>
+                  ))}</tbody>
+                </table></div>
+              </details>
+            )}
           </section>
         </>
       )}
@@ -460,7 +477,7 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
   );
 }
 
-function ClassPanel({ name, onChanged }) {
+function ClassPanel({ name, unit = "days", onUnit, onChanged }) {
   const [c, setC] = useState(null);
   const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "" });
   const [distribution, setDistribution] = useState("weibull");
@@ -484,11 +501,13 @@ function ClassPanel({ name, onChanged }) {
   };
   const fit = async () => {
     setBusy("fit"); setError(null);
-    try { const d = await fitClassModel(name, distribution); setMade(d.proposals.length); load(); onChanged?.(); } catch (e) { setError(e.message); }
+    try { const d = await fitClassModel(name, distribution, unit); setMade(d.proposals.length); load(); onChanged?.(); } catch (e) { setError(e.message); }
     setBusy(null);
   };
   if (!c) return <section className="card">{error ? <div className="card error">{error}</div> : <p className="lib-date">Loading…</p>}</section>;
   const model = c.model;
+  const units = c.life_units || ["days"];
+  const unitLabel = (u) => (u === "days" ? "days (calendar)" : `${u} (from counters)`);
   return (
     <>
       <section className="card">
@@ -504,6 +523,14 @@ function ClassPanel({ name, onChanged }) {
         </div>
         <div className="maint-row">
           <button className="secondary" onClick={save} disabled={busy === "costs"}>{busy === "costs" ? "Saving…" : "Save costs"}</button>
+          {units.length > 1 && (
+            <label className="lib-date" style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
+              Count lives in
+              <select value={unit} onChange={(e) => onUnit?.(e.target.value)}>
+                {[...new Set([...units, unit])].map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
+              </select>
+            </label>
+          )}
           <select value={distribution} onChange={(e) => setDistribution(e.target.value)}>
             <option value="weibull">Weibull</option><option value="best">Best fit</option>
             <option value="lognormal">Lognormal</option><option value="exponential">Exponential</option>
@@ -516,7 +543,7 @@ function ClassPanel({ name, onChanged }) {
         {model && (
           <p className="lib-date" style={{ marginTop: "0.75rem" }}>
             {model.distribution} fitted {fmtDate(model.fitted_on)} to {model.failures} failures and {model.suspensions} suspensions:{" "}
-            {(model.params || []).map((p) => `${p.name} ${Number(p.value).toPrecision(4)}`).join(", ")} (days).{" "}
+            {(model.params || []).map((p) => `${p.name} ${Number(p.value).toPrecision(4)}`).join(", ")} ({model.unit || "days"}).{" "}
             <Link to={`/models/m/${model.model_id}`}>Open the model</Link>
           </p>
         )}
@@ -524,7 +551,8 @@ function ClassPanel({ name, onChanged }) {
       </section>
       {model && <ForecastCard key={model.model_id} name={name} />}
       <Proposals proposals={c.proposals} onDecided={load} />
-      {model && c.costs?.planned_cost != null && c.costs?.failure_cost != null && <EconomicsCard name={name} />}
+      {model && c.costs?.planned_cost != null && c.costs?.failure_cost != null
+        && <EconomicsCard key={model.model_id} name={name} modelUnit={model.unit || "days"} />}
       <ReplacementCostCard name={name} cost={c.replacement_cost} onSaved={(d) => { setC(d); onChanged?.(); }} />
       <DocumentsCard title={`${name}: documents`} documents={c.documents} target={{ position_class: name }} onChanged={load} />
     </>
@@ -561,10 +589,12 @@ function ReplacementCostCard({ name, cost, onSaved }) {
   );
 }
 
-function EconomicsCard({ name }) {
+function EconomicsCard({ name, modelUnit = "days" }) {
+  const byUse = modelUnit !== "days";
   const [data, setData] = useState(null);
   const [whatIf, setWhatIf] = useState("");
-  const [unit, setUnit] = useState("months");
+  // A model by use (flight hours) costs per hour of use: its what-if is in that unit unless asked otherwise.
+  const [unit, setUnit] = useState(byUse ? modelUnit : "months");
   const [years, setYears] = useState(10);
   const [rate, setRate] = useState(7);
   const [error, setError] = useState(null);
@@ -582,7 +612,7 @@ function EconomicsCard({ name }) {
         <span className="lib-date">What if every</span>
         <input type="number" inputMode="decimal" min="0" step="any" value={whatIf} style={{ width: "5rem" }} onChange={(e) => setWhatIf(e.target.value)} />
         <select value={unit} onChange={(e) => setUnit(e.target.value)}>
-          {["days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}
+          {[...(byUse ? [modelUnit] : []), "days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}
         </select>
         <span className="lib-date">over</span>
         <input type="number" inputMode="numeric" min="1" max="100" value={years} style={{ width: "4rem" }} onChange={(e) => setYears(e.target.value)} />
@@ -702,7 +732,8 @@ function ForecastCard({ name }) {
                     <tr key={r.position.id}>
                       <td><Link to={`/asset-register/positions/${r.position.id}`}>{r.position.name}</Link></td>
                       <td>{r.item?.name || "—"}</td>
-                      <td className="lib-date">{formatNumber(r.age)} {data.model.unit}{r.rate_basis === "counter" ? ` (+${formatNumber(r.rate_per_period)} a ${shown})` : ""}</td>
+                      <td className="lib-date">{formatNumber(r.age)} {data.model.unit}{r.rate_basis === "counter" ? ` (+${formatNumber(r.rate_per_period)} a ${shown})`
+                        : r.rate_basis === "plan" ? ` (+${formatNumber(r.rate_per_period)} a ${shown} on its operating plan)` : ""}</td>
                       <td>{formatPercent(r.prob_next_period)}</td>
                       <td className="lib-date">≈ {formatNumber(r.expected_failures, { sig: 2 })}</td>
                     </tr>

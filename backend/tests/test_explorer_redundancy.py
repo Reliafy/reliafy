@@ -147,9 +147,14 @@ def test_an_active_set_is_k_of_n_and_unlike_pumps_on_standby_take_turns(m):
     m.create_group("Duty / standby", [d, e], mode="standby")
     built = rbd_derive.build(m, st2, block_model=_models({"Duty pump": 1e-3, "Standby pump": 2e-3, "Valve": 1e-4}),
                              unit="hours")
-    pumps = [n for n in built["graph"]["nodes"] if n.get("label", "").endswith("pump")]
-    assert [n["data"]["duty"] for n in pumps] == [0.5, 0.5]
-    assert any("different models" in n and "50%" in n for n in built["notes"])
+    # Pumps on standby with different models (#363): one standby block, the
+    # spare on its own model.
+    (sb,) = [n for n in built["graph"]["nodes"] if n["type"] == "standby"]
+    assert sb["model"]["params"][0]["value"] == pytest.approx(1e-3)
+    assert sb["standbyModel"]["params"][0]["value"] == pytest.approx(2e-3)
+    assert any("different models, each kept on its own unit" in n for n in built["notes"])
+    g = normalize_graph(built["graph"])
+    assert ra.validate_graph(g)["valid"]
 
 
 def _subsystems(m, db):

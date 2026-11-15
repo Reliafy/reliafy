@@ -281,6 +281,7 @@ def _export_resolvers(db, owner_id):
         if model is None:
             return None
         results = model.results or {}
+        spec = model.spec or {}
         return {
             "name": model.name,
             "kind": results.get("kind") or model.kind,
@@ -290,6 +291,11 @@ def _export_resolvers(db, owner_id):
             "extras": results.get("extras"),
             "unit": results.get("unit"),
             "base_distribution_id": results.get("base_distribution_id"),
+            # A Bayesian update's recipe (the history and the prior): the downloads refit it and
+            # use its posterior predictive, as the analysis does, not its parameters' middle values.
+            **({"bayes": {"distribution_id": spec.get("distribution_id") or model.distribution_id,
+                          "unit": spec.get("unit") or None, **spec["bayes"]}}
+               if spec.get("method") == "bayesian_update" and spec.get("bayes") else {}),
         }
 
     return resolve_model, resolve_subsystem
@@ -499,7 +505,7 @@ def _t_sim(t_simulation) -> float | None:
 # than from the parameters stored on the block (rbd_analysis._build_distribution):
 # proportional-hazards / regression models. (Non-parametric blocks are refused,
 # so never analysed.) A load-sharing block's load-life model is resolved too.
-_RESOLVED_KINDS = frozenset({"regression", "joint"})
+_RESOLVED_KINDS = frozenset({"regression", "joint", "repairable"})
 
 
 def _ref_id(model) -> str | None:
@@ -558,6 +564,12 @@ def model_fingerprints(db, graph: dict, owner_id) -> dict:
         d["_id"]: d
         for d in db.models.find({"_id": {"$in": sorted(refs)}, "owner_id": {"$in": access.owner_in(owners)}})
     }
+    # Blocks on saved repairable models (#367): their fits live in their own collection.
+    docs.update({
+        d["_id"]: d
+        for d in db.recurrent_models.find({"_id": {"$in": sorted(refs - set(docs))},
+                                           "owner_id": {"$in": access.owner_in(owners)}})
+    })
     return {mid: (_fit_fingerprint(docs[mid]) if mid in docs else None) for mid in sorted(refs)}
 
 

@@ -386,9 +386,12 @@ order)`, duration` (the whole mission)`, unit, result?}`. On an RBD: `GET /api/r
 expected_updated_at?}`; `GET` adds the blocks, vote nodes and every open
 covariate with the blocks it feeds and, per phase, the value each block uses
 and where it comes from), and `POST /api/rbds/{id}/missions/{mission}/calculate
-{phases?}`: the chance of completing it, each phase's failure probability,
+{phases?, current_state?}`: the chance of completing it, each phase's failure probability,
 reliability at its end and weakest block (the one whose failures end the most
-missions in that phase). A phase missing a value waits: `reliability` is null,
+missions in that phase). `current_state` (`{node: {failed: true} | {age}}`)
+flies it from the blocks' states now: an aged block starts at its age and keeps
+it through standby phases, a failed block stays failed, and the notes open with
+"As of now" (such a result isn't kept for the lists). A phase missing a value waits: `reliability` is null,
 `through` says how far the mission was worked out and `needs` which blocks need
 what. Over MCP: `analyse rbd_mission` and `change rbd_mission`.
 `fit: true` with `data` (`position`, `class`, or `both`: the position's history
@@ -542,7 +545,39 @@ or the nearest above it inside `root` (`inherited_from`), its own plans past and
 background's hours in an ordinary week and the next 14 days. `maintenance guide` topic
 `operating_plan` has the shapes. The app's routes: `GET /api/maintenance/positions/{id}/operating-plan`
 (or `items/{id}`; `?root=`), `PUT /api/maintenance/positions/{id}/operating-plan` and
-`POST /api/maintenance/positions/{id}/operating-plan/end`.
+`POST /api/maintenance/positions/{id}/operating-plan/end`. The hours come from RePyability's
+schedule module, in the plan's time zone (real hours across daylight saving). `get operating_plan`
+also gives `against_actual`: over the last 90 days, the hours the position's hours counter ran as a
+share of the plan, with a `proposal` of that share as the plan's `utilisation` (`plan.utilisation`,
+0.01 to 1) when they differ. It is only offered; nothing changes until it is saved.
+
+Tasks by use in operating hours fall due through the position's operating plan (its own, or the
+nearest above): the moment the hours counter, counted on from its latest reading, crosses the
+task's next reading (`limits[].due_moment`) and the stop after it (`stop_after`). With no plan,
+the date comes from the counter's recent rate, as before. `limits[].basis` says which (`kind`
+`plan`, `rate` or `readings`, with `text`).
+
+`get forecast` (`id` a position; `root` the asset opened; `period` `month`, `quarter` or `year`;
+`periods`, default 12) is the forecast for the position and everything inside it, from today to
+the end of the last whole period: `answer` (the whole forecast in a line), `rows` per period
+(the position's operating `hours`, `tasks`, `labour_hours`, `planned_cost`, expected `failures`
+and `failure_cost`, and the tasks `due`), `totals` with a 90% range (the 5th to 95th percentile
+of outcomes), each task's dates with what they rest on, the life models it used (`models`, each
+with its age, cost per failure and `rests_on`; `placeholder` when typed in) and what it left out
+(`not_on_dates`, `not_forecast`, `states`). Nothing is saved. `maintenance guide` topic
+`forecast` has the detail. The app's route: `GET /api/maintenance/positions/{id}/forecast`
+(`?root=&period=&periods=`).
+
+`analyse schedule` checks a rule or a plan before it is saved, saving nothing: `rule` (a task's
+rule shape) gives its dates from `start` to `end` and the rule in words; `plan` (an operating
+plan's shape) with `reading` at `read_at` gives the hours by `day`, `week` or `month` and, with
+`due_at`, the moment the meter reaches that reading and the stop after it. `time_zone` defaults
+to yours.
+
+```
+reliafy analyse schedule --rule '{"kind": "yearly", "month": 11, "weekday": "Tuesday", "nth": 1}' --end 2029-12-31
+reliafy maintenance get.forecast --id <position id> --period quarter --periods 4
+```
 
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
@@ -734,8 +769,13 @@ can take a new one with *Update from the original* (the entry's `version` goes
 up). Nothing is added unless someone asks. A model needn't be fitted to data
 (from parameters, a handbook, a published source: its `basis_text` says which);
 a model whose dataset is also in the library names it (`fitted_on`). A
-library belongs to one workspace and counts as one saved item toward the Free
-plan's storage limit, whatever it holds. It is **private** (its workspace),
+library belongs to one workspace. Reading and using libraries is on every plan;
+making one, adding, removing or refreshing entries, editing it, sharing it,
+publishing it and uploading into it are Pro (402 `code: pro_required`
+otherwise; deleting your own library, or making it private, never is). A library
+kept from an ended Pro plan is read-only to its owner (`can_edit: false`,
+`can_delete: true`, `pro_needed: true`); `GET /api/libraries` says
+`can_make`. It is **private** (its workspace),
 **shared with workspaces** (their IDs: a personal workspace's is the user id, a
 team's the team id; read-only for them) or **public** (anyone can read it,
 signed out too). Making it public needs a licence (`public-domain`, `cc0`,
@@ -752,7 +792,7 @@ libraries. Reads take an optional sign-in and are never cached.
 | `GET /api/libraries/entries?type=data\|model&q=` | Every dataset (or model) in any library you can see. |
 | `GET /api/libraries/{id}` | One library with its entries. |
 | `GET /api/libraries/{id}/entries/{entry_id}` | One entry: a dataset's first 50 rows and reading, a model's parameters. |
-| `POST /api/libraries` | Make one: `name`, `description?`, `notes?`, `source?`, `citation?`. 402 past the Free limit. |
+| `POST /api/libraries` | Make one (Pro): `name`, `description?`, `notes?`, `source?`, `citation?`. |
 | `PATCH /api/libraries/{id}` | Change `name`, `description`, `notes`, `source` or `citation`. |
 | `PUT /api/libraries/{id}/visibility` | `visibility` (`private`, `workspaces`, `public`), `workspaces?`, `licence?`, `source?`, `citation?`, `rights_confirmed?`. |
 | `DELETE /api/libraries/{id}` | Delete it and its entries (what they were taken from, and copies, stay). |

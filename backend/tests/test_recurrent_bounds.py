@@ -95,12 +95,14 @@ def test_interval_that_includes_one_is_stable_even_outside_the_old_band():
 def test_duane_shape_interval_is_its_alpha():
     """Duane's shape interval is Crow-AMSAA's β interval: the same process and
     likelihood. SurPyval 0.26's own Duane interval is too narrow (its Hessian
-    step), so the app takes it from the Crow-AMSAA fit until a fixed release."""
+    step), so the app takes it from the Crow-AMSAA fit there; from 0.27 it is
+    SurPyval's own, a numerical Hessian that agrees with Crow-AMSAA's to about
+    2e-5 relative."""
     from backend import recurrent as rec
 
     r, _ = _fit("duane")
     crow, _ = _fit("crow_amsaa")
-    assert r["beta_ci"] == pytest.approx(crow["beta_ci"], rel=1e-6)
+    assert r["beta_ci"] == pytest.approx(crow["beta_ci"], rel=1e-4)
     assert r["growth_basis"]["parameter"] == "alpha"
     if not rec.duane_needs_twin():
         ref = _ref(Duane)

@@ -1,7 +1,7 @@
 // Run with: node --test src/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyAnswer, curveIsCurrent, markPending, requestKey } from "./calcSeries.js";
+import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, requestKey } from "./calcSeries.js";
 
 const DEFAULT = { temp_C: 79.375, load: 0.7 };
 const start = [{ id: 0, values: DEFAULT, curves: { at: "default" }, error: null }];
@@ -56,4 +56,15 @@ test("the same number typed as text is the same request; a new range is a new on
   // Only the series named changes.
   const two = [...start, { id: 1, values: DEFAULT, curves: { at: "default" }, error: null }];
   assert.equal(curveIsCurrent(markPending(two, 1, "k")[0]), true);
+});
+
+test("a time past the end of the curves widens them to a round number beyond it", () => {
+  const fns = { evaluate_path: "/api/models/m/evaluate", curves: { x: [0, 900, 1842] } };
+  assert.equal(autoRangeEnd(fns, 3000), 3600);   // 3000 h asked, curves stop at 1842 h
+  assert.equal(autoRangeEnd(fns, 20000), 24000);
+  assert.equal(autoRangeEnd(fns, 1000), null);   // on the curve already
+  assert.equal(autoRangeEnd(fns, NaN), null);    // nothing valid asked
+  assert.equal(autoRangeEnd(fns, null), null);
+  // No way to work the curves out again: nothing to widen.
+  assert.equal(autoRangeEnd({ curves: fns.curves }, 3000), null);
 });

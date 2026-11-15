@@ -73,7 +73,7 @@ test("LSA: search and sort the tasks below, tick two and package them", async ({
   await shot(page, "packages-table-desktop");
   await bar.getByRole("button", { name: "Package selected…" }).click();
   const dialog = page.getByRole("dialog", { name: "Package 2 tasks" });
-  await expect(dialog.getByRole("spinbutton", { name: "Every" })).toHaveValue("1");
+  await expect(dialog.getByRole("group", { name: "How often" }).getByRole("spinbutton", { name: "How many" })).toHaveValue("1");
   await expect(dialog.getByRole("combobox", { name: "Unit" })).toHaveValue("weeks");
   await dialog.getByRole("textbox", { name: "Name" }).fill(`Pool weekly ${tag}`);
   await dialog.getByRole("button", { name: "Make package" }).click();

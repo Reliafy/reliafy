@@ -73,6 +73,41 @@ partner already wired in.
 
 ![A controller in series with two redundant pumps](/guides/img/availability-05-wired.png)
 
+## A unit that gets worse with each repair
+
+Some units don't come back as good as new: each repair patches them up, and the
+failures come closer together. If you've fitted that history on
+[Models › Repairable](/models/recurrent) (Crow-AMSAA, Duane, Cox-Lewis, ARA,
+ARI, G1 or generalised renewal), pick it for the block: it's under
+**Repairable models** in the block's **Saved model** list. The model then says
+how the unit fails between replacements, and brings its own repairs. The block
+still needs its repair time.
+
+A unit that keeps getting worse and is never replaced ends up always broken, so
+the block's **Repairs and replacement** section asks *when it's replaced with a
+new one*:
+
+- **At an age**: replace it when it reaches that age (with the time and cost of
+  a planned replacement, if you know them).
+- **After repairs**: repair it so many times, then replace it at the next
+  failure.
+- **Never**: only for a model whose failure rate never rises. A constant rate
+  (HPP) never needs a rule; nor does a Crow-AMSAA or Duane fit with shape 1 or
+  less, a Cox-Lewis fit with a trend of 0 or less, or a renewal model whose life
+  doesn't wear out (exponential, or Weibull shape 1 or less). The section says
+  which applies to your model, in words.
+
+With the block's repair and replacement costs set, Reliafy works out the best
+rule and fills it in, marked **Suggested**. Change it if you like; **Find the
+best replacement rule** puts the suggestion back.
+
+The section also says how the block's long-run availability is worked out. A
+Crow-AMSAA or Duane model with a replacement rule is worked out exactly, and a
+Cox-Lewis one numerically, both for free; so is a constant rate. A renewal
+model (ARA, ARI, G1, generalised renewal), whose repairs make the unit only
+partly as good as new, has no exact long-run answer, so those blocks are
+**Simulated · Pro**.
+
 ## Validate, then calculate
 
 Hit **Validate** at the right of the toolbar. In availability mode this checks

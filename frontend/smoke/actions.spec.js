@@ -161,12 +161,12 @@ test("repairable, accelerated, degradation and condition-and-life flows share th
 
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
-// The Classes tab is hidden for now (explorerTabs.js): a class's old address lands on the Explorer, and the
-// stock levels have no screen to test until the tab comes back.
-test("a class's old address lands on the Explorer, with no Classes tab", async ({ page, problems }) => {
+// The Classes tab is hidden for now (explorerTabs.js): a class's old address lands on the Assets list (the
+// Explorer is always one asset), and the stock levels have no screen to test until the tab comes back.
+test("a class's old address lands on the Assets list, with no Classes tab", async ({ page, problems }) => {
   test.skip(EXPLORER_PARTS_CLASSES_TABS, "the Classes tab is shown: the stock levels test below covers it");
   await open(page, `/asset-register/classes/${encodeURIComponent("Smoke test pump")}`);
-  await expect(page).toHaveURL(/\/asset-register\/explorer(\?|$)/);
+  await expect(page).toHaveURL(/\/asset-register$/);
   await expect(page).not.toHaveURL(/tab=classes/);
   await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "class address, Classes tab hidden" });
@@ -207,16 +207,16 @@ test("the assets are the top-level places, and the positions at none stay reacha
   await expect(page.getByRole("treeitem", { name: /^Smoke pump 1\b/ })).toBeVisible();
   // The seeded conveyor is at the depot.
   await expect(page.getByRole("treeitem", { name: /^Depot conveyor \(smoke test\)/ })).toHaveCount(0);
-  await page.getByRole("link", { name: "Show every position" }).click();
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions$/);
-  await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
-  await expect(page.locator(".tp-notice")).toHaveCount(0);
+  // Its way back: the Assets list (there's no whole-register Explorer).
+  await page.getByRole("link", { name: "Back to the assets" }).click();
+  await expect(page).toHaveURL(/\/asset-register$/);
+  await expect(page.getByRole("heading", { name: "Assets", exact: true })).toBeVisible();
   await expectHealthy(page, problems, { label: "positions" });
 
   await open(page, "/asset-register");
   await depot.getByRole("link", { name: "Smoke test depot", exact: true }).click();
-  // An asset opens in the Explorer, arranged by locations, with the asset picked.
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&sel=/);
+  // An asset opens on its own in the Explorer (?root=, #871), arranged by locations, with the asset picked.
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&root=([^&]+)&sel=\1(&|$)/);
   await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
   await expect(page.getByRole("treeitem", { name: /^Smoke test depot\b/ })).toBeVisible();
   await expect(page.locator(".td-title")).toContainText("Smoke test depot");
@@ -245,13 +245,15 @@ async function uploadAndFit(page) {
 
   // The column of decimals is offered as n (a count) only with the reason, and can't be picked.
   const count = page.getByRole("option", { name: /^col 2/ });
-  // Open the list once the dialog has read the file (CI can be slower than the click).
+  // Open the list once the dialog has read the file (CI can be slower than the click),
+  // and check the option while it's open: the list closes on any scroll or re-render,
+  // and a second click on its button would close it, so it's opened only when shut.
   await expect(async () => {
-    await dialog.getByRole("combobox", { name: "n", exact: true }).click();
+    if (!(await count.isVisible())) await dialog.getByRole("combobox", { name: "n", exact: true }).click();
     await expect(count).toBeVisible({ timeout: 2_000 });
+    await expect(count).toBeDisabled({ timeout: 1_000 });
+    await expect(count).toContainText("has decimals", { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
-  await expect(count).toBeDisabled();
-  await expect(count).toContainText("has decimals");
   // Close the list by clicking the dialog's own text (Escape would close the dialog too).
   await dialog.getByText("How the columns are read for modelling").click();
   await expect(count).toBeHidden();
@@ -480,6 +482,25 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   await expectHealthy(page, problems, { label: "model calculator", chart: true });
 });
 
+// A model entered from parameters (no data, no fit) answers in the Calculator too: the
+// model's own times, a time past the end of its curves, and a plain note instead of bounds.
+test("the Calculator answers for a model entered from parameters", async ({ page, request, problems }) => {
+  const made = await postOk(request, "/api/models/from-params", {
+    name: `Handbook Weibull ${Date.now()}`, distribution: "weibull", unit: "hours", params: [1000, 2.5],
+  });
+  await open(page, `/models/m/${made.id}?tab=calc`);
+  const answer = page.locator(".calc-answer");
+  await expect(page.locator(".calc-note")).toContainText("entered from parameters");
+  // 3,000 hours is past the 99% life the curves stop at: still answered, not "—".
+  await page.getByLabel(/^At time/).fill("3000");
+  await expect(answer).toContainText(/at 3,000 hours:\s*\d[\d.]*%/);
+  await page.getByRole("radio", { name: "Time at reliability" }).click();
+  await expect(answer).toContainText("(the B10 life)");
+  await expect(answer).toContainText("407 hours"); // 1000 × (−ln 0.9)^(1/2.5) = 406.5
+  await expect(page.locator(".calc-answer-ci")).toHaveCount(0); // no bounds without a fit
+  await expectHealthy(page, problems, { label: "params-only calculator", chart: true });
+});
+
 // The Model characteristics tab: the mean life with its bound at the page's
 // confidence (shared with the Calculator), a Kaplan-Meier estimate's mean to a
 // time, and "none, and why" where the mean is infinite.
@@ -582,7 +603,9 @@ const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
 test("the Explorer's menu offers no ready-made product; a product's RCM tab checks its evidence", async ({ page, request, problems }) => {
   // Wide enough for the usual columns to include the Evidence check.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, "/asset-register/explorer?arrange=positions&tab=rcm");
+  // The Explorer is always one asset (?root=).
+  const asset = await postOk(request, "/api/maintenance/positions", { name: `Menu asset ${Date.now()}` });
+  await open(page, `/asset-register/explorer?arrange=positions&tab=rcm&root=${asset.id}`);
   await page.getByRole("button", { name: /^Tree options/ }).click();
   const options = page.getByRole("menu", { name: "Tree options" });
   await expect(options.getByRole("menuitem", { name: "Import from Excel…" })).toBeVisible();
@@ -624,17 +647,14 @@ test("the Explorer's menu offers no ready-made product; a product's RCM tab chec
   await expectHealthy(page, problems, { label: "a product's RCM tab" });
 });
 
-// The empty tree: what to do first (a position, or the hierarchy from Excel) and the guides.
-// No sample to open.
-test("the empty tree offers New position, Import from Excel and the guides, no sample", async ({ page, problems }) => {
-  // The tree read as empty (the suite's own isn't).
-  await page.route("**/api/maintenance/tree", async (route) => {
-    const res = await route.fetch();
-    await route.fulfill({ response: res, json: { ...(await res.json()), positions: [], locations: [] } });
-  });
+// The empty tree (an asset, a place, with no positions yet): what to do first (a position, or
+// the hierarchy from Excel) and the guides. No sample to open.
+test("the empty tree offers New position, Import from Excel and the guides, no sample", async ({ page, request, problems }) => {
+  const place = await postOk(request, "/api/maintenance/locations", { name: `Empty site ${Date.now()}` });
+  const at = `/asset-register/explorer?arrange=positions&root=${place.id}`;
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
-    await open(page, "/asset-register/explorer?arrange=positions");
+    await open(page, at);
     const empty = page.locator(".section-empty").first();
     await expect(empty).toContainText("No positions yet");
     await expect(empty).toContainText("Add the first position, or bring your hierarchy in from Excel.");
@@ -649,7 +669,7 @@ test("the empty tree offers New position, Import from Excel and the guides, no s
   }
   // Import from Excel opens the tree's import.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, "/asset-register/explorer?arrange=positions");
+  await open(page, at);
   await page.locator(".section-empty").first().getByRole("button", { name: "Import from Excel" }).click();
   await expect(page.locator("#ts-import")).toBeVisible();
   await expectHealthy(page, problems, { label: "the empty tree" });

@@ -24,7 +24,8 @@ test("operating plan: set in the pane, inherited below, kept inside the asset", 
   await pane.getByLabel("Hours", { exact: true }).fill("3");
   await expect(pane.getByText("About 21 hours a week")).toBeVisible();
   await pane.getByRole("button", { name: "Save" }).click();
-  await expect(pane.getByText("About 3 hours a day")).toBeVisible();
+  // Shown in "How it runs now" and again in the list of its plans: check the summary.
+  await expect(pane.getByRole("region", { name: "How it runs now" }).getByText("About 3 hours a day")).toBeVisible();
 
   await open(page, `${base}&sel=${pump.id}&plan=${pump.id}`);
   await expect(pane.getByText(`From Plan station ${tag}`)).toBeVisible();

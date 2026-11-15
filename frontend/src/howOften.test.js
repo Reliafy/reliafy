@@ -85,6 +85,6 @@ test("what shows under it: dates, or the calendar limit's for a task by use", ()
     dates: ["2027-11-14", "2028-11-14", "2029-11-14"], lead: "By the 12-month limit", note: "",
     after: "or sooner, when the meter gets there first.",
   });
-  assert.equal(howOftenPreview({ ...byUse, also: "" }, { from: TODAY }).note, "By operating hours: its dates come from its meter readings.");
+  assert.equal(howOftenPreview({ ...byUse, also: "" }, { from: TODAY }).note, "By operating hours: its dates come from the operating plan where there is one, else its meter readings.");
   assert.equal(howOftenPreview(formFromTask({ interval: 1, unit: "weeks" }), { from: TODAY }).dates[0], "2026-11-21");
 });

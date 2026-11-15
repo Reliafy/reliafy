@@ -101,9 +101,26 @@ has block types for the common cases:
 - **Voting node (MooN)** — k-out-of-n voting: the system needs at least *k* of the *n* branches
   feeding the gate. Three sensors where any two must agree is a 2-of-3.
 - **Standby group** — spares that sit dormant (cold, the default) or lightly
-  loaded (warm), or run all the time (hot), until switched in. The risk here is the *switching*: a cold spare's chance of
-  starting is 1 (a perfect switch-over) until you set it, and 0.95–0.99 is
-  typical for generators and pumps.
+  loaded (warm), or run all the time (hot), until switched in. The risk here is the *switching*: the
+  **Chance a spare starts** is 1 (every spare starts) until you set it, and 0.95–0.99 is
+  typical for generators and pumps. A spare that fails to start is skipped and
+  the next one is tried, on cold, warm and hot standby alike.
+
+  Set it up the way the plant runs it. **Units running** is how many must run
+  at once (2 running and 1 spare is a 2-of-3 duty/standby train), and a warm
+  spare's **Dormancy factor** is how fast it ages while it waits (0.3: at 30%
+  of the running rate). The dialog says the arrangement back in words, such as
+  "2 running, 1 warm spare ageing at 30% while waiting". Under **Units that
+  differ** you can give any unit its own model: an older duty pump, or a
+  smaller spare. Spares are switched in in the order listed.
+
+  The dialog also says how the block is worked out. Units with a constant
+  failure rate (exponential) are exact for any arrangement, and so are most
+  others, free. A few arrangements have no exact answer, for example warm
+  Weibull spares with two units running. The dialog says so in plain words
+  and offers **Simulate this block** (Pro). Calculate then estimates the
+  block's reliability from 200,000 simulated lifetimes. The result says which
+  blocks were simulated and how close the estimate is.
 - **Series (n identical)** and **Parallel (n identical)** — a shorthand for *n* identical units, so you
   don't draw twenty identical blocks by hand.
 - **Sub-system** — embeds another saved RBD as a single block, so you can build
@@ -150,7 +167,10 @@ system reliability falls to 90%. The table's heading says which.
 
 With **Confidence band** on, the MTTF, B-lives and design life each get a
 one-sided lower bound ("≥ 1,240 at 90%": at least that long, 90% sure), as on a
-model's page.
+model's page. A block on a Bayesian update follows its model page's curve and
+adds its own range of plausible parameters, so the band is then a *credible*
+band (or "confidence and credible" when the diagram has both kinds of block),
+and the note under the chart says so.
 
 **Compare with other designs**, under the results, puts this diagram beside
 other saved non-repairable designs: the reliability at your **Evaluate at t**,
@@ -190,9 +210,9 @@ swap in a different SurPyval) and run the file. The script's header
 lists the exact commands for the versions Reliafy runs:
 
 ```
-pip install "surpyval==0.26"
+pip install "surpyval==0.28"
 pip install networkx tqdm
-pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.16"
+pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.17"
 python my_diagram.py
 ```
 

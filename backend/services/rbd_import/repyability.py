@@ -199,11 +199,15 @@ class _Saved:
             data = node.get("data") if isinstance(node.get("data"), dict) else {}
             node["data"] = data
             label = str(data.get("label") or node.get("id"))
-            for key in ("model", "standbyModel", "repair"):
-                model = data.get(key)
+            from backend.services import rbd_standby
+
+            paths = [(k,) for k in ("model", "standbyModel", "repair")] + [
+                p for p in rbd_standby.model_paths(data) if len(p) == 2]  # standby units' own models
+            for path in paths:
+                model = rbd_standby.get_path(data, path)
                 if isinstance(model, dict) and (model.get("modelId") or model.get("model_id")):
                     if not _same_saved_model(model, saved_model):
-                        data[key] = _unlinked(model)
+                        rbd_standby.set_path(data, path, _unlinked(model))
                         unlinked.append(label)
             ref = data.get("rbd")
             if node.get("type") == "subsystem" and isinstance(ref, dict) and ref.get("id"):
@@ -784,6 +788,10 @@ class _Converter:
                 if repeats == 1:
                     n = self.add(nid, "component", {"label": label, "model": model})
                 else:
+                    if switch < 1 and repeats > 2:
+                        self.note(f"“{label}”: its switching probability ({switch:g}) ends the group when a switch "
+                                  "fails; Reliafy reads it as the chance a spare starts, where a spare that fails "
+                                  "to start is skipped and the next tried.")
                     n = self.add(nid, "standby", {"label": label, "model": model, "spares": repeats - 1,
                                                   "dormancy": 0, "cold": True, "startProb": switch})
             else:
@@ -816,26 +824,50 @@ class _Converter:
         bad = next((why for m, why in models if m is None), None)
         if bad:
             return self.without_model(nid, label, bad)
-        duty, spare = models[0][0], models[k][0]
-        if any(m != duty for m, _ in models[1:k]):
-            return self.without_model(nid, label, "its running units aren't identical, which Reliafy's standby "
-                                                  "block needs")
-        if any(m != spare for m, _ in models[k + 1:]):
-            return self.without_model(nid, label, "its spares aren't identical, which Reliafy's standby block needs")
+        from backend.services.rbd_standby import MAX_OWN_UNITS, own_from_units
+
+        lives = [m for m, _ in models]
+        own = own_from_units(lives, k)  # units that differ get models of their own
+        if (own.keys() & {"runningModels", "spareModels"}) and count > MAX_OWN_UNITS:
+            return self.without_model(nid, label, f"its units differ and it has more than {MAX_OWN_UNITS}, "
+                                                  "which Reliafy's standby block takes only up to that many")
+        if repair is not None and own.keys() - {"model"}:
+            return self.without_model(nid, label, "its units aren't identical, which a repairable standby group "
+                                                  "needs")
         if dormancy is None or not 0 <= dormancy <= 1 or switch is None or not 0 <= switch <= 1:
             return self.without_model(nid, label, "its dormancy factor or switching probability isn't a probability")
-        if dormancy > 0 and switch < 1:
-            self.note(f"“{label}”: its switching probability ({switch:g}) applies only to cold standby in Reliafy, "
-                      "so this warm or hot standby switches perfectly.")
-        data: dict[str, Any] = {"label": label, "model": duty, "spares": len(units) - k,
+        start = self.start_chance(value.get("start_probability", 1.0), switch, count - k, label)
+        if start is None:
+            return self.without_model(nid, label, "its start probability isn't a probability")
+        data: dict[str, Any] = {"label": label, **own, "spares": len(units) - k,
                                 "dormancy": dormancy, "cold": dormancy == 0}
         if k > 1:
             data["k"] = k
-        if spare != duty:
-            data["standbyModel"] = spare
-        if dormancy == 0 and switch < 1:
-            data["startProb"] = switch
+        if start < 1:
+            data["startProb"] = start
         return self.add(nid, "standby", data)
+
+    def start_chance(self, raw, switch: float, spares: int, label: str) -> Optional[float]:
+        """A standby group's "Chance a spare starts" (Reliafy's ``startProb``):
+        its ``start_probability`` (one value, or the lowest of one per spare),
+        else its switching probability. A spare that fails to start is skipped
+        and the next tried; a failed switch ends the group, the same only with
+        one spare, so with more it is noted."""
+        values = raw if isinstance(raw, (list, tuple)) else [raw]
+        starts = [_finite(v) for v in values]
+        if not starts or any(v is None or not 0 <= v <= 1 for v in starts):
+            return None
+        start = min(starts)
+        if len(set(starts)) > 1:
+            self.note(f"“{label}”: its spares start with different probabilities; Reliafy takes one for all, "
+                      f"so the lowest ({start:g}) is used.")
+        if switch < 1:
+            if spares > 1:
+                self.note(f"“{label}”: its switching probability ({switch:g}) ends the group when a switch "
+                          "fails; Reliafy reads it as the chance a spare starts, where a spare that fails to "
+                          "start is skipped and the next tried.")
+            start = start * switch
+        return start
 
     # -- repairable blocks ------------------------------------------------
     def repairable_block(self, value, nid: str, label: str, k: Optional[int]) -> tuple[str, str]:

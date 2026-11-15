@@ -385,3 +385,103 @@ def test_mcp_list_tree_and_import_history_sheet_tree(env_mcp=None):
     text = hierarchy.to_csv(hierarchy.export(m)).decode("utf-8-sig")
     again = hierarchy.run(m, {"hierarchy": hierarchy.rows_from_csv(text)}, dry_run=False)
     assert again["positions_unchanged"] == 2
+
+
+# ---- found on tst (Nov 2026): round trips and messy sheets -------------------------------------------
+
+def test_moving_a_branch_then_importing_the_same_file_again_changes_nothing(m):
+    """The rows inside a moved position still carry the old path; their Parent ID says where they are."""
+    ids = _seed(m)
+    data = hierarchy.export(m)
+    rows = {r["path"]: r for r in data["hierarchy"]}
+    rows["Plant 1 > Unit 2"]["path"] = "Plant 2 > Unit 2"  # move the unit, with both pumps inside it
+    first = hierarchy.run(m, _sheets(data), dry_run=False)
+    assert first["ok"] and first["positions_moved"] == 1, first["problems"]
+    n = _events(m)
+    again = hierarchy.run(m, _sheets(data), dry_run=False)
+    assert again["ok"], again["problems"]
+    assert again["summary"] == "Nothing to change: everything in the file is already in Reliafy."
+    assert _events(m) == n
+    assert [p["name"] for p in m.position(ids["a"])["path"]][:2] == ["Plant 2", "Unit 2"]
+    _rebuilds(m)
+
+
+def test_two_locations_with_one_path_dont_swap_on_reimport(m):
+    ids = _seed(m)
+    twin = m.create_location("Site B")
+    m.create_location("Site B")  # a second with the same name: either may sort first
+    m.update_position(ids["plant"], location_id=twin["id"])
+    n = _events(m)
+    out = hierarchy.run(m, _sheets(hierarchy.export(m)), dry_run=False)
+    assert out["ok"] and out["positions_updated"] == 0, out
+    assert _events(m) == n
+
+
+def test_spaces_and_trailing_whitespace_dont_make_changes(m):
+    ids = _seed(m)
+    m.update_position(ids["plant"], description="The main plant ")
+    text = ("Path,Name,Description\n"
+            "  Plant 1  ,,The main plant\n"
+            "Plant 1  >Unit 2>   Feed   pump A ,,\n"
+            "Plant 1 > Unit 2 >  New  pump ,,\n")
+    out = hierarchy.run(m, hierarchy.read_file(text.encode("utf-8-sig"), "x.csv"), dry_run=False)
+    assert out["ok"], out["problems"]
+    assert (out["positions_created"], out["positions_updated"]) == (1, 0)
+    assert any(p["name"] == "New pump" for p in m.s.nodes(ORG, "Position"))
+
+
+def test_excel_dates_as_numbers_and_item_details_without_an_item(m):
+    text = ("Path,Fitted item,Item serial,Installed on\r\n"
+            "Mill,,,\r\n"
+            "Mill > Pump F,Pump F unit,,45366\r\n"
+            "Mill > Pump G,,SN-7,2024-01-01\r\n")
+    out = hierarchy.run(m, hierarchy.read_file(text.encode("utf-8-sig"), "x.csv"), dry_run=True)
+    assert [p["row"] for p in out["problems"]] == [4]
+    assert out["problems"][0]["text"] == ("It has Item serial and Installed on but no Fitted item: name the item, "
+                                         "or clear them.")
+    text = text.replace("Mill > Pump G,,SN-7,2024-01-01\r\n", "")
+    hierarchy.run(m, hierarchy.read_file(text.encode("utf-8-sig"), "x.csv"), dry_run=False)
+    f = next(p for p in m.s.nodes(ORG, "Position") if p["name"] == "Pump F")
+    assert m.current_fitment(f["id"])["from"] == "2024-03-15"  # Excel's day 45366
+
+
+def test_xlsx_with_dates_stored_as_numbers(m):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Path", "Fitted item", "Installed on"])
+    ws.append(["Mill", None, None])
+    ws.append(["Mill > Pump H", "Pump H unit", 45366])
+    buf = io.BytesIO()
+    wb.save(buf)
+    out = hierarchy.run(m, hierarchy.read_file(buf.getvalue(), "x.xlsx"), dry_run=True)
+    assert out["ok"], out["problems"]
+
+
+def test_duplicate_tags_are_noted_not_stopped(m):
+    _seed(m)
+    text = ("Path,Tag\n"
+            "Plant 1 > Unit 2 > Pump C,P-200\n"
+            "Plant 1 > Unit 2 > Pump D,P-200\n"
+            "Plant 1 > Unit 2 > Pump E,p-101\n")
+    out = hierarchy.run(m, hierarchy.read_file(text.encode(), "x.csv"), dry_run=True)
+    assert out["ok"]
+    assert [(n["row"], n["text"]) for n in out["notes"]] == [
+        (3, "The tag P-200 is on row 2 too."),
+        (4, "The tag p-101 is on Plant 1 > Unit 2 > Feed pump A in Reliafy already.")]
+
+
+def test_a_csv_with_semicolons_or_tabs_reads_like_a_comma_one():
+    """Excel saves ';'-separated CSV where the comma is the decimal mark: same rows."""
+    comma = "Path,Tag\nPlant 1,P1\nPlant 1 > Pump A,PA-1\n"
+    want = hierarchy.read_file(comma.encode(), "tree.csv")["hierarchy"]
+    for sep in (";", "\t"):
+        got = hierarchy.read_file(comma.replace(",", sep).encode("utf-8-sig"), "tree.csv")["hierarchy"]
+        assert got == want
+
+
+def test_a_comma_csv_with_semicolons_in_a_name_stays_a_comma_csv():
+    text = "Path,Tag,Description\nPlant 1,P1,\"wet; dusty\"\n"
+    rows = hierarchy.read_file(text.encode(), "tree.csv")["hierarchy"]
+    assert rows[0][1]["Description"] == "wet; dusty"
