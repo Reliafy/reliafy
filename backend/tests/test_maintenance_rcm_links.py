@@ -433,7 +433,7 @@ def test_copying_a_branch_copies_its_links(m):
     pool_causes = [c for e, c in links if e == p["pool_ff"]["id"]]
     assert len(pool_causes) == 6
     # Copied to the top level, the pool's links can't follow.
-    top = m.copy_position(p["circ"]["id"], "Elsewhere")
+    top = m.copy_position(p["circ"]["id"], "Elsewhere", top_level=True)
     assert top["links_skipped"] == 3
     assert len(_links(m)) == 10 + 2
     _rebuilds_the_same(m)

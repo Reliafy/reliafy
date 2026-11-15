@@ -16,6 +16,9 @@ Needs a server on the same release.
   run at once, warm spares ageing while they wait, `startProb` (the chance a spare starts) and
   `standbyModel` (spares on their own model). Cases with no exact answer are refused unless the
   block is marked to be simulated (Pro).
+- **`maintenance positions.copy`** puts the copy beside the original (inside the same parent
+  position) when no `parent_id` is given, instead of at the top level; `move_to_top_level` true
+  puts it at the top.
 
 ## 0.11.0
 
