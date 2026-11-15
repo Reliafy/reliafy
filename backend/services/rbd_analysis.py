@@ -473,6 +473,12 @@ def _build_distribution(
         return _nonparametric_reliability(model, where, resolve_model)
     if model.get("kind") == "joint":
         return _joint_reliability(model, where, resolve_model)
+    if model.get("kind") == "repairable":
+        # A fitted repairable model (rbd_repairable_blocks): how a unit fails between replacements,
+        # which only an availability (repairable) diagram takes.
+        raise AnalysisError(f"{where} has a repairable model (how a unit fails between replacements), which "
+                            "needs a repairable diagram — switch the diagram to availability, or pick a "
+                            "non-repairable model.")
     if model.get("kind") == "bound":
         # Covariates left open at its position (covariate_binding.py): made concrete before the
         # analysis from the block's and the diagram's values. Still bound here: they're not all set.
@@ -1107,6 +1113,12 @@ def validate_graph(
         # A node pinned working/failed is overridden in analysis, so it needs
         # no non-repairable model — don't flag one as missing here.
         pinned = (node.get("data") or {}).get("state") in ("working", "failed")
+        if graph.get("repairable") and ntype == "component" and \
+                ((node.get("data") or {}).get("model") or {}).get("kind") == "repairable":
+            # A fitted repairable model (#367): checked with the repairable blocks below, the structure
+            # here with a stand-in.
+            reliabilities[nid] = PerfectReliability
+            continue
         try:
             reliability, k_required = _node_reliability(
                 node, resolve_subsystem, visited
@@ -1205,8 +1217,9 @@ def validate_graph(
                     f"“{lbl}” has no repair-time distribution. Repairable diagrams "
                     "analyse availability, so every component needs one (double-click "
                     "the block to set it), or mark it as repaired instantly.")
-        from backend.services import rbd_maintenance, rbd_policies
+        from backend.services import rbd_maintenance, rbd_policies, rbd_repairable_blocks
 
+        errors.extend(rbd_repairable_blocks.validation_errors(graph))
         errors.extend(rbd_maintenance.validation_errors(graph))
         errors.extend(rbd_policies.validation_errors(graph))
         from backend.services import rbd_sim_guard
@@ -2676,6 +2689,18 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             rbd_tvc.refuse_repairable(data, label)
         if any(is_joint(data.get(k)) for k in ("model", "standbyModel")):
             raise AnalysisError(JOINT_REPAIRABLE.format(where=label))
+        from backend.services import rbd_repairable_blocks
+
+        if rbd_repairable_blocks.block_has(data) or data.get(rbd_repairable_blocks.KEY):
+            # A fitted repairable model and its replacement rule (#367): the live surpyval model is the
+            # component's life and repair, which RePyability takes as it is.
+            process = (rbd_repairable_blocks.build(data.get("model"), f"“{label}”", resolve_model)
+                       if rbd_repairable_blocks.block_has(data) else None)
+            problems = rbd_repairable_blocks.check(data, label, ntype, True, process)
+            if problems:
+                raise AnalysisError(problems[0])
+            components[nid] = rbd_maintenance.repairable_component(data, label, process, resolve_model)
+            continue
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
         if ntype == "standby":
             # A duty unit plus spares, each repaired on its own (#156).
@@ -3662,6 +3687,11 @@ def _settling_time(model: dict, repair: Optional[dict], now: Optional[dict] = No
     block's state now: a running block of age ``a`` has its remaining life
     (the mean residual life at ``a``) left to run instead of a whole one; a
     block down for ``since`` has its remaining repair to finish first."""
+    if model.get("kind") == "repairable":  # a fitted repairable model (#367): one replacement cycle
+        from backend.services import rbd_repairable_blocks
+
+        mttr = _spec_mean(repair) if isinstance(repair, dict) else None
+        return rbd_repairable_blocks.settling_time({"model": model}, mttr)
     life = _spec_mean(model)
     if life is None:
         return None
@@ -3674,6 +3704,14 @@ def _settling_time(model: dict, repair: Optional[dict], now: Optional[dict] = No
     if now and now.get("age"):
         life = _residual_mean(model, float(now["age"])) or life
     return wait + life + (mttr or 0.0)
+
+
+def _repairable_settling(data: dict) -> Optional[float]:
+    """A block on a fitted repairable model (#367): one replacement cycle and a repair."""
+    from backend.services import rbd_repairable_blocks
+
+    repair = data.get("repair")
+    return rbd_repairable_blocks.settling_time(data, _spec_mean(repair) if isinstance(repair, dict) else None)
 
 
 def _availability_horizon(graph: dict, state: Optional[dict] = None) -> float:
@@ -3696,7 +3734,8 @@ def _availability_horizon(graph: dict, state: Optional[dict] = None) -> float:
     settle = {
         nid: t for nid, data in nodes.items()
         if isinstance(data.get("model"), dict)
-        and (t := _settling_time(data["model"], data.get("repair"), state.get(nid))) is not None
+        and (t := (_repairable_settling(data) if (data["model"].get("kind") == "repairable")
+                   else _settling_time(data["model"], data.get("repair"), state.get(nid)))) is not None
     }
     if not settle:
         return max(1000.0, floor)

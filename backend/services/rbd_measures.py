@@ -693,6 +693,13 @@ def _uncertainty(head, opts, resolve_model, fits, fixed, *, rbd, labels, gates, 
     fitted, uncertainty, inputs = _with_fits(rbd, graph, fits, labels)
     base = {**head, "level": level, "method": opts["method"], "fixed": fixed,
             "inputs": [{k: v for k, v in i.items() if k != "key"} for i in inputs]}
+    from backend.services import rbd_repairable_blocks
+
+    wears = rbd_repairable_blocks.long_run_band_refusal(graph, resolve_model)
+    if wears:
+        # A block with no replacement rule whose fit could wear out (#367): the long-run band is
+        # refused; the point answer and the figures over a set period still stand.
+        return {**base, "status": "refused", "basis": "refused", "message": wears}
     if not uncertainty:
         return {**base, "status": "no_uncertainty",
                 "message": ("No block uses a saved model fitted by maximum likelihood, so there's no parameter "

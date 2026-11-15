@@ -460,6 +460,7 @@ class _Script:
         self.uses_lfp = False  # a block written with lfp_p= (SurPyval >= 0.23)
         self.uses_bayes = False  # a saved Bayesian update, refitted with fit_bayes
         self.uses_stand_in = False
+        self.uses_rec = False  # a block on a fitted repairable model (surpyval.recurrent)
         self.lines: list[str] = []  # block definitions, in order
         self.subsystems: dict[str, str] = {}  # rbd id -> variable
         self.placeholders: list[str] = []  # labels of raising blocks
@@ -519,6 +520,10 @@ class _Script:
 
     def dist(self, spec, label, var, prefix_comment: str = "") -> str:
         """Emit ``var = surv.X.from_params(...)`` (or a placeholder)."""
+        from backend.services import rbd_repairable_blocks as rrb
+
+        if rrb.is_repairable(spec):
+            return self.repairable_model(spec, label, var)
         recipe = bayes_recipe(spec, self.resolve_model)
         if recipe is not None:
             return self.bayesian(recipe, spec, label, var, prefix_comment)
@@ -544,6 +549,32 @@ class _Script:
                 "# NOTE: placeholder parameters - illustrative values, "
                 "replace with real data."
             )
+        line = f"{var} = {expr}"
+        if len(line) > 79:
+            line = f"{var} = (\n    {expr}\n)"
+        self.lines.append(line)
+        return var
+
+    def repairable_model(self, spec, label, var) -> str:
+        """Emit a fitted repairable model (#367): surpyval's model at its
+        parameters, which RePyability takes as the component's life and
+        repair."""
+        from backend.services import rbd_repairable_blocks as rrb
+
+        try:
+            process = rrb.build(spec, label, self.resolve_model)
+            expr = rrb.script_model(spec, process)
+            verdict = rrb.wear_verdict(process)
+        except rrb.AnalysisError as exc:
+            return self.missing(var, str(exc), label)
+        self.uses_surv = True
+        self.uses_rec = True
+        self.comment(f"{label}: repairable model {rrb.NAMES.get(rrb.form_of(process), '')} - how it fails "
+                     "between replacements (RePyability takes its repairs from it).")
+        self.comment(verdict["text"])
+        if spec.get("source") == "saved":
+            name = _one_line(spec.get("name") or "")
+            self.comment(f'Fitted in Reliafy - saved repairable model "{name}" (point estimates).')
         line = f"{var} = {expr}"
         if len(line) > 79:
             line = f"{var} = (\n    {expr}\n)"
@@ -1080,6 +1111,8 @@ def _imports(script: _Script, repairable: bool) -> str:
         out.append("import surpyval as surv")
     if script.uses_bayes:
         out.append("from surpyval.bayes.prior import PriorSpec")
+    if script.uses_rec:
+        out.append("from surpyval import recurrent as rec")
     names = sorted(script.imports)
     if names:
         line = "from repyability import " + ", ".join(names)
@@ -1591,8 +1624,9 @@ def _repairable_body(script: _Script, graph) -> str:
             rbd_export_costs.standby(script, nid, data, label, var, life, repair)
             comps.append((nid, var, label))
             continue
-        if rbd_maintenance.has_extras(data):
-            # Costs, instant repair, maintenance (#99/#100): a component spec.
+        if rbd_maintenance.has_extras(data) or (data.get("model") or {}).get("kind") == "repairable":
+            # Costs, instant repair, maintenance (#99/#100), a repairable model and its
+            # replacement rule (#367): a component spec.
             rbd_export_costs.component(script, data, label, var, life, repair)
             comps.append((nid, var, label))
             continue

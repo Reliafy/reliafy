@@ -278,6 +278,11 @@ def get_model(db, model_id: str, owner_id: str | list[str] | None = None) -> Mod
     Ids are strings; anything else (e.g. from a JSON body) matches nothing."""
     if not isinstance(model_id, str) or not model_id:
         return None
+    if model_id.startswith("repairable:"):
+        # A saved repairable model as an RBD block (rbd_repairable_blocks): its own collection.
+        from backend.services import recurrent as recurrent_service
+
+        return recurrent_service.get_model(db, model_id[len("repairable:"):], owner_id)
     # ``$eq`` keeps the id a value to match, never an operator.
     query = {"_id": {"$eq": str(model_id)}}
     if owner_id is not None:
@@ -687,6 +692,19 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
     graph and read it. Returns ``None`` if the model id is unknown/not owned,
     and raises ``fitting.FitError`` if the model has no covariate functions.
     """
+    if isinstance(model_id, str) and model_id.startswith("repairable:"):
+        # A block on a saved repairable model (rbd_repairable_blocks): its live fit and saved results.
+        from backend.services import recurrent as recurrent_service
+
+        ref = model_id[len("repairable:"):]
+        doc = recurrent_service.get_model(db, ref, owner_id)
+        if doc is None:
+            return None
+        try:
+            live = recurrent_service.get_live_model(db, ref, owner_id)
+        except Exception:  # noqa: BLE001 - a fit that can't be rebuilt reads as not found
+            return None
+        return {"model": live, "name": doc.name, "results": doc.results or {}, "spec": doc.spec or {}}
     model = get_model(db, model_id, owner_id)
     if model is None:
         return None

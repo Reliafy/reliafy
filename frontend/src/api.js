@@ -1204,6 +1204,17 @@ export function checkBlockMean(node, unit = "") {
   });
 }
 
+// A block on a fitted repairable model (#367): the model in words, whether it can wear out (and so
+// needs a replacement rule), the suggested rule and how its long-run availability is worked out
+// (exact/simulated, Free/Pro). ``node`` is the block as the builder stores it. Quick and free.
+export function rbdRepairableBlock(node, unit = "", repairable = true) {
+  return request("/api/rbds/repairable-block", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node, unit, repairable }),
+  });
+}
+
 // The cheapest design of a repairable diagram (#99): how many copies of each
 // priced block own it for ``horizon`` at the lowest total cost, optionally at
 // least ``minAvailability`` available. Returns { current, design, graph, ... };

@@ -41,3 +41,30 @@ def check_block_mean(
         logger.exception("Failed to check a block's mean")
         return JSONResponse(status_code=500, content={"detail": "Failed to check the block. The error has been logged."})
     return JSONResponse(content=result)
+
+
+@router.post("/rbds/repairable-block")
+def repairable_block(
+    node: dict = Body(...),
+    unit: str | None = Body(default=None),
+    repairable: bool = Body(default=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A block on a fitted repairable model (#367), for its "Repairs and replacement" section: the
+    model in words, whether it can wear out (and so needs a replacement rule), the suggested rule
+    for its costs and how its long-run availability is worked out (exact/simulated, Free/Pro, read
+    from RePyability's analysis routes). Quick and free: it works nothing out for the diagram."""
+    from backend.services import rbd_repairable_blocks
+
+    def resolve_model(model_id: str):
+        return models_service.get_live_model(session, model_id, ctx.read_owners)
+
+    try:
+        result = rbd_repairable_blocks.block_summary(node, resolve_model, unit or "", repairable)
+    except AnalysisError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to summarise a repairable block")
+        return JSONResponse(status_code=500, content={"detail": "Failed to read the block. The error has been logged."})
+    return JSONResponse(content=result)

@@ -13,6 +13,7 @@ import useModelSummary from "./useModelSummary.js";
 import { formatNumber } from "../format.js";
 import RbdMixtureBuilder, { isMixture } from "./RbdMixtureBuilder.jsx";
 import RbdRepairQuality from "./RbdRepairQuality.jsx";
+import RbdRepairsReplacement from "./RbdRepairsReplacement.jsx";
 import RbdCapacityFold from "./RbdCapacityFields.jsx";
 
 // "Mean 13.6 h · median 12 h" under a model's inputs, so what the parameters
@@ -84,9 +85,13 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   const [mixture, setMixture] = useState(isMixture(initial?.model) && initial?.model?.source !== "saved");
   // Imperfect repair / replacement at the N-th failure (#68).
   const [quality, setQuality] = useState({ value: initial?.repair_quality ?? null, valid: true });
+  // A fitted repairable model and when it's replaced (#367): it brings its own repairs.
+  const [replacement, setReplacement] = useState({ value: initial?.replacement ?? null, valid: true });
+  const processBlock = repairable && model?.kind === "repairable";
   // Throughput while it works (#122): its own section, for component blocks.
   const [cap, setCap] = useState({ value: initial?.capacity ?? null, valid: true });
-  const valid = model && (!repairable || repair || instant) && extras.valid && quality.valid && cap.valid;
+  const valid = model && (!repairable || repair || instant) && extras.valid && cap.valid
+    && (processBlock ? replacement.valid : quality.valid);
   const capExtras = { ...(capacity ? { capacity: cap.value } : {}), ...(keepBound && covExtras ? covExtras : {}),
     ...(wasBound && !keepBound ? { covariate_values: null, covariate_map: null } : {}) };
 
@@ -97,8 +102,9 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
       label,
       model,
       repair: instant ? repair ?? undefined : repair,
-      extras: { ...(extras.extras || {}), instant_repair: instant || null, repair_quality: quality.value,
-                ...capExtras },
+      extras: { ...(extras.extras || {}), instant_repair: instant || null,
+                repair_quality: processBlock ? null : quality.value,
+                replacement: processBlock ? replacement.value : null, ...capExtras },
     };
   };
   const submit = () => {
@@ -185,14 +191,16 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
         )}
         {!mixture && !keepBound && (
           <>
-            <ModelPicker label={safety ? "Non-repairable model (dangerous undetected failures, λDU)" : "Non-repairable model (time to failure)"}
+            <ModelPicker label={safety ? "Non-repairable model (dangerous undetected failures, λDU)"
+                           : repairable ? "Failure model (time to failure, or a repairable model)" : "Non-repairable model (time to failure)"}
                          value={initial?.model} onChange={setModel} rbdBlock unit={unit}
+                         repairableModels={repairable && !safety && !!capacity}
                          joint={jointBlock && !safety ? { repairable } : null}
                          meanEntry={safety ? "Mean time to a dangerous failure" : "Mean life, MTBF"} />
             <MeanEcho model={model} unit={unit} label="Mean life" />
           </>
         )}
-        {!keepBound && <RbdMixtureBuilder on={mixture} initial={initial?.model} unit={unit} onChange={setModel}
+        {!keepBound && !processBlock && <RbdMixtureBuilder on={mixture} initial={initial?.model} unit={unit} onChange={setModel}
                            onToggle={(on) => {
                              setMixture(on);
                              if (!on) setModel(isMixture(initial?.model) ? null : initial?.model ?? null);
@@ -222,7 +230,13 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
           {crews && <PriorityField ctl={ctl} />}
         </section>
       )}
-      {repairable && <RbdRepairQuality initial={initial?.repair_quality} onChange={setQuality} />}
+      {processBlock ? (
+        <RbdRepairsReplacement initial={initial?.model?.modelId === model?.modelId ? initial?.replacement : null}
+                               key={model?.modelId || model?.form}
+                               block={{ label: name.trim() || initial?.label, model, repair: instant ? null : repair,
+                                        instant_repair: instant || undefined, costs: extras.extras?.costs ?? initial?.costs }}
+                               unit={unit} onChange={setReplacement} />
+      ) : repairable && <RbdRepairQuality initial={initial?.repair_quality} onChange={setQuality} />}
       {repairable && !safety && maintenance}
       {repairable && (
         <Fold title="Costs" summary={costsSummary(ctl)} open={hasCosts && !safety}>
