@@ -50,6 +50,14 @@ MAX_TABLE_ROWS = 50
 MAX_SEGMENTS = 5000
 MAX_CYCLIC_SEGMENTS = 20_000
 MAX_PATTERN = 1000
+# Memory guards for evaluating a block along its schedule (a hourly-stepped
+# schedule out to tens of thousands of hours once took a 2 GiB instance down):
+# SurPyval's step-path sum lays out a (segments x query times) table, so the
+# query times go in chunks of at most this many cells (~8 MB a temporary);
+# the exact cumulative path (PH and PO models) holds a few numbers a segment,
+# up to this many segments (and replaces MAX_CYCLIC_SEGMENTS there).
+MAX_EVAL_CELLS = 1_000_000
+MAX_CUMULATIVE_SEGMENTS = 500_000
 
 REPAIRABLE_REASON = (
     "covariate schedules apply to non-repairable diagrams only: after a repair the item's covariates would "
@@ -445,6 +453,73 @@ class Plan:
 # The RBD node
 # ---------------------------------------------------------------------------
 
+def _segments_to(schedule, t: float) -> int:
+    """How many steps SurPyval lays the schedule out to by ``t``."""
+    n = max(len(schedule.edges) - 1, 1)
+    if schedule.period:
+        return int(math.ceil(max(float(t), 0.0) / float(schedule.period)) or 1) * n
+    return n
+
+
+def _cumulative_table(model, schedule, horizon: float) -> tuple:
+    """``(starts, Z, H before each step, H(start, z) of each step)`` up to
+    ``horizon``: a few numbers a step, from one call of the model's ``Hf``
+    each for the steps' starts and ends. For proportional hazards and odds
+    the cumulative hazard along a step path is the running total of each
+    step's ``Hf(end, z) - Hf(start, z)`` (SurPyval's own sum), so a query
+    then costs one more ``Hf`` call, never a steps x times table."""
+    starts, ends, Z = schedule.segments(float(horizon))
+    Z = np.atleast_2d(np.asarray(Z, dtype=float))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        h_start = np.asarray(model.Hf(starts, Z), dtype=float).ravel()
+        h_end = np.asarray(model.Hf(ends, Z), dtype=float).ravel()
+    h_start[0] = 0.0  # the first step runs from 0, where H is 0
+    before = np.concatenate([[0.0], np.cumsum(h_end - h_start)[:-1]])
+    return np.asarray(starts, dtype=float), Z, before, h_start
+
+
+def _cumulative_H(model, table: tuple, x: np.ndarray) -> np.ndarray:
+    """The cumulative hazard at ``x`` from :func:`_cumulative_table`."""
+    _, starts, Z, before, h_start = table
+    out = np.full(x.shape, np.nan, dtype=float)
+    out[x <= 0] = 0.0
+    out[x == np.inf] = np.inf
+    live = np.isfinite(x) & (x > 0)
+    if live.any():
+        xs = x[live]
+        i = np.clip(np.searchsorted(starts, xs, side="right") - 1, 0, len(starts) - 1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            h = np.asarray(model.Hf(xs, Z[i]), dtype=float).ravel()
+        out[live] = before[i] + (h - h_start[i])
+    return out
+
+
+def _cumulative_applies(model, schedule) -> bool:
+    """Whether :func:`_cumulative_table` gives this model's ``Hf_tvc``:
+    a proportional-hazards or -odds model on a baseline from 0, along a
+    schedule from 0 — and checked against ``Hf_tvc`` itself at a few times
+    over the first steps, so that a model the running total doesn't fit
+    falls back to SurPyval's own sum (in chunks)."""
+    try:
+        from surpyval.univariate.regression._tvc_evaluation import PROPORTIONAL_HAZARD, PROPORTIONAL_ODDS
+
+        if getattr(model, "kind", None) not in (PROPORTIONAL_HAZARD, PROPORTIONAL_ODDS):
+            return False
+        if float(model.distribution.support[0]) < 0 or float(schedule.edges[0]) != 0.0:
+            return False
+        edges = np.asarray(schedule.edges, dtype=float)
+        finite = edges[np.isfinite(edges)]
+        t_chk = float(schedule.period) * 2.5 if schedule.period else max(float(finite.max()) * 1.5, 1.0)
+        table = (t_chk, *_cumulative_table(model, schedule, t_chk))
+        x = np.concatenate([np.linspace(0.0, t_chk, 9)[1:], finite[1:6] + 1e-3 * t_chk])
+        x = x[(x > 0) & (x <= t_chk)]
+        want = np.asarray(model.Hf_tvc(x, schedule), dtype=float)
+        got = _cumulative_H(model, table, x)
+        return bool(np.allclose(got, want, rtol=1e-9, atol=1e-300))
+    except Exception:  # noqa: BLE001 - not this model: SurPyval's own sum
+        return False
+
+
 _NODE_CLASS = None
 
 
@@ -464,7 +539,19 @@ def _node_class():
             self._hi = hi
             self.label = name
             self._horizon = max(float(hi or 1.0) * 2.0, 1.0)
-            super().__init__(model, schedule=plan.schedule(self._horizon))
+            self._cum = None  # the exact cumulative path's table, when it applies
+            self._cumulative = False
+            schedule = plan.schedule(self._horizon)
+            self._cumulative = _cumulative_applies(model, schedule)
+            super().__init__(model, schedule=schedule)
+
+        def _too_fine(self, x_max: float, limit: int):
+            from backend.services.rbd_analysis import AnalysisError
+
+            return AnalysisError(
+                f"{self.label}: its schedule is too fine for this calculation over {_fmt(x_max)} — it would mean "
+                f"following more than {limit:,} steps. Use fewer, longer steps (e.g. a coarser repeat pattern), "
+                "a shorter time axis or a smaller survived-to age.")
 
         def _cover(self, x) -> None:
             x = np.asarray(x, dtype=float)
@@ -473,12 +560,9 @@ def _node_class():
             plan = self._plan
             if plan.period:
                 n = len(self.schedule.edges) - 1
-                if math.ceil(x_max / plan.period) * n > MAX_CYCLIC_SEGMENTS:
-                    from backend.services.rbd_analysis import AnalysisError
-
-                    raise AnalysisError(
-                        f"{self.label}: its schedule repeats every {_fmt(plan.period)}, too often to follow out to "
-                        f"{_fmt(x_max)} (more than {MAX_CYCLIC_SEGMENTS:,} steps). Shorten the window.")
+                limit = MAX_CUMULATIVE_SEGMENTS if self._cumulative else MAX_CYCLIC_SEGMENTS
+                if math.ceil(x_max / plan.period) * n > limit:
+                    raise self._too_fine(x_max, limit)
                 return
             if not plan.varies or x_max <= self._horizon:
                 return
@@ -489,15 +573,52 @@ def _node_class():
                 from backend.services.rbd_analysis import AnalysisError
 
                 raise AnalysisError(f"{self.label}: {exc}") from None
+            self._cum = None
             self._grid = None
 
-        def _sf_at(self, x):
+        def _H(self, x: np.ndarray) -> np.ndarray:
+            """The cumulative hazard along the schedule at ``x``, within the
+            memory guards: exactly from a per-segment running total where
+            the model allows (:func:`_cumulative_table`), else SurPyval's
+            ``Hf_tvc`` over chunks of the query times."""
             self._cover(x)
-            return super()._sf_at(x)
+            if self._cumulative:
+                return self._H_cumulative(x)
+            finite = x[np.isfinite(x)]
+            x_max = float(finite.max()) if finite.size else 0.0
+            n_seg = _segments_to(self.schedule, x_max)
+            chunk = max(1, MAX_EVAL_CELLS // max(n_seg, 1))
+            if x.size <= chunk:
+                return np.asarray(self.model.Hf_tvc(x, self.schedule), dtype=float)
+            # Sorted, so each chunk lays the path out only to its own last time.
+            order = np.argsort(x, kind="stable")
+            out = np.empty(x.size, dtype=float)
+            for k in range(0, x.size, chunk):
+                idx = order[k:k + chunk]
+                out[idx] = np.asarray(self.model.Hf_tvc(x[idx], self.schedule), dtype=float)
+            return out
+
+        def _H_cumulative(self, x: np.ndarray) -> np.ndarray:
+            finite = x[np.isfinite(x)]
+            x_max = max(float(finite.max()) if finite.size else 0.0, 1.0)
+            if self._cum is None or x_max > self._cum[0]:
+                horizon = max(x_max, self._cum[0] * 2.0 if self._cum else self._horizon)
+                if _segments_to(self.schedule, horizon) > MAX_CUMULATIVE_SEGMENTS:
+                    horizon = x_max
+                if _segments_to(self.schedule, horizon) > MAX_CUMULATIVE_SEGMENTS:
+                    raise self._too_fine(x_max, MAX_CUMULATIVE_SEGMENTS)
+                self._cum = (horizon, *_cumulative_table(self.model, self.schedule, horizon))
+            return _cumulative_H(self.model, self._cum, x)
+
+        def _sf_at(self, x):
+            x = np.atleast_1d(np.asarray(x, dtype=float))
+            return np.exp(-self._H(x))
 
         def ff(self, x):
-            self._cover(np.atleast_1d(np.asarray(x, dtype=float)))
-            return super().ff(x)
+            scalar = np.ndim(x) == 0
+            x = np.atleast_1d(np.asarray(x, dtype=float))
+            out = -np.expm1(-self._H(x))
+            return out[0] if scalar else out
 
         def cs(self, x, X):
             from repyability.utils.wrappers import conditional_survival
