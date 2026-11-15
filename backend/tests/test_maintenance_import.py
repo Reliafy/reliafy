@@ -82,3 +82,17 @@ def test_rows_given_directly_have_the_same_limits():
         importer.run(m, [{"position": "a" * (importer.MAX_CELL + 1)}])
     with pytest.raises(Invalid, match="rows"):
         importer.run(m, [{"position": "a"}] * (importer.MAX_ROWS + 1))
+
+
+def test_excel_dates_as_numbers_read_as_their_days():
+    """A date cell formatted as General (or a CSV saved from one) gives Excel's day number."""
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), "user-i")
+    rows = [{"Position": "Mill > Pump", "Item": "Pump A", "Fitted": "43831", "Removed": "45366.0",
+             "Failed": "yes"}]
+    assert importer.run(m, rows, dry_run=True)["fitments"] == 1
+    importer.run(m, rows)
+    [mill] = m.tree()
+    [life] = m.life_data(mill["children"][0]["id"])
+    assert life["c"] == 0 and life["x"] > 0
+    with pytest.raises(Invalid, match="isn't a date"):
+        importer.run(m, [{"Position": "Mill > Pump 2", "Item": "B", "Fitted": "123456"}], dry_run=True)

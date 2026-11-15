@@ -334,7 +334,7 @@ def test_an_fmea_sheet_imports_with_its_scores(m):
     events = m.s.event_count(ORG)
     bad = rcm_sheet.run(m, fresh, rcm_sheet.read_table(_xlsx(FMEA_HEADER, rows), "fmea.xlsx"), opts, dry_run=False)
     assert not bad["ok"] and bad["errors"] == [
-        "Row 3: Severity is a whole number from 1 (no effect) to 10 (hazardous without warning)."]
+        "Row 3, Severity “11”: Severity is a whole number from 1 (no effect) to 10 (hazardous without warning)."]
     assert m.s.event_count(ORG) == events
     _rebuilds_the_same(m)
 
