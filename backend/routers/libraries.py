@@ -4,6 +4,13 @@ dataset and model snapshots, beside the built-in handbooks.
 Reads take an optional sign-in: signed out, only public libraries (and the
 built-in handbooks) are seen. Every write needs sign-in, and only a library's
 owner changes it. Answers about a user's libraries are never cached.
+
+Plans (Derryn, 15 Nov 2026): reading and using (copying from) libraries is on
+every plan; making a library, adding, removing or refreshing entries, editing
+it, sharing it and publishing it are Pro (``billing.libraries_allowed``). A
+library made before that by an account now on Free stays readable to its owner,
+who may still delete it or make it private (taking back what they shared), but
+not add to, edit or share it.
 """
 
 from __future__ import annotations
@@ -49,14 +56,31 @@ def _visible(session, ctx: AccessCtx | None, library_id: str) -> Optional[dict]:
     return lib
 
 
+def _allowed(session, ctx: AccessCtx | None) -> bool:
+    """Whether the caller may make and change libraries (Pro, complimentary Pro, operators, self-hosted)."""
+    return ctx is not None and billing_service.libraries_allowed(session, ctx.user)
+
+
+def _pro_needed() -> JSONResponse:
+    return _json(billing_service.LIBRARIES_PRO_PAYLOAD, 402)
+
+
 def _out(session, ctx: AccessCtx | None, lib: dict) -> dict:
-    can_edit = ctx is not None and access_service.can_write(ctx, lib.get("owner_id"))
+    owner = ctx is not None and access_service.can_write(ctx, lib.get("owner_id"))
+    allowed = _allowed(session, ctx)
     rel = lib_entries.relation(lib, ctx.write_owner if ctx else None, _principals(ctx))
-    return lib_entries.library_out(session, lib, rel, can_edit, _principals(ctx))
+    out = lib_entries.library_out(session, lib, rel, owner and allowed, _principals(ctx))
+    # The owner without Pro: read-only, but the library stays theirs to delete or make private.
+    out["can_delete"] = owner
+    out["pro_needed"] = owner and not allowed
+    return out
 
 
-def _owned(session, ctx: AccessCtx, library_id: str) -> tuple[Optional[dict], Optional[JSONResponse]]:
-    """The library when the caller may change it, else the response saying why not."""
+def _owned(session, ctx: AccessCtx, library_id: str, pro: bool = True) -> tuple[Optional[dict], Optional[JSONResponse]]:
+    """The library when the caller may change it, else the response saying why not. ``pro``: the change
+    needs Pro (everything but deleting a library or making it private)."""
+    if pro and not _allowed(session, ctx):
+        return None, _pro_needed()
     if library_id in lib_entries.builtin_ids():
         return None, _json({"detail": "The built-in handbooks are read-only."}, 403)
     lib = _visible(session, ctx, library_id)
@@ -101,9 +125,10 @@ def list_libraries(request: Request, session=Depends(get_session),
     limited = _limited(request)
     if limited:
         return limited
-    rows = lib_entries.list_cards(session, _principals(ctx), ctx.write_owner if ctx else None, _can_write(ctx),
+    rows = lib_entries.list_cards(session, _principals(ctx), ctx.write_owner if ctx else None,
+                                  _can_write(ctx) if _allowed(session, ctx) else None,
                                   ctx.hidden if ctx else frozenset())
-    return _json({"libraries": rows, "signed_in": ctx is not None,
+    return _json({"libraries": rows, "signed_in": ctx is not None, "can_make": _allowed(session, ctx),
                   "workspace_id": lib_entries.workspace_id_of(ctx.write_owner) if ctx else None,
                   "licences": [{"id": k, "name": v} for k, v in lib_entries.LICENCES.items()]})
 
@@ -160,8 +185,10 @@ def get_entry(library_id: str, entry_id: str, request: Request, session=Depends(
 def create_library(name: str = Body(...), description: str = Body(default=""), notes: str = Body(default=""),
                    source: str = Body(default=""), citation: str = Body(default=""), session=Depends(get_session),
                    ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """A new, private, empty library. Counts as one saved item toward the Free plan's limit."""
-    capped = _capped(session, ctx, {"libraries": 1})
+    """A new, private, empty library (Pro)."""
+    if not _allowed(session, ctx):
+        return _pro_needed()
+    capped = _capped(session, ctx, {})
     if capped is not None:
         return capped
     try:
@@ -196,8 +223,8 @@ def set_visibility(library_id: str, visibility: str = Body(...), workspaces: Opt
                    citation: Optional[str] = Body(default=None), rights_confirmed: Optional[bool] = Body(default=None),
                    session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """Private, shared with workspaces (read-only for them) or public (needs a licence, a source or citation and
-    rights_confirmed true)."""
-    lib, failed = _owned(session, ctx, library_id)
+    rights_confirmed true). Sharing and publishing are Pro; making a library private again isn't."""
+    lib, failed = _owned(session, ctx, library_id, pro=visibility != "private")
     if failed is not None:
         return failed
     try:
@@ -211,8 +238,9 @@ def set_visibility(library_id: str, visibility: str = Body(...), workspaces: Opt
 
 @router.delete("/{library_id}")
 def delete_library(library_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """Delete a library and its entries. The datasets and models they were taken from stay, and so do copies."""
-    lib, failed = _owned(session, ctx, library_id)
+    """Delete a library and its entries. The datasets and models they were taken from stay, and so do copies.
+    On every plan: a library is always its owner's to delete."""
+    lib, failed = _owned(session, ctx, library_id, pro=False)
     if failed is not None:
         return failed
     return _json({"ok": True, "entries_removed": lib_entries.delete(session, lib)})

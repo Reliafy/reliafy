@@ -206,6 +206,10 @@ def _pro_only_message(tool: str) -> str:
                 "WeibullJointPH.fit_from_df(df, x_col=..., markers_col=..., c_col=...), one row per unit with its "
                 "readings as {age: value} — 0 = failed, 1 = still running). Or upgrade to Pro at "
                 f"{_billing_url()} (or call get kind upgrade_link for a payment link) to fit and save it here.")
+    if tool in _LIBRARY_TOOLS:
+        return (f"Making and sharing libraries is part of Reliafy Pro ({PRO_PRICE}) and isn't included on this plan. "
+                "Public libraries stay free: list kind libraries, get kind library and change library_use copy "
+                f"from them. Upgrade at {_billing_url()} (or call get kind upgrade_link for a payment link).")
     if tool in _FIT_TOOLS:
         return (f"Fitting in Reliafy is part of Reliafy Pro ({PRO_PRICE}) and isn't included on this plan. "
                 "Fit the data locally with SurPyval instead (pip install surpyval; e.g. "
@@ -410,7 +414,10 @@ DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in
 _FIT_TOOLS = {"analyse.fit", "analyse.bayes_update", "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent",
               "analyse.fit_joint", "change.model_fit_joint"}
 _FLEET_TOOLS = {"list.fleets", "analyse.fleet_forecast", "list.fleet_alerts", "change.fleet_create_alert"}
-PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
+# Making, filling, editing, sharing and publishing libraries (Derryn, 15 Nov 2026); reading and using
+# public libraries stays on every plan, and deleting one's own library (change library_delete) too.
+_LIBRARY_TOOLS = {"change.library_create", "change.library_update", "change.library_add", "change.library_remove"}
+PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS | _LIBRARY_TOOLS
 # Never gated or counted: the way to Pro, seeing where the allowance stands
 # and the how-tos must work when a limit is hit.
 UNGATED_TOOLS = {"get.upgrade_link", "get.account", "guide", "report_problem.report", "report_problem.status",
@@ -3389,6 +3396,8 @@ def upload_dataset(
     user, db = _caller(ctx), _db()
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
+    if library_id and user.get("mcp_plan", "pro") != "pro":
+        raise Refusal(_pro_only_message("change.library_add"), "pro_only")
     lib = _own_library(db, user["uid"], library_id) if library_id else None
     split = (dataset_col or "").strip()
     if not split:
@@ -8954,11 +8963,11 @@ def get_account(ctx: Context) -> dict[str, Any]:
     elif plan == "free":
         note = (f"Reliafy Free: {quota:,} tool calls a month to try Reliafy from an AI agent (get kind account, "
                 "guide, get kind upgrade_link, change upload_send_part and library lookups aren't counted), within the storage "
-                "limits shown. Fitting and fleets are Pro-only.")
+                "limits shown. Fitting, fleets and making libraries are Pro-only.")
     else:
         note = (f"Reliafy Agent (a retired plan, kept until the subscription ends): {quota:,} tool calls a day "
                 "(get kind account, guide, get kind upgrade_link, change upload_send_part and library lookups aren't counted) and "
-                "the storage limits shown. Fitting and fleets are Pro-only.")
+                "the storage limits shown. Fitting, fleets and making libraries are Pro-only.")
     return {
         "plan": plan,
         "plan_name": _PLAN_NAMES[plan],
@@ -9239,9 +9248,8 @@ def get_library(ctx: Context, library_id: _LibraryId, entry_id: Annotated[Option
 def create_library(ctx: Context, name: _LibraryName, description: _LibraryDescription = None,
                    notes: _LibraryNotes = None, source: _LibrarySource = None,
                    citation: _LibraryCitation = None) -> dict[str, Any]:
-    """A new, private, empty library (one saved item toward the Free plan's limit); change library_add fills it."""
+    """A new, private, empty library (Pro); change library_add fills it."""
     user, db = _caller(ctx), _db()
-    _cap(db, user, user_library.COLLECTION, "libraries")
     lib = _library_call(lib_entries.create, db, user["uid"], name, description or "", notes or "", source or "",
                         citation or "")
     return {"saved": True, "library_id": lib["_id"], **_library_out(db, user["uid"], lib)}

@@ -17,6 +17,7 @@ import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
+import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
 
 // A saved accelerated life model in the model frame: the answer line, the
@@ -80,7 +81,7 @@ export default function AltModelPage() {
             </Link>
           )}
           {!model.read_only && <button type="button" className="ovm-item" onClick={onRename}>Rename</button>}
-          <button type="button" className="ovm-item" onClick={() => setAdding(true)}>Add to library…</button>
+          <button type="button" className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>
           <button type="button" className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
           </button>

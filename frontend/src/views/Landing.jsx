@@ -139,6 +139,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
       ...freeStorageLines(),
       "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
+      "Browse public data libraries and copy from them",
       "25 AI credits to try the assistant",
       mcpOn
         ? "Try Reliafy from your AI agent: 20 tool calls a month"
@@ -164,6 +165,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
         : "Unlimited use from AI agents (MCP connector, on request) — Claude or any MCP client",
       "API access — push meter data & measurements from your scripts",
       "Team workspaces: create teams and edit together",
+      "Libraries: make your own, share them with workspaces and publish them",
       "AI assistant: fits models and builds RBDs for you",
       "Top-up credit packs from $5 — credits never expire",
     ],

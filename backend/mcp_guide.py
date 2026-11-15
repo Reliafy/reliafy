@@ -224,8 +224,8 @@ and suggest replacing it with their own data.
 - Library lookups are never counted against the Free plan's tool calls.
 - Libraries (list kind libraries, get kind library with library_id, and entry_id for one entry): collections of \
 datasets and models. Each is private (its owner's workspace), shared with workspaces (by workspace ID, read-only for \
-them) or public (anyone can read). The built-in handbooks above are listed too, read-only. change library_create \
-makes one (private, one saved item toward the Free limit); change library_add (library_id, dataset_id or model_id, \
+them) or public (anyone can read). The built-in handbooks above are listed too, read-only. Making, filling, editing, sharing and publishing \
+libraries is Pro (reading, using and deleting your own aren't): change library_create makes one (private); change library_add (library_id, dataset_id or model_id, \
 model_collection for a repairable or ALT model) adds a snapshot: later edits in the workspace don't change it. A \
 model needn't be fitted to data (from parameters, a handbook, a published source: give source). Nothing is added \
 unless the user asks. change library_update changes the name, notes, source, citation or visibility: public needs \

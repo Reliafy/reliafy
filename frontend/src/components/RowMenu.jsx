@@ -4,6 +4,7 @@ import { portalHost } from "../fullScreen.js";
 import { placeMenu, placeSubmenu } from "../menuPlace.js";
 import usePhone from "../usePhone.js";
 import useMenuDismiss from "./useMenuDismiss.js";
+import ProTag from "./ProTag.jsx";
 
 // A row's own menu (a context menu): opened by right-click, a row's ⋯ button,
 // or Shift+F10 / the Menu key. Drawn in the shared portal host (so it shows in
@@ -14,7 +15,7 @@ import useMenuDismiss from "./useMenuDismiss.js";
 // scroll that moves its row (the element `anchorId` names) away from it.
 // `onClose` puts the focus back where it belongs (the row).
 //
-// items: [{id, label, danger?, disabled?, reason?, items?} | {separator: true}]; onChoose(id) runs
+// items: [{id, label, danger?, disabled?, reason?, pro?, items?} | {separator: true}]; onChoose(id) runs
 // after the menu has closed. A disabled item stays in the menu (so it can be
 // found and its reason read: under its label, and to a screen reader as its
 // description) but does nothing.
@@ -156,6 +157,7 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
               onClick={() => choose(it)}>
         {radio && <span className="row-menu-tick" aria-hidden="true">{it.checked ? "✓" : ""}</span>}
         {it.label}
+        {it.pro && <> <ProTag /></>}
         {why && <span id={why} className="row-menu-why">{it.reason}</span>}
       </button>
     );

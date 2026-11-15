@@ -109,6 +109,7 @@ export default function BillingPage() {
     },
     { label: "Programmatic API & data ingestion", free: "—", pro: "Included" },
     { label: "Team workspaces", free: "Join teams (view-only)", pro: "Create teams and edit together" },
+    { label: "Libraries", free: "Browse public libraries and copy from them", pro: "Make your own, share and publish them" },
   ].filter(Boolean);
   // Pro exists (pricing.js); it can only be bought where Stripe is set up.
   const noPayments = (
