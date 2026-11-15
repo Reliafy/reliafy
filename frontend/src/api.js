@@ -1204,6 +1204,17 @@ export function checkBlockMean(node, unit = "") {
   });
 }
 
+// A standby block's arrangement in words and how it's worked out (#363): ``route`` "exact" or
+// "numerical" (free), or "simulated" with RePyability's plain ``reason`` (Pro, when the block is
+// set to be simulated). ``node`` is the block as the builder stores it. Quick and free.
+export function standbyRoute(node) {
+  return request("/api/rbds/standby-route", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node }),
+  });
+}
+
 // A block on a fitted repairable model (#367): the model in words, whether it can wear out (and so
 // needs a replacement rule), the suggested rule and how its long-run availability is worked out
 // (exact/simulated, Free/Pro). ``node`` is the block as the builder stores it. Quick and free.

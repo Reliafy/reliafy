@@ -43,6 +43,31 @@ def check_block_mean(
     return JSONResponse(content=result)
 
 
+@router.post("/rbds/standby-route")
+def standby_route(
+    node: dict = Body(..., embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A standby block's arrangement in words and how it's worked out: exact
+    or numerical (free), or only by simulation (RePyability's plain refusal,
+    and the offer to simulate it with Pro). Quick and free: it simulates
+    nothing."""
+    from backend.services import rbd_standby
+
+    def resolve_model(model_id: str):
+        return models_service.get_live_model(session, model_id, ctx.read_owners)
+
+    try:
+        result = rbd_standby.route_of(node, resolve_model)
+    except AnalysisError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to read a standby block's route")
+        return JSONResponse(status_code=500, content={"detail": "Failed to read the block. The error has been logged."})
+    return JSONResponse(content=result)
+
+
 @router.post("/rbds/repairable-block")
 def repairable_block(
     node: dict = Body(...),

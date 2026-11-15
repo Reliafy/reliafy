@@ -882,8 +882,12 @@ class _Converter:
             if smodel is None:
                 return self._placeholder(base, label, f"its standby unit “{s['name']}” — {swhy or 'has no failure model'}")
             smodels.append(smodel)
-        if any(m != smodels[0] for m in smodels):
-            return self._placeholder(base, label, "its standby units have different non-repairable models; Reliafy's standby block uses one model for all spares")
+        from backend.services.rbd_standby import MAX_OWN_UNITS, own_from_units
+
+        if any(m != smodels[0] for m in smodels) and 1 + len(smodels) > MAX_OWN_UNITS:
+            return self._placeholder(base, label, f"its standby units have different non-repairable models and "
+                                                  f"there are more than {MAX_OWN_UNITS} units; Reliafy's standby block "
+                                                  "gives units their own models only up to that many")
 
         # Quiescent (dormant) behaviour of the spares, as a dormancy factor:
         # 0 cold (no dormant failures), 1 hot (dormant = active), in between
@@ -896,7 +900,7 @@ class _Converter:
                 continue
             qurd = self.p["urds"].get(q)
             qmodel, _ = self.life_model(qurd.get("model") if qurd else None, label)
-            factors.add(_dormancy_factor(smodels[0], qmodel))
+            factors.add(_dormancy_factor(smodels[spares.index(s)], qmodel))
         if len(factors) == 1 and None not in factors:
             dormancy = factors.pop()
         else:
@@ -919,8 +923,9 @@ class _Converter:
                 self.warn(f"The switch of “{label}” can itself fail over time in BlockSim; Reliafy only models its success probability on demand.")
             if (sw.get("delay") or 0) > 0:
                 self.warn(f"The switch of “{label}” has a switching delay in BlockSim; Reliafy switches instantly.")
-        if smodels[0] != pmodel:
-            data["standbyModel"] = smodels[0]
+        # The spares' own models: one shared (standbyModel), or each its own (spareModels).
+        own = own_from_units([pmodel, *smodels], 1)
+        data.update({k: v for k, v in own.items() if k != "model"})
         node = {"type": "standby", "label": label, "model": pmodel, "spares": len(spares),
                 "cold": cold, "dormancy": dormancy}
         if data:

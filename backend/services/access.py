@@ -328,8 +328,10 @@ def graph_refs(graph) -> list[tuple[str, str]]:
         data = node.get("data") or {}
         if not isinstance(data, dict):
             continue
-        for key in _GRAPH_MODEL_KEYS:
-            model = data.get(key)
+        models = [data.get(key) for key in _GRAPH_MODEL_KEYS]
+        models += [m for key in ("runningModels", "spareModels")  # standby units' own models
+                   for m in (data.get(key) if isinstance(data.get(key), list) else [])]
+        for model in models:
             if isinstance(model, dict):
                 for id_key in _SAVED_MODEL_ID_KEYS:
                     if mid := _str_id(model.get(id_key)):

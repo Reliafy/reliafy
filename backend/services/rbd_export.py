@@ -461,6 +461,7 @@ class _Script:
         self.uses_bayes = False  # a saved Bayesian update, refitted with fit_bayes
         self.uses_stand_in = False
         self.uses_rec = False  # a block on a fitted repairable model (surpyval.recurrent)
+        self.uses_simulated = False  # a standby block simulated (no exact reliability)
         self.lines: list[str] = []  # block definitions, in order
         self.subsystems: dict[str, str] = {}  # rbd id -> variable
         self.placeholders: list[str] = []  # labels of raising blocks
@@ -660,56 +661,71 @@ class _Script:
         ), label)
 
     def _standby(self, data, label, var):
-        spares = int(data.get("spares") or 1)
-        spares = max(spares, 0)
-        primary_spec = data.get("model")
-        spare_spec = data.get("standbyModel") or data.get("model")
-        same = spare_spec is primary_spec or spare_spec == primary_spec
-        if same:
-            duty = self.dist(primary_spec, f"{label} (each unit)",
-                             self.names.make(f"{var}_unit"))
-            spare = duty
-        else:
-            duty = self.dist(primary_spec, f"{label} (duty unit)",
-                             self.names.make(f"{var}_duty"))
-            spare = self.dist(spare_spec, f"{label} (spare)",
-                              self.names.make(f"{var}_spare"))
-        n_units = 1 + spares
-        dormancy = rbd_analysis._standby_dormancy(data, label)
         from backend.services import rbd_standby
 
+        errors = rbd_standby.own_errors(data, label)
+        if errors:
+            return self.missing(var, errors[0], label)
         k = rbd_standby.operating(data, label)
+        spares = rbd_standby.spare_count(data)
+        specs = rbd_standby.unit_specs(data, label)
+        names = rbd_standby.unit_names(data, label)
+        # One variable per distinct model: identical units share it, so
+        # RePyability sees them as identical (exact forms for identical units).
+        made: dict = {}
+        unit_vars = []
+        distinct = len({rbd_standby._spec_key(sp) for sp in specs})
+        for i, (spec, where) in enumerate(zip(specs, names)):
+            key = rbd_standby._spec_key(spec)
+            if key not in made:
+                if distinct == 1:
+                    made[key] = self.dist(spec, f"{label} (each unit)", self.names.make(f"{var}_unit"))
+                elif i == 0:
+                    made[key] = self.dist(spec, f"{label} (duty unit)" if k == 1 else where,
+                                          self.names.make(f"{var}_duty"))
+                else:
+                    made[key] = self.dist(spec, where, self.names.make(
+                        f"{var}_spare" if i >= k else f"{var}_unit{i + 1}"))
+            unit_vars.append(made[key])
+        same = distinct == 1
+        duty = unit_vars[0]
+        n_units = k + spares
+        dormancy = rbd_analysis._standby_dormancy(data, label)
         start = rbd_standby.start_probability(data)
         if not (k == 1 and dormancy >= 1.0 and start == 1.0):
             # Cold, warm, or hot with spares that may fail to start; k units
             # running (#84). A spare that fails to start is skipped and the
             # next one tried (start_probability).
             reason = rbd_standby.limit_for(data, label)
-            if reason:
-                return self.missing(var, reason, label)
+            if reason and not data.get("simulate"):
+                return self.missing(var, f"{reason} {rbd_standby.SIMULATE_OFFER}", label)
             self.imports.add("StandbyModel")
-            kind = "cold" if dormancy == 0.0 else "hot" if dormancy >= 1.0 else "warm"
-            ageing = (f", ageing at {dormancy:g} x the operating rate while waiting (and able to fail "
-                      "before they're needed)" if 0.0 < dormancy < 1.0 else "")
-            starts = (f" Each spare starts with probability {start:g}; one that doesn't is skipped and the "
-                      "next tried." if start < 1.0 else "")
-            self.comment(f"{label}: {kind} standby - {k} unit{'s' if k != 1 else ''} running and {spares} "
-                         f"idle spare{'s' if spares != 1 else ''}{ageing}; it fails when fewer than {k} can "
-                         f"run.{starts}")
+            self.comment(f"{label}: standby - {rbd_standby.describe(data, label)}; it fails when fewer than "
+                         f"{k} can run. A spare that doesn't start is skipped and the next tried.")
             options = [f"k={k}"]
             if dormancy > 0.0:
                 options.append(f"dormancy_factor={_num(dormancy)}")
             if start < 1.0:
                 options.append(f"start_probability={_num(start)}")
-            units = ", ".join([duty] * k + [spare] * spares)
-            line = f"{var} = StandbyModel([{units}], {', '.join(options)})"
+            target = f"{var}_arrangement" if reason else var
+            units = ", ".join(unit_vars)
+            line = f"{target} = StandbyModel([{units}], {', '.join(options)})"
             if len(line) > 79:
-                self.lines.append(f"{var} = StandbyModel(")
+                self.lines.append(f"{target} = StandbyModel(")
                 self.lines.append(f"    [{units}],")
                 self.lines.extend(f"    {o}," for o in options)
                 self.lines.append(")")
             else:
                 self.lines.append(line)
+            if reason:
+                # Simulated, as Reliafy simulates it (Pro): the share of the same
+                # seeded lifetimes still running, so the figures match the app's.
+                self.uses_simulated = True
+                self.comment(f"{reason} So it's simulated, as in Reliafy: its reliability is the share of "
+                             f"{rbd_standby.SIM_LIVES:,} simulated lifetimes still running (seed "
+                             f"{rbd_standby.SIM_SEED}), within about +/-{rbd_standby.dkw_half_width(rbd_standby.SIM_LIVES):.3f} "
+                             "of the truth at every time (90%).")
+                self.lines.append(f"{var} = SimulatedLives({target})")
             return var
         self.comment(
             f"{label}: hot standby - all {n_units} units run from t=0, so it "
@@ -721,10 +737,10 @@ class _Script:
                 f'{var} = RepeatedNode({duty}, {n_units}, "parallel")'
             )
             return var
-        # Different spare model: a small nested parallel diagram.
+        # Units that differ: a small nested parallel diagram.
         self.imports.add("NonRepairableRBD")
         members = [("duty", duty)] + [
-            (f"spare{i + 1}", spare) for i in range(spares)
+            (f"spare{i + 1}", v) for i, v in enumerate(unit_vars[1:])
         ]
         self.lines.append(f"{var} = NonRepairableRBD(")
         self.lines.append("    [")
@@ -926,10 +942,14 @@ def _default_t_max(graph: dict, resolve_model, resolve_subsystem,
                     pass
             if data.get(key):
                 data[key] = _effective_spec(data[key], resolve_model)
+        from backend.services import rbd_standby
+
         try:
-            model, _ = rbd_analysis._node_reliability(
-                {**node, "data": data}, None, set(), fits.get if fits else None, None
-            )
+            # A standby block set to be simulated: its scale from the simulation (as the app's).
+            with rbd_standby.simulation("run"):
+                model, _ = rbd_analysis._node_reliability(
+                    {**node, "data": data}, None, set(), fits.get if fits else None, None
+                )
             hi = rbd_analysis._model_hi(model)
         except Exception:  # noqa: BLE001 - the script raises for this block
             continue
@@ -1127,6 +1147,18 @@ def _imports(script: _Script, repairable: bool) -> str:
     return "\n".join(out)
 
 
+def rbd_standby_lives() -> int:
+    from backend.services import rbd_standby
+
+    return rbd_standby.SIM_LIVES
+
+
+def rbd_standby_seed() -> int:
+    from backend.services import rbd_standby
+
+    return rbd_standby.SIM_SEED
+
+
 def _helpers(script: _Script) -> str:
     out = []
     if script.uses_missing:
@@ -1134,6 +1166,32 @@ def _helpers(script: _Script) -> str:
             def missing_model(message):
                 """Stand-in for a block whose model couldn't be exported."""
                 raise NotImplementedError(message)
+        '''))
+    if script.uses_simulated:
+        out.append(textwrap.dedent(f'''
+            class SimulatedLives:
+                """A standby arrangement RePyability has no exact reliability for,
+                simulated as Reliafy simulates it: its reliability is the share of
+                {rbd_standby_lives():,} seeded lifetimes (StandbyModel.random) still running."""
+
+                def __init__(self, model, lives={rbd_standby_lives()}, seed={rbd_standby_seed()}):
+                    self.model = model
+                    self.lives = lives
+                    self.draws = np.sort(np.asarray(model.random(lives, seed=seed), dtype=float))
+
+                def sf(self, x):
+                    x = np.asarray(x, dtype=float)
+                    out = 1.0 - np.searchsorted(self.draws, x, side="right") / self.lives
+                    return out if out.ndim else float(out)
+
+                def ff(self, x):
+                    return 1.0 - self.sf(x)
+
+                def random(self, size, seed=None):
+                    return self.model.random(size, seed=seed)
+
+                def mean(self):
+                    return float(self.draws.mean())
         '''))
     if script.uses_stand_in:
         out.append(textwrap.dedent('''

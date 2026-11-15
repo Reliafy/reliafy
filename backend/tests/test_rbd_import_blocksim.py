@@ -448,15 +448,17 @@ def test_standby_container_variants():
     assert any("warm standby" in w for w in imp.warnings)
 
 
-def test_standby_container_that_cant_be_represented_is_a_placeholder():
+def test_standby_container_with_spares_that_differ_keeps_each_model():
+    # #363: each spare on its own model, switched in in BlockSim's order.
     blocks = {1: _blk("SB", type_=bs.BT_STANDBY),
               2: _blk("P", 2, type_=bs.BT_IN_STANDBY, active=True),
               3: _blk("S1", 1, type_=bs.BT_IN_STANDBY, active=False, standby_index=1),
               4: _blk("S2", 3, type_=bs.BT_IN_STANDBY, active=False, standby_index=2)}
     (imp,) = bs.convert_project(_project([_diagram(1, "S", blocks, [], containers={1: [[2], [3], [4]]})]))
     (node,) = [n for n in imp.graph["nodes"] if n["type"] not in ("input", "output")]
-    assert node["type"] == "component" and "model" not in node
-    assert any("different non-repairable models" in w for w in imp.warnings)
+    assert node["type"] == "standby" and node["spares"] == 2
+    own = node["data"]["spareModels"]
+    assert len(own) == 2 and own[0] != own[1] and all(m != node["model"] for m in own)
 
 
 def test_load_sharing_of_identical_exponential_units_is_exact():

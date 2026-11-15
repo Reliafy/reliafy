@@ -1703,6 +1703,8 @@ export default function RbdCalculator({
         // the free quick run where it's offered.
         setResult(null);
         setQuickOffer(err.data?.quick || null);
+        // A standby block set to be simulated (#363): the library's plain refusal and what Pro adds.
+        if (err.data?.simulated_block) setCapMessage(err.message);
         setNeedsPro(true);
         setPhase("idle");
         return;
