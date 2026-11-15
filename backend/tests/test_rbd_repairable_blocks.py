@@ -5,9 +5,10 @@ The rule is required unless the model, as entered, never wears out; each
 exception (and its boundary) is allowed without a rule and each rising case
 refused in plain words. How the long-run figures are worked out comes from
 RePyability's ``analysis_routes()``: a simulated route is Pro, and the block
-turns free on its own when RePyability reports an exact route. The simulated
-availability of a Crow-AMSAA block replaced after N repairs is checked
-against a hand renewal-reward calculation.
+turns free on its own when RePyability reports an exact route (0.19 does for
+a minimally repaired block with a rule). The availability of a Crow-AMSAA
+block replaced after N repairs, exact and simulated, is checked against a
+hand renewal-reward calculation.
 """
 
 import json
@@ -138,8 +139,8 @@ def test_crow_amsaa_replaced_after_n_repairs_matches_a_hand_renewal_reward():
 
     By hand: a cycle runs to the 3rd failure of a power-law process, E[T3] = alpha * Gamma(3 + 1/beta) /
     Gamma(3) = 176.76 h of running, then is down 3 x 5 h = 15 h. Long-run availability = 176.76 / 191.76
-    = 0.9218. RePyability 0.18 has no exact route for this, so it's simulated (Pro): over a long window
-    the simulated mean is within its interval of the hand figure."""
+    = 0.9218. RePyability 0.19 works this out exactly (it was simulated on 0.18), so the long-run figure is
+    the hand one, and over a long window the simulated mean is within its interval of it too."""
     alpha, beta, n = 100.0, 1.8, 3
     t_n = alpha * math.exp(math.lgamma(n + 1 / beta) - math.lgamma(n))
     hand = t_n / (t_n + n * MTTR)
@@ -147,8 +148,10 @@ def test_crow_amsaa_replaced_after_n_repairs_matches_a_hand_renewal_reward():
 
     out = ra.analyze_availability(_graph(M("crow_amsaa", alpha, beta), {"rule": "repairs", "repairs": 2}),
                                   t_simulation=100_000, n_simulations=200)
-    assert out["steady_state_availability"] is None and out["availability_basis"] == "simulation"
-    assert out["long_run_method"]["route"] == "refused" and "“Pump”" in out["long_run_method"]["reason"]
+    assert out["steady_state_availability"] == pytest.approx(hand, rel=1e-9)
+    assert out["availability_basis"] == "exact" and out["long_run_method"]["route"] == "exact"
+    assert out["mean_down_time"] == pytest.approx(MTTR, rel=1e-9)
+    assert out["failure_frequency"] == pytest.approx(n / (t_n + n * MTTR), rel=1e-9)
     prec = out["precision"]
     assert abs(prec["window_availability"] - hand) < max(3 * prec["standard_error"], 0.002)
 
@@ -165,22 +168,31 @@ def test_ara_is_simulated_and_priced_pro():
 
 
 def test_price_follows_analysis_routes_not_the_model_family(monkeypatch):
-    """When RePyability reports an exact route (as it will once it works out a minimally repaired block's
-    replacement cycle), the same block is free with no change here."""
+    """The price is RePyability's route, whatever the model family: a minimally repaired block replaced
+    after N repairs is exact (so free) since 0.19, a Cox-Lewis one numerical (free), and the same block is
+    Pro again if RePyability reports its long-run figures as simulated."""
     node = _graph(M("crow_amsaa", 100.0, 1.8), {"rule": "repairs", "repairs": 2})["nodes"][1]
-    assert rrb.block_summary(node, unit="Hours", want_suggestion=False)["route"]["price"] == "pro"
+    route = rrb.block_summary(node, unit="Hours", want_suggestion=False)["route"]
+    assert route == {"route": "exact", "price": "free", "words": "Worked out exactly · Free"}
+    for model, rule in ((M("duane", 1.0, 0.5), {"rule": "repairs", "repairs": 2}),
+                        (M("crow_amsaa", 100.0, 1.8), {"rule": "age", "age": 300.0})):
+        got = rrb.block_summary(_graph(model, rule)["nodes"][1], unit="Hours", want_suggestion=False)["route"]
+        assert got["route"] == "exact" and got["price"] == "free"
+    cox_lewis = _graph(M("cox_lewis", -5.0, 0.001), {"rule": "repairs", "repairs": 2})["nodes"][1]
+    got = rrb.block_summary(cox_lewis, unit="Hours", want_suggestion=False)["route"]
+    assert got == {"route": "numerical", "price": "free", "words": "Worked out numerically · Free"}
 
     real = RepairableRBD.analysis_routes
 
-    def exact(self):
+    def simulated(self):
         routes = dict(real(self))
-        routes["mean_availability"] = type(routes["availability"])(route="exact", reason="Renewal reward.",
-                                                                   nodes=())
+        routes["mean_availability"] = type(routes["availability"])(
+            route="simulated", reason="Simulate it.", nodes=())
         return routes
 
-    monkeypatch.setattr(RepairableRBD, "analysis_routes", exact)
+    monkeypatch.setattr(RepairableRBD, "analysis_routes", simulated)
     route = rrb.block_summary(node, unit="Hours", want_suggestion=False)["route"]
-    assert route == {"route": "exact", "price": "free", "words": "Worked out exactly · Free"}
+    assert route["route"] == "simulated" and route["price"] == "pro" and route["words"] == "Simulated · Pro"
 
 
 def test_hpp_needs_no_rule_and_is_exact():
@@ -274,7 +286,7 @@ def test_a_saved_repairable_model_resolves_by_prefix(client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["model"]["name"] == "Feed pump repairs" and body["verdict"]["never_wears_out"] is False
-    assert body["rule_words"] == "Replace after 2 repairs" and body["route"]["price"] == "pro"
+    assert body["rule_words"] == "Replace after 2 repairs" and body["route"]["price"] == "free"
     assert body["suggestion"]["available"] and body["suggestion"]["rule"]["rule"] == "age"
     r = client.post("/api/rbds/repairable-block", json={"node": {"id": "x", "type": "component", "data": {}}})
     assert r.status_code == 422 and "has no repairable model" in r.json()["detail"]
@@ -349,7 +361,8 @@ def test_python_export_runs_and_matches_the_app(tmp_path):
     assert res["n_simulations"] == app["n_simulations"] == 40
     assert res["t_simulation"] == pytest.approx(app["t_simulation"])
     for key in ("mean_up_time", "mean_down_time", "failure_frequency"):
-        assert res["simulated"][key] == pytest.approx(app[key], rel=1e-9), key
+        # The app's headline figures are exact (RePyability 0.19); its simulated ones match the script's.
+        assert res["simulated"][key] == pytest.approx(app["simulated"][key], rel=1e-9), key
 
 
 def test_age_rule_python_export(tmp_path):
@@ -361,15 +374,20 @@ def test_age_rule_python_export(tmp_path):
 
 
 def test_free_user_gets_no_simulation_for_a_simulated_block(monkeypatch):
-    """Pro gating: the simulated route needs Pro. RePyability gives no exact long-run figure for this
-    block yet, so a free user meets the paywall (with the free quick run offered); Pro simulates."""
+    """Pro gating: the simulated route needs Pro. RePyability gives no exact long-run figure for an ARA
+    block, so a free user meets the paywall (with the free quick run offered); Pro simulates. A
+    Crow-AMSAA block with a rule is exact since 0.19, so a free user gets its figures."""
     from backend.tests import test_availability_paid as paid
 
     fixture = paid.client.__wrapped__(monkeypatch)
     tc = next(fixture)
     try:
-        g = _graph(M("crow_amsaa", 100.0, 1.8), {"rule": "repairs", "repairs": 2})
         tc.act_as(paid.FREE)
+        exact = tc.post("/api/rbds/analyze", json={"graph": _graph(M("crow_amsaa", 100.0, 1.8),
+                                                                   {"rule": "repairs", "repairs": 2})})
+        assert exact.status_code == 200 and not paid._paywall(exact), exact.text
+        assert exact.json()["steady_state_availability"] == pytest.approx(0.921777, rel=1e-5)
+        g = _graph(M("ara", 0.5, 100.0, 1.8, m=2), {"rule": "repairs", "repairs": 3})
         # No exact long-run figure to fall back on: the Pro paywall, with the free quick run offered.
         r = tc.post("/api/rbds/analyze", json={"graph": g})
         assert paid._paywall(r), r.text

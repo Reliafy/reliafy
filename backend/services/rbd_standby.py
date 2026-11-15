@@ -18,7 +18,7 @@ in in order. Up to :data:`MAX_OWN_UNITS` units take a model of their own.
 (0.17): a spare that fails to start is skipped and the next one is tried, on
 cold, warm and hot standby alike.
 
-What RePyability 0.18 works out, and so what Reliafy offers free: exactly or
+What RePyability (0.18 and 0.19) works out, and so what Reliafy offers free: exactly or
 numerically every arrangement of exponential units (a Markov chain), cold
 standby of identical units or with at most 2 running, warm or hot standby
 with one running, and hot standby whose spares always start. Where it has no
