@@ -4,7 +4,7 @@ import {
   assetOf, nextGutter,
   ARRANGEMENTS, CHIPS, CHIP_MARK, chipsFor, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, TREE_ROW_MARKERS, pinnedRows, saveTreeState,
-  classKey, scopedArrangeQuery, scopedArrangements, statusWords, structuralRow, windowOf,
+  classKey, scopedArrangeQuery, scopedArrangements, statusWords, structuralRow, viaKey, windowOf,
 } from "./assetTree.js";
 import { scopeHasClasses, scopeTree } from "./products.js";
 import { addressTab } from "./explorerTabs.js";
@@ -675,4 +675,64 @@ test("one place opened on its own: the tree in every arrangement holds nothing o
     assert.ok(!names.includes("Bore pump") && !names.includes("Farm") && !names.includes("Farm spare") && !names.includes("Loose item"), `${mode}: ${names}`);
     assert.ok(names.includes("Hot water"), mode);
   }
+});
+
+// 15 Nov 2026: a place opened on its own (?root=) by Positions listed its positions flat, because
+// their parents (House > Climate control, at no place) aren't at the place. The server sends the
+// way up (ancestors, with each top's `via`); they show as muted context rows above the positions.
+const PLACE = {
+  positions: [
+    { id: "ac", name: "Bedroom 3 Air Conditioner", parent_id: null, via: "climate", location_id: "bed3", status: { overdue: 1 } },
+    { id: "car", name: "Family Car", parent_id: null, via: "vehicles", location_id: "garage" },
+    { id: "bike", name: "Bicycle", parent_id: null, via: "vehicles", location_id: "garage" },
+    { id: "pool", name: "Swimming Pool", parent_id: null, location_id: "yard" },
+    { id: "pump", name: "Pool pump", parent_id: "pool", location_id: "yard" },
+    // An ancestor placed at the place hangs under a position here (pool > Lights > light).
+    { id: "light", name: "Pool light", parent_id: null, via: "lights", location_id: "yard" },
+  ],
+  ancestors: [
+    { id: "house", name: "House", parent_id: null },
+    { id: "climate", name: "Climate control", parent_id: "house" },
+    { id: "vehicles", name: "Vehicles", parent_id: "house" },
+    { id: "lights", name: "Lights", parent_id: "pool" },
+  ],
+  locations: [{ id: "addr", name: "96 Anthony Street", parent_id: null }, { id: "bed3", name: "Bedroom 3", parent_id: "addr" },
+    { id: "garage", name: "Garage", parent_id: "addr" }, { id: "yard", name: "Yard", parent_id: "addr" }],
+};
+
+test("a place by positions: its positions under the way up to them, the way up muted and not counted", () => {
+  const d = buildDisplay(PLACE, "positions");
+  assert.deepEqual(names(d, d.roots), ["House", "Swimming Pool"]);
+  const house = d.rows.get(viaKey("house"));
+  assert.equal(house.type, "group");
+  assert.equal(house.ref.via, true);
+  assert.deepEqual(names(d, house.kids), ["Climate control", "Vehicles"]);
+  assert.deepEqual(names(d, d.rows.get(viaKey("climate")).kids), ["Bedroom 3 Air Conditioner"]);
+  assert.deepEqual(names(d, d.rows.get(viaKey("vehicles")).kids), ["Bicycle", "Family Car"]);
+  assert.deepEqual(names(d, d.rows.get("pool").kids), ["Pool pump", "Lights"]);
+  assert.deepEqual(d.rows.get(viaKey("lights")).kids, ["light"]);
+  // Every position once, keyed by its own id; the ancestors are never position rows.
+  assert.equal([...d.rows.values()].filter((r) => r.type === "pos").length, PLACE.positions.length);
+  assert.equal(d.positions, PLACE.positions.length);
+  assert.equal(d.rows.has("house"), false);
+  assert.equal(d.rows.get(viaKey("house")).depth, 0);
+  assert.equal(d.rows.get("ac").depth, 2);
+  // Roll-ups count the positions inside it, nothing of its own.
+  assert.equal(house.sum.positions, 3);
+  assert.equal(house.sum.overdue, 1);
+  assert.equal(house.own.overdue, 0);
+  assert.equal(d.rows.has("G:other"), false);
+});
+
+test("a place by locations or classes leaves the way up out", () => {
+  const byLoc = buildDisplay(PLACE, "locations");
+  assert.equal([...byLoc.rows.keys()].some((k) => k.startsWith("via:")), false);
+  assert.deepEqual(byLoc.rows.get("garage").kids, ["bike", "car"]);
+  const byCls = buildDisplay({ ...PLACE, classes: [] }, "classes");
+  assert.equal([...byCls.rows.keys()].some((k) => k.startsWith("via:")), false);
+});
+
+test("a via with no ancestor sent (another asset's parent): the position stays a top", () => {
+  const d = buildDisplay({ positions: [{ id: "g", name: "Gauge", parent_id: null, via: "pump" }], ancestors: [] }, "positions");
+  assert.deepEqual(d.roots, ["g"]);
 });

@@ -173,6 +173,8 @@ export function RowIcon({ r }) {
   // A position is a position: the icon only says whether an item is fitted.
   // The lines icon is for the pane's own headings ("No home yet" and so on).
   if (r.type === "pos") kind = r.ref.item ? "slot" : "emptyslot";
+  // A position above a place's positions, shown for context (assetTree.js VIA).
+  if (r.ref?.via) kind = "emptyslot";
   return (
     <svg className="tp-ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
       {ICON[kind] || ICON.group}
@@ -200,7 +202,8 @@ function Markers({ r, rcm, onGoto }) {
 }
 
 // Bold: the pane's own headings, the places, and an item with positions on it.
-const heading = (r) => r.type === "group" || r.type === "loc" || r.type === "cls" || (r.type === "item" && r.kids.length > 0);
+// A position above a place's own (VIA) is muted instead, the way a search's context rows are.
+const heading = (r) => (r.type === "group" && !r.ref?.via) || r.type === "loc" || r.type === "cls" || (r.type === "item" && r.kids.length > 0);
 const label = (r) => (isRcmRow(r) ? r.ref.text : r.ref.name) || "(no name)";
 
 // What a row's menu is called, for screen readers: "Actions for Function: Pump water".
@@ -315,8 +318,9 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
       <RowIcon r={r} />
       {pinRoot && <span className="tp-pinmark" title={`Pinned: ${pinRoot.path}`}><PinIcon size={13} /><span className="sr-only">Pinned: </span></span>}
       {isRcmRow(r) && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
-      <span className="tp-nm" title={r.type === "cause" ? causeTip(r) : label(r).length > 24 ? label(r) : undefined}>
+      <span className="tp-nm" title={r.type === "cause" ? causeTip(r) : r.ref?.via ? `${label(r)}: ${r.ref.note}` : label(r).length > 24 ? label(r) : undefined}>
         <Highlight text={label(r)} query={query} />
+        {r.ref?.via && <span className="sr-only"> (not at this place)</span>}
       </span>
       {r.type === "cause" && <span className="tp-on" title={causeTip(r)}>on {r.ref.on}</span>}
       {/* In a redundancy set (Redundancy inside… on its parent): "1 of 2", or "Standby set". */}
@@ -368,7 +372,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
   const has = r.kids.length > 0;
   const drag = table && !phone ? table.drag : null;
   const movable = !!drag && !pinned && drag.canDrag(r);
-  const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (pinGap ? " pin-gap" : "") + (heading(r) ? " grp" : "")
+  const cls = "tp-row" + (focused ? " focus" : "") + (dim || r.ref?.via ? " dim" : "") + (pinned ? " pin" : "") + (pinGap ? " pin-gap" : "") + (heading(r) ? " grp" : "")
     + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "") + (drag?.picked?.has(r.key) ? " picked" : "")
     + (movable ? " movable" : "") + dropClass(drag, r.key) + (drag?.dragging?.has(r.key) ? " dragged" : "")
     // A row whose pinned copy is on show at the top: hidden under it, so no half of it peeks

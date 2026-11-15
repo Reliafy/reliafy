@@ -51,6 +51,11 @@ inside another is wherever that one is, unless you give it a place of its own.
 In the Explorer arranged by **Locations**, a place's menu has **New position
 here** too: the new position is at that place.
 
+Open an asset at a place and arrange it by **Positions**, and the tree still
+shows the groupings its positions sit in (a *House*, its *Climate control*),
+even when those groupings have no place of their own. They're shown muted:
+they're there to show where things belong, not things at that place.
+
 ## Fit the items
 
 Open a position's own page (**Open the full page** in the details' **…**
