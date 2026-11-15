@@ -38,3 +38,16 @@ export function applyAnswer(series, id, key, { curves = null, error = null } = {
 export function curveIsCurrent(s) {
   return !!s && !s.pending && !s.stale;
 }
+
+// Where the curves must be worked out to for a time ``asked`` past their end (the stored grid stops at
+// the 99% life): a round number a fifth beyond it. Null when the curves already reach it, when nothing
+// valid is asked, or when the model can't be worked out again (no evaluate path).
+export function autoRangeEnd(functions, asked) {
+  const x = functions?.curves?.x;
+  if (!functions?.evaluate_path || !x?.length || asked == null || !Number.isFinite(asked)) return null;
+  const end = x[x.length - 1];
+  if (!(asked > end)) return null;
+  const want = asked * 1.2;
+  const step = 10 ** (Math.floor(Math.log10(want)) - 1);
+  return Math.ceil(want / step) * step;
+}

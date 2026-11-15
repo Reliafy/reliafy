@@ -480,6 +480,25 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   await expectHealthy(page, problems, { label: "model calculator", chart: true });
 });
 
+// A model entered from parameters (no data, no fit) answers in the Calculator too: the
+// model's own times, a time past the end of its curves, and a plain note instead of bounds.
+test("the Calculator answers for a model entered from parameters", async ({ page, request, problems }) => {
+  const made = await postOk(request, "/api/models/from-params", {
+    name: `Handbook Weibull ${Date.now()}`, distribution: "weibull", unit: "hours", params: [1000, 2.5],
+  });
+  await open(page, `/models/m/${made.id}?tab=calc`);
+  const answer = page.locator(".calc-answer");
+  await expect(page.locator(".calc-note")).toContainText("entered from parameters");
+  // 3,000 hours is past the 99% life the curves stop at: still answered, not "—".
+  await page.getByLabel(/^At time/).fill("3000");
+  await expect(answer).toContainText(/at 3,000 hours:\s*\d[\d.]*%/);
+  await page.getByRole("radio", { name: "Time at reliability" }).click();
+  await expect(answer).toContainText("(the B10 life)");
+  await expect(answer).toContainText("407 hours"); // 1000 × (−ln 0.9)^(1/2.5) = 406.5
+  await expect(page.locator(".calc-answer-ci")).toHaveCount(0); // no bounds without a fit
+  await expectHealthy(page, problems, { label: "params-only calculator", chart: true });
+});
+
 // The Model characteristics tab: the mean life with its bound at the page's
 // confidence (shared with the Calculator), a Kaplan-Meier estimate's mean to a
 // time, and "none, and why" where the mean is infinite.
