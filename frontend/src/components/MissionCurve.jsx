@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import { ACCENT, bandPair, referenceShape } from "../plotTheme.js";
+import { ACCENT, MUTED, bandPair, referenceShape } from "../plotTheme.js";
 import { missionCurve, otherDrivers } from "../rbdMission.js";
 
 // The whole mission as one curve (A18): the chance the mission is still going at each point of its
@@ -35,18 +35,18 @@ export default function MissionCurve({ result, unit = "", name = "Mission" }) {
         layout={{
           height: 260,
           showlegend: !!lower,
-          margin: { l: 8, r: 16, t: 28, b: 40 },
+          margin: { l: 8, r: 16, t: lower ? 28 : 8, b: 40 },
           xaxis: { title: { text: unit ? `Mission time (${unit})` : "Mission time" }, rangemode: "tozero" },
           yaxis: { title: { text: "Still going" }, tickformat: ".1~%", range: [Math.max(0, Math.min(...r, ...(lower || [])) - 0.02), 1.005] },
           shapes: boundaries.map((b) => referenceShape({ x: b.t })),
           annotations: boundaries.map((b) => ({
-            x: b.t, y: 1, xref: "x", yref: "paper", yanchor: "bottom", xanchor: "left", showarrow: false,
-            text: b.next, font: { size: 11 },
+            x: b.t, y: 0.02, xref: "x", yref: "paper", yanchor: "bottom", xanchor: "left", xshift: 3, showarrow: false,
+            text: b.next, font: { size: 11, color: MUTED },
           })),
         }}
         download={`${name} — reliability through the mission`}
       />
-      <figcaption className="rim-tquiet">
+      <figcaption>
         The chance the mission is still going at each point; dashed lines mark where each phase begins.
         {lower ? " The shaded band is the simulation's own precision, not the uncertainty in the blocks' models." : ""}
       </figcaption>

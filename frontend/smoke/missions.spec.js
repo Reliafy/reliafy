@@ -201,6 +201,8 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   await expect(answer).toContainText("Standby: the block is idle until the phase needs it");
   // A18: one curve through the whole mission (simulated here: Weibull spares, so its band too).
   await expect(pane.locator(".mission-curve .js-plotly-plot")).toBeVisible({ timeout: 20_000 });
+  await answer.scrollIntoViewIfNeeded();
+  await shot(page, "mission-answer-curve-1440");
   await pane.getByRole("button", { name: "Save" }).click();
   await expect(pane.getByRole("button", { name: "Save" })).toBeDisabled();
   await shot(page, "mission-result-1440", true);
@@ -346,4 +348,40 @@ test("missions: a mission resting on placeholders says so, and can leave them ou
   await expect(nameRow(page, `Deployment ${tag}`)).toContainText("%");
   await expect(nameRow(page, `Deployment ${tag}`)).not.toContainText("placeholders");
   await expectHealthy(page, problems, { label: "a mission on placeholders" });
+});
+
+// A18: the RBD's own phased mission on the Calculator: duty and standby pumps (exponential, so the
+// Markov chain works it out exactly and free), one curve through the whole mission and each phase's
+// weakest block. Nothing scrolls sideways at 400 px.
+test("missions: the RBD's phased mission shows one curve and what drives each phase", async ({ page, request, problems }) => {
+  const exp = (rate) => ({ distribution: "Exponential", distribution_id: "exponential", params: [{ name: "failure_rate", value: rate }] });
+  const node = (id, label, model) => ({ id, type: "component", position: { x: 0, y: 0 }, data: { label, model } });
+  const graph = {
+    unit: "Hours",
+    nodes: [{ id: "input", type: "input", position: { x: 0, y: 0 }, data: { label: "Input" } },
+            { id: "output", type: "output", position: { x: 400, y: 0 }, data: { label: "Output" } },
+            node("a", "Pump A", exp(0.001)), node("b", "Pump B", exp(0.001)), node("v", "Valve", exp(0.0002))],
+    edges: [["input", "a"], ["input", "b"], ["a", "v"], ["b", "v"], ["v", "output"]].map(([source, target]) => ({ id: `${source}-${target}`, source, target })),
+    phases: [{ name: "Start-up", duration: 10 }, { name: "Duty", duration: 500, standby: ["b"] }],
+  };
+  const made = await postOk(request, "/api/rbds", { name: `Duty and standby pumps ${Date.now()}`, graph });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/systems/b/${made.id}`);
+  await page.getByRole("tab", { name: "Calculator" }).click();
+  await page.locator('[data-wt="rbd-calculate"]').click();
+  const mission = page.getByRole("region", { name: "Phased mission" });
+  await expect(mission).toContainText("worked out exactly", { timeout: 30_000 });
+  await expect(mission).toContainText("81.6%");
+  await expect(mission.locator(".mission-curve .js-plotly-plot")).toBeVisible();
+  await mission.scrollIntoViewIfNeeded();
+  await shot(page, "rbd-phases-curve-1440");
+  await mission.getByText("Each phase", { exact: true }).click();
+  await expect(mission.getByRole("columnheader", { name: "Weakest block" })).toBeVisible();
+  await shot(page, "rbd-phases-drivers-1440");
+  await page.setViewportSize({ width: 400, height: 860 });
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await mission.scrollIntoViewIfNeeded();
+  await shot(page, "rbd-phases-curve-400");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expectHealthy(page, problems, { label: "an RBD's phased mission", chart: true });
 });
