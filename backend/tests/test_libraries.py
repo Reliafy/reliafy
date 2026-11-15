@@ -2,7 +2,8 @@
 snapshots of datasets and models, updated from the original, shared with
 workspaces or made public (with a licence, a citation and the owner's word),
 read signed out when public, used (copied with where it came from), and
-listed beside the built-in handbooks; caps on Free."""
+listed beside the built-in handbooks; making and changing libraries is Pro
+(Derryn, 15 Nov 2026), reading and using them is on every plan."""
 
 from __future__ import annotations
 
@@ -289,25 +290,85 @@ def test_use_an_entry_copies_it_with_where_it_came_from(web):
     assert alone["dataset"] is None and web.get(f"/api/models/{alone['model']['id']}").json()["dataset_id"] == ""
 
 
-def test_caps_a_library_is_one_item_and_a_copy_counts(web):
+def test_making_and_changing_a_library_is_pro_using_a_public_one_is_free(web):
+    from backend.services import billing
+
     web.who["uid"] = FREE
-    lid = _library(web, "One")["id"]
-    over = web.post("/api/libraries", json={"name": "Two"})
-    assert over.status_code == 402 and over.json()["code"] == "cap" and "limit of 1 library" in over.json()["detail"]
-    # Entries don't count toward the library cap.
-    ds = _dataset(web)
-    assert web.post(f"/api/libraries/{lid}/entries", json={"dataset_id": ds["id"]}).status_code == 200
-    # Using a public entry counts as the copy it makes: at the datasets cap it's refused.
+    over = web.post("/api/libraries", json={"name": "Mine"})
+    assert over.status_code == 402 and over.json() == billing.LIBRARIES_PRO_PAYLOAD
+    assert "Public libraries stay free" in over.json()["detail"]
+    assert web.get("/api/libraries").json()["can_make"] is False
+    # A public library: read in full (its numbers too) and copied from on Free.
     web.who["uid"] = PRO
+    assert web.get("/api/libraries").json()["can_make"] is True
     plid = _library(web, "Public data")["id"]
     other = _dataset(web, CSV.replace("120,0", "121,0"), "other.csv")
     pentry = web.post(f"/api/libraries/{plid}/entries", json={"dataset_id": other["id"]}).json()["entry"]
+    mentry = web.post(f"/api/libraries/{plid}/entries", json={"model_id": _params(web)["id"]}).json()["entry"]
     _make_public(web, plid)
     web.who["uid"] = FREE
+    seen = web.get(f"/api/libraries/{plid}").json()
+    assert seen["can_edit"] is False and seen["can_delete"] is False and seen["pro_needed"] is False
+    model = web.get(f"/api/libraries/{plid}/entries/{mentry['id']}").json()
+    assert [p["value"] for p in model["model"]["params"]] == [1200.0, 2.5]
+    assert web.get("/api/libraries/entries?type=data").status_code == 200
+    r = web.post(f"/api/libraries/{plid}/entries/{pentry['id']}/use", json={})
+    assert r.status_code == 200, r.text
+    # Every change is Pro: the plan message, before whose library it is.
+    for method, url, body in (
+            ("patch", f"/api/libraries/{plid}", {"name": "x"}),
+            ("put", f"/api/libraries/{plid}/visibility", {"visibility": "public"}),
+            ("post", f"/api/libraries/{plid}/entries", {"dataset_id": other["id"]}),
+            ("delete", f"/api/libraries/{plid}/entries/{pentry['id']}", None),
+            ("post", f"/api/libraries/{plid}/entries/{pentry['id']}/refresh", {})):
+        got = getattr(web, method)(url, json=body) if body is not None else getattr(web, method)(url)
+        assert got.status_code == 402 and got.json()["code"] == "pro_required", (method, url)
+    # Not theirs to delete either (that's ownership, not the plan).
+    assert web.delete(f"/api/libraries/{plid}").status_code == 403
+    # Using a public entry counts as the copy it makes: at the datasets cap it's refused.
     for i in range(2):
         _dataset(web, CSV.replace("120,0", f"{130 + i},0"), f"x{i}.csv")
-    r = web.post(f"/api/libraries/{plid}/entries/{pentry['id']}/use", json={})
+    r = web.post(f"/api/libraries/{plid}/entries/{pentry['id']}/use", json={"name": "again"})
     assert r.status_code == 402 and r.json()["code"] == "cap" and "dataset" in r.json()["detail"]
+
+
+def test_a_library_made_before_on_an_account_now_free_is_read_only_to_its_owner(web):
+    lid = _library(web, "Old one")["id"]
+    ds = _dataset(web)
+    entry = web.post(f"/api/libraries/{lid}/entries", json={"dataset_id": ds["id"]}).json()["entry"]
+    r = web.put(f"/api/libraries/{lid}/visibility", json={"visibility": "workspaces", "workspaces": [OTHER]})
+    assert r.status_code == 200
+    web.db.users.update_one({"_id": PRO}, {"$unset": {"plan": ""}})  # the subscription ends
+    lib = web.get(f"/api/libraries/{lid}").json()
+    assert lib["relation"] == "yours" and lib["can_edit"] is False and lib["can_delete"] is True and lib["pro_needed"]
+    assert len(lib["entries"]) == 1
+    assert web.get(f"/api/libraries/{lid}/entries/{entry['id']}").status_code == 200
+    assert next(c for c in web.get("/api/libraries").json()["libraries"] if c["id"] == lid)["can_edit"] is False
+    # No new entries, no edits, no sharing...
+    assert web.post(f"/api/libraries/{lid}/entries", json={"dataset_id": ds["id"]}).status_code == 402
+    assert web.patch(f"/api/libraries/{lid}", json={"name": "x"}).status_code == 402
+    assert web.put(f"/api/libraries/{lid}/visibility", json={"visibility": "public"}).status_code == 402
+    # ...but taking back what was shared, and deleting it, stay theirs.
+    private = web.put(f"/api/libraries/{lid}/visibility", json={"visibility": "private"})
+    assert private.status_code == 200 and private.json()["visibility"] == "private"
+    assert web.delete(f"/api/libraries/{lid}").status_code == 200
+    # The dataset it was taken from stays.
+    assert web.get(f"/api/datasets/{ds['id']}").status_code == 200
+
+
+def test_complimentary_pro_and_operators_make_libraries(web, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from backend import config
+
+    until = datetime.now(timezone.utc) + timedelta(days=30)
+    web.db.users.update_one({"_id": FREE}, {"$set": {"plan": "pro", "plan_until": until}})
+    web.who["uid"] = FREE
+    assert web.post("/api/libraries", json={"name": "Comp"}).status_code == 200
+    web.db.users.update_one({"_id": FREE}, {"$unset": {"plan": "", "plan_until": ""}})
+    assert web.post("/api/libraries", json={"name": "Lapsed"}).status_code == 402
+    monkeypatch.setattr(config, "ADMIN_EMAILS", {f"{FREE}@example.org"})
+    assert web.post("/api/libraries", json={"name": "Operator"}).status_code == 200
 
 
 def test_the_built_in_handbooks_are_read_only_public_libraries(web):
@@ -409,15 +470,11 @@ def test_an_upload_into_a_library_is_all_or_nothing(web, monkeypatch):
     assert web.db.library_records.count_documents({"library_id": lid}) == 0
 
 
-def test_an_upload_into_a_library_keeps_the_free_cap(web):
-    web.who["uid"] = FREE
-    lid = _library(web, "One")["id"]
-    _dataset(web)  # 1 of the 3 free datasets
+def test_an_upload_into_a_library_is_pro(web):
+    lid = _library(web, "Pro's")["id"]
+    web.db.users.update_one({"_id": PRO}, {"$unset": {"plan": ""}})
+    before = web.db.datasets.count_documents({"owner_id": PRO})
     r = _upload(web, SITES, name="Sites", dataset_col="site", library_id=lid)
-    assert r.status_code == 402 and r.json()["code"] == "cap"
+    assert r.status_code == 402 and r.json()["code"] == "pro_required"
+    assert web.db.datasets.count_documents({"owner_id": PRO}) == before
     assert web.db.library_records.count_documents({"library_id": lid}) == 0
-    # What fits goes in: two parts.
-    two = "\n".join(line for line in SITES.splitlines() if not line.startswith("East"))
-    r = _upload(web, two, name="Sites", dataset_col="site", library_id=lid)
-    assert r.status_code == 200, r.text
-    assert len(r.json()["library"]["added"]) == 2

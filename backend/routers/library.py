@@ -200,20 +200,22 @@ def library_component(component_id: str, request: Request) -> JSONResponse:
 
 # ---- A user's own libraries (sign-in required) ----------------------------------------------
 
-def _denied(session, ctx: AccessCtx, cap: bool = False) -> JSONResponse | None:
+def _denied(session, ctx: AccessCtx) -> JSONResponse | None:
+    """Why the caller may not make a library here (making and changing libraries is Pro), else None."""
+    if not billing_service.libraries_allowed(session, ctx.user):
+        return JSONResponse(status_code=402, content=billing_service.LIBRARIES_PRO_PAYLOAD)
     denied = access_service.workspace_write_denial(ctx)
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
-    if cap and (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
-                and billing_service.would_exceed_cap(session, ctx.uid, user_lib.COLLECTION)):
-        return JSONResponse(status_code=402, content={
-            "detail": billing_service.cap_message(session, ctx.uid, user_lib.COLLECTION), "code": "cap", "upgrade": True})
     return None
 
 
-def _own_library(session, ctx: AccessCtx, library_id: str) -> tuple[dict | None, JSONResponse | None]:
-    """The library when the caller may change it, else the response saying why not."""
+def _own_library(session, ctx: AccessCtx, library_id: str, pro: bool = True) -> tuple[dict | None, JSONResponse | None]:
+    """The library when the caller may change it, else the response saying why not. ``pro``: the change
+    needs Pro (everything but deleting a library)."""
+    if pro and not billing_service.libraries_allowed(session, ctx.user):
+        return None, JSONResponse(status_code=402, content=billing_service.LIBRARIES_PRO_PAYLOAD)
     lib = user_lib.get_library(session, library_id, ctx.read_owners)
     if lib is None or lib["_id"] in ctx.hidden:
         return None, JSONResponse(status_code=404, content=NOT_FOUND)
@@ -228,16 +230,17 @@ def _own_library(session, ctx: AccessCtx, library_id: str) -> tuple[dict | None,
 def my_libraries(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     """The caller's libraries (the workspace's), newest first, with their record counts."""
     rows = user_lib.list_libraries(session, ctx.list_owners, ctx.hidden)
+    allowed = billing_service.libraries_allowed(session, ctx.user)
     for row in rows:
-        row["read_only"] = not access_service.can_write(ctx, row.get("owner_id"))
+        row["read_only"] = not (allowed and access_service.can_write(ctx, row.get("owner_id")))
     return {"libraries": rows, "equipment_types": service.sources()["equipment_types"]}
 
 
 @router.post("/mine")
 def create_library(name: str = Body(...), description: str = Body(default=""), notes: str = Body(default=""),
                    session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """A new, empty library. Counts as one saved item toward the Free plan's limit."""
-    denied = _denied(session, ctx, cap=True)
+    """A new, empty library (Pro)."""
+    denied = _denied(session, ctx)
     if denied is not None:
         return denied
     try:
@@ -268,8 +271,8 @@ def update_library(library_id: str, name: str | None = Body(default=None), descr
 
 @router.delete("/mine/{library_id}")
 def delete_library(library_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """Delete a library and its records. The models the records came from stay."""
-    lib, failed = _own_library(session, ctx, library_id)
+    """Delete a library and its records. The models the records came from stay. On every plan."""
+    lib, failed = _own_library(session, ctx, library_id, pro=False)
     if failed is not None:
         return failed
     try:

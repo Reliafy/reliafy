@@ -5,6 +5,7 @@ import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx"
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
+import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { compareModel, getModel, deleteModel, downloadModelPython, renameModel } from "../api.js";
@@ -108,7 +109,7 @@ export default function ModelPage() {
           <DownloadPythonItem download={() => downloadModelPython("life", model.id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           {canEdit && <button className="ovm-item" onClick={() => setEditing(true)}>Edit fit</button>}
-          {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to library…</button>}
+          {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
           </button>

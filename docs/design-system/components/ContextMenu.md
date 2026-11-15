@@ -8,7 +8,8 @@ Right-click, the row's ⋯ button (`MoreMenu`), or Shift+F10 / the Menu key on a
 
 ## Props
 
-- `items` — `[{id, label, danger?, disabled?, reason?, items?, checked?} | {separator: true}]`.
+- `items` — `[{id, label, danger?, disabled?, reason?, pro?, items?, checked?} | {separator: true}]`.
+  - `pro` — a Pro-only action (making libraries, for example): the small `pro-tag` after its label, shown only to users without Pro (`ProTag`). The item still opens; what it opens explains Pro.
   - `danger` — a destructive action in `danger-text`, last in the menu.
   - `disabled` + `reason` — the item stays in the menu, greyed, with the reason in `help` type under it (and as its description to a screen reader). Don't hide what can't be used now; say why.
   - `items` — a submenu ("Focus ›"). It opens beside the menu on a wide screen, in place under its item on a phone.

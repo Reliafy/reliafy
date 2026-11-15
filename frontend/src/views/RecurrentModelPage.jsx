@@ -16,6 +16,7 @@ import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js"
 import { recurrentAnswer, recurrentTabs } from "../recurrentResults.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
+import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
 
 // A saved repairable (recurrent-event) model in the model frame: the answer
@@ -74,7 +75,7 @@ export default function RecurrentModelPage() {
         <>
           <DownloadPythonItem download={() => downloadModelPython("recurrent", model.id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
-          <button type="button" className="ovm-item" onClick={() => setAdding(true)}>Add to library…</button>
+          <button type="button" className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
           </button>

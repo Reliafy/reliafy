@@ -457,8 +457,7 @@ def owned_count(db, uid: str, collection: str) -> int:
 
 
 CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "rcm_studies", "fleets",
-                "outage_logs", "fault_trees", "reliability_predictions", "maintainability_predictions",
-                "libraries")
+                "outage_logs", "fault_trees", "reliability_predictions", "maintainability_predictions")
 
 
 def plan_caps(plan: str) -> dict | None:
@@ -488,7 +487,6 @@ _CAP_NOUNS = {
     "fault_trees": ("saved fault tree", "saved fault trees"),
     "reliability_predictions": ("saved reliability prediction", "saved reliability predictions"),
     "maintainability_predictions": ("saved maintainability prediction", "saved maintainability predictions"),
-    "libraries": ("library", "libraries"),
 }
 
 
@@ -588,6 +586,26 @@ def premium_compute_allowed(db, user: dict) -> bool:
     if not uid:
         return False
     return account(db, uid)["is_pro"]
+
+
+# Libraries (Derryn, 15 Nov 2026): public libraries are free to browse and to
+# copy from on every plan (open data stays open); making a library, filling
+# or editing it, sharing it with workspaces and publishing it are Pro.
+LIBRARIES_PRO_MESSAGE = (
+    "Making and sharing libraries is part of Reliafy Pro: keep copies of your datasets and models together, "
+    "share them with other workspaces and publish them with a licence and citation. Public libraries stay "
+    "free to browse and copy from. Upgrade to Pro to make your own."
+)
+LIBRARIES_PRO_PAYLOAD = {"detail": LIBRARIES_PRO_MESSAGE, "code": "pro_required", "upgrade": True,
+                         "feature": "libraries"}
+
+
+def libraries_allowed(db, user: dict) -> bool:
+    """Whether this user may make, fill, edit, share or publish libraries: the
+    same people as :func:`premium_compute_allowed` (operators, self-hosted
+    installs, Pro and complimentary Pro). Reading and using public libraries
+    needs no plan."""
+    return premium_compute_allowed(db, user)
 
 
 def reliability_agent_allowed(db, user: dict) -> bool:

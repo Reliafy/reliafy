@@ -2,7 +2,7 @@
 title: "Build and share a library of data and models"
 task: "How do I keep datasets and models together, share them with another team, or publish them?"
 category: "Getting started"
-prerequisites: "A saved dataset or model to add. Anyone can browse public libraries and the built-in handbooks."
+prerequisites: "Pro to make, share or publish a library, with a saved dataset or model to add. Anyone can browse public libraries and the built-in handbooks, and copy from them, on any plan."
 related_href: "/libraries"
 related_label: "Open Libraries"
 order: 46
@@ -13,6 +13,12 @@ test programme or a family of equipment, share it with other workspaces, or
 publish it for anyone to use. Open **Libraries** in the menu to see
 [all libraries](/libraries): yours, those shared with you, and the public ones,
 which include the built-in handbooks.
+
+Making and sharing libraries is part of Pro; public libraries are free to use.
+On any plan you can browse public libraries and the ones shared with you, and
+copy their entries into your workspace. Making a library, adding to it, editing
+it, sharing it and publishing it need Pro: without it, **New library…** and
+**Add to library…** carry a **Pro** tag and say what Pro adds.
 
 ## Make a library
 
@@ -89,8 +95,12 @@ offers **Also copy the dataset it was fitted on**. A copy remembers where it
 came from: its page says *From the library … (version n)*, with a link back.
 Signed-out visitors see **Sign in to use** instead.
 
-On the Free plan each library counts as one saved item, however many entries it
-holds, and a copy counts as the dataset or model it makes.
+Using an entry works on every plan. On the Free plan a copy counts as the
+dataset or model it makes, toward the Free storage limits.
+
+If your Pro plan ends, your libraries stay yours: you can still open them, copy
+from them, make them private or delete them, but not add to, edit or share them
+until you have Pro again.
 
 ## The built-in handbooks
 
