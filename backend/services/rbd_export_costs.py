@@ -66,8 +66,21 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
     ``'"instant"'``)."""
     from backend.services.rbd_export import _lit, _num
 
+    from backend.services import rbd_repairable_blocks as rrb
+
     L = script.lines
+    rule_entries: list[str] = []
     try:
+        if rrb.block_has(data):
+            # Its replacement rule (#367): after N repairs is replace_after, at an age the block's
+            # age replacement (written below as any other).
+            rule_entries = rrb.script_entries(data, label)
+            _, rule_pm = rrb.spec_entries(data, label)
+            if rule_pm is not None:
+                data = {**data, "preventive": rule_pm}
+            rule = rrb.parse_rule(data, label)
+            if rule["rule"] != "none":
+                L.append(f"# Replacement rule: {rrb.rule_words(rule, script.unit)}.")
         costs = rm.block_costs(data, label)
         pm = rm.preventive_spec(data, label) if data.get("preventive") else None
         test = rm.inspection_spec(data, label) if data.get("inspection") else None
@@ -121,6 +134,7 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
         # Imperfect repair (#68): the simulation follows it; the exact values refuse it.
         L.append(f"# Repaired imperfectly: {rbd_repair_quality.describe(data)} (Kijima's virtual age).")
         entries += quality
+    entries += rule_entries
     if data.get("inspection"):
         L.append("# Hidden failures: found only at the proof tests below.")
     if (pm or {}).get("policy") == "condition":

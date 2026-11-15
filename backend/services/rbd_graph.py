@@ -59,7 +59,8 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
 MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection",
-                    "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality", "duty")
+                    "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality", "duty",
+                    "replacement")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil", "conditions")
 #: A block's values for the covariates its position left open, and which of the diagram's
@@ -486,6 +487,11 @@ def _model(model, where: str, resolve_saved_model) -> dict:
             if model.get(key):
                 out[key] = model[key]
         return out
+    if model.get("repairable_form") and not model.get("form"):  # the MCP spelling
+        model = {**model, "kind": "repairable", "form": model["repairable_form"],
+                 **({"options": model["repairable_options"]} if model.get("repairable_options") else {})}
+    if model.get("kind") == "repairable" or model.get("repairable_model_id"):
+        return _repairable_model(model, where, resolve_saved_model)
     saved_id = model.get("saved_model_id") or model.get("modelId") or model.get("model_id")
     if saved_id:
         out = _saved_model(str(saved_id), where, resolve_saved_model, model.get("joint_unit"))
@@ -505,6 +511,36 @@ def _model(model, where: str, resolve_saved_model) -> dict:
             out["placeholder"] = True
         return out
     return _inline_model(model, where)
+
+
+def _repairable_model(model: dict, where: str, resolve_saved_model) -> dict:
+    """A fitted repairable model as a block (#367, :mod:`.rbd_repairable_blocks`): a saved one by
+    ``repairable_model_id`` (resolved owner-scoped, as the picker stores it), or its form and
+    parameters inline."""
+    from backend.services import rbd_repairable_blocks as rrb
+    from backend.services.rbd_analysis import AnalysisError
+
+    saved_id = model.get("repairable_model_id") or (model.get("modelId") if model.get("source") == "saved" else None)
+    try:
+        if saved_id:
+            doc = resolve_saved_model(rrb.PREFIX + str(saved_id)) if resolve_saved_model else None
+            if doc is None:
+                if model.get("form") and model.get("params"):  # no resolver here: kept as stored
+                    kept = {k: model[k] for k in ("name", "form", "params", "options", "unit") if k in model}
+                    return {**kept, "kind": "repairable", "source": "saved", "modelId": str(saved_id)}
+                raise GraphError(f"{where}: saved repairable model '{saved_id}' not found (list kind "
+                                 "recurrent_models).")
+            return rrb.persisted(doc, where)
+        out = {"kind": "repairable", "source": "params", "form": model.get("form"),
+               "params": [{"name": str(p.get("name")), "value": p.get("value")}
+                          for p in model.get("params") or [] if isinstance(p, dict)]}
+        if model.get("options"):
+            out["options"] = dict(model["options"])
+        out["name"] = str(model.get("name") or rrb.NAMES.get(out["form"]) or "Repairable model")[:120]
+        rrb.build_from_params(out, where)  # checks the form and parameters
+        return out
+    except AnalysisError as exc:
+        raise GraphError(str(exc)) from None
 
 
 def _inline_disagrees(model: dict, saved: dict) -> bool:
@@ -585,7 +621,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
             raise GraphError(f"{where}: {exc}") from None
         if data["covariate_schedules"] is None:
             del data["covariate_schedules"]
-    for key in ("costs", "preventive", "inspection", "repair_quality") + COVARIATE_KEYS:
+    for key in ("costs", "preventive", "inspection", "repair_quality", "replacement") + COVARIATE_KEYS:
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
     if isinstance(data.get("repair_quality"), dict) and data["repair_quality"].get("model", "perfect") == "perfect" \
@@ -746,6 +782,12 @@ def compact_graph(graph: dict) -> dict:
                     cm = {"saved_model_id": m.get("modelId"), "joint_unit": m.get("joint_unit")}
                 if m.get("kind") == "bound":  # covariates left open at its position
                     cm = {"kind": "bound", "binding": m.get("binding")}
+                if m.get("kind") == "repairable":  # a fitted repairable model (#367)
+                    cm = {"repairable_form": m.get("form"), "params": m.get("params")}
+                    if m.get("options"):
+                        cm["repairable_options"] = m["options"]
+                    if m.get("source") == "saved" and m.get("modelId"):
+                        cm["repairable_model_id"] = m["modelId"]
                 if m.get("placeholder"):
                     cm["placeholder"] = True
                 if m.get("extras") and not m.get("modelId"):

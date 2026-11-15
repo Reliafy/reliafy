@@ -505,7 +505,7 @@ def _t_sim(t_simulation) -> float | None:
 # than from the parameters stored on the block (rbd_analysis._build_distribution):
 # proportional-hazards / regression models. (Non-parametric blocks are refused,
 # so never analysed.) A load-sharing block's load-life model is resolved too.
-_RESOLVED_KINDS = frozenset({"regression", "joint"})
+_RESOLVED_KINDS = frozenset({"regression", "joint", "repairable"})
 
 
 def _ref_id(model) -> str | None:
@@ -564,6 +564,12 @@ def model_fingerprints(db, graph: dict, owner_id) -> dict:
         d["_id"]: d
         for d in db.models.find({"_id": {"$in": sorted(refs)}, "owner_id": {"$in": access.owner_in(owners)}})
     }
+    # Blocks on saved repairable models (#367): their fits live in their own collection.
+    docs.update({
+        d["_id"]: d
+        for d in db.recurrent_models.find({"_id": {"$in": sorted(refs - set(docs))},
+                                           "owner_id": {"$in": access.owner_in(owners)}})
+    })
     return {mid: (_fit_fingerprint(docs[mid]) if mid in docs else None) for mid in sorted(refs)}
 
 

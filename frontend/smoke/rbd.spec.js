@@ -317,3 +317,32 @@ test("the maintenance plan edits planned work and duty in place", async ({ page,
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await expectHealthy(page, problems, { label: "maintenance plan" });
 });
+
+// A repairable model as a block (#367): its "Repairs and replacement" section says whether the model
+// wears out, pre-fills the suggested rule and says how the long-run availability is worked out.
+test("a repairable model's block: repairs and replacement", async ({ page, request, problems }) => {
+  const doc = await (await request.get("/api/recurrent/models/sample-rec-compressors")).json();
+  const model = {
+    kind: "repairable", source: "saved", modelId: doc.id, name: doc.name, form: doc.spec?.model_id || "crow_amsaa",
+    params: (doc.results.params || []).map((p) => ({ name: p.name, value: p.value })), unit: doc.results.unit,
+  };
+  const repair = { source: "params", distribution: "Exponential", distribution_id: "exponential",
+                   params: [{ name: "failure_rate", value: 0.1 }] };
+  const graph = {
+    repairable: true, unit: "Hours",
+    nodes: [{ id: "input", type: "input", position: { x: 0, y: 0 }, data: { label: "Input" } },
+            { id: "c", type: "component", position: { x: 200, y: 0 },
+              data: { label: "Compressor", model, repair, costs: { repair: 800, replace: 25000 } } },
+            { id: "output", type: "output", position: { x: 400, y: 0 }, data: { label: "Output" } }],
+    edges: [{ id: "a", source: "input", target: "c" }, { id: "b", source: "c", target: "output" }],
+  };
+  const { id } = await (await request.post("/api/rbds", { data: { name: "Smoke repairable block", graph } })).json();
+  await open(page, `/systems/b/${id}`);
+  await page.locator(".react-flow__node", { hasText: "Compressor" }).first().dblclick();
+  const section = page.getByRole("region", { name: "Repairs and replacement" });
+  await expect(section.getByText(/Replacement needed: this model's failure rate rises with age/)).toBeVisible({ timeout: 20_000 });
+  await expect(section.getByText("Suggested", { exact: true })).toBeVisible();
+  await expect(section.getByText("Simulated · Pro")).toBeVisible();
+  await expectHealthy(page, problems, { label: "repairable model block" });
+  await request.delete(`/api/rbds/${id}`);
+});

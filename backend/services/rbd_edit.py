@@ -64,6 +64,8 @@ _FIELD_TYPES = {
     "duty": ("component",),
     # Imperfect repair and replacement at the N-th failure (#68).
     "repair_quality": ("component",),
+    # When a block on a fitted repairable model is replaced with a new one (#367).
+    "replacement": ("component",),
     # Throughput while it works (#122).
     "capacity": ("component", "standby"),
     # A regression block's covariates over time (#52).
@@ -72,7 +74,7 @@ _FIELD_TYPES = {
 UPDATE_FIELDS = ("label", *_FIELD_TYPES)
 #: Block settings ``update_node``'s ``clear`` can remove.
 CLEARABLE = ("costs", "preventive", "inspection", "maintenance_group", "crew_priority", "instant_repair",
-             "repair_one_at_a_time", "repair_quality", "capacity", "covariate_schedules", "duty")
+             "repair_one_at_a_time", "repair_quality", "capacity", "covariate_schedules", "duty", "replacement")
 
 
 class EditError(ValueError):

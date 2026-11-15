@@ -3659,6 +3659,18 @@ class BlockModel(BaseModel):
         "A saved non-repairable model id (list kind models) instead of inline params: a parametric (or proportional-hazards) "
         "model — a saved mixture fit included — not a non-parametric one (Kaplan-Meier etc.), which RBD blocks "
         "don't take."))
+    repairable_model_id: Optional[str] = Field(None, description=(
+        "Repairable diagrams, component blocks: a saved repairable model id (list kind recurrent) as how the "
+        "unit fails between replacements: Crow-AMSAA, Duane, Cox-Lewis, HPP, ARA, ARI, G1 or generalised "
+        "renewal. Not a proportional-intensity model. Pair with the node's replacement rule; guide('rbds')."))
+    repairable_form: Optional[Literal["crow_amsaa", "duane", "cox_lewis", "hpp", "ara", "ari", "g1", "grp_i",
+                                      "grp_ii"]] = Field(None, description=(
+        "Or a repairable model typed in: its form, with params by SurPyval name — crow_amsaa [alpha, beta], "
+        "duane [alpha, b], cox_lewis [alpha, beta], hpp [lambda], ara [rho, alpha, beta], g1/grp_i/grp_ii "
+        "[q, alpha, beta] (Weibull life), ari [rho, alpha, beta] (Crow-AMSAA baseline)."))
+    repairable_options: Optional[dict[str, Union[int, str]]] = Field(None, description=(
+        "repairable_form ara/ari: {m: repairs remembered (or 'all')}; ari: {baseline: crow_amsaa | duane | "
+        "cox_lewis}."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
     joint_unit: Optional["JointUnit"] = Field(None, description=(
         "With a saved condition-based (joint) model: the unit this block is (non-repairable diagrams)."))
@@ -3824,6 +3836,20 @@ class RepairQuality(BaseModel):
         "repair cost is charged at every failure, its replacement cost at the replacement)."))
 
 
+class Replacement(BaseModel):
+    """When a block on a repairable model is replaced with a new one (#367)."""
+    model_config = ConfigDict(extra="forbid")
+    rule: Literal["none", "age", "repairs"] = Field(description=(
+        "age = replaced at an age; repairs = replaced at the next failure after this many repairs; none = never "
+        "(allowed only when the model never wears out: HPP, or a non-rising shape or trend)."))
+    age: Optional[float] = Field(None, gt=0, description="rule age: the age it's replaced at (diagram unit).")
+    repairs: Optional[int] = Field(None, ge=0, le=999, description=(
+        "rule repairs: repairs before it's replaced (0 = replaced at every failure)."))
+    duration: Optional[float] = Field(None, ge=0, description="rule age: how long a planned replacement takes.")
+    cost: Optional[float] = Field(None, ge=0, description=(
+        "rule age: what a planned replacement costs (default: the block's replacement cost)."))
+
+
 class RbdNode(BaseModel):
     id: str = Field(description="Unique node id. The diagram needs exactly one 'input' and one 'output' node.")
     type: Literal["input", "output", "component", "series", "parallel", "knode", "standby", "subsystem"] = Field(
@@ -3871,6 +3897,9 @@ class RbdNode(BaseModel):
         "at the N-th failure. Such a block has no exact long-run figures: analyse rbd simulates them (and "
         "says why). Not on standby groups, blocks replaced on condition or common-cause members' exact figures. Not "
         "yet with a mixture (two-failure-mode) life: that can't be simulated quickly, so it's refused."))
+    replacement: Optional[Replacement] = Field(None, description=(
+        "Repairable component on a repairable model (model.repairable_model_id or repairable_form): when it's "
+        "replaced with a new one. Required unless the model never wears out; guide('rbds')."))
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description=_CAPACITY_DESCRIPTION)
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Non-repairable component/series/parallel block on a saved covariate (regression) model: covariates "
@@ -4209,12 +4238,13 @@ class UpdateNodeOp(_Op):
     repair_one_at_a_time: Optional[bool] = None
     duty: Optional[float] = Field(None, gt=0, le=1)
     repair_quality: Optional[RepairQuality] = Field(None, description="Replaces the block's repair quality.")
+    replacement: Optional[Replacement] = Field(None, description="Replaces the block's replacement rule.")
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description="Replaces the capacity.")
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Replaces the block's covariate schedules (#52; see change rbd_create's node)."))
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
                                  "instant_repair", "repair_one_at_a_time", "repair_quality", "capacity",
-                                 "covariate_schedules", "duty"]]] = Field(
+                                 "covariate_schedules", "duty", "replacement"]]] = Field(
         None, description="Remove these block settings.")
 
 

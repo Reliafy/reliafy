@@ -90,6 +90,7 @@ export function lifeLine(model, unit, { short = false, repairable = false } = {}
   // Covariates left open at its position, set on the block or the diagram (covariate_binding.py).
   if (model.kind === "bound") return `${model.name || "Covariate model"} · covariates set here`;
   if (model.kind === "joint") return jointBlockLine(model, u); // a condition-based unit
+  if (model.kind === "repairable") return repairableLine(model); // a fitted repairable model (#367)
   const k = distKey(model);
   if (k === "mixture") return model.distribution || "Mixture of failure modes"; // #318
   if (k === "exponential") {
@@ -107,6 +108,23 @@ export function lifeLine(model, unit, { short = false, repairable = false } = {}
   if (mean != null) return `${model.distribution} · mean ${withU(mean)}`;
   const ps = (model.params || []).map((p) => `${GREEK[p.name] || p.name} ${n3(p.value)}`).join(" · ");
   return `${model.distribution}${ps ? ` · ${ps}` : ""}`;
+}
+
+// A fitted repairable model on a block (#367): "Crow-AMSAA · β 1.8", "ARA · β 2.1", "HPP".
+const REPAIRABLE_NAMES = {
+  crow_amsaa: "Crow-AMSAA", duane: "Duane", cox_lewis: "Cox-Lewis", hpp: "HPP", ara: "ARA", ari: "ARI",
+  g1: "G1 renewal", grp_i: "GRP Kijima I", grp_ii: "GRP Kijima II",
+};
+export function repairableName(model) {
+  return REPAIRABLE_NAMES[model?.form] || "Repairable model";
+}
+function repairableLine(model) {
+  const name = repairableName(model);
+  const shapeName = model.form === "duane" || (model.form === "ari" && model.options?.baseline === "duane") ? "alpha"
+    : model.form === "cox_lewis" ? null : model.form === "hpp" ? null : "beta";
+  const shape = shapeName ? param(model, shapeName) : null;
+  if (model.form === "cox_lewis") return `${name} · trend ${n3(param(model, "beta"))}`;
+  return shape != null && Number.isFinite(shape) ? `${name} · β ${n3(shape)}` : name;
 }
 
 // "MTTR 8 h" from a repair-time model (the distribution's name when its mean
