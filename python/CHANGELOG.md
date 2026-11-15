@@ -4,6 +4,13 @@
 
 Needs a server on the same release.
 
+- **Overhaul and replace**: `analyse optimal_overhaul_replace` finds "overhaul every X, replace
+  after N overhauls" for a repairable unit, from a saved minimal-repair recurrent model
+  (`model_id`) or `form` + `params`, with `cost_repair`, `cost_overhaul`, `cost_replace` and
+  `overhaul_restores` (% of its age an overhaul takes off); optional downtimes (hours) with
+  `downtime_cost`, and `max_overhauls`. It returns the best plan, run to failure, overhaul only and
+  replace only beside it, and the best X for each N. Exact, so free. The REST twin
+  (`POST /api/v1/analyse/optimal_overhaul_replace`) and the CLI take it too.
 - **Missions with true standby**: missions are worked out by RePyability's
   `PhasedMission.from_diagram`. A block on `standby` in a phase is idle until the phase needs it,
   then runs; `MissionPhase` gains `start_probability` (`{block: 0–1}`, the chance a standby block
@@ -24,13 +31,6 @@ Needs a server on the same release.
 
 Needs a server on the same release.
 
-- **Overhaul and replace**: `analyse optimal_overhaul_replace` finds "overhaul every X, replace
-  after N overhauls" for a repairable unit, from a saved minimal-repair recurrent model
-  (`model_id`) or `form` + `params`, with `cost_repair`, `cost_overhaul`, `cost_replace` and
-  `overhaul_restores` (% of its age an overhaul takes off); optional downtimes (hours) with
-  `downtime_cost`, and `max_overhauls`. It returns the best plan, run to failure, overhaul only and
-  replace only beside it, and the best X for each N. Exact, so free. The REST twin
-  (`POST /api/v1/analyse/optimal_overhaul_replace`) and the CLI take it too.
 - **Named missions from now**: `analyse rbd_mission` takes `current_state` (`{node: {failed: true} |
   {age}}`, as `analyse rbd`), so a mission flies from the blocks' ages now instead of from new: each
   aged block starts at its age and keeps it through standby phases, a failed block stays failed, and
