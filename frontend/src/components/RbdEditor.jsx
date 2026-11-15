@@ -393,6 +393,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   const [policies, setPolicies] = useState({});
   // The demand the blocks' capacities serve (#122): {demand, unit, period}.
   const [production, setProduction] = useState(null);
+  // The calculator's As of now (blocks' states), for the phased mission beside it.
+  const [asOfState, setAsOfState] = useState(null);
   // A phased mission's phases and a network's terminals (#160): {phases, network}.
   const [mission, setMission] = useState({});
   // The diagram's Use and Environment values, which blocks with covariates left open at their
@@ -2356,6 +2358,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         name={savedRbdName}
         onBuild={toBuilder}
         onProduction={setProduction}
+        onCurrentState={setAsOfState}
         onNodeData={(updates) =>
           // #52: covariate schedules set in the calculator, put on their blocks (unsaved); and the
           // values of covariates left open at the blocks' positions (null takes one off).
@@ -2369,6 +2372,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         active={tab === "calc"}
         name={savedRbdName}
         onEdit={savedRbdReadOnly ? null : () => setModal("phases")}
+        currentState={repairable ? null : asOfState}
       />
     </div>
     <div

@@ -5089,7 +5089,9 @@ def analyze_rbd(
             out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
         if rbd_phases.has_phases(graph):  # #160: the phased mission, alongside
             try:
-                out["phased_mission"] = rbd_phases.agent_summary(rbd_phases.analyze_for_owner(db, graph, owners))
+                # From the blocks' ages now, like the rest of the answer (as of now).
+                out["phased_mission"] = rbd_phases.agent_summary(
+                    rbd_phases.analyze_for_owner(db, graph, owners, current_state=state))
             except AnalysisError as exc:
                 out["phased_mission"] = {"available": False, "message": str(exc)}
         return _summary_only(out) if summary_only else out

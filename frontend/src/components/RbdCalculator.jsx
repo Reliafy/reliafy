@@ -1401,7 +1401,7 @@ const WINDOW_PRESETS = [
 
 export default function RbdCalculator({
   graph, validation, stale: checkStale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
-  onNodeData = null, onConditions = null,
+  onNodeData = null, onConditions = null, onCurrentState = null,
 }) {
   const [result, setResult] = useState(null);
   // The diagram the shown result is for. A result is never shown as current
@@ -1645,6 +1645,8 @@ export default function RbdCalculator({
       runGuard.current.finish(token);
       setResult(res);
       setResultSig(sentSig);
+      // The blocks' states the figures are from, for the phased mission beside them.
+      if (onCurrentState && !graph.repairable) onCurrentState(res.current_state || null);
       if (res.free_sims) setQuickOffer(res.free_sims);
       if (res.job) {
         // The exact figures now; the simulation is queued on the calculation

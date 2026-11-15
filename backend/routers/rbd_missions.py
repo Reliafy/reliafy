@@ -32,16 +32,20 @@ def _time(value) -> float | None:
 def phased_mission(
     graph: dict = Body(..., embed=True),
     covariates: dict = Body(default={}),
+    current_state: dict | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """A non-repairable graph's phased mission (its ``phases``): the mission
     reliability, each phase's failure probability and the reliability at its
     end, and the riskiest phase. Exact, or simulated where the mission is too
-    large (the result says which). Quick, so not plan-gated."""
+    large (the result says which). Quick, so not plan-gated. ``current_state``:
+    the blocks' states now (as the diagram's calculation takes them), so the
+    mission flies from their ages."""
     try:
         return JSONResponse(content=rbd_phases.analyze_for_owner(session, graph, ctx.read_owners,
-                                                                 covariates=covariates or None))
+                                                                 covariates=covariates or None,
+                                                                 current_state=current_state or None))
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive

@@ -496,6 +496,71 @@ class _Paused:
         return conditional_survival(self, x, X)
 
 
+class _Aged:
+    """A block's life from now, given it has already run ``age`` (As of now):
+    R(t) = R₀(age + t) / R₀(age). The mission's clock starts at 0 for every
+    block, so an aged block starts it part-worn."""
+
+    def __init__(self, base, age: float):
+        self.base = base
+        self.age = float(age)
+        self.dist = getattr(base, "dist", None)
+        self._s0 = float(np.ravel(np.asarray(base.sf(np.array([self.age])), dtype=float))[0])
+
+    def sf(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        if self._s0 <= 0:
+            return np.zeros_like(x)
+        out = np.ravel(np.asarray(self.base.sf(self.age + np.maximum(x, 0.0)), dtype=float)) / self._s0
+        return np.clip(np.where(x < 0, 1.0, out), 0.0, 1.0)
+
+    def ff(self, x) -> np.ndarray:
+        return 1.0 - self.sf(x)
+
+    def random(self, size) -> np.ndarray:
+        """A remaining life: the survival level drawn below R₀(age), found on
+        the base curve by bisection, less the age."""
+        u = np.random.uniform(size=size)
+        level = np.ravel(u) * self._s0
+        lo = np.full(level.shape, self.age)
+        hi = np.full(level.shape, max(self.age, 1.0) * 2.0)
+        for _ in range(80):  # widen until each draw's level is reached
+            short = np.ravel(np.asarray(self.base.sf(hi), dtype=float)) > level
+            if not short.any():
+                break
+            hi = np.where(short, hi * 2.0, hi)
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            alive = np.ravel(np.asarray(self.base.sf(mid), dtype=float)) > level
+            lo = np.where(alive, mid, lo)
+            hi = np.where(alive, hi, mid)
+        return np.where(level <= 0, np.inf, hi - self.age)
+
+    def cs(self, x, X) -> np.ndarray:
+        from backend.services.rbd_analysis import conditional_survival
+
+        return conditional_survival(self, x, X)
+
+
+AS_OF_NOW_NOTE = ("As of now: each block given an age starts the mission at that age (its reliability given it has "
+                  "lasted that long), and a block marked failed is failed throughout.")
+
+
+def with_state(built: tuple, state: Optional[dict]) -> tuple:
+    """``_build_rbd``'s result as the blocks are now (``parse_nonrepairable_state``'s
+    form): an aged block's model conditioned on its age, a failed block failed."""
+    if not state:
+        return built
+    rbd, labels, node_types, reliabilities, working, broken, baseline = built
+    rel = dict(reliabilities)
+    failed = {nid for nid, v in state.items() if v.get("failed")}
+    for nid, v in state.items():
+        model = rel.get(nid)
+        if "age" in v and model is not None and not isinstance(model, str) and hasattr(model, "sf"):
+            rel[nid] = _Aged(model, v["age"])
+    return rbd, labels, node_types, rel, working, set(broken) | failed, baseline
+
+
 def _standby_spans(phases: list[dict], repeats: dict) -> dict:
     """{block id: [(start, end, dormancy)]}: the stretches of the mission's clock each block stands
     by in, and how fast it ages there (a repeated block's copy names its original)."""
@@ -670,6 +735,7 @@ def analyze_phases(
     phases: Optional[list] = None,
     varying: frozenset = frozenset(),
     weakest: bool = False,
+    current_state: Optional[dict] = None,
 ) -> dict:
     """The mission's reliability, each phase's chance of being where the
     mission fails, the reliability at the end of each phase, and the riskiest
@@ -677,11 +743,13 @@ def analyze_phases(
     an interval), and the result says which. ``phases``: these instead of the
     diagram's own; ``varying``: the blocks whose covariates change by phase
     (for the notes); ``weakest``: add each phase's weakest block (exact
-    missions only)."""
+    missions only); ``current_state``: the blocks' states now (as analyse
+    rbd takes them), so the mission flies from the blocks' ages."""
     from backend.services import rbd_analysis as ra
 
     _refuse(graph)
-    built = ra._build_rbd(graph, resolve_subsystem, None, resolve_model, covariates)
+    state = ra.parse_nonrepairable_state(graph, current_state)
+    built = with_state(ra._build_rbd(graph, resolve_subsystem, None, resolve_model, covariates), state)
     mission, phases, labels, schedule_notes = build_mission(graph, resolve_subsystem, resolve_model, covariates,
                                                             phases=phases, built=built)
     interval = None
@@ -755,6 +823,9 @@ def analyze_phases(
                                                           for n in graph.get("nodes") or [] if n.get("id") not in varying)
                   else [] if varying else [STRESS_NOTE]) + ([PHASE_VALUES_NOTE, *schedule_notes] if varying else []),
     }
+    if state:
+        out["current_state"] = state
+        out["notes"].insert(0, AS_OF_NOW_NOTE)
     if any(p.get("not_needed") for p in phases):
         out["notes"].append(NOT_NEEDED_NOTE)
     if has_standby(phases):
@@ -887,14 +958,16 @@ def _add_weakest(out: dict, graph: dict, resolve_subsystem, resolve_model, covar
         row["weakest"] = b
 
 
-def analyze_for_owner(db, graph: dict, owner_id, covariates: Optional[dict] = None) -> dict:
+def analyze_for_owner(db, graph: dict, owner_id, covariates: Optional[dict] = None,
+                      current_state: Optional[dict] = None) -> dict:
     """The diagram's own phased mission (``phases``) for the caller: sub-systems and saved models
     resolved in their scope, as ``rbds.analyze_graph`` resolves them, and blocks whose covariates
     were left open at their positions given the phases' values (:mod:`.rbd_missions`). A phase
     still missing a value stops it, saying which blocks need what."""
     from backend.services import rbd_missions
 
-    result = rbd_missions.analyze(db, owner_id, graph, graph.get("phases"), covariates=covariates)
+    result = rbd_missions.analyze(db, owner_id, graph, graph.get("phases"), covariates=covariates,
+                                  current_state=current_state)
     if result.get("needs"):
         raise AnalysisError(rbd_missions.needs_message(result["needs"]))
     return result
