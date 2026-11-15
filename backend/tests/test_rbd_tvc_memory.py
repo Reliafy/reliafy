@@ -130,3 +130,39 @@ def test_a_schedule_too_fine_for_the_window_is_refused_in_plain_words(entry, mon
     monkeypatch.setattr(rbd_tvc, "MAX_CUMULATIVE_SEGMENTS", 5000)
     with pytest.raises(AnalysisError, match="too fine for this calculation over"):
         analyze(_graph(VARYING), resolve_model=lambda _: entry, conditional_age=20000.0, at_times=[2000.0])
+
+
+def test_the_schedule_work_budget_counts_evaluations_not_seconds(monkeypatch):
+    """The P-101 duty is worked out the same however slow the machine is (a
+    loaded CI runner under tracemalloc once ran out of a 3-second budget):
+    the budget is a count of evaluations, so the same count always passes."""
+    from backend.services import tvc_expression
+
+    expr = tvc_expression.Expression(VARYING)
+    assert expr.period == 720.0
+    before = expr.evaluations
+    times, values = tvc_expression.change_points(expr, 0.0, 720.0)
+    used = expr.evaluations - before
+    assert len(times) == 720 + 1 and used < tvc_expression.MAX_EVALUATIONS / 5
+    # A slow clock changes nothing.
+    monkeypatch.setattr("time.monotonic", lambda: 1e12)
+    monkeypatch.setattr("time.perf_counter", lambda: 1e12)
+    assert tvc_expression.change_points(tvc_expression.Expression(VARYING), 0.0, 720.0) == (times, values)
+    # Exactly the work it needs is enough; less is refused in plain words.
+    monkeypatch.setattr(tvc_expression, "MAX_EVALUATIONS", used)
+    assert tvc_expression.change_points(tvc_expression.Expression(VARYING), 0.0, 720.0) == (times, values)
+    monkeypatch.setattr(tvc_expression, "MAX_EVALUATIONS", used - 1)
+    with pytest.raises(tvc_expression.ExpressionError, match="takes too long to work out"):
+        tvc_expression.change_points(tvc_expression.Expression(VARYING), 0.0, 720.0)
+
+
+def test_p101_duty_gives_its_answer_with_the_production_parameters(entry):
+    """The production P-101 pump (Weibull PH, alpha 9,941.19 h, beta 2.2046,
+    0.02162 per % of rated flow) on the varying duty: R(2,000 h) about 0.832
+    and an MTTF about 3,814 h, with no refusal."""
+    d = entry["model"].to_dict()
+    d["params"] = [9941.19, 2.2046, 0.02162]
+    prod = {**entry, "model": type(entry["model"]).from_dict(d)}
+    out = analyze(_graph(VARYING), resolve_model=lambda _: prod, at_times=[2000.0])
+    assert out["at"]["sf"][0] == pytest.approx(0.8322, abs=5e-4)
+    assert out["mttf"] == pytest.approx(3814, rel=2e-3)
