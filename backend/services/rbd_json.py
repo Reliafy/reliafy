@@ -147,8 +147,6 @@ class _Exporter:
     def block(self, node: dict, visited: frozenset) -> tuple[dict, Optional[int]]:
         """``(serialised model, k)`` for one block of a non-repairable diagram."""
         from repyability.rbd.repeated_node import RepeatedNode
-        from repyability.rbd.standby_node import StandbyModel
-
         ntype = node.get("type")
         data = node.get("data") or {}
         label = data.get("label") or str(node.get("id"))
@@ -161,30 +159,28 @@ class _Exporter:
             unit = self.dist(data.get("model"), label)
             return _serialise(RepeatedNode(unit, count, ntype)), None
         if ntype == "standby":
-            primary = self.dist(data.get("model"), label)
-            spare = self.dist(data.get("standbyModel") or data.get("model"), f"{label} (spare)")
-            spares = max(int(data.get("spares") or 1), 0)
-            try:
-                dormancy = ra._standby_dormancy(data, label)
-            except ra.AnalysisError as exc:
-                raise _Missing(str(exc)) from None
             from backend.services import rbd_standby
 
             try:
+                units = rbd_standby.build_units(data, label, lambda spec, where: self.dist(spec, where))
+                dormancy = ra._standby_dormancy(data, label)
                 k = rbd_standby.operating(data, label)
                 start = rbd_standby.start_probability(data)
                 if not (k == 1 and dormancy >= 1.0 and start == 1.0):
                     # Cold, warm, or hot with spares that may fail to start, k units
-                    # running (#84), as the analysis builds it.
-                    return _serialise(rbd_standby.nonrepairable_model(
-                        data, label, primary, spare, spares, dormancy, start)), None
+                    # running (#84), as the analysis builds it. One RePyability only
+                    # simulates goes in as it is when the block is set to be simulated
+                    # (the library simulates it there too), else it's refused.
+                    model = rbd_standby.standby_model(data, label, units, dormancy, start)
+                    if model.is_simulated and not data.get("simulate"):
+                        rbd_standby.nonrepairable_model(data, label, units, dormancy, start)
+                    return _serialise(model), None
             except (ra.AnalysisError, TypeError, ValueError) as exc:
                 raise _Missing(str(exc)) from None
             # Hot standby: active parallel redundancy (as Download as Python).
-            same = data.get("standbyModel") in (None, data.get("model"))
-            if same:
-                return _serialise(RepeatedNode(primary, 1 + spares, "parallel")), None
-            members = [("duty", primary)] + [(f"spare{i + 1}", spare) for i in range(spares)]
+            if all(u is units[0] for u in units):
+                return _serialise(RepeatedNode(units[0], len(units), "parallel")), None
+            members = [("duty", units[0])] + [(f"spare{i + 1}", m) for i, m in enumerate(units[1:])]
             return {"kind": "rbd", "rbd": _rbd_dict(
                 "NonRepairableRBD",
                 edges=[e for key, _ in members for e in (["in", key], [key, "out"])],

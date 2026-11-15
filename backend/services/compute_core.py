@@ -98,11 +98,11 @@ def needs_saved_models(graph: dict) -> list[str]:
         if node.get("type") in ("subsystem", "loadshare"):
             out.append(label)
             continue
-        for key in _MODEL_KEYS:
-            spec = data.get(key)
-            if isinstance(spec, dict) and spec.get("kind") in NEEDS_SAVED_MODEL:
-                out.append(label)
-                break
+        specs = [data.get(key) for key in _MODEL_KEYS]
+        specs += [m for key in ("runningModels", "spareModels")  # standby units' own models
+                  for m in (data.get(key) if isinstance(data.get(key), list) else [])]
+        if any(isinstance(spec, dict) and spec.get("kind") in NEEDS_SAVED_MODEL for spec in specs):
+            out.append(label)
     return out
 
 

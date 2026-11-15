@@ -20,6 +20,7 @@ from backend.services import import_guard
 from backend.services import rbd_import
 from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import rbd_runs as rbd_runs_service
+from backend.services import rbd_standby
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
@@ -615,6 +616,22 @@ def bound_blocks(graph: dict = Body(..., embed=True), session=Depends(get_sessio
     return JSONResponse(content={"blocks": blocks, "conditions": (graph or {}).get("conditions") or []})
 
 
+def standby_simulation(session, ctx: AccessCtx):
+    """Leave to simulate the standby blocks set to be simulated (those
+    RePyability has no exact reliability for): Pro only, like every
+    simulation; without it they're refused (:func:`standby_pro_payload`)."""
+    entitled = billing_service.premium_compute_allowed(session, ctx.user)
+    return rbd_standby.simulation("run" if entitled else None)
+
+
+def standby_pro_payload(exc: Exception) -> dict:
+    """The 402 for a diagram whose standby block needs the simulation: the
+    library's plain refusal, then what Pro adds."""
+    reason = client_message(exc).split(" It's set to be simulated")[0]
+    return {"detail": f"{reason} {rbd_standby.PRO_MESSAGE}", "code": "pro_required", "upgrade": True,
+            "simulated_block": True}
+
+
 @router.post("/rbds/analyze")
 def analyze_graph(
     graph: dict = Body(..., embed=True),
@@ -671,8 +688,8 @@ def analyze_graph(
             return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners,
                                  simulate=simulate, current_state=current_state, exact=exact,
                                  quick=quick, run_token=run_token)
-        return JSONResponse(
-            content=rbds_service.analyze_graph(
+        with standby_simulation(session, ctx):
+            content = rbds_service.analyze_graph(
                 session,
                 graph,
                 ctx.read_owners,
@@ -684,7 +701,9 @@ def analyze_graph(
                 target_reliability=target_reliability,
                 evaluate_at=evaluate_at,
             )
-        )
+        return JSONResponse(content=content)
+    except rbd_standby.SimulationNeedsPro as exc:
+        return JSONResponse(status_code=402, content=standby_pro_payload(exc))
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
@@ -717,9 +736,11 @@ def analyze_rbd(
         if graph.get("repairable"):
             return _availability(session, ctx, graph, t_max, rbd, force, owners,
                                  simulate=simulate, exact=exact, quick=quick, run_token=run_token)
-        return JSONResponse(
-            content=rbds_service.analyze_graph(session, graph, owners, t_max=t_max)
-        )
+        with standby_simulation(session, ctx):
+            content = rbds_service.analyze_graph(session, graph, owners, t_max=t_max)
+        return JSONResponse(content=content)
+    except rbd_standby.SimulationNeedsPro as exc:
+        return JSONResponse(status_code=402, content=standby_pro_payload(exc))
     except rbds_service.RbdNotFound:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     except AnalysisError as exc:

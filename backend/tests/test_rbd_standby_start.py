@@ -86,7 +86,7 @@ def test_exponential_cases_once_refused_are_now_exact(data):
 @pytest.mark.parametrize("data, needle", [
     ({"k": 2, "dormancy": 0.3, "model": W(1000, 2)}, "warm standby with 2 units running"),
     ({"k": 3, "dormancy": 0, "cold": True, "model": W(1000, 2), "standbyModel": W(1500, 2)},
-     "spare model of its own"),
+     "units that differ"),
     ({"k": 2, "dormancy": 1, "model": W(1000, 2), "startProb": 0.9}, "hot standby with 2 units running"),
 ])
 def test_cases_the_library_still_refuses_are_said_plainly(data, needle):

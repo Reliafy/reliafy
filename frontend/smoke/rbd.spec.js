@@ -346,3 +346,40 @@ test("a repairable model's block: repairs and replacement", async ({ page, reque
   await expectHealthy(page, problems, { label: "repairable model block" });
   await request.delete(`/api/rbds/${id}`);
 });
+
+test("a standby block as plants run it: words, units that differ, refusal and simulate", async ({ page, request, problems }) => {
+  const weibull = (alpha, beta) => ({ source: "params", distribution: "Weibull", distribution_id: "weibull",
+                                      params: [{ name: "alpha", value: alpha }, { name: "beta", value: beta }] });
+  const graph = {
+    unit: "Hours",
+    nodes: [{ id: "input", type: "input", position: { x: 0, y: 0 }, data: { label: "Input" } },
+            { id: "s", type: "standby", position: { x: 200, y: 0 },
+              data: { label: "Cooling pumps", model: weibull(8000, 2), k: 2, spares: 1, dormancy: 0.3, cold: false,
+                      startProb: 0.95 } },
+            { id: "output", type: "output", position: { x: 400, y: 0 }, data: { label: "Output" } }],
+    edges: [{ id: "a", source: "input", target: "s" }, { id: "b", source: "s", target: "output" }],
+  };
+  const { id } = await (await request.post("/api/rbds", { data: { name: "Smoke standby as plants run it", graph } })).json();
+  await open(page, `/systems/b/${id}`);
+  await page.locator(".react-flow__node", { hasText: "Cooling pumps" }).first().dblclick();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("2 running, 1 warm spare ageing at 30% while waiting; each spare starts 95% of the time.")).toBeVisible();
+  // Warm Weibull spares with two running: RePyability's plain refusal and the offer.
+  await expect(dialog.getByText(/warm standby with 2 units running can be worked out exactly only/)).toBeVisible({ timeout: 20_000 });
+  const save = dialog.getByRole("button", { name: "Save block" });
+  await expect(save).toBeDisabled();
+  await dialog.getByLabel(/Simulate this block/).check();
+  await expect(save).toBeEnabled();
+  // Units that differ: a spare on its own model.
+  await dialog.getByText("Units that differ").click();
+  await expect(dialog.getByText("Running unit 1")).toBeVisible();
+  await dialog.getByRole("radiogroup", { name: "Spare: which model" }).getByRole("radio", { name: "Its own" }).click();
+  await expect(dialog.getByText("Spare's non-repairable model")).toBeVisible();
+  // Another spare: the words follow.
+  await dialog.locator(".standby-settings input[type=number]").nth(1).fill("2");
+  await expect(dialog.getByText("2 running, 2 warm spares ageing at 30% while waiting; each spare starts 95% of the time.")).toBeVisible();
+  await save.click();
+  await expect(page.locator(".react-flow__node", { hasText: "simulated" })).toBeVisible();
+  await expectHealthy(page, problems, { label: "standby as plants run it" });
+  await request.delete(`/api/rbds/${id}`);
+});

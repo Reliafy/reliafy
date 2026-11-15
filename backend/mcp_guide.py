@@ -156,6 +156,13 @@ output}; two parallel blocks fan out from the node before and join at the node a
 into one knode (n=2). Stages form: stages in series, each with components in parallel (k_of_n voting).
 - Block models: inline distribution_id + params, a mean (MTBF/MTTR) with its shape, a mixture, or a saved \
 model (saved_model_id; same time unit).
+- Standby as plants run it: k units running, spares cold (dormancy 0), warm (0-1: ageing at that share while \
+waiting) or hot (1), startProb the chance a spare starts (one that doesn't is skipped). Units may differ: \
+standbyModel for every spare, runningModels / spareModels (lists, null = the default) for single units, up to \
+12 units. Exact or numerical (free): exponential units (any k, kind, start chance), cold with identical units \
+or k <= 2, warm or hot with k = 1, hot when spares always start. Otherwise (e.g. warm Weibull spares with k = \
+2) the block is refused in plain words; set simulate=true and analyse rbd simulates it (200,000 lifetimes, \
+Pro; result.simulated says so). Repairable diagrams: a standby group's units are identical.
 - Repairable diagrams (repairable=true, analysed for availability): every block needs a repair model. Blocks \
 may carry costs, preventive (age / block / condition replacement), inspection (hidden failures found by proof \
 tests: offset staggers, coverage + full_test for partial tests), maintenance_group, crew_priority, \

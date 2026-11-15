@@ -163,10 +163,11 @@ def redundancy_units(m: Maintenance, children: list[dict], nodes: list[dict], no
     ``nodes``: ([{id, kind: vote | standby, members: [block ids]}], [the groups used, in brief]).
 
     * Active (k of n needed): the members, each its own block, into a k-of-n vote.
-    * Standby whose members are identical single blocks (one life model, none a sub-system): one
-      standby block, k running and the rest waiting: cold, warm (ageing at its dormancy) or hot,
-      with the chance a waiting one starts when switched in. The members' own blocks go.
-    * Any other standby set (sub-systems, or different models): the members into a k-of-n vote,
+    * Standby whose members are single blocks (none a sub-system; with different life models,
+      up to rbd_standby.MAX_OWN_UNITS, each unit keeping its own): one standby block, k running
+      and the rest waiting: cold, warm (ageing at its dormancy) or hot, with the chance a waiting
+      one starts when switched in. The members' own blocks go.
+    * Any other standby set (sub-systems, or too many different models): the members into a k-of-n vote,
       each running k/n of the time (they take turns; a repairable diagram's "Runs" share).
       Nothing about switching or ageing while waiting can be drawn on separate blocks, so the
       notes say what's counted."""
@@ -188,10 +189,17 @@ def redundancy_units(m: Maintenance, children: list[dict], nodes: list[dict], no
         blocks = [by_bid[b] for b in bids]
         if g["mode"] == "standby":
             first = blocks[0]
+            from backend.services.rbd_standby import MAX_OWN_UNITS, own_from_units
+
             identical = all(b.get("type") == "component" for b in blocks) and all(
                 _same_model(first, b) for b in blocks[1:])
+            # Single blocks with models that differ (an older duty pump, a smaller spare):
+            # one standby block too, each unit on its own model (#363).
+            differing = not identical and n <= MAX_OWN_UNITS and all(
+                b.get("type") == "component" and b.get("model") and not (b.get("data") or {}).get("rbd")
+                for b in blocks)
             dormancy = _WAIT.get(g["standby"], g.get("dormancy"))
-            if identical and dormancy is not None:
+            if (identical or differing) and dormancy is not None:
                 sid = "s" + g["id"][:10]
                 spb = g.get("start_probability")
                 node = {"id": sid, "type": "standby", "label": f"{g['name']} ({need} running, {n - need} standby)",
@@ -202,17 +210,22 @@ def redundancy_units(m: Maintenance, children: list[dict], nodes: list[dict], no
                                     if (first.get("data") or {}).get("model_source") else {})}}
                 if spb is not None:  # cold, warm or hot: a spare that fails to start is skipped
                     node["startProb"] = spb
+                if differing:  # the members in order: the first `need` running, then the spares
+                    node.update(own_from_units([b["model"] for b in blocks], need))
                 nodes[:] = [x for x in nodes if x["id"] not in set(bids)] + [node]
                 units.append({"id": sid, "kind": "standby", "members": bids})
                 words = {0.0: "cold"}.get(dormancy, "hot" if dormancy == 1.0 else f"warm, ageing at {_pct(dormancy)}")
                 start = (f", each starting when switched in with a {_pct(spb)} chance" if spb is not None
                          else "")
+                own = " Its units have different models, each kept on its own unit." if differing else ""
                 notes.append(f"{g['name']} is one standby block ({words}): {need} of {', '.join(brief['members'])} "
-                             f"running, the other{'s' if n - need > 1 else ''} waiting{start}.")
+                             f"running, the other{'s' if n - need > 1 else ''} waiting{start}.{own}")
                 used.append({**brief, "drawn": "standby"})
                 continue
             why = ("its members are sub-systems" if any(b.get("type") != "component" for b in blocks) else
-                   "its members have different models" if not identical else
+                   f"its members have different models and there are more than {MAX_OWN_UNITS}"
+                   if not identical and n > MAX_OWN_UNITS else
+                   "a member has no model" if not identical and not differing else
                    "a warm standby needs how fast a waiting one ages (set it on the set)")
             share = need / n
             for b in blocks:

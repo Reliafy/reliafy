@@ -3865,13 +3865,20 @@ class RbdNode(BaseModel):
     n: Optional[int] = Field(None, description="series/parallel: number of identical units; knode: number REQUIRED to work.")
     k: Optional[int] = Field(None, description=(
         "knode: number of branches feeding the gate. standby: number of units RUNNING (default 1), e.g. k=2 with "
-        "spares=1 for a 2-of-3 duty/standby train; warm spares need k=1 (no exact figures otherwise), and a "
-        "spare's own model works with k up to 2."))
+        "spares=1 for a 2-of-3 duty/standby train. Any k with exponential lives; guide('rbds') for the rest."))
     spares: Optional[int] = Field(None, description="standby: number of spares.")
     cold: Optional[bool] = Field(None, description="standby: true = cold (spares don't age while idle).")
     dormancy: Optional[float] = Field(None, ge=0, le=1, description=(
         "standby: how fast an idle spare ages relative to a running one — 0 cold, 1 hot, "
         "in between warm (e.g. 0.2 for a spare kept warm and pressurised). Overrides `cold`."))
+    startProb: Optional[float] = Field(None, ge=0, le=1, description="standby: chance a spare starts (default 1).")
+    standbyModel: Optional[BlockModel] = Field(None, description="standby: every spare's own model.")
+    runningModels: Optional[list[Optional[BlockModel]]] = Field(None, description=(
+        "standby: running units' own models in order, null = the block's model."))
+    spareModels: Optional[list[Optional[BlockModel]]] = Field(None, description=(
+        "standby: spares' own models in switch-in order, null = standbyModel/model."))
+    simulate: Optional[bool] = Field(None, description=(
+        "standby with no exact reliability: simulate it (Pro) instead of refusing."))
     subsystem_rbd_id: Optional[str] = Field(None, description="subsystem: the saved RBD id to embed.")
     # Repairable diagrams: a block's costs and maintenance (#99, #100, #156, #157).
     instant_repair: Optional[bool] = Field(None, description="Repairable component: repaired in zero time (still "
@@ -5039,13 +5046,27 @@ def analyze_rbd(
 
         state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
                  if current_state else None)
-        result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
-                                            at_times=times, current_state=state,
-                                            target_reliability=target_reliability, evaluate_at=evaluate_at,
-                                            band=({"level": confidence, "b_lives": b_lives,
-                                                   "times": [t for t in times or [] if t > 0][:8] or None}
-                                                  if confidence is not None else None))
+        from backend.services import rbd_standby
+
+        # A standby block set to be simulated (no exact reliability): Pro, like every simulation.
+        entitled = billing_service.premium_compute_allowed(db, user)
+        try:
+            with rbd_standby.simulation("run" if entitled else None):
+                result = rbds_service.analyze_graph(
+                    db, graph, owners, t_max=t_max, conditional_age=conditional_age,
+                    at_times=times, current_state=state,
+                    target_reliability=target_reliability, evaluate_at=evaluate_at,
+                    band=({"level": confidence, "b_lives": b_lives,
+                           "times": [t for t in times or [] if t > 0][:8] or None}
+                          if confidence is not None else None))
+        except rbd_standby.SimulationNeedsPro as exc:
+            _soft_refusal("pro_only")
+            reason = str(exc).split(" It's set to be simulated")[0]
+            return {**head, "kind": "reliability", "available": False, "code": "pro_required",
+                    "message": f"{reason} {rbd_standby.PRO_MESSAGE} Upgrade at {_billing_url()}."}
         out = {**head, "available": True, **_reliability_summary(result, graph, times, include_curves)}
+        if result.get("simulated"):
+            out["simulated"] = result["simulated"]
         produced = None if current_state else _production_answer(db, graph, owners, times[-1] if times else None)
         if produced is not None:
             out["production"] = produced

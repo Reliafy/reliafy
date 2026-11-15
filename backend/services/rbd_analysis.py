@@ -571,18 +571,14 @@ def _loadshare_model(data: dict, label: str, resolve_model=None):
 
 
 def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
-    """Build the reliability of a standby node from its builder data."""
-    primary = _build_distribution(data.get("model"), label, resolve_model, cov_values)
-    spares = int(data.get("spares") or 1)
-    spare_src = data.get("standbyModel") or data.get("model")
-    spare = _build_distribution(
-        spare_src, f"{label} (spare)", resolve_model, cov_values
-    )
-    units = [primary] + [spare for _ in range(max(spares, 0))]
-
-    dormancy = _standby_dormancy(data, label)
+    """Build the reliability of a standby node from its builder data: its
+    ``k`` running units and its spares, each on the block's model or one of
+    its own (:func:`backend.services.rbd_standby.unit_specs`)."""
     from backend.services import rbd_standby
 
+    units = rbd_standby.build_units(
+        data, label, lambda spec, where: _build_distribution(spec, where, resolve_model, cov_values))
+    dormancy = _standby_dormancy(data, label)
     start = rbd_standby.start_probability(data)
     if rbd_standby.operating(data, label) == 1 and dormancy >= 1.0 and start == 1.0:
         # Hot standby whose spares always start: every unit runs from t=0 ->
@@ -592,7 +588,16 @@ def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
     # its operating rate and can fail latent) or hot, k units running (#84), each
     # spare starting with the block's "Chance a spare starts": one that fails to
     # start is skipped and the next tried (RePyability 0.17's start_probability).
-    return rbd_standby.nonrepairable_model(data, label, primary, spare, spares, dormancy, start)
+    # Where RePyability only simulates it, refused, or simulated when asked for.
+    return rbd_standby.nonrepairable_model(data, label, units, dormancy, start)
+
+
+def _unit_models(data: dict) -> list:
+    """Every non-repairable model on a block's data (a standby block's
+    spare and per-unit models included)."""
+    from backend.services import rbd_standby
+
+    return [rbd_standby.get_path(data, p) for p in rbd_standby.model_paths(data)]
 
 
 def _standby_dormancy(data: dict, label: str) -> float:
@@ -639,7 +644,7 @@ def _node_reliability(
         return model, None
 
     if ntype in ("series", "parallel", "standby", "loadshare") and (
-            is_joint(data.get("model")) or is_joint(data.get("standbyModel"))):
+            any(is_joint(m) for m in _unit_models(data))):
         raise AnalysisError(JOINT_ONE_UNIT.format(where=label))
 
     if ntype == "knode":
@@ -1039,6 +1044,27 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
 
 
 def validate_graph(
+    graph: dict,
+    resolve_subsystem: Optional[Callable[[str], dict]] = None,
+) -> dict:
+    """:func:`_validate_graph`, a standby block set to be simulated taken
+    for its structure (a few lifetimes) and named in a warning: it's
+    simulated, with Pro, when the diagram is calculated."""
+    from backend.services import rbd_standby
+
+    with rbd_standby.simulation("check") as simulated:
+        out = _validate_graph(graph, resolve_subsystem)
+    if simulated and not graph.get("repairable"):
+        labels = list(dict.fromkeys(b.label for b in simulated))
+        out["simulated_blocks"] = labels
+        out["analytic"] = False
+        out["non_analytic_nodes"] = {
+            **(out.get("non_analytic_nodes") or {}),
+            **{label: f"standby, simulated from {rbd_standby.SIM_LIVES:,} lifetimes with Pro" for label in labels}}
+    return out
+
+
+def _validate_graph(
     graph: dict,
     resolve_subsystem: Optional[Callable[[str], dict]] = None,
 ) -> dict:
@@ -2191,11 +2217,18 @@ def analyze(
     the probability basis evaluated past the small probabilities it is meant
     for), in Reliafy's words, and why the MTTF is missing when it is.
     """
+    from backend.services import rbd_standby
+
     args = (graph, resolve_subsystem, t_max, covariates, resolve_model, conditional_age, at_times, band,
             current_state, target_reliability, evaluate_at)
     with collect_warnings(UserWarning, message=_CCF_WARNING.pattern) as caught:
         # Every time, not once per place: each analysis builds its own RBD.
         result, labels, notes = _analyze(*args)
+    # Standby blocks simulated (where the caller allows it, rbd_standby.simulation).
+    simulated = rbd_standby.simulated_summary(rbd_standby.simulated_now())
+    if simulated:
+        result["simulated"] = simulated
+        notes.append(simulated["note"])
     relayed = []
     for w in caught:
         if issubclass(w.category, UserWarning) and _CCF_WARNING.match(str(w.message)):
@@ -2460,6 +2493,14 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
             result["mean_residual_life"] = mrl
     if target is not None:
         result["design_life"] = _design_life(rbd, system, target, s, overrides, now=bool(state))
+    from backend.services import rbd_standby as _rs
+
+    if band is not None and _rs.simulated_now():
+        # A simulated block rebuilt once per draw of its fitted parameters would be
+        # thousands of simulations: the band is left out, and the result says so.
+        notes.append("The confidence band from the fitted blocks' uncertainty isn't worked out for a diagram with "
+                     "a simulated standby block. Make the block exact to see it.")
+        band = None
     if band is not None:
         from backend.services import rbd_uncertainty
 
@@ -2687,7 +2728,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             from backend.services import rbd_tvc
 
             rbd_tvc.refuse_repairable(data, label)
-        if any(is_joint(data.get(k)) for k in ("model", "standbyModel")):
+        if any(is_joint(m) for m in _unit_models(data)):
             raise AnalysisError(JOINT_REPAIRABLE.format(where=label))
         from backend.services import rbd_repairable_blocks
 
