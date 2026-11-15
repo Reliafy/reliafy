@@ -1303,14 +1303,14 @@ def _validate_graph(
 # A unit of running time: "flight hours", "operating hrs", "engine hours", "FH".
 _OPERATING_UNIT = re.compile(
     r"^(?:flight|flying|flown|operating|operation|engine|run|running|service|power[- ]?on|machine|motor|pump"
-    r"|block|air|hobbs|tach)\s+(.+)$", re.I)
+    r"|block|air|hobbs|tach)\s+(\S.*)$", re.I)
 _OPERATING_ABBREV = {"fh": "hour", "fhs": "hour", "oh": "hour", "ehrs": "hour", "eh": "hour", "rh": "hour"}
 
 
 def _operating_base(unit) -> Optional[str]:
     """The clock unit a unit of running time counts in ("flight hours" →
     "hour"), or None when it isn't one."""
-    text = str(unit or "").strip()
+    text = str(unit or "").strip()[:64]  # a unit name is short; bound the match
     if text.lower().rstrip(".") in _OPERATING_ABBREV:
         return _OPERATING_ABBREV[text.lower().rstrip(".")]
     m = _OPERATING_UNIT.match(text)
