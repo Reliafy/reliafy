@@ -2,6 +2,7 @@ import { useState } from "react";
 import RecurrentCalculator from "./RecurrentCalculator.jsx";
 import RecurrentAside, { CausesSide } from "./RecurrentAside.jsx";
 import RecurrentOverhaul from "./RecurrentOverhaul.jsx";
+import OverhaulReplace from "./OverhaulReplace.jsx";
 import RecurrentProjection from "./RecurrentProjection.jsx";
 import RecurrentDiagnostics from "./RecurrentDiagnostics.jsx";
 import RecurrentData from "./RecurrentData.jsx";
@@ -17,7 +18,7 @@ import { planViews, recurrentTabs, resolveRecurrentTab } from "../recurrentResul
 //                       beside the failure rate and MTBF now and the model in words
 //   Effects             what changes the failure rate (covariate models)
 //   Calculator          expected failures, failure rate and MTBF, at a time or over a window
-//   Plan ahead          [Next failure | Growth projection | Overhaul interval]
+//   Plan ahead          [Next failure | Growth projection | Overhaul interval | Overhaul and replace]
 //   Diagnostics         the trend, growth and fit checks (a fit to data)
 //   Data                what it was fitted to, and every parameter
 // ``modelId`` (a saved model) adds the tools that ask the server (the growth
@@ -97,6 +98,11 @@ export default function RecurrentResultView({
       {plans.some((p) => p.value === "projection") && (
         <div className="rec-plan-tool" hidden={!(tab === "plan" && planView === "projection")}>
           <RecurrentProjection modelId={modelId} unit={r.unit} />
+        </div>
+      )}
+      {plans.some((p) => p.value === "replace") && (
+        <div className="rec-plan-tool rec-plan-scroll" hidden={!(tab === "plan" && planView === "replace")}>
+          <OverhaulReplace modelId={modelId} lockModel compact defaultName={`Overhaul and replace · ${label}`} />
         </div>
       )}
       {plans.some((p) => p.value === "overhaul") && (

@@ -32,7 +32,7 @@ test("putting a pane in the address takes any other out", () => {
 });
 
 test("each pane has its address and its words for leaving it changed", () => {
-  assert.deepEqual(PANE_PARAMS, ["fit", "prior", "predict", "redundancy", "bind", "on", "plan", "mission", "rbd"]);
+  assert.deepEqual(PANE_PARAMS, ["fit", "prior", "predict", "redundancy", "bind", "on", "plan", "mission", "strategy", "how", "rbd"]);
   assert.equal(TABLE_PANES.predict.discard.title, "Discard this prediction?");
   assert.equal(TABLE_PANES.rbd.discard.title, "Discard your changes to this RBD?");
   for (const p of Object.values(TABLE_PANES)) {
@@ -82,4 +82,14 @@ test("picking a row keeps a pane open for that position whole, and closes one fo
 test("an operating plan opens by its own address (?plan=<position id>)", () => {
   assert.deepEqual(paneFromQuery(new URLSearchParams("plan=p1")), { kind: "plan", id: "p1" });
   assert.equal(setPaneQuery(new URLSearchParams("fit=p2"), "plan", "p1").toString(), "plan=p1");
+});
+
+test("a model's Strategy pane: its row, its position and the tool open", () => {
+  assert.deepEqual(paneFromQuery(new URLSearchParams("tab=models&strategy=L1&on=p3&how=overhaulReplace")),
+    { kind: "strategy", id: "p3", strategy: "L1", how: "overhaulReplace" });
+  assert.deepEqual(paneFromQuery(new URLSearchParams("strategy=L1&on=p3")), { kind: "strategy", id: "p3", strategy: "L1" });
+  const q = setPaneQuery(new URLSearchParams("tab=models&fit=p1"), "strategy", "p3", { rbd: "L1", how: "replacement" });
+  assert.equal(q.toString(), "tab=models&strategy=L1&on=p3&how=replacement");
+  // Another row picked: the pane goes, with its tool.
+  assert.equal(keepPaneFor(q, "p9").toString(), "tab=models");
 });

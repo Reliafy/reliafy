@@ -20,6 +20,7 @@ import {
   MODEL_COLUMNS, b10Text, boundsLabel, countsText, enteredParams, enteredStart, exponentialLabel, fmt, forText, headline,
   implausibleExponential, meanText, rowActions, unitOne, unitWord, usedText, withBounds,
 } from "../explorerModels.js";
+import { strategyHeadline } from "../positionStrategy.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
 import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
@@ -50,6 +51,16 @@ const QUALITY_TONE = { success: "success", warning: "warning", neutral: "neutral
 // One cell of a model row (the tree row `r`, its link r.ref.link).
 export function ModelCell({ r, col }) {
   const link = r.ref.link;
+  // A model's Strategy row: what was saved for it there.
+  if (r.ref.strategy) {
+    if (col.id === "kind") return <Chip tone="neutral" className="pk-kind">Strategy</Chip>;
+    if (col.id === "numbers") {
+      const text = strategyHeadline(r.ref.saved);
+      return <span className="ml-num" title={text}>{text}</span>;
+    }
+    if (col.id === "source") return <span className="ml-src">{r.ref.saved.length} saved</span>;
+    return <span className="rw-blank" />;
+  }
   const model = link.model;
   if (!model) {
     return col.id === "kind" ? <Chip tone="warning" title="The saved model was deleted, or isn't yours to open any more">Missing</Chip>
@@ -95,6 +106,7 @@ export function ModelCell({ r, col }) {
 // A row's second line on a phone: its kind and headline; the quality as its chip.
 export function modelPhoneRow(r, rollup) {
   if (r.type !== "pmodel") return { line: rollup || "", status: null };
+  if (r.ref.strategy) return { line: strategyHeadline(r.ref.saved), status: null };
   const link = r.ref.link;
   const model = link.model;
   if (!model) return { line: link.source_text, status: <Chip tone="warning">Missing</Chip> };

@@ -94,14 +94,14 @@ test("recurrentTabs: only the tabs that apply, in order", () => {
 
 test("planViews: next failure, growth projection, overhaul where each applies", () => {
   // Deteriorating: the overhaul first; a growth test: the projection first.
-  assert.deepEqual(planViews(crow, { modelId: "m1" }).map((v) => v.value), ["overhaul", "projection"]);
+  assert.deepEqual(planViews(crow, { modelId: "m1" }).map((v) => v.value), ["overhaul", "replace", "projection"]);
   assert.deepEqual(planViews({ ...crow, growth: "improving" }, { modelId: "m1" }).map((v) => v.value),
-    ["projection", "overhaul"]);
+    ["projection", "overhaul", "replace"]);
   const grp = { ...crow, family: "renewal", next_failure: { units: [{ system: "A" }] } };
   assert.deepEqual(planViews(grp, { modelId: "m1" }).map((v) => v.value), ["next", "projection"]);
   assert.deepEqual(planViews(grp).map((v) => v.value), ["next"]);
   assert.deepEqual(planViews({ ...crow, from_params: true }, { modelId: "m1", paramsOnly: true }).map((v) => v.value),
-    ["overhaul"]);
+    ["overhaul", "replace"]);
 });
 
 test("resolveRecurrentTab: ids, names and the old tab ids", () => {

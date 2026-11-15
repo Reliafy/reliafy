@@ -63,6 +63,8 @@ LEGACY: dict = {
 # them that are heavy (a compute slot) or whose results carry people's text (the
 # data notice). A PR that adds core actions adds them here, under its own comment.
 NEW_ACTIONS = {
+    # Overhaul every X, replace after N overhauls (Nov 2026).
+    ("analyse", "optimal_overhaul_replace"),
     # A how-often rule's dates, or an operating plan's hours by date, saved nowhere (Nov 2026).
     ("analyse", "schedule"),
     # A Bayesian update of a baseline life model with a few failures (Nov 2026).
@@ -241,7 +243,8 @@ def test_the_listed_tools_are_small(env):
     change rbd_mission, after shortening the analyse and guide intros; 7,981 with analyse model_export_python,
     after shortening the analyse intro again; 7,988 with libraries of datasets and models
     (library_add / library_remove renamed, library_use added), after shortening the list intro; 7,987 with
-    analyse schedule, after shortening the analyse and list intros again) and
+    analyse schedule, after shortening the analyse and list intros again; 7,994 with analyse
+    optimal_overhaul_replace, after shortening the change, report_problem and guide intros) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

@@ -57,6 +57,45 @@ def optimal_replacement_endpoint(
         )
 
 
+@router.post("/overhaul-replace")
+def overhaul_replace_endpoint(
+    body: dict = Body(...),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Overhaul every X, replace after N overhauls: the cheapest rule for a repairable unit,
+    against running to failure, overhauling only and replacing only (RePyability, exact: free).
+    JSON: ``recurrent_model_id`` (a saved repairable model; its unit is used) or ``form`` +
+    ``params``, with ``cost_repair``, ``cost_overhaul``, ``cost_replace``, ``overhaul_restores``
+    (% of its age an overhaul takes off), optional downtimes (hours) with ``downtime_cost``, and
+    ``max_overhauls``. Read-only: nothing is saved."""
+    from backend.fitting import FitError
+    from backend.schema import RecurrentModelDoc
+    from backend.services import overhaul_replace
+    from backend.services import recurrent as recurrent_service
+
+    inputs = dict(body or {})
+    live = None
+    try:
+        mid = inputs.get("recurrent_model_id")
+        if mid:
+            doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, str(mid), ctx)
+            if doc is None or doc.id in ctx.hidden:
+                return JSONResponse(status_code=404, content={"detail": "Repairable model not found."})
+            live = recurrent_service.get_live_model(session, doc.id, [*ctx.read_owners, doc.owner_id])
+            inputs["unit"] = (doc.results or {}).get("unit") or inputs.get("unit") or ""
+        return JSONResponse(content=overhaul_replace.from_inputs(inputs, live))
+    except recurrent_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Repairable model not found."})
+    except (FitError, StrategyError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Overhaul and replace failed")
+        return JSONResponse(
+            status_code=500, content={"detail": "Calculation failed. The error has been logged."}
+        )
+
+
 @router.post("/calendar-replacement")
 def calendar_replacement_endpoint(
     distribution_id: str = Body(...),
@@ -265,6 +304,10 @@ def _analysis_summary(doc, ctx: AccessCtx) -> dict:
         "updated_by": (doc.updated_by or {}).get("name"),
         "created_at": doc.created_at.isoformat(),
         "updated_at": doc.updated_at.isoformat(),
+        # A strategy added for a model on a position (the Explorer's Modelling tab): the model's row on that
+        # position (its link id), so the row shows a Strategy item under it once one is saved.
+        **({"position_link_id": str((doc.inputs or {})["position_link_id"])}
+           if (doc.inputs or {}).get("position_link_id") else {}),
     }
 
 

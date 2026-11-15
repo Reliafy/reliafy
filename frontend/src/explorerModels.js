@@ -10,6 +10,7 @@
 
 import { handbookCovariates } from "./predictions.js";
 import { isCovariateId, lineConditions } from "./covariate.js";
+import { strategiesFor, strategyKey } from "./positionStrategy.js";
 
 export const MODEL_TYPE = "pmodel";
 export const isModelRow = (r) => r?.type === MODEL_TYPE;
@@ -143,7 +144,9 @@ export const forText = (link) => (link?.failure_modes?.length
 // The tree with each position's model rows in it. The display given is left as it
 // is; position rows gain `lsum` (their own rows' counts), `lall` (theirs and every
 // position's inside them) and `modelKids`.
-export function graftModels(display, links = []) {
+// `strategies` ({link id: [saved strategy analysis]}, positionStrategy.strategiesByLink): a model row
+// with any gets a Strategy row under it (Strategy is optional: none, no row).
+export function graftModels(display, links = [], strategies = {}) {
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, models: true };
@@ -171,6 +174,18 @@ export function graftModels(display, links = []) {
           search: [name, link.model?.kind, link.source_text, forText(link)].filter(Boolean).join(" ").toLowerCase(),
         },
       });
+      const saved = strategies?.[link.id] || [];
+      if (saved.length) {
+        const sk = strategyKey(link.id);
+        rows.get(key).kids = [sk];
+        rows.set(sk, {
+          key: sk, type: MODEL_TYPE, parent: key, kids: [], depth: p.depth + 2, own: noStatus(), sum: noStatus(),
+          ref: {
+            name: "Strategy", strategy: true, saved, link, position_id: pk, family: "strategy", many: false,
+            search: ["strategy", ...saved.map((a) => `${a.name} ${a.headline || ""}`)].join(" ").toLowerCase(),
+          },
+        });
+      }
       keys.push(key);
       p.lsum.n += 1;
       if (link.stale) p.lsum.stale += 1;
@@ -242,6 +257,11 @@ export function inUseWords(link) {
 export function rowActions(r, { viewOnly = null } = {}) {
   const link = r.ref.link;
   const off = viewOnly ? { disabled: true, title: viewOnly } : {};
+  // A model's Strategy row: open it (the pane: its saved strategies and the tools that fit).
+  if (r.ref.strategy) return [{ id: "model-strategy-open", label: "Open" }];
+  // Strategy is optional (Derryn, 16 Nov 2026): offered quietly on a model a strategy tool takes.
+  const strategy = strategiesFor(link).choices.length
+    ? { id: "model-strategy-add", label: (r.kids || []).length ? "Add another strategy…" : "Add a strategy…" } : null;
   const rbd = link.model_type === "rbd";
   return [
     opensInPane(link) ? { id: "model-rbd-pane", label: "Open in the pane" } : { id: "model-open", label: "Open" },
@@ -261,6 +281,7 @@ export function rowActions(r, { viewOnly = null } = {}) {
     isLifeModelLink(link) ? { id: "model-to-library", label: "Add to library…", pro: true, ...off } : null,
     // Typed-in parameters (Assumed): changed in place, without unlinking and entering them again.
     link.model?.entered ? { id: "model-params-edit", label: "Edit parameters…", ...off } : null,
+    strategy,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
     { id: "model-unlink", label: "Unlink…", ...off },
   ].filter(Boolean);
@@ -299,7 +320,7 @@ export function lifeModelOf(links, positionId) {
 // The tab's chip: models behind their history or gone.
 export const MODEL_CHIPS = [
   { id: "stale", label: "Stale", rcmOnly: true, tab: "models",
-    title: "Fitted models with failures recorded since, and models that are gone", test: (r) => isModelRow(r) && (!!r.ref.link.stale || !r.ref.link.model) },
+    title: "Fitted models with failures recorded since, and models that are gone", test: (r) => isModelRow(r) && !r.ref.strategy && (!!r.ref.link.stale || !r.ref.link.model) },
 ];
 
 // The positions to open when the tab opens: the way down to the one picked.

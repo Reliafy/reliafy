@@ -37,6 +37,7 @@ export const GUIDE_COVERAGE = [
   { feature: "Replacement over a shutdown calendar", href: "/strategy/replacement?mode=calendar" },
   { feature: "Compare two models", href: "/strategy/compare" },
   { feature: "Failure-finding interval", href: "/strategy/failure-finding" },
+  { feature: "Overhaul and replace", href: "/strategy/overhaul-replace" },
   { feature: "Test planning", href: "/strategy/test-planning" },
   { feature: "Test planning: sequential test", href: "/strategy/test-planning/sequential" },
   { feature: "Test planning: life test precision", href: "/strategy/test-planning/life" },
