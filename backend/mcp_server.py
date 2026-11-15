@@ -7145,6 +7145,64 @@ def optimal_overhaul(
     return _maybe_curve(out, include_curve)
 
 
+def optimal_overhaul_replace(
+    ctx: Context,
+    cost_repair: Annotated[Optional[float], Field(gt=0, description="Cost of one repair at a failure (minimal "
+                                                                    "repair). Required.")] = None,
+    cost_overhaul: Annotated[Optional[float], Field(gt=0, description="Cost of one overhaul; more than a repair. "
+                                                                      "Required.")] = None,
+    cost_replace: Annotated[Optional[float], Field(gt=0, description="Cost of replacing the unit with a new one. "
+                                                                     "Required.")] = None,
+    overhaul_restores: Annotated[Optional[float], Field(ge=0, le=100, description="Share of its age an overhaul "
+                                                        "takes off, in % (100 = as good as new). Required.")] = None,
+    model_id: Annotated[Optional[str], Field(description="A saved RECURRENT model id (minimal repair: Crow-AMSAA, "
+                                                         "Duane, HPP, Cox-Lewis). Give this OR form + params.")] = None,
+    form: Annotated[Optional[Literal["crow_amsaa", "duane", "hpp", "cox_lewis"]],
+                    Field(description="Inline model form, with params.")] = None,
+    params: Annotated[Optional[list[float]], Field(description="Inline params in the form's order, e.g. crow_amsaa "
+                                                               "[alpha, beta].")] = None,
+    unit: _UNIT = None,
+    downtime_repair: Annotated[Optional[float], Field(ge=0, description="Hours down per repair.")] = None,
+    downtime_overhaul: Annotated[Optional[float], Field(ge=0, description="Hours down per overhaul.")] = None,
+    downtime_replace: Annotated[Optional[float], Field(ge=0, description="Hours down per replacement.")] = None,
+    downtime_cost: Annotated[Optional[float], Field(ge=0, description="Cost of an hour down (with downtimes).")] = None,
+    max_overhauls: Annotated[Optional[int], Field(ge=1, le=60, description="Most overhauls before a replacement "
+                                                                           "searched (default 19).")] = None,
+    include_curve: _INCLUDE_CURVE = False,
+) -> dict[str, Any]:
+    """Overhaul every X, replace after N overhauls: the cheapest rule for a repairable unit (minimal repair
+    between overhauls), with run to failure, overhaul only and replace only compared and the best X for each N.
+    Exact; times in the model's unit. Relay warnings (a cheaper plan of another kind is said there)."""
+    from backend.services import overhaul_replace
+
+    missing = [n for n, v in (("cost_repair", cost_repair), ("cost_overhaul", cost_overhaul),
+                              ("cost_replace", cost_replace), ("overhaul_restores", overhaul_restores)) if v is None]
+    if missing:
+        raise ToolError(f"analyse optimal_overhaul_replace needs {', '.join(missing)}: see "
+                        "guide(action='analyse.optimal_overhaul_replace').")
+    inputs = {"cost_repair": cost_repair, "cost_overhaul": cost_overhaul, "cost_replace": cost_replace,
+              "overhaul_restores": overhaul_restores, "unit": unit, "downtime_repair": downtime_repair,
+              "downtime_overhaul": downtime_overhaul, "downtime_replace": downtime_replace,
+              "downtime_cost": downtime_cost, "max_overhauls": max_overhauls, "form": form, "params": params}
+    live = None
+    if model_id:
+        user, db = _caller(ctx), _db()
+        owners = _owners(user["uid"])
+        doc = recurrent_service.get_model(db, model_id, owners)
+        if doc is None:
+            raise ToolError("Recurrent model not found: analyse optimal_overhaul_replace needs a recurrent "
+                            "(repairable-system) model id from list kind models (model_type recurrent).")
+        live = recurrent_service.get_live_model(db, model_id, owners)
+        inputs["unit"] = (doc.results or {}).get("unit") or unit or ""
+    elif not (form and params):
+        raise ToolError("Give model_id (a saved recurrent model) or form + params.")
+    try:
+        out = overhaul_replace.from_inputs(inputs, live)
+    except fitting.FitError as exc:
+        raise ToolError(str(exc)) from exc
+    return _maybe_curve(out, include_curve)
+
+
 def _overhaul_shape_uncertainty(db, doc, cost_repair: float, cost_overhaul: float, t_max: Optional[float],
                                 point: dict) -> dict:
     """``analyse optimal_replacement``'s shape treatment (#189) for the overhaul
@@ -9993,6 +10051,7 @@ _A = {  # new tool -> {action: the function it runs}
         "next_replacement": _act(calendar_next_replacement),
         "failure_finding_interval": _act(failure_finding_interval),
         "optimal_overhaul": _act(optimal_overhaul),
+        "optimal_overhaul_replace": _act(optimal_overhaul_replace),
         "fleet_forecast": _act(fleet_forecast),
         "rbd": _act(analyze_rbd),
         "rbd_quote_simulation": _act(quote_rbd_simulation),
@@ -10074,7 +10133,7 @@ _action_tool("analyse", _READ, "Analyse", "action",
              "Every calculation; saves nothing.", _A["analyse"], docs={
     "model_id": ("A saved model id (list kind models): non-repairable for reliability_at, check_life_requirement, "
                  "optimal_replacement and failure_finding_interval; ALT for alt_use_level; joint for "
-                 "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul; any for "
+                 "predict_joint; recurrent for next_failure, growth_projection, optimal_overhaul and optimal_overhaul_replace; any for "
                  "model_export_python."),
     "dataset_id": "A saved dataset (list kind datasets) instead of inline data (fit_per_demand: a row per batch).",
     "censored": ("Per time in data: 0 = failed, 1 = still running, -1 = left-censored, 2 = interval-censored (the "
@@ -10088,7 +10147,7 @@ _action_tool("analyse", _READ, "Analyse", "action",
     "rbd_id": "The diagram's id (list kind rbds).",
 })
 _action_tool("change", _WRITE, "Change items", "action",
-             "Every write: models, datasets, RBDs, fault trees, libraries, files in, shares, alerts. Delete, "
+             "Every write: models, data, RBDs, fault trees, libraries, files, shares, alerts. Delete, "
              "share or overwrite only when asked.",
              _A["change"], docs={
     "dataset_id": ("A saved dataset (list kind datasets) instead of inline data; model_save: the dataset the "
@@ -10101,7 +10160,7 @@ _action_tool("change", _WRITE, "Change items", "action",
     "label": "Who or what the link is for, e.g. 'for the client'. Shown only to the user.",
 })
 _action_tool("report_problem", _REPORT, "Report a problem", "action",
-             "Tell Reliafy's developers a tool got in your way; check later if it's fixed.",
+             "Tell Reliafy's developers a tool got in your way; check back later.",
              _A["report_problem"])
 
 
@@ -10198,7 +10257,7 @@ def guide(ctx: Context, topic: Annotated[Optional[_GuideTopic], Field(descriptio
     return out
 
 
-guide.__doc__ = ("How-tos by topic, and any action's full argument schema "
+guide.__doc__ = ("How-tos by topic, and any action's argument schema "
                  "(action='analyse.fit'). Read the topic before a task new to you.")
 _tool("guide", _READ, "How to use Reliafy")(guide)
 LISTED_SCHEMAS["guide"] = {"type": "object", "properties": {

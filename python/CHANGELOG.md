@@ -4,6 +4,13 @@
 
 Needs a server on the same release.
 
+- **Overhaul and replace**: `analyse optimal_overhaul_replace` finds "overhaul every X, replace
+  after N overhauls" for a repairable unit, from a saved minimal-repair recurrent model
+  (`model_id`) or `form` + `params`, with `cost_repair`, `cost_overhaul`, `cost_replace` and
+  `overhaul_restores` (% of its age an overhaul takes off); optional downtimes (hours) with
+  `downtime_cost`, and `max_overhauls`. It returns the best plan, run to failure, overhaul only and
+  replace only beside it, and the best X for each N. Exact, so free. The REST twin
+  (`POST /api/v1/analyse/optimal_overhaul_replace`) and the CLI take it too.
 - **Missions with true standby**: missions are worked out by RePyability's
   `PhasedMission.from_diagram`. A block on `standby` in a phase is idle until the phase needs it,
   then runs; `MissionPhase` gains `start_probability` (`{block: 0–1}`, the chance a standby block

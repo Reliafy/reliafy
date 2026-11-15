@@ -23,6 +23,9 @@ import {
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import RedundancyPane from "../components/RedundancyPane.jsx";
+import StrategyPane from "../components/StrategyPane.jsx";
+import { SAVED_EVENT } from "../components/SaveAnalysisButton.jsx";
+import { isStrategyRow, strategiesByLink } from "../positionStrategy.js";
 import OperatingPlanPane from "../components/OperatingPlanPane.jsx";
 import TreeSheetPane from "../components/TreeSheetPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
@@ -35,6 +38,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import {
   createPositionMission, deleteMission, getMission, updateMission, calculateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getWorkspaceRcm, getPositionRcm, getRcmOptions,
   hasFmeaExcel, linkPositionModel, restoreRcm, restoreTree, updateMaintenanceLocation, updateMaintenancePosition,
+  listStrategyAnalyses,
 } from "../api.js";
 import MergeAssetPane from "../components/MergeAssetPane.jsx";
 import { mergeSourceKind, separateChange, separateConfirm } from "../assetMerge.js";
@@ -532,13 +536,30 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const meas = useTreeMeasurements({ on: measOn && !!data, display: data ? base : null });
   // The Modelling tab: every model attached to a position.
   const pmodels = useTreeModels({ on: modelsOn && !!data, within: root });
+  // The strategies saved for models on positions (a model's Strategy row shows once it has one): read
+  // with the tab, and again when one is saved. Only rows of this tree's models are grafted, so no
+  // other asset's strategy shows here.
+  const [strategyList, setStrategyList] = useState(null);
+  const [strategyTick, setStrategyTick] = useState(0);
+  useEffect(() => {
+    const onSaved = () => setStrategyTick((t) => t + 1);
+    window.addEventListener(SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(SAVED_EVENT, onSaved);
+  }, []);
+  useEffect(() => {
+    if (!modelsOn || !data) return undefined;
+    let live = true;
+    listStrategyAnalyses().then((d) => live && setStrategyList(d.analyses || [])).catch(() => live && setStrategyList([]));
+    return () => { live = false; };
+  }, [modelsOn, !!data, strategyTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const strategies = useMemo(() => strategiesByLink(strategyList || []), [strategyList]);
   // The Missions tab: every position's RBDs and their missions.
   const pmissions = useTreeMissions({ on: missionsOn && !!data, within: root });
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
-      : modelsOn && pmodels.links ? graftModels(base, pmodels.links)
+      : modelsOn && pmodels.links ? graftModels(base, pmodels.links, strategies)
         : missionsOn && pmissions.links ? graftMissions(base, pmissions.links, pmissions.hasModel, pmissions.otherModel)
-          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel]);
+          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, strategies, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -714,6 +735,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const more = openForModels(display, selected.positions);
     setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
   }, [modelsOn, pmodels.links, display, whole, selected.positions]);
+  // A model with a Strategy (one saved for it here) shows it: the picked position's model rows that
+  // have one open when the strategies are read (and again after a save).
+  useLayoutEffect(() => {
+    if (!modelsOn || !strategyList) return;
+    const p = display.rows.get(selected.positions);
+    const more = (p?.kids || []).filter((k) => isModelRow(display.rows.get(k)) && (display.rows.get(k)?.kids || []).length);
+    if (more.length) setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
+  }, [modelsOn, strategyList, pmodels.links, selected.positions]); // eslint-disable-line react-hooks/exhaustive-deps
   // Opening the Missions tab opens the position picked, so its missions show.
   const openedMissions = useRef(false);
   useLayoutEffect(() => {
@@ -931,13 +960,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   useEffect(() => {
     if (paneAt && data && !panePosition) setQuery_((q) => { for (const k of PANE_PARAMS) q.delete(k); });
   }, [paneAt?.id, data, !!panePosition]); // eslint-disable-line react-hooks/exhaustive-deps
-  const openPane = (kind, position, { start = {}, link = null, query = null, rbd = null, built = null, from = null } = {}) => {
+  const openPane = (kind, position, { start = {}, link = null, query = null, rbd = null, built = null, from = null, how = null } = {}) => {
     paneDirty.current = false;
     setPaneSeed((s) => ({ kind, id: position.id, start, link, built, n: (s?.n || 0) + 1 }));
     setPanel(false);
     if (selPos !== position.id && display.rows.has(position.id)) reveal(position.id);
     setQuery_((q) => {
-      setPaneQuery(q, kind, position.id, { rbd, from });
+      setPaneQuery(q, kind, position.id, { rbd, from, how });
       query?.(q);
     });
     setTimeout(() => paneHeading.current?.focus({ preventScroll: true }), 0);
@@ -1074,6 +1103,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       closePane({ focusRow: false });
     }
     pick(key, opts);
+    // A model's Strategy row: a click opens its pane (it has no details of its own).
+    if (modelsOn && opts.go && isStrategyRow(r) && !(paneKind === "strategy" && paneAt?.strategy === r.ref.link.id)) {
+      openStrategy(r.ref.link);
+    }
   };
 
   // Adding from a row's menu, the heading or the details: the new row is
@@ -1450,8 +1483,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
   // A model row's details spread across the table (a double-click, Open, Enter), as a measurement row's.
   // An RBD row opens the builder in the table area instead (opensInPane).
+  // A model's Strategy (its row, or Add a strategy… on the model's row): the pane beside the tree.
+  const openStrategy = async (link, how = null) => {
+    if (!link || !(await leavePane())) return;
+    const pr = whole.rows.get(link.position_id);
+    openPane("strategy", { id: link.position_id, name: pr?.ref.name || "(no name)" }, { rbd: link.id, how });
+  };
   const openModel = (key) => {
-    const link = whole.rows.get(key)?.ref?.link;
+    const row = whole.rows.get(key);
+    if (isStrategyRow(row)) return openStrategy(row.ref.link);
+    const link = row?.ref?.link;
     if (opensInPane(link)) {
       const pr = whole.rows.get(link.position_id);
       return openRbd({ id: link.position_id, name: pr?.ref.name || "(no name)" }, link.model_id);
@@ -1463,7 +1504,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const modelAction = (r, id) => {
     const link = r.ref.link;
     const position = { id: r.ref.position_id, name: whole.rows.get(r.ref.position_id)?.ref.name || "(no name)" };
-    if (id === "model-open") openModel(r.key);
+    if (id === "model-strategy-add" || id === "model-strategy-open") openStrategy(link);
+    else if (id === "model-open") openModel(r.key);
     else if (id === "model-rbd-pane") openRbd(position, link.model_id);
     else if (id === "model-page" && link.model?.path) leavePane().then((ok) => ok && navigate(link.model.path));
     else if (id === "model-refit") {
@@ -2586,7 +2628,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     </div>
   ) : null;
   // The Modelling tab with a model row picked: its details beside the table (a sheet on a phone).
-  const modelRow = modelsOn && panel && isModelRow(focusRow) ? focusRow : null;
+  const modelRow = modelsOn && panel && isModelRow(focusRow) && !isStrategyRow(focusRow) ? focusRow : null;
   const modelSide = modelRow ? (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
@@ -2666,6 +2708,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                      removeMission(panePosition.id, rbdId, m, !!ref?.rbd?.mission_rbd).then((gone) => gone && closePane());
                    }} />
     </div>
+  ) : paneKind === "strategy" ? (
+    // Waits for the models, so the row's link (its model, the tools that fit) is known.
+    (pmodels.links || []).find((l) => l.id === paneAt.strategy && l.position_id === panePosition.id) ? (
+      <div className="rw tt-side">
+        <StrategyPane key={paneAt.strategy} position={{ ...panePosition, root: root || null }} phone={phone} headingRef={paneHeading}
+                      link={(pmodels.links || []).find((l) => l.id === paneAt.strategy)} saved={strategies[paneAt.strategy] || []}
+                      how={paneAt.how || null} onClose={() => closePane()}
+                      onHow={(h) => setQuery_((q) => { setPaneQuery(q, "strategy", panePosition.id, { rbd: paneAt.strategy, how: h }); })} />
+      </div>
+    ) : null
   ) : paneKind === "redundancy" ? (
     <div className="rw tt-side">
       <RedundancyPane key={`${panePosition.id}:${seed?.n || 0}`} position={panePosition} phone={phone} headingRef={paneHeading}

@@ -173,6 +173,7 @@ export const ENTRIES = [
           { to: "/strategy/replacement", label: "Optimal replacement" },
           { to: "/strategy/compare", label: "Compare two models" },
           { to: "/strategy/failure-finding", label: "Failure finding" },
+          { to: "/strategy/overhaul-replace", label: "Overhaul and replace" },
           { to: "/strategy/test-planning", label: "Test planning" },
         ],
       },

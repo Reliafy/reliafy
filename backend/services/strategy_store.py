@@ -23,7 +23,7 @@ from backend.services.strategy import StrategyError
 from backend.units import unit_in_text, with_unit
 
 KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test",
-         "on_condition_interval", "failure_finding_interval", "calendar_replacement")
+         "on_condition_interval", "failure_finding_interval", "calendar_replacement", "overhaul_replace")
 
 # The shutdown-calendar calculator's inputs (the endpoint body shape), as saved.
 CALENDAR_INPUTS = (
@@ -115,6 +115,14 @@ def compute(kind: str, inputs: dict) -> dict:
         return strategy_calendar.calendar_replacement(
             inputs.get("distribution_id"), inputs.get("params") or [],
             **{k: inputs.get(k) for k in CALENDAR_INPUTS if k in inputs})
+    if kind == "overhaul_replace":
+        from backend.fitting import FitError
+        from backend.services import overhaul_replace
+
+        try:
+            return overhaul_replace.from_inputs(inputs)
+        except FitError as exc:
+            raise StrategyError(str(exc)) from exc
     if kind == "demonstration_test":
         return strategy_service.demonstration_test(
             **{k: inputs[k] for k in DEMO_INPUTS if k in inputs}
@@ -203,6 +211,10 @@ def headline(doc: StrategyAnalysis) -> str:
     if doc.kind == "calendar_replacement":
         text = str(r.get("recommendation") or "Shutdown calendar")
         return text.split(". ")[0].rstrip(".") + "."
+    if doc.kind == "overhaul_replace":
+        from backend.services import overhaul_replace
+
+        return overhaul_replace.headline(r)
     if doc.kind in ("on_condition_interval", "failure_finding_interval"):
         rec = r.get("recommended")
         if not rec:

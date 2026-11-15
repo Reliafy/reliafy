@@ -14,6 +14,7 @@ export const STRATEGY_TOOLS = {
     help: { guide: "optimal-replacement-interval" },
   },
   compare: { kind: "compare_two", noun: "comparisons", help: { guide: "compare-groups" } },
+  overhaulReplace: { kind: "overhaul_replace", noun: "overhaul-and-replace analyses", help: { guide: "overhaul-and-replace" } },
   failureFinding: { kind: "failure_finding", noun: "failure-finding analyses", help: { guide: "failure-finding-interval" } },
   testPlanning: { kind: "demonstration_test", noun: "demonstration test plans", help: { guide: "check-a-requirement-and-plan-a-test" } },
   accelerated: { kind: "demonstration_test", noun: "demonstration test plans", help: { guide: "accelerated-life-testing" } },

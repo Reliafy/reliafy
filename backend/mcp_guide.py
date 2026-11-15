@@ -140,7 +140,8 @@ effectiveness and each system's next failure.
 - analyse next_failure: at a system's age, the chance of a failure within given times and the \
 time to the next one. analyse growth_projection: the MTBF a growth test reaches once its fixes \
 are in (BD modes with fix-effectiveness factors).
-- analyse optimal_overhaul: the overhaul interval for a deteriorating system (minimal-repair model, β > 1)."""),
+- analyse optimal_overhaul: the overhaul interval for a deteriorating system (minimal-repair model, β > 1).
+- analyse optimal_overhaul_replace: overhaul every X, replace after N overhauls (guide strategy)."""),
 
     "rbds": ("Building and editing reliability block diagrams: the structure rules.", """\
 Building RBDs (change rbd_create / clone / edit).
@@ -348,7 +349,7 @@ export_openpsa=true adds the tree as Open-PSA XML.
 - change import_rbd with as_fault_tree=true saves an Open-PSA or Galileo file's top events as fault trees.
 - change fault_tree_delete: own trees only, on the user's explicit request, confirmed by name."""),
 
-    "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
+    "strategy": ("Replacement (also over a shut calendar), proof-test, overhaul and overhaul-and-replace intervals; shape uncertainty.", """\
 Maintenance strategy (analyse actions).
 - analyse optimal_replacement: the cost-optimal age-replacement interval from a non-repairable model (model_id, or \
 distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper. \
@@ -359,6 +360,15 @@ standby unit) at a target availability, from the model's curve (not 2(1-A)MTTF, 
 rate). renewed_at_test (default true: each test overhauls or replaces it); test_duration and test_cost optional. \
 interval_bound: the cautious end from the fit's 90% one-sided bounds; quote it with the interval.
 - analyse optimal_overhaul: the overhaul interval of a repairable system from a minimal-repair recurrent model.
+- analyse optimal_overhaul_replace: "overhaul every X, replace after N overhauls", the cheapest such rule for a \
+repairable unit, from a saved minimal-repair recurrent model (model_id) or form + params. Give cost_repair (per \
+failure), cost_overhaul (more than a repair), cost_replace and overhaul_restores: the share of its age an overhaul \
+takes off, in % (100 = as good as new; ask, never assume). Optional: downtime_repair / _overhaul / _replace in \
+hours with downtime_cost (an hour down), max_overhauls (default 19). Back: best (interval X in the model's unit, \
+overhauls N, replace_every, cost_rate per model unit, repairs_per_cycle), comparisons (run to failure: repair, \
+replace at the best n-th failure; overhaul only; replace only) with saving_pct, by_overhauls (the best X and cost \
+rate for each N) and warnings: a plan of another kind can be cheaper; say so. Exact, free. Imperfect-repair \
+models are refused (failures from any age need a minimal-repair model).
 - analyse calendar_replacement: when replacing costs less at shuts (annual, quarterly, weekly stops) than between \
 them, the long-run best rule: at each shut, replace the part if it is older than a threshold age (the threshold \
 depends on when the next cheaper shut comes). Give the model in a time unit, the shuts (name, cost, every N \

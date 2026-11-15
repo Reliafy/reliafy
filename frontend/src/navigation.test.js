@@ -88,7 +88,7 @@ test("Modelling and Decisions are groups: their entries, each with its children"
   assert.deepEqual(kids(live, "maintainability"), []);
   assert.deepEqual(kids(live, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(live, "strategy"), ["Optimal replacement", "Compare two models", "Failure finding",
-    "Test planning"]);
+    "Overhaul and replace", "Test planning"]);
   assert.deepEqual(kids(live, "forecasts"), []);
   assert.deepEqual(kids(live, "risk"), ["Condition monitoring"]);
   // Assets is one entry with no children; Maintenance opens on Orders and lists it,

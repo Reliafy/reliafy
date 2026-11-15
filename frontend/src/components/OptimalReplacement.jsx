@@ -19,11 +19,13 @@ import { savedInputs } from "../analysisInputs.js";
 // A link can preset it: ?model=<saved model id>&planned=<cost>&unplanned=<cost>
 // (the guided walkthrough opens it on the bearing sample this way; "Use this
 // model" passes ?model= alone).
-export default function OptimalReplacement() {
+// In the Explorer's table pane (a model's Strategy on a position): `modelId` the position's saved model,
+// `planned` / `unplanned` its class's costs where known, `extraInputs` kept with a Save (the model's row).
+export default function OptimalReplacement({ modelId = null, planned = null, unplanned = null, extraInputs = null } = {}) {
   const [params] = useSearchParams();
   const [model, setModel] = useState(null);
-  const [cp, setCp] = useState(() => params.get("planned") || "");
-  const [cu, setCu] = useState(() => params.get("unplanned") || "");
+  const [cp, setCp] = useState(() => (planned ?? params.get("planned") ?? "") + "");
+  const [cu, setCu] = useState(() => (unplanned ?? params.get("unplanned") ?? "") + "");
   const [unit, setUnit] = useState("");
   // Optional: the use a unit runs a year, and how many units, for the saving a year.
   const [useYear, setUseYear] = useState(() => params.get("use") || "");
@@ -36,7 +38,8 @@ export default function OptimalReplacement() {
   const [source, setSource] = useState("saved"); // what the model picker shows
   const currency = useCurrency();
   // Opened from a model's "Use this model" (#294): that model, chosen.
-  const wanted = modelFromSearch(useLocation().search);
+  const fromLink = modelFromSearch(useLocation().search);
+  const wanted = modelId || fromLink;
   // A saved model brings its unit (shown, not copied: a unit carried over
   // from the saved model picked first must not label typed parameters).
   const pickModel = (m) => setModel(m);
@@ -136,7 +139,7 @@ export default function OptimalReplacement() {
           actions={inputs && (
             <SaveAnalysisButton
               kind="optimal_replacement"
-              inputs={inputs}
+              inputs={extraInputs ? { ...inputs, ...extraInputs } : inputs}
               defaultName={analysisName("Replacement", ranWith, result.distribution)}
             />
           )}

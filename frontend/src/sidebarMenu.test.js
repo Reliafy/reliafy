@@ -35,7 +35,7 @@ test("a group lists its entries; an entry lists exactly its children, never its 
   // Libraries opens on All libraries and lists it first.
   assert.deepEqual(labels(subItems(find(live, "libraries"))), ["All libraries", "Data", "Models"]);
   assert.deepEqual(labels(subItems(find(live, "strategy"))), ["Optimal replacement", "Compare two models", "Failure finding",
-    "Test planning"]);
+    "Overhaul and replace", "Test planning"]);
   // Maintenance opens on Orders and lists it first, then its other sub-pages.
   assert.deepEqual(labels(subItems(find(live, "maintenance"))), ["Orders", "Packages", "RCM studies", "Requests"]);
   assert.equal(subItems(find(live, "maintenance"))[0].to, "/maintenance/work-orders");

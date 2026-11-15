@@ -1499,6 +1499,13 @@ export function recurrentFromNow(id, horizon) {
 }
 
 // Optimal overhaul interval (minimal repair between overhauls) — read-only.
+// Overhaul every X, replace after N overhauls (Strategy › Overhaul and replace): `recurrent_model_id`
+// (a saved repairable model) or `form` + `params`, the costs, overhaul_restores (%), optional
+// downtimes (hours) with downtime_cost, max_overhauls. Exact, free; nothing is saved.
+export function overhaulReplace(body) {
+  return postJson("/api/strategy/overhaul-replace", body);
+}
+
 export function recurrentOverhaul(id, costRepair, costOverhaul) {
   return request(`/api/recurrent/models/${id}/overhaul`, {
     method: "POST",

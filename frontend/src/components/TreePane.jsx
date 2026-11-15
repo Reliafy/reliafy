@@ -114,6 +114,8 @@ const MODEL_ICON = {
   life: <path d="M2.5 3c1.8 0 2.8 1.2 4 4s2.6 5.5 7 6" strokeWidth="1.5" strokeLinecap="round" />,
   repairable: <path d="M2.5 13.5h3v-3h3v-3h3v-4h2" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />,
   degradation: <><path d="M2.5 12.5 13.5 4" strokeWidth="1.5" strokeLinecap="round" /><path d="M2.5 4.5h11" strokeWidth="1.2" strokeDasharray="2 2" /></>,
+  // A model's Strategy row: a target (the plan it aims at).
+  strategy: <><circle cx="8" cy="8" r="5.5" strokeWidth="1.4" /><circle cx="8" cy="8" r="2" strokeWidth="1.4" /></>,
 };
 
 export function RowIcon({ r }) {
