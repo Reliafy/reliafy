@@ -1,4 +1,4 @@
-// Strategy › Overhaul and replace (A27), and a model's Strategy on a position in the Explorer
+// Strategy › Overhaul and replace, and a model's Strategy on a position in the Explorer
 // (Derryn, 16 Nov 2026: "each model for a position needs a sub item which is 'strategy'", then
 // "Strategy is optional"): a model row has no Strategy item until one is saved for it; its ⋯
 // offers Add a strategy…, which opens the tools that fit it in the table pane beside the tree.
@@ -39,7 +39,7 @@ for (const width of [1440, 400]) {
     await expect(summary).toContainText(/Overhaul every [\d,]+ Flight hours/);
     await expect(page.locator(".or-table").first()).toContainText("Overhaul only, never replace");
     await expect(page.getByText("Run to failure: repair, then replace at a failure")).toBeVisible();
-    await shot(page, `a27-page-${width}`, true);
+    await shot(page, `overhaul-replace-page-${width}`, true);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     await expectHealthy(page, problems, { label: "Overhaul and replace page" });
   });
@@ -65,7 +65,7 @@ for (const width of [1440, 400]) {
     await pane.getByRole("button", { name: "Compute" }).click();
     await expect(pane.locator(".result-summary").first()).toContainText(/Flight hours/);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
-    await shot(page, `a27-explorer-pane-${width}`);
+    await shot(page, `overhaul-replace-explorer-pane-${width}`);
     await pane.getByRole("button", { name: "Save analysis" }).click();
     await page.getByRole("dialog", { name: "Save this analysis" }).getByRole("button", { name: "Save" }).click();
     await expect(pane.getByText("Saved for this model here")).toBeVisible();
@@ -75,7 +75,7 @@ for (const width of [1440, 400]) {
 
     const strategy = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: /^Strategy$/ }) });
     await expect(strategy).toHaveCount(1);
-    await shot(page, `a27-explorer-row-${width}`);
+    await shot(page, `overhaul-replace-explorer-row-${width}`);
     await expectHealthy(page, problems, { label: "Explorer model strategy" });
   });
 }

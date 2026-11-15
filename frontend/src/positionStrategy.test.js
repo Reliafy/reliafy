@@ -9,7 +9,7 @@ const ids = (link) => strategiesFor(link).choices.map((c) => c.id);
 test("the strategy tools that fit each kind of model", () => {
   // Non-repairable life model: replacement by age, at shutdowns, and failure finding for a hidden function.
   assert.deepEqual(ids(life), ["replacement", "calendar", "failureFinding"]);
-  // Repairable, minimal repair: overhaul and replace (A27) and the optimal overhaul.
+  // Repairable, minimal repair: overhaul and replace and the optimal overhaul.
   assert.deepEqual(ids({ ...life, model_type: "recurrent_model", model: { family: "repairable", kind: "Repairable (NHPP)" } }),
     ["overhaulReplace", "overhaul"]);
   // Imperfect repair can't be priced this way: none, with why.
