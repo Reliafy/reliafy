@@ -3922,6 +3922,10 @@ class MissionPhase(BaseModel):
         "Block ids this phase doesn't need (they still age and can fail, and stay failed for later phases)."))
     standby: Optional[list[str]] = Field(None, description=(
         "Block ids standing by in this phase: not running, so they don't age or fail in it."))
+    guaranteed: Optional[list[str]] = Field(None, description=(
+        "Block ids guaranteed working in this phase: they run and age but can't fail in it."))
+    dormancy: Optional[dict[str, float]] = Field(None, description=(
+        "standby block id -> how fast it ages while idle, 0 (cold, default) to 1 (hot)."))
     votes: Optional[dict[str, int]] = Field(None, description=(
         "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
     values: Optional[dict[str, Union[float, str]]] = Field(None, description=(

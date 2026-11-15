@@ -1,33 +1,40 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal.jsx";
+import { getPhaseCovariates } from "../api.js";
 import { cleanPhases, phaseBlocks, voteNodes } from "../rbdMission.js";
+import { BLOCK_STATES, STATE_SHORT, blockState, covValueText, withBlockState } from "../explorerMissions.js";
 import "./RbdMission.css";
 
 // The phased-mission editor (#160), from the builder's ⋯ menu: the mission's
 // phases in order, each with a name and a duration, and — folded under each
-// phase — the blocks it doesn't need and any vote node that needs a different
-// number of its inputs in it. Stored as graph.phases; Save with no phases
-// clears it.
+// phase — each block's state in it (working, standby, guaranteed working, not
+// needed), its covariate values (one per covariate the diagram's life models
+// leave open: the same list, and the same stored values, as the Explorer's
+// mission tree) and any vote node that needs a different number of its inputs
+// in it. Stored as graph.phases (a mission's own RBD: that mission's phases);
+// Save with no phases clears it.
 //
 //   initial   the diagram's phases (or none)
 //   nodes, edges, unit   the live diagram, for the block and vote lists
 //   onSubmit(phases | null), onClose
 
 let rowKey = 0;
-const newRow = (i) => ({ key: ++rowKey, name: `Phase ${i + 1}`, duration: "", not_needed: [], votes: {} });
+const newRow = (i) => ({ key: ++rowKey, name: `Phase ${i + 1}`, duration: "", not_needed: [], standby: [], guaranteed: [], dormancy: {}, votes: {}, values: {} });
 const fromStored = (p) => ({
   key: ++rowKey,
   name: p.name || "",
   duration: p.duration ?? "",
   not_needed: [...(p.not_needed || [])],
   votes: { ...(p.votes || {}) },
-  // Set on the Missions tab (standby blocks, covariate values): kept as they are when the phases are edited here.
-  values: p.values || null,
+  // The same settings the Explorer's mission tree edits: each block's state, the covariate values.
+  values: { ...(p.values || {}) },
   block_values: p.block_values || null,
   standby: [...(p.standby || [])],
+  guaranteed: [...(p.guaranteed || [])],
+  dormancy: { ...(p.dormancy || {}) },
 });
 
-export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, onSubmit }) {
+export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions = [], onClose, onSubmit }) {
   const [rows, setRows] = useState(() => (initial?.length ? initial.map(fromStored) : [newRow(0)]));
   const [tried, setTried] = useState(false);
   const blocks = useMemo(() => phaseBlocks(nodes), [nodes]);
@@ -35,13 +42,22 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, o
   const labelOf = useMemo(() => new Map(blocks.map((b) => [b.id, b.label])), [blocks]);
   const { phases, errors } = cleanPhases(rows, nodes);
   const u = unit ? ` (${unit})` : "";
+  // The covariates a phase can set: worked out from the diagram's life models by the server (one
+  // list for the builder and the Explorer's tree).
+  const [covs, setCovs] = useState([]);
+  useEffect(() => {
+    let live = true;
+    getPhaseCovariates({ nodes, edges, unit, conditions }).then((d) => live && setCovs(d.rows || []), () => {});
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const setValue = (row, name, v) => {
+    const values = { ...(row.values || {}) };
+    if (String(v ?? "").trim() === "") delete values[name];
+    else values[name] = v;
+    update(row.key, { values });
+  };
 
   const update = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const toggleBlock = (row, id) =>
-    update(row.key, {
-      not_needed: row.not_needed.includes(id) ? row.not_needed.filter((b) => b !== id) : [...row.not_needed, id],
-      standby: (row.standby || []).filter((b) => b !== id),
-    });
   const move = (i, dir) =>
     setRows((rs) => {
       const j = i + dir;
@@ -82,12 +98,20 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, o
       <ol className="rbd-phase-list">
         {rows.map((row, i) => {
           const skipped = row.not_needed.filter((id) => labelOf.has(id));
+          const standing = (row.standby || []).filter((id) => labelOf.has(id));
+          const sure = (row.guaranteed || []).filter((id) => labelOf.has(id));
+          const held = [...standing, ...sure];
+          const named = (ids) => (ids.length === 1 ? labelOf.get(ids[0]) : `${ids.length} blocks`);
           const changed = votes.filter((v) => String(row.votes[v.id] ?? "").trim() !== "");
+          const setCount = covs.filter((c) => String(row.values?.[c.name] ?? "").trim() !== "").length;
           const summary = [
             skipped.length
               ? `Doesn't need ${skipped.length === 1 ? labelOf.get(skipped[0]) : `${skipped.length} blocks`}`
-              : "Every block in use, wired as in the RBD",
+              : held.length ? "Every block in use" : "Every block in use, wired as in the RBD",
+            ...(standing.length ? [`${named(standing)} on standby`] : []),
+            ...(sure.length ? [`${named(sure)} guaranteed working`] : []),
             ...changed.map((v) => `${v.label}: ${row.votes[v.id]} of ${v.inputs}`),
+            ...(covs.length ? [`${setCount} of ${covs.length} covariate${covs.length === 1 ? "" : "s"} set`] : []),
           ].join(" · ");
           return (
             <li key={row.key} className="rbd-phase">
@@ -112,22 +136,51 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, o
                           disabled={rows.length === 1} aria-label={`Remove phase ${i + 1}`} title="Remove">×</button>
                 </div>
               </div>
-              {(blocks.length > 0 || votes.length > 0) && (
+              {(blocks.length > 0 || votes.length > 0 || covs.length > 0) && (
                 <details className="rbd-phase-needs">
                   <summary>{summary}</summary>
                   {blocks.length > 0 && (
                     <div className="rbd-phase-blocks">
-                      <span className="rbd-phase-k">Blocks needed in this phase</span>
-                      <div className="chip-row">
+                      <span className="rbd-phase-k">Each block in this phase</span>
+                      <div className="rbd-phase-states">
                         {blocks.map((b) => {
-                          const needed = !row.not_needed.includes(b.id);
+                          const state = blockState(row, b.id);
                           return (
-                            <button key={b.id} type="button" aria-pressed={needed}
-                                    className={"chip chip-btn rbd-need " + (needed ? "chip-accent" : "chip-neutral is-off")}
-                                    onClick={() => toggleBlock(row, b.id)}
-                                    title={needed ? "Needed — click if this phase doesn't need it" : "Not needed in this phase — click to need it"}>
-                              {b.label}
-                            </button>
+                            <label key={b.id} className={`rbd-phase-state is-${state}`}>
+                              <span title={b.label}>{b.label}</span>
+                              <select value={state} aria-label={`${b.label} in ${row.name || `phase ${i + 1}`}`}
+                                      title={BLOCK_STATES.find((x) => x.id === state)?.title}
+                                      onChange={(e) => update(row.key, withBlockState(row, b.id, e.target.value))}>
+                                {BLOCK_STATES.map((x) => <option key={x.id} value={x.id}>{STATE_SHORT[x.id]}</option>)}
+                              </select>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {covs.length > 0 && (
+                    <div className="rbd-phase-blocks">
+                      <span className="rbd-phase-k">Covariate values in this phase</span>
+                      <div className="rbd-phase-states">
+                        {covs.map((c) => {
+                          const choice = c.kind === "choice" && (c.choices || []).length;
+                          const v = row.values?.[c.name] ?? "";
+                          const fallback = c.diagram != null && c.diagram !== "" ? c.diagram : c.blocks?.[0]?.default;
+                          return (
+                            <label key={c.name} className="rbd-phase-state" title={`Feeds ${(c.blocks || []).map((b) => b.label).join(", ")}`}>
+                              <span title={`${c.name}${c.unit ? ` (${c.unit})` : ""}`}>{c.name}{c.unit ? ` (${c.unit})` : ""}</span>
+                              {choice ? (
+                                <select value={v} onChange={(e) => setValue(row, c.name, e.target.value)}>
+                                  <option value="">Not set</option>
+                                  {c.choices.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
+                                </select>
+                              ) : (
+                                <input type="number" inputMode="decimal" step="any" value={v}
+                                       placeholder={fallback != null ? covValueText(fallback, "") : "needs a value"}
+                                       onChange={(e) => setValue(row, c.name, e.target.value === "" ? "" : Number(e.target.value))} />
+                              )}
+                            </label>
                           );
                         })}
                       </div>

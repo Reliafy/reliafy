@@ -2,7 +2,9 @@
 // and the small helpers the builder, the Phases editor and the Network panel
 // share. A diagram holds
 //
-//   phases:  [{ name, duration, not_needed?: [blockId], votes?: {knodeId: n} }]
+//   phases:  [{ name, duration, not_needed?: [blockId], standby?: [blockId], guaranteed?: [blockId],
+//              dormancy?: {blockId: 0–1}, votes?: {knodeId: n}, values?: {covariate: value},
+//              block_values?: {blockId: {key: value}} }]
 //   network: { source, target }   (read as an undirected network between them)
 //
 // Both ride with the graph wherever it goes (save, validate, analyse, the
@@ -143,6 +145,16 @@ export function cleanPhases(rows, nodes) {
     // Blocks on standby (set on the Missions tab) ride along too; not needed wins.
     const standby = (r.standby || []).filter((id) => blocks.has(id) && !notNeeded.includes(id));
     if (standby.length) out.standby = [...new Set(standby)];
+    // Guaranteed working (one state per block: not needed and standby win), and how fast a standby
+    // block ages while idle (its dormancy, 0–1; kept for standby blocks only).
+    const guaranteed = (r.guaranteed || []).filter((id) => blocks.has(id) && !notNeeded.includes(id) && !standby.includes(id));
+    if (guaranteed.length) out.guaranteed = [...new Set(guaranteed)];
+    const dormancy = {};
+    for (const [id, f] of Object.entries(r.dormancy || {})) {
+      const x = Number(f);
+      if (standby.includes(id) && Number.isFinite(x) && x > 0) dormancy[id] = Math.min(x, 1);
+    }
+    if (Object.keys(dormancy).length) out.dormancy = dormancy;
     const v = {};
     for (const [id, n] of Object.entries(r.votes || {})) {
       const num = Number(n);

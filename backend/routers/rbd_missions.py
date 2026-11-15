@@ -50,6 +50,19 @@ def phased_mission(
             "detail": "Failed to analyse the phased mission. The error has been logged."})
 
 
+@router.post("/rbds/phases/covariates")
+def phase_covariates(graph: dict = Body(..., embed=True), session=Depends(get_session),
+                     ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """Every covariate a phase of this (unsaved) diagram can set: one row per covariate a block's
+    life model leaves open (bound NSWC-11, ALT and PH blocks, and saved regression models), with the
+    blocks each feeds. The same list the Explorer's tree hangs under each phase (rbd_missions.gather)."""
+    from backend.services import covariate_binding as cb
+    from backend.services import rbd_missions
+
+    got = rbd_missions.gather(graph or {}, rbd_missions._inputs_cache(lambda b: cb.inputs_of(b, session, ctx.read_owners)))
+    return JSONResponse(content=got)
+
+
 @router.post("/rbds/network")
 def network_reliability(
     graph: dict = Body(..., embed=True),
