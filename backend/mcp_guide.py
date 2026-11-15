@@ -184,7 +184,9 @@ phase) and values {covariate name: value} for every covariate its blocks' models
 saved regression blocks; block_values {block id: {key: value}} for one block); a value can be a schedule over \
 the phase ({expression} with t from the phase's start, or {table, period?}), followed exactly. Blocks age across the whole mission. analyse \
 rbd_mission lists those covariates with the blocks each feeds, then gives the chance of completing it, per \
-phase, and each phase's weakest block; a phase missing a value waits (needs).
+phase, and each phase's weakest block; a phase missing a value waits (needs). With current_state \
+({node: {failed: true} | {age}}, as analyse rbd) it flies from now: each aged block starts at its age and keeps \
+it through standby phases, a failed block stays failed, and the notes say "As of now".
 - Condition and life block (non-repairable diagrams only, one component block per unit): model = \
 {saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
 value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \
@@ -288,7 +290,8 @@ product_id, which keeps the product as the prediction's source).
 Analysing RBDs (analyse rbd and the other rbd_ actions).
 - rbd, non-repairable: reliability curve (~21 points; `times` gives exact values in reliability_at), MTTF, \
 B-lives, importance and cut sets; current_state ({node: {failed: true} | {age}}) gives the remaining life from \
-now; target_reliability the design life; confidence intervals from fitted blocks (with b_lives, times).
+now; target_reliability the design life; confidence intervals from fitted blocks (with b_lives, times). \
+The same current_state flies a phased mission from now: analyse rbd's phased_mission and analyse rbd_mission.
 - rbd, repairable, on every plan: exact (or numerical, never simulated) long-run availability, mean up / \
 down time, failure frequency, and in `exact` A(t), the mission availability and the window's expected \
 failures, outages, downtime and cost — from new, or from now with current_state ({node: {down: true, since} | \

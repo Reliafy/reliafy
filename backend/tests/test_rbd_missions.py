@@ -429,3 +429,24 @@ def test_api_phases_take_current_state(client):
     r = client.post("/api/rbds/phases", json={"graph": _one_block(), "current_state": {"a": {"age": 80}}})
     assert r.status_code == 200, r.text
     assert r.json()["reliability"] == pytest.approx(float(GEAR.sf(100.0) / GEAR.sf(80.0)), abs=1e-12)
+
+
+def test_mcp_rbd_mission_uses_current_state(env):
+    """analyse rbd_mission (a named mission, and the list of every mission) takes current_state too."""
+    compact = _compact({k: v for k, v in _one_block().items() if k != "phases"})
+    out = _ok(_call(env.token[MCP_A], "change", {"action": "rbd_create", "name": "Aged mission", "unit": "Hours",
+                                                  "nodes": compact["nodes"], "edges": compact["edges"],
+                                                  "phases": _one_block()["phases"]}))
+    args = {"action": "rbd_mission", "rbd_id": out["id"], "mission_id": "mission"}
+    new = _ok(_call(env.token[MCP_A], "analyse", args))["result"]
+    assert new["mission_reliability"] == pytest.approx(float(GEAR.sf(20.0)), abs=1e-9)
+    assert rbd_phases.AS_OF_NOW_NOTE not in new["notes"]
+    aged = _ok(_call(env.token[MCP_A], "analyse", {**args, "current_state": {"a": {"age": 80}}}))["result"]
+    assert aged["mission_reliability"] == pytest.approx(float(GEAR.sf(100.0) / GEAR.sf(80.0)), abs=1e-9)
+    assert aged["notes"][0] == rbd_phases.AS_OF_NOW_NOTE
+    failed = _ok(_call(env.token[MCP_A], "analyse", {**args, "current_state": {"a": {"failed": True}}}))["result"]
+    assert failed["mission_reliability"] == pytest.approx(0.0, abs=1e-12)
+    every = _ok(_call(env.token[MCP_A], "analyse", {"action": "rbd_mission", "rbd_id": out["id"],
+                                                     "current_state": {"a": {"age": 80}}}))
+    assert every["missions"][0]["mission_reliability"] == pytest.approx(aged["mission_reliability"], abs=1e-9)
+    assert every["note"] == rbd_phases.AS_OF_NOW_NOTE

@@ -5268,35 +5268,47 @@ def analyse_rbd_mission(
     mission_id: Annotated[Optional[str], Field(description=(
         "A mission of the diagram (get kind rbd lists them; 'mission' is the diagram's own phases). Omit for "
         "every mission's chance of completing."))] = None,
+    current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
+        "Blocks' states now, keyed by node id, as analyse rbd's non-repairable current_state ({failed: true} "
+        "or {age: <time it has run>}); blocks left out are new. The mission then flies from now: each aged "
+        "block starts it at its age and keeps ageing through standby phases, and a failed block stays failed. "
+        "Omit to fly it from new."))] = None,
 ) -> dict[str, Any]:
     """A mission's chance of completing: each phase's failure probability, reliability at its end and
     weakest block, plus the Use / Environment covariates its phases can set (the blocks each feeds). A
-    phase missing a value waits: needs says which blocks need what."""
+    phase missing a value waits: needs says which blocks need what. current_state flies it from the
+    blocks' states now (the notes say "As of now")."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     rbd = _get_rbd(db, user["uid"], rbd_id)
     graph = rbd.graph or {}
     every = rbd_missions.missions_of(graph)
+    state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
+             if current_state else None)
     if mission_id is None:
         rows = []
         for m in every:
             try:
-                got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False)
+                got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False, current_state=state)
                 rows.append({**rbd_missions.summary(graph, m), "mission_reliability": got["reliability"],
                              **({"needs": got["needs"]} if got.get("needs") else {}),
                              **({"placeholders": [p["label"] for p in got["placeholders"]],
                                  "note": rbd_phases.placeholder_note(got)} if got.get("placeholders") else {})})
             except AnalysisError as exc:
                 rows.append({**rbd_missions.summary(graph, m), "message": str(exc)})
-        return {"rbd_id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "", "missions": rows,
-                "url": _url(f"/systems/b/{rbd.id}")}
+        out = {"rbd_id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "", "missions": rows,
+               "url": _url(f"/systems/b/{rbd.id}")}
+        if state:
+            out["note"] = rbd_phases.AS_OF_NOW_NOTE
+        return out
     mission = rbd_missions.find(graph, mission_id)
     if mission is None:
         raise ToolError(f"“{rbd.name}” has no mission '{mission_id}': it has "
                         f"{', '.join(repr(m['id']) for m in every) or 'none'}.")
     detail = rbd_missions.detail(db, owners, graph, mission)
     try:
-        result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"]))
+        result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"],
+                                                               current_state=state))
     except AnalysisError as exc:
         result = {"available": False, "message": str(exc)}
     covariates = [{"name": r["name"], "role": r["role"], "unit": r["unit"],

@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.12.0 (unreleased)
+## 0.12.1 (unreleased)
+
+Needs a server on the same release.
+
+- **Named missions from now**: `analyse rbd_mission` takes `current_state` (`{node: {failed: true} |
+  {age}}`, as `analyse rbd`), so a mission flies from the blocks' ages now instead of from new: each
+  aged block starts at its age and keeps it through standby phases, a failed block stays failed, and
+  the notes say "As of now". The REST twin and the CLI take it too.
+
+## 0.12.0
 
 Needs a server on the same release.
 
