@@ -74,6 +74,11 @@ The flight succeeds with probability **98.9%**, worked out exactly. The
 riskiest phase is **landing**: 0.919% of flights fail in it, 83% of all the
 failures, even though it is the shortest phase.
 
+Under the answer, **Reliability through the mission** draws the whole
+mission as one curve, a dashed line where each phase begins. **Each phase**
+(folded under the chart) names the **Weakest block** in each phase: the one
+whose failures end the most missions there, and the next ones that matter.
+
 That's the history at work. A hydraulic pump that fails during the six-hour
 cruise doesn't matter then, because one pump is enough. But the landing
 needs both, so that failure shows up at landing. The chart, **Missions that
