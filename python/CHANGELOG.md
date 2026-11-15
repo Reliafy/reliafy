@@ -1,6 +1,23 @@
 # Changelog
 
-## 0.11.0 (unreleased)
+## 0.12.0 (unreleased)
+
+Needs a server on the same release.
+
+- **Repairable models as RBD blocks**: in `change rbd_create` and `rbd_edit`, a repairable
+  diagram's block takes `model.repairable_model_id` (a saved repairable model) or
+  `model.repairable_form` + `params`, with `replacement` (`rule` age / repairs / none). A rule is
+  required unless the model never wears out; `guide rbds` explains.
+- **Covariate schedules, wider**: `covariate_schedules` on a repairable diagram's block (a saved
+  regression model) now follow the plant's clock in the availability simulation (Pro) instead of
+  being refused; a mission phase's `values` / `block_values` take a schedule over the phase
+  (`{expression}` with `t` from the phase's start, or `{table, period}`).
+- **Standby as plants run it**: a standby block in `change rbd_create` / `rbd_edit` takes how many
+  run at once, warm spares ageing while they wait, `startProb` (the chance a spare starts) and
+  `standbyModel` (spares on their own model). Cases with no exact answer are refused unless the
+  block is marked to be simulated (Pro).
+
+## 0.11.0
 
 Needs a server on the same release.
 
@@ -11,14 +28,6 @@ Needs a server on the same release.
 - **`maintenance get.forecast`** (Reliafy Maintenance): a position and everything inside it, from
   today: tasks on dates, work, expected failures and their cost per month, quarter or year
   (`period`, `periods`), with a 90% range and what each number rests on (`root`: the asset opened).
-- **Repairable models as RBD blocks**: in `change rbd_create` and `rbd_edit`, a repairable
-  diagram's block takes `model.repairable_model_id` (a saved repairable model) or
-  `model.repairable_form` + `params`, with `replacement` (`rule` age / repairs / none). A rule is
-  required unless the model never wears out; `guide rbds` explains.
-- **Covariate schedules, wider**: `covariate_schedules` on a repairable diagram's block (a saved
-  regression model) now follow the plant's clock in the availability simulation (Pro) instead of
-  being refused; a mission phase's `values` / `block_values` take a schedule over the phase
-  (`{expression}` with `t` from the phase's start, or `{table, period}`).
 - Tasks by use in operating hours fall due through the position's operating plan where it has one
   (`limits[].due_moment`, `stop_after`, `basis`); `get operating_plan` adds `against_actual`, and
   a plan takes `utilisation`.
