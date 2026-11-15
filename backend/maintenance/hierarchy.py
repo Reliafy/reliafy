@@ -518,13 +518,22 @@ def read_file(data: bytes, name: str = "") -> dict:
     except UnicodeDecodeError:
         text = data.decode("latin-1")
     try:
-        lines = list(csv.reader(io.StringIO(text, newline="")))
+        lines = list(csv.reader(io.StringIO(text, newline=""), delimiter=_separator(text)))
     except csv.Error as err:
         from backend.fitting import csv_error_message
         raise Invalid(csv_error_message(err, text)) from None
     if not lines:
         raise Invalid("The file is empty.")
     return {"hierarchy": _table(lines[0], lines[1:], range(2, len(lines) + 1)), "locations": [], "classes": []}
+
+
+def _separator(text: str) -> str:
+    """The CSV's separator, read from its header line: a comma, or the semicolon
+    Excel uses where the comma is the decimal mark, or a tab."""
+    header = text.split("\n", 1)[0]
+    counts = {sep: header.count(sep) for sep in (",", ";", "\t")}
+    best = max(counts, key=lambda sep: counts[sep])
+    return best if counts[best] > counts[","] else ","
 
 
 def rows_from_records(records: list[dict], first_row: int = 2) -> list[tuple[int, dict]]:

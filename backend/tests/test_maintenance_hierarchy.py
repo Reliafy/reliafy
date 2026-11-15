@@ -470,3 +470,18 @@ def test_duplicate_tags_are_noted_not_stopped(m):
     assert [(n["row"], n["text"]) for n in out["notes"]] == [
         (3, "The tag P-200 is on row 2 too."),
         (4, "The tag p-101 is on Plant 1 > Unit 2 > Feed pump A in Reliafy already.")]
+
+
+def test_a_csv_with_semicolons_or_tabs_reads_like_a_comma_one():
+    """Excel saves ';'-separated CSV where the comma is the decimal mark: same rows."""
+    comma = "Path,Tag\nPlant 1,P1\nPlant 1 > Pump A,PA-1\n"
+    want = hierarchy.read_file(comma.encode(), "tree.csv")["hierarchy"]
+    for sep in (";", "\t"):
+        got = hierarchy.read_file(comma.replace(",", sep).encode("utf-8-sig"), "tree.csv")["hierarchy"]
+        assert got == want
+
+
+def test_a_comma_csv_with_semicolons_in_a_name_stays_a_comma_csv():
+    text = "Path,Tag,Description\nPlant 1,P1,\"wet; dusty\"\n"
+    rows = hierarchy.read_file(text.encode(), "tree.csv")["hierarchy"]
+    assert rows[0][1]["Description"] == "wet; dusty"
