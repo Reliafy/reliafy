@@ -2289,6 +2289,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           nodes={nodes}
           edges={edges}
           unit={rbdUnit}
+          conditions={conditions}
           onClose={() => setModal(null)}
           onSubmit={(phases) => {
             setMission((m) => {

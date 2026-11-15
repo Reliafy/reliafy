@@ -3668,6 +3668,18 @@ class BlockModel(BaseModel):
         "A saved non-repairable model id (list kind models) instead of inline params: a parametric (or proportional-hazards) "
         "model — a saved mixture fit included — not a non-parametric one (Kaplan-Meier etc.), which RBD blocks "
         "don't take."))
+    repairable_model_id: Optional[str] = Field(None, description=(
+        "Repairable diagrams, component blocks: a saved repairable model id (list kind recurrent) as how the "
+        "unit fails between replacements: Crow-AMSAA, Duane, Cox-Lewis, HPP, ARA, ARI, G1 or generalised "
+        "renewal. Not a proportional-intensity model. Pair with the node's replacement rule; guide('rbds')."))
+    repairable_form: Optional[Literal["crow_amsaa", "duane", "cox_lewis", "hpp", "ara", "ari", "g1", "grp_i",
+                                      "grp_ii"]] = Field(None, description=(
+        "Or a repairable model typed in: its form, with params by SurPyval name — crow_amsaa [alpha, beta], "
+        "duane [alpha, b], cox_lewis [alpha, beta], hpp [lambda], ara [rho, alpha, beta], g1/grp_i/grp_ii "
+        "[q, alpha, beta] (Weibull life), ari [rho, alpha, beta] (Crow-AMSAA baseline)."))
+    repairable_options: Optional[dict[str, Union[int, str]]] = Field(None, description=(
+        "repairable_form ara/ari: {m: repairs remembered (or 'all')}; ari: {baseline: crow_amsaa | duane | "
+        "cox_lewis}."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
     joint_unit: Optional["JointUnit"] = Field(None, description=(
         "With a saved condition-based (joint) model: the unit this block is (non-repairable diagrams)."))
@@ -3833,6 +3845,20 @@ class RepairQuality(BaseModel):
         "repair cost is charged at every failure, its replacement cost at the replacement)."))
 
 
+class Replacement(BaseModel):
+    """When a block on a repairable model is replaced with a new one (#367)."""
+    model_config = ConfigDict(extra="forbid")
+    rule: Literal["none", "age", "repairs"] = Field(description=(
+        "age = replaced at an age; repairs = replaced at the next failure after this many repairs; none = never "
+        "(allowed only when the model never wears out: HPP, or a non-rising shape or trend)."))
+    age: Optional[float] = Field(None, gt=0, description="rule age: the age it's replaced at (diagram unit).")
+    repairs: Optional[int] = Field(None, ge=0, le=999, description=(
+        "rule repairs: repairs before it's replaced (0 = replaced at every failure)."))
+    duration: Optional[float] = Field(None, ge=0, description="rule age: how long a planned replacement takes.")
+    cost: Optional[float] = Field(None, ge=0, description=(
+        "rule age: what a planned replacement costs (default: the block's replacement cost)."))
+
+
 class RbdNode(BaseModel):
     id: str = Field(description="Unique node id. The diagram needs exactly one 'input' and one 'output' node.")
     type: Literal["input", "output", "component", "series", "parallel", "knode", "standby", "subsystem"] = Field(
@@ -3848,13 +3874,20 @@ class RbdNode(BaseModel):
     n: Optional[int] = Field(None, description="series/parallel: number of identical units; knode: number REQUIRED to work.")
     k: Optional[int] = Field(None, description=(
         "knode: number of branches feeding the gate. standby: number of units RUNNING (default 1), e.g. k=2 with "
-        "spares=1 for a 2-of-3 duty/standby train; warm spares need k=1 (no exact figures otherwise), and a "
-        "spare's own model works with k up to 2."))
+        "spares=1 for a 2-of-3 duty/standby train. Any k with exponential lives; guide('rbds') for the rest."))
     spares: Optional[int] = Field(None, description="standby: number of spares.")
     cold: Optional[bool] = Field(None, description="standby: true = cold (spares don't age while idle).")
     dormancy: Optional[float] = Field(None, ge=0, le=1, description=(
         "standby: how fast an idle spare ages relative to a running one — 0 cold, 1 hot, "
         "in between warm (e.g. 0.2 for a spare kept warm and pressurised). Overrides `cold`."))
+    startProb: Optional[float] = Field(None, ge=0, le=1, description="standby: chance a spare starts (default 1).")
+    standbyModel: Optional[BlockModel] = Field(None, description="standby: every spare's own model.")
+    runningModels: Optional[list[Optional[BlockModel]]] = Field(None, description=(
+        "standby: running units' own models in order, null = the block's model."))
+    spareModels: Optional[list[Optional[BlockModel]]] = Field(None, description=(
+        "standby: spares' own models in switch-in order, null = standbyModel/model."))
+    simulate: Optional[bool] = Field(None, description=(
+        "standby with no exact reliability: simulate it (Pro) instead of refusing."))
     subsystem_rbd_id: Optional[str] = Field(None, description="subsystem: the saved RBD id to embed.")
     # Repairable diagrams: a block's costs and maintenance (#99, #100, #156, #157).
     instant_repair: Optional[bool] = Field(None, description="Repairable component: repaired in zero time (still "
@@ -3880,6 +3913,9 @@ class RbdNode(BaseModel):
         "at the N-th failure. Such a block has no exact long-run figures: analyse rbd simulates them (and "
         "says why). Not on standby groups, blocks replaced on condition or common-cause members' exact figures. Not "
         "yet with a mixture (two-failure-mode) life: that can't be simulated quickly, so it's refused."))
+    replacement: Optional[Replacement] = Field(None, description=(
+        "Repairable component on a repairable model (model.repairable_model_id or repairable_form): when it's "
+        "replaced with a new one. Required unless the model never wears out; guide('rbds')."))
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description=_CAPACITY_DESCRIPTION)
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Non-repairable component/series/parallel block on a saved covariate (regression) model: covariates "
@@ -3902,13 +3938,18 @@ class MissionPhase(BaseModel):
         "Block ids this phase doesn't need (they still age and can fail, and stay failed for later phases)."))
     standby: Optional[list[str]] = Field(None, description=(
         "Block ids standing by in this phase: not running, so they don't age or fail in it."))
+    guaranteed: Optional[list[str]] = Field(None, description=(
+        "Block ids guaranteed working in this phase: they run and age but can't fail in it."))
+    dormancy: Optional[dict[str, float]] = Field(None, description=(
+        "standby block id -> how fast it ages while idle, 0 (cold, default) to 1 (hot)."))
     votes: Optional[dict[str, int]] = Field(None, description=(
         "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
-    values: Optional[dict[str, Union[float, str]]] = Field(None, description=(
+    values: Optional[dict[str, Union[float, str, dict[str, Any]]]] = Field(None, description=(
         "Use / Environment covariate name -> its value in this phase, set once for every block it feeds "
-        "(analyse rbd_mission lists them)."))
-    block_values: Optional[dict[str, dict[str, Union[float, str]]]] = Field(None, description=(
-        "block id -> {input key: value}: one block's own values in this phase, over values."))
+        "(analyse rbd_mission lists them); or a schedule over the phase, t from the phase's start: "
+        "{expression: '100 if t % 24 < 16 else 40'} or {table: [{t, value}], period?}."))
+    block_values: Optional[dict[str, dict[str, Union[float, str, dict[str, Any]]]]] = Field(None, description=(
+        "block id -> {input key: value or schedule}: one block's own values in this phase, over values."))
 
 
 class NetworkTerminals(BaseModel):
@@ -4218,12 +4259,13 @@ class UpdateNodeOp(_Op):
     repair_one_at_a_time: Optional[bool] = None
     duty: Optional[float] = Field(None, gt=0, le=1)
     repair_quality: Optional[RepairQuality] = Field(None, description="Replaces the block's repair quality.")
+    replacement: Optional[Replacement] = Field(None, description="Replaces the block's replacement rule.")
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description="Replaces the capacity.")
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Replaces the block's covariate schedules (#52; see change rbd_create's node)."))
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
                                  "instant_repair", "repair_one_at_a_time", "repair_quality", "capacity",
-                                 "covariate_schedules", "duty"]]] = Field(
+                                 "covariate_schedules", "duty", "replacement"]]] = Field(
         None, description="Remove these block settings.")
 
 
@@ -5018,13 +5060,27 @@ def analyze_rbd(
 
         state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
                  if current_state else None)
-        result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
-                                            at_times=times, current_state=state,
-                                            target_reliability=target_reliability, evaluate_at=evaluate_at,
-                                            band=({"level": confidence, "b_lives": b_lives,
-                                                   "times": [t for t in times or [] if t > 0][:8] or None}
-                                                  if confidence is not None else None))
+        from backend.services import rbd_standby
+
+        # A standby block set to be simulated (no exact reliability): Pro, like every simulation.
+        entitled = billing_service.premium_compute_allowed(db, user)
+        try:
+            with rbd_standby.simulation("run" if entitled else None):
+                result = rbds_service.analyze_graph(
+                    db, graph, owners, t_max=t_max, conditional_age=conditional_age,
+                    at_times=times, current_state=state,
+                    target_reliability=target_reliability, evaluate_at=evaluate_at,
+                    band=({"level": confidence, "b_lives": b_lives,
+                           "times": [t for t in times or [] if t > 0][:8] or None}
+                          if confidence is not None else None))
+        except rbd_standby.SimulationNeedsPro as exc:
+            _soft_refusal("pro_only")
+            reason = str(exc).split(" It's set to be simulated")[0]
+            return {**head, "kind": "reliability", "available": False, "code": "pro_required",
+                    "message": f"{reason} {rbd_standby.PRO_MESSAGE} Upgrade at {_billing_url()}."}
         out = {**head, "available": True, **_reliability_summary(result, graph, times, include_curves)}
+        if result.get("simulated"):
+            out["simulated"] = result["simulated"]
         produced = None if current_state else _production_answer(db, graph, owners, times[-1] if times else None)
         if produced is not None:
             out["production"] = produced

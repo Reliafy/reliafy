@@ -11,6 +11,7 @@ import { test, expect } from "@playwright/test";
 const SIGNED_IN = [
   // Libraries: making one (reads are public, so only the writes need a sign-in).
   ["POST", "/api/libraries"],
+  ["POST", "/api/rbds/standby-route"], // a standby block's route and words (#363)
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
   // The asset tree in a spreadsheet, both ways (the Explorer's Import from Excel and Export).
   ["GET", "/api/maintenance/hierarchy/export"],
@@ -122,6 +123,7 @@ const SIGNED_IN = [
   // Covariates fixed at a position, the rest set on RBD blocks (covariate_binding.py).
   ["POST", "/api/rbds/binding-inputs"],
   ["POST", "/api/rbds/bound-blocks"],
+  ["POST", "/api/rbds/phases/covariates"], // the covariates a mission phase can set (the builder's Phased mission…)
   // Missions on an RBD and on positions (rbd_missions.py).
   ["GET", "/api/maintenance/position-missions"],
   ["POST", "/api/maintenance/positions/x/missions"],

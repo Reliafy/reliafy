@@ -36,7 +36,10 @@ part.
 Blocks whose model lives only in the user's workspace — a fitted
 proportional-hazards, non-parametric or load-sharing (AFT) model — can't be
 written as a plain document: the export refuses them by name (Download as
-Python writes a placeholder for them instead).
+Python writes a placeholder for them instead). The exception (#372): a
+repairable block on a covariate schedule goes in as RePyability's own
+component — the fitted regression (surpyval's ``to_dict``) and its
+``"covariates"`` schedule — so the document simulates what the app does.
 """
 
 from __future__ import annotations
@@ -147,8 +150,6 @@ class _Exporter:
     def block(self, node: dict, visited: frozenset) -> tuple[dict, Optional[int]]:
         """``(serialised model, k)`` for one block of a non-repairable diagram."""
         from repyability.rbd.repeated_node import RepeatedNode
-        from repyability.rbd.standby_node import StandbyModel
-
         ntype = node.get("type")
         data = node.get("data") or {}
         label = data.get("label") or str(node.get("id"))
@@ -161,30 +162,28 @@ class _Exporter:
             unit = self.dist(data.get("model"), label)
             return _serialise(RepeatedNode(unit, count, ntype)), None
         if ntype == "standby":
-            primary = self.dist(data.get("model"), label)
-            spare = self.dist(data.get("standbyModel") or data.get("model"), f"{label} (spare)")
-            spares = max(int(data.get("spares") or 1), 0)
-            try:
-                dormancy = ra._standby_dormancy(data, label)
-            except ra.AnalysisError as exc:
-                raise _Missing(str(exc)) from None
             from backend.services import rbd_standby
 
             try:
+                units = rbd_standby.build_units(data, label, lambda spec, where: self.dist(spec, where))
+                dormancy = ra._standby_dormancy(data, label)
                 k = rbd_standby.operating(data, label)
                 start = rbd_standby.start_probability(data)
                 if not (k == 1 and dormancy >= 1.0 and start == 1.0):
                     # Cold, warm, or hot with spares that may fail to start, k units
-                    # running (#84), as the analysis builds it.
-                    return _serialise(rbd_standby.nonrepairable_model(
-                        data, label, primary, spare, spares, dormancy, start)), None
+                    # running (#84), as the analysis builds it. One RePyability only
+                    # simulates goes in as it is when the block is set to be simulated
+                    # (the library simulates it there too), else it's refused.
+                    model = rbd_standby.standby_model(data, label, units, dormancy, start)
+                    if model.is_simulated and not data.get("simulate"):
+                        rbd_standby.nonrepairable_model(data, label, units, dormancy, start)
+                    return _serialise(model), None
             except (ra.AnalysisError, TypeError, ValueError) as exc:
                 raise _Missing(str(exc)) from None
             # Hot standby: active parallel redundancy (as Download as Python).
-            same = data.get("standbyModel") in (None, data.get("model"))
-            if same:
-                return _serialise(RepeatedNode(primary, 1 + spares, "parallel")), None
-            members = [("duty", primary)] + [(f"spare{i + 1}", spare) for i in range(spares)]
+            if all(u is units[0] for u in units):
+                return _serialise(RepeatedNode(units[0], len(units), "parallel")), None
+            members = [("duty", units[0])] + [(f"spare{i + 1}", m) for i, m in enumerate(units[1:])]
             return {"kind": "rbd", "rbd": _rbd_dict(
                 "NonRepairableRBD",
                 edges=[e for key, _ in members for e in (["in", key], [key, "out"])],
@@ -288,9 +287,20 @@ class _Exporter:
         from repyability.rbd.serialisation import rbd_to_dict
 
         nodes = []
+        scheduled: set = set()  # saved covariate models on a schedule (#372): their fits go in as they are
         for node in graph.get("nodes") or []:
             data = dict(node.get("data") or {})
             label = data.get("label") or str(node.get("id"))
+            model = data.get("model") or {}
+            if (node.get("type") == "component" and model.get("kind") == "regression"
+                    and data.get("covariate_schedules")):
+                if self.resolve_model is None or not (model.get("modelId") or model.get("model_id")):
+                    self.problems.append(f"“{label}” uses a fitted covariate model that couldn't be read")
+                scheduled.add(model.get("modelId") or model.get("model_id"))
+                if data.get("repair"):
+                    data["repair"] = self.spec(data["repair"])
+                nodes.append({**node, "data": data})
+                continue
             if node.get("type") in ("component", "standby") and data.get("model"):
                 spec = self.spec(data["model"])
                 if spec and spec.get("kind") in _UNSUPPORTED:
@@ -305,7 +315,8 @@ class _Exporter:
         try:
             # As the analysis builds it: the common-cause groups wherever it
             # takes them in (#226).
-            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=None,
+            resolve = (lambda mid: self.resolve_model(mid) if mid in scheduled else None) if scheduled else None
+            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=resolve,
                                                capacity=rbd_capacity.graph_capacities(graph))
         except ra.AnalysisError as exc:
             raise ExportError(f"This diagram can't be written as RePyability JSON yet: {exc}") from None

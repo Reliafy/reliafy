@@ -1703,6 +1703,8 @@ export default function RbdCalculator({
         // the free quick run where it's offered.
         setResult(null);
         setQuickOffer(err.data?.quick || null);
+        // A standby block set to be simulated (#363): the library's plain refusal and what Pro adds.
+        if (err.data?.simulated_block) setCapMessage(err.message);
         setNeedsPro(true);
         setPhase("idle");
         return;
@@ -2187,10 +2189,16 @@ export default function RbdCalculator({
           onApply={(v, schedules) => {
             setCovValues(v);
             // #52: schedules live on their blocks, saved with the diagram.
+            // In a repairable diagram (#372) the simulation reads a scheduled block's other covariates
+            // from the block itself, so their values are saved with it too.
+            const keepValues = (n) => !!graph.repairable && !!schedules?.[n.id];
             const changed = Object.fromEntries(
               covNodes
-                .filter((n) => JSON.stringify(n.schedules || null) !== JSON.stringify(schedules?.[n.id] || null))
-                .map((n) => [n.id, { covariate_schedules: schedules?.[n.id] || null }])
+                .filter((n) => JSON.stringify(n.schedules || null) !== JSON.stringify(schedules?.[n.id] || null) || keepValues(n))
+                .map((n) => [n.id, {
+                  covariate_schedules: schedules?.[n.id] || null,
+                  ...(keepValues(n) ? { covariate_values: v?.[n.id] || null } : {}),
+                }])
             );
             if (onNodeData && Object.keys(changed).length) onNodeData(changed);
             setShowCov(false);

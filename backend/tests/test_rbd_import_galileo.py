@@ -284,8 +284,11 @@ def test_spare_gate_restrictions():
              '"A" lambda=1; "B" lambda=1; "S" lambda=1;')
     with pytest.raises(RbdImportError, match="spare module"):
         load('toplevel "P"; "P" csp "A" "M"; "M" and "B" "C"; "A" lambda=1; "B" lambda=1; "C" lambda=1;')
-    with pytest.raises(RbdImportError, match="different failure distributions"):
-        load('toplevel "P"; "P" csp "A" "S1" "S2"; "A" lambda=1; "S1" lambda=1; "S2" lambda=2;')
+    # Spares that differ (#363): each its own model, in the gate's order.
+    d = load('toplevel "P"; "P" csp "A" "S1" "S2"; "A" lambda=1; "S1" lambda=1; "S2" lambda=2;')
+    node = next(n for n in d.graph["nodes"] if n["type"] == "standby")
+    data = {**node, **(node.get("data") or {})}
+    assert data["spareModels"][0] is None and data["spareModels"][1]["params"][0]["value"] == 2
 
 
 # ---------------------------------------------------------------------------

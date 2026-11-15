@@ -285,6 +285,95 @@ def _period(tree: ast.Expression) -> Optional[float]:
     return periods.pop()
 
 
+#: The longest repeat looked for, the candidates tried and the checks (#372).
+MAX_FOUND_PERIOD = 1e6
+MAX_CANDIDATES = 24
+PERIOD_SAMPLES = 600
+#: Repeats found, by expression text (the check takes a moment).
+_FOUND: dict = {}
+#: Shifts (in periods) a candidate must repeat at, beyond those reaching ten
+#: times the expression's largest time constant.
+PERIOD_SHIFTS = (1, 2, 3, 5, 10, 100, 1000, 10_000, 100_000)
+
+
+def _lcm(a: float, b: float) -> Optional[float]:
+    """The least common multiple of two positive times when their ratio is a
+    simple fraction (720 for 24 and 720, 72 for 24 and 36), else None."""
+    from fractions import Fraction
+
+    ratio = Fraction(a / b).limit_denominator(1000)
+    if ratio == 0 or abs(float(ratio) - a / b) > 1e-9 * (a / b):
+        return None
+    return a * ratio.denominator
+
+
+def _scale_constants(tree: ast.Expression) -> list:
+    """Every positive constant beside a time (divisors, moduli, comparison
+    bounds, and the reciprocal of a multiplier): the scales the expression
+    can change on, for the repeat check's reach."""
+    out = list(_time_constants(tree))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+            for side in (node.left, node.right):
+                if isinstance(side, ast.Constant) and isinstance(side.value, (int, float)) and side.value:
+                    v = abs(float(side.value))
+                    if math.isfinite(v) and v < 1:
+                        out.append(1.0 / v)
+    return [v for v in out if math.isfinite(v) and v > 0]
+
+
+def _common_period(expr: "Expression", tree: ast.Expression) -> Optional[float]:
+    """A repeat ``P`` for an expression not written with one ``t % P``: the
+    common period of several ``t % P`` terms (720 for ``t % 24`` and
+    ``t % 720``) or of steps such as ``floor(t) / 24`` and ``floor(t / 24) /
+    30`` inside a repeating function. Candidates come from the expression's
+    time constants (each, the products and the common multiples of pairs);
+    the shortest that the value repeats on, checked at many shifts out to
+    ten times its largest time scale and beyond, is taken. None when there
+    is none (the path is then laid out step by step)."""
+    consts = sorted({round(c, 12) for c in _time_constants(tree)})
+    if not consts:
+        return None
+    cands = set(consts)
+    for i, a in enumerate(consts):
+        for b in consts[i + 1:]:
+            cands.add(a * b)
+            m = _lcm(a, b)
+            if m:
+                cands.add(m)
+    total = consts[0]
+    for c in consts[1:]:
+        total = _lcm(total, c) if total else None
+        if total is None:
+            break
+    if total:
+        cands.add(total)
+    reach = 10.0 * max(_scale_constants(tree))
+    deadline = time.monotonic() + TIME_LIMIT_S / 2
+    for p in sorted(c for c in cands if 0 < c <= MAX_FOUND_PERIOD)[:MAX_CANDIDATES]:
+        shifts = sorted({*PERIOD_SHIFTS, max(1, int(math.ceil(reach / p)))})
+        step = p / PERIOD_SAMPLES
+        points = [step * (i + 0.5 * ((i * _GOLDEN) % 1.0)) for i in range(PERIOD_SAMPLES)]
+        try:
+            base = [expr(t) for t in points]
+            ok = True
+            for k in shifts:
+                for t, v in zip(points, base):
+                    w = expr(t + k * p)
+                    if not (v == w or abs(v - w) <= 1e-7 * max(1.0, abs(v))):
+                        ok = False
+                        break
+                if not ok or time.monotonic() > deadline:
+                    break
+        except ExpressionError:
+            ok = False
+        if ok and time.monotonic() <= deadline:
+            return float(p)
+        if time.monotonic() > deadline:
+            return None
+    return None
+
+
 def _time_constants(tree: ast.Expression) -> list:
     """Positive constants that set the time scale of a step: divisors,
     moduli and comparison bounds."""
@@ -336,6 +425,12 @@ class Expression:
             operators=dict(_OPERATORS), functions=functions,
             names={"t": 0.0, "pi": math.pi, "e": math.e})
         self(0.0)  # a value at the start, or the reason there is none
+        if self.uses_t and self.period is None:
+            if text not in _FOUND:
+                if len(_FOUND) > 512:
+                    _FOUND.clear()
+                _FOUND[text] = _common_period(self, tree)
+            self.period = _FOUND[text]
 
     def __call__(self, t: float) -> float:
         self._evaluator.names["t"] = float(t)
@@ -393,7 +488,9 @@ def change_points(expr: Expression, t0: float, t1: float) -> tuple[list, list]:
     if len(changes) > MAX_CHANGE_SHARE * len(grid):
         raise ExpressionError(
             f"The value changes too often to follow over 0 to {_fmt(t1)}: more than once every "
-            f"{_fmt(step * 2)}. Use a slower schedule, or a repeating one written with t % period.")
+            f"{_fmt(step * 2)}. Use a slower schedule. If it repeats, write every t as t % P with the one "
+            "repeat P (e.g. floor(t % 720) / 24 and floor((t % 720) / 24) / 30 for a daily and a 30-day "
+            "cycle), so it's followed one cycle at a time.")
     times, out = [float(t0)], [values[0]]
     for i in changes:
         lo, hi, a, b = grid[i], grid[i + 1], values[i], values[i + 1]

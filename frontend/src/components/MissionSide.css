@@ -1,0 +1,23 @@
+/* The Missions tab's details beside the tree (MissionSide.jsx). */
+.msd-where { margin: 2px 0 0; }
+.msd-body section { display: flex; flex-direction: column; gap: 6px; }
+.msd-answer p { margin: 0; }
+.msd-big { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.msd-figure { font-size: var(--fs-24); line-height: var(--lh-24); font-weight: 600; font-variant-numeric: tabular-nums; }
+.msd-figure-sm { font-size: var(--fs-16); line-height: var(--lh-16); font-weight: 600; font-variant-numeric: tabular-nums; }
+.msd-sub { flex-basis: 100%; }
+.msd-line { margin: 0; }
+.msd-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.msd-table th, .msd-table td { padding: 4px 6px; border-bottom: 1px solid var(--border-subtle); text-align: left; }
+.msd-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.msd-table tfoot th, .msd-table tfoot td { border-bottom: 0; font-weight: 500; }
+.msd-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.msd-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 4px 0; border-bottom: 1px solid var(--border-subtle); }
+.msd-list li:last-child { border-bottom: 0; }
+.msd-val { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.msd-form { display: flex; flex-direction: column; gap: 8px; }
+.msd-form > button { align-self: flex-start; }
+.msd-rule { padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); background: var(--bg-subtle); }
+.msd-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.msd-end { padding-top: 8px; border-top: 1px solid var(--border-subtle); }
+.msd-list li > button.link { text-align: left; }

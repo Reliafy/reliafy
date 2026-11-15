@@ -25,7 +25,8 @@ it was added on. Open **Assets → Explorer** (or a product's page) and choose
 the **Missions** tab. The tree stays in the first column; under each position
 are its missions, with:
 
-- **Phases**: how many, and their names.
+- **Phases or setting**: how many phases, and their names (under a phase, a
+  covariate's value or a block's state in it).
 - **Length**: every phase added up, in the RBD's time unit. Each phase's row
   under the mission shows that phase's own length.
 - **Completes**: the chance the mission completes, once worked out.
@@ -57,7 +58,41 @@ position with nothing inside and no model can't have a mission yet: its row says
 why ("needs a life model or positions inside"). Give it a life model on the
 **Modelling** tab first; a condition-and-life model can't be a block, so its row says that instead.
 
-Click a mission's row to open it.
+## The mission tree and its details
+
+Click any row under a position to see its **details** beside the tree (on a
+phone, as a sheet). Double-click it, or press **Enter**, to open the mission
+editor in the table area.
+
+- **A mission**: the chance of completing it, its phases in order with each
+  one's length and its chance of getting through, the RBD it flies (**Open in
+  the RBD builder**), and **Add a phase**, **Rename** and **Delete the
+  mission…**.
+- **A phase**: the chance of getting through it once started, and the mission's
+  chance of still going at its end; its name and duration (with the unit);
+  **Move earlier** and **Move later**; its covariates and node status rules;
+  **Delete the phase…**.
+
+Under each phase are two kinds of rows:
+
+- **Covariates** (a gauge icon): one for each covariate a life model in the
+  mission's RBD takes: a proportional-hazards or other regression model, an
+  accelerated life model, or a covariate model such as an NSWC-11 record. They
+  appear and go by themselves as the RBD's models change; you never type them
+  in. Each shows its value in the phase with its unit. One with no value of its
+  own says **Not set** and what stands in (the RBD's value or the model's
+  default); one that nothing can stand in for says **Needs a value**. Click it
+  and set its value in its details.
+- **Node status rules** (a block-and-switch icon): a block's state in this
+  phase. Choose **Add node status rule…** on the phase (its menu or its
+  details), pick the block and its state: **Standby**, **Guaranteed working**
+  or **Not needed**. A standby block can be warm: **Ages while idle** sets how
+  fast it wears while idle, from 0% (cold) to 100% (as if running). Blocks with
+  no rule are working. Edit or delete a rule in its details or its menu.
+
+These are the very values the mission's RBD keeps: the RBD builder's **Phased
+mission…** shows and edits the same block states and covariate values, so a
+change in one is in the other.
 
 The answer says why it has no bound: a mission is worked out from each block's
 model at its point values. A mission too large to work out exactly is
@@ -84,8 +119,11 @@ the mission's RBD and a column for each phase. Each cell says what that block
 does in that phase:
 
 - **Working** (the default): it runs, ages and can fail.
+- **Guaranteed working**: it runs and ages but can't fail in that phase (one
+  that failed earlier stays failed).
 - **Standby**: it's there but not running, so it neither ages nor fails in that
-  phase. It counts as working if it was still working when the phase began, and
+  phase (a warm standby, given an **Ages while idle** on its rule, wears at
+  that fraction). It counts as working if it was still working when the phase began, and
   its age carries on when it next runs. Switching over is taken as perfect, and
   a standby block's running time after it takes over within the phase isn't
   counted.
@@ -100,21 +138,27 @@ Each mission's phases are rows under it in the tree, in order, each with its
 place (**Phase 2 of 3**) and its own length. A mission's row
 menu (right-click it, or press its **⋯**) starts with **Add a phase**: it adds
 one at the end and opens the mission on it, ready for its name and duration. A
-phase's row menu has **Open…** (the mission, on that phase), **Move earlier**,
-**Move later** and **Delete…**.
+phase's row menu has **Add node status rule…**, **Open in the mission
+editor…** (on that phase), **Move earlier**, **Move later** and **Delete…**.
 
 ## Open a phase
 
 Open a phase (the **▸** beside its number) to set what's different about it.
 
 **Covariates in this phase.** Every use and environment covariate the RBD's
-blocks left open at their positions is listed here, grouped **Use** and
-**Environment**, each with its unit. These come from blocks on covariate models
-(an NSWC-11 record, an accelerated life model or a proportional-hazards model)
-whose design covariates were fixed at the position. Under each covariate you
+blocks take is listed here, grouped **Use** and **Environment**, each with its
+unit. These come from blocks on covariate models (an NSWC-11 record, an
+accelerated life model or a proportional-hazards model) whose design covariates
+were fixed at the position, and from blocks on a saved regression model put
+straight in the RBD. Under each covariate you
 see which blocks it feeds.
 
 - Type a value once for the phase: every block using that covariate takes it.
+- Or choose **Schedule** to have it change during the phase: an expression in
+  t, the time since the phase began (for a pump run hard by day and gently by
+  night, `100 if t % 24 < 16 else 40`), or a table of values from set times.
+  The mission follows every change, and each block carries its wear from one
+  step to the next, exactly as if you had split the phase into shorter phases.
 - **Set its own** gives one block its own value for this phase; the row then
   shows the block's value as its own.
 - A block with no value says **needs a value**. That phase's result waits until
@@ -169,5 +213,6 @@ at one stress counts at the next).
 The same is in the API, the CLI and the Claude connector: `analyse
 rbd_mission` works a mission out (or every mission on an RBD) and lists the
 covariates its phases can set; `change rbd_mission` adds, changes and deletes
-one, with a phase's `standby` and `not_needed` blocks. See also [Model a mission in phases](/guides/phased-missions) for the RBD
+one, with a phase's `standby`, `guaranteed` and `not_needed` blocks (and a
+standby block's `dormancy`). See also [Model a mission in phases](/guides/phased-missions) for the RBD
 builder's own phased mission.
