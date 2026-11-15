@@ -4,7 +4,8 @@ Every position of a class with an item fitted is one unit of a fleet running on
 the class's fitted non-repairable model (:func:`loop.fit_class_model`). Its age is how
 long the item has been in that position: days on the calendar for a model in
 calendar units (the same life the class's life data counts), else the use the
-position's counter in the model's unit has added since the item went in. It
+position's counter in the model's unit (its own, or the nearest above it: the
+same counter its life data counts) has added since the item went in. It
 adds that much each period: the period's days; for a unit of use, its operating
 plan's average over the horizon where the position has (or inherits) one
 (RePyability's duty map, ``Maintenance._usage_map``), else the counter's recent
@@ -126,7 +127,8 @@ def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str, horizon
     per_day, counter, basis} or {reason} when they can't be had. The rate is the operating
     plan's average over the horizon where the position has a plan (or inherits one), else
     the counter's recent rate."""
-    counter = svc._counter_on(m.s, m.org, position_id, unit)
+    # Its own counter, else the one above it (a propeller's flight hours are its air vehicle's).
+    counter = m._use_counter(position_id, unit)
     if counter is None:
         return {"reason": f"no {unit} counter on this position"}
     readings = svc._readings(m.s, m.org, counter, m.tz)

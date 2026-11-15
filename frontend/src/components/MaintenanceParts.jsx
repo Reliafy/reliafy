@@ -5,7 +5,7 @@ import {
   uploadMaintenanceDocument,
 } from "../api.js";
 import {
-  DOCUMENT_KINDS, MAX_DOCUMENT_MB, PRECISIONS, datedText, daysText, daysTitle, documentFileProblem, fileSizeText, lifeOutcomeText,
+  DOCUMENT_KINDS, MAX_DOCUMENT_MB, PRECISIONS, datedText, daysText, daysTitle, useLifeTitle, documentFileProblem, fileSizeText, lifeOutcomeText,
   roughDateInput, roughDateValue, safeHref,
 } from "../maintenanceFields.js";
 import { formatDate } from "../dates.js";
@@ -348,13 +348,14 @@ export const OUTCOME_LABELS = {
 };
 
 // The Maintenance section's own tabs.
-export function LifeTable({ rows, showPosition = false, onFix }) {
+// unit: what the lives are counted in (days, or a counter's unit such as hours).
+export function LifeTable({ rows, showPosition = false, onFix, unit = "days" }) {
   return (
     <div className="maint-scroll"><table className="lib-table">
       <thead>
         <tr>
           {showPosition && <th>Position</th>}
-          <th>Item</th><th>In</th><th>Out</th><th>Days</th><th>Outcome</th><th>Failure mode</th>
+          <th>Item</th><th>In</th><th>Out</th><th>{unit === "days" ? "Days" : `Life (${unit})`}</th><th>Outcome</th><th>Failure mode</th>
           {onFix && <th><span className="sr-only">Fix</span></th>}
         </tr>
       </thead>
@@ -365,7 +366,7 @@ export function LifeTable({ rows, showPosition = false, onFix }) {
             <td>{r.item}</td>
             <td className="lib-date">{fmtDated(r.from, r.from_precision)}</td>
             <td className="lib-date">{fmtDated(r.to, r.to_precision)}</td>
-            <td title={daysTitle(r)}>{daysText(r)}</td>
+            <td title={unit === "days" ? daysTitle(r) : useLifeTitle(r)}>{daysText(r)}</td>
             <td>{lifeOutcomeText(r, fmtDate)}</td>
             <td className="lib-date">{r.failure_mode || "—"}</td>
             {onFix && <td><button className="crumb-link" onClick={() => onFix(r)}>Fix</button></td>}

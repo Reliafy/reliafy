@@ -8,6 +8,14 @@ Needs a server on the same release.
   {age}}`, as `analyse rbd`), so a mission flies from the blocks' ages now instead of from new: each
   aged block starts at its age and keeps it through standby phases, a failed block stays failed, and
   the notes say "As of now". The REST twin and the CLI take it too.
+- **Class lives by use**: `maintenance get.class_life_data` and `reliability.fit_class_model` take
+  `unit`, days (the default) or a counter's unit such as `hours`, for lives counted from the
+  positions' counters (their own, or the nearest above). A failure between two readings is
+  interval censored; lives the readings can't bound are listed in `excluded` with why. The
+  class's model keeps its unit (a refit without `unit` keeps it), and its proposals are for tasks
+  by that use. `get.plan_economics` for such a model costs per unit of use and turns it into a
+  year through each position's operating plan or counter rate (`use_per_year`, `not_costed`);
+  its `unit` now also takes the model's unit of use.
 
 ## 0.12.0
 

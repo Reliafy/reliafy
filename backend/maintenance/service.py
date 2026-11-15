@@ -2307,7 +2307,9 @@ def _document_uploaded(s: GraphStore, org: str, p: dict) -> None:
 
 def _class_model_fitted(s: GraphStore, org: str, p: dict) -> None:
     _class_upsert(s, org, p, {"model": {k: p.get(k) for k in (
-        "model_id", "distribution", "params", "extras", "unit", "fitted_on", "failures", "suspensions")}})
+        "model_id", "distribution", "params", "extras", "unit", "fitted_on", "failures", "suspensions")}
+        # A model by use: the class's failures on record when it was fitted (some may not be countable yet).
+        | ({"failures_seen": p["failures_seen"]} if "failures_seen" in p else {})})
 
 
 def _proposal_made(s: GraphStore, org: str, p: dict) -> None:
@@ -13622,7 +13624,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if found is None:
             raise NotFound(position_class)
         return {**found, "proposals": [p for p in self.proposals("pending")
-                                       if (p.get("class_name") or "").lower() == found["position_class"].lower()]}
+                                       if (p.get("class_name") or "").lower() == found["position_class"].lower()],
+                # What its lives can be counted in: days, or a unit of use its positions' counters count.
+                "life_units": self.life_units(found["position_class"])}
 
     def proposals(self, status: str | None = "pending") -> list[dict]:
         out = []
@@ -13665,20 +13669,60 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         decided = [p for p in self.proposals(None) if p["task"] and p["task"]["id"] == task_id]
         return {"task": self._task_view(task), "history": mine, "proposals": decided}
 
-    def class_life_data(self, position_class: str) -> dict:
+    def class_life_data(self, position_class: str, unit: str | None = None) -> dict:
         """Every fitment at every position of a class, pooled: the data for one life
-        model of that kind of position."""
+        model of that kind of position. Lives in days on the calendar (``unit`` None or
+        days, as always); in a unit of use (hours, km, cycles) they're what each
+        position's counter in that unit went up by while the item was fitted
+        (:meth:`life_data_in_use`), with the lives the readings can't bound listed in
+        ``excluded`` (not counted) and the counters used in ``counters``."""
         wanted = (position_class or "").strip().lower()
-        rows = []
+        use = self._life_unit(unit)
+        rows, excluded, counters = [], [], {}
         for p in self.s.nodes(self.org, "Position"):
             if (p.get("position_class") or "").strip().lower() == wanted and not p.get("retired"):
-                rows += [{**r, "position": p["name"], "position_id": p["id"]} for r in self.life_data(p["id"])]
-        if not rows and not any((p.get("position_class") or "").strip().lower() == wanted
-                                for p in self.s.nodes(self.org, "Position")):
+                here = {"position": p["name"], "position_id": p["id"]}
+                if use is None:
+                    rows += [{**r, **here} for r in self.life_data(p["id"])]
+                    continue
+                got = self.life_data_in_use(p["id"], use)
+                rows += [{**r, **here} for r in got["rows"]]
+                excluded += [{**r, **here} for r in got["excluded"]]
+                if got["counter"]:
+                    counters[got["counter"]["id"]] = got["counter"]
+        if not rows and not excluded and not any((p.get("position_class") or "").strip().lower() == wanted
+                                                 for p in self.s.nodes(self.org, "Position")):
             raise NotFound(position_class)
-        return {"position_class": position_class, "rows": sorted(rows, key=lambda r: r["from"]),
-                "failures": sum(1 for r in rows if r["c"] != 1), "suspensions": sum(1 for r in rows if r["c"] == 1),
-                "uncertain": sum(1 for r in rows if "xl" in r)}
+        out = {"position_class": position_class, "rows": sorted(rows, key=lambda r: r["from"]),
+               "failures": sum(1 for r in rows if r["c"] != 1), "suspensions": sum(1 for r in rows if r["c"] == 1),
+               "uncertain": sum(1 for r in rows if "xl" in r)}
+        if use is None:
+            return out
+        failed_out = sum(1 for r in excluded if r["status"] == "failed")
+        note = (f"Lives in {use}: what each position's {use} counter (its own, or the one above it) went up "
+                "by while the item was fitted. Between readings the counter is known only to lie between "
+                "them, so a failure's life is a range (interval censored) unless readings on the days pin it.")
+        if excluded:
+            note += (f" {len(excluded)} fitment{'s' if len(excluded) != 1 else ''} left out "
+                     f"({failed_out} of them failures): the readings can't bound "
+                     f"{'their lives' if len(excluded) != 1 else 'its life'}; see excluded for why.")
+        return out | {"unit": use, "excluded": sorted(excluded, key=lambda r: r["from"]),
+                      "counters": sorted(counters.values(), key=lambda c: c["name"].lower()), "note": note}
+
+    @staticmethod
+    def _life_unit(unit) -> str | None:
+        """None for lives on the calendar (counted in days), else the unit of use."""
+        if unit is None or str(unit).strip() == "":
+            return None
+        u = _norm_unit(unit)
+        if u == "days":
+            return None
+        if u in CALENDAR_UNITS:
+            raise Invalid("Lives on the calendar are counted in days: give unit days, or a counter's unit "
+                          "(hours, km, cycles) for lives by use.")
+        if len(u) > 40:
+            raise Invalid("A unit of use is a short name, like hours, km or cycles.")
+        return u
 
     # ---- interfaces and redundancy ----------------------------------------------------
 
@@ -15732,7 +15776,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 out.setdefault(match["id"], r)
         return out
 
-    def life_data(self, position_id: str) -> list[dict]:
+    def life_data(self, position_id: str, _spans: dict | None = None) -> list[dict]:
         """One row per fitment at this position: its life in days, and whether it
         ended in a failure (``c`` = 0) or not (``c`` = 1: removed on purpose, or
         still fitted, censored today). Reliafy's censoring convention.
@@ -15752,7 +15796,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
           failure ends the same row, so it's never counted twice (``report``);
         - an inspection that found it failed (fitment.found_failed): it failed between
           the last good check and the finding (``c`` = 2, ``xl`` / ``xr``; ``found_failed``).
-          A report dated before the finding wins: it says when it failed."""
+          A report dated before the finding wins: it says when it failed.
+
+        ``_spans`` (a dict), when given, gets each fitment's dates as day ranges, for its
+        life counted by use (:meth:`life_data_in_use`): {fitment_id: (start (lo, hi),
+        end (lo, hi), failed)}."""
         today = self.today()
         rows = []
         fitments = self._fitments_at(position_id)
@@ -15777,6 +15825,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             days = (date.fromisoformat(end) - date.fromisoformat(f["from"])).days
             c, extra = 0 if failed else 1, {}
             from_p = f.get("from_precision")
+            if _spans is not None:
+                end_span = (date.fromisoformat(lower), date.fromisoformat(end)) if lower is not None \
+                    else date_range(end, end_p)
+                _spans[f["id"]] = (date_range(f["from"], from_p), end_span, failed)
             if lower is not None:
                 s_lo, s_hi = date_range(f["from"], from_p)
                 lo = max(0, (date.fromisoformat(lower) - s_hi).days)
@@ -15814,6 +15866,96 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                                            "work_order_id": found.get("work_order_id")}}
             rows.append(row)
         return sorted(rows, key=lambda r: r["from"])
+
+    # ---- life counted by use (flight hours, km, cycles) --------------------------------
+
+    def _use_counter(self, position_id: str, unit: str) -> dict | None:
+        """The counter that counts a position's use in ``unit``: its own, else the nearest
+        position (or item) above it with one. A propeller runs whenever its air vehicle
+        flies, so its flight hours are the air vehicle's."""
+        for node_id in (position_id, *self._ancestor_ids(position_id)):
+            counter = _counter_on(self.s, self.org, node_id, unit)
+            if counter is not None:
+                return counter
+        return None
+
+    def life_units(self, position_class: str) -> list[str]:
+        """The units a class's lives can be counted in: days, and the unit of every use
+        counter its positions have (their own or one above them)."""
+        wanted = (position_class or "").strip().lower()
+        units: list[str] = []
+        for p in self.s.nodes(self.org, "Position"):
+            if (p.get("position_class") or "").strip().lower() != wanted or p.get("retired"):
+                continue
+            for node_id in (p["id"], *self._ancestor_ids(p["id"])):
+                for mp in self.s.inn(self.org, node_id, "ON"):
+                    if mp["label"] == "MeasurementPoint" and mp.get("kind") == "counter" \
+                            and not mp.get("retired") and not _is_calendar(mp.get("unit")):
+                        u = _norm_unit(mp.get("unit"))
+                        if u and u not in units:
+                            units.append(u)
+        return ["days", *sorted(units)]
+
+    def life_data_in_use(self, position_id: str, unit: str) -> dict:
+        """One row per fitment at this position with its life in ``unit`` of use, from
+        the counter that counts the position's use (:meth:`_use_counter`), never made up:
+        a life is what the counter went up by while the item was fitted.
+
+        The counter's value on a day between two readings isn't known, only that it lay
+        between them. So a failure's life runs from the most it can have been to the
+        least: interval censored (``c`` = 2, ``xl`` / ``xr``, ``x`` the middle) unless
+        readings on the days themselves pin it (``c`` = 0). Anything not failed is
+        censored at the least use it surely had (``c`` = 1). A life the readings can't
+        bound is left out and listed in ``excluded`` with why: no counter, no reading
+        while it was fitted, or a failure with no reading after it (or none before it
+        went in) to bound it from above.
+
+        Returns {"rows", "excluded", "counter" ({id, name, unit, position} or None)}."""
+        spans: dict = {}
+        calendar_rows = self.life_data(position_id, _spans=spans)
+        counter = self._use_counter(position_id, unit)
+        if counter is None:
+            return {"rows": [], "counter": None, "excluded": [
+                {"fitment_id": r["fitment_id"], "item": r["item"], "from": r["from"], "to": r["to"],
+                 "status": r["status"], "reason": f"no {unit} counter on this position or above it"}
+                for r in calendar_rows]}
+        readings = [r for r in _readings(self.s, self.org, counter, self.tz) if r.get("value") is not None]
+        holder = self.s.out(self.org, counter["id"], "ON")
+        about = {"id": counter["id"], "name": counter["name"], "unit": counter.get("unit"),
+                 "position": holder and {"id": holder[0]["id"], "name": holder[0]["name"]}}
+
+        def at_or_before(day: date) -> float | None:
+            found = [r for r in readings if r["on"][:10] <= day.isoformat()]
+            return float(found[-1]["value"]) if found else None
+
+        def at_or_after(day: date) -> float | None:
+            found = [r for r in readings if r["on"][:10] >= day.isoformat()]
+            return float(found[0]["value"]) if found else None
+
+        rows, excluded = [], []
+        for r in calendar_rows:
+            (s_lo, s_hi), (e_lo, e_hi), failed = spans[r["fitment_id"]]
+            start_least, start_most = at_or_before(s_lo), at_or_after(s_hi)
+            end_least, end_most = at_or_before(e_lo), at_or_after(e_hi)
+            least = None if end_least is None or start_most is None else max(0.0, end_least - start_most)
+            most = None if end_most is None or start_least is None else max(0.0, end_most - start_least)
+            base = {k: v for k, v in r.items() if k not in ("x", "c", "xl", "xr")}
+            reason = None
+            if least is None:
+                reason = f"no {unit} reading while it was fitted"
+            elif failed and most is None:
+                reason = (f"failed after the last {unit} reading: a reading after the failure counts it"
+                          if end_most is None else f"no {unit} reading before it went in to count from")
+            if reason:
+                excluded.append({k: base.get(k) for k in ("fitment_id", "item", "from", "to", "status")}
+                                | {"reason": reason})
+                continue
+            if failed and most > least:
+                rows.append(base | {"x": round((least + most) / 2, 2), "c": 2, "xl": round(least, 2),
+                                    "xr": round(most, 2)})
+            else:
+                rows.append(base | {"x": round(least, 2), "c": 0 if failed else 1})
+        return {"rows": rows, "excluded": excluded, "counter": about}
 
 
 _PRODUCT_MARKS = ("design", "design_position_id", "design_gone", "built_from")

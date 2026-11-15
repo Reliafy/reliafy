@@ -80,3 +80,10 @@ test("a life row says how its failure is known: a check that found it failed, or
   assert.equal(lifeOutcomeText({ status: "still fitted" }), "still fitted");
   assert.equal(daysTitle({ x: 4 }), undefined);
 });
+
+test("a life counted by use says what its range means", async () => {
+  const { useLifeTitle } = await import("./maintenanceFields.js");
+  assert.match(useLifeTitle({ x: 136.5, c: 2, xl: 109.2, xr: 163.8 }), /between two counter readings/);
+  assert.match(useLifeTitle({ x: 80, c: 1 }), /surely had/);
+  assert.equal(useLifeTitle({ x: 80, c: 0 }), undefined);
+});

@@ -1246,7 +1246,7 @@ def fit_class_model(body: dict = Body(...), session=Depends(get_session),
 
     try:
         return _run(loop.fit_class_model, m, session, str(body.get("position_class") or ""),
-                    body.get("distribution") or "weibull")
+                    body.get("distribution") or "weibull", body.get("unit") or None)
     except fitting.FitError as err:
         return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {client_message(err)}"})
 
@@ -1529,7 +1529,7 @@ def unlink_position_model(link_id: str, m: Maintenance = Depends(maintenance_wri
 
 
 @router.get("/classes/economics")
-def class_economics(position_class: str, interval: float | None = None, unit: str = "months",
+def class_economics(position_class: str, interval: float | None = None, unit: str | None = None,
                     horizon_years: float = 10, discount_rate: float = 0.07,
                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
     from backend.maintenance import loop
@@ -1645,8 +1645,9 @@ def position_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
 
 
 @router.get("/classes/life-data")
-def class_life_data(position_class: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(m.class_life_data, position_class)
+def class_life_data(position_class: str, unit: str | None = None,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.class_life_data, position_class, unit or None)
 
 
 @router.post("/positions/{position_id}/points")
