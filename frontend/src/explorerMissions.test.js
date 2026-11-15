@@ -388,3 +388,19 @@ test("a phase's schedule is kept, typed as it is and said in words", async () =>
   assert.deepEqual(phases[0].values, { flow: sched });
   assert.equal(covStatus({ value: sched, unit: "%" }).text, "follows 100 if t % 24 < 16 else 40");
 });
+
+test("a standby block's chance of starting rides with its state (A18)", () => {
+  let phase = { name: "Duty", duration: 500 };
+  phase = { ...phase, ...withBlockState(phase, "b", "standby", 0.1, 0.95) };
+  assert.deepEqual(phase.standby, ["b"]);
+  assert.deepEqual(phase.start_probability, { b: 0.95 });
+  assert.equal(ruleText({ state: "standby", dormancy: 0.1, start_probability: 0.95 }), "Standby (warm, ages at 10%; starts 95%)");
+  assert.equal(ruleText({ state: "standby", dormancy: 0, start_probability: 1 }), "Standby (cold)");
+  // Always starting is the default, so not stored; another state drops it.
+  assert.deepEqual(withBlockState(phase, "b", "standby", 0, 1).start_probability, {});
+  assert.deepEqual(withBlockState(phase, "b", "working").start_probability, {});
+  const { phases } = cleanPhases([{ ...editablePhase({ ...phase, models: { a: { distribution_id: "exponential", params: [] } } }) }],
+    { blocks: [{ id: "a" }, { id: "b" }], votes: [] });
+  assert.deepEqual(phases[0].start_probability, { b: 0.95 });
+  assert.equal(phases[0].models.a.distribution_id, "exponential");
+});

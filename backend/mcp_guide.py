@@ -179,14 +179,18 @@ carries on under the load in force then), simulated only (Pro); PO, Cox, AFT wit
 standby and common-cause members are refused with the reason.
 - Missions: change rbd_mission adds named phased missions to a diagram (several over the same blocks, e.g. \
 "Corridor inspection", "Survey grid"); each phase has a duration, a state per block (default working; \
-not_needed, standby (dormancy {id: 0-1} warms it) or guaranteed: runs, can't fail), votes (k-of-n per \
-phase) and values {covariate name: value} for every covariate its blocks' models leave open (bound and \
+not_needed; standby: idle until the phase needs it (a block it backs up fails), then runs, called on in \
+listed order, with dormancy {id: 0-1} to warm it and start_probability {id: 0-1}, the chance it starts; or \
+guaranteed: runs, can't fail), models {block id: {distribution_id, params}} (a life model for the phase, age \
+carried in and out), votes (k-of-n per phase) and values {covariate name: value} for every covariate its blocks' models leave open (bound and \
 saved regression blocks; block_values {block id: {key: value}} for one block); a value can be a schedule over \
 the phase ({expression} with t from the phase's start, or {table, period?}), followed exactly. Blocks age across the whole mission. analyse \
 rbd_mission lists those covariates with the blocks each feeds, then gives the chance of completing it, per \
-phase, and each phase's weakest block; a phase missing a value waits (needs). With current_state \
-({node: {failed: true} | {age}}, as analyse rbd) it flies from now: each aged block starts at its age and keeps \
-it through standby phases, a failed block stays failed, and the notes say "As of now".
+phase, and the blocks driving each phase's failures (drivers, weakest first); a phase missing a value waits \
+(needs). Worked out by RePyability's PhasedMission: exact (free) without standby, or with standby when every \
+block has a constant failure rate; otherwise simulated, seeded (Pro; code pro_required without it). With \
+current_state ({node: {failed: true} | {age}}, as analyse rbd) it flies from now: each aged block starts at \
+its age, a failed block stays failed, and the notes say "As of now".
 - Condition and life block (non-repairable diagrams only, one component block per unit): model = \
 {saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
 value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \
@@ -291,7 +295,9 @@ Analysing RBDs (analyse rbd and the other rbd_ actions).
 - rbd, non-repairable: reliability curve (~21 points; `times` gives exact values in reliability_at), MTTF, \
 B-lives, importance and cut sets; current_state ({node: {failed: true} | {age}}) gives the remaining life from \
 now; target_reliability the design life; confidence intervals from fitted blocks (with b_lives, times). \
-The same current_state flies a phased mission from now: analyse rbd's phased_mission and analyse rbd_mission.
+The same current_state flies a phased mission from now: analyse rbd's phased_mission and analyse rbd_mission. \
+A mission is exact and free unless blocks on standby lack a constant failure rate: then it's simulated, seeded \
+(Pro; phased_mission says code pro_required without it).
 - rbd, repairable, on every plan: exact (or numerical, never simulated) long-run availability, mean up / \
 down time, failure frequency, and in `exact` A(t), the mission availability and the window's expected \
 failures, outages, downtime and cost — from new, or from now with current_state ({node: {down: true, since} | \

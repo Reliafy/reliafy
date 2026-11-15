@@ -344,6 +344,8 @@ export function editablePhase(p = {}) {
     standby: [...(p.standby || [])],
     guaranteed: [...(p.guaranteed || [])],
     dormancy: { ...(p.dormancy || {}) },
+    start_probability: { ...(p.start_probability || {}) },
+    models: Object.fromEntries(Object.entries(p.models || {}).map(([k, v]) => [k, { ...v }])),
     votes: { ...(p.votes || {}) },
     values: { ...(p.values || {}) },
     block_values: Object.fromEntries(Object.entries(p.block_values || {}).map(([k, v]) => [k, { ...v }])),
@@ -437,6 +439,16 @@ export function cleanPhases(rows, { blocks = [], votes = [] } = {}) {
       if (sb.includes(id) && Number.isFinite(x) && x > 0) dorm[id] = Math.min(x, 1);
     }
     if (Object.keys(dorm).length) out.dormancy = dorm;
+    // The chance a standby block starts when called on (0–1; kept below 1, standby blocks only).
+    const starts = {};
+    for (const [id, p] of Object.entries(r.start_probability || {})) {
+      const x = Number(p);
+      if (sb.includes(id) && Number.isFinite(x) && x >= 0 && x < 1) starts[id] = x;
+    }
+    if (Object.keys(starts).length) out.start_probability = starts;
+    // A block's own life model in the phase (set through the API or the connector) rides along.
+    const models = Object.fromEntries(Object.entries(r.models || {}).filter(([id, m]) => ids.has(id) && m));
+    if (Object.keys(models).length) out.models = models;
     const v = {};
     for (const [id, n] of Object.entries(r.votes || {})) {
       if (!voteIds.has(id) || String(n ?? "").trim() === "") continue;
@@ -485,7 +497,7 @@ export const withoutPhase = (rows, i) => rows.filter((_, j) => j !== i);
 // `standby` and `not_needed` lists; one or neither).
 export const BLOCK_STATES = [
   { id: "working", label: "Working", title: "Running and needed: it ages and can fail in this phase" },
-  { id: "standby", label: "Standby", title: "There but not running: idle it doesn't age (cold) or ages at its dormancy (warm), and counts as working if it was working when the phase began" },
+  { id: "standby", label: "Standby", title: "Idle until the phase needs it (a block it backs up fails), then running: idle it doesn't age (cold) or ages at its dormancy (warm), and it may fail to start" },
   { id: "guaranteed", label: "Guaranteed working", title: "Running and ageing, but it can't fail in this phase (one that failed earlier stays failed)" },
   { id: "off", label: "Not needed", title: "The phase works without it; its clock keeps running, so a failure now is found by a later phase that needs it" },
 ];
@@ -499,26 +511,35 @@ export function blockState(phase, id) {
   if ((phase?.not_needed || []).includes(id)) return "off";
   return "working";
 }
-// The phase's lists with block `id` set to `state`: {standby, guaranteed, not_needed, dormancy} (a
-// patch for the phase). `dormancy` (0–1) goes with standby only; another state drops it.
-export function withBlockState(phase, id, state, dormancy = null) {
+// The phase's lists with block `id` set to `state`: {standby, guaranteed, not_needed, dormancy,
+// start_probability} (a patch for the phase). `dormancy` (0–1) and `start` (the chance it starts,
+// 0–1) go with standby only; another state drops them. Left null, a standby block keeps its own.
+export function withBlockState(phase, id, state, dormancy = null, start = null) {
   const standby = (phase?.standby || []).filter((x) => x !== id);
   const guaranteed = (phase?.guaranteed || []).filter((x) => x !== id);
   const notNeeded = (phase?.not_needed || []).filter((x) => x !== id);
   const dorm = { ...(phase?.dormancy || {}) };
+  const starts = { ...(phase?.start_probability || {}) };
   delete dorm[id];
+  delete starts[id];
   if (state === "standby") {
     standby.push(id);
     const f = Number(dormancy ?? phase?.dormancy?.[id] ?? 0);
     if (Number.isFinite(f) && f > 0) dorm[id] = Math.min(f, 1);
+    const p = Number(start ?? phase?.start_probability?.[id] ?? 1);
+    if (Number.isFinite(p) && p >= 0 && p < 1) starts[id] = p;
   } else if (state === "guaranteed") guaranteed.push(id);
   else if (state === "off") notNeeded.push(id);
-  return { standby, guaranteed, not_needed: notNeeded, dormancy: dorm };
+  return { standby, guaranteed, not_needed: notNeeded, dormancy: dorm, start_probability: starts };
 }
-// "Standby (warm, ages at 20%)", "Guaranteed working", "Not needed".
+// "Standby (warm, ages at 20%; starts 95%)", "Standby (cold)", "Guaranteed working", "Not needed".
 export function ruleText(rule) {
   const s = ruleState(rule?.state);
-  if (s === "standby") return Number(rule.dormancy) > 0 ? `Standby (warm, ages at ${fmt(Number(rule.dormancy) * 100)}%)` : "Standby (cold)";
+  if (s === "standby") {
+    const warm = Number(rule.dormancy) > 0 ? `warm, ages at ${fmt(Number(rule.dormancy) * 100)}%` : "cold";
+    const p = Number(rule.start_probability ?? 1);
+    return `Standby (${warm}${Number.isFinite(p) && p < 1 ? `; starts ${fmt(p * 100)}%` : ""})`;
+  }
   return BLOCK_STATES.find((x) => x.id === s)?.label || "Working";
 }
 // The blocks shown faded in a phase's drawing: those it doesn't need and those standing by.

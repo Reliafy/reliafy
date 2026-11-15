@@ -3,8 +3,8 @@
 A new mission on a position gets an RBD of its own, built from what's inside the position and
 marked ``mission_of`` that position (never linked as one of its models). Missions stored on a
 position's RBD, as before, read and work out exactly as they did. In a phase, a block on standby
-neither ages nor fails (its clock stops) and counts as working if it was working when the phase
-began; a block not needed lets the phase work without it while its clock keeps running. The
+is idle until the phase needs it, then runs (RePyability's true standby, A18); a block not needed
+lets the phase work without it while its clock keeps running. The
 figures are checked against hand-worked exponential cases."""
 
 import math
@@ -83,24 +83,42 @@ def test_every_block_working_is_the_usual_phased_mission():
     assert rbd_phases.STANDBY_NOTE not in got["notes"] and rbd_phases.NOT_NEEDED_NOTE not in got["notes"]
 
 
-def test_standby_in_parallel_stops_the_spare_s_clock_and_raises_the_mission():
-    # B stands by through phase 1: it can't fail there, so phase 1 always succeeds; in phase 2 it
-    # has run 20 hours, not 30.
+def test_standby_in_parallel_is_true_standby_called_on_when_needed():
+    # A18: B stands by through phase 1, idle until A fails, then runs; in phase 2 both run. By hand:
+    # A survives phase 1 and the pair runs 20 h, or A fails at s < 10 and B runs from s to 30 h.
     working = _reliability(_parallel(), _two())["reliability"]
     got = _reliability(_parallel(), _two({"standby": ["b"]}))
-    assert got["reliability"] == pytest.approx(1 - (1 - e(-RATE * 30)) * (1 - e(-RATE * 20)), rel=1e-9)
-    assert got["reliability"] > working
-    assert got["phases"][0]["failure_probability"] == pytest.approx(0, abs=1e-12)
+    hand = e(-RATE * 10) * (1 - (1 - e(-RATE * 20)) ** 2) + RATE * 10 * e(-RATE * 30)
+    assert got["method"] == "exact"  # constant rates: RePyability's Markov chain
+    assert got["reliability"] == pytest.approx(hand, rel=1e-9)
+    # Lower than the old stand-in (B's clock stopped and it couldn't fail), higher than both running.
+    stand_in = 1 - (1 - e(-RATE * 30)) * (1 - e(-RATE * 20))
+    assert working < got["reliability"] < stand_in
     assert got["phases"][0]["standby"] == ["B"]
     assert rbd_phases.STANDBY_NOTE in got["notes"]
 
 
-def test_standby_in_series_only_ages_the_block_while_it_runs():
+def test_a_spare_that_may_not_start():
+    # Cold standby with a 90% start chance: B fails to start one time in ten when A fails.
+    got = _reliability(_parallel(), _two({"standby": ["b"], "start_probability": {"b": 0.9}}))
+    hand = e(-RATE * 10) * (1 - (1 - e(-RATE * 20)) ** 2) + 0.9 * RATE * 10 * e(-RATE * 30)
+    assert got["reliability"] == pytest.approx(hand, rel=1e-9)
+    # Kept for standby blocks only, and only below 1.
+    [p] = rbd_phases.parse_phases([{"name": "x", "duration": 1, "standby": ["b"],
+                                    "start_probability": {"b": 0.9, "a": 0.5, "c": 1}}])
+    assert p["start_probability"] == {"b": 0.9}
+    with pytest.raises(rbd_phases.PhaseError, match="from 0 to 1"):
+        rbd_phases.parse_phases([{"name": "x", "duration": 1, "standby": ["b"], "start_probability": {"b": 2}}])
+
+
+def test_standby_in_series_is_needed_at_once_so_it_runs():
+    # A spare with nothing to back it up is needed from the phase's start: it runs (the old
+    # stand-in stopped its clock, which was optimistic).
     working = _reliability(_series(), _two())["reliability"]
     assert working == pytest.approx(e(-2 * RATE * 30), rel=1e-9)
     got = _reliability(_series(), _two({"standby": ["b"]}))["reliability"]
-    assert got == pytest.approx(e(-RATE * 30) * e(-RATE * 20), rel=1e-9)
-    assert got > working
+    assert got == pytest.approx(working, rel=1e-9)
+    assert got < e(-RATE * 30) * e(-RATE * 20)
 
 
 def test_not_needed_lets_the_phase_work_without_the_block_while_it_still_ages():
@@ -116,25 +134,41 @@ def test_not_needed_lets_the_phase_work_without_the_block_while_it_still_ages():
     assert later == pytest.approx(e(-2 * RATE * 30), rel=1e-9)
 
 
-def test_a_weibull_block_on_standby_in_the_middle_carries_its_age_on():
-    g = _diagram([("input", "a"), ("a", "output")], {"a": _weibull(100, 2)})
-    phases = [{"name": "Out", "duration": 20}, {"name": "Wait", "duration": 50, "standby": ["a"]},
+def test_a_weibull_standby_mission_is_simulated_for_pro_only():
+    from backend.services import rbd_standby
+
+    g = _diagram([("input", "a"), ("input", "b"), ("a", "output"), ("b", "output")],
+                 {"a": _weibull(100, 2), "b": _weibull(100, 2)})
+    phases = [{"name": "Out", "duration": 20}, {"name": "Wait", "duration": 50, "standby": ["b"]},
               {"name": "Back", "duration": 30}]
-    got = _reliability(g, phases)
-    assert got["reliability"] == pytest.approx(e(-((50 / 100) ** 2)), rel=1e-9)
-    assert got["phases"][1]["failure_probability"] == pytest.approx(0, abs=1e-12)
+    # Free: refused, saying why and what Pro adds.
+    with pytest.raises(rbd_standby.SimulationNeedsPro, match="only be simulated"):
+        _reliability(g, phases)
+    # Without standby it stays exact and free.
+    assert _reliability(g, [{k: v for k, v in p.items() if k != "standby"} for p in phases])["method"] == "exact"
+    with rbd_standby.simulation("run"):
+        got = rbd_phases.analyze_phases(g, phases=phases, weakest=True)
+        again = rbd_phases.analyze_phases(g, phases=phases, weakest=True)
+    assert got["method"] == "simulated" and got["interval"]["n_samples"] == rbd_phases.SIM_MISSIONS
+    assert got["reliability"] == again["reliability"]  # seeded
+    assert "simulated" in got["method_reason"] and got["curve"]["lower"]
+    # RePyability called directly, same seed: the same numbers.
+    mission, *_ = rbd_phases.build_mission(g, phases=phases)
+    direct = mission.summary(method="simulate", mc_samples=rbd_phases.SIM_MISSIONS, seed=rbd_phases.SIM_SEED,
+                             confidence=rbd_phases.SIM_CONFIDENCE)
+    assert got["reliability"] == pytest.approx(direct.reliability, abs=1e-15)
+    # Lower than the old stand-in (B paused in Wait, both run in Out and Back).
+    from surpyval import Weibull
+
+    w = Weibull.from_params([100, 2])
+    stand_in = 1 - float(w.ff(100.0)) * float(w.ff(50.0))
+    assert got["reliability"] < stand_in
 
 
-def test_the_paused_life_draws_match_its_reliability():
-    from surpyval import Exponential
-
-    life = rbd_phases._Paused(Exponential.from_params([RATE]), [(10, 30)])
-    assert life.sf(np.array([5, 10, 20, 30, 50])) == pytest.approx(
-        [e(-RATE * 5), e(-RATE * 10), e(-RATE * 10), e(-RATE * 10), e(-RATE * 30)])
-    np.random.seed(3)
-    draws = life.random(200_000)
-    assert not ((draws > 10) & (draws < 30)).any()  # never fails while standing by
-    assert (draws > 50).mean() == pytest.approx(e(-RATE * 30), abs=0.005)
+def test_an_aged_exponential_block_keeps_the_mission_exact():
+    got = _reliability(_parallel(), _two({"standby": ["b"]}))
+    aged = rbd_phases.analyze_phases(_parallel(), phases=_two({"standby": ["b"]}), current_state={"a": {"age": 500}})
+    assert aged["method"] == "exact" and aged["reliability"] == pytest.approx(got["reliability"], rel=1e-12)
 
 
 def test_a_block_whose_values_change_by_phase_can_t_also_stand_by():
@@ -150,14 +184,38 @@ def test_a_block_whose_values_change_by_phase_can_t_also_stand_by():
             rm.combine = orig
 
 
-def test_standby_isn_t_exported_to_python_without_saying_so():
+def test_python_export_reproduces_a_standby_mission(tmp_path):
+    # Download as Python builds the same PhasedMission.from_diagram: exact (constant rates) gives
+    # the same figures to the last digit.
     from backend.services import rbd_export
+    from backend.tests.test_rbd_export import _run
 
-    g = {**_parallel(), "phases": _two({"standby": ["b"]})}
+    g = {**_parallel(), "phases": _two({"standby": ["b"], "dormancy": {"b": 0.5}, "start_probability": {"b": 0.9}},
+                                       {"models": {"a": _weibull(200, 1)}})}
     code = rbd_export.to_python(g, "Standby")
-    assert "stand by in" in code and "report_mission" not in code
-    plain = rbd_export.to_python({**_parallel(), "phases": _two()}, "Plain")
-    assert "report_mission" in plain
+    assert "PhasedMission.from_diagram" in code and 'BlockSetting(state="standby"' in code
+    assert "start_probability=0.9" in code and "dormancy_factor=0.5" in code
+    results, _ = _run(code, tmp_path)
+    app = rbd_phases.analyze_phases(g)
+    assert results["phased_mission"]["method"] == "exact"
+    assert results["phased_mission"]["reliability"] == pytest.approx(app["reliability"], abs=1e-12)
+
+
+def test_python_export_reproduces_a_simulated_standby_mission(tmp_path):
+    # Simulated (Weibull spare): the same seed and number of missions give the same numbers.
+    from backend.services import rbd_export, rbd_standby
+    from backend.tests.test_rbd_export import _run
+
+    g = {**_diagram([("input", "a"), ("input", "b"), ("a", "output"), ("b", "output")],
+                    {"a": _weibull(100, 2), "b": _weibull(100, 2)}), "phases": _two({"standby": ["b"]})}
+    results, _ = _run(rbd_export.to_python(g, "Weibull standby"), tmp_path)
+    with rbd_standby.simulation("run"):
+        app = rbd_phases.analyze_phases(g)
+    assert app["method"] == "simulated"
+    assert results["phased_mission"]["method"].startswith("simulated")
+    assert results["phased_mission"]["reliability"] == pytest.approx(app["reliability"], abs=1e-12)
+    assert list(results["phased_mission"]["phase_failure_probabilities"].values()) == pytest.approx(
+        [p["failure_probability"] for p in app["phases"]], abs=1e-12)
 
 
 # ---- one RBD per mission ---------------------------------------------------------------------
@@ -392,9 +450,9 @@ def test_rest_add_set_states_calculate_and_delete_a_mission_with_its_own_rbd(cli
     working = _ok(client.post(f"/api/rbds/{rid}/missions/mission/calculate",
                               json={"phases": [{"name": "Day", "duration": 500}, {"name": "Night", "duration": 500}]}))
     assert got["phases"][0]["standby"] == ["Pump B"] and any("Standby:" in n for n in got["notes"])
-    # The built diagram puts the pumps in series (no redundancy drawn), so each standing by half
-    # the time ages each half as much: the mission is likelier to complete.
-    assert got["reliability"] > working["reliability"]
+    # The built diagram puts the pumps in series (no redundancy drawn), so a pump on standby is
+    # needed at once and runs: the same as both working (A18; the old stand-in stopped its clock).
+    assert got["reliability"] == pytest.approx(working["reliability"], abs=0.02)
 
     listed = _ok(client.get("/api/maintenance/position-missions"))
     links = listed["links"]

@@ -274,9 +274,10 @@ function PhaseDetails({ r, m, rbd, busy, viewOnly, savePhases, atPhase, onAction
         ) : <p className="rim-tquiet">None: every block is working in this phase.</p>}
         {adding ? (
           <RuleForm blocks={free} busy={busy} onCancel={() => setAdding(false)}
-                    onSave={async ({ block, state, dormancy }) => {
+                    onSave={async ({ block, state, dormancy, start }) => {
                       const label = free.find((b) => b.id === block)?.label || block;
-                      const ok = await savePhases(atPhase(index, (p) => withBlockState(p, block, state, dormancy)), `${label}: ${ruleText({ state, dormancy })} in ${r.ref.phase.name}.`);
+                      const ok = await savePhases(atPhase(index, (p) => withBlockState(p, block, state, dormancy, start)),
+                        `${label}: ${ruleText({ state, dormancy, start_probability: start })} in ${r.ref.phase.name}.`);
                       if (ok) setAdding(false);
                     }} />
         ) : (
@@ -299,20 +300,25 @@ function PhaseDetails({ r, m, rbd, busy, viewOnly, savePhases, atPhase, onAction
 }
 
 // A node status rule's form: the block (new rules only), its state in the phase and, on standby, how
-// fast it ages while idle (0% cold … 100% hot, RePyability's dormancy factor).
+// fast it ages while idle (0% cold … 100% hot, RePyability's dormancy factor) and the chance it
+// starts when called on (RePyability's start_probability, 100% unless set).
 const RULE_STATES = BLOCK_STATES.filter((s) => s.id !== "working");
 export function RuleForm({ blocks = null, initial = null, busy = false, onSave, onCancel, onRemove = null }) {
   const [block, setBlock] = useState(initial?.block || blocks?.[0]?.id || "");
   const [state, setState] = useState(ruleState(initial?.state) || "standby");
   const [dorm, setDorm] = useState(initial?.dormancy ? String(Number(initial.dormancy) * 100) : "0");
+  const [starts, setStarts] = useState(initial?.start_probability != null ? String(Number(initial.start_probability) * 100) : "100");
   const d = Number(dorm);
   const dormOk = state !== "standby" || (String(dorm).trim() !== "" && Number.isFinite(d) && d >= 0 && d <= 100);
+  const p = Number(starts);
+  const startOk = state !== "standby" || (String(starts).trim() !== "" && Number.isFinite(p) && p >= 0 && p <= 100);
   const help = BLOCK_STATES.find((s) => s.id === state)?.title;
   return (
     <form className="msd-form msd-rule" onSubmit={(e) => {
       e.preventDefault();
-      if (!block || !dormOk) return;
-      onSave({ block, state, dormancy: state === "standby" ? d / 100 : null });
+      if (!block || !dormOk || !startOk) return;
+      const standby = state === "standby";
+      onSave({ block, state, dormancy: standby ? d / 100 : null, start: standby ? p / 100 : null });
     }}>
       {blocks && (
         <Field label="Block">
@@ -332,8 +338,14 @@ export function RuleForm({ blocks = null, initial = null, busy = false, onSave, 
           <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={dorm} disabled={busy} onChange={(e) => setDorm(e.target.value)} />
         </Field>
       )}
+      {state === "standby" && (
+        <Field label="Chance it starts (%)" help="How often it starts when called on. One that fails to start has failed for the rest of the mission."
+               error={startOk ? null : "A percentage from 0 to 100."}>
+          <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={starts} disabled={busy} onChange={(e) => setStarts(e.target.value)} />
+        </Field>
+      )}
       <div className="msd-actions">
-        <button type="submit" disabled={busy || !block || !dormOk}>{initial ? "Save" : "Add the rule"}</button>
+        <button type="submit" disabled={busy || !block || !dormOk || !startOk}>{initial ? "Save" : "Add the rule"}</button>
         {onCancel && <button type="button" className="secondary" onClick={onCancel} disabled={busy}>Cancel</button>}
         {onRemove && <button type="button" className="secondary danger" onClick={onRemove} disabled={busy}>Delete…</button>}
       </div>
@@ -351,8 +363,8 @@ function RuleDetails({ r, busy, viewOnly, savePhases, atPhase, onAction }) {
       <p className="rim-tquiet">Blocks without a rule are working (running, ageing, able to fail). This one is set for this phase only; the block keeps its age across the whole mission.</p>
       {viewOnly ? null : (
         <RuleForm key={r.key} initial={rule} busy={busy}
-                  onSave={({ state, dormancy }) => savePhases(atPhase(phase.index, (p) => withBlockState(p, rule.block, state, dormancy)),
-                    `${rule.label}: ${ruleText({ state, dormancy })} in ${phase.name}.`)}
+                  onSave={({ state, dormancy, start }) => savePhases(atPhase(phase.index, (p) => withBlockState(p, rule.block, state, dormancy, start)),
+                    `${rule.label}: ${ruleText({ state, dormancy, start_probability: start })} in ${phase.name}.`)}
                   onRemove={() => onAction(r, "mission-rule-delete")} />
       )}
     </>

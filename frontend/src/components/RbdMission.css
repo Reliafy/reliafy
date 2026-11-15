@@ -64,3 +64,9 @@
 .rbd-phase-cov { grid-column: 1 / -1; flex-wrap: wrap; align-items: flex-start; }
 .rbd-phase-cov > span { flex: 1 1 8rem; padding-top: 4px; }
 .rbd-phase-cov .phase-cov-value > input, .rbd-phase-cov .phase-cov-value > select { width: 9.5rem; }
+
+/* MissionCurve.jsx: the whole mission as one curve (Missions tab and the RBD's Calculator). */
+.mission-curve { margin: var(--space-3) 0 0; min-width: 0; }
+.mission-curve figcaption { margin-top: var(--space-1); font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); }
+/* MissionCurve.jsx's MissionProNote: a mission only a simulation can work out, without Pro. */
+.mission-pro p { margin: 0 0 var(--space-2); }
