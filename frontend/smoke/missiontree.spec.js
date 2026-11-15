@@ -84,10 +84,22 @@ test("mission tree: details for missions and phases; covariate and node status r
   await expect(side.getByLabel("State in this phase")).toHaveValue("guaranteed");
   await shot(page, "rule-panel-1440");
 
+  // A covariate that changes within the phase (#372): the temperature follows a day/night schedule.
+  const temp = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: /^Bearing operating temperature$/ }) }).last();
+  await temp.locator(".tp-nm").click();
+  await side.getByRole("radio", { name: "Schedule" }).or(side.getByRole("button", { name: "Schedule", exact: true })).first().click();
+  const expr = side.getByLabel(/as an expression in t/);
+  await expr.fill("60 if t % 24 < 16 else 30");
+  await expect(side).toContainText("from the start of the phase");
+  await side.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(temp).toContainText("follows 60 if t % 24 < 16 else 30", { timeout: 20_000 });
+  await shot(page, "covariate-schedule-1440");
+
   // One store: the RBD's own phases hold both.
   const saved = await (await request.get(`/api/rbds/${rbdId}`)).json();
   const survey = saved.graph.phases[1];
   expect(survey.values["Operating speed"]).toBe(1800);
+  expect(survey.values["Bearing operating temperature"]).toEqual({ expression: "60 if t % 24 < 16 else 30" });
   expect(survey.guaranteed?.length).toBe(1);
 
   // The builder's Phased mission… shows the same values.
@@ -101,6 +113,8 @@ test("mission tree: details for missions and phases; covariate and node status r
   await modal.locator(".rbd-phase-needs summary").nth(1).click();
   await expect(modal.getByRole("combobox", { name: `Rear bearing ${tag} in Survey` })).toHaveValue("guaranteed");
   await expect(modal.locator(".rbd-phase").nth(1).getByLabel(/^Operating speed/)).toHaveValue("1800", { timeout: 15_000 });
+  await expect(modal.locator(".rbd-phase").nth(1).getByLabel(/^Bearing operating temperature.* as an expression in t/))
+    .toHaveValue("60 if t % 24 < 16 else 30");
   await shot(page, "builder-phases-1440");
   await page.keyboard.press("Escape");
 
@@ -124,6 +138,11 @@ test("mission tree: details for missions and phases; covariate and node status r
   await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: /^Operating speed$/ }) }).last().locator(".tp-nm").click();
   await expect(side).toContainText("Covariate");
   await shot(page, "covariate-panel-400");
+  await side.getByRole("button", { name: "Close the details" }).click();
+  await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: /^Bearing operating temperature$/ }) }).last().locator(".tp-nm").click();
+  await expect(side.getByLabel(/as an expression in t/)).toHaveValue("60 if t % 24 < 16 else 30");
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await shot(page, "covariate-schedule-400");
   await side.getByRole("button", { name: "Close the details" }).click();
   await rule.locator(".tp-nm").click();
   await expect(side).toContainText("Node status rule");

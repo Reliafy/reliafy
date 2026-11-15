@@ -2688,6 +2688,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     gate_ids: set = set()  # synthetic voting gates — excluded from downtime
     working_nodes: set = set()
     broken_nodes: set = set()
+    schedule_notes: list = []
 
     for node in nodes:
         nid = node.get("id")
@@ -2726,10 +2727,11 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             # The override fixes its state; the stand-in is never consulted.
             components[nid] = _always_up()
             continue
-        if data.get("covariate_schedules"):  # #52: a schedule can't follow repairs
+        scheduled = None
+        if data.get("covariate_schedules"):  # #52/#372: the load follows the plant's clock
             from backend.services import rbd_tvc
 
-            rbd_tvc.refuse_repairable(data, label)
+            scheduled = rbd_tvc.repairable_schedule(data, ntype, label, resolve_model)
         if any(is_joint(m) for m in _unit_models(data)):
             raise AnalysisError(JOINT_REPAIRABLE.format(where=label))
         from backend.services import rbd_repairable_blocks
@@ -2743,6 +2745,19 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             if problems:
                 raise AnalysisError(problems[0])
             components[nid] = rbd_maintenance.repairable_component(data, label, process, resolve_model)
+            continue
+        if scheduled is not None:
+            # RePyability's repairable "covariates" (#372): the live regression model is the life, run
+            # under the schedule on the diagram's clock; repairs reset age, never the schedule.
+            live, schedule, notes = scheduled
+            spec = (rbd_maintenance.repairable_component(data, label, live, resolve_model)
+                    if rbd_maintenance.has_extras(data) else None)
+            if not isinstance(spec, dict):
+                spec = {"reliability": live, "repairability": "instant" if data.get("instant_repair")
+                        else _repair_distribution(data, label, resolve_model)}
+            spec["covariates"] = schedule
+            components[nid] = spec
+            schedule_notes.extend(notes)
             continue
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
         if ntype == "standby":
@@ -2788,6 +2803,8 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             ) from exc
 
     rbd = build(groups if with_ccf else None)
+    if any(isinstance(c, dict) and "covariates" in c for c in components.values()):
+        _SCHEDULED[rbd] = list(dict.fromkeys(schedule_notes))
     if groups:
         from backend.services import rbd_ccf
 
@@ -2809,6 +2826,26 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
                             "mode": "long_run" if with_ccf == "long_run" else "all",
                             "frequency_reason": _with_labels(frequency, labels) if frequency else None}
     return rbd, labels, gate_ids, working_nodes, broken_nodes
+
+
+#: The built RBDs with a block on a covariate schedule (#372), and the
+#: schedules' warnings (values held at the fitted range, a path held after
+#: its layout); weakly keyed, so it goes with the RBD.
+_SCHEDULED: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def covariate_schedule_summary(rbd) -> Optional[dict]:
+    """``{"note", "warnings"}`` for an RBD with a block on a covariate
+    schedule (the plain words every repairable result carries), else None."""
+    try:
+        notes = _SCHEDULED.get(rbd)
+    except TypeError:
+        return None
+    if notes is None:
+        return None
+    from backend.services import rbd_tvc
+
+    return {"note": rbd_tvc.REPAIRABLE_NOTE, "warnings": list(notes)}
 
 
 #: Whether each built RBD has its diagram's common-cause groups in it (see
@@ -2892,6 +2929,9 @@ def _component_message(text: str, labels: dict) -> str:
     """RePyability's message about a component, naming blocks by label."""
     for nid, label in labels.items():
         text = text.replace(f"'{nid}'", f"“{label}”")
+    from backend.services import rbd_tvc  # a block on a covariate schedule (#372): the library's words, no code
+
+    text = rbd_tvc.plain_refusal(text)
     # A common-cause group whose members differ, in plain words.
     same = _CCF_NOT_IDENTICAL.match(text)
     if same:
@@ -3658,6 +3698,7 @@ def analyze_availability(
         "curve": curve,
         **extras,
         **({"common_cause": common_cause} if common_cause is not None else {}),
+        **({"covariate_schedule": sched} if (sched := covariate_schedule_summary(rbd)) is not None else {}),
         # Whether the figures above include a simulation (``simulate=False``:
         # the exact long-run figures only), and the state it started from.
         "has_simulation": res is not None,

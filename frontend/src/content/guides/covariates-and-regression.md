@@ -218,8 +218,12 @@ gives the B-lives and the mean life along the Calculator's schedule.
 
 Save the model and it can drive a block in a
 [reliability block diagram](/guides/build-an-rbd). The block takes the covariate
-values to run at. In a non-repairable diagram it can take a schedule of them
-over the mission instead.
+values to run at, or a schedule of them over time instead. In a non-repairable
+diagram the schedule is worked out exactly. In a repairable diagram it follows
+the plant's clock: a repaired or replaced unit carries on under the load in
+force at that time. Each unit's life then depends on when it starts, so those
+figures are simulated (Pro). A mission phase can give a covariate a schedule of
+its own too (see [model a mission in phases](/guides/phased-missions)).
 
 ## Run it yourself in Python
 

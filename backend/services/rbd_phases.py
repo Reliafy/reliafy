@@ -184,9 +184,18 @@ MAX_VALUES = 200
 
 
 def _value(v, what: str):
-    """One covariate value: a finite number, or a choice's code (text). None for blank."""
+    """One covariate value: a finite number, a choice's code (text), or (#372) a schedule over the
+    phase ({"expression": …} in the phase's own time t, or {"table": [{t, value}], "period"?}).
+    None for blank."""
     if v is None or (isinstance(v, str) and not v.strip()):
         return None
+    if isinstance(v, dict):
+        from backend.services import rbd_tvc
+
+        try:
+            return rbd_tvc.phase_schedule(v, what.rsplit(": ", 1)[-1])
+        except rbd_tvc.ScheduleError as exc:
+            raise PhaseError(f"{what}: {str(exc).split(': ', 1)[-1]}") from None
     if isinstance(v, bool) or not isinstance(v, (int, float, str)):
         raise PhaseError(f"{what} must be a number (or a choice).")
     if isinstance(v, str):
@@ -1001,6 +1010,33 @@ def report_mission():
 '''
 
 
+def _covariate_comment(phases: list[dict]) -> str:
+    """The phases' covariate values in words, for the script (#372): a value set once, or a
+    schedule over the phase (t from its start). The blocks they feed are covariate models, which
+    the script leaves as placeholders, so these say what Reliafy used."""
+    from backend.services import rbd_tvc
+
+    rows = []
+    for p in phases:
+        parts = [f"{k} = {rbd_tvc.describe(v) if rbd_tvc.is_schedule(v) else v}"
+                 for k, v in (p.get("values") or {}).items()]
+        for nid, vals in (p.get("block_values") or {}).items():
+            parts += [f"{k} on block {nid} = {rbd_tvc.describe(v) if rbd_tvc.is_schedule(v) else v}"
+                      for k, v in vals.items()]
+        if parts:
+            rows.append(f"#   {p['name']}: " + "; ".join(parts))
+    if not rows:
+        return ""
+    import textwrap as tw
+
+    head = ("# Covariates set per phase in Reliafy (a schedule's t runs from the start of its phase; the "
+            "blocks they feed follow them on the mission's clock, their age carried on):")
+    out = tw.wrap(head, 79, subsequent_indent="# ")
+    for r in rows:
+        out += tw.wrap(r, 79, subsequent_indent="#     ")
+    return "\n".join(out)
+
+
 def python_section(body: str, graph: dict, script) -> str:
     """Add the phased mission to a non-repairable "Download as Python" body:
     the phases, a diagram per phase and ``report_mission()``, run after the
@@ -1048,6 +1084,9 @@ def python_section(body: str, graph: dict, script) -> str:
         io += "        output_node=\"output\",\n"
     code = (_MISSION_CODE.replace("__PHASES__", "\n".join(lines)).replace("__SIMS__", f"{SIM_MISSIONS:_}")
             .replace("__SEED__", str(SIM_SEED)).replace("__IO__", io)).strip("\n")
+    covs = _covariate_comment(phases)
+    if covs:
+        code = covs + "\n" + code
     script.imports.update({"PhasedMission", "PerfectReliability", "PerfectUnreliability"})
     return (f"{head}\n\n\n{code}\n\n\nif __name__ == \"__main__\":\n    results = main()\n"
             "    results[\"phased_mission\"] = report_mission()\n    save_results(results)\n")

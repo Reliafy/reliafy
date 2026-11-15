@@ -27,10 +27,22 @@ time asked for and extended when a later time is asked.
 The block is then RePyability's ``RegressionNode`` with that schedule:
 its reliability is the model's ``sf_tvc`` along the path, so the system
 reliability, importance, MTTF, B-lives, fault tree, conditional and "as of
-now" figures all take it unchanged. Repairable diagrams refuse schedules (a
-repaired item would restart its path from its own time zero, not the
-diagram's clock), and so do standby spares (a spare's path would start when
-it's switched in).
+now" figures all take it unchanged.
+
+In a **repairable** diagram the schedule belongs to the plant, not the unit
+(RePyability's repairable ``"covariates"``): the load follows the diagram's
+clock, and a repaired or replaced unit carries on under the load in force at
+that time (a repair resets its age as the repair says; the schedule keeps
+running). Such a block has no reliability of its own, so only the
+simulations take it: its figures are simulated (Pro), and RePyability's own
+refusals (an accelerated-failure-time model with imperfect repair, a
+proportional-odds or Cox model, a duty, a common-cause group) are shown in
+its words. Standby spares refuse schedules in both kinds of diagram (a
+spare's path would start when it's switched in).
+
+A **mission phase** can give a covariate a schedule too, over the phase's
+own time (:func:`phase_steps`): the mission then follows it within the
+phase, on the mission's clock.
 """
 
 from __future__ import annotations
@@ -59,10 +71,11 @@ MAX_PATTERN = 1000
 MAX_EVAL_CELLS = 1_000_000
 MAX_CUMULATIVE_SEGMENTS = 500_000
 
-REPAIRABLE_REASON = (
-    "covariate schedules apply to non-repairable diagrams only: after a repair the item's covariates would "
-    "restart from its own time zero, not follow the diagram's clock. Remove the schedule (Set covariates → "
-    "Constant) or make the diagram non-repairable.")
+#: In words, on every repairable result with a block on a schedule.
+REPAIRABLE_NOTE = (
+    "Covariate schedules follow the plant's clock: the load follows the diagram's schedule, and a repaired or "
+    "replaced unit carries on under the load in force at that time (a repair resets its age, not the schedule). "
+    "Blocks on a schedule have no reliability of their own, so these figures are simulated.")
 STANDBY_REASON = (
     "a standby block can't follow a covariate schedule: a spare's covariates would start when it's switched "
     "in, not on the diagram's clock. Use a constant value, or model the units as parallel blocks.")
@@ -221,6 +234,53 @@ def describe(spec: dict) -> str:
         return spec["expression"]
     phases = ", ".join(f"{r['value']} from {_fmt(r['t'])}" for r in spec.get("table") or [])
     return phases + (f", repeating every {_fmt(spec['period'])}" if spec.get("period") else "")
+
+
+# ---------------------------------------------------------------------------
+# A schedule within a mission phase (#372)
+# ---------------------------------------------------------------------------
+#: The most steps one phase's schedules may make (the mission follows each).
+MAX_PHASE_STEPS = 2000
+
+
+def is_schedule(value) -> bool:
+    """Whether a phase's covariate value is a schedule over the phase."""
+    return isinstance(value, dict) and ("expression" in value or "table" in value)
+
+
+def phase_schedule(raw, name: str) -> dict:
+    """A phase's covariate value given as a schedule over the phase's own
+    time (``t`` from the phase's start): ``{"expression": …}`` or
+    ``{"table": [{t, value}], "period"?}``, checked. Raises
+    :class:`ScheduleError`."""
+    return normalise({name: raw})[name]
+
+
+def phase_steps(spec: dict, duration: float, name: str = "the covariate") -> tuple[list, list]:
+    """A phase schedule's steps over ``[0, duration)``, in phase time:
+    ``(times, values)``, the first at 0. A phase of no length takes the
+    value at 0. Raises :class:`ScheduleError`."""
+    field = {"name": name, "type": "number" if "expression" in spec else "category"}
+    if "table" in spec and all(not isinstance(r.get("value"), str) for r in spec["table"]):
+        field["type"] = "number"
+    track = _Track(name, field, spec, None)
+    if not track.varies:
+        return [0.0], [track.constant]
+    end = max(float(duration), 0.0)
+    if end <= 0:
+        times, values = track.steps(1e-9) if not track.period else track.pattern()
+        return [0.0], [values[0]]
+    times, values = track.steps(end)
+    keep = [i for i, t in enumerate(times) if t < end]
+    if len(keep) > MAX_PHASE_STEPS:
+        raise ScheduleError(f"{name} changes {len(keep):,} times in the phase: at most {MAX_PHASE_STEPS:,}. "
+                            "Use fewer, longer steps.")
+    return [float(times[i]) for i in keep], [values[i] for i in keep]
+
+
+def phase_words(spec: dict) -> str:
+    """A phase schedule in words: "follows 100 if t % 24 < 16 else 40"."""
+    return f"follows {describe(spec)}"
 
 
 # ---------------------------------------------------------------------------
@@ -653,9 +713,7 @@ def refuse(data: dict, ntype: str, label: str, repairable: bool) -> None:
     """Raise :class:`ScheduleError` where a block's schedule can't apply."""
     if not of_node(data):
         return
-    if repairable:
-        raise ScheduleError(f"{label}: {REPAIRABLE_REASON}")
-    if ntype == "standby" and not _hot(data):
+    if ntype == "standby" and (repairable or not _hot(data)):
         raise ScheduleError(f"{label}: {STANDBY_REASON}")
 
 
@@ -718,10 +776,78 @@ def node(entry: dict, cov_values: "Values", where: str):
         raise _analysis_error(f"{where}: {exc}") from None
 
 
-def refuse_repairable(data: dict, label: str) -> None:
-    """A repairable diagram's block with a schedule: ``AnalysisError``."""
-    if of_node(data) and ((data or {}).get("model") or {}).get("kind") == "regression":
-        raise _analysis_error(f"{label}: {REPAIRABLE_REASON}")
+#: How far a schedule that neither repeats nor is a table is laid out for a
+#: repairable block, in multiples of the model's own time axis (its last
+#: step held beyond); fewer when that would be too many steps.
+REPAIRABLE_LAYOUT = (20.0, 5.0, 1.0)
+
+
+#: RePyability's refusals for a block on a schedule end with what to do in
+#: Python; the same advice in the app's words.
+_PLAIN = (
+    ("Fit a parametric regression (e.g. surv.WeibullPH) in surpyval.",
+     "Fit a parametric covariate model (e.g. Weibull PH) in Models instead."),
+    ("Fit a proportional hazards, additive hazards, accelerated failure time or accelerated life model in "
+     "surpyval.", "Fit a proportional hazards, additive hazards or accelerated failure time model in Models instead."),
+    ("give a Kijima repair (kijima1 or kijima2) or none.",
+     "give it a repair quality (Kijima I or II) or repair as good as new."),
+    ("give a proportional or additive hazards model, or repairs and tasks that renew.",
+     "use a proportional or additive hazards model, or repairs and tasks that make it as good as new."),
+)
+
+
+def plain_refusal(text: str) -> str:
+    """RePyability's refusal of a block on a covariate schedule without the
+    Python it suggests (other text unchanged)."""
+    if "covariate schedule" not in text and "its covariates" not in text:
+        return text
+    for code, words in _PLAIN:
+        text = text.replace(code, words)
+    return text.replace("Component “", "“").replace("”: its covariates: ", "”: ")
+
+
+def repairable_schedule(data: dict, ntype: str, label: str, resolve_model, horizon: Optional[float] = None):
+    """``(live regression model, StepSchedule, notes)`` for a repairable
+    diagram's block on a covariate schedule (RePyability's repairable
+    ``"covariates"``), or None for a block without one (or no model
+    resolver: structural checks only). Non-scheduled covariates hold the
+    block's own value (``covariate_values``) or the fit's default. Raises
+    ``AnalysisError`` in plain words."""
+    schedules = of_node(data)
+    model = (data or {}).get("model") or {}
+    if not schedules or model.get("kind") != "regression":
+        return None
+    try:
+        refuse(data, ntype, label, repairable=True)
+        check_static(schedules, model, label)
+    except ScheduleError as exc:
+        raise _analysis_error(str(exc)) from None
+    if resolve_model is None:
+        return None
+    model_id = model.get("modelId") or model.get("model_id")
+    entry = resolve_model(model_id) if model_id else None
+    if not entry:
+        raise _analysis_error(f"{label}: saved model not found — re-fit it or pick another.")
+    try:
+        plan = Plan(entry["model"], entry.get("fields") or [], schedules, (data or {}).get("covariate_values"))
+    except ScheduleError as exc:
+        raise _analysis_error(f"{label}: {exc}") from None
+    grid = entry.get("grid")
+    axis = float(grid[-1]) if grid is not None and len(grid) else 1.0
+    spans = [float(horizon)] if horizon else [axis * k for k in REPAIRABLE_LAYOUT]
+    last: Optional[ScheduleError] = None
+    for span in spans:
+        try:
+            schedule = plan.schedule(max(span, 1e-9))
+            break
+        except ScheduleError as exc:
+            last = exc
+    else:
+        raise _analysis_error(f"{label}: {last}")
+    notes = [f"{label}: {n}" for n in plan.notes]
+    if plan.varies and not plan.period and any(tr.expr is not None for tr in plan.tracks):
+        notes.append(f"{label}: its schedule is followed to t = {_fmt(span)} and its last value held after that.")
+    return entry["model"], schedule, notes
 
 
 def notes_of(reliabilities: dict) -> list:

@@ -60,3 +60,7 @@
 .rbd-phase-state > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rbd-phase-state select, .rbd-phase-state input { width: 9.5rem; flex: none; }
 .rbd-phase-state.is-off > span { text-decoration: line-through; color: var(--text-secondary); }
+/* A phase's covariate (#372): one value or a schedule over the phase, the full row wide. */
+.rbd-phase-cov { grid-column: 1 / -1; flex-wrap: wrap; align-items: flex-start; }
+.rbd-phase-cov > span { flex: 1 1 8rem; padding-top: 4px; }
+.rbd-phase-cov .phase-cov-value > input, .rbd-phase-cov .phase-cov-value > select { width: 9.5rem; }

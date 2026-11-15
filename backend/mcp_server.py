@@ -3935,11 +3935,12 @@ class MissionPhase(BaseModel):
         "standby block id -> how fast it ages while idle, 0 (cold, default) to 1 (hot)."))
     votes: Optional[dict[str, int]] = Field(None, description=(
         "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
-    values: Optional[dict[str, Union[float, str]]] = Field(None, description=(
+    values: Optional[dict[str, Union[float, str, dict[str, Any]]]] = Field(None, description=(
         "Use / Environment covariate name -> its value in this phase, set once for every block it feeds "
-        "(analyse rbd_mission lists them)."))
-    block_values: Optional[dict[str, dict[str, Union[float, str]]]] = Field(None, description=(
-        "block id -> {input key: value}: one block's own values in this phase, over values."))
+        "(analyse rbd_mission lists them); or a schedule over the phase, t from the phase's start: "
+        "{expression: '100 if t % 24 < 16 else 40'} or {table: [{t, value}], period?}."))
+    block_values: Optional[dict[str, dict[str, Union[float, str, dict[str, Any]]]]] = Field(None, description=(
+        "block id -> {input key: value or schedule}: one block's own values in this phase, over values."))
 
 
 class NetworkTerminals(BaseModel):
