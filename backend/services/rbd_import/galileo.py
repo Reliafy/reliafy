@@ -580,11 +580,13 @@ def _spare_block(name, gtype, kids, nodes, gates, parents, dorm, warnings) -> ft
     if len(kids) < 2:
         return ft.Leaf(name, dict(leaves[0].node), label=kids[0])
     primary, spares = leaves[0], leaves[1:]
+    from backend.services.rbd_standby import MAX_OWN_UNITS
+
     spare_keys = {ft.model_key(s.node["model"]) for s in spares}
-    if len(spare_keys) > 1:
+    if len(spare_keys) > 1 and len(kids) > MAX_OWN_UNITS:
         raise RbdImportError(
-            f"Spare gate “{name}” has spares with different failure distributions. A Reliafy "
-            "standby block has one primary model and one (shared) spare model.")
+            f"Spare gate “{name}” has spares with different failure distributions and more than "
+            f"{MAX_OWN_UNITS} units. A Reliafy standby block gives units their own models only up to that many.")
     default = _SPARE[gtype]
     factors = [dorm[c] if dorm[c] is not None else default for c in kids[1:]]
     # Galileo's dormancy factor is exactly Reliafy's (RePyability's): an idle
@@ -598,6 +600,10 @@ def _spare_block(name, gtype, kids, nodes, gates, parents, dorm, warnings) -> ft
             "reliability is a lower bound.")
     node = {"type": "standby", "model": primary.node["model"], "spares": len(spares),
             "cold": dormancy == 0, "dormancy": dormancy}
-    if ft.model_key(spares[0].node["model"]) != ft.model_key(primary.node["model"]):
+    pkey = ft.model_key(primary.node["model"])
+    if len(spare_keys) > 1:
+        # Spares that differ: each its own model, switched in in the gate's order.
+        node["spareModels"] = [None if ft.model_key(s.node["model"]) == pkey else s.node["model"] for s in spares]
+    elif ft.model_key(spares[0].node["model"]) != pkey:
         node["standbyModel"] = spares[0].node["model"]
     return ft.Leaf(name, node)

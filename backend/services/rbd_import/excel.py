@@ -101,6 +101,18 @@ BLOCK_FIELDS = [
        "series / parallel: identical units in the block.", group="Type extras"),
     _f("spares", "Spares", ["spares", "spare", "spare units", "standby units", "number of spares"],
        "standby: spare units (default 1).", group="Type extras"),
+    _f("running", "Running", ["running", "units running", "running units", "duty units", "on duty"],
+       "standby: units that must run at once (default 1).", group="Type extras"),
+    _f("spare_distribution", "Spare distribution", ["spare distribution", "spare dist", "spare model",
+                                                    "standby distribution"],
+       "standby: the spares' own failure distribution (blank: the block's).", group="Type extras"),
+    _f("spare_alpha", "Spare alpha", ["spare alpha", "spare eta", "spare scale"], group="Type extras"),
+    _f("spare_beta", "Spare beta", ["spare beta", "spare shape"], group="Type extras"),
+    _f("spare_mu", "Spare mu", ["spare mu", "spare location"], group="Type extras"),
+    _f("spare_sigma", "Spare sigma", ["spare sigma", "spare std", "spare sd"], group="Type extras"),
+    _f("spare_rate", "Spare failure rate", ["spare failure rate", "spare rate", "spare lambda"],
+       group="Type extras"),
+    _f("spare_mean", "Spare MTTF", ["spare mttf", "spare mtbf", "spare mean life"], group="Type extras"),
     _f("dormancy", "Dormancy", ["dormancy", "dormancy factor", "standby factor"],
        "standby: 0 cold … 1 hot.", group="Type extras"),
     _f("switch", "Switch reliability", ["switch reliability", "switching probability", "switch probability",
@@ -369,13 +381,13 @@ def _model(rec: dict, where: str, prefix: str = "") -> Optional[dict]:
         key = prefix + ("rate" if prefix and name == "failure_rate" else name)
         return rec.get(key)
 
-    mean_key = "mttr" if prefix else "mean"
+    mean_key = "mttr" if prefix == "repair_" else prefix + "mean"
     raw_dist = _text(rec.get(prefix + "distribution"))
     given = {p: val(p) for p in ("alpha", "beta", "mu", "sigma", "failure_rate")}
     given = {k: v for k, v in given.items() if v not in (None, "")}
     mean = rec.get(mean_key)
     mean = None if mean in (None, "") else mean
-    what = "Repair" if prefix else "Failure"
+    what = {"repair_": "Repair", "spare_": "Spare"}.get(prefix, "Failure")
     if not raw_dist:
         if not given and mean is None:
             return None
@@ -395,13 +407,13 @@ def _model(rec: dict, where: str, prefix: str = "") -> Optional[dict]:
         v = given.get(name)
         label = f"{where}: {what.lower()} {name}"
         if v is None and mean is not None and dist == "exponential" and name == "failure_rate":
-            params.append({"name": name, "value": 1.0 / _positive(mean, f"{where}: {'MTTR' if prefix else 'MTTF'}")})
+            params.append({"name": name, "value": 1.0 / _positive(mean, f"{where}: {'MTTR' if prefix == 'repair_' else 'MTTF'}")})
             continue
         if v is None and mean is not None and dist == "normal" and name == "mu":
             v = mean
         if v is None:
             need = " and ".join(names)
-            hint = " (or MTTR)" if prefix and dist == "exponential" else " (or MTTF)" if dist == "exponential" else ""
+            hint = (" (or MTTR)" if prefix == "repair_" else " (or MTTF)") if dist == "exponential" else ""
             raise RbdImportError(f"{where}: a {fitting.DISTRIBUTIONS[dist]['name']} {what.lower()} model needs "
                                  f"{need}{hint} — the {name} cell is blank.")
         x = _number(v, label) if name == "mu" else _positive(v, label)
@@ -507,6 +519,12 @@ def _convert(blocks: _Sheet, links: Optional[_Sheet]) -> tuple[dict, list[str]]:
             elif ntype == "standby":
                 spares = _whole(rec.get("spares"), f"{where}: spares", 1)
                 node["spares"] = spares or 1
+                running = _whole(rec.get("running"), f"{where}: running", 1)
+                if running and running > 1:
+                    node["k"] = running  # k units running (k-of-n standby)
+                spare_model = _model(rec, where, prefix="spare_")
+                if spare_model is not None and spare_model != model:
+                    node["standbyModel"] = spare_model  # the spares' own model
                 dormancy = _number(rec.get("dormancy"), f"{where}: dormancy")
                 if dormancy is None:
                     dormancy = implied.get("dormancy")
@@ -748,6 +766,8 @@ def _readme() -> list[list[str]]:
         ["alpha … MTTF", "The distribution's parameters, one column each (leave the others blank)."],
         ["Required", "k-of-n only: how many of the incoming branches must work (default 1 — a plain junction)."],
         ["Spares", "standby only: number of spare units (default 1)."],
+        ["Running", "standby only (add the column): how many units must run at once (default 1), e.g. 2 running and 1 spare."],
+        ["Spare distribution", "standby only (add the columns): the spares' own failure model, with Spare alpha / Spare beta / Spare rate / Spare MTTF … (blank: the block's)."],
         ["Dormancy", "standby only: 0 = cold (spares don't age), 1 = hot, in between = warm (default 0)."],
         ["Count", "series / parallel only (add the column): how many identical units the block stands for."],
         ["Switch reliability", "standby only (add the column): the chance a spare starts when switched in; one that fails to start is skipped and the next tried."],

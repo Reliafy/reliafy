@@ -1,6 +1,6 @@
 import Select from "./Select.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getDistributions, listModels, getModel, rbdBlockModel, rbdMeanForms } from "../api.js";
+import { getDistributions, listModels, getModel, getRecurrentModel, listRecurrentModels, rbdBlockModel, rbdMeanForms } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
@@ -35,9 +35,29 @@ const GIVEN_LABEL = {
 // ``wt`` is a guided walkthrough's anchor (walkthroughs.js).
 // ``joint`` (an RBD block's non-repairable model: ``{repairable}``) adds "Condition-based":
 // one unit of a condition and life model, given its readings.
+// ``repairableModels`` (a block in a repairable diagram, #367) adds a "Repairable models" group to
+// the saved models: a model fitted on Models › Repairable, how the unit fails between replacements.
+// Picking one emits ``{kind: "repairable", source: "saved", modelId, name, form, params, options}``.
+
+// The block model for a saved repairable model (the shape rbd_repairable_blocks stores).
+export function repairableRef(doc) {
+  const r = doc.results || {};
+  const opts = doc.spec?.options || {};
+  const options = Object.fromEntries(["m", "baseline"].filter((k) => opts[k] != null && opts[k] !== "").map((k) => [k, opts[k]]));
+  return {
+    kind: "repairable", source: "saved", modelId: doc.id, name: doc.name,
+    form: doc.spec?.model_id || r.model?.id || "crow_amsaa",
+    params: (r.params || []).map((p) => ({ name: p.name, value: p.value })),
+    ...(Object.keys(options).length ? { options } : {}),
+    unit: r.unit || "",
+  };
+}
+
+const REP = "rep:"; // a repairable model's id in the saved-model list
+
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
                                       preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt,
-                                      joint = null, onSource = null }) {
+                                      joint = null, onSource = null, repairableModels = false }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
     joint && value?.kind === "joint" ? "joint" : value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
@@ -55,8 +75,9 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     )
   );
   const [savedId, setSavedId] = useState(
-    value?.source === "saved" ? value.modelId : initialSavedId || ""
+    value?.source === "saved" ? (value.kind === "repairable" ? REP : "") + value.modelId : initialSavedId || ""
   );
+  const [repairables, setRepairables] = useState([]);
   // Mean entry: the mean, the given shape/spread, the parameters it made
   // (shown under the inputs) and the server's reason when it can't.
   const [meanVal, setMeanVal] = useState("");
@@ -80,7 +101,12 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       .catch(() => {})
       .finally(() => setSavedLoaded(true));
     if (meanEntry) rbdMeanForms().then(setForms).catch(() => setForms({}));
-  }, [rbdBlock, meanEntry]);
+    if (repairableModels) {
+      // A proportional-intensity model needs covariates, which a block can't give it.
+      listRecurrentModels().then((d) => setRepairables((d.models || []).filter((m) => m.family !== "regression")))
+        .catch(() => {});
+    }
+  }, [rbdBlock, meanEntry, repairableModels]);
 
   const dist = useMemo(() => dists.find((d) => d.id === distId), [dists, distId]);
   const meanDists = useMemo(() => dists.filter((d) => forms?.[d.id]), [dists, forms]);
@@ -170,6 +196,15 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     const current = pickSeq.current();
     setSavedId(id);
     if (!id) return onChange(null);
+    if (id.startsWith(REP)) {
+      try {
+        const doc = await getRecurrentModel(id.slice(REP.length));
+        if (current()) onChange(repairableRef({ ...doc, id: id.slice(REP.length) }));
+      } catch {
+        if (current()) onChange(null);
+      }
+      return;
+    }
     try {
       const m = await getModel(id);
       if (current()) onChange(savedModelRef({ ...m, id }));
@@ -317,7 +352,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
             ))}
           </div>
         </>
-      ) : saved.length === 0 ? (
+      ) : saved.length === 0 && !repairables.length ? (
         <p className="muted-line">No saved distribution models yet.</p>
       ) : (
         <label className="dist-field" style={{ maxWidth: 320 }}>
@@ -325,17 +360,24 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
           <Select
             value={savedId}
             onChange={onPickSaved}
-            searchable={saved.length > 8}
+            searchable={saved.length + repairables.length > 8}
             ariaLabel={label ? `${label}: saved model` : "Saved model"}
             placeholder="— choose —"
             options={[
               { value: "", label: "— choose —" },
+              ...(repairables.length ? [{ heading: "Non-repairable models" }] : []),
               ...saved.map((m) => ({
                 value: m.id,
                 label: m.name,
                 // The unit too: a class's model fitted from maintenance records is in days.
                 hint: m.distribution + (m.kind === "regression" ? ", covariates" : "")
                   + (m.unit ? ` · ${unitInText(m.unit)}` : ""),
+              })),
+              ...(repairables.length ? [{ heading: "Repairable models" }] : []),
+              ...repairables.map((m) => ({
+                value: REP + m.id,
+                label: m.name,
+                hint: (m.model || "Repairable") + (m.unit ? ` · ${unitInText(m.unit)}` : ""),
               })),
             ]}
           />

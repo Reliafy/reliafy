@@ -1204,6 +1204,28 @@ export function checkBlockMean(node, unit = "") {
   });
 }
 
+// A standby block's arrangement in words and how it's worked out (#363): ``route`` "exact" or
+// "numerical" (free), or "simulated" with RePyability's plain ``reason`` (Pro, when the block is
+// set to be simulated). ``node`` is the block as the builder stores it. Quick and free.
+export function standbyRoute(node) {
+  return request("/api/rbds/standby-route", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node }),
+  });
+}
+
+// A block on a fitted repairable model (#367): the model in words, whether it can wear out (and so
+// needs a replacement rule), the suggested rule and how its long-run availability is worked out
+// (exact/simulated, Free/Pro). ``node`` is the block as the builder stores it. Quick and free.
+export function rbdRepairableBlock(node, unit = "", repairable = true) {
+  return request("/api/rbds/repairable-block", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node, unit, repairable }),
+  });
+}
+
 // The cheapest design of a repairable diagram (#99): how many copies of each
 // priced block own it for ``horizon`` at the lowest total cost, optionally at
 // least ``minAvailability`` available. Returns { current, design, graph, ... };
@@ -3763,6 +3785,13 @@ export function getBindingInputs(binding) {
 // value each takes and where it came from, and what's missing.
 export function getBoundBlocks(graph) {
   return request("/api/rbds/bound-blocks", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
+  });
+}
+// Every covariate a mission phase of this (unsaved) diagram can set: {rows: [{name, role, unit, kind,
+// choices, blocks}], problems}. The same list the Explorer's tree hangs under each phase.
+export function getPhaseCovariates(graph) {
+  return request("/api/rbds/phases/covariates", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
   });
 }

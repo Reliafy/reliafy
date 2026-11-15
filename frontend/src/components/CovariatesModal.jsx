@@ -31,7 +31,7 @@ export default function CovariatesModal({
   useEffect(() => {
     let live = true;
     for (const node of covNodes) {
-      if (!node.modelId || repairable) continue;
+      if (!node.modelId) continue;
       previewRbdSchedule({ modelId: node.modelId, schedules: {}, constants: {}, tMax })
         .then((data) => live && remember(node.id, data))
         .catch(() => {});
@@ -105,6 +105,13 @@ export default function CovariatesModal({
       <p className="hint" style={{ marginTop: 0 }}>
         These blocks use covariate models. Set each covariate to a constant value, or a schedule over time.
       </p>
+      {repairable && (
+        <p className="hint" style={{ marginTop: 0 }}>
+          In this repairable diagram a schedule follows the plant&apos;s clock: a repaired or replaced unit carries on
+          under the load in force at that time. Blocks on a schedule are simulated (Pro); the preview shows a first
+          unit from new.
+        </p>
+      )}
       {covNodes.map((node) => (
         <div className="rbd-cov-node" key={node.id}>
           <span className="rbd-cov-node-label">{node.label}</span>
@@ -118,14 +125,8 @@ export default function CovariatesModal({
                     size="sm"
                     label={`${c.name}: constant or schedule`}
                     options={MODES.map((m) =>
-                      m.value === "schedule" && (repairable || !node.modelId)
-                        ? {
-                            ...m,
-                            disabled: true,
-                            title: repairable
-                              ? "Schedules apply to non-repairable diagrams: a repaired item would restart its covariates from its own time zero."
-                              : "Pick a saved covariate model for this block first.",
-                          }
+                      m.value === "schedule" && !node.modelId
+                        ? { ...m, disabled: true, title: "Pick a saved covariate model for this block first." }
                         : m
                     )}
                     value={mode}

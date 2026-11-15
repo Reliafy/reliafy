@@ -245,13 +245,15 @@ async function uploadAndFit(page) {
 
   // The column of decimals is offered as n (a count) only with the reason, and can't be picked.
   const count = page.getByRole("option", { name: /^col 2/ });
-  // Open the list once the dialog has read the file (CI can be slower than the click).
+  // Open the list once the dialog has read the file (CI can be slower than the click),
+  // and check the option while it's open: the list closes on any scroll or re-render,
+  // and a second click on its button would close it, so it's opened only when shut.
   await expect(async () => {
-    await dialog.getByRole("combobox", { name: "n", exact: true }).click();
+    if (!(await count.isVisible())) await dialog.getByRole("combobox", { name: "n", exact: true }).click();
     await expect(count).toBeVisible({ timeout: 2_000 });
+    await expect(count).toBeDisabled({ timeout: 1_000 });
+    await expect(count).toContainText("has decimals", { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
-  await expect(count).toBeDisabled();
-  await expect(count).toContainText("has decimals");
   // Close the list by clicking the dialog's own text (Escape would close the dialog too).
   await dialog.getByText("How the columns are read for modelling").click();
   await expect(count).toBeHidden();
@@ -478,6 +480,25 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   await expect(page.getByLabel("Reliability", { exact: true })).toHaveValue("50");
   await expect(page.getByRole("region", { name: "B-lives and mean life" })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "model calculator", chart: true });
+});
+
+// A model entered from parameters (no data, no fit) answers in the Calculator too: the
+// model's own times, a time past the end of its curves, and a plain note instead of bounds.
+test("the Calculator answers for a model entered from parameters", async ({ page, request, problems }) => {
+  const made = await postOk(request, "/api/models/from-params", {
+    name: `Handbook Weibull ${Date.now()}`, distribution: "weibull", unit: "hours", params: [1000, 2.5],
+  });
+  await open(page, `/models/m/${made.id}?tab=calc`);
+  const answer = page.locator(".calc-answer");
+  await expect(page.locator(".calc-note")).toContainText("entered from parameters");
+  // 3,000 hours is past the 99% life the curves stop at: still answered, not "—".
+  await page.getByLabel(/^At time/).fill("3000");
+  await expect(answer).toContainText(/at 3,000 hours:\s*\d[\d.]*%/);
+  await page.getByRole("radio", { name: "Time at reliability" }).click();
+  await expect(answer).toContainText("(the B10 life)");
+  await expect(answer).toContainText("407 hours"); // 1000 × (−ln 0.9)^(1/2.5) = 406.5
+  await expect(page.locator(".calc-answer-ci")).toHaveCount(0); // no bounds without a fit
+  await expectHealthy(page, problems, { label: "params-only calculator", chart: true });
 });
 
 // The Model characteristics tab: the mean life with its bound at the page's

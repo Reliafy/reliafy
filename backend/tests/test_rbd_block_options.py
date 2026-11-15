@@ -259,7 +259,7 @@ def test_cold_k_of_n_standby_with_spares_that_may_not_start():
 
 @pytest.mark.parametrize("data, needle", [
     ({"dormancy": 0.5}, "warm standby with 2 units running"),
-    ({"dormancy": 0, "cold": True, "k": 3, "spares": 1, "standbyModel": W(150, 2)}, "spare model of its own"),
+    ({"dormancy": 0, "cold": True, "k": 3, "spares": 1, "standbyModel": W(150, 2)}, "units that differ"),
 ])
 def test_k_of_n_standby_limits_are_said_plainly(data, needle):
     errors = ra.validate_graph(_series(_standby(**data)))["errors"]

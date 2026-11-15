@@ -176,7 +176,7 @@ def test_only_parametric_life_models_go_in_and_only_your_own(web):
     # Another user's library is not yours: not found, not changed.
     web.who["uid"] = FREE
     assert web.get(f"/api/library/search?source={lid}").status_code == 422  # unknown source for this user
-    assert web.patch(f"/api/library/mine/{lid}", json={"name": "Taken"}).status_code == 404
+    assert web.patch(f"/api/library/mine/{lid}", json={"name": "Taken"}).status_code == 402  # Free: Pro first
     assert web.delete(f"/api/library/mine/{lid}").status_code == 404
     web.who["uid"] = PRO
     assert web.get("/api/library/mine").json()["libraries"][0]["name"] == "Mine"
@@ -230,28 +230,29 @@ def test_a_life_record_as_a_prior_on_a_position(web):
         library_models.prior_base({"kind": "library", "record_id": rec2["id"]}, "weibull", web.db, [PRO])
 
 
-def test_one_library_is_one_saved_item_on_free(web):
-    from backend import config
+def test_making_a_library_is_pro_and_an_old_one_stays_readable(web):
     from backend.services import billing
 
-    assert billing.plan_caps("free")["libraries"] == config.FREE_MAX_LIBRARIES == 1
+    assert "libraries" not in billing.CAPPED_KINDS
     web.who["uid"] = FREE
-    first = web.post("/api/library/mine", json={"name": "One"})
-    assert first.status_code == 200
-    over = web.post("/api/library/mine", json={"name": "Two"})
-    assert over.status_code == 402 and over.json()["code"] == "cap"
-    assert over.json()["detail"] == ("You've reached the free-plan limit of 1 library. "
-                                     "Upgrade to Pro for unlimited libraries.")
-    # Records inside it don't count: several models go in, and editing is still allowed.
-    for i in range(3):
-        m = _params_model(web, f"M{i}")
-        assert web.post(f"/api/library/mine/{first.json()['id']}/records", json={"model_id": m["id"]}).status_code == 200
-    assert web.patch(f"/api/library/mine/{first.json()['id']}", json={"name": "Renamed"}).status_code == 200
-    usage = web.get("/api/billing").json()
-    assert usage["usage"]["libraries"] == 1 and usage["caps"]["libraries"] == 1
+    over = web.post("/api/library/mine", json={"name": "One"})
+    assert over.status_code == 402 and over.json() == billing.LIBRARIES_PRO_PAYLOAD
+    assert "libraries" not in web.get("/api/billing").json()["caps"]
+    # Pro: as many as they like, records too.
     web.who["uid"] = PRO
+    lid = web.post("/api/library/mine", json={"name": "Kept"}).json()["id"]
     for i in range(3):
         assert web.post("/api/library/mine", json={"name": f"P{i}"}).status_code == 200
+    m = _params_model(web, "M0")
+    rec = web.post(f"/api/library/mine/{lid}/records", json={"model_id": m["id"]}).json()["record"]
+    # The plan ends: the library is read-only to its owner, and still theirs to delete.
+    web.db.users.update_one({"_id": PRO}, {"$unset": {"plan": ""}})
+    kept = next(x for x in web.get("/api/library/mine").json()["libraries"] if x["id"] == lid)
+    assert kept["read_only"] is True and kept["records"] == 1
+    assert web.post(f"/api/library/mine/{lid}/records", json={"model_id": m["id"]}).status_code == 402
+    assert web.patch(f"/api/library/mine/{lid}", json={"name": "Renamed"}).status_code == 402
+    assert web.delete(f"/api/library/mine/{lid}/records/{rec['id']}").status_code == 402
+    assert web.delete(f"/api/library/mine/{lid}").status_code == 200
 
 
 def test_signed_out_reads_stay_public_and_cached(monkeypatch):
@@ -307,8 +308,10 @@ def test_the_library_actions_over_mcp(env):  # noqa: F811
     free = env.oauth[FREE]
     seen = _ok(_call(free, "get", {"kind": "library", "args": {"id": lid}}))
     assert seen["can_edit"] is False and seen["relation"] == "public"
-    assert "Only the library's owner" in _err(_call(free, "change", {"action": "library_remove", "args": {
+    # Changing a library is Pro: the plain plan message (using a public one isn't).
+    msg = _err(_call(free, "change", {"action": "library_remove", "args": {
         "library_id": lid, "entry_id": added["entry_id"]}}))
+    assert "Making and sharing libraries is part of Reliafy Pro (US$19/month)" in msg
     copied = _ok(_call(free, "change", {"action": "library_use", "args": {"library_id": lid, "entry_id": added["entry_id"]}}))
     assert copied["model"]["name"] == "Saved W" and copied["dataset"] is None
     mine = env.db.models.find_one({"_id": copied["model"]["id"]})
@@ -324,25 +327,35 @@ def test_the_library_actions_over_mcp(env):  # noqa: F811
     assert gone["deleted"] and _ok(_call(pro, "list", {"kind": "libraries", "args": {"scope": "yours"}}))["libraries"] == []
 
 
-def test_the_free_cap_over_mcp_and_rest(env, monkeypatch):  # noqa: F811
+def test_making_libraries_is_pro_over_mcp_and_rest(env, monkeypatch):  # noqa: F811
+    from backend import mcp_server
     from backend.services import billing, tokens
 
+    assert {"change.library_create", "change.library_update", "change.library_add",
+            "change.library_remove"} <= mcp_server.PRO_ONLY_TOOLS
+    assert not {"list.libraries", "get.library", "change.library_use", "change.library_delete",
+                "list.library", "get.library_record"} & mcp_server.PRO_ONLY_TOOLS
     free = env.oauth[FREE]
-    assert _ok(_call(free, "change", {"action": "library_create", "args": {"name": "One"}}))["saved"]
-    msg = _err(_call(free, "change", {"action": "library_create", "args": {"name": "Two"}}))
-    assert "limit of 1 saved librar" in msg and UPGRADE in msg
-    assert _ok(_call(free, "get", {"kind": "account"}))["storage"]["libraries"] == {"used": 1, "limit": 1}
-    # REST is the MCP action.
+    for action, args in (("library_create", {"name": "One"}), ("library_update", {"library_id": "x", "name": "y"}),
+                         ("library_add", {"library_id": "x", "dataset_id": "d"}),
+                         ("library_remove", {"library_id": "x", "entry_id": "e"})):
+        msg = _err(_call(free, "change", {"action": action, "args": args}))
+        assert "Making and sharing libraries is part of Reliafy Pro (US$19/month)" in msg, action
+    account = _ok(_call(free, "get", {"kind": "account"}))
+    assert "libraries" not in account["storage"] and "making libraries are Pro-only" in account["note"]
+    # Reading the libraries is on every plan.
+    assert _ok(_call(free, "list", {"kind": "libraries"}))["libraries"]
+    # REST is the MCP action: Pro makes one.
     monkeypatch.setattr(billing, "api_access_allowed", lambda db, user: True)
-    token = tokens.create_token(env.db, FREE, "api")["token"]
+    token = tokens.create_token(env.db, PRO, "api")["token"]
     from backend.main import app
 
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {token}"}
     r = client.post("/api/v1/change/library_create", json={"name": "Three"}, headers=headers)
-    assert r.status_code >= 400 and "limit of 1 saved librar" in r.text
+    assert r.status_code == 200, r.text
     r = client.post("/api/v1/list/libraries", json={}, headers=headers)
-    assert r.status_code == 200 and [x["name"] for x in r.json()["libraries"] if not x["builtin"]] == ["One"]
+    assert r.status_code == 200 and [x["name"] for x in r.json()["libraries"] if not x["builtin"]] == ["Three"]
 
 
 def test_dataset_upload_into_a_library_over_mcp(env):  # noqa: F811
@@ -359,4 +372,4 @@ def test_dataset_upload_into_a_library_over_mcp(env):  # noqa: F811
     before = env.db.datasets.count_documents({"owner_id": FREE})
     msg = _err(_call(env.oauth[FREE], "change", {"action": "dataset_upload", "args": {
         "name": "X", "csv": csv, "library_id": lid}}))
-    assert "Library not found" in msg and env.db.datasets.count_documents({"owner_id": FREE}) == before
+    assert "part of Reliafy Pro" in msg and env.db.datasets.count_documents({"owner_id": FREE}) == before

@@ -149,7 +149,8 @@ def test_a_repeating_expression_is_spotted():
     assert Expression("90 if t % 24 < 8 else 30").period == 24
     assert Expression("(t % 24 < 8) * 60 + (t % 24 >= 8) * 30").period == 24
     assert Expression("90 if t % 24 < 8 else 30 + floor(t / 1000)").period is None
-    assert Expression("90 if t % 24 < 8 else (t % 12 < 1)").period is None
+    # #372: several repeats share their common one (24 for 24 and 12).
+    assert Expression("90 if t % 24 < 8 else (t % 12 < 1)").period == 24
 
 
 def test_a_path_changing_faster_than_it_can_be_followed_is_refused_quickly():
@@ -291,11 +292,12 @@ def test_validation_names_a_bad_schedule_without_the_fit(entry):
     assert validate_graph(_graph({"load_pct": {"expression": "60"}}, entry["fields"]))["valid"]
 
 
-def test_repairable_diagrams_and_standby_spares_refuse_schedules(entry):
+def test_repairable_diagrams_take_schedules_and_standby_spares_refuse_them(entry):
+    # #372: a repairable block follows the plant's schedule (test_rbd_tvc_repairable.py has the figures).
     sched = {"load_pct": {"expression": "60 if t < 3000 else 90"}}
-    with pytest.raises(AnalysisError, match="non-repairable diagrams only"):
-        rbd_analysis._build_repairable_rbd(_graph(sched, entry["fields"], repairable=True),
-                                           resolve_model=lambda _: entry)
+    rbd, *_ = rbd_analysis._build_repairable_rbd(_graph(sched, entry["fields"], repairable=True),
+                                                 resolve_model=lambda _: entry)
+    assert rbd.analysis_routes()["availability"].route == "simulated"
     with pytest.raises(AnalysisError, match="switched in"):
         analyze(_graph(sched, entry["fields"], ntype="standby", extra={"spares": 1, "cold": True}),
                 resolve_model=lambda _: entry)

@@ -8,10 +8,11 @@ import { PRESETS, presetExpression, stairPoints, stairValueAt } from "../rbdTvc.
 // One covariate's schedule in the node covariate modal (#52): an expression
 // in t with presets that insert an editable template (numeric covariates),
 // or a phase table that can repeat (categorical ones).
-export default function RbdCovariateSchedule({ field, draft, onDraft, unit, tMax, value }) {
+// `inPhase`: the schedule is over one mission phase (t from the phase's start).
+export default function RbdCovariateSchedule({ field, draft, onDraft, unit, tMax, value, inPhase = false, disabled = false }) {
   const id = useId();
   if (field.type !== "number") {
-    return <PhaseTable field={field} draft={draft} onDraft={onDraft} unit={unit} />;
+    return <PhaseTable field={field} draft={draft} onDraft={onDraft} unit={unit} inPhase={inPhase} />;
   }
   const insert = (preset) =>
     onDraft({ expression: presetExpression(preset, field, { value, tMax, unit }) });
@@ -19,7 +20,7 @@ export default function RbdCovariateSchedule({ field, draft, onDraft, unit, tMax
     <div className="rbd-sched">
       <div className="rbd-sched-presets" role="group" aria-label={`Presets for ${field.name}`}>
         {PRESETS.map((p) => (
-          <button key={p.id} type="button" className="chip chip-neutral chip-btn" title={p.title} onClick={() => insert(p.id)}>
+          <button key={p.id} type="button" className="chip chip-neutral chip-btn" title={p.title} disabled={disabled} onClick={() => insert(p.id)}>
             {p.label}
           </button>
         ))}
@@ -32,13 +33,14 @@ export default function RbdCovariateSchedule({ field, draft, onDraft, unit, tMax
           spellCheck={false}
           autoComplete="off"
           maxLength={400}
+          disabled={disabled}
           value={draft?.expression ?? ""}
           placeholder="60 if t < 1000 else 90"
           onChange={(e) => onDraft({ expression: e.target.value })}
         />
       </label>
       <p className="hint rbd-sched-hint">
-        In t ({unitWord(unit)}), changing in steps: floor(t / 500), t % 24 &lt; 8, or a comparison.
+        In t ({unitWord(unit)}{inPhase ? " from the start of the phase" : ""}), changing in steps: floor(t / 500), t % 24 &lt; 8, or a comparison.
       </p>
     </div>
   );
@@ -50,7 +52,7 @@ function unitWord(unit) {
 
 // A categorical covariate's phases: the level from each time on, optionally
 // repeating every period.
-function PhaseTable({ field, draft, onDraft, unit }) {
+function PhaseTable({ field, draft, onDraft, unit, inPhase = false }) {
   const rows = draft?.table || [];
   const options = field.options || [];
   const set = (i, patch) => onDraft({ ...draft, table: rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
@@ -65,7 +67,7 @@ function PhaseTable({ field, draft, onDraft, unit }) {
       <table className="rbd-sched-table">
         <thead>
           <tr>
-            <th scope="col">From t ({unitWord(unit)})</th>
+            <th scope="col">From t ({unitWord(unit)}{inPhase ? " into the phase" : ""})</th>
             <th scope="col">{field.name}</th>
             <th scope="col"><span className="sr-only">Remove</span></th>
           </tr>

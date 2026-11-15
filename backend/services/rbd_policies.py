@@ -147,10 +147,12 @@ def standby_errors(data: dict, label: str) -> list[str]:
         errors.append(
             f"“{label}”: a standby group's units need a repair time — repaired instantly, a spare "
             "would never be needed.")
-    if not _same_model(data.get("model"), data.get("standbyModel")):
+    from backend.services.rbd_standby import own_units
+
+    if not _same_model(data.get("model"), data.get("standbyModel")) or own_units(data):
         errors.append(
             f"“{label}”: in a repairable diagram a standby group's units are identical — remove the "
-            "spares' own non-repairable model (each unit fails and is repaired by the block's models).")
+            "spares' and units' own non-repairable models (each unit fails and is repaired by the block's models).")
     for key in _STANDBY_EXTRAS:
         if data.get(key) not in (None, "", {}):
             what = {"preventive": "scheduled replacement", "inspection": "proof tests",

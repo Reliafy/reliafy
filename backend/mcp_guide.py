@@ -156,6 +156,13 @@ output}; two parallel blocks fan out from the node before and join at the node a
 into one knode (n=2). Stages form: stages in series, each with components in parallel (k_of_n voting).
 - Block models: inline distribution_id + params, a mean (MTBF/MTTR) with its shape, a mixture, or a saved \
 model (saved_model_id; same time unit).
+- Standby as plants run it: k units running, spares cold (dormancy 0), warm (0-1: ageing at that share while \
+waiting) or hot (1), startProb the chance a spare starts (one that doesn't is skipped). Units may differ: \
+standbyModel for every spare, runningModels / spareModels (lists, null = the default) for single units, up to \
+12 units. Exact or numerical (free): exponential units (any k, kind, start chance), cold with identical units \
+or k <= 2, warm or hot with k = 1, hot when spares always start. Otherwise (e.g. warm Weibull spares with k = \
+2) the block is refused in plain words; set simulate=true and analyse rbd simulates it (200,000 lifetimes, \
+Pro; result.simulated says so). Repairable diagrams: a standby group's units are identical.
 - Repairable diagrams (repairable=true, analysed for availability): every block needs a repair model. Blocks \
 may carry costs, preventive (age / block / condition replacement), inspection (hidden failures found by proof \
 tests: offset staggers, coverage + full_test for partial tests), maintenance_group, crew_priority, \
@@ -164,12 +171,18 @@ the time': its model is then a life in operating time; intervals stay on the clo
 safety_function + target_sil (needs proof \
 tests), costs (downtime_rate, horizon, discount_rate) and production (capacity demand). Common cause: \
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
-- Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \
-covariate_schedules on a block with a saved regression model.
+- Repairable models as blocks (repairable diagrams, component blocks): model = {repairable_model_id: <id from list kind recurrent>} (Crow-AMSAA, Duane, Cox-Lewis, HPP, ARA, ARI, G1, generalised renewal; not proportional intensity), or repairable_form + params. The model is how the unit fails between replacements, and brings its own repairs (no repair_quality); it still needs a repair-time model. Add replacement {rule: age, age} (replaced at that age), {rule: repairs, repairs: N} (replaced at the next failure after N repairs) or {rule: none}. A rule is REQUIRED unless the model never wears out as entered: HPP always; Crow-AMSAA/Duane shape <= 1; Cox-Lewis trend <= 0; ARA/ARI/generalised renewal with an exponential or Weibull shape <= 1 life (ARI: baseline as for its form); G1 also needs q >= 0. Otherwise calculation refuses and says so. HPP takes no rule. How the long-run availability is worked out follows RePyability (exact/numerical is free; simulated is Pro); today a non-constant repairable model's long-run figures are simulated. A block with no rule whose fit's 90% interval reaches into wear-out gets no long-run uncertainty band.
+- Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network).
+- covariate_schedules on a block with a saved regression model: {name: {expression in t} | {table: [{t, value}], \
+period?}}. Non-repairable: exact. Repairable: the schedule follows the plant's clock (a repaired or replaced unit \
+carries on under the load in force then), simulated only (Pro); PO, Cox, AFT with imperfect repair, duty, \
+standby and common-cause members are refused with the reason.
 - Missions: change rbd_mission adds named phased missions to a diagram (several over the same blocks, e.g. \
-"Corridor inspection", "Survey grid"); each phase has a duration, not_needed blocks, votes (k-of-n per \
-phase) and values {covariate name: value} for the Use / Environment covariates its bound blocks left open \
-(block_values {block id: {key: value}} for one block). Blocks age across the whole mission. analyse \
+"Corridor inspection", "Survey grid"); each phase has a duration, a state per block (default working; \
+not_needed, standby (dormancy {id: 0-1} warms it) or guaranteed: runs, can't fail), votes (k-of-n per \
+phase) and values {covariate name: value} for every covariate its blocks' models leave open (bound and \
+saved regression blocks; block_values {block id: {key: value}} for one block); a value can be a schedule over \
+the phase ({expression} with t from the phase's start, or {table, period?}), followed exactly. Blocks age across the whole mission. analyse \
 rbd_mission lists those covariates with the blocks each feeds, then gives the chance of completing it, per \
 phase, and each phase's weakest block; a phase missing a value waits (needs).
 - Condition and life block (non-repairable diagrams only, one component block per unit): model = \
@@ -224,8 +237,8 @@ and suggest replacing it with their own data.
 - Library lookups are never counted against the Free plan's tool calls.
 - Libraries (list kind libraries, get kind library with library_id, and entry_id for one entry): collections of \
 datasets and models. Each is private (its owner's workspace), shared with workspaces (by workspace ID, read-only for \
-them) or public (anyone can read). The built-in handbooks above are listed too, read-only. change library_create \
-makes one (private, one saved item toward the Free limit); change library_add (library_id, dataset_id or model_id, \
+them) or public (anyone can read). The built-in handbooks above are listed too, read-only. Making, filling, editing, sharing and publishing \
+libraries is Pro (reading, using and deleting your own aren't): change library_create makes one (private); change library_add (library_id, dataset_id or model_id, \
 model_collection for a repairable or ALT model) adds a snapshot: later edits in the workspace don't change it. A \
 model needn't be fitted to data (from parameters, a handbook, a published source: give source). Nothing is added \
 unless the user asks. change library_update changes the name, notes, source, citation or visibility: public needs \

@@ -21,7 +21,9 @@ Compact node (what an assistant writes and reads)::
      "duty": 0.25,                            # repairable: runs a quarter of the time (life in operating time)
      # a per-action cost may be a range, drawn uniformly: "repair": {"min": 150, "max": 250}
      "n": 2, "k": 3, "spares": 1, "cold": true,
-     "standbyModel": {...}, "startProb": 0.98,  # spare's own model (cold); chance a spare starts
+     "standbyModel": {...}, "startProb": 0.98,  # every spare's own model; chance a spare starts
+     "runningModels": [null, {...}], "spareModels": [{...}],  # standby: single units' own models
+     "simulate": true,                        # standby with no exact reliability: simulated (Pro)
      "dormancy": 0.3,                         # standby: 0 cold, 1 hot, between = warm
      "subsystem_rbd_id": "<saved rbd id>",
      "covariate_schedules": {"load_pct": {"expression": "90 if t % 24 < 8 else 30"}}}  # #52
@@ -59,7 +61,8 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
 MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection",
-                    "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality", "duty")
+                    "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality", "duty",
+                    "replacement")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil", "conditions")
 #: A block's values for the covariates its position left open, and which of the diagram's
@@ -486,6 +489,11 @@ def _model(model, where: str, resolve_saved_model) -> dict:
             if model.get(key):
                 out[key] = model[key]
         return out
+    if model.get("repairable_form") and not model.get("form"):  # the MCP spelling
+        model = {**model, "kind": "repairable", "form": model["repairable_form"],
+                 **({"options": model["repairable_options"]} if model.get("repairable_options") else {})}
+    if model.get("kind") == "repairable" or model.get("repairable_model_id"):
+        return _repairable_model(model, where, resolve_saved_model)
     saved_id = model.get("saved_model_id") or model.get("modelId") or model.get("model_id")
     if saved_id:
         out = _saved_model(str(saved_id), where, resolve_saved_model, model.get("joint_unit"))
@@ -505,6 +513,36 @@ def _model(model, where: str, resolve_saved_model) -> dict:
             out["placeholder"] = True
         return out
     return _inline_model(model, where)
+
+
+def _repairable_model(model: dict, where: str, resolve_saved_model) -> dict:
+    """A fitted repairable model as a block (#367, :mod:`.rbd_repairable_blocks`): a saved one by
+    ``repairable_model_id`` (resolved owner-scoped, as the picker stores it), or its form and
+    parameters inline."""
+    from backend.services import rbd_repairable_blocks as rrb
+    from backend.services.rbd_analysis import AnalysisError
+
+    saved_id = model.get("repairable_model_id") or (model.get("modelId") if model.get("source") == "saved" else None)
+    try:
+        if saved_id:
+            doc = resolve_saved_model(rrb.PREFIX + str(saved_id)) if resolve_saved_model else None
+            if doc is None:
+                if model.get("form") and model.get("params"):  # no resolver here: kept as stored
+                    kept = {k: model[k] for k in ("name", "form", "params", "options", "unit") if k in model}
+                    return {**kept, "kind": "repairable", "source": "saved", "modelId": str(saved_id)}
+                raise GraphError(f"{where}: saved repairable model '{saved_id}' not found (list kind "
+                                 "recurrent_models).")
+            return rrb.persisted(doc, where)
+        out = {"kind": "repairable", "source": "params", "form": model.get("form"),
+               "params": [{"name": str(p.get("name")), "value": p.get("value")}
+                          for p in model.get("params") or [] if isinstance(p, dict)]}
+        if model.get("options"):
+            out["options"] = dict(model["options"])
+        out["name"] = str(model.get("name") or rrb.NAMES.get(out["form"]) or "Repairable model")[:120]
+        rrb.build_from_params(out, where)  # checks the form and parameters
+        return out
+    except AnalysisError as exc:
+        raise GraphError(str(exc)) from None
 
 
 def _inline_disagrees(model: dict, saved: dict) -> bool:
@@ -562,7 +600,8 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
 
     data = dict(raw.get("data") or {})
     for key in ("label", "model", "repair", "n", "k", "spares", "cold", "dormancy",
-                "standbyModel", "startProb", "repeat_of") + MAINTENANCE_KEYS + CAPACITY_KEYS + COVARIATE_KEYS:
+                "standbyModel", "startProb", "runningModels", "spareModels", "simulate",
+                "repeat_of") + MAINTENANCE_KEYS + CAPACITY_KEYS + COVARIATE_KEYS:
         if raw.get(key) is not None and key not in data:
             data[key] = raw[key]
     if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -572,6 +611,17 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         data["model"] = normalize_model(data["model"], where, resolve_saved_model)
     if data.get("standbyModel") is not None:
         data["standbyModel"] = normalize_model(data["standbyModel"], f"{where} spare", resolve_saved_model)
+    for key, what in (("runningModels", "running unit"), ("spareModels", "spare")):
+        if data.get(key) is None:
+            continue
+        if not isinstance(data[key], list):
+            raise GraphError(f"{where}: {key} must be a list of models (null keeps the block's model).")
+        data[key] = [normalize_model(m, f"{where} {what} {i + 1}", resolve_saved_model) if m is not None else None
+                     for i, m in enumerate(data[key])]
+    if data.get("simulate") is not None:
+        data["simulate"] = bool(data["simulate"]) or None
+        if data["simulate"] is None:
+            data.pop("simulate")
     if data.get("repair") is not None:
         data["repair"] = normalize_repair(data["repair"], where)
     if raw.get("covariate_schedules") is not None and "covariate_schedules" not in data:
@@ -585,7 +635,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
             raise GraphError(f"{where}: {exc}") from None
         if data["covariate_schedules"] is None:
             del data["covariate_schedules"]
-    for key in ("costs", "preventive", "inspection", "repair_quality") + COVARIATE_KEYS:
+    for key in ("costs", "preventive", "inspection", "repair_quality", "replacement") + COVARIATE_KEYS:
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
     if isinstance(data.get("repair_quality"), dict) and data["repair_quality"].get("model", "perfect") == "perfect" \
@@ -726,6 +776,30 @@ def _conditions(raw) -> list:
     return out
 
 
+def _compact_model(m: dict) -> dict:
+    """A persisted model in the compact shape an assistant reads."""
+    cm = {"distribution_id": m.get("distribution_id"), "params": m.get("params")}
+    if m.get("base_distribution_id"):
+        cm["base_distribution_id"] = m["base_distribution_id"]  # a mixture's modes (#318)
+    if m.get("modelId"):
+        cm["saved_model_id"] = m["modelId"]
+    if m.get("kind") == "joint":  # a condition-based block: its unit
+        cm = {"saved_model_id": m.get("modelId"), "joint_unit": m.get("joint_unit")}
+    if m.get("kind") == "bound":  # covariates left open at its position
+        cm = {"kind": "bound", "binding": m.get("binding")}
+    if m.get("kind") == "repairable":  # a fitted repairable model (#367)
+        cm = {"repairable_form": m.get("form"), "params": m.get("params")}
+        if m.get("options"):
+            cm["repairable_options"] = m["options"]
+        if m.get("source") == "saved" and m.get("modelId"):
+            cm["repairable_model_id"] = m["modelId"]
+    if m.get("placeholder"):
+        cm["placeholder"] = True
+    if m.get("extras") and not m.get("modelId"):
+        cm["extras"] = m["extras"]
+    return cm
+
+
 def compact_graph(graph: dict) -> dict:
     """Strip a persisted graph to what an assistant needs to read and edit."""
     nodes = []
@@ -737,22 +811,12 @@ def compact_graph(graph: dict) -> dict:
         for key in ("model", "repair", "standbyModel"):
             m = d.get(key)
             if isinstance(m, dict):
-                cm = {"distribution_id": m.get("distribution_id"), "params": m.get("params")}
-                if m.get("base_distribution_id"):
-                    cm["base_distribution_id"] = m["base_distribution_id"]  # a mixture's modes (#318)
-                if m.get("modelId"):
-                    cm["saved_model_id"] = m["modelId"]
-                if m.get("kind") == "joint":  # a condition-based block: its unit
-                    cm = {"saved_model_id": m.get("modelId"), "joint_unit": m.get("joint_unit")}
-                if m.get("kind") == "bound":  # covariates left open at its position
-                    cm = {"kind": "bound", "binding": m.get("binding")}
-                if m.get("placeholder"):
-                    cm["placeholder"] = True
-                if m.get("extras") and not m.get("modelId"):
-                    cm["extras"] = m["extras"]
-                node[key] = cm
-        for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "repeat_of") + MAINTENANCE_KEYS \
-                + CAPACITY_KEYS:
+                node[key] = _compact_model(m)
+        for key in ("runningModels", "spareModels"):  # standby units with models of their own
+            if isinstance(d.get(key), list) and any(isinstance(m, dict) for m in d[key]):
+                node[key] = [_compact_model(m) if isinstance(m, dict) else None for m in d[key]]
+        for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "simulate", "repeat_of") \
+                + MAINTENANCE_KEYS + CAPACITY_KEYS:
             if d.get(key) is not None:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):

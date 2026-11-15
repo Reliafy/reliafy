@@ -245,14 +245,23 @@ def _drawn_model(model: dict, params: list, extras: Optional[dict] = None) -> di
     }
 
 
-def _model_slots(node: dict) -> list[str]:
-    """The ``data`` keys holding a non-repairable model the node is built from."""
+def _model_slots(node: dict) -> list[tuple]:
+    """Where in ``data`` the node's non-repairable models sit (paths: a key,
+    or a standby unit's list and index, :func:`rbd_standby.model_paths`)."""
     ntype = node.get("type")
     if ntype in ("component", "series", "parallel"):
-        return ["model"]
+        return [("model",)]
     if ntype == "standby":
-        return ["model", "standbyModel"]
+        from backend.services import rbd_standby
+
+        return rbd_standby.model_paths(node.get("data") or {}) or [("model",)]
     return []
+
+
+def _slot(data: dict, path: tuple):
+    from backend.services import rbd_standby
+
+    return rbd_standby.get_path(data, path)
 
 
 def _is_slow_standby(node: dict) -> bool:
@@ -357,10 +366,10 @@ def _draw_graph(
         slots = _model_slots(node)
         if not slots or base is PerfectReliability:
             continue  # voting gates / placeholders: nothing to draw
-        swaps: dict[str, _SavedDraws] = {}
+        swaps: dict[tuple, _SavedDraws] = {}
         reasons: list[str] = []
         for slot in slots:
-            model = data.get(slot)
+            model = _slot(data, slot)
             if not model:
                 continue
             kind = model.get("kind")
@@ -389,14 +398,16 @@ def _draw_graph(
         for i in range(n):
             new_data = dict(data)
             for slot, saved in swaps.items():
-                new_data[slot] = _drawn_model(
-                    data[slot], saved.params[i], saved.extras[i] if saved.extras else None)
+                from backend.services import rbd_standby
+
+                rbd_standby.set_path(new_data, slot, _drawn_model(
+                    _slot(data, slot), saved.params[i], saved.extras[i] if saved.extras else None))
             node_i = {**node, "data": new_data}
             rel, _ = ra._node_reliability(node_i, None, set(), resolve_model, covariates)
             models.append(rel)
         drawn[nid] = models
         entry = {"id": nid, "label": label,
-                 "models": sorted({(data[slot].get("name") or "saved model")
+                 "models": sorted({(_slot(data, slot).get("name") or "saved model")
                                    for slot in swaps}),
                  "model_ids": sorted({s.model_id for s in swaps.values()}),
                  "kind": band_kind(s.kind for s in swaps.values())}
@@ -422,7 +433,7 @@ def _count_slow_standby(graph: dict, resolve_subsystem, visited=frozenset()) -> 
                 if sub:
                     count += _count_slow_standby(sub, resolve_subsystem, visited | {ref})
         elif _is_slow_standby(node) and any(
-            _saved_id(data.get(s)) for s in ("model", "standbyModel")
+            _saved_id(_slot(data, s)) for s in _model_slots(node)
         ):
             count += 1
     return count

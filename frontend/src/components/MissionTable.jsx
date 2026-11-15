@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listPositionMissions } from "../api.js";
 import Chip from "./ui/Chip.jsx";
-import { completesText, isPhaseRow, latestOnly, lengthText, phaseLengthText, phaseOfText, phasesText, placeholderTitle } from "../explorerMissions.js";
+import {
+  completesText, covStatus, feedsList, isCovRow, isPhaseRow, isRuleRow, latestOnly, lengthText, pct, phaseLengthText, phaseOfText, phasesText,
+  placeholderTitle, ruleText,
+} from "../explorerMissions.js";
 
 // The Explorer's Missions tab is the tree with each position's missions in it
 // (explorerMissions.js), like the Modelling tab: the read of every position's RBD missions, each
@@ -43,8 +46,28 @@ export function MissionRollup({ text, onAdd = null }) {
 // duration}) has its place in the mission under Phases and its own length under Length, in the
 // mission's unit (the mission's row has their total). A phase's own chance is in the mission, opened.
 export function MissionCell({ r, col }) {
+  // Under a phase: a covariate's value in it (flagged when unset), what it feeds; a rule's state.
+  if (isCovRow(r)) {
+    const st = covStatus(r.ref.cov);
+    if (col.id === "phases") {
+      if (st.flag === "needs") return <Chip tone="warning" title={st.title}>Needs a value</Chip>;
+      if (st.flag === "unset") return <Chip tone="neutral" title={st.title}>{st.text}</Chip>;
+      return <span className="ml-num" title={st.title}>{st.text}</span>;
+    }
+    if (col.id === "rbd") return <span className="ml-src" title={feedsList(r.ref.cov)}>{feedsList(r.ref.cov)}</span>;
+    return null;
+  }
+  if (isRuleRow(r)) {
+    if (col.id === "phases") return <span className="ml-src">{ruleText(r.ref.rule)}</span>;
+    return null;
+  }
   if (isPhaseRow(r)) {
     if (col.id === "phases") return <span className="ml-src">{phaseOfText(r.ref.phase)}</span>;
+    if (col.id === "reliability") {
+      const pr = r.ref.result;
+      if (pr?.waiting) return <Chip tone="warning">Needs values</Chip>;
+      return pr?.completes != null ? <span className="ml-num" title="The chance of getting through this phase, once started">{pct(pr.completes)}</span> : null;
+    }
     if (col.id !== "duration") return null;
     const text = phaseLengthText(r.ref.phase, r.ref.mission.unit);
     return text ? <span className="ml-num">{text}</span> : <span className="rw-blank">—</span>;
@@ -74,7 +97,19 @@ export function MissionCell({ r, col }) {
 
 // A row's second line on a phone.
 export function missionPhoneRow(r, rollup) {
-  if (isPhaseRow(r)) return { line: [phaseOfText(r.ref.phase), phaseLengthText(r.ref.phase, r.ref.mission.unit)].filter(Boolean).join(" · "), status: null };
+  if (isCovRow(r)) {
+    const st = covStatus(r.ref.cov);
+    return { line: st.flag ? "" : st.text, status: st.flag === "needs" ? <Chip tone="warning">Needs a value</Chip> : st.flag ? <Chip tone="neutral">Not set</Chip> : null };
+  }
+  if (isRuleRow(r)) return { line: ruleText(r.ref.rule), status: null };
+  if (isPhaseRow(r)) {
+    const pr = r.ref.result;
+    return {
+      line: [phaseOfText(r.ref.phase), phaseLengthText(r.ref.phase, r.ref.mission.unit)].filter(Boolean).join(" · "),
+      status: pr?.waiting ? <Chip tone="warning">Needs values</Chip>
+        : pr?.completes != null ? <Chip tone="neutral" title="The chance of getting through this phase, once started">{pct(pr.completes)}</Chip> : null,
+    };
+  }
   if (r.type !== "mission") return { line: rollup || "", status: null };
   const m = r.ref.mission;
   const done = m.result?.reliability != null;

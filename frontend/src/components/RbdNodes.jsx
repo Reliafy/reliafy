@@ -5,6 +5,7 @@ import { unitInText } from "./unitText.js";
 import { formatPercent } from "../format.js";
 import { lifeLine, repairLine } from "./rbdModelText.js";
 import { jointBlockLine } from "../joint.js";
+import { describeStandby, hasOwnUnits } from "../standbyWords.js";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -307,7 +308,7 @@ export function StructureNode({ id, data: nodeData, type }) {
     // #156) each failed unit's repair.
     body = (
       <>
-        <div className="rbd-block-sub one-line">
+        <div className="rbd-block-sub one-line" title={describeStandby(data)}>
           {standbyKind(data) + (data.k > 1 ? ` · ${data.k} running` : "") /* k-of-n standby, #84 */ +
             ` · ${data.spares ?? 1} spare${(data.spares ?? 1) === 1 ? "" : "s"}`}
           {/* A spare's chance of starting is part of the answer: shown on the block (cold always,
@@ -316,6 +317,13 @@ export function StructureNode({ id, data: nodeData, type }) {
             ? ` · starts ${startWords(data.startProb)}` : ""}
           {repairable && data.repair_one_at_a_time ? " · one repairer" : ""}
         </div>
+        {!repairable && (hasOwnUnits(data) || data.standbyModel || data.simulate) && (
+          /* #363: units on models of their own, and a block that's simulated (no exact reliability). */
+          <div className="rbd-block-sub one-line">
+            {[hasOwnUnits(data) || data.standbyModel ? "units differ" : null, data.simulate ? "simulated" : null]
+              .filter(Boolean).join(" · ")}
+          </div>
+        )}
         {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true, repairable })}</div>}
         {repairable && data.repair && <div className="rbd-block-model one-line">{repairLine(data.repair, rbdUnit)}</div>}
         {repairable && !data.repair && (

@@ -11,6 +11,8 @@ import CovariateCalculator from "./CovariateCalculator.jsx";
 import { covariatesToSave, missingInputs } from "../covariate.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
+import ProTag from "./ProTag.jsx";
+import { LibrariesProDialog, LIBRARIES_PRO_TITLE, useLibrariesLocked } from "./LibrariesPro.jsx";
 import Field from "./ui/Field.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { saveErrorText } from "../confirm.js";
@@ -229,6 +231,13 @@ export function UseAsPriorDialog({ record, onClose }) {
 // citation) and notes. ``library``: the one to edit (none: create). A refusal at the Free plan's
 // limit shows its words with the upgrade link.
 export function LibraryFormDialog({ library = null, onClose, onDone }) {
+  // Making a library is Pro: without it, New library… opens the upgrade prompt instead.
+  const locked = useLibrariesLocked();
+  if (locked && !library) return <LibrariesProDialog onClose={onClose} />;
+  return <LibraryForm library={library} onClose={onClose} onDone={onDone} />;
+}
+
+function LibraryForm({ library, onClose, onDone }) {
   const [name, setName] = useState(library?.name || "");
   const [description, setDescription] = useState(library?.description || "");
   const [source, setSource] = useState(library?.source || "");
@@ -283,7 +292,14 @@ export function LibraryFormDialog({ library = null, onClose, onDone }) {
 // or a prior) as it is now, into one of your libraries or a new one made here. Nothing is ever added
 // automatically (Derryn, 9 Nov 2026). ``collection``: the model's ("models", "recurrent_models",
 // "alt_models"); a dataset passes ``datasetId`` instead of ``modelId``.
-export function AddToLibraryDialog({ modelId = null, modelName = "", collection = "models", datasetId = null, datasetName = "", onClose, onDone }) {
+export function AddToLibraryDialog({ onClose, ...props }) {
+  // Adding to a library is Pro: without it, Add to library… opens the upgrade prompt instead.
+  const locked = useLibrariesLocked();
+  if (locked) return <LibrariesProDialog onClose={onClose} />;
+  return <AddToLibrary onClose={onClose} {...props} />;
+}
+
+function AddToLibrary({ modelId = null, modelName = "", collection = "models", datasetId = null, datasetName = "", onClose, onDone }) {
   const [libs, setLibs] = useState(null);
   const [libraryId, setLibraryId] = useState("");
   const [newName, setNewName] = useState("");
@@ -369,15 +385,27 @@ export function AddToLibraryDialog({ modelId = null, modelName = "", collection 
 // New dataset's "Also add to library": none (the default), one of your libraries, or New library… (named
 // here, made when the data is saved: resolveLibraryChoice). ``value``: {libraryId, newName}.
 export function LibraryChoice({ value, onChange, disabled = false }) {
+  const locked = useLibrariesLocked();
   const [libs, setLibs] = useState(null);
   useEffect(() => {
+    if (locked) return undefined;
     let live = true;
     listLibraries().then((d) => {
       if (live) setLibs((d.libraries || []).filter((l) => l.relation === "yours" && l.can_edit && !l.builtin));
     }, () => live && setLibs([]));
     return () => { live = false; };
-  }, []);
+  }, [locked]);
   const id = value?.libraryId || "";
+  if (locked) {
+    // Without Pro: say where the choice went, quietly, instead of a control that would be refused.
+    return (
+      <section className="ds-library" aria-label="Also add to a library">
+        <p className="rw-fhelp">
+          Also add to a library <ProTag always /> {LIBRARIES_PRO_TITLE}. <Link to="/billing">See what Pro adds</Link>
+        </p>
+      </section>
+    );
+  }
   // A library chosen before the list arrives (the library page's Upload data…) is kept and named once it does.
   const known = (libs || []).some((l) => l.id === id);
   return (

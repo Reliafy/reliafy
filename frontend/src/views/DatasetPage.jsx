@@ -19,6 +19,7 @@ import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
+import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
 
 // Where each kind of model fitted to a dataset opens.
@@ -187,7 +188,7 @@ export default function DatasetPage() {
             {writable && parts.readingsOnly && (
               <button className="ovm-item" onClick={() => setPartModal({ part: "life", replacing: false })}>Add life data</button>
             )}
-            <button className="ovm-item" onClick={() => setAdding(true)}>Add to library…</button>
+            <button className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>
             <ShareButton
               collection="datasets"
               artifactId={ds.id}

@@ -170,8 +170,11 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     data-notice calls are exactly the earlier ones under their new names."""
     from backend import mcp_server
 
-    # Plus the Bayesian update (Nov 2026): fitting, so Pro like the rest.
-    assert {_new_key(k) for k in OLD_PRO_ONLY} | {"analyse.bayes_update"} == mcp_server.PRO_ONLY_TOOLS
+    # Plus the Bayesian update (Nov 2026): fitting, so Pro like the rest; and making, changing, sharing and
+    # publishing libraries (15 Nov 2026).
+    libraries = {"change.library_create", "change.library_update", "change.library_add", "change.library_remove"}
+    assert mcp_server._LIBRARY_TOOLS == libraries
+    assert {_new_key(k) for k in OLD_PRO_ONLY} | {"analyse.bayes_update"} | libraries == mcp_server.PRO_ONLY_TOOLS
     assert {_new_key(k) for k in OLD_HEAVY} | NEW_HEAVY == mcp_server.HEAVY_TOOLS
     assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
     assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS

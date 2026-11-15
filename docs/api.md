@@ -766,8 +766,13 @@ can take a new one with *Update from the original* (the entry's `version` goes
 up). Nothing is added unless someone asks. A model needn't be fitted to data
 (from parameters, a handbook, a published source: its `basis_text` says which);
 a model whose dataset is also in the library names it (`fitted_on`). A
-library belongs to one workspace and counts as one saved item toward the Free
-plan's storage limit, whatever it holds. It is **private** (its workspace),
+library belongs to one workspace. Reading and using libraries is on every plan;
+making one, adding, removing or refreshing entries, editing it, sharing it,
+publishing it and uploading into it are Pro (402 `code: pro_required`
+otherwise; deleting your own library, or making it private, never is). A library
+kept from an ended Pro plan is read-only to its owner (`can_edit: false`,
+`can_delete: true`, `pro_needed: true`); `GET /api/libraries` says
+`can_make`. It is **private** (its workspace),
 **shared with workspaces** (their IDs: a personal workspace's is the user id, a
 team's the team id; read-only for them) or **public** (anyone can read it,
 signed out too). Making it public needs a licence (`public-domain`, `cc0`,
@@ -784,7 +789,7 @@ libraries. Reads take an optional sign-in and are never cached.
 | `GET /api/libraries/entries?type=data\|model&q=` | Every dataset (or model) in any library you can see. |
 | `GET /api/libraries/{id}` | One library with its entries. |
 | `GET /api/libraries/{id}/entries/{entry_id}` | One entry: a dataset's first 50 rows and reading, a model's parameters. |
-| `POST /api/libraries` | Make one: `name`, `description?`, `notes?`, `source?`, `citation?`. 402 past the Free limit. |
+| `POST /api/libraries` | Make one (Pro): `name`, `description?`, `notes?`, `source?`, `citation?`. |
 | `PATCH /api/libraries/{id}` | Change `name`, `description`, `notes`, `source` or `citation`. |
 | `PUT /api/libraries/{id}/visibility` | `visibility` (`private`, `workspaces`, `public`), `workspaces?`, `licence?`, `source?`, `citation?`, `rights_confirmed?`. |
 | `DELETE /api/libraries/{id}` | Delete it and its entries (what they were taken from, and copies, stay). |

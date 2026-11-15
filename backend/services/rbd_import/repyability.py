@@ -199,11 +199,15 @@ class _Saved:
             data = node.get("data") if isinstance(node.get("data"), dict) else {}
             node["data"] = data
             label = str(data.get("label") or node.get("id"))
-            for key in ("model", "standbyModel", "repair"):
-                model = data.get(key)
+            from backend.services import rbd_standby
+
+            paths = [(k,) for k in ("model", "standbyModel", "repair")] + [
+                p for p in rbd_standby.model_paths(data) if len(p) == 2]  # standby units' own models
+            for path in paths:
+                model = rbd_standby.get_path(data, path)
                 if isinstance(model, dict) and (model.get("modelId") or model.get("model_id")):
                     if not _same_saved_model(model, saved_model):
-                        data[key] = _unlinked(model)
+                        rbd_standby.set_path(data, path, _unlinked(model))
                         unlinked.append(label)
             ref = data.get("rbd")
             if node.get("type") == "subsystem" and isinstance(ref, dict) and ref.get("id"):
@@ -820,23 +824,25 @@ class _Converter:
         bad = next((why for m, why in models if m is None), None)
         if bad:
             return self.without_model(nid, label, bad)
-        duty, spare = models[0][0], models[k][0]
-        if any(m != duty for m, _ in models[1:k]):
-            return self.without_model(nid, label, "its running units aren't identical, which Reliafy's standby "
-                                                  "block needs")
-        if any(m != spare for m, _ in models[k + 1:]):
-            return self.without_model(nid, label, "its spares aren't identical, which Reliafy's standby block needs")
+        from backend.services.rbd_standby import MAX_OWN_UNITS, own_from_units
+
+        lives = [m for m, _ in models]
+        own = own_from_units(lives, k)  # units that differ get models of their own
+        if (own.keys() & {"runningModels", "spareModels"}) and count > MAX_OWN_UNITS:
+            return self.without_model(nid, label, f"its units differ and it has more than {MAX_OWN_UNITS}, "
+                                                  "which Reliafy's standby block takes only up to that many")
+        if repair is not None and own.keys() - {"model"}:
+            return self.without_model(nid, label, "its units aren't identical, which a repairable standby group "
+                                                  "needs")
         if dormancy is None or not 0 <= dormancy <= 1 or switch is None or not 0 <= switch <= 1:
             return self.without_model(nid, label, "its dormancy factor or switching probability isn't a probability")
         start = self.start_chance(value.get("start_probability", 1.0), switch, count - k, label)
         if start is None:
             return self.without_model(nid, label, "its start probability isn't a probability")
-        data: dict[str, Any] = {"label": label, "model": duty, "spares": len(units) - k,
+        data: dict[str, Any] = {"label": label, **own, "spares": len(units) - k,
                                 "dormancy": dormancy, "cold": dormancy == 0}
         if k > 1:
             data["k"] = k
-        if spare != duty:
-            data["standbyModel"] = spare
         if start < 1:
             data["startProb"] = start
         return self.add(nid, "standby", data)
