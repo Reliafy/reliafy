@@ -342,7 +342,8 @@ test("a repairable model's block: repairs and replacement", async ({ page, reque
   const section = page.getByRole("region", { name: "Repairs and replacement" });
   await expect(section.getByText(/Replacement needed: this model's failure rate rises with age/)).toBeVisible({ timeout: 20_000 });
   await expect(section.getByText("Suggested", { exact: true })).toBeVisible();
-  await expect(section.getByText("Simulated · Pro")).toBeVisible();
+  // Crow-AMSAA with a replacement rule is worked out exactly since RePyability 0.19, so free.
+  await expect(section.getByText("Its long-run availability is worked out without simulation.")).toBeVisible();
   await expectHealthy(page, problems, { label: "repairable model block" });
   await request.delete(`/api/rbds/${id}`);
 });

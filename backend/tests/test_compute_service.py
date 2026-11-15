@@ -43,6 +43,7 @@ from backend.tests.test_availability_paid import (  # noqa: F401 - fixtures
     ADMIN, BUYER, FREE, PRO, USERS, client, _analyze, _save, _with_param,
 )
 from backend.tests.test_public_rbd_links import _rbd_graph
+from backend.tests.test_library_pins import REPYABILITY
 
 QUEUE = "projects/reliafy-test/locations/australia-southeast1/queues/reliafy-compute"
 COMPUTE_URL = "https://reliafy-compute-test.a.run.app"
@@ -174,7 +175,7 @@ def test_compute_app_health_and_availability():
 
     tc = TestClient(compute_app.app)
     health = tc.get("/health").json()
-    assert health["ok"] is True and health["repyability_version"].startswith("0.18")
+    assert health["ok"] is True and health["repyability_version"].startswith(REPYABILITY)
     # /healthz (Cloud Run reserves paths ending in "z") stays, for local use.
     assert tc.get("/healthz").json() == health
 
@@ -288,7 +289,7 @@ def test_run_reports_running_then_result_and_retries_a_failed_callback(monkeypat
     assert all(url == CALLBACK_URL for url, _ in sent)
     final = sent[-1][1]
     assert final["job_id"] == "job1" and final["result"]["n_simulations"] == 10
-    assert final["timings"]["compute_s"] >= 0 and final["repyability_version"].startswith("0.18")
+    assert final["timings"]["compute_s"] >= 0 and final["repyability_version"].startswith(REPYABILITY)
 
     # The web app didn't take the result: 5xx so Cloud Tasks retries.
     answer["status"] = 503
