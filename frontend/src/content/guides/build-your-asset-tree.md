@@ -80,7 +80,8 @@ adding positions one by one.
 3. Choose **Import from Excel…** in the same menu (or on an empty Explorer)
    and pick the file. Reliafy checks every row first and shows what will
    happen ("Will create 312 positions, 40 locations, 18 classes and 290
-   items") and any problems, by row, with what to fix.
+   items") and any problems, by row, with what to fix. Notes, such as a tag
+   that's on two rows, don't stop the import.
 4. Choose **Import**. It all goes in, or nothing does.
 
 Importing the same file again changes nothing: each row finds its position by

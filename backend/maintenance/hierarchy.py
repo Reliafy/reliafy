@@ -126,7 +126,12 @@ def split_path(value) -> list[str]:
     ``/`` or ``\\`` does. So ``Plant > I/O panel`` keeps its slash."""
     text = str(value or "")
     pattern = r"\s*[>›]\s*" if re.search(r"[>›]", text) else r"\s*[/\\]\s*"
-    return [p.strip() for p in re.split(pattern, text) if p.strip()]
+    return [_squash(p) for p in re.split(pattern, text) if p.strip()]
+
+
+def _squash(text) -> str:
+    """Spaces as a person means them: none at the ends, one between words."""
+    return " ".join(str(text or "").split())
 
 
 def _key(parts) -> str:
@@ -694,7 +699,7 @@ class _Plan:
             r.parent_ref = get("parent_id")
             r.path = split_path(get("path"))
             r.path_given = bool(r.path)
-            r.name = get("name") or (r.path[-1] if r.path else "")
+            r.name = _squash(get("name")) or (r.path[-1] if r.path else "")
             r.fields = {f: get(f) for f in ("tag", "position_class", "description")}
             r.fields["location"] = split_path(get("location"))
             r.item = {f: get(f) for f in ("item_id", "item", "serial", "part_number", "manufacturer", "model",
@@ -712,9 +717,12 @@ class _Plan:
                 for f, what in (("item", "item's name"), ("serial", "serial"), ("part_number", "part number"),
                                 ("manufacturer", "manufacturer"), ("model", "model")):
                     _text(r.item[f], what)
-                if any(r.item[f] for f in ("serial", "part_number", "manufacturer", "model", "installed_on")) \
-                        and not (r.item["item"] or r.item["item_id"]):
-                    raise Invalid("item details without a Fitted item: name the item.")
+                given = [h for f, h in (("serial", "Item serial"), ("part_number", "Item part number"),
+                                        ("manufacturer", "Item manufacturer"), ("model", "Item model"),
+                                        ("installed_on", "Installed on")) if r.item[f]]
+                if given and not (r.item["item"] or r.item["item_id"]):
+                    raise Invalid(f"It has {_join(given)} but no Fitted item: name the item, or clear "
+                                  f"{'it' if len(given) == 1 else 'them'}.")
                 if r.item["installed_on"]:
                     r.item["installed_on"] = _installed_text(r.item["installed_on"])
                     day, _ = dated(r.item["installed_on"], None, "Installed on date", today=m.today())
@@ -735,6 +743,7 @@ class _Plan:
                 else:
                     by_id[r.id] = r
         self.by_id = by_id
+        self.tag_notes()
 
         # Each row's own path: given, or built from its Parent ID chain.
         def parts_of(r: _Row, seen=()) -> list[str] | None:
@@ -833,6 +842,10 @@ class _Plan:
                 options += [("pos", p) for p in reg.by_key.get(_key(up), []) if p not in taken and p not in matched]
                 if len(options) == 1:
                     r.parent = options[0]
+                elif not options and ref is not None:
+                    # The path above it is out of date (its parent's row moved or was renamed, and this
+                    # row wasn't edited): its Parent ID says where it sits.
+                    r.parent = ref
                 elif not options:
                     self.problem(HIERARCHY, r.n, f"Its parent {SEP.join(up)} isn't in the file or in Reliafy: add a "
                                                  "row for it, or correct the path.")
@@ -967,15 +980,40 @@ class _Plan:
                 it["defaulted"] = True
             it["action"] = ("fit", it["item_id"] or None, None)
 
+    def tag_notes(self) -> None:
+        """A tag on two rows, or on a position the file doesn't name: noted, not stopped (a tag
+        needn't be unique, but two usually means a typing slip)."""
+        reg = self.reg
+        first: dict[str, _Row] = {}
+        for r in self.rows:
+            tag = _norm(r.fields["tag"])
+            if not tag:
+                continue
+            if tag in first:
+                self.note(HIERARCHY, r.n, f"The tag {r.fields['tag']} is on row {first[tag].n} too.")
+            else:
+                first[tag] = r
+        if not first:
+            return
+        in_file = {r.id for r in self.rows if r.id} | {pid for r in self.rows if r.path for pid in
+                                                        reg.by_key.get(_key(r.path), [])}
+        for pid, p in reg.positions.items():
+            tag = _norm(p.get("tag"))
+            if tag in first and pid not in in_file:
+                r = first.pop(tag)
+                self.note(HIERARCHY, r.n, f"The tag {r.fields['tag']} is on {SEP.join(reg.path(pid))} in Reliafy "
+                                          "already.")
+
     def updates(self, r: _Row) -> dict:
         """What changes on a matched position (blank cells change nothing)."""
         node = self.reg.positions[r.match]
         out = {}
         if "name" in self.cols or r.path_given:
-            if r.name and r.name != node["name"]:
+            if r.name and r.name != _squash(node["name"]):
                 out["name"] = r.name
         for f in ("tag", "position_class", "description"):
-            if r.fields[f] and r.fields[f] != node.get(f, ""):
+            # A cell is read trimmed: a value stored with spaces at its ends is the same value.
+            if r.fields[f] and r.fields[f] != str(node.get(f) or "").strip():
                 out[f] = r.fields[f]
         return out
 
@@ -1055,9 +1093,20 @@ class _Plan:
                 return self.reg.path(node[1]) + list(reversed(out))
         return list(reversed(out))
 
+    def _same_location(self, r: _Row) -> bool:
+        """The position is at a location with the path the row names already (one of two
+        locations with the same path, say): left where it is."""
+        cur = self.reg.own_location.get(r.match) if r.match else None
+        k = r.fields.get("location_key")
+        return bool(k) and cur in self.reg.locations and _key(self.reg.loc_path(cur)) == k
+
+    def _same_class(self, item_id: str, k: str | None) -> bool:
+        cur = self.reg.item_class.get(item_id)
+        return bool(k) and cur in self.reg.classes and _key(self.reg.class_path(cur)) == k
+
     def _location_change(self, r: _Row) -> bool:
         k = r.fields.get("location_key")
-        if not k:
+        if not k or self._same_location(r):
             return False
         lid = self.reg.loc_by_key.get(k)
         return lid is None or self.reg.own_location.get(r.match) != lid
@@ -1068,7 +1117,8 @@ class _Plan:
             return False
         cid = self.reg.class_by_key.get(k)
         action = r.item.get("action")
-        return cid is None or (action and action[0] == "update" and self.reg.item_class.get(action[1]) != cid)
+        return cid is None or (action and action[0] == "update" and not self._same_class(action[1], k)
+                               and self.reg.item_class.get(action[1]) != cid)
 
     # -- writing (only after a clean plan)
 
@@ -1125,7 +1175,7 @@ class _Plan:
             pid = parent_id(r)
             if pid != reg.parent[r.match]:
                 changes["parent_id"] = pid
-            if loc and reg.own_location.get(r.match) != loc:
+            if loc and reg.own_location.get(r.match) != loc and not self._same_location(r):
                 changes["location_id"] = loc
             if changes:
                 m.update_position(r.match, **changes)
@@ -1140,7 +1190,7 @@ class _Plan:
             if kind == "update":
                 if changes:
                     m.update_item(item_id, **changes)
-                if cid and reg.item_class.get(item_id) != cid:
+                if cid and reg.item_class.get(item_id) != cid and not self._same_class(item_id, r.item["class_key"]):
                     m.assign_item_class(item_id, cid)
                 continue
             it = r.item
@@ -1157,6 +1207,10 @@ def _installed_text(text: str) -> str:
     text = text.strip()
     if re.fullmatch(r"\d{4}(-\d{2})?", text):
         return text
+    from backend.services.excel import serial_day
+
+    if serial_day(text):  # an Excel date stored as its number
+        return serial_day(text)
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}([ T].*)?", text):
         return text[:10]
     import pandas as pd
