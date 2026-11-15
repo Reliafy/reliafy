@@ -520,6 +520,56 @@ def phase_graph(graph: dict, phase: dict, rows: list[dict]) -> dict:
     return {**(graph or {}), "nodes": nodes, "conditions": conditions}
 
 
+# ---- a covariate that follows a schedule within a phase (#372) --------------------------------
+
+def phase_schedules(phase: dict) -> list[tuple]:
+    """The covariates a phase gives a schedule over the phase: [(where, name, spec)], ``where``
+    None for the phase's own value or a block id for that block's own."""
+    from backend.services import rbd_tvc
+
+    out = [(None, k, v) for k, v in (phase.get("values") or {}).items() if rbd_tvc.is_schedule(v)]
+    for nid, vals in (phase.get("block_values") or {}).items():
+        out += [(nid, k, v) for k, v in (vals or {}).items() if rbd_tvc.is_schedule(v)]
+    return out
+
+
+def flat_steps(phase: dict) -> list[tuple[float, dict]]:
+    """A phase as steps of one value each: [(time from the phase's start, the phase with every
+    schedule replaced by its value then)]; just [(0, phase)] when nothing in it follows a schedule.
+    Each step runs to the next (the last to the phase's end), so the mission follows the schedule
+    exactly. Raises AnalysisError in plain words."""
+    import bisect
+
+    from backend.services import rbd_tvc
+
+    scheduled = phase_schedules(phase)
+    if not scheduled:
+        return [(0.0, phase)]
+    duration = float(phase.get("duration") or 0.0)
+    tracks = []
+    for where, name, spec in scheduled:
+        try:
+            tracks.append((where, name, *rbd_tvc.phase_steps(spec, duration, name)))
+        except rbd_tvc.ScheduleError as exc:
+            raise AnalysisError(f"Phase “{phase['name']}”: {exc}") from None
+    times = sorted({t for *_, ts, _ in tracks for t in ts})
+    if len(times) > rbd_tvc.MAX_PHASE_STEPS:
+        raise AnalysisError(f"Phase “{phase['name']}”: its schedules change {len(times):,} times in the phase, "
+                            f"at most {rbd_tvc.MAX_PHASE_STEPS:,}. Use fewer, longer steps.")
+    out = []
+    for t in times:
+        flat = {**phase, "values": dict(phase.get("values") or {}),
+                "block_values": {k: dict(v) for k, v in (phase.get("block_values") or {}).items()}}
+        for where, name, ts, vs in tracks:
+            value = vs[max(bisect.bisect_right(ts, t) - 1, 0)]
+            if where is None:
+                flat["values"][name] = value
+            else:
+                flat["block_values"][where][name] = value
+        out.append((t, flat))
+    return out
+
+
 # ---- one diagram for the whole mission -------------------------------------------------------
 
 def _same(a, b) -> bool:
@@ -612,26 +662,36 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
     for p in clean:
         starts.append(t)
         t += float(p["duration"])
-    bound, covs, needs = [], [], []
-    for p in clean:
-        g, c, lines = cb.bind_graph(phase_graph(graph, p, rows), inputs_for, covariates)
-        reg = regression_values(phase_rows(rows, p))
-        if reg:
-            c = dict(c or {})
-            for nid, vals in reg.items():
-                c[nid] = {**(c.get(nid) or {}), **vals}
+    # Each phase as its steps (#372): a covariate given a schedule over the phase splits it into steps
+    # of one value each, bound one by one; their changes are then on the mission's clock (combine).
+    bound, covs, step_starts, needs = [], [], [], []
+    gap = 0
+    for p, start in zip(clean, starts):
+        got, lines = [], None
+        for offset, flat in flat_steps(p):
+            g, c, lines = cb.bind_graph(phase_graph(graph, flat, rows), inputs_for, covariates)
+            reg = regression_values(phase_rows(rows, flat))
+            if reg:
+                c = dict(c or {})
+                for nid, vals in reg.items():
+                    c[nid] = {**(c.get(nid) or {}), **vals}
+            if lines:
+                break
+            got.append((g, c, start + offset))
         if lines:
             needs.append({"phase": p["name"], "lines": lines})
         if needs:
             continue
-        bound.append(g)
-        covs.append(c)
-    gap = len(bound)
+        gap += 1
+        for g, c, at in got:
+            bound.append(g)
+            covs.append(c)
+            step_starts.append(at)
     if gap == 0:
         return {"unit": (graph.get("unit") or "").strip(), "method": None, "reliability": None,
                 "unreliability": None, "duration": duration(clean), "riskiest": None, "through": None,
                 "phases": [_waiting(p, s) for p, s in zip(clean, starts)], "needs": needs, "notes": []}
-    merged, merged_covs, varying = combine(bound, covs, starts[:gap])
+    merged, merged_covs, varying = combine(bound, covs, step_starts)
     both = sorted({b for p in clean[:gap] for b in p.get("standby", [])} & varying)
     if both:
         labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id") for n in graph.get("nodes") or []}

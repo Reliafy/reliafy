@@ -28,6 +28,8 @@ def uses_extras(graph: dict) -> bool:
         return True
     return any(
         rm.has_extras(n.get("data") or {}) or n.get("type") == "standby"
+        # A block on a covariate schedule (#372) has no exact long-run values: only the simulation.
+        or bool((n.get("data") or {}).get("covariate_schedules"))
         for n in graph.get("nodes") or []
         if n.get("type") in ("component", "standby")
     )

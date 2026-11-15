@@ -172,13 +172,17 @@ safety_function + target_sil (needs proof \
 tests), costs (downtime_rate, horizon, discount_rate) and production (capacity demand). Common cause: \
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
 - Repairable models as blocks (repairable diagrams, component blocks): model = {repairable_model_id: <id from list kind recurrent>} (Crow-AMSAA, Duane, Cox-Lewis, HPP, ARA, ARI, G1, generalised renewal; not proportional intensity), or repairable_form + params. The model is how the unit fails between replacements, and brings its own repairs (no repair_quality); it still needs a repair-time model. Add replacement {rule: age, age} (replaced at that age), {rule: repairs, repairs: N} (replaced at the next failure after N repairs) or {rule: none}. A rule is REQUIRED unless the model never wears out as entered: HPP always; Crow-AMSAA/Duane shape <= 1; Cox-Lewis trend <= 0; ARA/ARI/generalised renewal with an exponential or Weibull shape <= 1 life (ARI: baseline as for its form); G1 also needs q >= 0. Otherwise calculation refuses and says so. HPP takes no rule. How the long-run availability is worked out follows RePyability (exact/numerical is free; simulated is Pro); today a non-constant repairable model's long-run figures are simulated. A block with no rule whose fit's 90% interval reaches into wear-out gets no long-run uncertainty band.
-- Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \
-covariate_schedules on a block with a saved regression model.
+- Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network).
+- covariate_schedules on a block with a saved regression model: {name: {expression in t} | {table: [{t, value}], \
+period?}}. Non-repairable: exact. Repairable: the schedule follows the plant's clock (a repaired or replaced unit \
+carries on under the load in force then), simulated only (Pro); PO, Cox, AFT with imperfect repair, duty, \
+standby and common-cause members are refused with the reason.
 - Missions: change rbd_mission adds named phased missions to a diagram (several over the same blocks, e.g. \
 "Corridor inspection", "Survey grid"); each phase has a duration, a state per block (default working; \
 not_needed, standby (dormancy {id: 0-1} warms it) or guaranteed: runs, can't fail), votes (k-of-n per \
 phase) and values {covariate name: value} for every covariate its blocks' models leave open (bound and \
-saved regression blocks; block_values {block id: {key: value}} for one block). Blocks age across the whole mission. analyse \
+saved regression blocks; block_values {block id: {key: value}} for one block); a value can be a schedule over \
+the phase ({expression} with t from the phase's start, or {table, period?}), followed exactly. Blocks age across the whole mission. analyse \
 rbd_mission lists those covariates with the blocks each feeds, then gives the chance of completing it, per \
 phase, and each phase's weakest block; a phase missing a value waits (needs).
 - Condition and life block (non-repairable diagrams only, one component block per unit): model = \

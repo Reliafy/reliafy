@@ -36,8 +36,10 @@ summary line to say what it needs:
   **Not needed** (struck through).
 - **Covariate values in this phase**: one for each covariate the diagram's life
   models take (a proportional-hazards, accelerated life or covariate model).
-  Leave one blank to use the diagram's value or the model's default. These are
-  the same values the Explorer's Missions tab shows under each phase.
+  Leave one blank to use the diagram's value or the model's default, or choose
+  **Schedule** for a value that changes during the phase (t counts from the
+  phase's start). These are the same values the Explorer's Missions tab shows
+  under each phase.
 - **Working inputs needed** for each voting node: how many of its inputs
   must work in this phase. Leave it blank to use the node's own setting.
 

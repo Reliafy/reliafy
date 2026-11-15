@@ -15,6 +15,10 @@ Needs a server on the same release.
   diagram's block takes `model.repairable_model_id` (a saved repairable model) or
   `model.repairable_form` + `params`, with `replacement` (`rule` age / repairs / none). A rule is
   required unless the model never wears out; `guide rbds` explains.
+- **Covariate schedules, wider**: `covariate_schedules` on a repairable diagram's block (a saved
+  regression model) now follow the plant's clock in the availability simulation (Pro) instead of
+  being refused; a mission phase's `values` / `block_values` take a schedule over the phase
+  (`{expression}` with `t` from the phase's start, or `{table, period}`).
 - Tasks by use in operating hours fall due through the position's operating plan where it has one
   (`limits[].due_moment`, `stop_after`, `basis`); `get operating_plan` adds `against_actual`, and
   a plan takes `utilisation`.

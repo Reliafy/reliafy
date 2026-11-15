@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal.jsx";
 import { getPhaseCovariates } from "../api.js";
 import { cleanPhases, phaseBlocks, voteNodes } from "../rbdMission.js";
-import { BLOCK_STATES, STATE_SHORT, blockState, covValueText, withBlockState } from "../explorerMissions.js";
+import { BLOCK_STATES, STATE_SHORT, blockState, covValueText, isSchedule, withBlockState } from "../explorerMissions.js";
+import PhaseCovValue from "./PhaseCovValue.jsx";
 import "./RbdMission.css";
 
 // The phased-mission editor (#160), from the builder's ⋯ menu: the mission's
@@ -52,7 +53,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const setValue = (row, name, v) => {
     const values = { ...(row.values || {}) };
-    if (String(v ?? "").trim() === "") delete values[name];
+    if (v == null || (typeof v !== "object" && String(v).trim() === "")) delete values[name];
     else values[name] = v;
     update(row.key, { values });
   };
@@ -168,19 +169,20 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
                           const v = row.values?.[c.name] ?? "";
                           const fallback = c.diagram != null && c.diagram !== "" ? c.diagram : c.blocks?.[0]?.default;
                           return (
-                            <label key={c.name} className="rbd-phase-state" title={`Feeds ${(c.blocks || []).map((b) => b.label).join(", ")}`}>
+                            <div key={c.name} className="rbd-phase-state rbd-phase-cov" title={`Feeds ${(c.blocks || []).map((b) => b.label).join(", ")}`}>
                               <span title={`${c.name}${c.unit ? ` (${c.unit})` : ""}`}>{c.name}{c.unit ? ` (${c.unit})` : ""}</span>
-                              {choice ? (
-                                <select value={v} onChange={(e) => setValue(row, c.name, e.target.value)}>
+                              <PhaseCovValue cov={c} value={v} onChange={(x) => setValue(row, c.name, x)} unit={unit} duration={row.duration}
+                                             constant={choice ? (
+                                <select aria-label={c.name} value={isSchedule(v) ? "" : v} onChange={(e) => setValue(row, c.name, e.target.value)}>
                                   <option value="">Not set</option>
                                   {c.choices.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
                                 </select>
                               ) : (
-                                <input type="number" inputMode="decimal" step="any" value={v}
+                                <input type="number" inputMode="decimal" step="any" aria-label={c.name} value={isSchedule(v) ? "" : v}
                                        placeholder={fallback != null ? covValueText(fallback, "") : "needs a value"}
                                        onChange={(e) => setValue(row, c.name, e.target.value === "" ? "" : Number(e.target.value))} />
-                              )}
-                            </label>
+                              )} />
+                            </div>
                           );
                         })}
                       </div>

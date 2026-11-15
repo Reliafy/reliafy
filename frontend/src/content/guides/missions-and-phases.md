@@ -154,6 +154,11 @@ straight in the RBD. Under each covariate you
 see which blocks it feeds.
 
 - Type a value once for the phase: every block using that covariate takes it.
+- Or choose **Schedule** to have it change during the phase: an expression in
+  t, the time since the phase began (for a pump run hard by day and gently by
+  night, `100 if t % 24 < 16 else 40`), or a table of values from set times.
+  The mission follows every change, and each block carries its wear from one
+  step to the next, exactly as if you had split the phase into shorter phases.
 - **Set its own** gives one block its own value for this phase; the row then
   shows the block's value as its own.
 - A block with no value says **needs a value**. That phase's result waits until

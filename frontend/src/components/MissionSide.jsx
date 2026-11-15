@@ -8,8 +8,9 @@ import { saveErrorText } from "../confirm.js";
 import {
   BLOCK_STATES, MAX_PHASES, changedPhases, completesText, covStatus, covValueText, isCovRow, isPhaseRow, isRuleRow, lengthText,
   pct, phaseKey, phaseOfText, phaseResult, phaseSettingsText, placeholderTitle, ruleKey, ruleState, ruleText, covKey,
-  withBlockState, withValue,
+  withBlockState, withValue, isSchedule,
 } from "../explorerMissions.js";
+import PhaseCovValue from "./PhaseCovValue.jsx";
 import "./MissionSide.css";
 
 // The details beside the Missions tab's tree for the row picked (Derryn, 15 Nov 2026: "I want the
@@ -361,14 +362,15 @@ function RuleDetails({ r, busy, viewOnly, savePhases, atPhase, onAction }) {
 // ---- a phase's covariate -----------------------------------------------------------------------
 
 function CovDetails({ r, busy, viewOnly, savePhases, atPhase, onAction }) {
-  const { cov, phase } = r.ref;
+  const { cov, phase, rbd } = r.ref;
   const [value, setValue] = useState(cov.value ?? "");
-  useEffect(() => setValue(cov.value ?? ""), [r.key, cov.value]);
+  useEffect(() => setValue(cov.value ?? ""), [r.key, JSON.stringify(cov.value)]); // eslint-disable-line react-hooks/exhaustive-deps
   const st = covStatus(cov);
   const choice = cov.kind === "choice" && (cov.choices || []).length;
+  const sched = isSchedule(value);
   const num = Number(value);
-  const ok = String(value).trim() === "" || choice || Number.isFinite(num);
-  const same = String(value) === String(cov.value ?? "");
+  const ok = sched || String(value).trim() === "" || choice || Number.isFinite(num);
+  const same = JSON.stringify(value) === JSON.stringify(cov.value ?? "");
   const unit = String(cov.unit || "").trim();
   return (
     <>
@@ -380,21 +382,23 @@ function CovDetails({ r, busy, viewOnly, savePhases, atPhase, onAction }) {
       <form className="msd-form" onSubmit={(e) => {
         e.preventDefault();
         if (!ok || same) return;
-        const v = String(value).trim() === "" ? "" : choice ? value : num;
+        const v = sched ? value : String(value).trim() === "" ? "" : choice ? value : num;
         savePhases(atPhase(phase.index, (p) => withValue(p, cov.name, v)),
           v === "" ? `Cleared ${cov.name} in ${phase.name}.` : `${cov.name} in ${phase.name}: ${covValueText(v, unit)}.`);
       }}>
         <Field label={`Value in ${phase.name}${unit ? ` (${unit})` : ""}`} error={ok ? null : "A number."}
-               help="Set once for the phase: every block it feeds takes it.">
-          {choice ? (
-            <Select value={value} disabled={!!viewOnly || busy} onChange={(e) => setValue(e.target.value)}>
+               help={sched ? "It follows this schedule through the phase: every block it feeds takes it, and the mission follows each change."
+                 : "Set once for the phase: every block it feeds takes it."}>
+          <PhaseCovValue cov={cov} value={value} onChange={setValue} unit={rbd?.unit} duration={phase.duration}
+                         disabled={!!viewOnly || busy} constant={choice ? (
+            <Select value={sched ? "" : value} disabled={!!viewOnly || busy} onChange={(e) => setValue(e.target.value)}>
               <option value="">Not set</option>
               {cov.choices.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
             </Select>
           ) : (
-            <TextInput type="number" inputMode="decimal" step="any" value={value} placeholder={cov.used != null ? String(cov.used) : "—"}
+            <TextInput type="number" inputMode="decimal" step="any" value={sched ? "" : value} placeholder={cov.used != null && !isSchedule(cov.used) ? String(cov.used) : "—"}
                        disabled={!!viewOnly || busy} onChange={(e) => setValue(e.target.value)} />
-          )}
+          )} />
         </Field>
         <div className="msd-actions">
           <button type="submit" disabled={!!viewOnly || busy || !ok || same}>Save</button>

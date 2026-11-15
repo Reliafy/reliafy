@@ -366,9 +366,24 @@ export function movePhase(phases, i, dir) {
   return out;
 }
 
-// A value typed as a number when it is one; text (a choice) otherwise; null for blank.
+// A phase's covariate value that follows a schedule over the phase (#372): {expression} in the
+// phase's own time t, or {table: [{t, value}], period?}.
+export function isSchedule(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v) && ("expression" in v || "table" in v);
+}
+// A schedule in words, short: "follows 100 if t % 24 < 16 else 40" / "follows a table of 3 steps".
+export function scheduleWords(v) {
+  if (!isSchedule(v)) return "";
+  if (v.expression != null) return `follows ${v.expression}`;
+  const n = (v.table || []).length;
+  return `follows a table of ${n} step${n === 1 ? "" : "s"}${v.period ? `, repeating every ${fmt(Number(v.period))}` : ""}`;
+}
+
+// A value typed as a number when it is one; text (a choice) otherwise; a schedule as it is; null
+// for blank.
 export function typed(v) {
   if (v == null) return null;
+  if (isSchedule(v)) return v;
   const s = String(v).trim();
   if (s === "") return null;
   const n = Number(s);
@@ -524,6 +539,7 @@ export function phaseResult(result, i) {
 // A covariate value with its unit: "35 °C", "12%", "Desert" (a choice).
 export function covValueText(v, unit) {
   if (v == null || v === "") return "—";
+  if (isSchedule(v)) return scheduleWords(v);
   const u = String(unit || "").trim();
   const num = typeof v === "number" ? fmt(v) : String(v);
   if (!u) return num;

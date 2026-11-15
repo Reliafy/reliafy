@@ -1588,6 +1588,65 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------
 # Repairable (availability)
 # ---------------------------------------------------------------------------
+def _scheduled_life(script: _Script, data: dict, label: str, var: str) -> tuple[str, Optional[str]]:
+    """``(life, schedule)`` variables for a repairable block on a covariate schedule (#372): the
+    fitted regression model rebuilt from its parameters (``surv.from_dict``) and the schedule as
+    the app lowers it (:func:`rbd_tvc.repairable_schedule`), so the script simulates what Reliafy
+    does. A placeholder when the fit can't be read here."""
+    from backend.services import rbd_tvc
+    from backend.services.python_export import literal
+
+    life_var = script.names.make(f"{var}_life")
+    try:
+        got = rbd_tvc.repairable_schedule(data, "component", label, script.resolve_model)
+    except rbd_analysis.AnalysisError as exc:
+        return script.missing(life_var, str(exc), label), None
+    if got is None:
+        return script.missing(life_var, (
+            f"Block '{label}' uses a fitted covariate model on a schedule, which couldn't be read for this "
+            "script. Fit it with SurPyval and give it with its StepSchedule as the component's "
+            "'covariates'."), label), None
+    model, schedule, notes = got
+    try:
+        saved = json.loads(model.to_json())
+    except Exception:  # noqa: BLE001 - a model surpyval can't write
+        return script.missing(life_var, (
+            f"Block '{label}': its fitted covariate model can't be written out here. Fit it with SurPyval and "
+            "give it with its StepSchedule as the component's 'covariates'."), label), None
+    script.uses_surv = True
+    L = script.lines
+    paths = "; ".join(f"{n} = {rbd_tvc.describe(sp)}" for n, sp in (rbd_tvc.of_node(data) or {}).items())
+    script.comment(f"{label}: life from a covariate model fitted in Reliafy (its parameters below), under a "
+                   f"schedule on the diagram's clock - {paths}. A repaired or replaced unit carries on under the "
+                   "load in force at that time (repairs reset its age, never the schedule).")
+    for note in notes:
+        script.comment(note)
+    L.append(f"{life_var} = surv.from_dict(")
+    L += ["    " + line for line in _wrapped(saved, "    ", 4)]
+    L.append(")")
+    sched_var = script.names.make(f"{var}_schedule")
+    def edge(e: float) -> str:
+        return repr(float(e)) if np.isfinite(e) else ("-np.inf" if e < 0 else "np.inf")
+
+    edges = [edge(e) for e in np.asarray(schedule.edges, dtype=float)]
+    rows = np.asarray(schedule.Z, dtype=float).tolist()
+    L.append(f"{sched_var} = surv.StepSchedule(")
+    L.append("    [")
+    line = "       "
+    for e in edges:
+        if len(line) + len(e) + 2 > 79:
+            L.append(line.rstrip())
+            line = "       "
+        line += f" {e},"
+    L.append(line.rstrip())
+    L.append("    ],")
+    L += ["    " + ln for ln in _wrapped(rows, "    ", 4, 1)]
+    L[-1] += ","
+    L.append(f"    period={literal(None if schedule.period is None else float(schedule.period))},")
+    L.append(")")
+    return life_var, sched_var
+
+
 def _repairable_body(script: _Script, graph) -> str:
     from backend.services import rbd_export_costs, rbd_maintenance
 
@@ -1663,8 +1722,14 @@ def _repairable_body(script: _Script, graph) -> str:
             L.append(f"{var} = pinned_stand_in()")
             comps.append((nid, var, label))
             continue
-        life = script.dist(data.get("model"), f"{label} (life)",
-                           script.names.make(f"{var}_life"))
+        schedule_var = None
+        if (data.get("covariate_schedules") and ntype == "component"
+                and (data.get("model") or {}).get("kind") == "regression"):
+            # #372: the fitted regression model run under its covariate schedule on the diagram's clock.
+            life, schedule_var = _scheduled_life(script, data, label, var)
+        else:
+            life = script.dist(data.get("model"), f"{label} (life)",
+                               script.names.make(f"{var}_life"))
         repair_var = script.names.make(f"{var}_repair")
         if data.get("instant_repair"):
             repair = '"instant"'  # repaired in zero time: fails, never down
@@ -1680,6 +1745,18 @@ def _repairable_body(script: _Script, graph) -> str:
         if ntype == "standby":
             # A duty unit plus spares, each repaired on its own (#156).
             rbd_export_costs.standby(script, nid, data, label, var, life, repair)
+            comps.append((nid, var, label))
+            continue
+        if schedule_var is not None:
+            if rbd_maintenance.has_extras(data):
+                rbd_export_costs.component(script, data, label, var, life, repair)
+                L.append(f'{var}["covariates"] = {schedule_var}')
+            else:
+                L.append(f"{var} = {{")
+                L.append(f'    "reliability": {life},')
+                L.append(f'    "repairability": {repair},')
+                L.append(f'    "covariates": {schedule_var},')
+                L.append("}")
             comps.append((nid, var, label))
             continue
         if rbd_maintenance.has_extras(data) or (data.get("model") or {}).get("kind") == "repairable":

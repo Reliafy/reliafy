@@ -373,3 +373,18 @@ test("node status rules: a row each, after the covariates; edit and delete from 
   const changed = { ...phase, ...withBlockState(phase, "b", ruleState("not_needed")) };
   assert.deepEqual(changed.not_needed, ["b"]);
 });
+
+// ---- a covariate that follows a schedule within a phase (#372) ----
+test("a phase's schedule is kept, typed as it is and said in words", async () => {
+  const { isSchedule, typed, covValueText, cleanPhases, withValue, covStatus } = await import("./explorerMissions.js");
+  const sched = { expression: "100 if t % 24 < 16 else 40" };
+  assert.equal(isSchedule(sched), true);
+  assert.equal(isSchedule(80), false);
+  assert.equal(typed(sched), sched);
+  assert.equal(covValueText(sched, "%"), "follows 100 if t % 24 < 16 else 40");
+  assert.equal(covValueText({ table: [{ t: 0, value: "a" }, { t: 5, value: "b" }], period: 10 }), "follows a table of 2 steps, repeating every 10");
+  const { phases, errors } = cleanPhases([withValue({ name: "Run", duration: 48 }, "flow", sched)]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(phases[0].values, { flow: sched });
+  assert.equal(covStatus({ value: sched, unit: "%" }).text, "follows 100 if t % 24 < 16 else 40");
+});

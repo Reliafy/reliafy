@@ -36,7 +36,10 @@ part.
 Blocks whose model lives only in the user's workspace — a fitted
 proportional-hazards, non-parametric or load-sharing (AFT) model — can't be
 written as a plain document: the export refuses them by name (Download as
-Python writes a placeholder for them instead).
+Python writes a placeholder for them instead). The exception (#372): a
+repairable block on a covariate schedule goes in as RePyability's own
+component — the fitted regression (surpyval's ``to_dict``) and its
+``"covariates"`` schedule — so the document simulates what the app does.
 """
 
 from __future__ import annotations
@@ -284,9 +287,20 @@ class _Exporter:
         from repyability.rbd.serialisation import rbd_to_dict
 
         nodes = []
+        scheduled: set = set()  # saved covariate models on a schedule (#372): their fits go in as they are
         for node in graph.get("nodes") or []:
             data = dict(node.get("data") or {})
             label = data.get("label") or str(node.get("id"))
+            model = data.get("model") or {}
+            if (node.get("type") == "component" and model.get("kind") == "regression"
+                    and data.get("covariate_schedules")):
+                if self.resolve_model is None or not (model.get("modelId") or model.get("model_id")):
+                    self.problems.append(f"“{label}” uses a fitted covariate model that couldn't be read")
+                scheduled.add(model.get("modelId") or model.get("model_id"))
+                if data.get("repair"):
+                    data["repair"] = self.spec(data["repair"])
+                nodes.append({**node, "data": data})
+                continue
             if node.get("type") in ("component", "standby") and data.get("model"):
                 spec = self.spec(data["model"])
                 if spec and spec.get("kind") in _UNSUPPORTED:
@@ -301,7 +315,8 @@ class _Exporter:
         try:
             # As the analysis builds it: the common-cause groups wherever it
             # takes them in (#226).
-            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=None,
+            resolve = (lambda mid: self.resolve_model(mid) if mid in scheduled else None) if scheduled else None
+            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=resolve,
                                                capacity=rbd_capacity.graph_capacities(graph))
         except ra.AnalysisError as exc:
             raise ExportError(f"This diagram can't be written as RePyability JSON yet: {exc}") from None
