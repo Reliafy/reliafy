@@ -808,6 +808,7 @@ def save_model(
     xr: str | None = Form(default=None),
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
+    x2: str | None = Form(default=None),
     i: str | None = Form(default=None),
     e: str | None = Form(default=None),
     g: str | None = Form(default=None),
@@ -847,6 +848,8 @@ def save_model(
     mapping = {
         "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
         "i": i, "e": e, "g": g, "group": group,
+        # Hours and starts (two clocks): the second clock's column.
+        "x2": x2,
     }
     try:
         if dataset_id:
@@ -1313,6 +1316,35 @@ def life_model(
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid life request.")})
+
+
+@router.post("/models/{model_id}/at-rate")
+def model_at_rate(
+    model_id: str,
+    body: dict = Body(default={}),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A saved model on hours and starts (two clocks) for a unit run at ``rate`` starts
+    per hour (the fleet's typical rate when left out): its B-lives with 90% one-sided
+    lower bounds, the curve with its band, and, with ``times`` or ``reliability``, the
+    calculator's answers there. Free."""
+    from backend import two_clocks
+
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None or model.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if model.kind != two_clocks.KIND:
+        return JSONResponse(status_code=422, content={"detail": "Only a model on hours and starts takes a usage "
+                                                                "rate."})
+    try:
+        live = models_service.two_clock_live(session, model, [*ctx.read_owners, model.owner_id])
+        body = {**(body or {}), "default_rate": (model.results or {}).get("default_rate")}
+        return JSONResponse(content=two_clocks.answer(live, body, (model.results or {}).get("unit") or ""))
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid usage rate.")})
 
 
 @router.post("/models/{model_id}/compare")

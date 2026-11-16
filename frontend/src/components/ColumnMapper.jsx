@@ -51,8 +51,9 @@ const WORDS = {
   tr: "observed only up to this value",
   e: "optional, competing risks",
   s: "optional: the state the unit was in during this row",
+  x2: "optional: each unit's starts (or cycles) beside x, for a part worn by both",
 };
-const LABELS = { e: "failure mode" };
+const LABELS = { e: "failure mode", x2: "starts" };
 
 export default function ColumnMapper({
   columns, mapping, onChange, unit, onUnitChange, facts = {}, timeVarying = null, failureMode = false,
@@ -297,6 +298,14 @@ export default function ColumnMapper({
     ),
   };
 
+  // x2: a second clock (starts beside hours): fits a life worn by both (two clocks).
+  ROW.x2 = () => (
+    <div className="xcn-row" key="x2">
+      {key("x2", say("x2"))}
+      <div className="xcn-fields">{pick("x2", none.x2 || "— none —", "Starts (second clock)")}</div>
+      {below("x2")}
+    </div>
+  );
   // s: the state a row starts from (multi-state data); shown where a flow asks for it.
   ROW.s = () => (
     <div className="xcn-row" key="s">

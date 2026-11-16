@@ -618,6 +618,29 @@ def _bayes_script(model: Model) -> str:
         _imports(name), ["from surpyval.bayes.prior import PriorSpec", ""], px.PRINT_HELPERS, ["", ""], body)
 
 
+def _two_clock_script(model: Model, df: pd.DataFrame) -> str:
+    """A life on hours and starts: SurPyval's equivalent-time-scale fit, then the life
+    of a unit at the fleet's typical rate (the page's numbers)."""
+    from backend import two_clocks
+
+    spec = model.spec or {}
+    results = model.results or {}
+    dist_id = spec.get("distribution_id") or model.distribution_id
+    if dist_id not in two_clocks.MODELS:
+        raise ExportError("Download as Python isn't available for this model on hours and starts.")
+    unit_label = results.get("unit") or spec.get("unit") or ""
+    df, mapping, _, notes = prepare(df, spec, unit_label)
+    unit = _unit_words(model)
+    rate = results.get("default_rate")
+    body = two_clocks.python_script(model.name, df, mapping, dist_id, unit, rate)
+    entry = two_clocks.MODELS[dist_id]
+    what = (f"a {entry['dist']} life on two clocks (hours + k x starts), fitted by maximum likelihood, and the "
+            "life of a unit run at RATE starts per hour.")
+    return px.assemble(
+        px.header(model.name, what, notes=notes, unit=unit),
+        _imports(entry["fitter"].dist.name + "Equivalence"), px.PRINT_HELPERS, [""], body)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -636,7 +659,7 @@ def source_for(db, model: Model) -> str:
         return _params_only_script(model)
     if model.kind in ("joint",):
         raise ExportError("Use the condition and life page's own download for this model.")
-    supported = ("distribution", "discrete", "nonparametric", "regression")
+    supported = ("distribution", "discrete", "nonparametric", "regression", "two_clock")
     if model.kind not in supported:
         raise ExportError(f"Download as Python isn't available for {results.get('distribution') or model.kind} "
                           "models yet.")
@@ -649,6 +672,8 @@ def source_for(db, model: Model) -> str:
         from backend.services import regression_export
 
         return regression_export.script(model, df)
+    if model.kind == "two_clock":
+        return _two_clock_script(model, df)
     if model.kind == "discrete":
         return _discrete_script(model, df)
     if model.kind == "nonparametric":

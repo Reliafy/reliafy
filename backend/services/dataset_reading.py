@@ -46,11 +46,12 @@ from typing import Any
 
 from backend.services import datasets as datasets_service
 
-ROLES = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u")
+ROLES = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u", "x2")
 #: The roles in the order the summary line and the upload screen give them.
-SHOWN = ("x", "c", "n", "tl", "tr", "i", "m", "e", "s")
+SHOWN = ("x", "x2", "c", "n", "tl", "tr", "i", "m", "e", "s")
 SOURCES = ("saved", "last_model", "guessed")
-_NAMES = {"e": "failure mode"}
+#: x2: the second clock (starts beside hours), for a life on two clocks.
+_NAMES = {"e": "failure mode", "x2": "starts"}
 
 
 class ReadingError(ValueError):
@@ -716,7 +717,7 @@ def summary(reading: dict) -> str:
         parts.append(f"c = {reading['c']}")
     elif reading.get("all_failed"):
         parts.append("c: every row failed")
-    for role in ("n", "tl", "tr", "i", "m", "e", "s"):
+    for role in ("x2", "n", "tl", "tr", "i", "m", "e", "s"):
         if reading.get(role):
             unit = f" ({reading['m_unit']})" if role == "m" and reading.get("m_unit") else ""
             parts.append(f"{_NAMES.get(role, role)} = {reading[role]}{unit}")

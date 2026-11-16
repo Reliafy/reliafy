@@ -172,7 +172,8 @@ it, or guessed, and the line says *guessed — check it*: press **Looks right**
 
 If the dataset has covariates (Z), choose **Life model, no covariates** or
 **Regression on Z**: a regression starts with every covariate ticked; untick
-any you don't want (see [covariates](/guides/covariates-and-regression)). When
+any you don't want (see [covariates](/guides/covariates-and-regression)). A part worn by running hours and by
+starts takes a starts column too (see [hours and starts](/guides/hours-and-starts)). When
 the rows follow each item over time (start and stop rows), a regression fits
 the covariates over time, and a life model reads one life per item: its last
 time and its status then.

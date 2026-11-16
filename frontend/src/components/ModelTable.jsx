@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import TwoClockLife from "./TwoClockLife.jsx";
 import { Link, useLocation } from "react-router-dom";
 import {
   createModelFromParams, getMaintenancePosition, getPositionModel, linkPositionModel, listAltModels, listDegradationModels, listModels,
+  setPositionModelUsageRate,
   listPositionModels, listRbds, listRecurrentModels, unlinkPositionModel, updateModelParams,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
@@ -166,12 +168,19 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
   const [state, setState] = useState({ id: null, data: null, error: null });
   const [age, setAge] = useState("");
   const askAge = link.model_type === "rbd" && Number(age) > 0 ? Number(age) : null;
+  // Read again after the row's starts per hour changes (a life on hours and starts).
+  const [nonce, setNonce] = useState(0);
+  const [rateBusy, setRateBusy] = useState(false);
   useEffect(() => {
     let live = true;
     const t = setTimeout(() => getPositionModel(link.id, { age: askAge }).then((data) => live && setState({ id: link.id, data, error: null }),
       (e) => live && setState({ id: link.id, data: null, error: e.message })), askAge ? 300 : 0);
     return () => { live = false; clearTimeout(t); };
-  }, [link.id, askAge]);
+  }, [link.id, askAge, nonce]);
+  const setRate = async (rate) => {
+    setRateBusy(true);
+    try { await setPositionModelUsageRate(link.id, rate); setNonce((n) => n + 1); } finally { setRateBusy(false); }
+  };
   useEffect(() => {
     onMenu?.(rowActions(r).filter((a) => a.id !== "model-open").map((a) => ({
       ...a, id: `side-${a.id}`, onSelect: () => onAction(r, a.id),
@@ -224,7 +233,21 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
             {!d && !state.error && <p className="rim-tquiet">Reading the model…</p>}
             {d?.stress_note && <p className="rim-tquiet ml-stress">{d.stress_note}</p>}
             {link.model_type === "rbd" && <RbdDetails d={d} model={model} age={age} onAge={setAge} />}
-            {d && <ModelPlot curves={d.curves} unit={unit} name={r.ref.name} />}
+            {d?.two_clock && (
+              // Hours and starts: the life at this position's starts per hour (its operating plan's, or set here).
+              <section aria-label="At this position's starts per hour">
+                <h3 className="ml-h">At this position's starts per hour</h3>
+                {d.two_clock.at_rate ? (
+                  <TwoClockLife compact atRate={d.two_clock.at_rate} unit={unit} busy={rateBusy}
+                                source={{ text: d.two_clock.usage_rate?.text, kind: d.two_clock.usage_rate?.source }}
+                                onRate={setRate} onReset={() => setRate(null)} />
+                ) : (
+                  <TwoClockLife compact atRate={null} unit={unit} busy={rateBusy}
+                                source={{ text: d.two_clock.usage_rate?.text }} onRate={setRate} />
+                )}
+              </section>
+            )}
+            {d && !d.two_clock && <ModelPlot curves={d.curves} unit={unit} name={r.ref.name} />}
             {d?.prediction && (
               <section aria-label="The parts count">
                 <h3 className="ml-h">The parts count <Link className="rw-sum" to={predictionPath(d.prediction.id)}>Open in Predictions</Link></h3>

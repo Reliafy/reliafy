@@ -452,6 +452,19 @@ def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None
             "which an RBD block can't take. Fit a parametric distribution (Weibull, say) to the same "
             "data and use that, or give distribution_id + params inline."
         )
+    if saved.kind == "two_clock":
+        # Hours and starts: the block's starts per running hour (usage_rate) turns it into a life in hours.
+        return {
+            "source": "saved",
+            "kind": "two_clock",
+            "modelId": saved.id,
+            "name": saved.name,
+            "distribution": r.get("distribution"),
+            "distribution_id": r.get("distribution_id") or saved.distribution_id,
+            "params": [{"name": p.get("name"), "value": p.get("value")} for p in (r.get("params") or [])],
+            "unit": r.get("unit") or "",
+            "default_rate": r.get("default_rate"),
+        }
     if saved.kind not in ("distribution", "regression"):
         raise GraphError(
             f"{where}: model “{saved.name}” is a {saved.kind} model — RBD blocks need a "
@@ -501,6 +514,19 @@ def _model(model, where: str, resolve_saved_model) -> dict:
         if out.get("kind") == "joint":
             if model.get("distribution_id") or model.get("params"):
                 raise GraphError(f"{where}: a condition-based block takes saved_model_id and joint_unit only.")
+            return out
+        if out.get("kind") == "two_clock":
+            rate = model.get("usage_rate")
+            if rate not in (None, ""):
+                from backend import two_clocks
+
+                try:
+                    out["usage_rate"] = two_clocks.check_rate(rate)
+                except two_clocks.TwoClockError as exc:
+                    raise GraphError(f"{where}: {exc}") from None
+            for key in ("usage_rate_source", "placeholder"):
+                if model.get(key):
+                    out[key] = model[key]
             return out
         if model.get("source") != "saved" and _inline_disagrees(model, out):
             # The compact form get kind rbd returns repeats a saved model's own

@@ -105,6 +105,7 @@ from backend import fitting
 from backend import life_bounds
 from backend import mcp_guide
 from backend import regression_bands
+from backend import two_clocks
 from backend.regression_diagnostics import COX_KEY
 from backend import recurrent as recurrent_fit
 from backend import recurrent_models
@@ -1386,6 +1387,23 @@ def _cr_summary(result: dict) -> dict:
 _MORE_MODEL_KEYS = ("coef_table", "ci_method", "frailty", "semi_parametric", "spline")
 
 
+def _two_clock_summary(result: dict) -> dict:
+    """A fit on hours and starts for an agent: k (hours one start is worth) and the parameters with 90%
+    intervals, the test that starts matter, and the life at the fleet's low, typical and high rates."""
+    at = result.get("at_rate") or {}
+    return {
+        **({"warnings": result["warnings"]} if result.get("warnings") else {}),
+        "kind": result.get("kind"), "distribution": result.get("distribution"),
+        "distribution_id": result.get("distribution_id"), "unit": result.get("unit", ""), "n": result.get("n"),
+        "answer": result.get("headline"), "params": result.get("params", []), "k_test": result.get("k_test"),
+        "fleet_rates": result.get("rates"), "at_rates": result.get("rate_table"),
+        "at_typical_rate": {"rate": at.get("rate"), "rate_words": at.get("rate_words"),
+                            "b_lives": (at.get("life") or {}).get("b_lives"),
+                            "mean_life": ((at.get("life") or {}).get("mttf") or {}).get("value")} if at else None,
+        "use": "Pass usage_rate (starts per hour) to analyse reliability_at, or on an RBD block's model.",
+    }
+
+
 def _fit_summary(result: dict) -> dict:
     """The parts of a fit payload worth handing to a model (no plot arrays).
 
@@ -1393,6 +1411,8 @@ def _fit_summary(result: dict) -> dict:
     the warning, ahead of the numbers, so they aren't quoted as a result."""
     if result.get("kind") == "competing_risks":
         return _cr_summary(result)
+    if result.get("kind") == two_clocks.KIND:
+        return _two_clock_summary(result)
     no_max = result.get("no_finite_maximum")  # #230: SurPyval 0.23 says so
     failed = bool(no_max) or result.get("fit_ok") is False or bool(result.get("fit_warning"))
     metrics = None if failed else (
@@ -1618,6 +1638,12 @@ _FitTimeRightCol = Annotated[Optional[str], Field(
 _FitTruncLeftCol = Annotated[Optional[str], Field(
     description="Column holding each row's left-truncation age (delayed entry: the age it came under "
                 "observation; blank = not truncated).")]
+_FitSecondClock = Annotated[Optional[list[float]], Field(
+    description="Hours and starts (two clocks): each unit's starts (or cycles) beside its time in data, at its "
+                "failure or now. With a *_two_clock distribution.")]
+_FitSecondClockCol = Annotated[Optional[str], Field(
+    description="Hours and starts: the dataset column of each unit's starts (or cycles). With a *_two_clock "
+                "distribution.")]
 _FitTruncRightCol = Annotated[Optional[str], Field(
     description="Column holding each row's right-truncation age (blank = not truncated).")]
 _FitCovariates = Annotated[Optional[list[str]], Field(
@@ -1818,7 +1844,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               criterion: str | None = None, frailty_family: str | None = None,
               covariate_units: dict | None = None, cox_options: CoxOptions | None = None,
               id_column: str | None = None, causes=None, groups=None, cause_column=None,
-              group_column: str | None = None) -> dict[str, Any]:
+              group_column: str | None = None, second_clock=None,
+              second_clock_column: str | None = None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if covariate_units:
@@ -1829,7 +1856,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                             f"{'is' if len(unknown) == 1 else 'are'} not in covariates "
                             f"({', '.join(covariates or []) or 'none given'}).")
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
-             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS, *fitting.FLEXIBLE, *competing_risks.CR_MODELS}
+             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS, *fitting.FLEXIBLE, *competing_risks.CR_MODELS,
+             *two_clocks.MODELS}
     dist = (distribution or "weibull").strip()
     if dist not in known:
         dist = fitting.resolve_distribution_id(dist)  # FitError -> tool error listing the options
@@ -1842,10 +1870,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                              ("count_column", count_column), ("time_right_column", time_right_column),
                              ("trunc_left_column", trunc_left_column),
                              ("trunc_right_column", trunc_right_column), ("cause_column", cause_column),
-                             ("group_column", group_column)) if v] if data is not None
+                             ("group_column", group_column), ("second_clock_column", second_clock_column)) if v]
+             if data is not None
              else [k for k, v in (("censored", censored), ("counts", counts), ("data_right", data_right),
                                   ("trunc_left", trunc_left), ("trunc_right", trunc_right), ("causes", causes),
-                                  ("groups", groups)) if v is not None])
+                                  ("groups", groups), ("second_clock", second_clock)) if v is not None])
     if stray:
         other = "dataset_id" if data is not None else "inline data"
         raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with {other} — "
@@ -1862,7 +1891,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                                  if data_right is not None else {"x": list(data)})
         for key, values, label in (("c", censored, "censored"), ("n", counts, "counts"),
                                    ("tl", trunc_left, "trunc_left"), ("tr", trunc_right, "trunc_right"),
-                                   ("e", causes, "causes"), ("g", groups, "groups")):
+                                   ("e", causes, "causes"), ("g", groups, "groups"),
+                                   ("x2", second_clock, "second_clock")):
             if values is not None:
                 cols[key] = _per_row(values, len(data), label)
         mapping = {k: k for k in cols}
@@ -1885,6 +1915,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                                 f"(change dataset_update x_col). Columns: {', '.join(names)}.")
             if competing_risks.is_competing_risks(dist) and reading.get("e") and not cause_column:
                 mapping["e"] = reading["e"]
+            if two_clocks.is_two_clock(dist) and reading.get("x2") and not second_clock_column:
+                mapping["x2"] = reading["x2"]
             if covariates is None and dist in fitting.REGRESSION_MODELS and reading.get("z"):
                 covariates = list(reading["z"])
             mapping.update({k: v for k, v in (("c", censor_column), ("n", count_column), ("tl", trunc_left_column),
@@ -1901,6 +1933,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
                        "tr": trunc_right_column, "i": id_column, "e": cause_column,
                        ("group" if frailty else "g"): group_column}
+        if second_clock_column:
+            mapping["x2"] = second_clock_column
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
@@ -2038,6 +2072,8 @@ def fit_distribution(
     groups: _FitGroups = None,
     cause_column: _FitCauseCol = None,
     group_column: _FitGroupColumn = None,
+    second_clock: _FitSecondClock = None,
+    second_clock_column: _FitSecondClockCol = None,
 ) -> dict[str, Any]:
     """Fit a life distribution (SurPyval) to inline times or a saved dataset and report it:
     parameters with 90% CIs, goodness of fit, metrics, and `censoring`, the failures and censored units the fit
@@ -2051,7 +2087,8 @@ def fit_distribution(
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
                 include_mixtures=include_mixtures, criterion=criterion, frailty_family=frailty_family, save=False, name=None, covariate_units=covariate_units,
                 cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
-                cause_column=cause_column, group_column=group_column)
+                cause_column=cause_column, group_column=group_column, second_clock=second_clock,
+                second_clock_column=second_clock_column)
 
 
 def fit_and_save_model(
@@ -2085,6 +2122,8 @@ def fit_and_save_model(
     groups: _FitGroups = None,
     cause_column: _FitCauseCol = None,
     group_column: _FitGroupColumn = None,
+    second_clock: _FitSecondClock = None,
+    second_clock_column: _FitSecondClockCol = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -2116,7 +2155,8 @@ def fit_and_save_model(
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
                 include_mixtures=include_mixtures, criterion=criterion, frailty_family=frailty_family, save=True, name=name, covariate_units=covariate_units,
                 cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
-                cause_column=cause_column, group_column=group_column)
+                cause_column=cause_column, group_column=group_column, second_clock=second_clock,
+                second_clock_column=second_clock_column)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -2445,6 +2485,26 @@ def _bayes_class_prior(user, db, baseline: dict, x, c, trust, age) -> dict[str, 
     return {"data_notice": DATA_NOTICE, **out}
 
 
+def _reliability_at_rate(db, m, times, owners, usage_rate, conditional_age) -> dict[str, Any]:
+    """reliability_at on a model on hours and starts: the life of a unit at ``usage_rate`` starts per
+    hour (SurPyval's at_usage), R(t) with its 90% one-sided lower bound, and the B-lives."""
+    if conditional_age is not None:
+        raise ToolError("conditional_age isn't offered for a model on hours and starts yet: drop it.")
+    try:
+        live = models_service.two_clock_live(db, m, owners)
+        out = two_clocks.answer(live, {"rate": usage_rate, "default_rate": (m.results or {}).get("default_rate"),
+                                       "times": list(times)}, (m.results or {}).get("unit") or "")
+    except (two_clocks.TwoClockError, models_service.ModelNotFound) as exc:
+        raise ToolError(str(exc) or "Model not found.") from None
+    return {"model": m.name, "model_id": m.id, "unit": (m.results or {}).get("unit", ""), "method": "exact",
+            "usage_rate": out["rate"], "rate_words": out["rate_words"], "answer": out["sentence"],
+            "points": [{"t": p["t"], "reliability": p["reliability"], "reliability_lower_90": p["lower"]}
+                       for p in out["at_times"]],
+            "life": out["life"], "as_distribution": out["as_distribution"],
+            "notes": ["Exact: SurPyval's life at the usage rate; lower bounds 90% one-sided, including the "
+                      "uncertainty in what a start is worth."]}
+
+
 def reliability_at(
     ctx: Context,
     model_id: Annotated[str, Field(description="A saved non-repairable model id (list kind models).")],
@@ -2469,6 +2529,9 @@ def reliability_at(
                     "next; a covariate a row leaves out keeps its previous value. Evaluates along that path "
                     "(SurPyval's sf_tvc) instead of at fixed covariates, and adds mean_life along it. Use "
                     "instead of `covariates`.")] = None,
+    usage_rate: Annotated[Optional[float], Field(
+        ge=0, description="Hours-and-starts (two_clock) models only: starts per running hour (0.125 = 1 start "
+                          "every 8 h); default the fleet's typical rate.")] = None,
 ) -> dict[str, Any]:
     """A saved non-repairable model at given times: R(t), F(t), hazard, cumulative hazard and density;
     conditional_age adds the chance a unit that age survives a further t. Parametric models are exact,
@@ -2491,6 +2554,10 @@ def reliability_at(
     if covariate_schedule is not None:
         return _reliability_along(db, m, times, owners, covariate_schedule, covariates, conditional_age,
                                   confidence)
+    if m.kind == two_clocks.KIND:
+        return _reliability_at_rate(db, m, times, owners, usage_rate, conditional_age)
+    if usage_rate is not None:
+        raise ToolError(f"“{m.name}” isn't a model on hours and starts: drop usage_rate.")
 
     ts = [float(t) for t in times]
     later = [conditional_age + t for t in ts] if conditional_age is not None else []
@@ -3689,6 +3756,8 @@ class BlockModel(BaseModel):
     repairable_options: Optional[dict[str, Union[int, str]]] = Field(None, description=(
         "repairable_form ara/ari: {m: repairs remembered (or 'all')}; ari: {baseline: crow_amsaa | duane | "
         "cox_lewis}."))
+    usage_rate: Optional[float] = Field(None, ge=0, description=(
+        "With a saved hours-and-starts (two_clock) model: starts per running hour."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
     joint_unit: Optional["JointUnit"] = Field(None, description=(
         "With a saved condition-based (joint) model: the unit this block is (non-repairable diagrams)."))

@@ -117,6 +117,20 @@ export function savedModelRef(full) {
     unit: r.unit || "",
     // A mixture fit's modes follow this distribution (#318).
     ...(r.distribution_id === "mixture" ? { base_distribution_id: r.base_distribution_id || "weibull" } : {}),
+    // Hours and starts (two clocks): the starts per hour it runs at, the fleet's typical one to start.
+    ...(full.kind === "two_clock" ? { usage_rate: r.default_rate ?? null } : {}),
+  };
+}
+
+// A two-clock model picked for use (an RBD block, a strategy tool) at a starts-per-hour rate:
+// its reference with ``usage_rate`` and, for tools that take a distribution and its parameters,
+// the plain distribution it equals at that rate (the server's as_distribution).
+export function twoClockAt(ref, atRate) {
+  const plain = atRate?.as_distribution || {};
+  return {
+    ...ref, usage_rate: atRate?.rate ?? ref.usage_rate ?? null, rate_words: atRate?.rate_words || "",
+    ...(plain.distribution_id ? { distribution_id: plain.distribution_id, params: plain.params } : {}),
+    distribution: `${ref.distribution || "Two clocks"}${atRate?.rate_words ? ` at ${atRate.rate_words}` : ""}`,
   };
 }
 

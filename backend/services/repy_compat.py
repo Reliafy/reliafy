@@ -157,3 +157,23 @@ def plan_supports() -> dict:
             shutdowns = False
         _PLAN_SUPPORTS = {"restoration": restoration, "shutdowns": shutdowns}
     return dict(_PLAN_SUPPORTS)
+
+
+_USAGE_BLOCKS: Optional[bool] = None
+
+
+def native_usage_blocks() -> bool:
+    """Whether the installed RePyability takes SurPyval's life at a usage rate
+    (``EquivalenceModel.at_usage(rate)``, a ``LifeAtUsage``) as a block's life in every
+    diagram, saves it and offers its rate as a lever (RePyability #415, the release after
+    0.19). Found by capability, as :func:`plan_supports` is. Without it the app gives the
+    block the life at the rate as a plain SurPyval distribution (``rbd_two_clocks``)."""
+    global _USAGE_BLOCKS
+    if _USAGE_BLOCKS is None:
+        try:
+            from repyability.rbd import _usage
+
+            _USAGE_BLOCKS = hasattr(_usage, "first_clock_life") and hasattr(_usage, "to_dict")
+        except ImportError:
+            _USAGE_BLOCKS = False
+    return _USAGE_BLOCKS
