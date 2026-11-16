@@ -48,7 +48,7 @@ test("Delete a branch: the server's counts, one click, gone; Undo brings it all 
   const dialog = page.getByRole("dialog", { name: `Delete “Zdel propulsion ${tag}” and everything inside it?` });
   const counts = dialog.getByTestId("delete-counts");
   await expect(counts).toContainText("2 positions inside it");
-  await expect(counts).toContainText("1 fitted item kept, unfitted: it stays in Items");
+  await expect(counts).toContainText("1 fitted item kept, unfitted: it stays on the Assets list");
   await expect(counts).toContainText("1 scheduled task: no longer scheduled");
   await expect(counts).toContainText("1 open work order: cancelled");
   await expect(counts).toContainText("Its history stays in the log");
