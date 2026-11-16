@@ -58,7 +58,8 @@ typical and high rates side by side.
 ## Use it
 
 - **In a block diagram**, pick the saved model for a block and set its
-  **Starts per hour**. The block is the life at that rate.
+  **Starts per hour**. The block is the life at that rate, and the diagram's
+  90% band includes the model's own uncertainty, the worth of a start too.
 - **In the Explorer**, link the model to a position. The rate comes from the
   position's **operating plan**: its runs and hours over the next 12 months
   give its starts per hour, and the panel says so. Type another rate to

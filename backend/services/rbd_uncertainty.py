@@ -26,6 +26,13 @@ blocks, the units of one parallel block, or a block inside a sub-system:
 drawing them independently would understate the uncertainty, which is about
 the one population's parameters.
 
+A block on a saved life on hours and starts (``two_clock``, at the block's starts
+per hour) draws its fit's own parameters, the scale, shape and starts weight ``k``
+together from the fit's covariance (each on the log scale, a log-normal mean on its
+own), and each draw is the plain distribution that draw's life at the block's rate
+is in hours (``two_clocks.as_distribution``): the band carries the uncertainty in
+``k`` as well as in the life.
+
 A saved model from a library rate record (NRC/INL) has no fit to draw from:
 its source gives the failure rate as a gamma (or lognormal) across plants, and
 each draw takes its rate from that (``rate_draws``); the block says so.
@@ -91,7 +98,7 @@ class _SavedDraws:
     """The draws of one saved fitted model, shared by every block using it."""
 
     def __init__(self, model_id: str, live, params: list, from_source: bool = False,
-                 extras: Optional[list] = None, kind: str = CONFIDENCE):
+                 extras: Optional[list] = None, kind: str = CONFIDENCE, two_clock: bool = False):
         self.model_id = model_id
         self.live = live
         self.params = params  # n_draws parameter vectors (dist param order)
@@ -102,6 +109,44 @@ class _SavedDraws:
         # Per draw, the offset / LFP / zero-inflation shares the draw itself carries
         # (Reliafy's names: gamma, p, f0); None where the model has none.
         self.extras = extras
+        # A life on hours and starts: ``params`` are the whole fit's (the distribution's, then k),
+        # turned into a block's life at its own rate per draw (``_drawn_two_clock``).
+        self.two_clock = two_clock
+
+
+def _two_clock_draws(model_id: str, live, n: int, rng):
+    """``n`` draws of a two-clock fit's parameters (the distribution's, then ``k``) from its
+    covariance, each on the log scale (a log-normal's ``mu`` on its own, and a ``k`` fitted at
+    0 on its own, kept at 0 or more), as ``_SavedDraws``; or a reason string."""
+    from backend.fitting import _covariance_of
+
+    if getattr(live.dist, "name", None) not in ("Weibull", "Exponential", "LogNormal"):
+        return "a life on hours and starts of this family isn't drawn yet"
+    cov = _covariance_of(live)
+    centre = np.asarray(live.params, dtype=float)
+    if cov is None or cov.shape != (len(centre), len(centre)) or not np.all(np.isfinite(cov)):
+        return "no parameter covariance (not a maximum-likelihood fit)"
+    names = list(live.parameter_names)
+    logged = np.array([name != "mu" and value > 0 for name, value in zip(names, centre)])
+    slope = np.where(logged, 1.0 / np.where(logged, centre, 1.0), 1.0)
+    scaled = cov * np.outer(slope, slope)
+    z = rng.multivariate_normal(np.where(logged, np.log(np.where(logged, centre, 1.0)), centre),
+                                scaled, size=n, method="eigh")
+    values = np.where(logged, np.exp(z), z)
+    values[:, names.index("k")] = np.maximum(values[:, names.index("k")], 0.0)
+    return _SavedDraws(model_id, live, [list(row) for row in values], two_clock=True)
+
+
+def _drawn_two_clock(block: dict, live, params: list, where: str) -> dict:
+    """A two-clock block as the plain model its drawn life is in hours at the block's rate."""
+    from backend import two_clocks
+    from backend.services import rbd_two_clocks
+
+    names = list(live.parameter_names)
+    rate = rbd_two_clocks.rate_of(block, where)
+    k = float(params[names.index("k")])
+    dist = two_clocks.distribution_in_hours(live.dist.name, names[:-1], params[:-1], 1.0 + k * rate)
+    return {"source": "params", **dist}
 
 
 def _draw_extras(live, drawn) -> Optional[dict]:
@@ -163,6 +208,12 @@ class _Collector:
         except Exception:  # noqa: BLE001 - a refit that fails leaves it fixed
             entry = None
         live = (entry or {}).get("model")
+        from backend import two_clocks
+
+        if two_clocks.is_model(live):
+            # A life on hours and starts: its own draws, of k too (``_two_clock_draws``).
+            rng = np.random.default_rng([self.seed, zlib.crc32(model_id.encode())])
+            return _two_clock_draws(model_id, live, self.n_draws, rng)
         from backend.services import bayes_life
 
         fit = bayes_life.bayesian_fit(live)
@@ -386,7 +437,9 @@ def _draw_graph(
                 got = collector.draws(model_id, label)
                 if not isinstance(got, _SavedDraws):
                     reasons.append(got)
-                elif got.kind != CREDIBLE and not _matches(model, got.live):
+                elif got.two_clock != (kind == "two_clock"):
+                    reasons.append(_UNREADABLE)
+                elif not got.two_clock and got.kind != CREDIBLE and not _matches(model, got.live):
                     reasons.append(_STALE)
                 else:
                     swaps[slot] = got
@@ -400,6 +453,10 @@ def _draw_graph(
             for slot, saved in swaps.items():
                 from backend.services import rbd_standby
 
+                if saved.two_clock:
+                    rbd_standby.set_path(new_data, slot, _drawn_two_clock(
+                        _slot(data, slot), saved.live, saved.params[i], label))
+                    continue
                 rbd_standby.set_path(new_data, slot, _drawn_model(
                     _slot(data, slot), saved.params[i], saved.extras[i] if saved.extras else None))
             node_i = {**node, "data": new_data}

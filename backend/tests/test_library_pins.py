@@ -1,4 +1,4 @@
-"""The library pins Reliafy runs: SurPyval 0.28, the version RePyability 0.19
+"""The library pins Reliafy runs: SurPyval 0.28, the version RePyability 0.19.1
 targets (the pin rule: never bump SurPyval on its own).
 
 Bump these with the pins (requirements.txt / the lock, the Dockerfile and its
@@ -15,7 +15,7 @@ import surpyval as sp
 from backend.services import rbd_export
 
 SURPYVAL = "0.28"
-REPYABILITY = "0.19"
+REPYABILITY = "0.19.1"
 _ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -25,7 +25,7 @@ def test_the_installed_libraries_are_the_pins():
 
 
 def test_download_as_python_installs_the_pinned_tags():
-    """The install line users are given names the released tag (v0.19), not
+    """The install line users are given names the released tag (v0.19.1), not
     the commit the Dockerfile pins."""
     assert rbd_export.detect_versions() == {"surpyval": SURPYVAL, "repyability": REPYABILITY}
     assert rbd_export.install_commands()[-1].endswith(f'RePyability.git@v{REPYABILITY}"')

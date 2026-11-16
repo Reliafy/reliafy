@@ -212,7 +212,7 @@ lists the exact commands for the versions Reliafy runs:
 ```
 pip install "surpyval==0.28"
 pip install networkx tqdm
-pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.17"
+pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.19.1"
 python my_diagram.py
 ```
 

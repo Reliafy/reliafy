@@ -165,9 +165,9 @@ _USAGE_BLOCKS: Optional[bool] = None
 def native_usage_blocks() -> bool:
     """Whether the installed RePyability takes SurPyval's life at a usage rate
     (``EquivalenceModel.at_usage(rate)``, a ``LifeAtUsage``) as a block's life in every
-    diagram, saves it and offers its rate as a lever (RePyability #415, the release after
-    0.19). Found by capability, as :func:`plan_supports` is. Without it the app gives the
-    block the life at the rate as a plain SurPyval distribution (``rbd_two_clocks``)."""
+    diagram, saves it and offers its rate as a lever (RePyability 0.19.1). Found by
+    capability, as :func:`plan_supports` is. Without it a two-clock block is refused,
+    saying which RePyability it needs (``rbd_two_clocks``)."""
     global _USAGE_BLOCKS
     if _USAGE_BLOCKS is None:
         try:

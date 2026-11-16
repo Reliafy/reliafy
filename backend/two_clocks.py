@@ -284,15 +284,22 @@ def as_distribution(life) -> Optional[dict]:
     distribution with time divided by ``1 + k rate``): {distribution_id, params [{name,
     value}]} for tools that take a distribution and its parameters (Strategy). Point
     values only; the bounds stay with the two-clock model. None for another family."""
-    model, a = life.model, float(life.acceleration)
-    names = list(model.parameter_names[:-1])
-    p = dict(zip(names, (float(v) for v in model.dist_params)))
-    name = model.dist.name
-    if name == "Weibull":
+    model = life.model
+    return distribution_in_hours(model.dist.name, list(model.parameter_names[:-1]), model.dist_params,
+                                 float(life.acceleration))
+
+
+def distribution_in_hours(dist_name: str, names, values, acceleration: float) -> Optional[dict]:
+    """A combined-clock distribution (``dist_name`` with parameters ``names`` = ``values``)
+    of a unit that ages ``acceleration`` combined units per hour, as the plain distribution
+    it is in hours (see :func:`as_distribution`); None for another family."""
+    p = dict(zip(names, (float(v) for v in values)))
+    a = float(acceleration)
+    if dist_name == "Weibull":
         out = ("weibull", [("alpha", p["alpha"] / a), ("beta", p["beta"])])
-    elif name == "Exponential":
+    elif dist_name == "Exponential":
         out = ("exponential", [("failure_rate", p["failure_rate"] * a)])
-    elif name == "LogNormal":
+    elif dist_name == "LogNormal":
         out = ("lognormal", [("mu", p["mu"] - math.log(a)), ("sigma", p["sigma"])])
     else:
         return None
