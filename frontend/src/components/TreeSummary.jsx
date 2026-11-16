@@ -53,7 +53,8 @@ function Facts({ r, display, fittedFrom, design = false }) {
   const p = r.ref;
   const rows = [];
   if (r.type === "pos" && design) {
-    rows.push(["Position class", p.position_class || quiet("None")]);
+    // A design position is itself the class of every position built from it
+    // ("Built as …" below), so its own free-text class isn't shown.
     // Where it sits in the product's layout (its design locations), set here or from what it's inside.
     rows.push(["Placed at", p.location ? (
       <>{p.location.name}{p.location.inherited && <span className="td-quiet td-sub">From what it's inside</span>}</>
