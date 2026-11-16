@@ -10,7 +10,7 @@ import {
 // competing risks only. ``u``: a column giving each row's time unit (sent as
 // the ``u_col`` fit option): every time is converted to the fit's unit first.
 export const EMPTY_MAPPING = {
-  x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", e: "", g: "", u: "", c_invert: false, c_map: null,
+  x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", e: "", g: "", u: "", x2: "", c_invert: false, c_map: null,
 };
 
 // The form fields a mapping is sent as, in order: [[field, value]] (api.js's

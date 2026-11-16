@@ -186,11 +186,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Inspection data (an earliest and a latest time) takes Turnbull, not the
   // estimators that need exact failure times: those aren't offered.
   const intervalTimes = !!(mapping.xl || mapping.xr);
+  // A starts column (x2, a second clock) takes only the models on hours and starts, and they need it.
+  const twoClocks = !!mapping.x2;
   const options = useMemo(
     () => (byMode ? CR_OPTIONS : distributions)
-      .filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false)
-        && !(intervalTimes && EXACT_TIMES_ONLY.includes(d.id))),
-    [distributions, hasCovariates, byMode, tvc, intervalTimes]
+      .filter((d) => !!d.two_clock === twoClocks
+        && (twoClocks || (!!d.covariates === hasCovariates && (!tvc || d.tvc !== false)
+          && !(intervalTimes && EXACT_TIMES_ONLY.includes(d.id))))),
+    [distributions, hasCovariates, byMode, tvc, intervalTimes, twoClocks]
   );
 
   // Keep the selected model valid for the current filtered list.

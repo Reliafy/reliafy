@@ -6,7 +6,7 @@
 // by both test suites). Pure, so `node --test src/` covers it.
 //
 //   reading = {
-//     x, xl, xr, c, n, tl, tr, i, m, e, s, u, // column names, "" for none
+//     x, xl, xr, c, n, tl, tr, i, m, e, s, u, x2, // column names, "" for none (x2: starts beside hours)
 //                                           // (s: the state during the row, multi-state; kept, not yet fitted)
 //     c_invert, c_map,                      // what the status values mean
 //     all_failed,                           // no status column, on purpose: every row failed
@@ -20,10 +20,11 @@ import {
 import { isNumeric } from "./datasetGuess.js";
 import { guessTvc, tvcUnit } from "./tvcData.js";
 
-export const ROLES = ["x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u"];
+export const ROLES = ["x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u", "x2"];
 // The selectors the upload shows, in order (x carries its range xl to xr).
-export const READING_ROWS = ["x", "c", "n", "tl", "tr", "i", "m", "e", "s"];
-const LABEL = { e: "failure mode" };
+export const READING_ROWS = ["x", "x2", "c", "n", "tl", "tr", "i", "m", "e", "s"];
+// x2: a second clock beside x (starts beside hours), for a life worn by both.
+const LABEL = { e: "failure mode", x2: "starts" };
 
 export const emptyReading = () => ({
   ...Object.fromEntries(ROLES.map((r) => [r, ""])),
@@ -145,7 +146,7 @@ export function guessReading(columns, facts, nRows) {
 export function lifeMapping(r) {
   if (!r) return { ...EMPTY_MAPPING };
   const m = { ...EMPTY_MAPPING };
-  for (const k of ["x", "c", "n", "xl", "xr", "tl", "tr", "e", "u"]) m[k] = r[k] || "";
+  for (const k of ["x", "c", "n", "xl", "xr", "tl", "tr", "e", "u", "x2"]) m[k] = r[k] || "";
   m.c_invert = !!r.c_invert && !!r.c;
   m.c_map = r.c ? r.c_map || null : null;
   return m;
@@ -223,6 +224,7 @@ export function readingParts(r) {
   const out = [];
   if (r.x) out.push({ key: "x", label: "x", value: r.x + (r.unit && r.unit !== "units" && !/\([^()]*\)\s*$/.test(r.x) ? ` (${r.unit.toLowerCase()})` : "") });
   if (r.xl) out.push({ key: "range", label: "range", value: `${r.xl} to ${r.xr}` });
+  if (r.x2) out.push({ key: "x2", label: "starts", value: r.x2 });
   if (r.c) out.push({ key: "c", label: "c", value: r.c });
   else if (r.all_failed) out.push({ key: "c", label: "c", value: "every row failed" });
   for (const k of ["n", "tl", "tr", "i", "m", "e", "s"]) {

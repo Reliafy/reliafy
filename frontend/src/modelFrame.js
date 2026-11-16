@@ -19,6 +19,7 @@ export const TAB_LABELS = {
   survival: "Survival curve",
   chance: "Chance by count",
   modes: "Failure modes",
+  rate: "Life at a rate",
   effects: "Effects",
   risk: "Risk now",
   calc: "Calculator",
@@ -92,6 +93,10 @@ export function modelTabs(result) {
       break;
     case "joint":
       ids = ["risk", "calc", "effects", "diag", "data"];
+      break;
+    case "two_clock":
+      // Hours and starts: the life at a starts-per-hour rate (its own calculator), what a start costs.
+      ids = ["rate", "chars", "data"];
       break;
     case "regression":
       ids = ["effects", fns && "calc", fns && regressionChars(r) && "chars", "diag", "data"];
@@ -227,6 +232,15 @@ export function answerParts(result, { split = null, saved = null } = {}) {
       // Near 100%, four figures: "99.25%", not "99%".
       add(d.reliability != null && `reliability ${formatNumber(d.reliability * 100, { sig: 4 })}%`);
       add(d.demands != null && `${d.failures} failed in ${Number(d.demands).toLocaleString("en-US")} demands`);
+      break;
+    }
+    case "two_clock": {
+      const k = (r.params || []).find((p) => p.name === "k");
+      add(k && `one ${r.clocks?.second_one || "start"} = ${formatNumber(k.value)} ${unitInText(r.unit) || "hours"}`);
+      const at = r.at_rate;
+      const b10 = (at?.life?.b_lives || []).find((b) => b.label === "B10");
+      add(b10?.value != null && `B10 ${formatNumber(b10.value)} ${unitInText(r.unit) || "hours"} at ${at.rate_words}`);
+      add(r.split && `${r.split.failed} failed, ${r.split.running} running`);
       break;
     }
     case "joint": {

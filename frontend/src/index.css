@@ -10069,3 +10069,19 @@ main.content:focus { outline: none; }
 
 /* The dark theme (tokens.css) lets native controls follow it. */
 [data-theme="dark"] { color-scheme: dark; }
+
+/* Hours and starts (two clocks): the life at a usage rate (TwoClockLife.jsx). */
+.tc-panel { display: flex; flex-direction: column; gap: var(--space-4); overflow-y: auto; }
+.tc-headline { margin: 0; font-size: var(--fs-16); line-height: var(--lh-16); color: var(--text); }
+.tc-life { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.tc-rate { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.tc-rate .field { flex: 1 1 220px; max-width: 360px; }
+.tc-rate-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-bottom: var(--space-1); }
+.tc-left { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.tc-plot { min-width: 0; }
+@media (min-width: 1100px) {
+  .tc-life:not(.tc-compact) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
+  .tc-life:not(.tc-compact) .rs-stats { flex-wrap: wrap; }
+  .tc-life:not(.tc-compact) .rs-stats .stat { flex: 1 1 40%; }
+}
+.tc-source { margin: 0; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }

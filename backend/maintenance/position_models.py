@@ -527,6 +527,20 @@ def summary(model_type: str, doc) -> dict:
                 out["numbers"].append({"id": "reference", "label": "at", "text": f"the fit's average covariates ({at})"})
             out["quality"] = _quality(failed, "life", warning=r.get("fit_warning"))
             return out
+        if kind == "two_clock":
+            # Hours and starts: what a start costs, and the life at the fleet's typical rate (the row's own
+            # rate, from the position's operating plan, is in the detail).
+            k = params.get("k") or {}
+            out["kind"] = r.get("distribution") or "Hours and starts"
+            if k.get("value") is not None:
+                lo, hi = _ci(k)
+                out["numbers"].append(_number("k", "Hours per start", k.get("value"), lo, hi, unit))
+            row = next((x for x in r.get("rate_table") or [] if x.get("label") == "Typical"), None)
+            if row and row.get("b10") is not None:
+                out["numbers"].append(_number("b10", f"B10 life at {row.get('rate_words')}", row["b10"],
+                                              row.get("b10_lower"), None, unit, "lower"))
+            out["quality"] = _quality(failed, "life")
+            return out
         if r.get("method") == "bayesian_update":
             # Posterior medians with 90% credible intervals (bayes_life.py), never confidence bounds.
             bayes = r.get("bayes") or {}

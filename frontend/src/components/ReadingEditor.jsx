@@ -58,10 +58,11 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
           m: "optional: a measured value, for readings",
           e: "optional: each failure's mode (the state entered)",
           s: "optional: the state the unit was in during this row (multi-state data)",
+          x2: "optional: each unit's starts (or cycles) beside x, for a part worn by both",
         }}
         none={{
           x: "— pick a column —", c: range ? "— none: read from the values —" : "— pick a column —",
-          i: "— none —", m: "— none —", e: "— none —", s: "— none —",
+          i: "— none —", m: "— none —", e: "— none —", s: "— none —", x2: "— none —",
         }}
         issues={issues}
         asides={{ c: failedTick ? [failedTick] : [] }}
@@ -108,5 +109,5 @@ export function readingWaiting(reading, facts, nRows) {
   const issues = readingIssues(reading, facts, nRows);
   if (!issues.length) return null;
   const rows = [...new Set(issues.map((i) => (i.row === "xl" || i.row === "xr" ? "x" : i.row || "x")))];
-  return `First settle the note${issues.length === 1 ? "" : "s"} beside ${rows.map((r) => (r === "e" ? "failure mode" : r)).join(", ")}.`;
+  return `First settle the note${issues.length === 1 ? "" : "s"} beside ${rows.map((r) => (r === "e" ? "failure mode" : r === "x2" ? "starts" : r)).join(", ")}.`;
 }
