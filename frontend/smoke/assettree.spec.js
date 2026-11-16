@@ -237,9 +237,10 @@ test("adding at the top of the asset from the tree's last row, and the old addre
     // Naming no row: the Assets list (the Explorer is always one asset).
     ["/asset-register/positions?arrange=flat", "/asset-register", "Assets"],
     ["/asset-register/explorer?arrange=items", "/asset-register", "Assets"],
-    ["/asset-register/items", "/items", "Items"],
+    ["/asset-register/items", "/asset-register", "Assets"],
+    ["/items", "/asset-register", "Assets"],
     [`/asset-register/locations?sel=${p.site.id}`, `/asset-register/explorer?arrange=locations&sel=${p.site.id}`, "Assets"],
-    ["/maintenance/items", "/items", "Items"],
+    ["/maintenance/items", "/asset-register", "Assets"],
   ]) {
     await open(page, from);
     await expect.poll(() => { const u = new URL(page.url()); return (u.pathname + u.search).replace(/&root=[^&]+$/, ""); }, { message: from }).toBe(want);

@@ -6,7 +6,6 @@ import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
 import { explorerPath } from "./assetTree.js";
 
 export const PRODUCTS_PATH = "/products";
-export const ITEMS_PATH = "/items";
 export const PRODUCTS_GUIDE = "products-and-items";
 
 // A product's page is the Explorer on its design (?view= names the tree's tab,
@@ -91,7 +90,7 @@ export function scopeLocations(locations = [], root = null, design = false) {
 // product's design, or an item's tree); a design's positions are each marked
 // `in_design` (the tree read marks only its top `design`), so the panel knows
 // they're a design's, with no maintenance. Without: everything but the
-// products' designs and the items' trees (they're under Products and Items).
+// products' designs and the items' trees (they're under Products and Assets).
 // Its locations as scopeLocations keeps them; with a root, `scope` says whose
 // tree it is ({kind: "design" | "unit", id, name}) for the Locations arrangement.
 // A root that's a place you look after (an asset on the Assets page, opened by
@@ -202,20 +201,6 @@ export function hoursText(hours) {
 
 // "Rev C" or "" with none.
 export const revText = (rev) => (rev ? `Rev ${rev}` : "");
-
-// The Items list's status, in words.
-const STATUS = { fitted: "Fitted", spare: "Spare (placed)", "not placed": "Not placed" };
-export const statusText = (status) => STATUS[status] || status || "—";
-
-// The filter choices for the Items list from what's in it: the products and
-// the types (item classes), each by name, plus "none" when some have none.
-export function itemFilters(products = [], classes = []) {
-  const byName = (a, b) => a.name.localeCompare(b.name);
-  return {
-    products: [...products].sort(byName).map((p) => ({ value: p.id, label: p.name })),
-    types: [...classes].sort(byName).map((c) => ({ value: c.id, label: c.name })),
-  };
-}
 
 // The RBDs of a product: those named after it (one made from its structure is
 // "<product> (from Maintenance)"; the sample's is "<product>: …").

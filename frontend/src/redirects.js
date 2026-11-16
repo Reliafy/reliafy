@@ -103,9 +103,10 @@ export const MOVED = [
   // Reliafy Maintenance's register → Operate › Assets. (The positions tree is
   // Assets › Explorer, and Assets opens on the top-level places.)
   { path: "/maintenance/positions/:id", to: "/asset-register/positions/:id" },
-  // The register's items list, then the Explorer's Items arrangement (gone):
-  // the Items page.
-  { path: "/maintenance/items", to: "/items" },
+  // The register's items list, then the Explorer's Items arrangement, then the
+  // Items page (all gone): Assets, whose Explorer holds every item.
+  { path: "/maintenance/items", to: "/asset-register" },
+  { path: "/items", to: "/asset-register" },
   { path: "/maintenance/items/:id", to: "/asset-register/items/:id" },
   { path: "/maintenance/locations", to: "/asset-register/explorer?arrange=locations" },
   { path: "/maintenance/locations/:id", to: "/asset-register/locations/:id" },
@@ -116,10 +117,10 @@ export const MOVED = [
   // Design › Systems opens on its RBDs, the list of diagrams, at their own address.
   { path: "/systems", to: "/systems/rbds" },
   // Assets › Positions and Locations → one page, Assets › Explorer, arranged
-  // by each (their ?place= and ?sel= come along); Assets › Items → the Items
-  // page. Each one's own pages (/asset-register/positions/:id and so on) stay.
+  // by each (their ?place= and ?sel= come along); Assets › Items → the
+  // Assets list. Each one's own pages (/asset-register/positions/:id and so on) stay.
   { path: "/asset-register/positions", to: "/asset-register/explorer?arrange=positions" },
-  { path: "/asset-register/items", to: "/items" },
+  { path: "/asset-register/items", to: "/asset-register" },
   { path: "/asset-register/locations", to: "/asset-register/explorer?arrange=locations" },
   // The menu's preview-only placeholder for FMECA: the working version is the
   // Explorer's FME(C)A tab. (Fault trees have their own page now.)

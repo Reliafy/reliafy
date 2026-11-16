@@ -178,22 +178,6 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     await expectHealthy(page, problems, { label: `products ${w}` });
   });
-
-  test(`Items at ${width} px: every serial-numbered thing, filtered by product`, async ({ page, problems }) => {
-    await page.setViewportSize({ width, height });
-    await open(page, "/items");
-    await expect(page.getByRole("heading", { name: "Items", level: 1 })).toBeVisible();
-    await expect(page.locator(".pp-table")).toContainText(`${SMOKE_PRODUCT} · 0007`);
-    await shot(page, `${width}-items-landing`);
-    expect(await sideways(page)).toBeLessThanOrEqual(0);
-    await page.getByLabel("Product").selectOption({ label: SMOKE_PRODUCT });
-    await expect(page.locator(".tablebar .count")).toHaveText(/^\d+ matches$/);
-    await expect(page.locator(".pp-table")).toContainText("· 0007");
-    await page.getByLabel("Product").selectOption({ label: "No product" });
-    await expect(page.locator(".pp-table")).toContainText("Smoke pump");
-    await expect(page.locator('.pp-table a[href^="/products/"]')).toHaveCount(0);
-    await expectHealthy(page, problems, { label: `items ${width}` });
-  });
 }
 
 // The seeded pump skid's functional structure's FME(C)A tab works as on the Explorer (scored rows, the row menus of a design,
@@ -298,7 +282,7 @@ test("Assets offers no ready-made product", async ({ page, problems }) => {
 });
 
 // With no products (the read answered empty here), the page says what a product is and offers New product and the guide.
-test("Products and Items empty states offer New product and the guide", async ({ page, problems }) => {
+test("the Products empty state offers New product and the guide", async ({ page, problems }) => {
   await page.route("**/api/maintenance/products", (route) => (route.request().method() === "GET"
     ? route.fulfill({ json: { products: [] } }) : route.continue()));
   await page.route("**/api/maintenance/items/overview*", (route) => route.fulfill({
@@ -313,12 +297,8 @@ test("Products and Items empty states offer New product and the guide", async ({
     await expect(empty.getByRole("button", { name: "How products and items work" })).toBeVisible();
     await shot(page, `${width}-products-empty`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
-    await open(page, "/items");
-    await expect(page.locator(".section-empty")).toContainText("No items yet");
-    await shot(page, `${width}-items-empty`);
-    expect(await sideways(page)).toBeLessThanOrEqual(0);
   }
-  await expectHealthy(page, problems, { label: "empty products and items" });
+  await expectHealthy(page, problems, { label: "empty products" });
 });
 
 // Assets and Products: two landing pages of one shape (RegisterList), and the
