@@ -116,6 +116,7 @@ import {
 import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
+import { classFields, classKey } from "../positionClass.js";
 
 // The new-position (or new-location) dialog opened from the tree's last row:
 // at the top level, whatever row is picked.
@@ -954,7 +955,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     : (measOn || tab === "summary") && paneQuery?.kind === "plan" ? paneQuery : null;
   const paneRow = paneAt && whole.rows.has(paneAt.id) ? whole.rows.get(paneAt.id) : null;
   const panePosition = paneRow?.type === "pos"
-    ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", position_class: paneRow.ref.position_class || "" } : null;
+    ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", ...classFields(paneRow.ref) } : null;
   const paneKind = panePosition ? paneAt.kind : null;
   // An address for a position that isn't in the tree (deleted, or another tree): the table as usual.
   useEffect(() => {
@@ -1466,7 +1467,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     hasInside: insideOf(pid).length > 0 });
   const attachAt = (pid, id) => {
     const rr = whole.rows.get(pid);
-    const position = { id: pid, name: rr?.ref.name || "(no name)", position_class: rr?.ref.position_class || "" };
+    const position = { id: pid, name: rr?.ref.name || "(no name)", ...classFields(rr?.ref) };
     if (id === "model-attach-fit-life") return openFit(position);
     if (id === "model-attach-predict") return openPredict(position);
     if (id === "model-refresh-predict") return openPredict(position, predictionOf(pid));
@@ -1510,7 +1511,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     else if (id === "model-page" && link.model?.path) leavePane().then((ok) => ok && navigate(link.model.path));
     else if (id === "model-refit") {
       const scope = link.source?.scope;
-      openFit({ ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" },
+      openFit({ ...position, ...classFields(whole.rows.get(r.ref.position_id)?.ref) },
         { link, start: { data: scope === "class" ? "class" : "position" } });
     }
     else if (id === "model-predict") openPredict(position, link);
@@ -1524,7 +1525,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       }, (e) => say(e.message, "error"));
     }
     else if (id === "model-bayes") {
-      const withClass = { ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" };
+      const withClass = { ...position, ...classFields(whole.rows.get(r.ref.position_id)?.ref) };
       // The fit pane with this row's model as the prior: a Bayesian row takes its new failures (its own prior kept).
       openFit(withClass, { ...priorFrom(link), from: link.id });
     }
@@ -1644,7 +1645,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const missionAction = (r, id) => {
     const pid = r.type === "pos" ? r.key : r.ref.position_id;
     const pr = whole.rows.get(pid);
-    const position = { id: pid, name: pr?.ref.name || "(no name)", position_class: pr?.ref.position_class || "" };
+    const position = { id: pid, name: pr?.ref.name || "(no name)", ...classFields(pr?.ref) };
     if (id === "mission-open" || id === "mission-phase-open") return openMissionRow(r);
     // Under a phase: its covariates (set in their details) and node status rules.
     if (id === "mission-rule-add") {
@@ -1738,7 +1739,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         // Two levels (Derryn, 9 Nov 2026): Life model ›, RBD ›, Prediction ›, a line, then only the
         // position items that make sense here (Rename…, Focus ›, Pin this branch).
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
-        return [...modelGroups(r.key, r.ref.position_class), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
+        return [...modelGroups(r.key, classKey(r.ref)), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
       }
       if (measOn || modelsOn) {
         if (isMeasRow(r)) return measRowActions(r);
@@ -2271,7 +2272,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     // ?fit_prior_cov=<JSON>: the record's covariates given on the Library page.
     let covariates = {};
     try { covariates = JSON.parse(params.get("fit_prior_cov") || "{}") || {}; } catch { covariates = {}; }
-    openFit({ id: posRow.key, name: posRow.ref.name || "(no name)", position_class: posRow.ref.position_class || "" },
+    openFit({ id: posRow.key, name: posRow.ref.name || "(no name)", ...classFields(posRow.ref) },
       { start: { method: "bayes", priorKind: "library", recordId: fitPrior, covariates },
         query: (q) => { q.delete("fit_prior"); q.delete("fit_prior_cov"); } });
   }, [fitPrior, data, modelsOn, posRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2442,7 +2443,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const modelPosition = posRow?.type === "pos" ? { id: posRow.key, name: posRow.ref.name || "(no name)" } : null;
   // The heading's "…": the same three groups (two levels), a line, Columns… and the row picked's own.
   const modelMenu = modelsOn && modelPosition ? [
-    ...modelGroups(modelPosition.id, posRow.ref.position_class).map((g) => ({
+    ...modelGroups(modelPosition.id, classKey(posRow.ref)).map((g) => ({
       ...g, items: g.items.map((it) => ({ ...it, title: it.reason, onSelect: () => attachAt(modelPosition.id, it.id) })),
     })),
     { separator: true },

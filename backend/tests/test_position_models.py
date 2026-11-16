@@ -124,7 +124,7 @@ def test_from_class_needs_a_class_model(m, db):
     _history(m, pump, [300, 420, 380])
     loop.fit_class_model(m, db, "Duty pump")
     link = pm.link_from_class(m, db, OWNERS, set(), pump)
-    assert link["role"] == "class" and link["source"] == {"class_name": "Duty pump"}
+    assert link["role"] == "class" and link["source"] == {"class_name": "Duty pump", "class_key": "Duty pump"}
     assert pm.source_text(link) == "From the class Duty pump"
 
 

@@ -58,6 +58,7 @@ import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { explorerPath } from "../assetTree.js";
 import { ASSETS_LIST_PATH } from "../maintenanceAssets.js";
 import { partsPath } from "../redirects.js";
+import { classLabel, isDesignClass } from "../positionClass.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -89,7 +90,7 @@ export default function MaintenancePosition() {
         crumbs={[{ label: "Assets", to: "/asset-register" }, ...p.path.map((a) => ({
           label: a.name, to: a.kind === "Item" ? `/asset-register/items/${a.id}` : `/asset-register/positions/${a.id}` }))]}
         title={p.name}
-        meta={[p.tag, p.position_class].filter(Boolean).join(" · ") || "Position"}
+        meta={[p.tag, classLabel(p)].filter(Boolean).join(" · ") || "Position"}
         id={p.id}
         menu={
           <>
@@ -462,14 +463,23 @@ function LocationModal({ p, onClose, onDone }) {
 }
 
 function EditPositionModal({ p, onClose, onDone }) {
+  // Built from a product's design: its class is the design position's, so the free-text
+  // class isn't offered (nor sent: what's stored is left as it was).
+  const built = !!p.implements && isDesignClass(p);
   const [f, setF] = useState({ name: p.name, tag: p.tag || "", position_class: p.position_class || "", description: p.description || "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const changes = built ? Object.fromEntries(Object.entries(f).filter(([k]) => k !== "position_class")) : f;
   return (
     <FormModal title="Edit position" submitLabel="Save" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose}
-               onSubmit={async () => onDone(await updateMaintenancePosition(p.id, f))}>
+               onSubmit={async () => onDone(await updateMaintenancePosition(p.id, changes))}>
       <Field label="Name" text={f.name} hint={DESCRIPTION_HINT}><input value={f.name} onChange={set("name")} /></Field>
       <Field label="Tag"><input value={f.tag} onChange={set("tag")} /></Field>
-      <Field label="Class (to compare like positions)"><input value={f.position_class} onChange={set("position_class")} /></Field>
+      {built ? (
+        <Field label="Class (from its product's design: the same on every item built from it)">
+          <input value={classLabel(p)} readOnly /></Field>
+      ) : (
+        <Field label="Class (to compare like positions)"><input value={f.position_class} onChange={set("position_class")} /></Field>
+      )}
       <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>
     </FormModal>
   );

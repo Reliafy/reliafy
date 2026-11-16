@@ -15,6 +15,7 @@ import { useRecordCovariates } from "./LibraryParts.jsx";
 import { rowFromDetail } from "../libraryPicker.js";
 import "./RcmWorksheet.css";
 import "./FitLifeModel.css";
+import { classKey, classLabel } from "../positionClass.js";
 
 // "Fit a life model…" (Life model ›) fills the Explorer's table area, the tree kept beside it
 // (Derryn, 9 Nov 2026: "It shouldn't be a modal itself, only the select life model from the
@@ -27,7 +28,7 @@ import "./FitLifeModel.css";
 // moment later (fitDialog.previewKey: the request and what's missing). Only the library record
 // picker is a dialog, over the pane.
 //
-//   position  {id, name, position_class}
+//   position  {id, name, position_class, class_key?, class_label?} (positionClass.js)
 //   start     {data?, method?, priorKind?, modelId?, recordId?, update?}   link: a row it replaces (Refit…)
 //             update: "Update with new failures…" on a fit with a prior, that row's model the prior
 //             (fitDialog.priorFrom); its own prior is kept, so trust isn't asked.
@@ -165,15 +166,16 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
     }
   };
   // The class's model: fitted from its pooled history and saved on the class, then attached here.
-  const forClass = savesForClass(state, position.position_class);
+  // A built position's class is its design position's (by key; shown by product and path).
+  const forClass = savesForClass(state, classKey(position));
   const saveForClass = async () => {
     setSaving(true);
     setFailed(null);
     try {
-      await fitClassModel(position.position_class, state.distribution);
+      await fitClassModel(classKey(position), state.distribution);
       const made = await linkPositionModel(position.id, { from_class: true, failure_mode_ids: state.modes || [],
         ...(link ? { replace_link_id: link.id } : {}) });
-      onDone(made, `Saved the class ${position.position_class}'s model and attached it to ${position.name}.`);
+      onDone(made, `Saved the class ${classLabel(position)}'s model and attached it to ${position.name}.`);
     } catch (e) {
       setSaving(false);
       setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
@@ -204,7 +206,7 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
           <div className="rw-sg rw-steps-first fit2-grid">
             <Step label="Data">
               <Select aria-label="Data" value={state.data} onChange={(e) => set("data", e.target.value)}>
-                {dataOptions({ positionCounts, cls: ctx?.class_history, hasClass: !!position.position_class })
+                {dataOptions({ positionCounts, cls: ctx?.class_history, hasClass: !!classKey(position) })
                   .map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Select>
               <p className="fit2-sum">
@@ -241,7 +243,7 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
               <Step label="Prior">
                 <PriorFields
                   state={state} set={set} kind={eff.priorKind}
-                  kinds={state.data !== "both" ? priorChoices(state.data).filter((p) => p.value !== "class" || position.position_class) : null}
+                  kinds={state.data !== "both" ? priorChoices(state.data).filter((p) => p.value !== "class" || classKey(position)) : null}
                   onKind={(k) => {
                     set("priorKind", k);
                     if (k === "library" && !state.recordId && !autoOpened.current) { autoOpened.current = true; setPicking(true); }

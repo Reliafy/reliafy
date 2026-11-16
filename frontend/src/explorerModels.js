@@ -8,6 +8,7 @@
 // what's inside it too. Pure functions, tested in explorerModels.test.js; the cells are
 // drawn by ModelTable.jsx. The links come from GET /api/maintenance/position-models.
 
+import { classKey } from "./positionClass.js";
 import { handbookCovariates } from "./predictions.js";
 import { isCovariateId, lineConditions } from "./covariate.js";
 import { strategiesFor, strategyKey } from "./positionStrategy.js";
@@ -234,7 +235,8 @@ export function rollupText(r, open = false) {
 // position's until it's attached, so the roll-up never counts it.
 export function classModelHint(r, classModels, { short = false } = {}) {
   if (!r || r.type !== "pos" || (r.lsum?.n || 0) > 0) return "";
-  const name = (r.ref?.position_class || "").trim();
+  // Keyed by the class's key: a built position's is its design position's ("design:<id>").
+  const name = classKey(r.ref);
   const cm = name && classModels ? classModels[name] : null;
   if (!cm) return "";
   const fresh = Number.isFinite(cm.failures_now) && Number.isFinite(cm.failures) ? cm.failures_now - cm.failures : 0;
