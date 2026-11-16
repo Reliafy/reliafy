@@ -476,7 +476,7 @@ function EditPositionModal({ p, onClose, onDone }) {
       <Field label="Tag"><input value={f.tag} onChange={set("tag")} /></Field>
       {built ? (
         <Field label="Class (from its product's design: the same on every item built from it)">
-          <input value={classLabel(p)} readOnly /></Field>
+          <input value={classLabel(p)} disabled /></Field>
       ) : (
         <Field label="Class (to compare like positions)"><input value={f.position_class} onChange={set("position_class")} /></Field>
       )}
