@@ -7,6 +7,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
+import { intervalBasis, withTaskBasis } from "../rbdMaintenancePlan.js";
 import "./RbdIntervals.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import ProTag from "./ProTag.jsx";
@@ -57,14 +58,8 @@ export function applyIntervals(graph, rows) {
     const data = { ...n.data };
     if (data.preventive) {
       if (r.never) delete data.preventive;
-      else {
-        data.preventive = { ...data.preventive, interval: r.interval };
-        // Given in running time: kept so, through the block's duty (the backend's apply_plan too).
-        if (data.preventive.operating_interval != null) {
-          if (data.duty > 0 && data.duty <= 1) data.preventive.operating_interval = r.interval * data.duty;
-          else delete data.preventive.operating_interval;
-        }
-      }
+      // In the task's own unit, as the plan answers: a running-hours task stays one (#365).
+      else data.preventive = { ...withTaskBasis(data).preventive, interval: r.interval };
     } else if (data.inspection) {
       const test = { ...data.inspection, interval: r.interval };
       if (r.offset) test.offset = r.offset;
@@ -113,9 +108,10 @@ async function poll(jobId, live, ticket) {
   }
 }
 
-function Interval({ row, unit, schedule }) {
+// A block's interval in its task's own unit: running hours for a task counted in them (#365).
+function Interval({ row, unit, schedule, basis = row.basis }) {
   if (row.never) return <>never (run to failure)</>;
-  const u = unit ? ` ${unit.toLowerCase()}` : "";
+  const u = basis === "operating" ? ` running ${unit ? unit.toLowerCase() : "time"}` : unit ? ` ${unit.toLowerCase()}` : "";
   return (
     <>
       {num(row.interval)}{u}
@@ -365,7 +361,9 @@ export default function RbdIntervals({ graph, onApply, onView }) {
             <span>Intervals to choose from</span>
             <input type="text" value={allowedText} onChange={(e) => setAllowedText(e.target.value)}
                    placeholder={cal ? "monthly … four-yearly" : "e.g. 100, 250, 500"} />
-            <small>{cal ? `${unit || "time"} · blank: ${cal.map(num).join(", ")} and each block's own` : unit || "time"}</small>
+            <small>{cal ? `${unit || "time"} · blank: ${cal.map(num).join(", ")} and each block's own` : unit || "time"}
+              {found.proof_test.some((n) => intervalBasis(n.data) === "operating")
+                ? " · a test counted in running hours reads these as running hours (blank: the same calendar at its Runs share)" : ""}</small>
           </label>
         )}
       </div>
@@ -452,8 +450,8 @@ export default function RbdIntervals({ graph, onApply, onView }) {
                         {r.label}
                         {r.coverage != null && <div className="muted">tests find {Math.round(r.coverage * 100)}%</div>}
                       </td>
-                      <td><Interval row={{ interval: r.interval_now, offset: r.offset_now }} unit={unit} schedule={kind} /></td>
-                      {showTogether && <td>{t ? <Interval row={t} unit={unit} schedule={kind} /> : "—"}</td>}
+                      <td><Interval row={{ interval: r.interval_now, offset: r.offset_now }} unit={unit} schedule={kind} basis={r.basis} /></td>
+                      {showTogether && <td>{t ? <Interval row={t} unit={unit} schedule={kind} basis={r.basis} /> : "—"}</td>}
                       <td><Interval row={r} unit={unit} schedule={kind} /></td>
                     </tr>
                   );

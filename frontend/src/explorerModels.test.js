@@ -86,9 +86,9 @@ test("the cells: headline with bounds, mean, B10, counts, used by", () => {
 test("the row's actions: Refit only for a fitted model, Open in Models only when it's there", () => {
   const g = graftModels(buildDisplay(DATA, "positions"), LINKS);
   assert.deepEqual(rowActions(g.rows.get(modelKey("a"))).map((a) => a.id),
-    ["model-open", "model-page", "model-bayes", "model-to-library", "model-replace", "model-unlink"]);
+    ["model-open", "model-page", "model-bayes", "model-to-library", "model-strategy-add", "model-replace", "model-unlink"]);
   assert.deepEqual(rowActions(g.rows.get(modelKey("b"))).map((a) => a.id),
-    ["model-open", "model-page", "model-use", "model-refit", "model-bayes", "model-to-library", "model-replace", "model-unlink"]);
+    ["model-open", "model-page", "model-use", "model-refit", "model-bayes", "model-to-library", "model-strategy-add", "model-replace", "model-unlink"]);
   const bayes = graftModels(buildDisplay(DATA, "positions"), [link("q", "pump", { role: "bayesian", model: { ...WEIBULL, kind: "Weibull (Bayesian)" } })]);
   assert.equal(rowActions(bayes.rows.get(modelKey("q"))).find((a) => a.id === "model-bayes").label, "Update with new failures…");
   assert.deepEqual(rowActions(g.rows.get(modelKey("c"))).map((a) => a.id), ["model-open", "model-replace", "model-unlink"]);
@@ -294,4 +294,23 @@ test("classModelHint: a position with no model whose class has one says so, and 
   assert.equal(classModelHint({ ...r, lsum: { n: 1 } }, cms), "");
   assert.equal(classModelHint({ ...r, ref: { position_class: "Pump" } }, cms), "");
   assert.equal(classModelHint(r, null), "");
+});
+
+test("Strategy is optional: a model row has a Strategy item only once one is saved for it", () => {
+  const none = graftModels(buildDisplay(DATA, "positions"), LINKS);
+  assert.ok(![...none.rows.keys()].some((k) => k.startsWith("S:")));
+  assert.equal(rowActions(none.rows.get(modelKey("a"))).find((a) => a.id === "model-strategy-add").label, "Add a strategy…");
+  const saved = { a: [{ id: "s1", kind: "optimal_replacement", name: "Pump plan", headline: "Replace at ~2,000 hours" }] };
+  const g = graftModels(buildDisplay(DATA, "positions"), LINKS, saved);
+  const row = g.rows.get("S:a");
+  assert.ok(row && row.ref.strategy && row.parent === modelKey("a") && row.ref.position_id === "pump");
+  assert.deepEqual(g.rows.get(modelKey("a")).kids, ["S:a"]);
+  assert.ok(!g.rows.has("S:b"));
+  // Its own menu just opens it; the model's says "another"; the roll-up doesn't count it as a model.
+  assert.deepEqual(rowActions(row).map((a) => a.id), ["model-strategy-open"]);
+  assert.equal(rowActions(g.rows.get(modelKey("a"))).find((a) => a.id === "model-strategy-add").label, "Add another strategy…");
+  assert.equal(g.rows.get("pump").lsum.n, none.rows.get("pump").lsum.n);
+  // The Stale chip never picks it.
+  const f = computeFilter(g, { query: "", chips: ["stale"] });
+  assert.ok(!f.match.has("S:a"));
 });

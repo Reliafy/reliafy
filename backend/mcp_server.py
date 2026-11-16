@@ -105,6 +105,7 @@ from backend import fitting
 from backend import life_bounds
 from backend import mcp_guide
 from backend import regression_bands
+from backend import two_clocks
 from backend.regression_diagnostics import COX_KEY
 from backend import recurrent as recurrent_fit
 from backend import recurrent_models
@@ -115,6 +116,7 @@ from backend.library import entries as lib_entries
 from backend.library import user as user_library
 from backend.mcp_actions import Table, check, choice
 from backend.mcp_actions import describe as describe_actions
+from backend.errors import client_message
 from backend.services import access as access_service
 from backend.services import dataset_reading
 from backend.services import alt as alt_service
@@ -240,6 +242,14 @@ def _quota_message(plan: str, quota: int) -> str:
     reset = billing_service.next_day_start()
     return (f"You've used all {quota:,} Reliafy tool calls included per day on the {_PLAN_NAMES[plan]} "
             f"plan. The limit resets at 00:00 UTC ({_until(reset)}). " + _upgrade_path())
+
+
+def _mission_pro(exc: Exception) -> dict:
+    """A mission only a simulation can work out, for a caller without Pro: what stops it and where
+    to upgrade (the exact figures elsewhere in the answer still stand)."""
+    _soft_refusal("pro_only")
+    return {"available": False, "code": "pro_required",
+            "message": f"{client_message(exc)} Upgrade at {_billing_url()}."}
 
 
 def _simulation_message(plan: str) -> str:
@@ -1377,6 +1387,27 @@ def _cr_summary(result: dict) -> dict:
 _MORE_MODEL_KEYS = ("coef_table", "ci_method", "frailty", "semi_parametric", "spline")
 
 
+def _two_clock_summary(result: dict) -> dict:
+    """A fit on two clocks for an agent: k (what one unit of the second clock is worth on the first) and the
+    parameters with 90% intervals, the test that the second clock matters, and the life at the fleet's low,
+    typical and high rates."""
+    at = result.get("at_rate") or {}
+    words = result.get("clocks") or {}
+    return {
+        **({"warnings": result["warnings"]} if result.get("warnings") else {}),
+        "kind": result.get("kind"), "distribution": result.get("distribution"),
+        "distribution_id": result.get("distribution_id"), "unit": result.get("unit", ""),
+        "second_clock_unit": result.get("second_unit") or two_clocks.LEGACY_UNIT, "n": result.get("n"),
+        "answer": result.get("headline"), "params": result.get("params", []), "k_test": result.get("k_test"),
+        "fleet_rates": result.get("rates"), "at_rates": result.get("rate_table"),
+        "at_typical_rate": {"rate": at.get("rate"), "rate_words": at.get("rate_words"),
+                            "b_lives": (at.get("life") or {}).get("b_lives"),
+                            "mean_life": ((at.get("life") or {}).get("mttf") or {}).get("value")} if at else None,
+        "use": f"Pass usage_rate ({words.get('rate_unit') or 'second clock per first-clock unit'}) to analyse "
+               "reliability_at, or on an RBD block's model.",
+    }
+
+
 def _fit_summary(result: dict) -> dict:
     """The parts of a fit payload worth handing to a model (no plot arrays).
 
@@ -1384,6 +1415,8 @@ def _fit_summary(result: dict) -> dict:
     the warning, ahead of the numbers, so they aren't quoted as a result."""
     if result.get("kind") == "competing_risks":
         return _cr_summary(result)
+    if result.get("kind") == two_clocks.KIND:
+        return _two_clock_summary(result)
     no_max = result.get("no_finite_maximum")  # #230: SurPyval 0.23 says so
     failed = bool(no_max) or result.get("fit_ok") is False or bool(result.get("fit_warning"))
     metrics = None if failed else (
@@ -1609,6 +1642,15 @@ _FitTimeRightCol = Annotated[Optional[str], Field(
 _FitTruncLeftCol = Annotated[Optional[str], Field(
     description="Column holding each row's left-truncation age (delayed entry: the age it came under "
                 "observation; blank = not truncated).")]
+_FitSecondClock = Annotated[Optional[list[float]], Field(
+    description="Two clocks: each unit's second measure of use (starts, cycles, landings...) beside its time in "
+                "data, at its failure or now. With a *_two_clock distribution.")]
+_FitSecondClockCol = Annotated[Optional[str], Field(
+    description="Two clocks: the dataset column of each unit's second measure of use. With a *_two_clock "
+                "distribution.")]
+_FitSecondClockUnit = Annotated[Optional[str], Field(
+    description="Two clocks: the second clock's unit, plural (cycles, landings, starts); default from its "
+                "column's name.")]
 _FitTruncRightCol = Annotated[Optional[str], Field(
     description="Column holding each row's right-truncation age (blank = not truncated).")]
 _FitCovariates = Annotated[Optional[list[str]], Field(
@@ -1809,7 +1851,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               criterion: str | None = None, frailty_family: str | None = None,
               covariate_units: dict | None = None, cox_options: CoxOptions | None = None,
               id_column: str | None = None, causes=None, groups=None, cause_column=None,
-              group_column: str | None = None) -> dict[str, Any]:
+              group_column: str | None = None, second_clock=None,
+              second_clock_column: str | None = None, second_clock_unit: str | None = None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if covariate_units:
@@ -1820,7 +1863,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                             f"{'is' if len(unknown) == 1 else 'are'} not in covariates "
                             f"({', '.join(covariates or []) or 'none given'}).")
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
-             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS, *fitting.FLEXIBLE, *competing_risks.CR_MODELS}
+             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS, *fitting.FLEXIBLE, *competing_risks.CR_MODELS,
+             *two_clocks.MODELS}
     dist = (distribution or "weibull").strip()
     if dist not in known:
         dist = fitting.resolve_distribution_id(dist)  # FitError -> tool error listing the options
@@ -1833,10 +1877,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                              ("count_column", count_column), ("time_right_column", time_right_column),
                              ("trunc_left_column", trunc_left_column),
                              ("trunc_right_column", trunc_right_column), ("cause_column", cause_column),
-                             ("group_column", group_column)) if v] if data is not None
+                             ("group_column", group_column), ("second_clock_column", second_clock_column)) if v]
+             if data is not None
              else [k for k, v in (("censored", censored), ("counts", counts), ("data_right", data_right),
                                   ("trunc_left", trunc_left), ("trunc_right", trunc_right), ("causes", causes),
-                                  ("groups", groups)) if v is not None])
+                                  ("groups", groups), ("second_clock", second_clock)) if v is not None])
     if stray:
         other = "dataset_id" if data is not None else "inline data"
         raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with {other} — "
@@ -1853,7 +1898,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                                  if data_right is not None else {"x": list(data)})
         for key, values, label in (("c", censored, "censored"), ("n", counts, "counts"),
                                    ("tl", trunc_left, "trunc_left"), ("tr", trunc_right, "trunc_right"),
-                                   ("e", causes, "causes"), ("g", groups, "groups")):
+                                   ("e", causes, "causes"), ("g", groups, "groups"),
+                                   ("x2", second_clock, "second_clock")):
             if values is not None:
                 cols[key] = _per_row(values, len(data), label)
         mapping = {k: k for k in cols}
@@ -1876,13 +1922,16 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                                 f"(change dataset_update x_col). Columns: {', '.join(names)}.")
             if competing_risks.is_competing_risks(dist) and reading.get("e") and not cause_column:
                 mapping["e"] = reading["e"]
+            if two_clocks.is_two_clock(dist) and reading.get("x2") and not second_clock_column:
+                mapping["x2"] = reading["x2"]
+                reading_options = {**reading_options, two_clocks.UNIT_KEY: from_reading.get(two_clocks.UNIT_KEY)}
             if covariates is None and dist in fitting.REGRESSION_MODELS and reading.get("z"):
                 covariates = list(reading["z"])
             mapping.update({k: v for k, v in (("c", censor_column), ("n", count_column), ("tl", trunc_left_column),
                                               ("tr", trunc_right_column), ("i", id_column), ("e", cause_column),
                                               ("group" if frailty else "g", group_column)) if v})
             if from_reading.get("c_map") and not censor_column:
-                reading_options = {fitting.CENSOR_MAP_KEY: from_reading["c_map"]}
+                reading_options = {**reading_options, fitting.CENSOR_MAP_KEY: from_reading["c_map"]}
             elif from_reading.get("c_invert") and not censor_column:
                 c_invert = True
             if from_reading.get("u_col"):
@@ -1892,6 +1941,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
                        "tr": trunc_right_column, "i": id_column, "e": cause_column,
                        ("group" if frailty else "g"): group_column}
+        if second_clock_column:
+            mapping["x2"] = second_clock_column
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
@@ -1914,6 +1965,13 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         raise ToolError("groups / group_column apply to a shared-frailty model (e.g. weibull_frailty, with "
                         "covariates) or to competing risks (with causes / cause_column) — choose one of "
                         "those, or drop the group column.")
+    if second_clock_unit is not None:
+        if "x2" not in mapping:
+            raise ToolError("second_clock_unit names the second clock's unit: give second_clock (or "
+                            "second_clock_column) too, or drop it.")
+        if not two_clocks.clean_unit(second_clock_unit):
+            raise ToolError("second_clock_unit is blank: name the second clock's unit (cycles, landings, starts).")
+        reading_options = {**reading_options, two_clocks.UNIT_KEY: two_clocks.clean_unit(second_clock_unit)}
     # Flags sent as codes are read as they are: an interval row is flagged 2.
     options: dict[str, Any] = {fitting.STRICT_INTERVALS_KEY: True, **reading_options}
     if c_invert:
@@ -2029,6 +2087,9 @@ def fit_distribution(
     groups: _FitGroups = None,
     cause_column: _FitCauseCol = None,
     group_column: _FitGroupColumn = None,
+    second_clock: _FitSecondClock = None,
+    second_clock_column: _FitSecondClockCol = None,
+    second_clock_unit: _FitSecondClockUnit = None,
 ) -> dict[str, Any]:
     """Fit a life distribution (SurPyval) to inline times or a saved dataset and report it:
     parameters with 90% CIs, goodness of fit, metrics, and `censoring`, the failures and censored units the fit
@@ -2042,7 +2103,8 @@ def fit_distribution(
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
                 include_mixtures=include_mixtures, criterion=criterion, frailty_family=frailty_family, save=False, name=None, covariate_units=covariate_units,
                 cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
-                cause_column=cause_column, group_column=group_column)
+                cause_column=cause_column, group_column=group_column, second_clock=second_clock,
+                second_clock_column=second_clock_column, second_clock_unit=second_clock_unit)
 
 
 def fit_and_save_model(
@@ -2076,6 +2138,9 @@ def fit_and_save_model(
     groups: _FitGroups = None,
     cause_column: _FitCauseCol = None,
     group_column: _FitGroupColumn = None,
+    second_clock: _FitSecondClock = None,
+    second_clock_column: _FitSecondClockCol = None,
+    second_clock_unit: _FitSecondClockUnit = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -2107,7 +2172,8 @@ def fit_and_save_model(
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
                 include_mixtures=include_mixtures, criterion=criterion, frailty_family=frailty_family, save=True, name=name, covariate_units=covariate_units,
                 cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
-                cause_column=cause_column, group_column=group_column)
+                cause_column=cause_column, group_column=group_column, second_clock=second_clock,
+                second_clock_column=second_clock_column, second_clock_unit=second_clock_unit)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -2436,6 +2502,27 @@ def _bayes_class_prior(user, db, baseline: dict, x, c, trust, age) -> dict[str, 
     return {"data_notice": DATA_NOTICE, **out}
 
 
+def _reliability_at_rate(db, m, times, owners, usage_rate, conditional_age) -> dict[str, Any]:
+    """reliability_at on a model on two clocks: the life of a unit at ``usage_rate`` (its second clock per
+    unit of the first: starts per hour, landings per flight hour; SurPyval's at_usage), R(t) with its 90% one-sided lower bound, and the B-lives."""
+    if conditional_age is not None:
+        raise ToolError("conditional_age isn't offered for a model on two clocks yet: drop it.")
+    try:
+        live = models_service.two_clock_live(db, m, owners)
+        out = two_clocks.answer(live, {"rate": usage_rate, "default_rate": (m.results or {}).get("default_rate"),
+                                       "times": list(times)}, (m.results or {}).get("unit") or "")
+    except (two_clocks.TwoClockError, models_service.ModelNotFound) as exc:
+        raise ToolError(str(exc) or "Model not found.") from None
+    return {"model": m.name, "model_id": m.id, "unit": (m.results or {}).get("unit", ""), "method": "exact",
+            "usage_rate": out["rate"], "usage_rate_unit": out["clocks"]["rate_unit"], "rate_words": out["rate_words"],
+            "answer": out["sentence"],
+            "points": [{"t": p["t"], "reliability": p["reliability"], "reliability_lower_90": p["lower"]}
+                       for p in out["at_times"]],
+            "life": out["life"], "as_distribution": out["as_distribution"],
+            "notes": ["Exact: SurPyval's life at the usage rate; lower bounds 90% one-sided, including the "
+                      f"uncertainty in what one {out['clocks']['second_one']} is worth."]}
+
+
 def reliability_at(
     ctx: Context,
     model_id: Annotated[str, Field(description="A saved non-repairable model id (list kind models).")],
@@ -2460,6 +2547,9 @@ def reliability_at(
                     "next; a covariate a row leaves out keeps its previous value. Evaluates along that path "
                     "(SurPyval's sf_tvc) instead of at fixed covariates, and adds mean_life along it. Use "
                     "instead of `covariates`.")] = None,
+    usage_rate: Annotated[Optional[float], Field(
+        ge=0, description="Two-clock models only: <second clock> per <first clock unit>, e.g. starts per hour "
+                          "(0.125 = 1 every 8); default the fleet's typical rate.")] = None,
 ) -> dict[str, Any]:
     """A saved non-repairable model at given times: R(t), F(t), hazard, cumulative hazard and density;
     conditional_age adds the chance a unit that age survives a further t. Parametric models are exact,
@@ -2482,6 +2572,10 @@ def reliability_at(
     if covariate_schedule is not None:
         return _reliability_along(db, m, times, owners, covariate_schedule, covariates, conditional_age,
                                   confidence)
+    if m.kind == two_clocks.KIND:
+        return _reliability_at_rate(db, m, times, owners, usage_rate, conditional_age)
+    if usage_rate is not None:
+        raise ToolError(f"“{m.name}” isn't a model on two clocks: drop usage_rate.")
 
     ts = [float(t) for t in times]
     later = [conditional_age + t for t in ts] if conditional_age is not None else []
@@ -3336,6 +3430,8 @@ _RI = _col("which item (unit, pump, tag) each row belongs to")
 _RM = _col("a measured value (readings)")
 _RE = _col("each failure's mode (the state entered, for multi-state data)")
 _RS = _col("the state the unit was in during the row (multi-state data; kept, not yet used by a model)")
+_RX2 = _col("a second clock: a second measure of use beside x (starts, cycles, landings), for *_two_clock fits")
+_RX2Unit = Annotated[Optional[str], Field(description="x2_col's unit, plural (cycles, landings); default from its name.")]
 _RZ = Annotated[Optional[list[str]], Field(description=(
     "The covariates (Z). Omit for the default: every column not given a role, less ids, dates, free text and "
     "one-value columns."))]
@@ -3355,7 +3451,7 @@ def _reading_given(**kw) -> dict:
     keys = {"x_col": "x", "xl_col": "xl", "xr_col": "xr", "c_col": "c", "n_col": "n", "tl_col": "tl",
             "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "s_col": "s", "z_cols": "z", "not_used": "not_used",
             "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "unit": "unit",
-            "m_unit": "m_unit", "z_units": "z_units"}
+            "m_unit": "m_unit", "z_units": "z_units", "x2_col": "x2", "x2_unit": "x2_unit"}
     return {keys[k]: v for k, v in kw.items() if v is not None}
 
 
@@ -3383,7 +3479,7 @@ def upload_dataset(
         "taken), the column itself left out; rows with no value are left out. Returns datasets, a list."))] = None,
     x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
-    s_col: _RS = None,
+    s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
     library_id: Annotated[Optional[str], Field(max_length=64, description=(
@@ -3423,7 +3519,7 @@ def upload_dataset(
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
                            not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
-                           unit=unit, m_unit=m_unit, z_units=z_units)
+                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
     reading = _upload_reading(data, given, split)
     if split:
         return _split_upload(db, user, name.strip(), data, split, upload, guess, hint, reading, lib)
@@ -3680,6 +3776,8 @@ class BlockModel(BaseModel):
     repairable_options: Optional[dict[str, Union[int, str]]] = Field(None, description=(
         "repairable_form ara/ari: {m: repairs remembered (or 'all')}; ari: {baseline: crow_amsaa | duane | "
         "cox_lewis}."))
+    usage_rate: Optional[float] = Field(None, ge=0, description=(
+        "With a saved two_clock model: <second clock> per <first clock unit> (starts per hour, say)."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
     joint_unit: Optional["JointUnit"] = Field(None, description=(
         "With a saved condition-based (joint) model: the unit this block is (non-repairable diagrams)."))
@@ -3742,6 +3840,13 @@ class PreventiveRestoration(BaseModel):
         "kijima1/kijima2: the share of the age left after a task (0 = as new, 1 = as before)."))
 
 
+#: A task's unit (#365), on Preventive and ProofTest.
+_BASIS_DESCRIPTION = (
+    "What the task's times (interval, opportunity, offset, full_test) count: calendar (default, the diagram's "
+    "clock) or operating = the block's running hours, put onto the clock through its duty (blank duty = runs "
+    "all the time). Interval answers come back in this unit.")
+
+
 class Preventive(BaseModel):
     model_config = ConfigDict(extra="forbid")
     policy: Literal["age", "block", "condition"] = Field("age", description=(
@@ -3749,10 +3854,10 @@ class Preventive(BaseModel):
         "condition = inspected every interval (in no time) and replaced when its chance of failing before the "
         "next inspection exceeds threshold."))
     interval: Optional[float] = Field(None, gt=0, description=(
-        "Replacement interval (age/block) or inspection interval (condition). Give this or operating_interval."))
+        "Replacement interval (age/block) or inspection interval (condition), in basis's unit."))
+    basis: Optional[Literal["calendar", "operating"]] = Field(None, description=_BASIS_DESCRIPTION)
     operating_interval: Optional[float] = Field(None, gt=0, description=(
-        "Instead of interval: the interval in the block's operating time, turned into the diagram's clock "
-        "through the block's duty (needs duty)."))
+        "Older form of interval with basis operating; prefer those."))
     duration: Optional[float] = Field(None, ge=0, description="Time off-line per replacement; 0/omit = instant.")
     cost: Optional[Cost] = Field(None, description="Per replacement.")
     threshold: Optional[float] = Field(None, ge=0, le=1, description=(
@@ -3772,7 +3877,8 @@ class Preventive(BaseModel):
 
 class ProofTest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    interval: float = Field(gt=0, description="Proof-test interval.")
+    interval: float = Field(gt=0, description="Proof-test interval, in basis's unit.")
+    basis: Optional[Literal["calendar", "operating"]] = Field(None, description=_BASIS_DESCRIPTION)
     duration: Optional[float] = Field(None, ge=0, description="Time off-line per test; 0/omit = instant (exact "
                                                               "values need instant tests and instant repair).")
     cost: Optional[Cost] = Field(None, description="Per test.")
@@ -3937,11 +4043,18 @@ class MissionPhase(BaseModel):
     not_needed: Optional[list[str]] = Field(None, description=(
         "Block ids this phase doesn't need (they still age and can fail, and stay failed for later phases)."))
     standby: Optional[list[str]] = Field(None, description=(
-        "Block ids standing by in this phase: not running, so they don't age or fail in it."))
+        "Block ids on standby in this phase, in the order they're called on: idle until the phase needs "
+        "them (a block they back up fails), then running to the phase's end."))
     guaranteed: Optional[list[str]] = Field(None, description=(
         "Block ids guaranteed working in this phase: they run and age but can't fail in it."))
     dormancy: Optional[dict[str, float]] = Field(None, description=(
         "standby block id -> how fast it ages while idle, 0 (cold, default) to 1 (hot)."))
+    start_probability: Optional[dict[str, float]] = Field(None, description=(
+        "standby block id -> the chance it starts when called on, 0 to 1 (default 1); one that fails "
+        "to start has failed for the rest of the mission."))
+    models: Optional[dict[str, dict[str, Any]]] = Field(None, description=(
+        "block id -> its life model in this phase, {distribution_id, params: [{name, value}]} as a "
+        "block's model; it runs on it through the phase, its age carried in and out."))
     votes: Optional[dict[str, int]] = Field(None, description=(
         "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
     values: Optional[dict[str, Union[float, str, dict[str, Any]]]] = Field(None, description=(
@@ -5089,9 +5202,13 @@ def analyze_rbd(
             out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
         if rbd_phases.has_phases(graph):  # #160: the phased mission, alongside
             try:
-                # From the blocks' ages now, like the rest of the answer (as of now).
-                out["phased_mission"] = rbd_phases.agent_summary(
-                    rbd_phases.analyze_for_owner(db, graph, owners, current_state=state))
+                # From the blocks' ages now, like the rest of the answer (as of now). Simulated
+                # (standby without constant rates) for Pro only, like every simulation.
+                with rbd_standby.simulation("run" if entitled else None):
+                    out["phased_mission"] = rbd_phases.agent_summary(
+                        rbd_phases.analyze_for_owner(db, graph, owners, current_state=state))
+            except rbd_standby.SimulationNeedsPro as exc:
+                out["phased_mission"] = _mission_pro(exc)
             except AnalysisError as exc:
                 out["phased_mission"] = {"available": False, "message": str(exc)}
         return _summary_only(out) if summary_only else out
@@ -5271,13 +5388,14 @@ def analyse_rbd_mission(
     current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
         "Blocks' states now, keyed by node id, as analyse rbd's non-repairable current_state ({failed: true} "
         "or {age: <time it has run>}); blocks left out are new. The mission then flies from now: each aged "
-        "block starts it at its age and keeps ageing through standby phases, and a failed block stays failed. "
+        "block starts it at its age, and a failed block stays failed. "
         "Omit to fly it from new."))] = None,
 ) -> dict[str, Any]:
     """A mission's chance of completing: each phase's failure probability, reliability at its end and
     weakest block, plus the Use / Environment covariates its phases can set (the blocks each feeds). A
     phase missing a value waits: needs says which blocks need what. current_state flies it from the
-    blocks' states now (the notes say "As of now")."""
+    blocks' states now (the notes say "As of now"). Exact answers are free; a mission with blocks on
+    standby whose lives have no constant failure rate is simulated (seeded), which needs Pro."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     rbd = _get_rbd(db, user["uid"], rbd_id)
@@ -5285,15 +5403,22 @@ def analyse_rbd_mission(
     every = rbd_missions.missions_of(graph)
     state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
              if current_state else None)
+    from backend.services import rbd_standby
+
+    # A mission only a simulation can work out (standby without constant rates): Pro.
+    entitled = billing_service.premium_compute_allowed(db, user)
     if mission_id is None:
         rows = []
         for m in every:
             try:
-                got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False, current_state=state)
+                with rbd_standby.simulation("run" if entitled else None):
+                    got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False, current_state=state)
                 rows.append({**rbd_missions.summary(graph, m), "mission_reliability": got["reliability"],
                              **({"needs": got["needs"]} if got.get("needs") else {}),
                              **({"placeholders": [p["label"] for p in got["placeholders"]],
                                  "note": rbd_phases.placeholder_note(got)} if got.get("placeholders") else {})})
+            except rbd_standby.SimulationNeedsPro as exc:
+                rows.append({**rbd_missions.summary(graph, m), **_mission_pro(exc)})
             except AnalysisError as exc:
                 rows.append({**rbd_missions.summary(graph, m), "message": str(exc)})
         out = {"rbd_id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "", "missions": rows,
@@ -5307,8 +5432,11 @@ def analyse_rbd_mission(
                         f"{', '.join(repr(m['id']) for m in every) or 'none'}.")
     detail = rbd_missions.detail(db, owners, graph, mission)
     try:
-        result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"],
-                                                               current_state=state))
+        with rbd_standby.simulation("run" if entitled else None):
+            result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"],
+                                                                   current_state=state))
+    except rbd_standby.SimulationNeedsPro as exc:
+        result = _mission_pro(exc)
     except AnalysisError as exc:
         result = {"available": False, "message": str(exc)}
     covariates = [{"name": r["name"], "role": r["role"], "unit": r["unit"],
@@ -5967,7 +6095,7 @@ def _save_imported_trees(db, user, diagrams, name, save, only) -> dict[str, Any]
 # What a lever row carries in analyse rbd_sensitivity's answer (the app's row has more).
 _SENSITIVITY_ROW_KEYS = ("rank", "id", "block", "name", "lever", "change", "value", "shown_value", "shown_to",
                          "effect_basis", "cost_to_change", "benefit_per_cost", "per_unit_cost", "plain",
-                         "interval", "distinguishable", "unranked", "limit", "limited")
+                         "interval", "distinguishable", "unranked", "limit", "limited", "running")
 
 
 def _sensitivity_summary(payload: dict, limit: int) -> dict:
@@ -6255,7 +6383,10 @@ def _interval_ops(graph: dict, rows: list[dict]) -> list[dict]:
     """change rbd_edit ops that put a plan on the saved diagram (update_node
     replaces a whole schedule, so each carries the block's own with the new
     interval and first test)."""
-    nodes = {n.get("id"): (n.get("data") or {}) for n in graph.get("nodes") or []}
+    from backend.services import rbd_maintenance
+
+    # Each task in its current shape: a running-hours one keeps its basis, the interval in its unit (#365).
+    nodes = {n.get("id"): rbd_maintenance.with_task_basis(n.get("data") or {}) for n in graph.get("nodes") or []}
     ops = []
     for row in rows:
         if not row.get("changed"):
@@ -6286,7 +6417,8 @@ def _intervals_summary(payload: dict, graph: Optional[dict] = None) -> dict:
                 "crews": payload.get("crews"), "message": payload.get("message")
                 + " Call again with assume_unlimited_crews=true (and simulate_with_crews=true to see the effect)."}
     rows = [{k: r.get(k) for k in ("id", "label", "interval_now", "interval", "never", "offset_now", "offset",
-                                   "changed", "coverage", "full_test") if k in r} for r in payload.get("blocks") or []]
+                                   "changed", "coverage", "full_test", "unit_words") if k in r}
+            for r in payload.get("blocks") or []]
     out: dict[str, Any] = {
         "available": True,
         **{k: payload.get(k) for k in ("schedule", "unit", "safety_function", "target", "basis", "stagger",
@@ -7099,6 +7231,64 @@ def optimal_overhaul(
     live = recurrent_service.get_live_model(db, model_id, owners)
     out = recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max)
     out.update(_overhaul_shape_uncertainty(db, doc, cost_repair, cost_overhaul, t_max, out))
+    return _maybe_curve(out, include_curve)
+
+
+def optimal_overhaul_replace(
+    ctx: Context,
+    cost_repair: Annotated[Optional[float], Field(gt=0, description="Cost of one repair at a failure (minimal "
+                                                                    "repair). Required.")] = None,
+    cost_overhaul: Annotated[Optional[float], Field(gt=0, description="Cost of one overhaul; more than a repair. "
+                                                                      "Required.")] = None,
+    cost_replace: Annotated[Optional[float], Field(gt=0, description="Cost of replacing the unit with a new one. "
+                                                                     "Required.")] = None,
+    overhaul_restores: Annotated[Optional[float], Field(ge=0, le=100, description="Share of its age an overhaul "
+                                                        "takes off, in % (100 = as good as new). Required.")] = None,
+    model_id: Annotated[Optional[str], Field(description="A saved RECURRENT model id (minimal repair: Crow-AMSAA, "
+                                                         "Duane, HPP, Cox-Lewis). Give this OR form + params.")] = None,
+    form: Annotated[Optional[Literal["crow_amsaa", "duane", "hpp", "cox_lewis"]],
+                    Field(description="Inline model form, with params.")] = None,
+    params: Annotated[Optional[list[float]], Field(description="Inline params in the form's order, e.g. crow_amsaa "
+                                                               "[alpha, beta].")] = None,
+    unit: _UNIT = None,
+    downtime_repair: Annotated[Optional[float], Field(ge=0, description="Hours down per repair.")] = None,
+    downtime_overhaul: Annotated[Optional[float], Field(ge=0, description="Hours down per overhaul.")] = None,
+    downtime_replace: Annotated[Optional[float], Field(ge=0, description="Hours down per replacement.")] = None,
+    downtime_cost: Annotated[Optional[float], Field(ge=0, description="Cost of an hour down (with downtimes).")] = None,
+    max_overhauls: Annotated[Optional[int], Field(ge=1, le=60, description="Most overhauls before a replacement "
+                                                                           "searched (default 19).")] = None,
+    include_curve: _INCLUDE_CURVE = False,
+) -> dict[str, Any]:
+    """Overhaul every X, replace after N overhauls: the cheapest rule for a repairable unit (minimal repair
+    between overhauls), with run to failure, overhaul only and replace only compared and the best X for each N.
+    Exact; times in the model's unit. Relay warnings (a cheaper plan of another kind is said there)."""
+    from backend.services import overhaul_replace
+
+    missing = [n for n, v in (("cost_repair", cost_repair), ("cost_overhaul", cost_overhaul),
+                              ("cost_replace", cost_replace), ("overhaul_restores", overhaul_restores)) if v is None]
+    if missing:
+        raise ToolError(f"analyse optimal_overhaul_replace needs {', '.join(missing)}: see "
+                        "guide(action='analyse.optimal_overhaul_replace').")
+    inputs = {"cost_repair": cost_repair, "cost_overhaul": cost_overhaul, "cost_replace": cost_replace,
+              "overhaul_restores": overhaul_restores, "unit": unit, "downtime_repair": downtime_repair,
+              "downtime_overhaul": downtime_overhaul, "downtime_replace": downtime_replace,
+              "downtime_cost": downtime_cost, "max_overhauls": max_overhauls, "form": form, "params": params}
+    live = None
+    if model_id:
+        user, db = _caller(ctx), _db()
+        owners = _owners(user["uid"])
+        doc = recurrent_service.get_model(db, model_id, owners)
+        if doc is None:
+            raise ToolError("Recurrent model not found: analyse optimal_overhaul_replace needs a recurrent "
+                            "(repairable-system) model id from list kind models (model_type recurrent).")
+        live = recurrent_service.get_live_model(db, model_id, owners)
+        inputs["unit"] = (doc.results or {}).get("unit") or unit or ""
+    elif not (form and params):
+        raise ToolError("Give model_id (a saved recurrent model) or form + params.")
+    try:
+        out = overhaul_replace.from_inputs(inputs, live)
+    except fitting.FitError as exc:
+        raise ToolError(str(exc)) from exc
     return _maybe_curve(out, include_curve)
 
 
@@ -8920,7 +9110,7 @@ def update_dataset(
     notes: _NewNotes = None,
     x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
-    s_col: _RS = None,
+    s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
 ) -> dict[str, Any]:
@@ -8931,7 +9121,7 @@ def update_dataset(
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
                            not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
-                           unit=unit, m_unit=m_unit, z_units=z_units)
+                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
     if name is None and notes is None and not given:
         raise ToolError("Nothing to change: give name, notes, or the reading (x_col, c_col, …, z_cols).")
     if name is not None or notes is not None:
@@ -9950,6 +10140,7 @@ _A = {  # new tool -> {action: the function it runs}
         "next_replacement": _act(calendar_next_replacement),
         "failure_finding_interval": _act(failure_finding_interval),
         "optimal_overhaul": _act(optimal_overhaul),
+        "optimal_overhaul_replace": _act(optimal_overhaul_replace),
         "fleet_forecast": _act(fleet_forecast),
         "rbd": _act(analyze_rbd),
         "rbd_quote_simulation": _act(quote_rbd_simulation),
@@ -10031,7 +10222,7 @@ _action_tool("analyse", _READ, "Analyse", "action",
              "Every calculation; saves nothing.", _A["analyse"], docs={
     "model_id": ("A saved model id (list kind models): non-repairable for reliability_at, check_life_requirement, "
                  "optimal_replacement and failure_finding_interval; ALT for alt_use_level; joint for "
-                 "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul; any for "
+                 "predict_joint; recurrent for next_failure, growth_projection, optimal_overhaul and optimal_overhaul_replace; any for "
                  "model_export_python."),
     "dataset_id": "A saved dataset (list kind datasets) instead of inline data (fit_per_demand: a row per batch).",
     "censored": ("Per time in data: 0 = failed, 1 = still running, -1 = left-censored, 2 = interval-censored (the "
@@ -10045,7 +10236,7 @@ _action_tool("analyse", _READ, "Analyse", "action",
     "rbd_id": "The diagram's id (list kind rbds).",
 })
 _action_tool("change", _WRITE, "Change items", "action",
-             "Every write: models, datasets, RBDs, fault trees, libraries, files in, shares, alerts. Delete, "
+             "Every write: models, data, RBDs, fault trees, libraries, files, shares, alerts. Delete, "
              "share or overwrite only when asked.",
              _A["change"], docs={
     "dataset_id": ("A saved dataset (list kind datasets) instead of inline data; model_save: the dataset the "
@@ -10058,7 +10249,7 @@ _action_tool("change", _WRITE, "Change items", "action",
     "label": "Who or what the link is for, e.g. 'for the client'. Shown only to the user.",
 })
 _action_tool("report_problem", _REPORT, "Report a problem", "action",
-             "Tell Reliafy's developers a tool got in your way; check later if it's fixed.",
+             "Tell Reliafy's developers a tool got in your way; check back later.",
              _A["report_problem"])
 
 
@@ -10155,7 +10346,7 @@ def guide(ctx: Context, topic: Annotated[Optional[_GuideTopic], Field(descriptio
     return out
 
 
-guide.__doc__ = ("How-tos by topic, and any action's full argument schema "
+guide.__doc__ = ("How-tos by topic, and any action's argument schema "
                  "(action='analyse.fit'). Read the topic before a task new to you.")
 _tool("guide", _READ, "How to use Reliafy")(guide)
 LISTED_SCHEMAS["guide"] = {"type": "object", "properties": {

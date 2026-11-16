@@ -25,7 +25,7 @@ import { tvcProblems } from "../tvcData.js";
 import Covariates from "./Covariates.jsx";
 import {
   EMPTY_MAPPING, columnFacts, statusSummary, summaryParts,
-  dataStepIssues, dataSplit, parsePastedValues, addMissingFlags,
+  dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, mappingColumns,
 } from "../lifeData.js";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { Select } from "./ui/Controls.jsx";
@@ -186,11 +186,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Inspection data (an earliest and a latest time) takes Turnbull, not the
   // estimators that need exact failure times: those aren't offered.
   const intervalTimes = !!(mapping.xl || mapping.xr);
+  // A second clock column (x2: starts, cycles, landings...) takes only the models on two clocks, and they need it.
+  const twoClocks = !!mapping.x2;
   const options = useMemo(
     () => (byMode ? CR_OPTIONS : distributions)
-      .filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false)
-        && !(intervalTimes && EXACT_TIMES_ONLY.includes(d.id))),
-    [distributions, hasCovariates, byMode, tvc, intervalTimes]
+      .filter((d) => !!d.two_clock === twoClocks
+        && (twoClocks || (!!d.covariates === hasCovariates && (!tvc || d.tvc !== false)
+          && !(intervalTimes && EXACT_TIMES_ONLY.includes(d.id))))),
+    [distributions, hasCovariates, byMode, tvc, intervalTimes, twoClocks]
   );
 
   // Keep the selected model valid for the current filtered list.
@@ -367,7 +370,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   // Columns given a role in the mapping (x/xl/xr/c/n/tl/tr/i/e) can't also be covariates.
   const mappedColumns = useMemo(
-    () => new Set(Object.values(mapping).filter((v) => typeof v === "string" && v)),
+    () => new Set(mappingColumns(mapping)),
     [mapping]
   );
 

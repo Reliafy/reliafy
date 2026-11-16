@@ -18,11 +18,13 @@ import { savedInputs } from "../analysisInputs.js";
 
 // Failure-finding interval tool: how often to check a HIDDEN function (e.g. a
 // protective device) so its availability stays above the target.
-export default function FailureFinding() {
+// In the Explorer's table pane: `modelId` the position's saved model, `target` its class's availability
+// target (%) where known, `extraInputs` kept with a Save (the model's row on the position).
+export default function FailureFinding({ modelId = null, target = null, extraInputs = null } = {}) {
   const [model, setModel] = useState(null);
   const search = useLocation().search;
   // A saved analysis' "Open in Failure finding" brings its target (?target=99.5).
-  const [availability, setAvailability] = useState(() => new URLSearchParams(search).get("target") || "99");
+  const [availability, setAvailability] = useState(() => (target ?? new URLSearchParams(search).get("target") ?? "99") + "");
   const [unit, setUnit] = useState("");
   const [result, setResult] = useState(null);
   const [inputs, setInputs] = useState(null);
@@ -35,7 +37,7 @@ export default function FailureFinding() {
   const [renewed, setRenewed] = useState(true);
   const currency = useCurrency();
   // Opened from a model's "Use this model" (#294): that model, chosen.
-  const wanted = modelFromSearch(search);
+  const wanted = modelId || modelFromSearch(search);
   // A saved model brings its unit (shown, not copied: a unit carried over
   // from the saved model picked first must not label typed parameters).
   const pickModel = (m) => setModel(m);
@@ -129,7 +131,7 @@ export default function FailureFinding() {
           actions={inputs && (
             <SaveAnalysisButton
               kind="failure_finding"
-              inputs={inputs}
+              inputs={extraInputs ? { ...inputs, ...extraInputs } : inputs}
               defaultName={analysisName("Failure finding", ranWith, result.distribution)}
             />
           )}

@@ -172,9 +172,12 @@ def _condition_checks(graph: dict) -> Optional[tuple[str, float]]:
         pm = data.get("preventive") or {}
         if node.get("type") != "component" or pm.get("policy") != "condition":
             continue
-        try:
-            interval = float(pm.get("interval"))
-        except (TypeError, ValueError):
+        from backend.services import rbd_maintenance
+
+        # On the calendar: a check counted in running hours comes round less often (#365).
+        interval = rbd_maintenance.calendar_time(rbd_maintenance.with_task_basis(data)["preventive"].get("interval"),
+                                                 data, "preventive")
+        if interval is None:
             continue
         if interval > 0 and (best is None or interval < best[1]):
             best = (data.get("label") or node.get("id"), interval)

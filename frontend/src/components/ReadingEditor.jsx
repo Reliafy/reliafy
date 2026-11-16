@@ -1,10 +1,12 @@
 import ColumnMapper from "./ColumnMapper.jsx";
 import { ROLES, readingIssues, setRole, toggleZ, withZ, zLine, notUsedReason } from "../datasetReading.js";
-import { READING_ROWS } from "../datasetReading.js";
+import { READING_MAIN, READING_MORE } from "../datasetReading.js";
+import { defaultSecondUnit } from "../twoClocks.js";
 
 // How a dataset's columns are read for modelling (datasetReading.js): the
 // shared Data-step selectors (ColumnMapper) for x (with its range xl to xr),
-// c (with what each value means), n, tl, tr, i, m and the failure mode, then
+// c (with what each value means) and n, then under "More columns" tl, tr, i, m,
+// the failure mode, the state and the second clock (with its unit), then
 // Z, the covariates: every column not given a role, less the ones guarded as
 // "not used" (an id, a date, free text, one value), each one tap to include.
 // Used by New dataset (Data) and by every fit flow's Change.
@@ -44,24 +46,32 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
           // A role picked takes its column out of Z and any other role.
           const changed = ROLES.find((k) => next[k] !== reading[k] && next[k]);
           if (changed) r = setRole(r, changed, next[changed], facts, nRows);
+          // The second clock's unit follows its column, unless the user typed their own.
+          if (next.x2 !== cur.x2 && (!cur.x2_unit || cur.x2_unit === defaultSecondUnit(cur.x2))) {
+            r.x2_unit = next.x2 ? defaultSecondUnit(next.x2) : "";
+          }
           return withZ(r, cur, facts, nRows);
         })}
         unit={reading.unit}
         onUnitChange={(u) => update((cur) => ({ ...cur, unit: u }))}
         mUnit={reading.m_unit}
         onMUnitChange={(u) => update((cur) => ({ ...cur, m_unit: u }))}
+        x2Unit={reading.x2_unit}
+        onX2UnitChange={(u) => update((cur) => ({ ...cur, x2_unit: u }))}
         facts={facts}
-        rows={READING_ROWS}
+        rows={READING_MAIN}
+        more={READING_MORE}
         lifeRules
         words={{
           i: "optional: which item (unit, pump, tag) each row belongs to",
           m: "optional: a measured value, for readings",
           e: "optional: each failure's mode (the state entered)",
           s: "optional: the state the unit was in during this row (multi-state data)",
+          x2: "optional: a second measure of use, e.g. starts, cycles, landings, shots, km",
         }}
         none={{
           x: "— pick a column —", c: range ? "— none: read from the values —" : "— pick a column —",
-          i: "— none —", m: "— none —", e: "— none —", s: "— none —",
+          i: "— none —", m: "— none —", e: "— none —", s: "— none —", x2: "— none —",
         }}
         issues={issues}
         asides={{ c: failedTick ? [failedTick] : [] }}
@@ -108,5 +118,5 @@ export function readingWaiting(reading, facts, nRows) {
   const issues = readingIssues(reading, facts, nRows);
   if (!issues.length) return null;
   const rows = [...new Set(issues.map((i) => (i.row === "xl" || i.row === "xr" ? "x" : i.row || "x")))];
-  return `First settle the note${issues.length === 1 ? "" : "s"} beside ${rows.map((r) => (r === "e" ? "failure mode" : r)).join(", ")}.`;
+  return `First settle the note${issues.length === 1 ? "" : "s"} beside ${rows.map((r) => (r === "e" ? "failure mode" : r === "x2" ? "second clock" : r)).join(", ")}.`;
 }

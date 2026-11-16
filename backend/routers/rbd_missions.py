@@ -19,6 +19,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
+def _simulation(session, ctx: AccessCtx):
+    """Leave to simulate a mission that can only be simulated (blocks on standby without constant
+    rates, standby blocks set to be simulated): Pro, like every simulation."""
+    from backend.routers.rbds import standby_simulation
+
+    return standby_simulation(session, ctx)
+
+
+def _pro_payload(exc: Exception) -> dict:
+    """The 402 for a mission only a simulation can work out: what stops it, then what Pro adds."""
+    from backend.routers.rbds import standby_pro_payload
+
+    if client_message(exc) == rbd_phases.MISSION_PRO_MESSAGE:
+        return {"detail": rbd_phases.MISSION_PRO_MESSAGE, "code": "pro_required", "upgrade": True}
+    return standby_pro_payload(exc)
+
+
 def _time(value) -> float | None:
     """A finite time of at least 0, else None (the default)."""
     try:
@@ -41,11 +58,17 @@ def phased_mission(
     end, and the riskiest phase. Exact, or simulated where the mission is too
     large (the result says which). Quick, so not plan-gated. ``current_state``:
     the blocks' states now (as the diagram's calculation takes them), so the
-    mission flies from their ages."""
+    mission flies from their ages. A mission only a simulation can work out (blocks on standby
+    without constant failure rates) needs Pro: 402 with code ``pro_required`` otherwise."""
+    from backend.services import rbd_standby
+
     try:
-        return JSONResponse(content=rbd_phases.analyze_for_owner(session, graph, ctx.read_owners,
-                                                                 covariates=covariates or None,
-                                                                 current_state=current_state or None))
+        with _simulation(session, ctx):
+            return JSONResponse(content=rbd_phases.analyze_for_owner(session, graph, ctx.read_owners,
+                                                                     covariates=covariates or None,
+                                                                     current_state=current_state or None))
+    except rbd_standby.SimulationNeedsPro as exc:
+        return JSONResponse(status_code=402, content=_pro_payload(exc))
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
@@ -243,10 +266,11 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
     the saved ones. ``current_state``: the blocks' states now (``{node_id: {"failed": true} |
     {"age": t}}``, as ``POST /api/rbds/phases`` takes them), so the mission flies from their ages
     ("As of now" in the notes). A phase still missing a value waits; the result says which blocks
-    need what. Quick, so not plan-gated. A from-new result for the saved phases is kept for the
-    lists; an as-of-now one isn't."""
+    need what. Exact answers are free; a mission only a simulation can work out (blocks on standby
+    without constant failure rates) needs Pro (402, code ``pro_required``). A from-new result for
+    the saved phases is kept for the lists; an as-of-now one isn't."""
     from backend.services import access as access_service
-    from backend.services import rbd_missions
+    from backend.services import rbd_missions, rbd_standby
 
     rbd, err = _rbd_or_404(session, rbd_id, ctx)
     if err:
@@ -257,7 +281,10 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
         return JSONResponse(status_code=404, content={"detail": "That mission isn't on this RBD (deleted?)."})
     use = mission["phases"] if phases is None else phases
     try:
-        result = rbd_missions.analyze(session, ctx.read_owners, graph, use, current_state=current_state or None)
+        with _simulation(session, ctx):
+            result = rbd_missions.analyze(session, ctx.read_owners, graph, use, current_state=current_state or None)
+    except rbd_standby.SimulationNeedsPro as exc:
+        return JSONResponse(status_code=402, content=_pro_payload(exc))
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive

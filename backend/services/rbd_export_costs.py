@@ -110,6 +110,11 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
                 parts.append(f'"{extra}": {_num(spec[extra])}')
         if spec.get("inspection_cost") is not None:
             parts.append(f'"inspection_cost": {_cost(script, spec["inspection_cost"])}')
+        if spec.get("basis"):
+            # Counted in running hours (#365): RePyability puts its times onto the clock through the duty.
+            parts.append(f'"basis": {_lit(spec["basis"])}')
+            L.append(f"# Its {'proof tests are' if key == 'inspection' else 'maintenance is'} counted in running "
+                     "time: RePyability divides the times by the duty.")
         entries.append(f'"{key}": {{' + ", ".join(parts) + "}")
     try:
         group = rm.maintenance_group(data, label)

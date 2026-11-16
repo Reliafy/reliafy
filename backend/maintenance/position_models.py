@@ -30,6 +30,12 @@ Events (new types only; older logs replay unchanged):
   another saved model of the same kind (or the same one), with the name and note it
   carries from then on. The link itself and what it is for stay as they were.
 
+* ``position.model_rate_set {id, usage_rate, on}`` (Nov 2026): a row on a life on two clocks given its
+  own usage rate (``usage_rate``: its second clock per unit of the first, starts per hour or landings
+  per flight hour; null: back to the operating plan's, or the fleet's). Without one the rate comes
+  from the position's operating plan when the second clock is starts or runs (a plan counts runs),
+  else from the fleet's typical rate in the data.
+
 An RBD is a row too (``model_type`` and ``role`` ``rbd``, Nov 2026: "every position can
 either have a life model, an RBD, or a prediction"): a saved diagram, built from the
 positions inside (each block the child's model in use, else a flagged placeholder) or
@@ -98,7 +104,12 @@ def _model_relinked(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"model_id": p["model_id"], "name": p["name"], "note": p["note"]})
 
 
+def _model_rate_set(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"usage_rate": p.get("usage_rate")})
+
+
 PROJECTORS = {
+    "position.model_rate_set": _model_rate_set,
     "position.model_linked": _model_linked,
     "position.model_unlinked": _model_unlinked,
     "position.model_in_use_set": _model_in_use_set,
@@ -131,7 +142,7 @@ class PositionModelOps:
         return {"id": link["id"], "position_id": link.get("position_id"), "model_type": link.get("model_type"),
                 "model_id": link.get("model_id"), "role": link.get("role"), "name": link.get("name") or "",
                 "note": link.get("note") or "", "source": link.get("source") or None, "failure_modes": modes,
-                "linked_on": link.get("linked_on")}
+                "linked_on": link.get("linked_on"), "usage_rate": link.get("usage_rate")}
 
     def position_models(self, position_id: str) -> list[dict]:
         """The models attached to a position, oldest first, the one in use marked (``in_use``)."""
@@ -300,6 +311,45 @@ class PositionModelOps:
             "name": sv._text(name, "model's name", required=True)[:sv.SHORT_TEXT],
             "note": sv._text(note, "note")})
         return self.model_link(link_id)
+
+    def set_link_usage_rate(self, link_id: str, usage_rate) -> dict:
+        """A row on a life on two clocks given its own usage rate (its second clock per unit of
+        the first), or (``usage_rate`` None) put back on the operating plan's rate (or the fleet's)."""
+        from backend import two_clocks
+
+        sv = _sv()
+        link = self._get(link_id, "ModelLink")
+        if link.get("removed"):
+            raise sv.Invalid("That model was taken off its position.")
+        rate = None
+        if usage_rate not in (None, ""):
+            try:
+                rate = two_clocks.check_rate(usage_rate)
+            except two_clocks.TwoClockError as exc:
+                raise sv.Invalid(str(exc)) from None
+        self._emit("position.model_rate_set", {"id": link_id, "usage_rate": rate})
+        return self.model_link(link_id)
+
+    def plan_usage_rate(self, position_id: str) -> dict | None:
+        """Starts per running hour from the position's operating plan (its own, or the one
+        it runs to), over the next 12 months, by RePyability's ``UsageForecast.rate``:
+        {rate, text, holder}. None without a plan, or a plan that says nothing of starts
+        (a rate of hours a day) or gives no hours."""
+        from datetime import date, timedelta
+
+        duty = self.duty_of(position_id)
+        if not duty:
+            return None
+        start = date.fromisoformat(self.today())
+        try:
+            usage = duty["plan"].forecast(start, start + timedelta(days=365))
+            rate = float(usage.rate("starts", per="hours"))
+        except (KeyError, ValueError, TypeError):
+            return None
+        holder = self.s.node(self.org, duty["holder"]) if duty.get("holder") else None
+        where = "" if not holder or holder.get("id") == position_id else f" of {holder.get('name', '')}"
+        return {"rate": rate, "plan": duty.get("text") or "", "holder": duty.get("holder"),
+                "text": f"From the operating plan{where} ({duty.get('text') or 'as planned'}) over the next 12 months."}
 
     def _copy_model_links(self, mapping: dict) -> int:
         """A built item's positions take their design positions' models (role design),
@@ -478,6 +528,24 @@ def summary(model_type: str, doc) -> dict:
                                if _num(c.get("value")) is not None)
                 out["numbers"].append({"id": "reference", "label": "at", "text": f"the fit's average covariates ({at})"})
             out["quality"] = _quality(failed, "life", warning=r.get("fit_warning"))
+            return out
+        if kind == "two_clock":
+            # Two clocks: what one unit of the second clock costs, and the life at the fleet's typical rate
+            # (the row's own rate, from the position's operating plan or set by hand, is in the detail).
+            from backend import two_clocks
+
+            words = two_clocks.results_words(r)
+            k = params.get("k") or {}
+            out["kind"] = r.get("distribution") or "Two clocks"
+            if k.get("value") is not None:
+                lo, hi = _ci(k)
+                label = f"{words['first_word'][:1].upper()}{words['first_word'][1:]} per {words['second_one']}"
+                out["numbers"].append(_number("k", label, k.get("value"), lo, hi, unit))
+            row = next((x for x in r.get("rate_table") or [] if x.get("label") == "Typical"), None)
+            if row and row.get("b10") is not None:
+                out["numbers"].append(_number("b10", f"B10 life at {row.get('rate_words')}", row["b10"],
+                                              row.get("b10_lower"), None, unit, "lower"))
+            out["quality"] = _quality(failed, "life")
             return out
         if r.get("method") == "bayesian_update":
             # Posterior medians with 90% credible intervals (bayes_life.py), never confidence bounds.
@@ -915,6 +983,7 @@ def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dic
         if not isinstance(notes, str):
             notes = ""
     return {**row, "position": {"id": pos.get("id"), "name": pos.get("name", "")},
+            "two_clock": two_clock_detail(m, db, owners, link, doc),
             "source_text": row["source_text"],
             "params": _params(doc) if doc is not None else [],
             "curves": _curves(link["model_type"], doc, db, owners) if doc is not None else None,
@@ -926,6 +995,63 @@ def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dic
                 "used: an RBD block or a calculation." if (row.get("model") or {}).get("covariate_words")
                 else None),
             "prediction": prediction_detail(db, owners, link) if link.get("role") == "prediction" else None}
+
+
+def usage_rate_for(m, link: dict, doc) -> dict | None:
+    """The usage rate (second clock per unit of the first) a row on a life on two clocks uses,
+    and where it came from: the row's own (set by hand) first, then the position's operating plan
+    (only when the second clock is starts or runs: a plan counts runs, not landings or cycles),
+    then the fleet's typical rate in the data it was fitted to. {rate, source (set | plan | fleet),
+    text, plan (the plan's rate, when it applies), clocks (the words), plan_refused (a plan that
+    can't give this unit, in words)}; None for any other model."""
+    from backend import two_clocks
+
+    if doc is None or getattr(doc, "kind", "") != two_clocks.KIND:
+        return None
+    words = two_clocks.results_words(doc.results)
+    runs = words["second_word"].lower() in two_clocks.RUN_UNITS
+    plan = m.plan_usage_rate(link["position_id"]) if link.get("position_id") else None
+    refused = None
+    if plan is not None and not runs:
+        # The plan counts runs (its starts), so it can't say how many landings or cycles the unit makes.
+        refused = (f"The operating plan counts runs, not {words['second_word']}: set the {words['rate_unit']} "
+                   "here.")
+        plan = None
+    own = link.get("usage_rate")
+    base = {"clocks": words, "plan_refused": refused}
+    if own is not None:
+        return {**base, "rate": float(own), "source": "set", "plan": plan,
+                "text": "Set here by hand" + (f" (the operating plan gives {two_clocks.rate_words(plan['rate'], words)})."
+                                               if plan else ".")}
+    if plan is not None:
+        return {**base, "rate": plan["rate"], "source": "plan", "plan": plan, "text": plan["text"]}
+    typical = (doc.results or {}).get("default_rate")
+    lead = refused or (f"No operating plan here says how often it starts: set the {words['rate_unit']}." if runs
+                       else f"Set the {words['rate_unit']} this position sees.")
+    if typical is None:
+        return {**base, "rate": None, "source": None, "plan": None, "text": lead}
+    return {**base, "rate": float(typical), "source": "fleet", "plan": None,
+            "text": f"{lead} Until then this is the typical rate in the data it was fitted to."}
+
+
+def two_clock_detail(m, db, owners, link: dict, doc) -> dict | None:
+    """A row on a life on two clocks: the rate it uses and where from, and the life at it."""
+    from backend import two_clocks
+    from backend.services import models as models_service
+
+    rate = usage_rate_for(m, link, doc)
+    if rate is None:
+        return None
+    out = {"usage_rate": rate, "at_rate": None, "clocks": rate.get("clocks")}
+    if rate["rate"] is None:
+        return out
+    try:
+        live = models_service.two_clock_live(db, doc, owners)
+        out["at_rate"] = two_clocks.at_rate(live, rate["rate"], (doc.results or {}).get("unit") or "",
+                                            {"kind": rate["source"], "text": rate["text"]})
+    except Exception:  # noqa: BLE001 - the row still shows; the life waits for a working model
+        out["at_rate"] = None
+    return out
 
 
 def link_saved(m, db, owners, hidden, position_id: str, model_type: str, model_id: str, failure_mode_ids=None,
@@ -1555,6 +1681,18 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
             return bound, None
         if x["model_type"] == "rbd":
             return {"data": {"rbd": {"id": d.id, "name": d.name}, "model_source": f"Its RBD in use ({d.name})"}}, None
+        if x["model_type"] == "model" and d.kind == "two_clock":
+            # Two clocks: the block runs at the position's usage rate (its own, else its plan's or the fleet's).
+            rate = usage_rate_for(m, x, d) or {}
+            per = (rate.get("clocks") or {}).get("rate_unit") or "usage rate"
+            if rate.get("rate") is None or _factor((d.results or {}).get("unit") or unit, unit) != 1.0:
+                return None, (f"{child['name']}'s model in use ({d.name}) is on two clocks and "
+                              + (f"needs its {per}" if rate.get("rate") is None
+                                 else f"is in {(d.results or {}).get('unit')}, not {unit}") + ": a placeholder stands in.")
+            return ({"model": {"saved_model_id": d.id, "usage_rate": rate["rate"],
+                               "usage_rate_source": rate.get("source")},
+                     "data": {"model_source": f"Its model in use ({d.name}), at {rate['rate']:.4g} {per}: "
+                                              f"{rate.get('text') or ''}"}}, None)
         if x["model_type"] != "model" or d.kind not in ("distribution", "regression"):
             return None, (f"{child['name']}'s model in use ({d.name}) isn't a life distribution an RBD block can take: "
                           "a placeholder stands in.")

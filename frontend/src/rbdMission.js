@@ -3,7 +3,8 @@
 // share. A diagram holds
 //
 //   phases:  [{ name, duration, not_needed?: [blockId], standby?: [blockId], guaranteed?: [blockId],
-//              dormancy?: {blockId: 0–1}, votes?: {knodeId: n}, values?: {covariate: value},
+//              dormancy?: {blockId: 0–1}, start_probability?: {blockId: 0–1}, models?: {blockId: model},
+//              votes?: {knodeId: n}, values?: {covariate: value},
 //              block_values?: {blockId: {key: value}} }]
 //   network: { source, target }   (read as an undirected network between them)
 //
@@ -155,6 +156,16 @@ export function cleanPhases(rows, nodes) {
       if (standby.includes(id) && Number.isFinite(x) && x > 0) dormancy[id] = Math.min(x, 1);
     }
     if (Object.keys(dormancy).length) out.dormancy = dormancy;
+    // The chance a standby block starts when called on, and a block's own life model in the phase
+    // (both set on the Missions tab or through the API), ride along.
+    const starts = {};
+    for (const [id, p] of Object.entries(r.start_probability || {})) {
+      const x = Number(p);
+      if (standby.includes(id) && Number.isFinite(x) && x >= 0 && x < 1) starts[id] = x;
+    }
+    if (Object.keys(starts).length) out.start_probability = starts;
+    const models = Object.fromEntries(Object.entries(r.models || {}).filter(([id, m]) => blocks.has(id) && m));
+    if (Object.keys(models).length) out.models = models;
     const v = {};
     for (const [id, n] of Object.entries(r.votes || {})) {
       const num = Number(n);
@@ -194,4 +205,27 @@ export function topBlocks(importance) {
   if (!rows.length) return [];
   const best = rows[0].birnbaum;
   return rows.filter((r) => r.birnbaum >= best * (1 - 1e-6));
+}
+
+// The whole-mission curve a mission result carries (A18), ready to draw: {t, r, lower, upper,
+// boundaries: [{t, next}]} — each boundary where a phase begins (after the first), named after it,
+// only for missions of up to 8 phases (more would crowd the chart's top). null when the result has
+// no curve (a mission still waiting on values, or too large to work out exactly).
+export function missionCurve(result) {
+  const c = result?.curve;
+  if (result?.reliability == null || !c || !Array.isArray(c.t) || c.t.length < 2) return null;
+  const t = c.t.map(Number);
+  const r = c.reliability.map(Number);
+  const band = Array.isArray(c.lower) && Array.isArray(c.upper) && c.lower.length === t.length;
+  const rows = (result.phases || []).filter((p) => !p.waiting);
+  const boundaries = rows.length <= 8
+    ? rows.slice(1).map((p) => ({ t: Number(p.start ?? 0), next: p.name })).filter((b) => b.t > 0 && b.t < t[t.length - 1])
+    : [];
+  return { t, r, lower: band ? c.lower.map(Number) : null, upper: band ? c.upper.map(Number) : null, boundaries };
+}
+
+// The blocks after the first (the weakest) that drive a phase's failures, each at least 1% of them:
+// [{label, share}]. ``row``: a mission result's phase.
+export function otherDrivers(row) {
+  return (row?.drivers || []).slice(1).filter((d) => Number(d.share) >= 0.01);
 }

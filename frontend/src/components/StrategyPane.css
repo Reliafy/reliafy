@@ -1,0 +1,11 @@
+/* StrategyPane.jsx: a model's Strategy in the Explorer's table area. The body scrolls inside the
+   pane; the tool lays itself out as on its Strategy page. */
+.strategy-pane .sp-body { padding: var(--space-4) var(--space-6); overflow: auto; min-height: 0; flex: 1 1 auto;
+  display: flex; flex-direction: column; gap: var(--space-4); }
+.strategy-pane .sp-h { margin: 0 0 var(--space-2); font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600; }
+.strategy-pane .sp-what { margin: 0 0 var(--space-3); color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+.strategy-pane .sp-link { margin: 0; }
+.strategy-pane .sp-tool { min-width: 0; }
+@media (max-width: 640px) {
+  .strategy-pane .sp-body { padding: var(--space-3) var(--space-4); }
+}

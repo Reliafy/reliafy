@@ -37,8 +37,10 @@ before, as a plain ``NonRepairable``)::
         "duty": 0.25,                          # runs a quarter of the time: its life is
                                                #   in operating time (RePyability's duty)
     }
-    # A replacement given in operating time ("every 500 running hours"):
-    node.data["preventive"]["operating_interval"] = 500  # interval = 500 / duty
+    # A task counted in running hours ("every 500 running hours"): its times
+    # (interval, opportunity, first test, full test) are in the block's running time.
+    node.data["preventive"]["basis"] = "operating"     # or "calendar" (the default)
+    node.data["inspection"]["basis"] = "operating"
     graph["costs"] = {"downtime_rate": 500,    # per unit time the *system* is down
                       "horizon": 87600,        # ownership horizon for the total cost
                       "discount_rate": 7}      # % a year: the total as a present value (#219)
@@ -61,10 +63,18 @@ the diagram's unit, costs in whatever currency the user works in.
 
 A block's ``duty`` (a fraction in (0, 1]) is the share of the time it runs:
 its life model is then read as operating time and RePyability stretches it onto
-the diagram's clock; repairs, maintenance and tests stay on the clock. A
-replacement may be given in operating time (``operating_interval``): it is
-turned into the clock's interval through the duty, and refused, with a note
-saying what to set, when the block has no duty.
+the diagram's clock; repairs stay on the clock. A task (a replacement or a
+proof test) is counted on the calendar or in running hours (its ``basis``,
+stored as entered). One in running hours goes to RePyability as written, with
+``"basis": "operating"`` and the block's duty, and RePyability puts its times
+onto the clock; its levers, ``with_intervals`` and interval choices then take
+and give them in running hours too. A blank Runs share means the block runs
+all the time, so running hours are calendar hours and the task goes as a
+calendar one, with the same numbers. Blocks saved before the basis existed
+carried ``preventive.operating_interval`` (the interval in running hours, with
+``interval`` the app's own division by the duty): :func:`with_task_basis`
+reads them as a running-hours task, giving the same numbers, with no stored
+data rewritten.
 
 This module also splits the system's downtime into what failures cause and
 what planned outages (maintenance and test durations) add, and extends the
@@ -75,6 +85,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 from typing import Any, Optional
 
 import numpy as np
@@ -98,6 +109,11 @@ COST_NAMES = {
 #: The block costs that may be a range (RePyability draws them per failure).
 RANGED_COSTS = ("repair", "replace")
 POLICIES = ("age", "block", "condition")
+#: What a task's times are counted in (RePyability's ``"basis"``): the
+#: calendar (the diagram's clock, the default) or the block's running hours.
+BASES = ("calendar", "operating")
+#: The times of a task that a basis applies to (RePyability converts them).
+TASK_TIMES = {"preventive": ("interval", "opportunity"), "inspection": ("interval", "offset", "full_test")}
 #: Block fields beyond the models that make a block a component spec.
 EXTRA_KEYS = ("instant_repair", "costs", "preventive", "inspection", "maintenance_group", "crew_priority",
               "repair_quality", "duty", "replacement")
@@ -221,17 +237,110 @@ def duty_fraction(data: dict, label: str) -> Optional[float]:
     return x
 
 
+def _legacy_task(pm: dict, data: dict) -> dict:
+    """A replacement saved with ``operating_interval`` (before tasks had a
+    basis) as a running-hours task: the interval is that, and an early-renewal
+    age, which was on the calendar, goes into running hours through the duty,
+    so the numbers RePyability works out are the ones it gave then."""
+    out = {k: v for k, v in pm.items() if k != "operating_interval"}
+    out["basis"] = "operating"
+    out["interval"] = pm["operating_interval"]
+    duty = data.get("duty")
+    if not _blank(pm.get("opportunity")) and not isinstance(duty, bool) and isinstance(duty, (int, float)) \
+            and 0 < duty < 1:
+        try:
+            out["opportunity"] = float(f"{float(pm['opportunity']) * float(duty):.12g}")
+        except (TypeError, ValueError):
+            pass  # left as it was: preventive_spec says what's wrong with it
+    return out
+
+
+def with_task_basis(data: dict) -> dict:
+    """The block's data with each task in the current shape: a replacement
+    saved with ``operating_interval`` read as a running-hours task
+    (``basis: "operating"``, its interval that). Everything else as it is.
+    Pure: nothing is changed in place, and stored data needn't be rewritten."""
+    pm = data.get("preventive") if isinstance(data, dict) else None
+    if isinstance(pm, dict) and not _blank(pm.get("operating_interval")):
+        return {**data, "preventive": _legacy_task(pm, data)}
+    if isinstance(pm, dict) and "operating_interval" in pm:
+        return {**data, "preventive": {k: v for k, v in pm.items() if k != "operating_interval"}}
+    return data
+
+
+def graph_with_task_basis(graph: dict) -> dict:
+    """The diagram with :func:`with_task_basis` on every block (a shallow copy
+    where anything changed)."""
+    nodes = (graph or {}).get("nodes") or []
+    new, changed = [], False
+    for n in nodes:
+        data = n.get("data") if isinstance(n, dict) else None
+        moved = with_task_basis(data) if isinstance(data, dict) else data
+        changed = changed or moved is not data
+        new.append({**n, "data": moved} if moved is not data else n)
+    return {**graph, "nodes": new} if changed else graph
+
+
+def task_basis(task: Optional[dict], label: str = "") -> str:
+    """``"operating"`` (running hours) or ``"calendar"`` for a task's times
+    (blank is the calendar); refuse any other basis."""
+    basis = (task or {}).get("basis")
+    if _blank(basis):
+        return "operating" if not _blank((task or {}).get("operating_interval")) else "calendar"
+    if basis not in BASES:
+        raise AnalysisError(
+            f"“{label}”: a task is counted on the calendar or in running hours (basis “calendar” or "
+            "“operating”).")
+    return basis
+
+
+def running_hours(data: dict, key: str) -> bool:
+    """Whether the block's ``key`` task (``"preventive"`` or ``"inspection"``)
+    is counted in running hours."""
+    task = with_task_basis(data).get(key)
+    try:
+        return isinstance(task, dict) and task_basis(task) == "operating"
+    except AnalysisError:
+        return False
+
+
+def calendar_time(value, data: dict, key: str) -> Optional[float]:
+    """One of a task's times on the diagram's clock: as it is for a calendar
+    task, over the block's duty for one in running hours (a blank Runs share
+    is all the time). None for a blank or bad value."""
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not running_hours(data, key):
+        return x
+    try:
+        duty = duty_fraction(data, "")
+    except AnalysisError:
+        duty = None
+    return x / (duty or 1.0)
+
+
 def calendar_interval(pm: dict, data: dict, label: str) -> Optional[float]:
-    """A replacement's interval on the diagram's clock: its ``interval``, or,
-    when it is given in operating time (``operating_interval``), that over the
-    block's duty. A blank Runs share means the block runs all the time (the plan says "all the time",
-    and 100% is stored as blank), so running time is calendar time."""
-    operating = pm.get("operating_interval")
-    if _blank(operating):
-        return _number(pm.get("interval"), "preventive-maintenance interval", label, positive=True)
-    hours = _number(operating, "interval in operating time", label, positive=True)
+    """A replacement's interval on the diagram's clock (a running-hours one
+    over the block's duty; a blank Runs share is all the time)."""
+    task = with_task_basis({**data, "preventive": pm})["preventive"]
+    hours = _number(task.get("interval"), "preventive-maintenance interval", label, positive=True)
+    if hours is None or task_basis(task, label) != "operating":
+        return hours
     duty = duty_fraction(data, label)
     return hours / (1.0 if duty is None else duty)
+
+
+def _basis_entry(task: dict, data: dict, label: str) -> dict:
+    """``{"basis": "operating"}`` for a running-hours task on a block that runs
+    part of the time (RePyability then puts its times onto the clock through
+    the duty); nothing otherwise — on the calendar, or running all the time,
+    when running hours are calendar hours."""
+    if task_basis(task, label) != "operating":
+        return {}
+    duty = duty_fraction(data, label)
+    return {"basis": "operating"} if duty is not None and duty < 1.0 else {}
 
 
 def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict]:
@@ -246,6 +355,8 @@ def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
     pm = _dict(data.get("preventive"), "the preventive maintenance", label)
     if pm is None:
         return None
+    data = with_task_basis(data)
+    pm = data["preventive"]
     policy = pm.get("policy") or "age"
     if policy not in POLICIES:
         raise AnalysisError(
@@ -253,12 +364,9 @@ def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
             "replacement."
         )
     condition = policy == "condition"
-    if not _blank(pm.get("operating_interval")):
-        interval = calendar_interval(pm, data, label)
-    else:
-        interval = _number(pm.get("interval"),
-                           "inspection interval" if condition else "preventive-maintenance interval",
-                           label, positive=True)
+    interval = _number(pm.get("interval"),
+                       "inspection interval" if condition else "preventive-maintenance interval",
+                       label, positive=True)
     if interval is None:
         raise AnalysisError(
             f"“{label}”: set the inspection interval (how often its condition is checked)."
@@ -268,6 +376,7 @@ def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
         "interval": interval,
         "policy": policy,
         "duration": _duration(pm.get("duration"), "preventive-maintenance duration", label, resolve_model),
+        **_basis_entry(pm, data, label),
     }
     cost = _cost(pm.get("cost"), "preventive-maintenance cost", label)
     if _priced(cost):
@@ -336,6 +445,7 @@ def inspection_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
     spec: dict[str, Any] = {
         "interval": interval,
         "duration": _duration(test.get("duration"), "proof-test duration", label, resolve_model),
+        **_basis_entry(test, data, label),
     }
     cost = _cost(test.get("cost"), "proof-test cost", label)
     if _priced(cost):
@@ -387,6 +497,54 @@ def crew_priority(data: dict, label: str) -> Optional[float]:
     if isinstance(value, bool) or not np.isfinite(x):
         raise AnalysisError(f"“{label}”: the repair-crew priority must be a finite number.")
     return x
+
+
+_TASK_WORDS = {"preventive": "maintenance", "inspection": "proof test"}
+_REFUSALS = (
+    (re.compile(r"^Component (.+?): its (preventive|inspection) is counted in operating time, which needs the "
+                r"block's duty\b.*$", re.S),
+     lambda m: (f"{m.group(1)}: its {_TASK_WORDS[m.group(2)]} is counted in running hours, which needs the share "
+                "of the time the block runs: set Runs in the Maintenance plan, or count the task on the calendar.")),
+    (re.compile(r"^Component (.+?): a (preventive|inspection) task at a shutdown is on the calendar\b.*$", re.S),
+     lambda m: (f"{m.group(1)}: its {_TASK_WORDS[m.group(2)]} is done at a shutdown, which follows the "
+                "shutdown's dates, so it can't be counted in running hours: count it on the calendar.")),
+    (re.compile(r"^Component (.+?): a 'calendar' policy's thresholds are its own times\b.*$", re.S),
+     lambda m: (f"{m.group(1)}: a calendar policy's thresholds are calendar times, so it can't be counted in "
+                "running hours: count it on the calendar.")),
+    (re.compile(r"^Component (.+?): the (preventive|inspection) basis must be\b.*$", re.S),
+     lambda m: (f"{m.group(1)}: its {_TASK_WORDS[m.group(2)]} is counted on the calendar or in running hours "
+                "(basis “calendar” or “operating”).")),
+)
+
+
+def plain_refusal(text: str) -> str:
+    """RePyability's refusal of a task counted in running hours (no duty, at
+    a shutdown, under a calendar policy, an unknown basis), in plain words
+    with what to do; any other text as it is."""
+    for pattern, words in _REFUSALS:
+        m = pattern.match(text)
+        if m:
+            return words(m)
+    return text
+
+
+def basis_errors(graph: dict) -> list[str]:
+    """Tasks in running hours on a diagram whose clock isn't a time (cycles,
+    km, no unit): running hours can't be put on it."""
+    from backend.units import normalize_unit
+
+    if UNITS_PER_YEAR.get(normalize_unit(graph.get("unit")) or "") is not None:
+        return []
+    out = []
+    for node in graph.get("nodes") or []:
+        data = node.get("data") or {}
+        if node.get("type") == "component" and (running_hours(data, "preventive")
+                                                or running_hours(data, "inspection")):
+            shown = str(graph.get("unit") or "").strip() or "not set"
+            out.append(f"“{data.get('label') or node.get('id')}”: its task is counted in running hours, which "
+                       f"needs the diagram in a time unit (hours, days, …); its unit is {shown}. Change the unit, "
+                       "or count the task on the calendar.")
+    return out
 
 
 def has_extras(data: dict) -> bool:
@@ -524,6 +682,7 @@ def validation_errors(graph: dict) -> list[str]:
         discount(graph)
     except AnalysisError as exc:
         errors.append(client_message(exc).replace("“Diagram”: the ", "The "))
+    errors.extend(basis_errors(graph))
     for node in graph.get("nodes") or []:
         if node.get("type") != "component":
             continue
@@ -546,6 +705,9 @@ def validation_errors(graph: dict) -> list[str]:
                     "nobody knows it has failed when the group stops.")
             crew_priority(data, label)
             duty_fraction(data, label)
+            for key in ("preventive", "inspection"):
+                if isinstance(data.get(key), dict):
+                    task_basis(data[key], label)
             from backend.services import rbd_repair_quality
 
             errors.extend(rbd_repair_quality.errors(data, label))
@@ -585,10 +747,9 @@ def horizon_floor(graph: dict) -> float:
     for n in maintained_blocks(graph):
         data = n.get("data") or {}
         for key in ("preventive", "inspection"):
-            try:
-                longest = max(longest, float((data.get(key) or {}).get("interval") or 0.0))
-            except (TypeError, ValueError):
-                pass
+            task = with_task_basis(data).get(key) or {}
+            # A running-hours interval is longer on the calendar: the window covers that.
+            longest = max(longest, calendar_time(task.get("interval") or 0.0, data, key) or 0.0)
     return HORIZON_INTERVALS * longest if np.isfinite(longest) else 0.0
 
 

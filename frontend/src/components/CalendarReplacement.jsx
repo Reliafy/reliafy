@@ -27,15 +27,18 @@ const POLL_MAX_MS = 6000;
 // part is older than a threshold age), what simpler rules cost, and the next
 // months by date; then one unit in service: now, at the next shut, or later.
 // Today is time 0; the server turns the dates into model time.
-export default function CalendarReplacement() {
+// In the Explorer's table pane: `modelId` the position's saved model, `failure` its class's failure cost
+// where known, `extraInputs` kept with a Save (the model's row on the position).
+export default function CalendarReplacement({ modelId = null, failure = null, extraInputs = null } = {}) {
   const currency = useCurrency();
   const today0 = useRef(localToday()).current;
-  const wanted = modelFromSearch(useLocation().search);
+  const fromLink = modelFromSearch(useLocation().search);
+  const wanted = modelId || fromLink;
   const [model, setModel] = useState(null);
   const [unit, setUnit] = useState("");
   const [today, setToday] = useState(today0);
   const [shuts, setShuts] = useState(() => [newShut(today0)]);
-  const [failureCost, setFailureCost] = useState("");
+  const [failureCost, setFailureCost] = useState(failure == null ? "" : String(failure));
   const [anytimeCost, setAnytimeCost] = useState("");
   const [maxAge, setMaxAge] = useState("");
   const [method, setMethod] = useState("dp");
@@ -266,7 +269,7 @@ export default function CalendarReplacement() {
               // Saved with today's date, so the plan's dates stay as they were; the server recomputes it.
               <SaveAnalysisButton
                 kind="calendar_replacement"
-                inputs={{ ...body, today: result.today, ...savedInputs(ranWith) }}
+                inputs={{ ...body, today: result.today, ...savedInputs(ranWith), ...(extraInputs || {}) }}
                 defaultName={analysisName("Shutdown calendar", ranWith, result.distribution)}
               />
             )}

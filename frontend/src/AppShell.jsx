@@ -47,6 +47,7 @@ const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
 const StrategyReplacement = lazy(() => import("./views/StrategyReplacement.jsx"));
 const StrategyCompare = lazy(() => import("./views/StrategyCompare.jsx"));
 const StrategyFailureFinding = lazy(() => import("./views/StrategyFailureFinding.jsx"));
+const StrategyOverhaulReplace = lazy(() => import("./views/StrategyOverhaulReplace.jsx"));
 const StrategyTestPlanning = lazy(() => import("./views/StrategyTestPlanning.jsx"));
 const StrategyAnalyses = lazy(() => import("./views/StrategyAnalyses.jsx"));
 const StrategyTracking = lazy(() => import("./views/StrategyTracking.jsx"));
@@ -297,6 +298,7 @@ function Shell() {
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
+            <Route path="/strategy/overhaul-replace" element={<StrategyOverhaulReplace />} />
             <Route path="/strategy/test-planning" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/sequential" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/life" element={<StrategyTestPlanning />} />

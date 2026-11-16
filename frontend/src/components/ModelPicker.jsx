@@ -1,12 +1,13 @@
 import Select from "./Select.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getDistributions, listModels, getModel, getRecurrentModel, listRecurrentModels, rbdBlockModel, rbdMeanForms } from "../api.js";
+import { getDistributions, listModels, getModel, getRecurrentModel, listRecurrentModels, modelAtRate, rbdBlockModel, rbdMeanForms } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
 import { formatNumber } from "../format.js";
-import { latestOnly, savedModelRef } from "../modelNext.js";
+import { latestOnly, savedModelRef, twoClockAt } from "../modelNext.js";
+import { clockWords, parseRate, rateHint, rateLabel, rateText } from "../twoClocks.js";
 
 // The shape or spread a mean leaves open, in the words the Mean entry uses
 // (#299): a lognormal "takes mean + spread".
@@ -207,10 +208,31 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     }
     try {
       const m = await getModel(id);
-      if (current()) onChange(savedModelRef({ ...m, id }));
+      const ref = savedModelRef({ ...m, id });
+      if (m.kind === "two_clock") {
+        // Two clocks: used at a usage rate (landings per hour, say), the fleet's typical one until changed.
+        const at = await modelAtRate(id, { rate: ref.usage_rate });
+        if (current()) onChange(twoClockAt(ref, at));
+        return;
+      }
+      if (current()) onChange(ref);
     } catch {
       if (current()) onChange(null);
     }
+  };
+  // A two-clock model's rate typed in: the life at it, emitted with the reference.
+  const [rateBox, setRateBox] = useState(null);
+  const [rateError, setRateError] = useState(null);
+  const applyRate = async () => {
+    if (rateBox == null || value?.kind !== "two_clock") return;
+    const parsed = parseRate(rateBox, clockWords(value.clocks, value.unit, value.second_unit));
+    if (parsed.error) { setRateError(parsed.error); return; }
+    setRateError(null);
+    try {
+      const at = await modelAtRate(value.modelId, { rate: parsed.rate });
+      onChange(twoClockAt(value, at));
+      setRateBox(null);
+    } catch (e) { setRateError(e.message); }
   };
 
   // Strategy tools start on a saved model (#294): once the list is in, pick
@@ -381,6 +403,20 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
               })),
             ]}
           />
+        </label>
+      )}
+      {source === "saved" && value?.kind === "two_clock" && (
+        <label className="dist-field" style={{ maxWidth: 320 }}>
+          <span className="dist-label">{rateLabel(clockWords(value.clocks, value.unit, value.second_unit))}</span>
+          <input className="ctl" type="text" inputMode="decimal"
+                 aria-label={rateLabel(clockWords(value.clocks, value.unit, value.second_unit))}
+                 value={rateBox ?? rateText(value.usage_rate)}
+                 onChange={(e) => setRateBox(e.target.value)} onBlur={applyRate}
+                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyRate(); } }} />
+          <span className={rateError ? "rbd-dlg-echo is-error" : "rbd-dlg-echo"} role={rateError ? "alert" : undefined}>
+            {rateError || (value.rate_words ? `${value.rate_words}: a life on two clocks, used at this rate.`
+              : rateHint(clockWords(value.clocks, value.unit, value.second_unit)))}
+          </span>
         </label>
       )}
     </div>

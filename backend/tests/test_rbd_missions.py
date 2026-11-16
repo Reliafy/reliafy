@@ -408,10 +408,17 @@ def test_a_mission_from_a_blocks_age_is_conditioned_on_it():
     assert failed["reliability"] == pytest.approx(0.0, abs=1e-12)
 
 
-def test_an_aged_block_on_standby_keeps_its_age_through_the_pause():
+def test_an_aged_block_on_standby_alone_is_needed_at_once_and_runs():
+    # A18: a block on standby with nothing to back up is needed from the start, so it runs the whole
+    # 50 h from its age (the old stand-in paused it for 30 h). Weibull on standby: simulated (Pro).
+    from backend.services import rbd_standby
+
     graph = _one_block(phases=[{"name": "Wait", "duration": 30, "standby": ["a"]}, {"name": "Run", "duration": 20}])
-    out = rbd_phases.analyze_phases(graph, current_state={"a": {"age": 50}})
-    assert out["reliability"] == pytest.approx(float(GEAR.sf(70.0) / GEAR.sf(50.0)), abs=1e-12)
+    with rbd_standby.simulation("run"):
+        out = rbd_phases.analyze_phases(graph, current_state={"a": {"age": 50}})
+    assert out["method"] == "simulated"
+    assert out["reliability"] == pytest.approx(float(GEAR.sf(100.0) / GEAR.sf(50.0)), abs=0.01)
+    assert out["reliability"] < float(GEAR.sf(70.0) / GEAR.sf(50.0))
 
 
 def test_mcp_phased_mission_uses_current_state(env):

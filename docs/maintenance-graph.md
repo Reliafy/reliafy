@@ -1282,6 +1282,10 @@ saved model assigned by hand. Code: `backend/maintenance/position_models.py`.
   another saved model of the same kind and sets its name and note (the
   ready-made product's links moved from the shared library's records to the
   workspace's own); everything else on the link stays.
+  `position.model_rate_set {id, usage_rate, on}` gives a link on a life on
+  two clocks its own usage rate (its second clock per unit of the first:
+  starts per hour, landings per flight hour; null: back
+  to the rate from the position's operating plan).
 - **Predictions.** A parts-count prediction of a position (role `prediction`)
   is saved as a reliability prediction and an exponential model at its rate;
   the link names the model, and `source` the prediction, the environment and

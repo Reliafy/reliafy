@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.db import get_session, init_db
 from backend import fitting as fitting_module
-from backend import life_bounds, more_models, regression_bands, regression_diagnostics
+from backend import life_bounds, more_models, regression_bands, regression_diagnostics, two_clocks
 from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
@@ -458,7 +458,14 @@ def distributions_endpoint() -> dict:
          "tvc": hasattr(entry["fitter"], "fit_tvc_from_df")}
         for key, entry in REGRESSION_MODELS.items()
     ]
-    return {"distributions": plain + discrete + nonparametric + more_models.flexible_listing() + regression,
+    # Two clocks (hours and starts, cycles, landings...): offered only when a second clock is given.
+    two_clock = [
+        {"id": key, "name": entry["name"], "covariates": False, "two_clock": True,
+         "params": [*entry["fitter"].parameter_names], "methods": ["MLE"]}
+        for key, entry in two_clocks.MODELS.items()
+    ]
+    return {"distributions": plain + discrete + nonparametric + more_models.flexible_listing() + regression
+            + two_clock,
             "fit_methods": FIT_METHODS}
 
 
@@ -517,6 +524,8 @@ def fit_endpoint(
     xr: str | None = Form(default=None),
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
+    x2: str | None = Form(default=None),
+    x2_unit: str | None = Form(default=None),
     i: str | None = Form(default=None),
     e: str | None = Form(default=None),
     g: str | None = Form(default=None),
@@ -560,6 +569,8 @@ def fit_endpoint(
     mapping = {
         "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
         "i": i, "e": e, "g": g, "group": group,
+        # Two clocks: the second clock's column (its unit, x2_unit, goes in the options).
+        "x2": x2,
     }
     try:
         if dataset_id:
@@ -579,7 +590,7 @@ def fit_endpoint(
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
             include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
-            frailty_family=frailty_family, u_col=u_col, item_lives=item_lives,
+            frailty_family=frailty_family, u_col=u_col, item_lives=item_lives, x2_unit=x2_unit,
         )
         options = regression_diagnostics.with_cox_form(options, cox)  # Cox ties / strata / cluster (#61)
         result = fit(
@@ -618,6 +629,8 @@ def fit_endpoint(
             functions["life_path"] = f"/api/life/{functions['model_id']}"
         else:
             functions.update(regression_bands.notes(result))
+        if result.get("kind") == two_clocks.KIND:  # the life at a usage rate (two clocks)
+            functions["at_rate_path"] = f"/api/at-rate/{functions['model_id']}"
         if result.get("kind") == "regression":  # the residual plots (#61)
             functions["residuals_path"] = f"/api/residuals/{functions['model_id']}"
     return JSONResponse(content=result)
@@ -695,6 +708,27 @@ def life_endpoint(
         )
     except (ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid life request.")})
+
+
+@app.post("/api/at-rate/{model_id}")
+def at_rate_endpoint(
+    model_id: str,
+    body: dict = Body(default={}),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """A fresh (unsaved) fit on two clocks at a usage rate: as
+    ``/api/models/{id}/at-rate``. Same access rule as :func:`evaluate_endpoint`."""
+    try:
+        entry = _entry_for(model_id, user["uid"])
+        if not two_clocks.is_model(entry["model"]):
+            return JSONResponse(status_code=422, content={"detail": "Only a model on two clocks takes a "
+                                                                    "usage rate."})
+        return JSONResponse(content=two_clocks.answer(entry["model"], body, getattr(entry["model"], "unit", "")
+                                                      or ""))
+    except ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found — re-fit it."})
+    except (ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid usage rate.")})
 
 
 # ---------------------------------------------------------------------------

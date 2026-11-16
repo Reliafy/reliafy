@@ -4880,6 +4880,11 @@ h1 .chip,
   min-width: 0;
 }
 .xcn-row:last-child { border-bottom: 0; padding-bottom: 0; }
+/* "More columns": the less common roles folded after x, c and n (ResultDetails). */
+.xcn > .rs-details { margin-top: 0; }
+.xcn > .rs-details > summary { flex-wrap: wrap; row-gap: 2px; min-height: 32px; }
+.xcn > .rs-details > summary .xcn-words { font-weight: 400; }
+.xcn > .rs-details .rs-details-body > .xcn { margin-top: 0; }
 .xcn-key { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .xcn-key code, .xcn-pair code, .xcn-fields > code { font-weight: 600; color: var(--text); font-size: var(--fs-14); white-space: nowrap; }
 .xcn-words { color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
@@ -10069,3 +10074,19 @@ main.content:focus { outline: none; }
 
 /* The dark theme (tokens.css) lets native controls follow it. */
 [data-theme="dark"] { color-scheme: dark; }
+
+/* Hours and starts (two clocks): the life at a usage rate (TwoClockLife.jsx). */
+.tc-panel { display: flex; flex-direction: column; gap: var(--space-4); overflow-y: auto; }
+.tc-headline { margin: 0; font-size: var(--fs-16); line-height: var(--lh-16); color: var(--text); }
+.tc-life { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.tc-rate { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.tc-rate .field { flex: 1 1 220px; max-width: 360px; }
+.tc-rate-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-bottom: var(--space-1); }
+.tc-left { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.tc-plot { min-width: 0; }
+@media (min-width: 1100px) {
+  .tc-life:not(.tc-compact) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
+  .tc-life:not(.tc-compact) .rs-stats { flex-wrap: wrap; }
+  .tc-life:not(.tc-compact) .rs-stats .stat { flex: 1 1 40%; }
+}
+.tc-source { margin: 0; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }

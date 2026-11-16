@@ -5,7 +5,7 @@ import {
 } from "./rbdTreePlan.js";
 
 const row = (plan, extra = {}) => ({ position: { id: "p1", name: "Pump A" }, used: plan ? "t1" : null, plan, ...extra });
-const AGE = { task: "age", interval: 4383, operating_interval: null, duration: 8, cost: 1200, inspection_cost: null, group: null };
+const AGE = { task: "age", interval: 4383, basis: "calendar", duration: 8, cost: 1200, inspection_cost: null, group: null };
 
 test("the task replaces whatever was drawn; the diagram keeps only its own settings", () => {
   const data = { label: "Pump A", duty: 0.5, crew_priority: 2, preventive: { policy: "block", interval: 1, cost: 5 },
@@ -69,10 +69,22 @@ test("settings and what's left to set", () => {
   const cond = row({ ...AGE, task: "condition" });
   assert.match(treeRowProblems({}, cond)[0], /threshold/);
   assert.deepEqual(treeRowProblems({ tree_settings: { threshold: 0.1 } }, cond), []);
-  const running = row({ ...AGE, interval: null, operating_interval: 500 });
+  const running = row({ ...AGE, interval: 500, basis: "operating" });
   // Runs blank: the block runs all the time, so running hours are calendar hours.
   assert.deepEqual(treeRowProblems({}, running), []);
   assert.deepEqual(treeRowProblems({ duty: 0.25 }, running), []);
+});
+
+test("a task by use on an hours counter is a running-hours task, replacement or proof test (#365)", () => {
+  const pm = mergeTreeData({ duty: 0.25, tree_settings: { opportunity: 300 } }, row({ ...AGE, interval: 500, basis: "operating" }));
+  assert.deepEqual(pm.preventive, { policy: "age", interval: 500, basis: "operating", duration: 8, cost: 1200, opportunity: 300 });
+  const pt = mergeTreeData({ duty: 0.25, tree_settings: { offset: 100 } },
+    row({ ...AGE, task: "test", interval: 2000, basis: "operating", duration: 2, cost: 300 }));
+  assert.deepEqual(pt.inspection, { interval: 2000, basis: "operating", duration: 2, cost: 300, offset: 100 });
+  // At a shutdown the shut's dates rule: no basis.
+  const shut = mergeTreeData({}, row({ ...AGE, interval: 500, basis: "operating", shutdown: "Annual" }));
+  assert.equal(shut.preventive.basis, undefined);
+  assert.equal(shut.preventive.interval, undefined);
 });
 
 test("links to the tree and the request's blocks", () => {

@@ -165,7 +165,7 @@ export function dataText(r) {
 //   failures  Failures over time: the MCF with the fitted curve [All | By cause]
 //   effects   Effects: what changes the failure rate (covariate models only)
 //   calc      Calculator: expected failures, failure rate and MTBF
-//   plan      Plan ahead [Next failure | Growth projection | Overhaul interval]
+//   plan      Plan ahead [Next failure | Growth projection | Overhaul interval | Overhaul and replace]
 //   diag      Diagnostics: the trend, growth and fit checks (a fit to data)
 //   data      Data: what it was fitted to, and every parameter
 
@@ -178,7 +178,8 @@ export const REC_TAB_LABELS = {
   data: "Data",
 };
 
-export const PLAN_LABELS = { next: "Next failure", projection: "Growth projection", overhaul: "Overhaul interval" };
+export const PLAN_LABELS = { next: "Next failure", projection: "Growth projection", overhaul: "Overhaul interval",
+  replace: "Overhaul and replace" };
 
 // Whether the model was fitted to event data (not built from parameters).
 export const fittedToData = (r) => !r?.from_params && !!r?.mcf?.observed?.x?.length;
@@ -191,9 +192,11 @@ export const fittedToData = (r) => !r?.from_params && !!r?.mcf?.observed?.x?.len
 export function planViews(r, { modelId = null, paramsOnly = false } = {}) {
   const projection = modelId && !paramsOnly && !r?.from_params && "projection";
   const overhaul = modelId && familyOf(r) === "nhpp" && "overhaul";
+  // Overhaul every X, replace after N (Strategy › Overhaul and replace, the same tool): beside the overhaul interval.
+  const replace = overhaul && "replace";
   const ids = [
     familyOf(r) === "renewal" && (r?.next_failure?.units || []).length > 0 && "next",
-    ...(r?.growth === "deteriorating" ? [overhaul, projection] : [projection, overhaul]),
+    ...(r?.growth === "deteriorating" ? [overhaul, replace, projection] : [projection, overhaul, replace]),
   ].filter(Boolean);
   return ids.map((value) => ({ value, label: PLAN_LABELS[value] }));
 }

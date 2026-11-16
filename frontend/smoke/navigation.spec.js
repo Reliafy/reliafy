@@ -152,7 +152,7 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await mainMenu(page).getByRole("button", { name: "Decisions", exact: true }).click();
   await mainMenu(page).getByRole("button", { name: "Strategy", exact: true }).click();
   await expect(mainMenu(page).locator("#side-list-strategy .side-subitem")).toHaveText(["Optimal replacement",
-    "Compare two models", "Failure finding", "Test planning"]);
+    "Compare two models", "Failure finding", "Overhaul and replace", "Test planning"]);
   await mainMenu(page).getByRole("link", { name: "Failure finding", exact: true }).click();
   await expect(page).toHaveURL(/\/strategy\/failure-finding$/);
   await mainMenu(page).getByRole("button", { name: "Risk", exact: true }).click();

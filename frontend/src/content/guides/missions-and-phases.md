@@ -87,16 +87,21 @@ Under each phase are two kinds of rows:
   phase. Choose **Add node status rule…** on the phase (its menu or its
   details), pick the block and its state: **Standby**, **Guaranteed working**
   or **Not needed**. A standby block can be warm: **Ages while idle** sets how
-  fast it wears while idle, from 0% (cold) to 100% (as if running). Blocks with
-  no rule are working. Edit or delete a rule in its details or its menu.
+  fast it wears while idle, from 0% (cold) to 100% (as if running). **Chance it
+  starts** is how often it starts when called on (100% unless you set it). Blocks
+  with no rule are working. Edit or delete a rule in its details or its menu.
 
 These are the very values the mission's RBD keeps: the RBD builder's **Phased
 mission…** shows and edits the same block states and covariate values, so a
 change in one is in the other.
 
 The answer says why it has no bound: a mission is worked out from each block's
-model at its point values. A mission too large to work out exactly is
-simulated, and the range shown (90%, two-sided) is the simulation's own precision.
+model at its point values. It is worked out exactly when no block stands by, or
+when every block has a constant failure rate (an exponential life). A mission
+with blocks on standby and other lives can only be simulated: that needs Pro,
+and the range shown (90%, two-sided) is the simulation's own precision. The
+simulation is seeded, so the same mission gives the same figures every time. A
+mission too large to work out exactly is simulated too.
 
 Under **Modelling → System models → RBDs**, a mission's RBD has a **Mission**
 label and says which mission and position it belongs to.
@@ -121,18 +126,20 @@ does in that phase:
 - **Working** (the default): it runs, ages and can fail.
 - **Guaranteed working**: it runs and ages but can't fail in that phase (one
   that failed earlier stays failed).
-- **Standby**: it's there but not running, so it neither ages nor fails in that
-  phase (a warm standby, given an **Ages while idle** on its rule, wears at
-  that fraction). It counts as working if it was still working when the phase began, and
-  its age carries on when it next runs. Switching over is taken as perfect, and
-  a standby block's running time after it takes over within the phase isn't
-  counted.
+- **Standby**: it's idle until the phase needs it, when a block it backs up
+  fails, and then it runs to the phase's end. Idle, a cold spare neither ages
+  nor fails; a warm one, given an **Ages while idle** on its rule, wears at that
+  fraction. Called on, it starts with its **Chance it starts**; one that fails to
+  start has failed for the rest of the mission, and the next spare is tried.
+  A block on standby with nothing to back up (in series) is needed at once, so
+  it runs.
 - **Not needed**: the phase works without it. Its clock keeps running, so if it
   fails then, a later phase that needs it finds it failed.
 
 Change a cell in place; **Calculate** works the mission out with what's on
-screen, and **Save** keeps it. A pump that runs by day and stands by at night,
-with its partner the other way round, ages only half the mission.
+screen, and **Save** keeps it. Two pumps in parallel, one running by day with
+the other on standby and the other way round at night, each run only when
+needed.
 
 Each mission's phases are rows under it in the tree, in order, each with its
 place (**Phase 2 of 3**) and its own length. A mission's row
@@ -177,13 +184,16 @@ that stand by in it, faded.
 ## Calculate
 
 **Calculate** works the mission out, saved or not. The answer comes first: the
-chance the mission completes. Then, for each phase:
+chance the mission completes. Under it, **Reliability through the mission** is
+one curve over the whole mission, phase boundaries marked: the chance the
+mission is still going at each point. Then, for each phase:
 
 - **Completes**: the chance the mission gets through the phase once it has
   started it.
 - **Still going**: the chance the mission is still going at the phase's end.
 - **Weakest**: the block whose failures end the most missions in that phase,
-  and its share of the phase's failures.
+  and its share of the phase's failures; **Also** names the next blocks that
+  drive the phase's failures.
 
 ### Blocks with no model
 
@@ -202,8 +212,8 @@ You choose what to do with them:
 - Or set one **Not needed** only in the phases that don't use it.
 
 The parts age across the **whole** mission, not afresh in each phase: wear in a
-hot climb stays with a motor for the rest of the flight (except while a part
-stands by). The result's notes say what **Standby** and **Not needed** mean. When a block's
+hot climb stays with a motor for the rest of the flight (except while a spare
+is idle on standby). The result's notes say what **Standby** and **Not needed** mean. When a block's
 covariates change between phases, its life carries on from where the last phase
 left it (for an accelerated life model, by cumulative exposure: the wear done
 at one stress counts at the next).
@@ -214,5 +224,6 @@ The same is in the API, the CLI and the Claude connector: `analyse
 rbd_mission` works a mission out (or every mission on an RBD) and lists the
 covariates its phases can set; `change rbd_mission` adds, changes and deletes
 one, with a phase's `standby`, `guaranteed` and `not_needed` blocks (and a
-standby block's `dormancy`). See also [Model a mission in phases](/guides/phased-missions) for the RBD
+standby block's `dormancy` and `start_probability`), and `models`: a block's
+life model for one phase, its age carried in and out. See also [Model a mission in phases](/guides/phased-missions) for the RBD
 builder's own phased mission.

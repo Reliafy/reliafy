@@ -44,6 +44,9 @@
 .rbd-plan-cost { width: 7rem; }
 .rbd-plan-group { width: 8rem; }
 .rbd-plan-basis { min-width: 8.5rem; }
+/* The interval and its unit (InputGroup): as wide as its two controls, not the cell. */
+.rbd-plan-every-group { display: inline-flex; }
+.rbd-plan-every-group > .rbd-plan-basis { flex: none; }
 .rbd-plan-with-suffix { display: inline-flex; align-items: center; gap: 4px; }
 .rbd-plan-table small { display: block; font-size: var(--fs-12, 0.75rem); margin-top: 2px; }
 .rbd-plan-table input.is-invalid { border-color: var(--danger); }
@@ -66,6 +69,8 @@
   .rbd-plan { padding: 10px 10px 4px; }
   .rbd-plan-btns { margin-left: 0; }
   .rbd-plan-table input, .rbd-plan-table select { font-size: var(--fs-16); min-height: 40px; }
+  .rbd-plan-table .rbd-plan-every-group > .ctl { min-height: 38px; }
+  .rbd-plan-every-group > .rbd-plan-basis { min-width: 10rem; }
   .rbd-plan-more { min-height: 40px; }
 }
 

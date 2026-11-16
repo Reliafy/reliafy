@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   PLAN_SUPPORTS, costText, parsePercent, percentText, dutyText, dutyWords, intervalBasis, parseCost, parseDuty, parseNumber, planColumns,
   planCounts, planRows, rowProblems, setDuty, setGroup, setInterval, setIntervalBasis, setScheduleField, setTask,
-  taskOf, taskSummary, toCalendar, toOperating,
+  taskOf, taskSummary, toCalendar, toOperating, withTaskBasis, calendarNote, onCalendar,
 } from "./rbdMaintenancePlan.js";
 
 const block = (id, data = {}) => ({ id, type: "component", data: { label: id, ...data } });
@@ -53,32 +53,47 @@ test("running time converts to calendar time through the duty, and back", () => 
   assert.equal(toCalendar(500, null), null);
 });
 
-test("an interval in running time follows the duty", () => {
+test("a task in running hours is stored as entered; Runs moves only its calendar time (#365)", () => {
   let d = setTask({ label: "Pump" }, "age");
   d = setDuty(d, 0.5);
   d = setInterval(d, 500, "operating");
   assert.equal(intervalBasis(d), "operating");
-  assert.deepEqual(d.preventive, { policy: "age", operating_interval: 500, interval: 1000 });
-  // Change the duty: the calendar interval moves, the running interval stays.
+  assert.deepEqual(d.preventive, { policy: "age", interval: 500, basis: "operating" });
+  assert.equal(onCalendar(500, d), 1000);
+  // Change the duty: the running interval stays, its calendar time moves.
   d = setDuty(d, 0.25);
-  assert.equal(d.preventive.interval, 2000);
-  assert.equal(d.preventive.operating_interval, 500);
+  assert.equal(d.preventive.interval, 500);
+  assert.equal(calendarNote(500, d, "h"), "= 2,000 h on the calendar at Runs 25%");
+  assert.match(taskSummary(d, "Hours"), /every 500 running h \(2,000 h on the calendar at Runs 25%\)/);
   // Back to the calendar keeps the same schedule.
   const cal = setIntervalBasis(d, "calendar");
   assert.deepEqual(cal.preventive, { policy: "age", interval: 2000 });
   // And to running time again converts through the duty.
-  assert.equal(setIntervalBasis(cal, "operating").preventive.operating_interval, 500);
+  assert.deepEqual(setIntervalBasis(cal, "operating").preventive, { policy: "age", interval: 500, basis: "operating" });
 });
 
-test("running time with Runs blank is calendar time: the block runs all the time", () => {
-  let d = setInterval(setTask({}, "age"), 500, "operating");
-  assert.equal(d.preventive.interval, 500);
-  assert.deepEqual(rowProblems(d, "Hours"), []);
-  assert.match(rowProblems(d, "Cycles")[0], /time unit/);
-  // A duty set and taken away again: back to the running interval on the calendar.
-  d = setDuty(setDuty(d, 0.5), null);
-  assert.equal(d.duty, undefined);
-  assert.equal(d.preventive.interval, 500);
+test("a proof test takes running hours too: interval, first test and full test move together", () => {
+  let d = setDuty(setTask({}, "test"), 0.25);
+  d = setInterval(d, 8000);
+  d = setScheduleField(setScheduleField(setScheduleField(d, "offset", 4000), "coverage", 0.9), "full_test", 40000);
+  const run = setIntervalBasis(d, "operating");
+  assert.deepEqual(run.inspection, { interval: 2000, offset: 1000, coverage: 0.9, full_test: 10000, basis: "operating" });
+  assert.equal(taskOf(run), "test");
+  assert.deepEqual(rowProblems(run, "Hours"), []);
+  // Switching to a replacement keeps the unit with the interval.
+  assert.deepEqual(setTask(run, "age").preventive, { policy: "age", interval: 2000, basis: "operating" });
+});
+
+test("a block saved with operating_interval reads as a running-hours task, same numbers", () => {
+  const old = { duty: 0.5, maintenance_group: "g",
+    preventive: { policy: "age", operating_interval: 500, interval: 1000, opportunity: 600 } };
+  const d = withTaskBasis(old);
+  assert.deepEqual(d.preventive, { policy: "age", interval: 500, basis: "operating", opportunity: 300 });
+  assert.equal(onCalendar(d.preventive.interval, d), 1000);
+  assert.equal(intervalBasis(old), "operating");
+  // Editing writes the new shape.
+  assert.equal(setScheduleField(old, "cost", 10).preventive.operating_interval, undefined);
+  assert.equal(withTaskBasis({ preventive: { policy: "age", interval: 9 } }).preventive.interval, 9);
 });
 
 test("a threshold and a coverage are typed as percentages and kept as fractions", () => {
@@ -145,7 +160,7 @@ test("the summary reads as a sentence", () => {
   d = setScheduleField(d, "duration", 8);
   assert.equal(taskSummary(d, "Hours"), "Replace at age every 4,380 h, takes 8 h, as new");
   d = setInterval(setDuty(d, 0.5), 2190, "operating");
-  assert.equal(taskSummary(d, "Hours"), "Replace at age every 4,380 h (2,190 running h), takes 8 h, as new");
+  assert.equal(taskSummary(d, "Hours"), "Replace at age every 2,190 running h (4,380 h on the calendar at Runs 50%), takes 8 h, as new");
   assert.equal(taskSummary(setInterval(setTask({}, "test"), 8760), "Hours"), "Proof test every 8,760 h, no downtime");
   assert.equal(taskSummary({}, "Hours"), "Run to failure");
 });

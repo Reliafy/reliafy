@@ -387,6 +387,11 @@ def simulation(mode: Optional[str]) -> Iterator[list]:
         _SIMULATED.reset(t2)
 
 
+def simulation_allowed() -> bool:
+    """Whether the caller may run a simulation here (Pro: :func:`simulation` with "run")."""
+    return _MODE.get() == "run"
+
+
 def simulated_now() -> list:
     """The blocks simulated so far within :func:`simulation`."""
     return list(_SIMULATED.get() or [])

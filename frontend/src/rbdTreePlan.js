@@ -34,18 +34,20 @@ export function mergeTreeData(data = {}, row) {
   const plan = row.plan;
   if (!plan) return out;
   const own = pick(Object.fromEntries((TREE_SETTINGS[plan.task] || []).map((k) => [k, settings?.[k]])));
+  // A task by use on an hours counter is counted in running hours (basis "operating").
+  const basis = plan.basis === "operating" ? "operating" : null;
   if (plan.task === "test") {
-    out.inspection = pick({ interval: plan.interval, duration: plan.duration, cost: plan.cost, ...own });
+    out.inspection = pick({ interval: plan.interval, basis, duration: plan.duration, cost: plan.cost, ...own });
     delete out.maintenance_group;
     return out;
   }
-  const pm = { policy: plan.task, interval: plan.interval, operating_interval: plan.operating_interval };
+  const pm = { policy: plan.task, interval: plan.interval, basis };
   if (plan.task === "condition") Object.assign(pm, { inspection_cost: plan.inspection_cost }, own);
   else Object.assign(pm, { duration: plan.duration, cost: plan.cost }, own);
   // What the library takes only once it supports it (the server puts these in the plan only then;
   // until then the row's pending says so and it's calculated as new, on its own interval).
   for (const k of LIBRARY_KEYS) if (plan[k] != null) pm[k] = plan[k];
-  if (plan.shutdown != null) for (const k of ["interval", "operating_interval", "duration", "opportunity"]) delete pm[k];
+  if (plan.shutdown != null) for (const k of ["interval", "basis", "duration", "opportunity"]) delete pm[k];
   out.preventive = pick(pm);
   if (plan.group) out.maintenance_group = plan.group;
   return out;

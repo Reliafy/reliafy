@@ -18,6 +18,7 @@ Compact node (what an assistant writes and reads)::
      "costs": {"repair": 200, "replace": 1500, "downtime": 50, "acquisition": 20000},
      "preventive": {"policy": "age", "interval": 580, "duration": 7, "cost": 1000},
      "inspection": {"interval": 8760, "duration": 0, "cost": 300},  # hidden failures
+     # a task counted in running hours: "basis": "operating" in preventive or inspection
      "duty": 0.25,                            # repairable: runs a quarter of the time (life in operating time)
      # a per-action cost may be a range, drawn uniformly: "repair": {"min": 150, "max": 250}
      "n": 2, "k": 3, "spares": 1, "cold": true,
@@ -427,6 +428,13 @@ def _joint_unit(raw, saved, where: str) -> dict:
     return {"age": age, "markers": markers, "covariates": covariates}
 
 
+def two_clocks_words(results: dict) -> dict:
+    """How to say a saved two-clock model's clocks (``two_clocks.results_words``)."""
+    from backend import two_clocks  # here: it loads SurPyval
+
+    return two_clocks.results_words(results)
+
+
 def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None) -> dict:
     """The builder model-picker shape for a saved model reference."""
     saved = resolve_saved_model(model_id) if resolve_saved_model else None
@@ -451,6 +459,21 @@ def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None
             "which an RBD block can't take. Fit a parametric distribution (Weibull, say) to the same "
             "data and use that, or give distribution_id + params inline."
         )
+    if saved.kind == "two_clock":
+        # Two clocks: the block's usage rate (second clock per unit of the first) turns it into a life.
+        return {
+            "source": "saved",
+            "kind": "two_clock",
+            "modelId": saved.id,
+            "name": saved.name,
+            "distribution": r.get("distribution"),
+            "distribution_id": r.get("distribution_id") or saved.distribution_id,
+            "params": [{"name": p.get("name"), "value": p.get("value")} for p in (r.get("params") or [])],
+            "unit": r.get("unit") or "",
+            "default_rate": r.get("default_rate"),
+            # How to say its clocks ("landings per hour"): a model saved before the unit existed reads starts.
+            "clocks": two_clocks_words(r),
+        }
     if saved.kind not in ("distribution", "regression"):
         raise GraphError(
             f"{where}: model “{saved.name}” is a {saved.kind} model — RBD blocks need a "
@@ -500,6 +523,19 @@ def _model(model, where: str, resolve_saved_model) -> dict:
         if out.get("kind") == "joint":
             if model.get("distribution_id") or model.get("params"):
                 raise GraphError(f"{where}: a condition-based block takes saved_model_id and joint_unit only.")
+            return out
+        if out.get("kind") == "two_clock":
+            rate = model.get("usage_rate")
+            if rate not in (None, ""):
+                from backend import two_clocks
+
+                try:
+                    out["usage_rate"] = two_clocks.check_rate(rate, out.get("clocks"))
+                except two_clocks.TwoClockError as exc:
+                    raise GraphError(f"{where}: {exc}") from None
+            for key in ("usage_rate_source", "placeholder"):
+                if model.get(key):
+                    out[key] = model[key]
             return out
         if model.get("source") != "saved" and _inline_disagrees(model, out):
             # The compact form get kind rbd returns repeats a saved model's own
@@ -643,6 +679,18 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         data.pop("repair_quality")  # perfect repair is the default (#68)
     if data.get("maintenance_group") is not None and not isinstance(data["maintenance_group"], str):
         raise GraphError(f"{where}: maintenance_group must be a group name.")
+    if data.get("preventive") or data.get("inspection"):
+        # A task's unit (#365): "calendar" or "operating" (running hours); a replacement saved with
+        # operating_interval is read as a running-hours one, with the same numbers.
+        from backend.services import rbd_maintenance
+
+        data = rbd_maintenance.with_task_basis(data)
+        for key in ("preventive", "inspection"):
+            basis = (data.get(key) or {}).get("basis")
+            if basis is not None and basis not in rbd_maintenance.BASES:
+                raise GraphError(f"{where}: {key}.basis must be “calendar” or “operating” (running hours).")
+            if basis == "calendar":
+                data[key] = {k: v for k, v in data[key].items() if k != "basis"}
     for key in ("preventive", "inspection"):
         spec = data.get(key)
         if spec and isinstance(spec.get("duration"), dict):

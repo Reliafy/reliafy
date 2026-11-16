@@ -1090,6 +1090,7 @@ const MCP_TOOLS = [
     ["growth_projection", "Reliability growth projection (MIL-HDBK-189C, AMSAA-Crow): the MTBF a growth test reaches once its delayed fixes are in. Inline data is Pro (it fits)."],
     ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function — for a saved Weibull fitted to data, at each end of the shape’s 95% interval too, with a note when that makes the recommendation less firm."],
     ["optimal_overhaul", "Optimal overhaul interval from a minimal-repair repairable model."],
+    ["optimal_overhaul_replace", "Overhaul every X, replace after N overhauls: the cheapest such rule for a repairable unit."],
     ["fleet_forecast", "Expected failures across a fleet of in-service items, with exact 90% (P5–P95) intervals per period and each item’s chance of failing; regression and ALT fleets at each item’s covariates or stress; repairable fleets count every repeat failure. Pro."],
     ["rbd", "System reliability, MTTF, B-lives and importance; for a repairable diagram exact availability over time, the window’s expected failures, downtime and cost, a safety function’s PFDavg and SIL, a priced diagram’s cost of ownership and capacities’ production availability — from new or from the blocks’ state now. The Monte-Carlo simulation adds the spread and the time to the next failure (Pro; a long one comes back as a job)."],
     ["rbd_quote_simulation", "How long a simulation should take, before anything runs."],

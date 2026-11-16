@@ -1,6 +1,45 @@
 # Changelog
 
-## 0.12.1 (unreleased)
+## 0.12.2 (unreleased)
+
+Needs a server on the same release.
+
+- **Overhaul and replace**: `analyse optimal_overhaul_replace` finds "overhaul every X, replace
+  after N overhauls" for a repairable unit, from a saved minimal-repair recurrent model
+  (`model_id`) or `form` + `params`, with `cost_repair`, `cost_overhaul`, `cost_replace` and
+  `overhaul_restores` (% of its age an overhaul takes off); optional downtimes (hours) with
+  `downtime_cost`, and `max_overhauls`. It returns the best plan, run to failure, overhaul only and
+  replace only beside it, and the best X for each N. Exact, so free. The REST twin
+  (`POST /api/v1/analyse/optimal_overhaul_replace`) and the CLI take it too.
+- **Missions with true standby**: missions are worked out by RePyability's
+  `PhasedMission.from_diagram`. A block on `standby` in a phase is idle until the phase needs it,
+  then runs; `MissionPhase` gains `start_probability` (`{block: 0–1}`, the chance a standby block
+  starts when called on) and `models` (`{block: {distribution_id, params}}`, a life model for the
+  phase, its age carried in and out) in `change rbd_mission`, `rbd_create` and `rbd_edit`. Results
+  with standby are lower than before (the old stand-in stopped the spare's clock); missions without
+  standby give the same numbers. `analyse rbd_mission` gives each phase's `drivers`; a mission with
+  standby blocks whose lives have no constant rate is simulated (seeded), which needs Pro
+  (`code: pro_required` otherwise). The REST twins and the CLI take the same.
+- **Two clocks (hours and starts, flight hours and landings, hours and cycles)**: `analyse fit` and
+  `change model_fit` take `second_clock` (inline, one per time) or `second_clock_column` with
+  `distribution` `weibull_two_clock`, `lognormal_two_clock` or `exponential_two_clock`: a life
+  worn by two measures of use. `second_clock_unit` names the second clock's unit (plural:
+  `cycles`, `landings`, `starts`; default from the column's name) and every answer uses it.
+  The answer says what one unit of the second clock is worth on the first (`k`, with its 90%
+  interval and a test that it matters) and the life at the fleet's low, typical and high rates.
+  `analyse reliability_at` takes `usage_rate` (the second clock per unit of the first: starts per
+  hour, landings per flight hour) for such a model: R(t) with a 90% lower bound, the B-lives and
+  `as_distribution`. An RBD block's model takes `usage_rate` beside `saved_model_id`.
+  `change dataset_upload` and `dataset_update` take `x2_col` and `x2_unit` for the dataset's
+  reading. Free (a numerical fit). The REST twins and the CLI take the same.
+- **RBD tasks in running hours**: a repairable block's `preventive` and `inspection` (proof test)
+  take `basis`, `calendar` (the default) or `operating`: the task's times (interval, opportunity,
+  offset, full_test) are then the block's running hours, put onto the calendar through its `duty`.
+  `analyse rbd_optimise_intervals` and `rbd_sensitivity` answer in the task's own unit (each row's
+  `basis` / `unit_words`, a lever's `running`). `preventive.operating_interval` still works and
+  reads as `interval` with `basis: operating`. The REST twins and the CLI take it too.
+
+## 0.12.1
 
 Needs a server on the same release.
 

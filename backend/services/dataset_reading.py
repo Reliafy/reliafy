@@ -19,7 +19,8 @@ covariates:
 
 plus ``c_invert`` / ``c_map`` (what the status values mean), ``all_failed``
 (no status column: every row is a failure, said on purpose), ``unit`` (x's),
-``m_unit``, ``z`` (the covariates: every column not used as something else,
+``m_unit``, ``x2_unit`` (the second clock's unit: "cycles", "landings"; from its
+column's name when blank), ``z`` (the covariates: every column not used as something else,
 less the ``not_used`` ones), ``z_units`` ({column: unit}, optional) and
 ``not_used``.
 
@@ -46,11 +47,12 @@ from typing import Any
 
 from backend.services import datasets as datasets_service
 
-ROLES = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u")
+ROLES = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u", "x2")
 #: The roles in the order the summary line and the upload screen give them.
-SHOWN = ("x", "c", "n", "tl", "tr", "i", "m", "e", "s")
+SHOWN = ("x", "c", "n", "tl", "tr", "i", "m", "e", "s", "x2")
 SOURCES = ("saved", "last_model", "guessed")
-_NAMES = {"e": "failure mode"}
+#: x2: the second clock (a second measure of use beside x: starts, cycles, landings), for a life on two clocks.
+_NAMES = {"e": "failure mode", "x2": "second clock"}
 
 
 class ReadingError(ValueError):
@@ -59,7 +61,7 @@ class ReadingError(ValueError):
 
 def empty() -> dict:
     return {**{r: "" for r in ROLES}, "c_invert": False, "c_map": None, "all_failed": False, "unit": "",
-            "m_unit": "", "z": [], "z_units": {}, "not_used": []}
+            "m_unit": "", "x2_unit": "", "z": [], "z_units": {}, "not_used": []}
 
 
 def _names(columns) -> list[str]:
@@ -130,6 +132,7 @@ def normalize(raw: dict | None, columns, *, require_x: bool = True, measurement_
     out["all_failed"] = bool(raw.get("all_failed")) and not out["c"]
     out["unit"] = str(raw.get("unit") or "").strip()[:40]
     out["m_unit"] = str(raw.get("m_unit") or "").strip()[:40] if out["m"] else ""
+    out["x2_unit"] = second_clock_unit(out["x2"], raw.get("x2_unit"))
     z = _column_list(raw.get("z"), have, "z")
     clash = [c for c in z if c in taken]
     if clash:
@@ -599,7 +602,7 @@ def merged(base: dict, given: dict) -> dict:
         if role == "c":
             out["c_invert"], out["c_map"] = False, None
     taken = {out[r] for r in ROLES if out.get(r)}
-    for key in ("c_invert", "c_map", "all_failed", "unit", "m_unit", "z_units"):
+    for key in ("c_invert", "c_map", "all_failed", "unit", "m_unit", "x2_unit", "z_units"):
         if key in given:
             out[key] = given[key]
     if "z" in given:
@@ -716,9 +719,12 @@ def summary(reading: dict) -> str:
         parts.append(f"c = {reading['c']}")
     elif reading.get("all_failed"):
         parts.append("c: every row failed")
-    for role in ("n", "tl", "tr", "i", "m", "e", "s"):
+    for role in ("n", "tl", "tr", "i", "m", "e", "s", "x2"):
         if reading.get(role):
             unit = f" ({reading['m_unit']})" if role == "m" and reading.get("m_unit") else ""
+            if role == "x2":  # its unit when the column's name doesn't already say it
+                u = second_clock_unit(reading["x2"], reading.get("x2_unit"))
+                unit = "" if u.lower() == reading["x2"].lower() else f" ({u})"
             parts.append(f"{_NAMES.get(role, role)} = {reading[role]}{unit}")
     z = reading.get("z") or []
     if z:
@@ -739,4 +745,16 @@ def life_mapping(reading: dict) -> dict:
         options["c_invert"] = True
     if reading.get("u"):
         options["u_col"] = reading["u"]
+    if reading.get("x2"):
+        options["x2_unit"] = second_clock_unit(reading["x2"], reading.get("x2_unit"))
     return mapping, options
+
+
+def second_clock_unit(column: str, given=None) -> str:
+    """The second clock's unit: as given ("cycles"), else from its column's
+    name ("num_landings" → "landings"); blank without a second clock."""
+    if not column:
+        return ""
+    from backend import two_clocks  # here: it loads SurPyval
+
+    return two_clocks.clean_unit(given) or two_clocks.default_unit(column)

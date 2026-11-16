@@ -6,9 +6,9 @@ import InputGroup from "./ui/InputGroup.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
-  getFailureModeIntervalInputs, getModel, listModels, optimalReplacement, rcmFailureFindingInterval, rcmOnConditionInterval,
+  getFailureModeIntervalInputs, getModel, listModels, modelAtRate, optimalReplacement, rcmFailureFindingInterval, rcmOnConditionInterval,
 } from "../api.js";
-import { savedModelRef } from "../modelNext.js";
+import { savedModelRef, twoClockAt } from "../modelNext.js";
 import { modeAnswers } from "../decisionCheck.js";
 import { formatCost } from "../money.js";
 import {
@@ -109,7 +109,12 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
   const pick = (id, then) => {
     if (!id || id === "__given") return;
     setResult(null);
-    getModel(id).then((m) => { if (alive.current) then(modelOf(savedModelRef({ ...m, id }))); },
+    getModel(id).then(async (m) => {
+      let ref = savedModelRef({ ...m, id });
+      // Two clocks: the life at the fleet's typical usage rate, as a plain distribution.
+      if (m.kind === "two_clock") ref = twoClockAt(ref, await modelAtRate(id, { rate: ref.usage_rate }));
+      if (alive.current) then(modelOf(ref));
+    },
       (e) => { if (alive.current) setFailed(saveErrorText(e, { offline: navigator.onLine === false })); });
   };
 

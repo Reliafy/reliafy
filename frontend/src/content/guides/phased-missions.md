@@ -31,9 +31,11 @@ For each phase, give a **Name** and a **Duration** in the diagram's unit.
 **Add phase** adds the next one, and the arrows reorder them. Open a phase's
 summary line to say what it needs:
 
-- **Each block in this phase**: **Working** (the default), **Standby**,
-  **Guaranteed working** (it runs and ages but can't fail in the phase) or
-  **Not needed** (struck through).
+- **Each block in this phase**: **Working** (the default), **Standby** (idle
+  until the phase needs it, then running; set how fast it ages while idle and
+  its chance of starting on the Explorer's Missions tab), **Guaranteed
+  working** (it runs and ages but can't fail in the phase) or **Not needed**
+  (struck through).
 - **Covariate values in this phase**: one for each covariate the diagram's life
   models take (a proportional-hazards, accelerated life or covariate model).
   Leave one blank to use the diagram's value or the model's default, or choose
@@ -71,6 +73,11 @@ them.
 The flight succeeds with probability **98.9%**, worked out exactly. The
 riskiest phase is **landing**: 0.919% of flights fail in it, 83% of all the
 failures, even though it is the shortest phase.
+
+Under the answer, **Reliability through the mission** draws the whole
+mission as one curve, a dashed line where each phase begins. **Each phase**
+(folded under the chart) names the **Weakest block** in each phase: the one
+whose failures end the most missions there, and the next ones that matter.
 
 That's the history at work. A hydraulic pump that fails during the six-hour
 cruise doesn't matter then, because one pump is enough. But the landing

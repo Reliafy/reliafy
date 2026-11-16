@@ -12,6 +12,7 @@
   "e": "Failure mode",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "Running": 1,
@@ -20,6 +21,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": [
@@ -39,6 +41,7 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "Failed": 0,
@@ -47,6 +50,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Site"
   ],
@@ -69,11 +73,13 @@
   "e": "",
   "s": "",
   "u": "Units",
+  "x2": "",
   "c_invert": true,
   "c_map": null,
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Conveyor"
   ],
@@ -95,11 +101,13 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": true,
   "c_map": null,
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Conveyor",
    "Time in service"
@@ -123,6 +131,7 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "Failed": 0,
@@ -131,6 +140,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Supplier"
   ],
@@ -152,6 +162,7 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "Failed": 0,
@@ -160,6 +171,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Supplier"
   ],
@@ -182,6 +194,7 @@
   "e": "Failure mode",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "Running": 1,
@@ -190,6 +203,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Wear failure"
   ],
@@ -211,6 +225,7 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "Found failed": 0,
@@ -219,6 +234,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -236,6 +252,7 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "Failed": 0,
@@ -244,6 +261,7 @@
   "all_failed": false,
   "unit": "Cycles",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Cycles"
   ],
@@ -263,6 +281,7 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "Failed": 0,
@@ -271,6 +290,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -288,11 +308,13 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": null,
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -310,11 +332,13 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": null,
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -332,11 +356,13 @@
   "e": "failure_mode",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": null,
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "site"
   ],
@@ -356,6 +382,7 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": {
    "failed": 0,
@@ -364,6 +391,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "temp_C",
    "temp_K"
@@ -386,11 +414,13 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": null,
   "all_failed": false,
   "unit": "Kilometres",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -408,11 +438,13 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": null,
   "all_failed": false,
   "unit": "Days",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "high_load"
   ],
@@ -432,11 +464,13 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": null,
   "all_failed": false,
   "unit": "Days",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -454,11 +488,13 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": null,
   "all_failed": false,
   "unit": "Days",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "high_load"
   ],
@@ -480,11 +516,13 @@
   "e": "",
   "s": "",
   "u": "",
+  "x2": "",
   "c_invert": false,
   "c_map": null,
   "all_failed": false,
   "unit": "Days",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []

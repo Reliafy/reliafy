@@ -110,3 +110,26 @@ test("a mission's own RBD says which mission and position it belongs to in the l
   assert.equal(missionRbdLine({ mission: { name: "Lift", position: null } }), "Mission “Lift”");
   assert.equal(missionRbdLine({ name: "Plain" }), "");
 });
+
+test("the whole-mission curve and the drivers after the weakest (A18)", async () => {
+  const { missionCurve, otherDrivers } = await import("./rbdMission.js");
+  assert.equal(missionCurve({ reliability: null, curve: { t: [0, 1], reliability: [1, 0.9] } }), null);
+  assert.equal(missionCurve({ reliability: 0.9 }), null);
+  const got = missionCurve({
+    reliability: 0.9,
+    curve: { t: [0, 5, 10, 30], reliability: [1, 0.98, 0.95, 0.9], lower: [1, 0.97, 0.94, 0.88], upper: [1, 0.99, 0.96, 0.92] },
+    phases: [{ name: "Start", start: 0 }, { name: "Duty", start: 10 }],
+  });
+  assert.deepEqual(got.boundaries, [{ t: 10, next: "Duty" }]);
+  assert.equal(got.lower.length, 4);
+  assert.equal(missionCurve({ reliability: 0.9, curve: { t: [0, 1], reliability: [1, 0.9] }, phases: [] }).lower, null);
+  assert.deepEqual(otherDrivers({ drivers: [{ label: "A", share: 0.6 }, { label: "B", share: 0.3 }, { label: "C", share: 0.001 }] }),
+    [{ label: "B", share: 0.3 }]);
+});
+
+test("cleanPhases keeps a standby block's start chance and a phase's own models", () => {
+  const { phases } = cleanPhases([{ name: "Cruise", duration: 5, standby: ["c2"], start_probability: { c2: 0.9, c1: 0.5 },
+    models: { c1: { distribution_id: "weibull" }, nope: { distribution_id: "x" } } }], nodes);
+  assert.deepEqual(phases[0].start_probability, { c2: 0.9 });
+  assert.deepEqual(Object.keys(phases[0].models), ["c1"]);
+});

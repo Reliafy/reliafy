@@ -35,6 +35,7 @@ assumption holds, with what to try if not), shared frailty (group_column; frailt
 heavier-tailed frailty), competing risks (causes / cause_column: each failure mode's share). method: MLE unless \
 the user asks.
 - A fit that didn't converge or has no finite maximum leads with fit_ok false: don't quote its numbers.
+- Two clocks: a part worn by two measures of use at once: running hours AND starts (motors, gas turbines), flight hours and landings, hours and cycles, km and shots. Each unit's first clock in data / time_column and its second in second_clock / second_clock_column, at its failure or now, with second_clock_unit (plural: cycles, landings, starts; default from the column's name); distribution weibull_two_clock (or lognormal_two_clock, exponential_two_clock). It learns k, what one unit of the second clock is worth on the first (90% interval; k_test says whether the second clock matters at all), and gives the life at the fleet's low, typical and high usage rates (second clock per unit of the first). Units must run at different rates. Use it at a rate: analyse reliability_at with usage_rate (e.g. landings per flight hour; B-lives with 90% lower bounds, and as_distribution: the plain distribution it equals at that rate, for the strategy calculators), or an RBD block model {saved_model_id, usage_rate}. Free in the app; no late entry, intervals or covariates.
 - One or two failures and a credible baseline (a class's or fleet's model, a vendor's or handbook's numbers, a \
 B10 the user believes): analyse bayes_update (Pro) updates the baseline with the data: baseline {model_id} or \
 {distribution, params, unit} or {b10: {value, low, high}, shape: {low, high}, unit}; trust close / guide / start \
@@ -140,7 +141,8 @@ effectiveness and each system's next failure.
 - analyse next_failure: at a system's age, the chance of a failure within given times and the \
 time to the next one. analyse growth_projection: the MTBF a growth test reaches once its fixes \
 are in (BD modes with fix-effectiveness factors).
-- analyse optimal_overhaul: the overhaul interval for a deteriorating system (minimal-repair model, β > 1)."""),
+- analyse optimal_overhaul: the overhaul interval for a deteriorating system (minimal-repair model, β > 1).
+- analyse optimal_overhaul_replace: overhaul every X, replace after N overhauls (guide strategy)."""),
 
     "rbds": ("Building and editing reliability block diagrams: the structure rules.", """\
 Building RBDs (change rbd_create / clone / edit).
@@ -167,7 +169,8 @@ Pro; result.simulated says so). Repairable diagrams: a standby group's units are
 may carry costs, preventive (age / block / condition replacement), inspection (hidden failures found by proof \
 tests: offset staggers, coverage + full_test for partial tests), maintenance_group, crew_priority, \
 repair_quality (Kijima: simulated figures), duty (0-1, the share of the time it runs, shown as 'Runs X% of \
-the time': its model is then a life in operating time; intervals stay on the clock); the diagram repair_crews, \
+the time': its model is then a life in operating time; a task's intervals stay on the clock unless its \
+basis is operating, counted in running hours through the duty); the diagram repair_crews, \
 safety_function + target_sil (needs proof \
 tests), costs (downtime_rate, horizon, discount_rate) and production (capacity demand). Common cause: \
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
@@ -179,14 +182,18 @@ carries on under the load in force then), simulated only (Pro); PO, Cox, AFT wit
 standby and common-cause members are refused with the reason.
 - Missions: change rbd_mission adds named phased missions to a diagram (several over the same blocks, e.g. \
 "Corridor inspection", "Survey grid"); each phase has a duration, a state per block (default working; \
-not_needed, standby (dormancy {id: 0-1} warms it) or guaranteed: runs, can't fail), votes (k-of-n per \
-phase) and values {covariate name: value} for every covariate its blocks' models leave open (bound and \
+not_needed; standby: idle until the phase needs it (a block it backs up fails), then runs, called on in \
+listed order, with dormancy {id: 0-1} to warm it and start_probability {id: 0-1}, the chance it starts; or \
+guaranteed: runs, can't fail), models {block id: {distribution_id, params}} (a life model for the phase, age \
+carried in and out), votes (k-of-n per phase) and values {covariate name: value} for every covariate its blocks' models leave open (bound and \
 saved regression blocks; block_values {block id: {key: value}} for one block); a value can be a schedule over \
 the phase ({expression} with t from the phase's start, or {table, period?}), followed exactly. Blocks age across the whole mission. analyse \
 rbd_mission lists those covariates with the blocks each feeds, then gives the chance of completing it, per \
-phase, and each phase's weakest block; a phase missing a value waits (needs). With current_state \
-({node: {failed: true} | {age}}, as analyse rbd) it flies from now: each aged block starts at its age and keeps \
-it through standby phases, a failed block stays failed, and the notes say "As of now".
+phase, and the blocks driving each phase's failures (drivers, weakest first); a phase missing a value waits \
+(needs). Worked out by RePyability's PhasedMission: exact (free) without standby, or with standby when every \
+block has a constant failure rate; otherwise simulated, seeded (Pro; code pro_required without it). With \
+current_state ({node: {failed: true} | {age}}, as analyse rbd) it flies from now: each aged block starts at \
+its age, a failed block stays failed, and the notes say "As of now".
 - Condition and life block (non-repairable diagrams only, one component block per unit): model = \
 {saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
 value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \
@@ -291,7 +298,9 @@ Analysing RBDs (analyse rbd and the other rbd_ actions).
 - rbd, non-repairable: reliability curve (~21 points; `times` gives exact values in reliability_at), MTTF, \
 B-lives, importance and cut sets; current_state ({node: {failed: true} | {age}}) gives the remaining life from \
 now; target_reliability the design life; confidence intervals from fitted blocks (with b_lives, times). \
-The same current_state flies a phased mission from now: analyse rbd's phased_mission and analyse rbd_mission.
+The same current_state flies a phased mission from now: analyse rbd's phased_mission and analyse rbd_mission. \
+A mission is exact and free unless blocks on standby lack a constant failure rate: then it's simulated, seeded \
+(Pro; phased_mission says code pro_required without it).
 - rbd, repairable, on every plan: exact (or numerical, never simulated) long-run availability, mean up / \
 down time, failure frequency, and in `exact` A(t), the mission availability and the window's expected \
 failures, outages, downtime and cost — from new, or from now with current_state ({node: {down: true, since} | \
@@ -308,7 +317,8 @@ past simulations.
 free; simulated Pro); costs_to_change with order benefit_per_cost ranks by benefit per cost; measure gives \
 over_time, shares, joint, rate or uncertainty. Quote `top` with its basis.
 - rbd_optimise_intervals chooses age-replacement or proof-test intervals together (lowest cost, or a target \
-availability / PFDavg / SIL, or a cost cap), returns edit_rbd_ops to apply with change rbd_edit. rbd_cheapest_design: \
+availability / PFDavg / SIL, or a cost cap), each in its task's unit (basis operating: running hours), and \
+returns edit_rbd_ops to apply with change rbd_edit. rbd_cheapest_design: \
 the redundancy with the lowest total cost (needs block acquisition prices, a horizon and a downtime_rate; \
 trains copy whole chains). rbd_compare: design B against A (change rbd_clone A, edit, compare). rbd_allocate_targets: \
 what each block needs for a system target. rbd_fault_tree: ranked cut sets with common causes. These answer only; apply a choice \
@@ -340,7 +350,7 @@ export_openpsa=true adds the tree as Open-PSA XML.
 - change import_rbd with as_fault_tree=true saves an Open-PSA or Galileo file's top events as fault trees.
 - change fault_tree_delete: own trees only, on the user's explicit request, confirmed by name."""),
 
-    "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
+    "strategy": ("Replacement (also over a shut calendar), proof-test, overhaul and overhaul-and-replace intervals; shape uncertainty.", """\
 Maintenance strategy (analyse actions).
 - analyse optimal_replacement: the cost-optimal age-replacement interval from a non-repairable model (model_id, or \
 distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper. \
@@ -351,6 +361,15 @@ standby unit) at a target availability, from the model's curve (not 2(1-A)MTTF, 
 rate). renewed_at_test (default true: each test overhauls or replaces it); test_duration and test_cost optional. \
 interval_bound: the cautious end from the fit's 90% one-sided bounds; quote it with the interval.
 - analyse optimal_overhaul: the overhaul interval of a repairable system from a minimal-repair recurrent model.
+- analyse optimal_overhaul_replace: "overhaul every X, replace after N overhauls", the cheapest such rule for a \
+repairable unit, from a saved minimal-repair recurrent model (model_id) or form + params. Give cost_repair (per \
+failure), cost_overhaul (more than a repair), cost_replace and overhaul_restores: the share of its age an overhaul \
+takes off, in % (100 = as good as new; ask, never assume). Optional: downtime_repair / _overhaul / _replace in \
+hours with downtime_cost (an hour down), max_overhauls (default 19). Back: best (interval X in the model's unit, \
+overhauls N, replace_every, cost_rate per model unit, repairs_per_cycle), comparisons (run to failure: repair, \
+replace at the best n-th failure; overhaul only; replace only) with saving_pct, by_overhauls (the best X and cost \
+rate for each N) and warnings: a plan of another kind can be cheaper; say so. Exact, free. Imperfect-repair \
+models are refused (failures from any age need a minimal-repair model).
 - analyse calendar_replacement: when replacing costs less at shuts (annual, quarterly, weekly stops) than between \
 them, the long-run best rule: at each shut, replace the part if it is older than a threshold age (the threshold \
 depends on when the next cheaper shut comes). Give the model in a time unit, the shuts (name, cost, every N \

@@ -1499,6 +1499,13 @@ export function recurrentFromNow(id, horizon) {
 }
 
 // Optimal overhaul interval (minimal repair between overhauls) — read-only.
+// Overhaul every X, replace after N overhauls (Strategy › Overhaul and replace): `recurrent_model_id`
+// (a saved repairable model) or `form` + `params`, the costs, overhaul_restores (%), optional
+// downtimes (hours) with downtime_cost, max_overhauls. Exact, free; nothing is saved.
+export function overhaulReplace(body) {
+  return postJson("/api/strategy/overhaul-replace", body);
+}
+
 export function recurrentOverhaul(id, costRepair, costOverhaul) {
   return request(`/api/recurrent/models/${id}/overhaul`, {
     method: "POST",
@@ -3955,4 +3962,25 @@ export function setOperatingPlan(positionId, body) {
 }
 export function endOperatingPlan(positionId, until = null) {
   return postJson(`/api/maintenance/positions/${positionId}/operating-plan/end`, until ? { until } : {});
+}
+
+// ---- Two clocks (hours and starts, cycles, landings...) ---------------------
+// A life on two clocks at a usage rate (its second clock per unit of the first): a saved model, or a
+// fresh fit's at_rate_path. { rate, times?, reliability? } → B-lives with 90% lower
+// bounds, the curve with its band, the sentence.
+export function modelAtRate(modelId, body) {
+  return request(`/api/models/${modelId}/at-rate`, { method: "POST", body: JSON.stringify(body || {}),
+    headers: { "Content-Type": "application/json" } });
+}
+
+export function fitAtRate(path, body) {
+  return request(path, { method: "POST", body: JSON.stringify(body || {}),
+    headers: { "Content-Type": "application/json" } });
+}
+
+// The Explorer: a row on a life on two clocks given its own usage rate
+// (null: back to the position's operating plan's).
+export function setPositionModelUsageRate(linkId, usageRate) {
+  return request(`/api/maintenance/position-models/${linkId}/usage-rate`, { method: "PUT",
+    body: JSON.stringify({ usage_rate: usageRate }), headers: { "Content-Type": "application/json" } });
 }

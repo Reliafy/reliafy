@@ -6,7 +6,7 @@ import Modal from "./Modal.jsx";
 import ModelPicker from "./ModelPicker.jsx";
 import { openGuide } from "./HelpButton.jsx";
 import { CostFields, ExtrasErrors, PriorityField, costsSummary, useBlockExtras } from "./RbdBlockCosts.jsx";
-import { dutyWords, hasDuty, taskOf, taskSummary } from "../rbdMaintenancePlan.js";
+import { dutyWords, hasDuty, intervalBasis, taskOf, taskSummary } from "../rbdMaintenancePlan.js";
 import { RbdUnitContext } from "./RbdNodes.jsx";
 import { unitAbbr } from "./rbdModelText.js";
 import useModelSummary from "./useModelSummary.js";
@@ -136,9 +136,12 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
 
   const hasCosts = !!Object.keys(initial?.costs || {}).length;
   // The block's planned work, in words; edited in the Maintenance plan (D5).
+  // A task in running hours relies on the Runs share (#365): say it, even when it's all the time.
+  const running = intervalBasis(initial || {}) === "operating";
   const planLines = [
     taskSummary(initial || {}, unit),
-    hasDuty(initial || {}) && initial.duty < 1 ? dutyWords(initial.duty, unit) : null,
+    hasDuty(initial || {}) && initial.duty < 1 ? dutyWords(initial.duty, unit)
+      : running ? "Runs all the time, so its running hours are calendar hours" : null,
     initial?.maintenance_group ? `Maintenance group “${initial.maintenance_group}”` : null,
   ].filter(Boolean);
   // A block standing for a position (a repairable diagram): its planned work is the position's

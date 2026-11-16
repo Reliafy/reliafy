@@ -61,6 +61,18 @@ export const TABLE_PANES = {
       confirmLabel: "Discard the changes", cancelLabel: "Keep editing",
     },
   },
+  // A model's Strategy on a position (?strategy=<model row's link id>&on=<position id>, and &how=<tool>):
+  // its saved strategies and the strategy tools that fit (positionStrategy.js). Nothing to discard:
+  // each tool saves on its own.
+  strategy: {
+    param: "strategy",
+    on: "on",
+    extra: { how: "how" },
+    discard: {
+      title: "Leave this strategy?", body: "The figures you've entered aren't saved.",
+      confirmLabel: "Leave it", cancelLabel: "Stay",
+    },
+  },
   rbd: {
     param: "rbd",
     on: "on",
@@ -83,7 +95,8 @@ export function paneFromQuery(params) {
       return { kind, id: value, ...more };
     }
     const on = params.get(p.on);
-    if (on) return { kind, id: on, [p.param]: value };
+    const more = Object.fromEntries(Object.entries(p.extra || {}).map(([name, k]) => [name, params.get(k)]).filter(([, v]) => v));
+    if (on) return { kind, id: on, [p.param]: value, ...more };
   }
   return null;
 }
@@ -105,7 +118,7 @@ export function keepPaneFor(q, positionId) {
 
 // Put the pane `kind` for `positionId` in the address `q` (URLSearchParams), any other pane's
 // taken out; an RBD's `rbd`, the diagram; a fit's `from`, the model row it starts from (&prior=).
-export function setPaneQuery(q, kind, positionId, { rbd = null, from = null } = {}) {
+export function setPaneQuery(q, kind, positionId, { rbd = null, from = null, how = null } = {}) {
   for (const k of PANE_PARAMS) q.delete(k);
   const p = TABLE_PANES[kind];
   if (p.on) {
@@ -115,5 +128,6 @@ export function setPaneQuery(q, kind, positionId, { rbd = null, from = null } = 
     q.set(p.param, positionId);
   }
   if (from && p.extra?.from) q.set(p.extra.from, from);
+  if (how && p.extra?.how) q.set(p.extra.how, how);
   return q;
 }

@@ -1522,6 +1522,14 @@ def preview_position_fit(position_id: str, body: dict = Body(default={}), sessio
         return JSONResponse(content={"refused": client_message(err), **(getattr(err, "context", None) or {})})
 
 
+@router.put("/position-models/{link_id}/usage-rate")
+def set_position_model_usage_rate(link_id: str, body: dict = Body(default={}),
+                                  m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A row on a life on two clocks given its own usage rate (usage_rate: its second clock per unit
+    of the first), or put back on the position's operating plan or the fleet's rate (usage_rate null)."""
+    return _run(m.set_link_usage_rate, link_id, body.get("usage_rate"))
+
+
 @router.delete("/position-models/{link_id}")
 def unlink_position_model(link_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Take a model off its position (the model stays in Models)."""
