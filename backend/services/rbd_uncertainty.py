@@ -143,7 +143,7 @@ def _drawn_two_clock(block: dict, live, params: list, where: str) -> dict:
     from backend.services import rbd_two_clocks
 
     names = list(live.parameter_names)
-    rate = rbd_two_clocks.rate_of(block, where)
+    rate = rbd_two_clocks.rate_of(block, where, two_clocks.words_of(live))
     k = float(params[names.index("k")])
     dist = two_clocks.distribution_in_hours(live.dist.name, names[:-1], params[:-1], 1.0 + k * rate)
     return {"source": "params", **dist}

@@ -1,6 +1,7 @@
-"""Lives on two clocks (hours and starts): the fit recovers a simulated fleet's
-parameters, the life at a rate matches SurPyval called directly, a saved model
-round-trips, and the REST routes serve it (free)."""
+"""Lives on two clocks (hours and starts, flight hours and landings...): the fit
+recovers a simulated fleet's parameters, the life at a rate matches SurPyval called
+directly, a saved model round-trips (its second clock's unit too), every word uses
+the user's units, and the REST routes serve it (free)."""
 
 import io
 import math
@@ -80,9 +81,9 @@ def test_round_trip_keeps_the_numbers_and_bounds(fitted):
 
 def test_refusals_say_what_to_do():
     df = fleet()
-    with pytest.raises(FitError, match="model on hours and starts"):
+    with pytest.raises(FitError, match="model on two clocks"):
         fitting.fit("weibull", df, MAPPING)
-    with pytest.raises(FitError, match="starts \\(second clock\\) column"):
+    with pytest.raises(FitError, match="second clock's column"):
         fitting.fit("weibull_two_clock", df, {"x": "hours", "c": "c"})
     same = df.assign(starts=(df["hours"] * 0.1).round(6))
     with pytest.raises(FitError):
@@ -145,7 +146,7 @@ def test_listed_fitted_saved_and_used_at_a_rate_on_free(client):
     default = client.post(f"/api/models/{saved['id']}/at-rate", json={}).json()
     assert default["rate"] == 0.05
     bad = client.post(f"/api/models/{saved['id']}/at-rate", json={"rate": "fast"})
-    assert bad.status_code == 422 and "starts per hour" in bad.json()["detail"]
+    assert bad.status_code == 422 and "starts per hour" in bad.json()["detail"]  # its column is "starts"
     script = client.get(f"/api/models/{saved['id']}/export.py")
     assert script.status_code == 200, script.text
     assert "WeibullEquivalence.fit_from_df" in script.text and "at_usage(RATE)" in script.text
@@ -266,7 +267,7 @@ def test_rbd_block_without_a_rate_says_to_set_one(rbd_db):
 
     doc = _save_two_clock(rbd_db)
     _, resolve_model = rbds.resolvers(rbd_db, OWNER)
-    with pytest.raises(ra.AnalysisError, match="starts per running hour"):
+    with pytest.raises(ra.AnalysisError, match="set its usage rate, starts per hour"):
         ra.analyze(_diagram({"source": "saved", "kind": "two_clock", "modelId": doc.id}),
                    resolve_model=resolve_model, at_times=[1000.0])
 
@@ -313,7 +314,7 @@ def test_explorer_rate_comes_from_the_operating_plan_and_can_be_overridden(rbd_d
     assert m.s.snapshot() == before
     m.set_link_usage_rate(link["id"], None)
     assert pm.detail(m, rbd_db, owners, set(), link["id"])["two_clock"]["usage_rate"]["source"] == "plan"
-    with pytest.raises(Invalid, match="starts per hour"):
+    with pytest.raises(Invalid, match="0 or more"):
         m.set_link_usage_rate(link["id"], -2)
 
 
@@ -362,6 +363,175 @@ def test_tools_fit_save_and_use_at_a_rate(monkeypatch):
     direct = sp.WeibullEquivalence.fit(df["hours"], df["starts"], c=df["c"]).at_usage(0.125)
     assert at["points"][0]["reliability"] == pytest.approx(float(direct.sf(4000)), rel=1e-6)
     assert at["points"][0]["reliability_lower_90"] < at["points"][0]["reliability"]
-    # A starts column with a one-clock model is refused in words.
+    # A second clock with a one-clock model is refused in words.
     bad = client.post("/api/v1/analyse/fit", json={**body, "distribution": "weibull"}, headers=head)
-    assert "hours and starts" in bad.text
+    assert "model on two clocks" in bad.text
+    # The second clock's own unit: every answer says landings, never starts.
+    r = client.post("/api/v1/analyse/fit", json={**body, "second_clock_unit": "landing"}, headers=head)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["second_clock_unit"] == "landings"
+    assert out["answer"].startswith("Wears by landings and by hours: one landing wears it as much as 18.4 hours")
+    assert "start" not in out["answer"] and "landings per hour" in out["use"]
+    r = client.post("/api/v1/change/model_fit", json={**body, "name": "Struts", "second_clock_unit": "landings"},
+                    headers=head)
+    assert r.status_code == 200, r.text
+    at = client.post("/api/v1/analyse/reliability_at", json={"model_id": r.json()["model_id"], "times": [4000],
+                                                              "usage_rate": 0.125}, headers=head).json()
+    assert at["rate_words"] == "1 landing every 8 hours" and at["usage_rate_unit"] == "landings per hour"
+    assert "start" not in at["answer"]
+    # A unit with no second clock is refused, not ignored.
+    lone = client.post("/api/v1/analyse/fit", json={"distribution": "weibull", "data": [1.0, 2.0, 3.0],
+                                                    "second_clock_unit": "cycles"}, headers=head)
+    assert lone.status_code >= 400 and "second_clock_unit" in lone.text
+
+
+# ---- the second clock's own unit (Derryn, 16 Nov 2026: "more general" than starts) -----------
+
+LANDINGS = {"x": "hours", "x2": "landings", "c": "c"}
+
+
+def flights() -> pd.DataFrame:
+    return fleet().rename(columns={"starts": "landings"})
+
+
+def _all_words(result: dict) -> str:
+    """Every sentence a fit shows."""
+    at = result.get("at_rate") or {}
+    return " ".join([result["headline"], *result["warnings"], at.get("sentence", ""), at.get("rate_words", ""),
+                     *(r["rate_words"] for r in result["rate_table"]), *(p["words"] for p in result["params"])])
+
+
+def test_the_unit_defaults_from_the_column_and_can_be_typed():
+    assert two_clocks.default_unit("starts") == "starts"
+    assert two_clocks.default_unit("Landings") == "landings"
+    assert two_clocks.default_unit("num_cycles") == "cycles"
+    assert two_clocks.default_unit("StartCount") == "starts"
+    assert two_clocks.default_unit("Distance (km)") == "km"
+    assert two_clocks.default_unit("x2") == "uses"
+    assert two_clocks.clean_unit(" cycle ") == "cycles"
+    assert two_clocks.clean_unit("kWh") == "kWh"
+    _, result = two_clocks.fit("weibull_two_clock", flights(), LANDINGS, "Hours")
+    assert result["second_unit"] == "landings"
+    _, typed = two_clocks.fit("weibull_two_clock", flights(), LANDINGS, "Hours", "deck landing")
+    assert typed["second_unit"] == "deck landings"
+
+
+def test_every_word_uses_the_users_units():
+    model, result = two_clocks.fit("weibull_two_clock", flights(), LANDINGS, "flight hours", "cycle")
+    words = _all_words(result)
+    assert "start" not in words.lower()
+    assert result["headline"].startswith(
+        "Wears by cycles and by flight hours: one cycle wears it as much as 18.4 flight hours.")
+    assert "1 cycle every 20 flight hours" in result["headline"]
+    assert result["clocks"]["rate_unit"] == "cycles per flight hour"
+    assert next(p for p in result["params"] if p["name"] == "k")["words"] == "flight hours one cycle is worth"
+    at = two_clocks.answer(model, {"rate": 2.5}, "flight hours")
+    assert at["rate_words"] == "2.5 cycles per flight hour"
+    assert at["sentence"].startswith("At 2.5 cycles per flight hour, its B10 life is ")
+    one = two_clocks.answer(model, {"rate": 1}, "flight hours")
+    assert one["rate_words"] == "1 cycle every 1 flight hour"
+    with pytest.raises(two_clocks.TwoClockError, match="cycles per flight hour"):
+        two_clocks.answer(model, {"rate": "fast"}, "flight hours")
+    script = "\n".join(two_clocks.python_script("Struts", flights(), LANDINGS, "weibull_two_clock", "flight hours",
+                                                0.05, "cycles"))
+    assert "# cycles per flight hour" in script and "start" not in script.lower()
+
+
+def test_the_unit_round_trips_through_to_dict_and_the_saved_live_model():
+    model, _ = two_clocks.fit("weibull_two_clock", flights(), LANDINGS, "Hours", "landings")
+    d = two_clocks.to_dict(model)
+    assert d["second_unit"] == "landings"
+    back = two_clocks.from_dict(d)
+    assert back.second_unit == "landings"
+    assert two_clocks.answer(back, {"rate": 0.125}, "Hours")["rate_words"] == "1 landing every 8 hours"
+    # The app's own serialisation (a saved model's ``serialized``) carries it too.
+    cache = fitting._store_model(model, np.array([0.0, 1.0]), [])
+    restored = fitting._MODEL_STORE[fitting.restore_live(fitting.serialize_live(cache))]["model"]
+    assert restored.second_unit == "landings"
+
+
+def test_a_model_saved_before_units_reads_starts_and_is_not_rewritten(rbd_db):
+    from backend.services import models as models_service
+
+    doc = _save_two_clock(rbd_db)
+    doc.serialized["model"].pop("second_unit", None)
+    results = {k: v for k, v in doc.results.items() if k != "second_unit"}
+    results["clocks"] = {**results["clocks"], "second": "Start count", "second_word": "start count"}
+    rbd_db.models.update_one({"_id": doc.id}, {"$set": {"results": results, "serialized": doc.serialized},
+                                               "$unset": {"spec.options.x2_unit": ""}})
+    stored = rbd_db.models.find_one({"_id": doc.id})
+    models_service._LIVE.clear()
+    old = models_service.get_model(rbd_db, doc.id, OWNER)
+    live = models_service.two_clock_live(rbd_db, old, [OWNER])
+    at = two_clocks.answer(live, {"rate": 0.125}, "Hours")
+    assert at["rate_words"] == "1 start every 8 hours" and at["clocks"]["rate_unit"] == "starts per hour"
+    assert two_clocks.results_words(old.results)["second_word"] == "starts"
+    assert rbd_db.models.find_one({"_id": doc.id}) == stored  # read only: nothing rewritten
+
+
+def test_a_saved_model_keeps_the_unit_from_the_form(client):
+    r = client.post("/api/models", data={"name": "Struts", "distribution": "weibull_two_clock", "x": "hours",
+                                         "x2": "landings", "x2_unit": "landing", "c": "c", "unit": "hours"},
+                    files={"file": ("f.csv", io.BytesIO(flights().to_csv(index=False).encode()), "text/csv")})
+    assert r.status_code == 200, r.text
+    saved = r.json()
+    doc = client.db.models.find_one({"_id": saved["id"]})
+    assert doc["results"]["second_unit"] == "landings"
+    assert doc["spec"]["options"]["x2_unit"] == "landings"  # a refit keeps it
+    assert doc["serialized"]["model"]["second_unit"] == "landings"
+    from backend.services import models as models_service
+
+    models_service._LIVE.clear()
+    out = client.post(f"/api/models/{saved['id']}/at-rate", json={"rate": 0.125}).json()
+    assert out["rate_words"] == "1 landing every 8 hours" and "start" not in out["sentence"]
+    bad = client.post(f"/api/models/{saved['id']}/at-rate", json={"rate": "fast"})
+    assert bad.status_code == 422 and "landings per hour" in bad.json()["detail"]
+    script = client.get(f"/api/models/{saved['id']}/export.py").text
+    assert "landings per hour" in script and "starts" not in script
+
+
+def test_the_reading_keeps_the_second_clocks_unit():
+    from backend.services import dataset_reading as dr
+
+    cols = [{"name": n} for n in ("hours", "num_landings", "status")]
+    r = dr.normalize({"x": "hours", "c": "status", "x2": "num_landings"}, cols)
+    assert r["x2_unit"] == "landings"
+    r = dr.normalize({"x": "hours", "c": "status", "x2": "num_landings", "x2_unit": "cycle"}, cols)
+    assert r["x2_unit"] == "cycles"
+    assert "second clock = num_landings (cycles)" in dr.summary(r)
+    mapping, options = dr.life_mapping(r)
+    assert options["x2_unit"] == "cycles"
+    assert dr.normalize({"x": "hours", "x2_unit": "cycles"}, cols)["x2_unit"] == ""
+
+
+def test_the_operating_plan_gives_starts_but_not_landings(rbd_db):
+    """A plan counts runs: it can say how often a unit starts, never how often it lands."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.service import PROJECTORS, Maintenance
+    from backend.maintenance.store import GraphStore
+    from backend.services import datasets as datasets_service
+    from backend.services import models as models_service
+
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), OWNER, "tester")
+    ds = datasets_service.create_dataset(rbd_db, "flights", flights().to_csv(index=False).encode(), OWNER)
+    doc = models_service.save_model(rbd_db, "Struts", ds, "weibull_two_clock", LANDINGS, None, None, "hours",
+                                    owner_id=OWNER)
+    owners = [OWNER]
+    strut = m.create_position("Main gear strut")["id"]
+    m.set_operating_plan(strut, WEEKDAYS_6_TO_22, name="Day shifts")
+    link = pm.link_saved(m, rbd_db, owners, set(), strut, "model", doc.id)
+    rate = pm.detail(m, rbd_db, owners, set(), link["id"])["two_clock"]["usage_rate"]
+    assert rate["source"] == "fleet" and rate["rate"] == 0.05 and rate["plan"] is None
+    assert rate["text"].startswith("The operating plan counts runs, not landings: set the landings per hour here.")
+    assert "typical rate in the data" in rate["text"]
+    # Typed by hand, it wins; cleared, it goes back to the fleet's rate, never the plan's runs.
+    m.set_link_usage_rate(link["id"], 0.4)
+    d = pm.detail(m, rbd_db, owners, set(), link["id"])
+    assert d["two_clock"]["usage_rate"]["source"] == "set" and "operating plan gives" not in d["two_clock"]["usage_rate"]["text"]
+    assert d["two_clock"]["at_rate"]["rate_words"] == "1 landing every 2.5 hours"
+    m.set_link_usage_rate(link["id"], None)
+    assert pm.detail(m, rbd_db, owners, set(), link["id"])["two_clock"]["usage_rate"]["source"] == "fleet"
+    # A diagram built from the position runs the block at the same rate, said in landings.
+    row = pm.summary("model", doc)
+    assert any(n["label"] == "Hours per landing" for n in row["numbers"])

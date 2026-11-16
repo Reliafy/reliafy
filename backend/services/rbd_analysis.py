@@ -488,7 +488,7 @@ def _build_distribution(
                             "Environment values).")
     if model.get("kind") == "alt_stress":
         return _alt_stress_reliability(model, where, resolve_model)
-    if model.get("kind") == "two_clock":  # hours and starts, at the block's starts per hour
+    if model.get("kind") == "two_clock":  # two clocks, at the block's usage rate
         from backend.services import rbd_two_clocks
 
         try:

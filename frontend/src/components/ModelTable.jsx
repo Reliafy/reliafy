@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TwoClockLife from "./TwoClockLife.jsx";
+import { clockWords } from "../twoClocks.js";
 import { Link, useLocation } from "react-router-dom";
 import {
   createModelFromParams, getMaintenancePosition, getPositionModel, linkPositionModel, listAltModels, listDegradationModels, listModels,
@@ -168,7 +169,7 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
   const [state, setState] = useState({ id: null, data: null, error: null });
   const [age, setAge] = useState("");
   const askAge = link.model_type === "rbd" && Number(age) > 0 ? Number(age) : null;
-  // Read again after the row's starts per hour changes (a life on hours and starts).
+  // Read again after the row's usage rate changes (a life on two clocks).
   const [nonce, setNonce] = useState(0);
   const [rateBusy, setRateBusy] = useState(false);
   useEffect(() => {
@@ -233,20 +234,27 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
             {!d && !state.error && <p className="rim-tquiet">Reading the model…</p>}
             {d?.stress_note && <p className="rim-tquiet ml-stress">{d.stress_note}</p>}
             {link.model_type === "rbd" && <RbdDetails d={d} model={model} age={age} onAge={setAge} />}
-            {d?.two_clock && (
-              // Hours and starts: the life at this position's starts per hour (its operating plan's, or set here).
-              <section aria-label="At this position's starts per hour">
-                <h3 className="ml-h">At this position's starts per hour</h3>
-                {d.two_clock.at_rate ? (
-                  <TwoClockLife compact atRate={d.two_clock.at_rate} unit={unit} busy={rateBusy}
-                                source={{ text: d.two_clock.usage_rate?.text, kind: d.two_clock.usage_rate?.source }}
-                                onRate={setRate} onReset={() => setRate(null)} />
-                ) : (
-                  <TwoClockLife compact atRate={null} unit={unit} busy={rateBusy}
-                                source={{ text: d.two_clock.usage_rate?.text }} onRate={setRate} />
-                )}
-              </section>
-            )}
+            {d?.two_clock && (() => {
+              // Two clocks: the life at this position's usage rate (its operating plan's when the plan can
+              // say it, i.e. starts or runs; else set here, or the fleet's typical rate).
+              const tc = d.two_clock;
+              const words = clockWords(tc.at_rate?.clocks || tc.clocks || tc.usage_rate?.clocks, unit);
+              const title = `At this position's ${words.rate_unit}`;
+              const resetLabel = tc.usage_rate?.plan ? "Use the operating plan's rate" : "Use the fleet's typical rate";
+              return (
+                <section aria-label={title}>
+                  <h3 className="ml-h">{title}</h3>
+                  {tc.at_rate ? (
+                    <TwoClockLife compact atRate={tc.at_rate} unit={unit} busy={rateBusy} clocks={words}
+                                  source={{ text: tc.usage_rate?.text, kind: tc.usage_rate?.source }}
+                                  onRate={setRate} onReset={() => setRate(null)} resetLabel={resetLabel} />
+                  ) : (
+                    <TwoClockLife compact atRate={null} unit={unit} busy={rateBusy} clocks={words}
+                                  source={{ text: tc.usage_rate?.text }} onRate={setRate} />
+                  )}
+                </section>
+              );
+            })()}
             {d && !d.two_clock && <ModelPlot curves={d.curves} unit={unit} name={r.ref.name} />}
             {d?.prediction && (
               <section aria-label="The parts count">

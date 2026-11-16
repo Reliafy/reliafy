@@ -30,9 +30,11 @@ Events (new types only; older logs replay unchanged):
   another saved model of the same kind (or the same one), with the name and note it
   carries from then on. The link itself and what it is for stay as they were.
 
-* ``position.model_rate_set {id, usage_rate, on}`` (Nov 2026): a row on a life on hours and starts
-  (two clocks) given its own starts per running hour (``usage_rate``; null: back to the operating
-  plan's). Without one the rate comes from the position's operating plan.
+* ``position.model_rate_set {id, usage_rate, on}`` (Nov 2026): a row on a life on two clocks given its
+  own usage rate (``usage_rate``: its second clock per unit of the first, starts per hour or landings
+  per flight hour; null: back to the operating plan's, or the fleet's). Without one the rate comes
+  from the position's operating plan when the second clock is starts or runs (a plan counts runs),
+  else from the fleet's typical rate in the data.
 
 An RBD is a row too (``model_type`` and ``role`` ``rbd``, Nov 2026: "every position can
 either have a life model, an RBD, or a prediction"): a saved diagram, built from the
@@ -311,8 +313,8 @@ class PositionModelOps:
         return self.model_link(link_id)
 
     def set_link_usage_rate(self, link_id: str, usage_rate) -> dict:
-        """A row on a life on hours and starts given its own starts per running hour, or
-        (``usage_rate`` None) put back on the operating plan's rate."""
+        """A row on a life on two clocks given its own usage rate (its second clock per unit of
+        the first), or (``usage_rate`` None) put back on the operating plan's rate (or the fleet's)."""
         from backend import two_clocks
 
         sv = _sv()
@@ -528,13 +530,17 @@ def summary(model_type: str, doc) -> dict:
             out["quality"] = _quality(failed, "life", warning=r.get("fit_warning"))
             return out
         if kind == "two_clock":
-            # Hours and starts: what a start costs, and the life at the fleet's typical rate (the row's own
-            # rate, from the position's operating plan, is in the detail).
+            # Two clocks: what one unit of the second clock costs, and the life at the fleet's typical rate
+            # (the row's own rate, from the position's operating plan or set by hand, is in the detail).
+            from backend import two_clocks
+
+            words = two_clocks.results_words(r)
             k = params.get("k") or {}
-            out["kind"] = r.get("distribution") or "Hours and starts"
+            out["kind"] = r.get("distribution") or "Two clocks"
             if k.get("value") is not None:
                 lo, hi = _ci(k)
-                out["numbers"].append(_number("k", "Hours per start", k.get("value"), lo, hi, unit))
+                label = f"{words['first_word'][:1].upper()}{words['first_word'][1:]} per {words['second_one']}"
+                out["numbers"].append(_number("k", label, k.get("value"), lo, hi, unit))
             row = next((x for x in r.get("rate_table") or [] if x.get("label") == "Typical"), None)
             if row and row.get("b10") is not None:
                 out["numbers"].append(_number("b10", f"B10 life at {row.get('rate_words')}", row["b10"],
@@ -992,43 +998,51 @@ def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dic
 
 
 def usage_rate_for(m, link: dict, doc) -> dict | None:
-    """The starts per running hour a row on a life on hours and starts uses, and where it came
-    from: the row's own (set by hand) first, then the position's operating plan, then the
-    fleet's typical rate in the data it was fitted to. {rate, source (set | plan | fleet), text,
-    plan (the plan's rate, when there is one)}; None for any other model."""
+    """The usage rate (second clock per unit of the first) a row on a life on two clocks uses,
+    and where it came from: the row's own (set by hand) first, then the position's operating plan
+    (only when the second clock is starts or runs: a plan counts runs, not landings or cycles),
+    then the fleet's typical rate in the data it was fitted to. {rate, source (set | plan | fleet),
+    text, plan (the plan's rate, when it applies), clocks (the words), plan_refused (a plan that
+    can't give this unit, in words)}; None for any other model."""
     from backend import two_clocks
 
     if doc is None or getattr(doc, "kind", "") != two_clocks.KIND:
         return None
+    words = two_clocks.results_words(doc.results)
+    runs = words["second_word"].lower() in two_clocks.RUN_UNITS
     plan = m.plan_usage_rate(link["position_id"]) if link.get("position_id") else None
+    refused = None
+    if plan is not None and not runs:
+        # The plan counts runs (its starts), so it can't say how many landings or cycles the unit makes.
+        refused = (f"The operating plan counts runs, not {words['second_word']}: set the {words['rate_unit']} "
+                   "here.")
+        plan = None
     own = link.get("usage_rate")
-    clocks = (doc.results or {}).get("clocks") or {}
-    words = two_clocks.clock_words([clocks.get("first") or "hours", clocks.get("second") or "starts"],
-                                   (doc.results or {}).get("unit") or "")
+    base = {"clocks": words, "plan_refused": refused}
     if own is not None:
-        return {"rate": float(own), "source": "set", "plan": plan,
+        return {**base, "rate": float(own), "source": "set", "plan": plan,
                 "text": "Set here by hand" + (f" (the operating plan gives {two_clocks.rate_words(plan['rate'], words)})."
                                                if plan else ".")}
     if plan is not None:
-        return {"rate": plan["rate"], "source": "plan", "plan": plan, "text": plan["text"]}
+        return {**base, "rate": plan["rate"], "source": "plan", "plan": plan, "text": plan["text"]}
     typical = (doc.results or {}).get("default_rate")
+    lead = refused or (f"No operating plan here says how often it starts: set the {words['rate_unit']}." if runs
+                       else f"Set the {words['rate_unit']} this position sees.")
     if typical is None:
-        return {"rate": None, "source": None, "plan": None,
-                "text": "No operating plan here says how often it starts: set the starts per hour."}
-    return {"rate": float(typical), "source": "fleet", "plan": None,
-            "text": "No operating plan here says how often it starts, so this is the typical rate in the data it "
-                    "was fitted to. Set an operating plan, or the starts per hour, to use this position's own."}
+        return {**base, "rate": None, "source": None, "plan": None, "text": lead}
+    return {**base, "rate": float(typical), "source": "fleet", "plan": None,
+            "text": f"{lead} Until then this is the typical rate in the data it was fitted to."}
 
 
 def two_clock_detail(m, db, owners, link: dict, doc) -> dict | None:
-    """A row on a life on hours and starts: the rate it uses and where from, and the life at it."""
+    """A row on a life on two clocks: the rate it uses and where from, and the life at it."""
     from backend import two_clocks
     from backend.services import models as models_service
 
     rate = usage_rate_for(m, link, doc)
     if rate is None:
         return None
-    out = {"usage_rate": rate, "at_rate": None}
+    out = {"usage_rate": rate, "at_rate": None, "clocks": rate.get("clocks")}
     if rate["rate"] is None:
         return out
     try:
@@ -1668,15 +1682,16 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
         if x["model_type"] == "rbd":
             return {"data": {"rbd": {"id": d.id, "name": d.name}, "model_source": f"Its RBD in use ({d.name})"}}, None
         if x["model_type"] == "model" and d.kind == "two_clock":
-            # Hours and starts: the block runs at the position's starts per hour (its own, else its plan's).
+            # Two clocks: the block runs at the position's usage rate (its own, else its plan's or the fleet's).
             rate = usage_rate_for(m, x, d) or {}
+            per = (rate.get("clocks") or {}).get("rate_unit") or "usage rate"
             if rate.get("rate") is None or _factor((d.results or {}).get("unit") or unit, unit) != 1.0:
-                return None, (f"{child['name']}'s model in use ({d.name}) is on hours and starts and "
-                              + ("needs a starts-per-hour rate" if rate.get("rate") is None
+                return None, (f"{child['name']}'s model in use ({d.name}) is on two clocks and "
+                              + (f"needs its {per}" if rate.get("rate") is None
                                  else f"is in {(d.results or {}).get('unit')}, not {unit}") + ": a placeholder stands in.")
             return ({"model": {"saved_model_id": d.id, "usage_rate": rate["rate"],
                                "usage_rate_source": rate.get("source")},
-                     "data": {"model_source": f"Its model in use ({d.name}), at {rate['rate']:.4g} starts per hour: "
+                     "data": {"model_source": f"Its model in use ({d.name}), at {rate['rate']:.4g} {per}: "
                                               f"{rate.get('text') or ''}"}}, None)
         if x["model_type"] != "model" or d.kind not in ("distribution", "regression"):
             return None, (f"{child['name']}'s model in use ({d.name}) isn't a life distribution an RBD block can take: "

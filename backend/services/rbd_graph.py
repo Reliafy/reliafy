@@ -428,6 +428,13 @@ def _joint_unit(raw, saved, where: str) -> dict:
     return {"age": age, "markers": markers, "covariates": covariates}
 
 
+def two_clocks_words(results: dict) -> dict:
+    """How to say a saved two-clock model's clocks (``two_clocks.results_words``)."""
+    from backend import two_clocks  # here: it loads SurPyval
+
+    return two_clocks.results_words(results)
+
+
 def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None) -> dict:
     """The builder model-picker shape for a saved model reference."""
     saved = resolve_saved_model(model_id) if resolve_saved_model else None
@@ -453,7 +460,7 @@ def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None
             "data and use that, or give distribution_id + params inline."
         )
     if saved.kind == "two_clock":
-        # Hours and starts: the block's starts per running hour (usage_rate) turns it into a life in hours.
+        # Two clocks: the block's usage rate (second clock per unit of the first) turns it into a life.
         return {
             "source": "saved",
             "kind": "two_clock",
@@ -464,6 +471,8 @@ def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None
             "params": [{"name": p.get("name"), "value": p.get("value")} for p in (r.get("params") or [])],
             "unit": r.get("unit") or "",
             "default_rate": r.get("default_rate"),
+            # How to say its clocks ("landings per hour"): a model saved before the unit existed reads starts.
+            "clocks": two_clocks_words(r),
         }
     if saved.kind not in ("distribution", "regression"):
         raise GraphError(
@@ -521,7 +530,7 @@ def _model(model, where: str, resolve_saved_model) -> dict:
                 from backend import two_clocks
 
                 try:
-                    out["usage_rate"] = two_clocks.check_rate(rate)
+                    out["usage_rate"] = two_clocks.check_rate(rate, out.get("clocks"))
                 except two_clocks.TwoClockError as exc:
                     raise GraphError(f"{where}: {exc}") from None
             for key in ("usage_rate_source", "placeholder"):

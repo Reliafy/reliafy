@@ -1,7 +1,7 @@
-// Hours and starts (two clocks, planning A15): a dataset of each unit's hours and starts is
-// fitted through New model (the reading's starts column offers the models on hours and starts),
-// the model page answers at the fleet's typical starts per hour and at a rate typed in, and an
-// RBD block on it takes its starts per hour. At 1440 and 400 px, nothing scrolls sideways.
+// Two clocks (planning A15): a dataset of each unit's hours and landings (a second clock in its
+// own unit, under the reading's "More columns") is fitted through New model, the model page
+// answers in landings at the fleet's typical rate and at a rate typed in, and an RBD block on a
+// model of hours and starts takes its starts per hour. At 1440 and 400 px, nothing scrolls sideways.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -12,10 +12,10 @@ const sideways = (page) => page.evaluate(() => document.documentElement.scrollWi
 
 // A simulated fleet in three duties: one start is worth 20 hours; Weibull(30,000, 2.5) on the
 // combined clock. A fixed generator, so every run fits the same data.
-function fleetCsv() {
+function fleetCsv(second = "starts") {
   let seed = 7;
   const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-  const rows = ["hours,starts,status"];
+  const rows = [`hours,${second},status`];
   for (let i = 0; i < 160; i += 1) {
     const rate = [0.01, 0.05, 0.3][i % 3];
     const life = (30000 * (-Math.log(1 - rand())) ** (1 / 2.5)) / (1 + 20 * rate);
@@ -27,34 +27,48 @@ function fleetCsv() {
   return rows.join("\n");
 }
 
-async function fleetDataset(request, name) {
-  const ds = await postOk(request, "/api/datasets/paste", { name, content: fleetCsv() });
+async function fleetDataset(request, name, second = "starts") {
+  const ds = await postOk(request, "/api/datasets/paste", { name, content: fleetCsv(second) });
   const res = await request.put(`/api/datasets/${ds.id}/reading`, {
-    data: { reading: { x: "hours", x2: "starts", c: "status", unit: "Hours" } },
+    data: { reading: { x: "hours", x2: second, c: "status", unit: "Hours" } },
   });
   expect(res.ok(), await res.text()).toBeTruthy();
   return ds;
 }
 
 for (const width of [1440, 400]) {
-  test(`fit a life on hours and starts and read it at a rate (${width} px)`, async ({ page, request, problems }) => {
-    const ds = await fleetDataset(request, `Turbine starts ${width} ${Date.now()}`);
+  test(`fit a life on hours and landings and read it at a rate (${width} px)`, async ({ page, request, problems }) => {
+    const ds = await fleetDataset(request, `Strut landings ${width} ${Date.now()}`, "landings");
     await page.setViewportSize({ width, height: 900 });
     await open(page, `/models/new?dataset=${ds.id}`);
-    await expect(page.locator('[data-wt="reading-summary"]')).toContainText("starts = starts");
+    const reading = page.locator('[data-wt="reading-summary"]');
+    await expect(reading).toContainText("second clock = landings");
+    // The second clock lives under "More columns", open because it's in use, its unit from the column's name.
+    await reading.getByRole("button", { name: "Change" }).click();
+    const change = page.getByRole("region", { name: "Change how the columns are read" });
+    const more = change.locator("details.rs-details", { hasText: "More columns" });
+    await expect(more).toHaveAttribute("open", "");
+    await expect(change.getByLabel("Unit of the second clock")).toHaveValue("landings");
+    await change.getByLabel("Unit of the second clock").scrollIntoViewIfNeeded();
+    await shot(page, `two-clocks-reading-${width}`, true);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
+    await change.getByRole("button", { name: "Cancel" }).click();
+
     await page.locator('[data-wt="fit-run"]').click();
-    await expect(page.getByText(/One start wears it as much as [\d.]+ hours of running/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/One landing wears it as much as [\d.]+ hours/)).toBeVisible({ timeout: 30_000 });
     const summary = page.locator(".tc-life .result-summary");
-    await expect(summary).toContainText(/its B10 life is [\d,]+ hours \(at least [\d,]+ hours, 90% one-sided\)/);
+    await expect(summary).toContainText(/At 1 landing every [\d.]+ hours, its B10 life is [\d,]+ hours \(at least [\d,]+ hours, 90% one-sided\)/);
     await shot(page, `two-clocks-fit-${width}`, true);
-    await page.getByLabel("Starts per hour").fill("1/8");
+    await page.getByLabel("Landings per hour").fill("1/8");
     await page.getByRole("button", { name: "Use this rate" }).click();
-    await expect(summary).toContainText("1 start every 8 hours");
+    await expect(summary).toContainText("1 landing every 8 hours");
+    await expect(page.locator(".tc-panel")).not.toContainText(/start/i);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     await expectHealthy(page, problems, { label: "two-clock fit", chart: true });
 
     await page.getByRole("tab", { name: "Model characteristics" }).click();
-    await expect(page.getByText(/Starts clearly matter/)).toBeVisible();
+    await expect(page.getByText(/Landings clearly matter/)).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Landings per hour" })).toBeVisible();
     await shot(page, `two-clocks-characteristics-${width}`, true);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
   });

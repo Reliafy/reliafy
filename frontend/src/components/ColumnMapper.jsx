@@ -1,4 +1,5 @@
 import Select from "./Select.jsx";
+import { ResultDetails } from "./ui/ResultSummary.jsx";
 import StatusMeanings from "./StatusMeanings.jsx";
 import { COMMON_UNITS } from "./Units.jsx";
 import { guessUnit } from "../datasetGuess.js";
@@ -22,6 +23,7 @@ import { TVC_STATUS } from "./TvcColumns.jsx";
 //   tl  [column]  late entry: observed only from this value
 //   tr  [column]  observed only up to this value
 //   failure mode [column]
+//   second clock [column]                       unit [cycles]
 //
 // ``rows``: which rows a flow shows, in order (LIFE_ROWS by default); a fit
 // that doesn't take an input never shows its row. ``range``: x's range
@@ -38,7 +40,10 @@ import { TVC_STATUS } from "./TvcColumns.jsx";
 // false where it can't flip a 1 = failed column). ``lifeRules``: false for a
 // flow whose mapping isn't a life mapping (lifeData's rules don't apply).
 // ``timeVarying`` ("intervals" | "timeline", #60): an item column and each
-// row's times take x's place, with no count or late entry.
+// row's times take x's place, with no count or late entry. ``more``: rows
+// folded under "More columns" after ``rows`` (the less common roles); the fold
+// opens by itself while any of them has a column or a note. ``x2Unit`` /
+// ``onX2UnitChange``: the second clock's unit, typed beside its column.
 export const LIFE_ROWS = ["x", "c", "n", "tl", "tr", "e"];
 
 const WORDS = {
@@ -51,17 +56,25 @@ const WORDS = {
   tr: "observed only up to this value",
   e: "optional, competing risks",
   s: "optional: the state the unit was in during this row",
-  x2: "optional: each unit's starts (or cycles) beside x, for a part worn by both",
+  x2: "optional: a second measure of use, e.g. starts, cycles, landings, shots, km",
 };
-const LABELS = { e: "failure mode", x2: "starts" };
+const LABELS = { e: "failure mode", x2: "second clock" };
+// What the "More columns" fold holds, in a few words.
+const MORE_WORDS = { tl: "late entry", tr: "observed up to", i: "item", m: "readings", e: "failure mode", s: "state",
+  x2: "second clock" };
 
 export default function ColumnMapper({
   columns, mapping, onChange, unit, onUnitChange, facts = {}, timeVarying = null, failureMode = false,
   issues = [], notes = [], asides = {}, warning = null,
   rows = null, range = true, keys = {}, words = {}, none = {}, meanings: showMeanings = true,
   mUnit, onMUnitChange, codeWords = "0 = failed, 1 = running", invertible = true, lifeRules = null,
+  more = [], x2Unit = "", onX2UnitChange = null,
 }) {
   const shown = rows || (failureMode ? LIFE_ROWS : LIFE_ROWS.filter((r) => r !== "e"));
+  // The fold opens by itself while one of its rows is in use or has a note (never hides a role in use).
+  const lifeRows = lifeRules ?? !Object.keys(keys).length;
+  const moreInUse = more.some((r) => mapping[keys[r] || r])
+    || [...issues, ...notes].some((x) => more.includes(x.row || (lifeRows ? issueRow(x, mapping) : "x")));
   const k = (role) => keys[role] || role;
   const val = (role) => mapping[k(role)] || "";
   const options = (label) => [{ value: "", label }, ...columns];
@@ -298,11 +311,22 @@ export default function ColumnMapper({
     ),
   };
 
-  // x2: a second clock (starts beside hours): fits a life worn by both (two clocks).
+  // x2: a second clock (a second measure of use beside x: starts, cycles, landings), with its unit:
+  // fits a life worn by both (two clocks).
   ROW.x2 = () => (
     <div className="xcn-row" key="x2">
       {key("x2", say("x2"))}
-      <div className="xcn-fields">{pick("x2", none.x2 || "— none —", "Starts (second clock)")}</div>
+      <div className="xcn-fields">
+        {pick("x2", none.x2 || "— none —", "Second clock")}
+        {val("x2") && onX2UnitChange && (
+          <span className="xcn-unit">
+            <span className="xcn-words">unit</span>
+            <input className="units-input" type="text" aria-label="Unit of the second clock"
+                   value={x2Unit || ""} placeholder="cycles, landings, starts…"
+                   onChange={(e) => onX2UnitChange(e.target.value)} />
+          </span>
+        )}
+      </div>
       {below("x2")}
     </div>
   );
@@ -314,5 +338,15 @@ export default function ColumnMapper({
       {below("s")}
     </div>
   );
-  return <div className="xcn">{shown.map((r) => ROW[r]())}</div>;
+  return (
+    <div className="xcn">
+      {shown.map((r) => ROW[r]())}
+      {more.length > 0 && (
+        <ResultDetails open={moreInUse}
+                       summary={<>More columns <span className="xcn-words">{more.map((r) => MORE_WORDS[r] || r).join(", ")}</span></>}>
+          <div className="xcn">{more.map((r) => ROW[r]())}</div>
+        </ResultDetails>
+      )}
+    </div>
+  );
 }
