@@ -95,7 +95,7 @@ export function modelTabs(result) {
       ids = ["risk", "calc", "effects", "diag", "data"];
       break;
     case "two_clock":
-      // Hours and starts: the life at a starts-per-hour rate (its own calculator), what a start costs.
+      // Two clocks: the life at a usage rate (its own calculator), what one unit of the second clock costs.
       ids = ["rate", "chars", "data"];
       break;
     case "regression":

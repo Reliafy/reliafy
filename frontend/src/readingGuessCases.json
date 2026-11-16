@@ -21,6 +21,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": [
@@ -49,6 +50,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Site"
   ],
@@ -77,6 +79,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Conveyor"
   ],
@@ -104,6 +107,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Conveyor",
    "Time in service"
@@ -136,6 +140,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Supplier"
   ],
@@ -166,6 +171,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Supplier"
   ],
@@ -197,6 +203,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Wear failure"
   ],
@@ -227,6 +234,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -253,6 +261,7 @@
   "all_failed": false,
   "unit": "Cycles",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "Cycles"
   ],
@@ -281,6 +290,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -304,6 +314,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -327,6 +338,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -350,6 +362,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "site"
   ],
@@ -378,6 +391,7 @@
   "all_failed": false,
   "unit": "Hours",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "temp_C",
    "temp_K"
@@ -406,6 +420,7 @@
   "all_failed": false,
   "unit": "Kilometres",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -429,6 +444,7 @@
   "all_failed": false,
   "unit": "Days",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "high_load"
   ],
@@ -454,6 +470,7 @@
   "all_failed": false,
   "unit": "Days",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []
@@ -477,6 +494,7 @@
   "all_failed": false,
   "unit": "Days",
   "m_unit": "",
+  "x2_unit": "",
   "z": [
    "high_load"
   ],
@@ -504,6 +522,7 @@
   "all_failed": false,
   "unit": "Days",
   "m_unit": "",
+  "x2_unit": "",
   "z": [],
   "z_units": {},
   "not_used": []

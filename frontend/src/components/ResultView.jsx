@@ -169,7 +169,7 @@ export default function ResultView(props) {
     return <CompetingRisksResult result={props.result} name={props.name} datasetId={props.datasetId || null}
                                  tab={props.tab} onTab={props.onTab || null} />;
   }
-  // Hours and starts (two clocks): the life at a usage rate, in tabs of its own.
+  // Two clocks: the life at a usage rate, in tabs of its own.
   if (props.result.kind === "two_clock") {
     return <TwoClockResult result={props.result} modelId={props.modelId || null} split={props.split || null}
                            datasetId={props.datasetId || null} tab={props.tab} onTab={props.onTab || null} />;

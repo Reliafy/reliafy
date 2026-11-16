@@ -1,8 +1,8 @@
-// A life on hours and starts (two clocks), in the model frame's tabs:
-// "Life at a rate" (the answer at a starts-per-hour rate: the fleet's typical one
-// first, any other typed), "Model characteristics" (what a start costs, the test
-// that starts matter, the life at the fleet's low, typical and high rates, the
-// parameters) and Data. A fresh fit asks its at_rate_path; a saved model its
+// A life on two clocks (hours and starts, flight hours and landings...), in the model
+// frame's tabs: "Life at a rate" (the answer at a usage rate: the fleet's typical one
+// first, any other typed), "Model characteristics" (what one unit of the second clock
+// costs, the test that it matters, the life at the fleet's low, typical and high rates,
+// the parameters) and Data. Every word uses the model's units. A fresh fit asks its at_rate_path; a saved model its
 // /at-rate route.
 import { useState } from "react";
 import TwoClockLife from "./TwoClockLife.jsx";
@@ -13,7 +13,7 @@ import { fitAtRate, modelAtRate } from "../api.js";
 import { modelTabs, resolveTab } from "../modelFrame.js";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
-import { kWords } from "../twoClocks.js";
+import { clockWords, kTestWords, kWords, rateLabel } from "../twoClocks.js";
 
 const pText = (p) => (p == null ? "—" : p < 0.001 ? "< 0.001" : formatNumber(p, { sig: 2 }));
 
@@ -27,6 +27,7 @@ export default function TwoClockResult({ result, modelId = null, split = null, d
   const [busy, setBusy] = useState(false);
   const unit = result.unit || "Hours";
   const u = unitInText(unit) || "hours";
+  const words = clockWords(result.clocks, u, result.second_unit);
 
   const ask = async (rate) => {
     setBusy(true);
@@ -42,25 +43,20 @@ export default function TwoClockResult({ result, modelId = null, split = null, d
     body = (
       <div className="detail-panel tc-panel">
         <p className="tc-headline">{kWords(result)}</p>
-        <TwoClockLife atRate={atRate} unit={unit} onRate={ask} busy={busy} />
+        <TwoClockLife atRate={atRate} unit={unit} onRate={ask} busy={busy} clocks={words} />
       </div>
     );
   } else if (tab === "chars") {
-    const test = result.k_test || {};
     body = (
       <TablePanel main={<>
-        <ScrollCard title="What a start costs">
+        <ScrollCard title={`What a ${words.second_one} costs`}>
           <p>{kWords(result)}</p>
-          <p className="muted-line">
-            {test.matters
-              ? `Starts clearly matter: the test that they don't gives p ${pText(test.p_value)}.`
-              : `The data can't tell starts from no effect (p ${pText(test.p_value)}): hours alone may do.`}
-          </p>
+          <p className="muted-line">{kTestWords(result, pText)}</p>
         </ScrollCard>
-        <ScrollCard title="Life by duty" sub="The fleet's own low, typical and high starts per hour; B10 with its 90% lower bound.">
+        <ScrollCard title="Life by duty" sub={`The fleet's own low, typical and high ${words.rate_unit}; B10 with its 90% lower bound.`}>
           <div className="maint-scroll">
             <table className="mini-table">
-              <thead><tr><th></th><th>Starts per hour</th><th>B10 life ({u})</th><th>At least (90%)</th><th>Mean life ({u})</th></tr></thead>
+              <thead><tr><th></th><th>{rateLabel(words)}</th><th>B10 life ({u})</th><th>At least (90%)</th><th>Mean life ({u})</th></tr></thead>
               <tbody>
                 {(result.rate_table || []).map((r) => (
                   <tr key={r.label}>
@@ -86,7 +82,9 @@ export default function TwoClockResult({ result, modelId = null, split = null, d
               </tbody>
             </table>
           </div>
-          <p className="muted-line">alpha is in combined {u} (hours plus k × starts); k is in {u} per start.</p>
+          <p className="muted-line">
+            alpha is in combined {u} ({u} plus k × {words.second_word}); k is in {u} per {words.second_one}.
+          </p>
         </ScrollCard>
       </>} />
     );

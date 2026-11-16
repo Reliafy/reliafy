@@ -809,6 +809,7 @@ def save_model(
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
     x2: str | None = Form(default=None),
+    x2_unit: str | None = Form(default=None),
     i: str | None = Form(default=None),
     e: str | None = Form(default=None),
     g: str | None = Form(default=None),
@@ -848,7 +849,7 @@ def save_model(
     mapping = {
         "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
         "i": i, "e": e, "g": g, "group": group,
-        # Hours and starts (two clocks): the second clock's column.
+        # Two clocks: the second clock's column (its unit, x2_unit, goes in the options).
         "x2": x2,
     }
     try:
@@ -875,7 +876,7 @@ def save_model(
             options=regression_diagnostics.with_cox_form(options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
                 include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
-            frailty_family=frailty_family, u_col=u_col, item_lives=item_lives,
+            frailty_family=frailty_family, u_col=u_col, item_lives=item_lives, x2_unit=x2_unit,
             ), cox),
             covariate_units=covariate_units_from_form(covariate_units),
         )
@@ -1325,8 +1326,9 @@ def model_at_rate(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """A saved model on hours and starts (two clocks) for a unit run at ``rate`` starts
-    per hour (the fleet's typical rate when left out): its B-lives with 90% one-sided
+    """A saved model on two clocks for a unit used at ``rate`` (its second clock per unit
+    of the first: starts per hour, landings per flight hour; the fleet's typical rate when
+    left out): its B-lives with 90% one-sided
     lower bounds, the curve with its band, and, with ``times`` or ``reliability``, the
     calculator's answers there. Free."""
     from backend import two_clocks
@@ -1335,7 +1337,7 @@ def model_at_rate(
     if model is None or model.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     if model.kind != two_clocks.KIND:
-        return JSONResponse(status_code=422, content={"detail": "Only a model on hours and starts takes a usage "
+        return JSONResponse(status_code=422, content={"detail": "Only a model on two clocks takes a usage "
                                                                 "rate."})
     try:
         live = models_service.two_clock_live(session, model, [*ctx.read_owners, model.owner_id])

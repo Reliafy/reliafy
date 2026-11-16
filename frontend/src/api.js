@@ -3964,8 +3964,8 @@ export function endOperatingPlan(positionId, until = null) {
   return postJson(`/api/maintenance/positions/${positionId}/operating-plan/end`, until ? { until } : {});
 }
 
-// ---- Hours and starts (two clocks) ----------------------------------------
-// A life on hours and starts at a usage rate (starts per hour): a saved model, or a
+// ---- Two clocks (hours and starts, cycles, landings...) ---------------------
+// A life on two clocks at a usage rate (its second clock per unit of the first): a saved model, or a
 // fresh fit's at_rate_path. { rate, times?, reliability? } → B-lives with 90% lower
 // bounds, the curve with its band, the sentence.
 export function modelAtRate(modelId, body) {
@@ -3978,7 +3978,7 @@ export function fitAtRate(path, body) {
     headers: { "Content-Type": "application/json" } });
 }
 
-// The Explorer: a row on a life on hours and starts given its own starts per hour
+// The Explorer: a row on a life on two clocks given its own usage rate
 // (null: back to the position's operating plan's).
 export function setPositionModelUsageRate(linkId, usageRate) {
   return request(`/api/maintenance/position-models/${linkId}/usage-rate`, { method: "PUT",

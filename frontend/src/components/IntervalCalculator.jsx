@@ -111,7 +111,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     setResult(null);
     getModel(id).then(async (m) => {
       let ref = savedModelRef({ ...m, id });
-      // Hours and starts: the life at the fleet's typical starts per hour, as a plain distribution.
+      // Two clocks: the life at the fleet's typical usage rate, as a plain distribution.
       if (m.kind === "two_clock") ref = twoClockAt(ref, await modelAtRate(id, { rate: ref.usage_rate }));
       if (alive.current) then(modelOf(ref));
     },

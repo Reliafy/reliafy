@@ -1388,19 +1388,23 @@ _MORE_MODEL_KEYS = ("coef_table", "ci_method", "frailty", "semi_parametric", "sp
 
 
 def _two_clock_summary(result: dict) -> dict:
-    """A fit on hours and starts for an agent: k (hours one start is worth) and the parameters with 90%
-    intervals, the test that starts matter, and the life at the fleet's low, typical and high rates."""
+    """A fit on two clocks for an agent: k (what one unit of the second clock is worth on the first) and the
+    parameters with 90% intervals, the test that the second clock matters, and the life at the fleet's low,
+    typical and high rates."""
     at = result.get("at_rate") or {}
+    words = result.get("clocks") or {}
     return {
         **({"warnings": result["warnings"]} if result.get("warnings") else {}),
         "kind": result.get("kind"), "distribution": result.get("distribution"),
-        "distribution_id": result.get("distribution_id"), "unit": result.get("unit", ""), "n": result.get("n"),
+        "distribution_id": result.get("distribution_id"), "unit": result.get("unit", ""),
+        "second_clock_unit": result.get("second_unit") or two_clocks.LEGACY_UNIT, "n": result.get("n"),
         "answer": result.get("headline"), "params": result.get("params", []), "k_test": result.get("k_test"),
         "fleet_rates": result.get("rates"), "at_rates": result.get("rate_table"),
         "at_typical_rate": {"rate": at.get("rate"), "rate_words": at.get("rate_words"),
                             "b_lives": (at.get("life") or {}).get("b_lives"),
                             "mean_life": ((at.get("life") or {}).get("mttf") or {}).get("value")} if at else None,
-        "use": "Pass usage_rate (starts per hour) to analyse reliability_at, or on an RBD block's model.",
+        "use": f"Pass usage_rate ({words.get('rate_unit') or 'second clock per first-clock unit'}) to analyse "
+               "reliability_at, or on an RBD block's model.",
     }
 
 
@@ -1639,11 +1643,14 @@ _FitTruncLeftCol = Annotated[Optional[str], Field(
     description="Column holding each row's left-truncation age (delayed entry: the age it came under "
                 "observation; blank = not truncated).")]
 _FitSecondClock = Annotated[Optional[list[float]], Field(
-    description="Hours and starts (two clocks): each unit's starts (or cycles) beside its time in data, at its "
-                "failure or now. With a *_two_clock distribution.")]
+    description="Two clocks: each unit's second measure of use (starts, cycles, landings...) beside its time in "
+                "data, at its failure or now. With a *_two_clock distribution.")]
 _FitSecondClockCol = Annotated[Optional[str], Field(
-    description="Hours and starts: the dataset column of each unit's starts (or cycles). With a *_two_clock "
+    description="Two clocks: the dataset column of each unit's second measure of use. With a *_two_clock "
                 "distribution.")]
+_FitSecondClockUnit = Annotated[Optional[str], Field(
+    description="Two clocks: the second clock's unit, plural (cycles, landings, starts); default from its "
+                "column's name.")]
 _FitTruncRightCol = Annotated[Optional[str], Field(
     description="Column holding each row's right-truncation age (blank = not truncated).")]
 _FitCovariates = Annotated[Optional[list[str]], Field(
@@ -1845,7 +1852,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               covariate_units: dict | None = None, cox_options: CoxOptions | None = None,
               id_column: str | None = None, causes=None, groups=None, cause_column=None,
               group_column: str | None = None, second_clock=None,
-              second_clock_column: str | None = None) -> dict[str, Any]:
+              second_clock_column: str | None = None, second_clock_unit: str | None = None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if covariate_units:
@@ -1917,13 +1924,14 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                 mapping["e"] = reading["e"]
             if two_clocks.is_two_clock(dist) and reading.get("x2") and not second_clock_column:
                 mapping["x2"] = reading["x2"]
+                reading_options = {**reading_options, two_clocks.UNIT_KEY: from_reading.get(two_clocks.UNIT_KEY)}
             if covariates is None and dist in fitting.REGRESSION_MODELS and reading.get("z"):
                 covariates = list(reading["z"])
             mapping.update({k: v for k, v in (("c", censor_column), ("n", count_column), ("tl", trunc_left_column),
                                               ("tr", trunc_right_column), ("i", id_column), ("e", cause_column),
                                               ("group" if frailty else "g", group_column)) if v})
             if from_reading.get("c_map") and not censor_column:
-                reading_options = {fitting.CENSOR_MAP_KEY: from_reading["c_map"]}
+                reading_options = {**reading_options, fitting.CENSOR_MAP_KEY: from_reading["c_map"]}
             elif from_reading.get("c_invert") and not censor_column:
                 c_invert = True
             if from_reading.get("u_col"):
@@ -1957,6 +1965,13 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         raise ToolError("groups / group_column apply to a shared-frailty model (e.g. weibull_frailty, with "
                         "covariates) or to competing risks (with causes / cause_column) — choose one of "
                         "those, or drop the group column.")
+    if second_clock_unit is not None:
+        if "x2" not in mapping:
+            raise ToolError("second_clock_unit names the second clock's unit: give second_clock (or "
+                            "second_clock_column) too, or drop it.")
+        if not two_clocks.clean_unit(second_clock_unit):
+            raise ToolError("second_clock_unit is blank: name the second clock's unit (cycles, landings, starts).")
+        reading_options = {**reading_options, two_clocks.UNIT_KEY: two_clocks.clean_unit(second_clock_unit)}
     # Flags sent as codes are read as they are: an interval row is flagged 2.
     options: dict[str, Any] = {fitting.STRICT_INTERVALS_KEY: True, **reading_options}
     if c_invert:
@@ -2074,6 +2089,7 @@ def fit_distribution(
     group_column: _FitGroupColumn = None,
     second_clock: _FitSecondClock = None,
     second_clock_column: _FitSecondClockCol = None,
+    second_clock_unit: _FitSecondClockUnit = None,
 ) -> dict[str, Any]:
     """Fit a life distribution (SurPyval) to inline times or a saved dataset and report it:
     parameters with 90% CIs, goodness of fit, metrics, and `censoring`, the failures and censored units the fit
@@ -2088,7 +2104,7 @@ def fit_distribution(
                 include_mixtures=include_mixtures, criterion=criterion, frailty_family=frailty_family, save=False, name=None, covariate_units=covariate_units,
                 cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
                 cause_column=cause_column, group_column=group_column, second_clock=second_clock,
-                second_clock_column=second_clock_column)
+                second_clock_column=second_clock_column, second_clock_unit=second_clock_unit)
 
 
 def fit_and_save_model(
@@ -2124,6 +2140,7 @@ def fit_and_save_model(
     group_column: _FitGroupColumn = None,
     second_clock: _FitSecondClock = None,
     second_clock_column: _FitSecondClockCol = None,
+    second_clock_unit: _FitSecondClockUnit = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -2156,7 +2173,7 @@ def fit_and_save_model(
                 include_mixtures=include_mixtures, criterion=criterion, frailty_family=frailty_family, save=True, name=name, covariate_units=covariate_units,
                 cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
                 cause_column=cause_column, group_column=group_column, second_clock=second_clock,
-                second_clock_column=second_clock_column)
+                second_clock_column=second_clock_column, second_clock_unit=second_clock_unit)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -2486,10 +2503,10 @@ def _bayes_class_prior(user, db, baseline: dict, x, c, trust, age) -> dict[str, 
 
 
 def _reliability_at_rate(db, m, times, owners, usage_rate, conditional_age) -> dict[str, Any]:
-    """reliability_at on a model on hours and starts: the life of a unit at ``usage_rate`` starts per
-    hour (SurPyval's at_usage), R(t) with its 90% one-sided lower bound, and the B-lives."""
+    """reliability_at on a model on two clocks: the life of a unit at ``usage_rate`` (its second clock per
+    unit of the first: starts per hour, landings per flight hour; SurPyval's at_usage), R(t) with its 90% one-sided lower bound, and the B-lives."""
     if conditional_age is not None:
-        raise ToolError("conditional_age isn't offered for a model on hours and starts yet: drop it.")
+        raise ToolError("conditional_age isn't offered for a model on two clocks yet: drop it.")
     try:
         live = models_service.two_clock_live(db, m, owners)
         out = two_clocks.answer(live, {"rate": usage_rate, "default_rate": (m.results or {}).get("default_rate"),
@@ -2497,12 +2514,13 @@ def _reliability_at_rate(db, m, times, owners, usage_rate, conditional_age) -> d
     except (two_clocks.TwoClockError, models_service.ModelNotFound) as exc:
         raise ToolError(str(exc) or "Model not found.") from None
     return {"model": m.name, "model_id": m.id, "unit": (m.results or {}).get("unit", ""), "method": "exact",
-            "usage_rate": out["rate"], "rate_words": out["rate_words"], "answer": out["sentence"],
+            "usage_rate": out["rate"], "usage_rate_unit": out["clocks"]["rate_unit"], "rate_words": out["rate_words"],
+            "answer": out["sentence"],
             "points": [{"t": p["t"], "reliability": p["reliability"], "reliability_lower_90": p["lower"]}
                        for p in out["at_times"]],
             "life": out["life"], "as_distribution": out["as_distribution"],
             "notes": ["Exact: SurPyval's life at the usage rate; lower bounds 90% one-sided, including the "
-                      "uncertainty in what a start is worth."]}
+                      f"uncertainty in what one {out['clocks']['second_one']} is worth."]}
 
 
 def reliability_at(
@@ -2530,8 +2548,8 @@ def reliability_at(
                     "(SurPyval's sf_tvc) instead of at fixed covariates, and adds mean_life along it. Use "
                     "instead of `covariates`.")] = None,
     usage_rate: Annotated[Optional[float], Field(
-        ge=0, description="Hours-and-starts (two_clock) models only: starts per running hour (0.125 = 1 start "
-                          "every 8 h); default the fleet's typical rate.")] = None,
+        ge=0, description="Two-clock models only: <second clock> per <first clock unit>, e.g. starts per hour "
+                          "(0.125 = 1 every 8); default the fleet's typical rate.")] = None,
 ) -> dict[str, Any]:
     """A saved non-repairable model at given times: R(t), F(t), hazard, cumulative hazard and density;
     conditional_age adds the chance a unit that age survives a further t. Parametric models are exact,
@@ -2557,7 +2575,7 @@ def reliability_at(
     if m.kind == two_clocks.KIND:
         return _reliability_at_rate(db, m, times, owners, usage_rate, conditional_age)
     if usage_rate is not None:
-        raise ToolError(f"“{m.name}” isn't a model on hours and starts: drop usage_rate.")
+        raise ToolError(f"“{m.name}” isn't a model on two clocks: drop usage_rate.")
 
     ts = [float(t) for t in times]
     later = [conditional_age + t for t in ts] if conditional_age is not None else []
@@ -3412,6 +3430,8 @@ _RI = _col("which item (unit, pump, tag) each row belongs to")
 _RM = _col("a measured value (readings)")
 _RE = _col("each failure's mode (the state entered, for multi-state data)")
 _RS = _col("the state the unit was in during the row (multi-state data; kept, not yet used by a model)")
+_RX2 = _col("a second clock: a second measure of use beside x (starts, cycles, landings), for *_two_clock fits")
+_RX2Unit = Annotated[Optional[str], Field(description="x2_col's unit, plural (cycles, landings); default from its name.")]
 _RZ = Annotated[Optional[list[str]], Field(description=(
     "The covariates (Z). Omit for the default: every column not given a role, less ids, dates, free text and "
     "one-value columns."))]
@@ -3431,7 +3451,7 @@ def _reading_given(**kw) -> dict:
     keys = {"x_col": "x", "xl_col": "xl", "xr_col": "xr", "c_col": "c", "n_col": "n", "tl_col": "tl",
             "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "s_col": "s", "z_cols": "z", "not_used": "not_used",
             "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "unit": "unit",
-            "m_unit": "m_unit", "z_units": "z_units"}
+            "m_unit": "m_unit", "z_units": "z_units", "x2_col": "x2", "x2_unit": "x2_unit"}
     return {keys[k]: v for k, v in kw.items() if v is not None}
 
 
@@ -3459,7 +3479,7 @@ def upload_dataset(
         "taken), the column itself left out; rows with no value are left out. Returns datasets, a list."))] = None,
     x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
-    s_col: _RS = None,
+    s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
     library_id: Annotated[Optional[str], Field(max_length=64, description=(
@@ -3499,7 +3519,7 @@ def upload_dataset(
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
                            not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
-                           unit=unit, m_unit=m_unit, z_units=z_units)
+                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
     reading = _upload_reading(data, given, split)
     if split:
         return _split_upload(db, user, name.strip(), data, split, upload, guess, hint, reading, lib)
@@ -3757,7 +3777,7 @@ class BlockModel(BaseModel):
         "repairable_form ara/ari: {m: repairs remembered (or 'all')}; ari: {baseline: crow_amsaa | duane | "
         "cox_lewis}."))
     usage_rate: Optional[float] = Field(None, ge=0, description=(
-        "With a saved hours-and-starts (two_clock) model: starts per running hour."))
+        "With a saved two_clock model: <second clock> per <first clock unit> (starts per hour, say)."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
     joint_unit: Optional["JointUnit"] = Field(None, description=(
         "With a saved condition-based (joint) model: the unit this block is (non-repairable diagrams)."))
@@ -9090,7 +9110,7 @@ def update_dataset(
     notes: _NewNotes = None,
     x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
-    s_col: _RS = None,
+    s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
 ) -> dict[str, Any]:
@@ -9101,7 +9121,7 @@ def update_dataset(
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
                            not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
-                           unit=unit, m_unit=m_unit, z_units=z_units)
+                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
     if name is None and notes is None and not given:
         raise ToolError("Nothing to change: give name, notes, or the reading (x_col, c_col, …, z_cols).")
     if name is not None or notes is not None:

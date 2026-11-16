@@ -7,7 +7,7 @@ import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
 import { formatNumber } from "../format.js";
 import { latestOnly, savedModelRef, twoClockAt } from "../modelNext.js";
-import { parseRate, rateText } from "../twoClocks.js";
+import { clockWords, parseRate, rateHint, rateLabel, rateText } from "../twoClocks.js";
 
 // The shape or spread a mean leaves open, in the words the Mean entry uses
 // (#299): a lognormal "takes mean + spread".
@@ -210,7 +210,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       const m = await getModel(id);
       const ref = savedModelRef({ ...m, id });
       if (m.kind === "two_clock") {
-        // Hours and starts: used at a starts-per-hour rate, the fleet's typical one until changed.
+        // Two clocks: used at a usage rate (landings per hour, say), the fleet's typical one until changed.
         const at = await modelAtRate(id, { rate: ref.usage_rate });
         if (current()) onChange(twoClockAt(ref, at));
         return;
@@ -225,7 +225,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
   const [rateError, setRateError] = useState(null);
   const applyRate = async () => {
     if (rateBox == null || value?.kind !== "two_clock") return;
-    const parsed = parseRate(rateBox);
+    const parsed = parseRate(rateBox, clockWords(value.clocks, value.unit, value.second_unit));
     if (parsed.error) { setRateError(parsed.error); return; }
     setRateError(null);
     try {
@@ -407,14 +407,15 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       )}
       {source === "saved" && value?.kind === "two_clock" && (
         <label className="dist-field" style={{ maxWidth: 320 }}>
-          <span className="dist-label">Starts per hour</span>
-          <input className="ctl" type="text" inputMode="decimal" aria-label="Starts per hour"
+          <span className="dist-label">{rateLabel(clockWords(value.clocks, value.unit, value.second_unit))}</span>
+          <input className="ctl" type="text" inputMode="decimal"
+                 aria-label={rateLabel(clockWords(value.clocks, value.unit, value.second_unit))}
                  value={rateBox ?? rateText(value.usage_rate)}
                  onChange={(e) => setRateBox(e.target.value)} onBlur={applyRate}
                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyRate(); } }} />
           <span className={rateError ? "rbd-dlg-echo is-error" : "rbd-dlg-echo"} role={rateError ? "alert" : undefined}>
-            {rateError || (value.rate_words ? `${value.rate_words}: a life on hours and starts, used at this rate.`
-              : "0.125 is 1 start every 8 hours.")}
+            {rateError || (value.rate_words ? `${value.rate_words}: a life on two clocks, used at this rate.`
+              : rateHint(clockWords(value.clocks, value.unit, value.second_unit)))}
           </span>
         </label>
       )}
