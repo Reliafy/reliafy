@@ -86,7 +86,7 @@ from surpyval import GumbelPH, LogisticPH
 from surpyval import AFT, AH, PH, PO
 from surpyval.univariate.regression import CoxPH
 
-from backend import levels, life_bounds, np_life, param_intervals
+from backend import levels, life_bounds, np_life, param_intervals, two_clocks
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
@@ -2051,6 +2051,10 @@ def fit(
     cox_opts = options.pop(regression_diagnostics.COX_KEY, None)
     # #179: the Group by column is a frailty model's alone.
     mapping = more_models.check_group(distribution, mapping, covariates)
+    if two_clocks.is_two_clock(distribution) or mapping.get(two_clocks.X2):
+        # Hours and starts (two clocks): its own fit, and none of the options below.
+        return _json_safe(_fit_two_clock(distribution, df, mapping, unit, options, covariates, formula,
+                                         c_invert, c_map))
     options = normalize_options(distribution, options)
     if mapping.get("i"):
         # #60: an item column means covariates that change over time.
@@ -2149,6 +2153,36 @@ def fit(
     # values at the extremes (e.g. a Weibull bound that maps to ±inf/NaN). These
     # are not valid JSON, so coerce them to null — Plotly renders them as gaps.
     return _json_safe(result)
+
+
+def _fit_two_clock(distribution, df, mapping, unit, options, covariates, formula, c_invert, c_map) -> dict:
+    """A life on two clocks (hours and starts, :mod:`backend.two_clocks`): SurPyval's
+    equivalent-time-scale fit, kept live like any other fit so a saved model rehydrates
+    from its ``to_dict``."""
+    if not two_clocks.is_two_clock(distribution):
+        raise FitError("A starts (second clock) column needs a model on hours and starts: pick "
+                       f"{', '.join(e['name'] for e in two_clocks.MODELS.values())}, or clear the starts column.")
+    if not mapping.get(two_clocks.X2):
+        raise FitError("A model on hours and starts needs the starts (second clock) column: give each unit's "
+                       "starts beside its hours.")
+    if covariates or formula:
+        raise FitError("A model on hours and starts takes no covariates.")
+    stray = sorted(k for k, v in (options or {}).items() if v)
+    if stray:
+        raise FitError(f"A model on hours and starts takes no fit options ({', '.join(stray)}).")
+    try:
+        model, result = two_clocks.fit(distribution, df, mapping, canonical_unit(unit))
+    except two_clocks.TwoClockError as exc:
+        raise FitError(str(exc)) from None
+    cache_id = _store_model(model, np.asarray(result["at_rate"]["curves"]["x"]
+                                              if result.get("at_rate") else [0.0, 1.0], dtype=float), [])
+    result["functions"] = {"model_id": cache_id}
+    result["unit"] = canonical_unit(unit)
+    if c_invert:
+        result["options"] = {CENSOR_INVERT_KEY: True}
+    if c_map:
+        result["options"] = {**(result.get("options") or {}), CENSOR_MAP_KEY: c_map}
+    return result
 
 
 def late_entry(df: pd.DataFrame, mapping: dict) -> Optional[dict]:

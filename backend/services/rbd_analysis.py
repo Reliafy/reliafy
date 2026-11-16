@@ -488,6 +488,14 @@ def _build_distribution(
                             "Environment values).")
     if model.get("kind") == "alt_stress":
         return _alt_stress_reliability(model, where, resolve_model)
+    if model.get("kind") == "two_clock":  # hours and starts, at the block's starts per hour
+        from backend.services import rbd_two_clocks
+
+        try:
+            life = rbd_two_clocks.block_life(model, where, resolve_model)
+        except rbd_two_clocks.BlockError as exc:
+            raise AnalysisError(str(exc)) from None
+        return PerfectReliability if life is None else life
     if model.get("kind") == "phase_rates":  # a mission's phases (rbd_missions.py)
         return _phase_rates_reliability(model, where)
     from backend.services import rbd_mixture

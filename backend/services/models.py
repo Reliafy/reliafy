@@ -554,6 +554,18 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
     return cache_id
 
 
+def two_clock_live(db, model: Model, owner_id) -> object:
+    """A saved model on hours and starts as SurPyval's ``EquivalenceModel`` (from its
+    saved ``to_dict``, else refitted). Raises ``ModelNotFound``."""
+    from backend import two_clocks
+
+    entry = fitting._MODEL_STORE.get(_live_cache_id(db, model.id, owner_id))
+    live = (entry or {}).get("model")
+    if not two_clocks.is_model(live):
+        raise ModelNotFound(model.id)
+    return live
+
+
 def evaluate(db, model_id: str, values: dict, owner_id: str, x_min=None, x_max=None) -> dict:
     """Evaluate the model's functions at covariate ``values``, re-fitting if the
     live model isn't cached. ``x_min``/``x_max`` recompute over a custom grid."""

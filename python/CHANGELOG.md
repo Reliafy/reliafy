@@ -20,6 +20,14 @@ Needs a server on the same release.
   standby give the same numbers. `analyse rbd_mission` gives each phase's `drivers`; a mission with
   standby blocks whose lives have no constant rate is simulated (seeded), which needs Pro
   (`code: pro_required` otherwise). The REST twins and the CLI take the same.
+- **Hours and starts (two clocks)**: `analyse fit` and `change model_fit` take `second_clock`
+  (inline, one per time) or `second_clock_column` with `distribution` `weibull_two_clock`,
+  `lognormal_two_clock` or `exponential_two_clock`: a life worn by running hours and by starts.
+  The answer says what one start is worth in hours (`k`, with its 90% interval and a test that
+  starts matter) and the life at the fleet's low, typical and high starts per hour. `analyse
+  reliability_at` takes `usage_rate` (starts per hour) for such a model: R(t) with a 90% lower
+  bound, the B-lives and `as_distribution`. An RBD block's model takes `usage_rate` beside
+  `saved_model_id`. Free (a numerical fit). The REST twins and the CLI take the same.
 - **RBD tasks in running hours**: a repairable block's `preventive` and `inspection` (proof test)
   take `basis`, `calendar` (the default) or `operating`: the task's times (interval, opportunity,
   offset, full_test) are then the block's running hours, put onto the calendar through its `duty`.

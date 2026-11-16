@@ -35,6 +35,7 @@ assumption holds, with what to try if not), shared frailty (group_column; frailt
 heavier-tailed frailty), competing risks (causes / cause_column: each failure mode's share). method: MLE unless \
 the user asks.
 - A fit that didn't converge or has no finite maximum leads with fit_ok false: don't quote its numbers.
+- Hours and starts (two clocks): a part worn by running hours AND by starts (motors, gas turbines; or flight hours and cycles). Each unit's hours in data / time_column and its starts in second_clock / second_clock_column, at its failure or now; distribution weibull_two_clock (or lognormal_two_clock, exponential_two_clock). It learns k, the hours one start is worth (90% interval; k_test says whether starts matter at all), and gives the life at the fleet's low, typical and high starts per hour. Units must run at different rates. Use it at a rate: analyse reliability_at with usage_rate (starts per hour; B-lives with 90% lower bounds, and as_distribution: the plain distribution it equals at that rate, for the strategy calculators), or an RBD block model {saved_model_id, usage_rate}. Free in the app; no late entry, intervals or covariates.
 - One or two failures and a credible baseline (a class's or fleet's model, a vendor's or handbook's numbers, a \
 B10 the user believes): analyse bayes_update (Pro) updates the baseline with the data: baseline {model_id} or \
 {distribution, params, unit} or {b10: {value, low, high}, shape: {low, high}, unit}; trust close / guide / start \
