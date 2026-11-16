@@ -30,7 +30,7 @@ export function deleteLines(c) {
   const pos = positionsTaken(c);
   if (pos) out.push(c.kind === "location" ? `${n(pos, "position")} there, with everything inside them` : `${n(pos, "position")} inside it`);
   if (c.items_unfitted) {
-    out.push(`${n(c.items_unfitted, "fitted item")} kept, unfitted: ${c.items_unfitted === 1 ? "it stays" : "they stay"} in Items`
+    out.push(`${n(c.items_unfitted, "fitted item")} kept, unfitted: ${c.items_unfitted === 1 ? "it stays" : "they stay"} on the Assets list`
       + (c.positions_on_unfitted_items ? ` (with the ${n(c.positions_on_unfitted_items, "position")} on ${c.items_unfitted === 1 ? "it" : "them"})` : ""));
   }
   if (c.tasks) out.push(`${n(c.tasks, "scheduled task")}: no longer scheduled`);
@@ -42,7 +42,7 @@ export function deleteLines(c) {
   }
   // A product's layout (its design locations): what's placed there stays, with no place.
   if (c.positions_unplaced) out.push(`${n(c.positions_unplaced, "position")} placed there kept, with no place in the layout`);
-  if (c.items_placed) out.push(`${n(c.items_placed, "item")} stored there kept, with no place now: ${c.items_placed === 1 ? "it stays" : "they stay"} in Items`);
+  if (c.items_placed) out.push(`${n(c.items_placed, "item")} stored there kept, with no place now: ${c.items_placed === 1 ? "it stays" : "they stay"} on the Assets list`);
   if (c.stock_lines) out.push(`Stock recorded there: kept`);
   return out;
 }
