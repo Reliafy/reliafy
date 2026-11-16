@@ -366,7 +366,7 @@ for (const [width, phone] of [[400, true], [1440, false]]) {
 
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
-  "/items", "/asset-register/explorer?tab=rcm", "/asset-register/parts",
+  "/asset-register/explorer?tab=rcm", "/asset-register/parts",
   "/asset-register/classes", "/products", "/maintenance/work-orders", "/maintenance/work-orders?tab=due",
   "/maintenance/work-orders?tab=closed", "/maintenance/packages", "/maintenance/rcm", "/data",
   "/models", "/models/recurrent", "/strategy", "/risk", "/forecasts", "/reports", "/settings",

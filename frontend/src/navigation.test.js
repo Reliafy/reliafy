@@ -65,11 +65,11 @@ test("every menu link is a page of the app", () => {
   }
 });
 
-test("the menu is one flat list: Home, Products, Assets, Items, Maintenance, Modelling, Libraries, Decisions, Reports, the Agent", () => {
+test("the menu is one flat list: Home, Products, Assets, Maintenance, Modelling, Libraries, Decisions, Reports, the Agent", () => {
   const { main } = buildMenu({ has: ALL });
-  assert.deepEqual(ids(main), ["home", "products", "assets", "items", "maintenance", "modelling", "libraries", "decisions", "reports", "agent"]);
+  assert.deepEqual(ids(main), ["home", "products", "assets", "maintenance", "modelling", "libraries", "decisions", "reports", "agent"]);
   assert.deepEqual(main.map((e) => e.label),
-    ["Home", "Products", "Assets", "Items", "Maintenance", "Modelling", "Libraries", "Decisions", "Reports", "Reliability Agent"]);
+    ["Home", "Products", "Assets", "Maintenance", "Modelling", "Libraries", "Decisions", "Reports", "Reliability Agent"]);
   // No section headings any more.
   for (const e of ENTRIES) assert.equal(e.section, undefined, e.id);
 });
@@ -123,7 +123,7 @@ test("a group opens on its first live entry; an entry with no landing page opens
 test("a menu word is the title of the page it opens", () => {
   // The page titles (SectionHeader's title) of each entry's landing page.
   const TITLES = {
-    home: "Home", products: "Products", assets: "Assets", items: "Items", maintenance: "Maintenance", data: "Data", models: "Models",
+    home: "Home", products: "Products", assets: "Assets", maintenance: "Maintenance", data: "Data", models: "Models",
     prediction: "Reliability prediction",
     strategy: "Strategy", forecasts: "Forecasts", reports: "Reports", agent: "Reliability Agent",
     maintainability: "Maintainability prediction",
@@ -203,18 +203,18 @@ test("no roles shows everything the workspace has, nothing under More", () => {
   assert.deepEqual(more, []);
 });
 
-test("a technician sees Home, Assets, Items and Maintenance; the rest is under More", () => {
+test("a technician sees Home, Assets and Maintenance; the rest is under More", () => {
   const { main, more } = buildMenu({ roles: ["technician"], has: ALL });
-  assert.deepEqual(ids(main), ["home", "assets", "items", "maintenance"]);
+  assert.deepEqual(ids(main), ["home", "assets", "maintenance"]);
   assert.deepEqual(ids(more), ["products", "modelling", "libraries", "decisions", "reports", "agent"]);
-  assert.equal(main[3].to, "/maintenance/work-orders");
+  assert.equal(main[2].to, "/maintenance/work-orders");
 });
 
 test("a role keeps the menu's own order", () => {
   assert.deepEqual(ids(buildMenu({ roles: ["fleet"], has: ALL }).main),
-    ["home", "assets", "items", "maintenance", "modelling", "libraries", "decisions", "reports"]);
+    ["home", "assets", "maintenance", "modelling", "libraries", "decisions", "reports"]);
   assert.deepEqual(ids(buildMenu({ roles: ["planner", "analyst"], has: ALL }).main),
-    ["home", "assets", "items", "maintenance", "modelling", "libraries", "decisions", "reports", "agent"]);
+    ["home", "assets", "maintenance", "modelling", "libraries", "decisions", "reports", "agent"]);
   assert.deepEqual(ids(buildMenu({ roles: ["manager"], has: ALL }).main),
     ["home", "maintenance", "modelling", "libraries", "decisions", "reports"]);
   assert.deepEqual(homeCards(["fleet"]), ["fleets", "due"]);
@@ -280,11 +280,10 @@ test("a page lights its place in the menu at every level", () => {
     "/systems/structure"]) {
     assert.deepEqual(at(path), ["assets", null, null], path);
   }
-  // Products and Items: their landing pages, a product's page, and each item's own page.
+  // Products: its landing page and a product's page. An item's own page is under Assets.
   assert.deepEqual(at("/products"), ["products", null, null]);
   assert.deepEqual(at("/products/p1"), ["products", null, null]);
-  assert.deepEqual(at("/items"), ["items", null, null]);
-  assert.deepEqual(at("/asset-register/items/i1"), ["items", null, null]);
+  assert.deepEqual(at("/asset-register/items/i1"), ["assets", null, null]);
   // Maintenance's sub-pages, and a work order's or a package's own page under them.
   assert.deepEqual(at("/maintenance/work-orders"), ["maintenance", null, "Orders"]);
   assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null, "Orders"]);
@@ -458,7 +457,8 @@ const OLD_TO_NEW = [
   // Maintenance's own page → its Orders (Open, Due soon, Closed).
   ["/maintenance", "/maintenance/work-orders"],
   ["/maintenance/positions/x", "/asset-register/positions/x"],
-  ["/maintenance/items", "/items"],
+  ["/maintenance/items", "/asset-register"],
+  ["/items", "/asset-register"],
   ["/maintenance/items/x", "/asset-register/items/x"],
   ["/maintenance/locations", "/asset-register/explorer?arrange=locations"],
   ["/maintenance/locations/x", "/asset-register/locations/x"],
@@ -468,7 +468,7 @@ const OLD_TO_NEW = [
   ["/maintenance/parts/x", "/asset-register/parts/x"],
   ["/systems", "/systems/rbds"],
   ["/asset-register/positions", "/asset-register/explorer?arrange=positions"],
-  ["/asset-register/items", "/items"],
+  ["/asset-register/items", "/asset-register"],
   ["/asset-register/locations", "/asset-register/explorer?arrange=locations"],
   ["/systems/fmeca", "/asset-register/explorer?tab=fmea"],
   // Parts and stock and Classes are tabs of the asset tree, on everything.
@@ -511,7 +511,7 @@ test("every earlier address redirects to its page's new place, with its id", () 
 test("an earlier address keeps its query: the target's first, then the rest", () => {
   // No query in the target: the old query and #hash exactly as they were.
   assert.equal(movedHref("/data/x", "?compare=a%20b", "#bounds"), "/data/x?compare=a%20b#bounds");
-  // The old Positions, Items and Locations pages, with what their addresses carried.
+  // The old Positions and Locations pages, with what their addresses carried.
   assert.equal(movedHref("/asset-register/explorer?arrange=positions", "?place=none"),
     "/asset-register/explorer?arrange=positions&place=none");
   // An RCM study's address from an email: the tab first, then the rest.
@@ -521,7 +521,6 @@ test("an earlier address keeps its query: the target's first, then the rest", ()
     "/asset-register/explorer?arrange=positions&sel=p1");
   assert.equal(movedHref("/asset-register/explorer?arrange=locations", "?sel=l1", "#top"),
     "/asset-register/explorer?arrange=locations&sel=l1#top");
-  assert.equal(movedHref("/items", "?sel=i1"), "/items?sel=i1");
   // Maintenance's open work orders in an area land on Orders, still in that area.
   assert.equal(movedHref(movedTo("/maintenance"), "?location=l1"), "/maintenance/work-orders?location=l1");
 });

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildProblem, designActions, explorerHere, hoursText, isDesignScope, itemFilters, itemTreePath, productViewPath, productPath,
-  productRbds, productTab, productTreeIds, scopeTree, statusText,
+  buildProblem, designActions, explorerHere, hoursText, isDesignScope, itemTreePath, productViewPath, productPath,
+  productRbds, productTab, productTreeIds, scopeTree,
 } from "./products.js";
 
 // A plant, a product's design (d…) and an item's tree built from it (b…).
@@ -72,20 +72,12 @@ test("an item's tree is the Explorer scoped to it", () => {
   assert.equal(itemTreePath("t1", "b5"), "/asset-register/explorer?arrange=positions&root=t1&sel=b5");
 });
 
-test("words: hours with their unit, statuses, a serial needed", () => {
+test("words: hours with their unit, a serial needed", () => {
   assert.equal(hoursText({ value: 212, unit: "hours" }), "212 hours");
   assert.equal(hoursText({ value: 1234.56, unit: "h" }), "1,234.6 h");
   assert.equal(hoursText(null), "—");
-  assert.equal(statusText("spare"), "Spare (placed)");
-  assert.equal(statusText("not placed"), "Not placed");
   assert.equal(buildProblem("  "), "Give the item's serial number.");
   assert.equal(buildProblem("0010"), null);
-});
-
-test("the Items filters list products and types by name", () => {
-  const f = itemFilters([{ id: "2", name: "Rover" }, { id: "1", name: "Quad" }], [{ id: "c", name: "UAV" }]);
-  assert.deepEqual(f.products, [{ value: "1", label: "Quad" }, { value: "2", label: "Rover" }]);
-  assert.deepEqual(f.types, [{ value: "c", label: "UAV" }]);
 });
 
 test("a product's RBDs: made from its structure, or named after it", () => {

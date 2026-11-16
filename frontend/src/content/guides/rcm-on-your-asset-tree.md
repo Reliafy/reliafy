@@ -104,8 +104,8 @@ To find your way around a big tree:
   position's on the RCM and FME(C)A tabs too; or press **Delete** on the row)
   deletes it. Everything inside it goes too: the
   positions inside, their tasks and their RCM; open work orders are cancelled.
-  Items are never deleted: those fitted there are taken out and kept, loose,
-  in Items. The dialog counts what will go before you confirm. Its history
+  Items are never deleted: those fitted there are taken out and kept, not
+  fitted anywhere. The dialog counts what will go before you confirm. Its history
   stays, and **Undo** in the message that follows (or Ctrl+Z, Cmd+Z on a Mac)
   brings it all back.
 - **Columns…**, in the **⋯** menu at the top right of the panel, shows or hides columns, such as **Evidence**, **What the evidence shows** and **Decision notes** (the failure mode's notes and rationale). Drag a

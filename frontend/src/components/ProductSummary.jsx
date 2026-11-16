@@ -17,7 +17,7 @@ import { BuildItemModal, DesignReports } from "./ProductPanels.jsx";
 import TreeSummary from "./TreeSummary.jsx";
 import { newPredictionPath } from "../predictions.js";
 import {
-  ITEMS_PATH, hoursText, itemPagePath, itemTreePath, itemsText, productRbds, revText,
+  hoursText, itemPagePath, itemTreePath, itemsText, productRbds, revText,
 } from "../products.js";
 import "../views/MaintenanceProducts.css";
 
@@ -89,7 +89,6 @@ function BuiltItems({ product, version, onBuild }) {
             </table>
           </div>
         )}
-      <Link className="td-more" to={ITEMS_PATH}>Every item, on Items</Link>
     </Section>
   );
 }

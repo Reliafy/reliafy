@@ -5,7 +5,7 @@ category: "Maintenance strategy"
 prerequisites: "Reliafy Maintenance."
 order: 28
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Products and Items pages and stays out of the index until Maintenance opens.
+# Products page and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
@@ -88,9 +88,8 @@ with it.
 
 ## Items
 
-**Items** lists every serial-numbered thing, built from a product or not,
-with its product, type, where it is and its open failure reports. Filter by
-product or type, or search by name, serial or part number.
+Each item has its own page: open it from the product's **Items built** table,
+or from the item's row in the **Explorer** under **Assets**.
 
 ## Not yet
 
