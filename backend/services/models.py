@@ -548,6 +548,14 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
                 cache_id = _params_live(model)  # no data to refit: the model is its parameters
             if cache_id is None:
                 cache_id = _refit(model)
+            if model.kind == "two_clock":
+                # The second clock's unit is the saved model's ("starts" for one saved before it had one),
+                # however the live fit came back (its to_dict, or a refit that guesses from the column).
+                from backend import two_clocks
+
+                live = (fitting._MODEL_STORE.get(cache_id) or {}).get("model")
+                if live is not None:
+                    live.second_unit = two_clocks.unit_of(None, model.results)
             _LIVE[model_id] = cache_id
             while len(_LIVE) > _LIVE_MAX:
                 _LIVE.popitem(last=False)
@@ -555,14 +563,16 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
 
 
 def two_clock_live(db, model: Model, owner_id) -> object:
-    """A saved model on hours and starts as SurPyval's ``EquivalenceModel`` (from its
-    saved ``to_dict``, else refitted). Raises ``ModelNotFound``."""
+    """A saved model on two clocks as SurPyval's ``EquivalenceModel`` (from its saved
+    ``to_dict``, else refitted), carrying the second clock's unit the saved results give
+    ("starts" for a model saved before it had one). Raises ``ModelNotFound``."""
     from backend import two_clocks
 
     entry = fitting._MODEL_STORE.get(_live_cache_id(db, model.id, owner_id))
     live = (entry or {}).get("model")
     if not two_clocks.is_model(live):
         raise ModelNotFound(model.id)
+    live.second_unit = two_clocks.unit_of(None, model.results)
     return live
 
 
