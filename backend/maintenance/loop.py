@@ -67,6 +67,7 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
         unit = model_unit(node.get("model"))
     use = m._life_unit(unit)
     data = m.class_life_data(position_class, use)
+    key = data["class_key"]  # the class's stable name: its node, costs and proposals
     unit = use or "days"
     # A row whose life is a range (dates known only roughly) counts while its
     # longest life is above 0.
@@ -92,7 +93,7 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
     else:
         pd.DataFrame({unit: [r["x"] for r in rows], "censored": [r["c"] for r in rows]}).to_csv(buf, index=False)
         mapping = {"x": unit, "c": "censored"}
-    name = data["position_class"]
+    name = data["position_class"]  # as shown (product › … › position for a design class)
     in_unit = f" in {unit}" if use else ""
     dataset = datasets_service.create_dataset(db, f"{name}: maintenance life data{in_unit}.csv",
                                               buf.getvalue().encode(), m.org)
@@ -100,14 +101,14 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
                                       mapping, [], None, unit, owner_id=m.org)
     params = [{"name": p["name"], "value": p["value"]} for p in model.results.get("params") or []]
     m._emit("class.model_fitted", {
-        "id": class_id(m.org, name), "name": name, "model_id": model.id, "distribution": model.distribution_id,
+        "id": class_id(m.org, key), "name": key, "model_id": model.id, "distribution": model.distribution_id,
         "params": params, "extras": (model.results.get("options") or None), "unit": unit,
         "fitted_on": m.today(), "failures": failures, "suspensions": len(rows) - failures,
         # By use, failures the readings can't count yet aren't in the fit: the daily refit
         # waits for failures beyond those on record now, not for those to be counted.
-        **({"failures_seen": m.position_class(name)["failures"]} if use else {}),
+        **({"failures_seen": m.position_class(key)["failures"]} if use else {}),
     })
-    out = {**m.position_class(name), "proposals": propose(m, name), "uncertain": data["uncertain"]}
+    out = {**m.position_class(key), "proposals": propose(m, key), "uncertain": data["uncertain"]}
     if use:
         out |= {"unit": unit, "excluded": data["excluded"], "counters": data["counters"], "note": data["note"]}
     return out
@@ -147,9 +148,10 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
     support changing. Returns the proposals made now."""
     from backend.services import strategy as strategy_service
 
+    position_class = m._resolve_class(position_class) or str(position_class or "").strip()
     node = m.s.node(m.org, class_id(m.org, position_class))
     if not node or not node.get("model"):
-        raise Invalid(f"Fit a non-repairable model for {position_class} first.")
+        raise Invalid(f"Fit a non-repairable model for {m._class_label(position_class)} first.")
     model = node["model"]
     life_unit = model_unit(model)
     by_use = life_unit != "days"
@@ -158,10 +160,7 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
         return _rounded(t) if by_use else _in_unit(t, unit)
 
     made = []
-    for position in m.s.nodes(m.org, "Position"):
-        if (position.get("position_class") or "").strip().lower() != position_class.strip().lower() \
-                or position.get("retired"):
-            continue
+    for position in m._class_members(position_class):
         for task in m._tasks_on(position["id"]):
             unit = task["unit"]
             if by_use:
@@ -232,7 +231,7 @@ def refit_stale(m: Maintenance, db) -> list[str]:
         if not model or c["failures"] <= model.get("failures_seen", model.get("failures", 0)):
             continue
         try:
-            fit_class_model(m, db, c["position_class"], model.get("distribution") or "weibull")
+            fit_class_model(m, db, c["class_key"], model.get("distribution") or "weibull")
             done.append(c["position_class"])
         except (Invalid, NotFound):
             continue
@@ -281,6 +280,7 @@ def economics(m: Maintenance, position_class: str, interval: float | None = None
 
     from backend.services import strategy as strategy_service
 
+    position_class = m._resolve_class(position_class) or str(position_class or "").strip()
     node0 = m.s.node(m.org, class_id(m.org, position_class)) or {}
     if node0.get("model") and model_unit(node0["model"]) != "days":
         return _economics_by_use(m, position_class, interval, unit, horizon_years, discount_rate)
@@ -288,9 +288,9 @@ def economics(m: Maintenance, position_class: str, interval: float | None = None
 
     node = m.s.node(m.org, class_id(m.org, position_class))
     if not node or not node.get("model"):
-        raise Invalid(f"Fit a non-repairable model for {position_class} first.")
+        raise Invalid(f"Fit a non-repairable model for {m._class_label(position_class)} first.")
     if node.get("planned_cost") is None or node.get("failure_cost") is None:
-        raise Invalid(f"Set {position_class}'s costs (a planned replacement and a failure) first.")
+        raise Invalid(f"Set {m._class_label(position_class)}'s costs (a planned replacement and a failure) first.")
     if not 0 <= float(discount_rate) < 1 or not 0 < float(horizon_years) <= 100:
         raise Invalid("The discount rate is 0 to 1 (e.g. 0.07) and the horizon 1 to 100 years.")
     if interval is not None and not (math.isfinite(float(interval)) and 0 < float(interval) <= 1e6):
@@ -313,13 +313,11 @@ def economics(m: Maintenance, position_class: str, interval: float | None = None
         return {"plan": label, "interval": interval_text, "per_year": round(yearly, 2),
                 "net_present_cost": round(yearly * annuity, 2)}
 
-    positions = [p for p in m.s.nodes(m.org, "Position")
-                 if (p.get("position_class") or "").strip().lower() == position_class.strip().lower()
-                 and not p.get("retired")]
+    positions = m._class_members(position_class)
     n = len(positions)
     tasks = [t_ for p in positions for t_ in m._tasks_on(p["id"])
              if t_.get("outcome") == "fixed_interval" and t_["unit"] in DAYS_PER]
-    out = {"position_class": node["name"], "positions": n, "horizon_years": h, "discount_rate": r,
+    out = {**m._class_view(node["name"]), "positions": n, "horizon_years": h, "discount_rate": r,
            "options": []}
     if tasks:
         current = sum(per_day(t_["interval"] * DAYS_PER[t_["unit"]]) for t_ in tasks) + \
@@ -353,14 +351,14 @@ def _economics_by_use(m: Maintenance, position_class: str, interval, unit, horiz
 
     node = m.s.node(m.org, class_id(m.org, position_class))
     if node.get("planned_cost") is None or node.get("failure_cost") is None:
-        raise Invalid(f"Set {position_class}'s costs (a planned replacement and a failure) first.")
+        raise Invalid(f"Set {m._class_label(position_class)}'s costs (a planned replacement and a failure) first.")
     if not 0 <= float(discount_rate) < 1 or not 0 < float(horizon_years) <= 100:
         raise Invalid("The discount rate is 0 to 1 (e.g. 0.07) and the horizon 1 to 100 years.")
     model = node["model"]
     life = model_unit(model)
     what_unit = svc._norm_unit(unit) if unit else life
     if what_unit not in DAYS_PER and what_unit != life:
-        raise Invalid(f"{node['name']}'s model counts {life}: a what-if interval is in {life}, or in days, "
+        raise Invalid(f"{m._class_label(node['name'])}'s model counts {life}: a what-if interval is in {life}, or in days, "
                       "weeks, months or years.")
     if interval is not None and not (math.isfinite(float(interval)) and 0 < float(interval) <= 1e9):
         raise Invalid(f"A what-if interval is a positive number of {what_unit}.")
@@ -381,13 +379,11 @@ def _economics_by_use(m: Maintenance, position_class: str, interval, unit, horiz
         return {"plan": label, "interval": interval_text, "per_year": round(yearly, 2),
                 "net_present_cost": round(yearly * annuity, 2)}
 
-    positions = [p for p in m.s.nodes(m.org, "Position")
-                 if (p.get("position_class") or "").strip().lower() == position_class.strip().lower()
-                 and not p.get("retired")]
+    positions = m._class_members(position_class)
     rates, missing = use_per_year(m, positions, life)
     costed = [p for p in positions if p["id"] in rates]
     if not costed:
-        raise Invalid(f"No position of {node['name']} has a usage rate in {life}: give them an operating plan, "
+        raise Invalid(f"No position of {m._class_label(node['name'])} has a usage rate in {life}: give them an operating plan, "
                       f"or record readings on their {life} counters.")
     yearly_use = {p["id"]: rates[p["id"]]["per_year"] for p in costed}
     total = sum(yearly_use.values())
@@ -396,7 +392,7 @@ def _economics_by_use(m: Maintenance, position_class: str, interval, unit, horiz
         """An interval as use at a position: by use as it is, on the calendar through its rate."""
         return value * DAYS_PER[u] / 365.25 * yearly_use[pid] if u in DAYS_PER else value
 
-    out = {"position_class": node["name"], "positions": len(costed), "horizon_years": h, "discount_rate": r,
+    out = {**m._class_view(node["name"]), "positions": len(costed), "horizon_years": h, "discount_rate": r,
            "unit": life, "options": [],
            "use_per_year": [{"position": {"id": p["id"], "name": p["name"]},
                              "per_year": round(rates[p["id"]]["per_year"], 2), "basis": rates[p["id"]]["basis"],

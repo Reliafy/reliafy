@@ -11,6 +11,7 @@ import { getPositionClass } from "../api.js";
 import { explorerPath } from "../assetTree.js";
 import { classPresets, rowInputs, strategiesFor } from "../positionStrategy.js";
 import "./StrategyPane.css";
+import { classKey } from "../positionClass.js";
 
 // A model's Strategy on a position, in the Explorer's table area beside the tree (the Modelling
 // tab): the strategies saved for it there, then the strategy tools that fit the model's type as
@@ -27,11 +28,11 @@ export default function StrategyPane({ link, position, saved = [], how = null, o
   const [cls, setCls] = useState(null);
   useEffect(() => {
     let live = true;
-    const name = (position.position_class || "").trim();
+    const name = classKey(position);
     if (!name) { setCls(null); return undefined; }
     getPositionClass(name).then((c) => live && setCls(c)).catch(() => live && setCls(null));
     return () => { live = false; };
-  }, [position.position_class]);
+  }, [position.position_class, position.class_key]);
   const pre = classPresets(cls);
   const extra = rowInputs(link);
   const modelName = link.model?.name || link.name || "the model";

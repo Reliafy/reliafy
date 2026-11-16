@@ -707,6 +707,7 @@ Classes and makers.
 - A position class is a label on a position for its duty ('Cooling-water duty pump'), set with \
 maintenance positions.create / update position_class. Positions sharing it pool life data, costs, a fitted model \
 and document links; maintenance list.position_classes lists them.
+- A position built from a product's design is of its design position's class, whatever its own text: shown by product and path ('UAV › Propulsion › Motor 1', following renames), with class_key 'design:<design position id>' to pass back as position_class (the label works too). Positions added to a built item later keep their text. get.position gives a position's class; on a design's position, built_as lists the positions built from it. get.location on a carried location gives its location_class (the design location it came from); on a design location, carried_as lists every built unit's copy.
 - An item class (optional) is what KIND OF THING an item or part is, in a tree (Rotating equipment > Pump > \
 Centrifugal > End-suction) with attributes inherited down it (Flow m3/h; Shaft seal: mechanical seal | \
 packing). maintenance list.item_classes; maintenance item_classes.create, update, set_attributes, retire. \

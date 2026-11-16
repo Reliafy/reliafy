@@ -71,14 +71,14 @@ def _counts(rows: list[dict]) -> dict:
 def class_summary(m, position_id: str) -> dict | None:
     """The class's pooled history in numbers: {name, positions, failures, suspensions}, or None."""
     p = m._get(position_id, "Position")
-    name = (p.get("position_class") or "").strip()
-    if not name:
+    key = m._class_key(p)
+    if not key:
         return None
     try:
-        data = m.class_life_data(name)
+        data = m.class_life_data(key)
     except _sv().NotFound:
-        return {"name": name, "positions": 0, "failures": 0, "suspensions": 0}
-    return {"name": data["position_class"], "positions": len({r["position_id"] for r in data["rows"]}),
+        return {"name": m._class_label(key), "class_key": key, "positions": 0, "failures": 0, "suspensions": 0}
+    return {"name": data["position_class"], "class_key": key, "positions": len({r["position_id"] for r in data["rows"]}),
             "failures": data["failures"], "suspensions": data["suspensions"]}
 
 
@@ -88,7 +88,7 @@ def _rows(m, position_id: str, scope: str, texts: set, exclude, per: float) -> l
     sv = _sv()
     p = m._get(position_id, "Position")
     if scope == "class":
-        name = (p.get("position_class") or "").strip()
+        name = m._class_key(p)
         if not name:
             raise sv.Invalid(f"{p['name']} has no position class, so there's no class history to use.")
         try:
@@ -425,7 +425,7 @@ def _save(m, db, p, result, model, rows, modes, data, method, distribution, unit
     saved = models_service.save_model(db, label, dataset, distribution, mapping, [], None, unit, owner_id=owner)
     source = {"scope": "class" if data == "class" else "position", "failures": result["counts"]["failures"],
               "suspensions": result["counts"]["suspensions"], "distribution": saved.distribution_id, "method": "mle"} \
-        | ({"class_name": cls["name"]} if data == "class" and cls else {})
+        | ({"class_name": cls["name"], "class_key": cls.get("class_key") or cls["name"]} if data == "class" and cls else {})
     link = m.link_position_model(p["id"], "model", saved.id, "fitted", modes, saved.name, note, source, replace_link_id)
     return {**link, "fit": {k: result.get(k) for k in ("words", "posterior", "b10", "mean", "counts", "label",
                                                       "interval_label", "method")}}

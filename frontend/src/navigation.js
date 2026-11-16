@@ -88,19 +88,13 @@ export const ENTRIES = [
   { id: "products", label: "Products", to: "/products", needs: "maintenance" },
 
   // Assets: the places you look after (its landing page), the Explorer (one
-  // tree pane over the whole register, with Parts and stock and Classes as
+  // tree pane over the whole register, items included, with Parts and stock and Classes as
   // tabs), and every position's, location's, item's and part's own page. One
   // entry, no children.
   {
     id: "assets", label: "Assets", to: "/asset-register", needs: "maintenance",
     match: ["/asset-register", STRUCTURE_PATH],
   },
-
-  // Items: every serial-numbered thing, and each item's own page
-  // (/asset-register/items/:id wins over Assets by the longest match).
-  // (The bare /asset-register/items is an earlier address that redirects; its
-  // pages below it are each item's own.)
-  { id: "items", label: "Items", to: "/items", needs: "maintenance", match: ["/items", `${ASSETS_PATH}/items`] },
 
   {
     // Maintenance opens on Orders (/maintenance itself redirects there,
@@ -216,24 +210,24 @@ export const ROLES = [
   },
   {
     id: "planner", label: "Maintenance engineer / planner",
-    entries: ["maintenance", "assets", "items", "decisions", "reports"],
+    entries: ["maintenance", "assets", "decisions", "reports"],
     home: ["due"],
   },
   {
     id: "technician", label: "Technician",
-    entries: ["maintenance", "assets", "items"],
+    entries: ["maintenance", "assets"],
     home: ["work-today"],
   },
   {
     // Looks after many items in service (trucks, pumps, aircraft): their
     // forecasts, the items' condition, and what's due on them.
     id: "fleet", label: "Fleet manager",
-    entries: ["decisions", "assets", "items", "maintenance", "modelling", "libraries", "reports"],
+    entries: ["decisions", "assets", "maintenance", "modelling", "libraries", "reports"],
     home: ["fleets", "due"],
   },
   {
     id: "logistics", label: "Supportability / logistics",
-    entries: ["assets", "products", "items", "decisions", "modelling", "libraries", "reports"],
+    entries: ["assets", "products", "decisions", "modelling", "libraries", "reports"],
     home: ["spares", "due"],
   },
   {

@@ -56,7 +56,7 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -
             sub = fields.get("subsystem_rbd_id") or ((fields.get("data") or {}).get("rbd") or {}).get("id")
             nodes.append({"id": _bid(c["id"]), "type": "subsystem" if sub else "component", "label": c["name"], **fields})
             continue
-        cls = (c.get("position_class") or "").strip()
+        cls = m._class_key(c)
         model_node = m.s.node(m.org, class_id(m.org, cls)) if cls else None
         model = (model_node or {}).get("model")
         if model:

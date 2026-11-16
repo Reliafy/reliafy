@@ -617,6 +617,136 @@ class ProductOps:
                          "part": self._part_view(part and part["id"])}}
         return out
 
+    # -- design positions as position classes (and design locations as location classes)
+
+    def _design_classes(self) -> dict[str, dict]:
+        """Every position in a product's design as a class: {design position id: {label
+        (the product and the path down to it: "UAV › Propulsion › Motor 1"), product}}
+        (memoised until the next change). Retired ones too: positions built from them
+        still group under them."""
+        memo = self._memo.get("design_classes")
+        if memo is None:
+            memo = {}
+            for did in self._design_ids():
+                node = self.s.node(self.org, did)
+                if node is None:
+                    continue
+                above = [a for a in self._position_path(did) if a["kind"] == "Position"]
+                top = above[0] if above else node
+                memo[did] = {"label": " › ".join([a["name"] for a in above] + [node["name"]]),
+                             "product": {"id": top["id"], "name": top["name"]}}
+            self._memo["design_classes"] = memo
+        return memo
+
+    def _class_key(self, p: dict) -> str:
+        """A position's class, as the class reads group by it: the design position it
+        implements ("design:<id>"; a design's own position is the class itself), else
+        its free-text position class ("" with none). The design link wins over the
+        text; positions added to a built item later have no link and keep the text."""
+        designs = self._design_classes()
+        if p["id"] in designs:
+            return DESIGN_CLASS + p["id"]
+        dpid = p.get("design_position_id")
+        if dpid and dpid in designs:
+            return DESIGN_CLASS + dpid
+        return (p.get("position_class") or "").strip()
+
+    def _class_label(self, key: str) -> str:
+        """How a class is shown: a design class by its product and path, any other by its text."""
+        if key.startswith(DESIGN_CLASS):
+            got = self._design_classes().get(key[len(DESIGN_CLASS):])
+            return got["label"] if got else key
+        return key
+
+    def _class_view(self, key: str) -> dict:
+        """A class's names: ``position_class`` (shown, and accepted back), ``class_key``
+        (the stable one to pass back: it survives renames), and for a design class the
+        design position and its product (None otherwise)."""
+        dpid = key[len(DESIGN_CLASS):] if key.startswith(DESIGN_CLASS) else None
+        got = dpid and self._design_classes().get(dpid)
+        return {"position_class": self._class_label(key), "class_key": key,
+                "design_position_id": dpid if got else None, "product": got["product"] if got else None}
+
+    def _class_members(self, key: str, retired: bool = False) -> list[dict]:
+        """The positions of a class (live ones; ``retired`` too), never a design's own
+        positions (a design position is the class, not a member of it)."""
+        want = _class_norm(key)
+        if not want:
+            return []
+        designs = self._design_classes()
+        return [p for p in self.s.nodes(self.org, "Position")
+                if p["id"] not in designs and (retired or not p.get("retired"))
+                and _class_norm(self._class_key(p)) == want]
+
+    def _resolve_class(self, text) -> str | None:
+        """The class a text names, as its key: a class key ("design:<id>"), a design
+        position's id, a design class's label (product › … › position), or a free-text
+        class some position has (case and spacing aside). None when nothing matches."""
+        wanted = str(text or "").strip()
+        if not wanted:
+            return None
+        designs = self._design_classes()
+        if wanted.startswith(DESIGN_CLASS) and wanted[len(DESIGN_CLASS):] in designs:
+            return wanted
+        if wanted in designs:
+            return DESIGN_CLASS + wanted
+        norm = _class_norm(wanted)
+        if " › " in wanted:
+            labelled = [d for d, v in designs.items() if _class_norm(v["label"]) == norm]
+            if len(labelled) > 1:
+                raise _sv().Invalid(f"More than one design position is “{wanted}”: pass its class_key "
+                                    f"(e.g. {DESIGN_CLASS}{labelled[0]}) instead.")
+            if labelled:
+                return DESIGN_CLASS + labelled[0]
+        for p in self.s.nodes(self.org, "Position"):
+            if p["id"] in designs:
+                continue
+            key = self._class_key(p)
+            if not key.startswith(DESIGN_CLASS) and _class_norm(key) == norm:
+                return key
+        return None
+
+    def built_as(self, design_position_id: str) -> list[dict]:
+        """The positions built from a design position (its class's members): each with
+        its path and the unit (serial, top position) it's in, by serial."""
+        out = []
+        for p in self.s.inn(self.org, design_position_id, "IMPLEMENTS"):
+            if p["label"] != "Position" or p.get("retired"):
+                continue
+            top = self._top_of(p["id"])
+            path = [a["name"] for a in self._position_path(p["id"])] + [p["name"]]
+            out.append({"id": p["id"], "name": p["name"], "path": " › ".join(path),
+                        "serial": self._built_serial(top), "top_position_id": top["id"]})
+        return sorted(out, key=lambda r: (r["serial"].lower(), r["path"].lower()))
+
+    def _location_class(self, loc: dict) -> dict | None:
+        """A carried location's location class: the design location it was copied from
+        ({design_location_id, label: product › … › location, product}); None for any
+        other location, or when that design location is gone."""
+        dlid = loc.get("design_location_id")
+        dloc = dlid and self.s.node(self.org, dlid, "Location")
+        if not dloc or not dloc.get("design_of"):
+            return None
+        product = self.s.node(self.org, dloc["design_of"]) or {}
+        names = [a["name"] for a in self._location_path(dlid)] + [dloc["name"]]
+        return {"design_location_id": dlid, "label": " › ".join([product.get("name") or ""] + names),
+                "product": {"id": dloc["design_of"], "name": product.get("name") or ""}}
+
+    def carried_as(self, design_location_id: str) -> list[dict]:
+        """A design location across every built unit: each carried copy (live), its unit
+        (serial, top position) and what's there now (positions placed at it, items kept
+        there), by serial."""
+        out = []
+        for loc in self.s.nodes(self.org, "Location"):
+            if loc.get("design_location_id") != design_location_id or loc.get("retired") or not loc.get("carried_by"):
+                continue
+            top = self.s.node(self.org, loc["carried_by"]) or {"id": loc["carried_by"], "name": ""}
+            out.append({"id": loc["id"], "name": loc["name"], "serial": self._built_serial(top),
+                        "unit": {"id": top["id"], "name": top.get("name") or ""},
+                        "positions": len(self._positions_at([loc["id"]])),
+                        "items": len(self._loose_items([loc["id"]]))})
+        return sorted(out, key=lambda r: (r["serial"].lower(), r["unit"]["name"].lower()))
+
     # -- a built position's provenance, for the position and tree reads
 
     def _provenance(self, node: dict) -> dict | None:
@@ -820,4 +950,13 @@ class ProductOps:
 
 
 def _key(text) -> str:
+    return " ".join(str(text or "").lower().split())
+
+
+#: A design class's key: the design position's id after it (``_class_key``).
+DESIGN_CLASS = "design:"
+
+
+def _class_norm(text) -> str:
+    """A class key for matching: case and spacing aside, as class_id treats names."""
     return " ".join(str(text or "").lower().split())

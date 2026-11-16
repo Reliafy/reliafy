@@ -232,15 +232,16 @@ def _task_rows(m: Maintenance, pos: dict, hours_map, start: date, end: date) -> 
 
 def _cost_per_failure(m: Maintenance, pos: dict) -> tuple[float | None, str]:
     """What a failure here costs: the position class's failure cost, else its replacement cost."""
-    name = (pos.get("position_class") or "").strip()
-    if not name:
+    key = m._class_key(pos)
+    name = m._class_label(key)
+    if not key:
         return None, "no failure cost set (give the position a class with a failure cost)"
-    node = m.s.node(m.org, svc.class_id(m.org, name)) or {}
+    node = m.s.node(m.org, svc.class_id(m.org, key)) or {}
     if node.get("failure_cost") is not None:
-        return float(node["failure_cost"]), f"the {node.get('name') or name} class's failure cost"
+        return float(node["failure_cost"]), f"the {name} class's failure cost"
     rc = (node.get("replacement_cost") or {}).get("amount")
     if rc is not None:
-        return float(rc), f"the {node.get('name') or name} class's replacement cost"
+        return float(rc), f"the {name} class's replacement cost"
     return None, f"no failure cost set on the {name} class"
 
 

@@ -73,10 +73,8 @@ def _num(v: float) -> str:
 
 
 def _class_positions(m: Maintenance, name: str) -> list[dict]:
-    wanted = name.strip().lower()
-    return sorted((p for p in m.s.nodes(m.org, "Position")
-                   if (p.get("position_class") or "").strip().lower() == wanted and not p.get("retired")),
-                  key=lambda p: p["name"].lower())
+    """The class's live positions (name: its key; built positions group by their design position)."""
+    return sorted(m._class_members(name), key=lambda p: p["name"].lower())
 
 
 def _calendar_age(m: Maintenance, position_id: str, fitment: dict) -> float:
@@ -274,7 +272,8 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
     node = m.s.node(m.org, class_id(m.org, name)) or {}
     model = node.get("model")
     if not model:
-        raise Invalid(f"Fit a non-repairable model for {name} first (maintenance reliability.fit_class_model).")
+        raise Invalid(f"Fit a non-repairable model for {m._class_label(name)} first "
+                      "(maintenance reliability.fit_class_model).")
     unit = svc._norm_unit(model.get("unit")) or "days"
     calendar = unit in svc.CALENDAR_UNITS
     if (model.get("extras") or {}).get("p") is not None:
@@ -313,7 +312,7 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
 
     word = f"{period}{'s' if periods != 1 else ''}"
     base = {
-        "position_class": name, "status": "ok", "today": today, "period": period, "periods": periods,
+        **m._class_view(name), "status": "ok", "today": today, "period": period, "periods": periods,
         "period_days": days, "horizon_end": starts[-1], "interval_level": LEVEL,
         "model": {k: model.get(k) for k in ("model_id", "distribution", "params", "fitted_on", "failures",
                                             "suspensions")} | {"unit": unit},
@@ -543,7 +542,8 @@ def spares_plan(fc: dict) -> dict:
     for a window starting at each period, with its risk curve."""
     keep = ("part", "unit", "critical", "roles", "positions", "per_job", "usable_on_hand", "min_on_hand",
             "use_instead")
-    return {**{k: fc[k] for k in ("position_class", "today", "period", "periods", "horizon_end")},
+    return {**{k: fc.get(k) for k in ("position_class", "class_key", "design_position_id", "today", "period", "periods",
+                                       "horizon_end")},
             "stocking": fc.get("stocking"),
             "parts": [{**{k: s.get(k) for k in keep}, "stock_by_location": s.get("stock"),
                        **(s.get("stocking") or {}), "demand_per_period": s["per_period"]} for s in fc["spares"]]}
@@ -558,7 +558,7 @@ def digest_spares(m: Maintenance) -> tuple[list[dict], list[dict]]:
         if not c.get("model"):
             continue
         try:
-            fc = class_forecast(m, c["position_class"], "month", 1)
+            fc = class_forecast(m, c["class_key"], "month", 1)
         except Invalid:
             continue
         for s in fc["spares"]:

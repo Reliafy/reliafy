@@ -103,6 +103,15 @@ def _members(m, class_id: str, within: set[str] | None = None) -> tuple[dict, li
     return node, sorted(found, key=lambda x: ((x[0].get("name") or "").lower(), x[0]["id"]))
 
 
+def _position_brief(m, p: dict) -> dict:
+    """A member's position: its duty (position_class) is its class as shown, the design
+    position it was built from (by product and path) or else its free text; class_key
+    is the class's stable name."""
+    key = m._class_key(p)
+    return {"id": p["id"], "name": p.get("name") or "", "tag": p.get("tag") or "",
+            "position_class": m._class_label(key) if key else "", "class_key": key}
+
+
 def _member(m, position_id: str) -> tuple[dict, tuple[dict, dict, dict, dict | None] | None]:
     """One position, and its ``(position, fitment, item, item class)``: the item
     fitted there now, whatever its class (None with no class); None with nothing
@@ -246,8 +255,7 @@ def _scorer(m, db, owners, hidden):
         since = _since(m, item, f)
         age_days = max(_days(since, today), 0)
         doc = position_model(m, fetch, p["id"])
-        row = {"position": {"id": p["id"], "name": p.get("name") or "", "tag": p.get("tag") or "",
-                            "position_class": p.get("position_class") or ""},
+        row = {"position": _position_brief(m, p),
                "item": {"id": item["id"], "name": item.get("name") or "", "serial": item.get("serial") or ""},
                "item_class": cls and {"id": cls["id"], "name": cls["name"]},
                "in_service": since, "age": float(age_days), "model": None, "point": None, "last_reading": None,
@@ -382,8 +390,7 @@ def position(m, db, owners, hidden, position_id: str) -> dict:
     p, member = _member(m, position_id)
     row_for, _, fetch, today, horizons = _scorer(m, db, owners, hidden)
     doc = position_model(m, fetch, position_id)
-    out = {"position": {"id": p["id"], "name": p.get("name") or "", "tag": p.get("tag") or "",
-                        "position_class": p.get("position_class") or ""},
+    out = {"position": _position_brief(m, p),
            "item_class": m._class_brief(member[3]) if member else None, "today": today, "age_unit": AGE_UNIT,
            "horizons": {"labels": horizons["labels"], "values": horizons["values"]},
            "member": row_for(member, with_curves=True) if member else None,

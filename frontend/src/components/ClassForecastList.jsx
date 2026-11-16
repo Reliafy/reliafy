@@ -26,9 +26,11 @@ export default function ClassForecastList() {
         if (!alive) return;
         setClasses(fitted);
         for (const c of fitted) {
-          getClassForecast(c.position_class)
-            .then((f) => alive && setForecasts((s) => ({ ...s, [c.position_class]: f })))
-            .catch(() => alive && setForecasts((s) => ({ ...s, [c.position_class]: { error: true } })));
+          // By its key: a design class's label (product › … › position) can change.
+          const key = c.class_key || c.position_class;
+          getClassForecast(key)
+            .then((f) => alive && setForecasts((s) => ({ ...s, [key]: f })))
+            .catch(() => alive && setForecasts((s) => ({ ...s, [key]: { error: true } })));
         }
       })
       .catch(() => alive && setClasses([]));
@@ -74,17 +76,17 @@ export default function ClassForecastList() {
             </thead>
             <tbody>
               {classes.map((c) => (
-                <tr key={c.position_class} className={linked ? "lib-row" : undefined}
-                    onClick={linked ? () => navigate(classesPath(c.position_class)) : undefined}>
+                <tr key={c.class_key || c.position_class} className={linked ? "lib-row" : undefined}
+                    onClick={linked ? () => navigate(classesPath(c.class_key || c.position_class)) : undefined}>
                   <td>
                     {linked ? (
-                      <Link className="lib-name lib-link" to={classesPath(c.position_class)} onClick={(e) => e.stopPropagation()}>
+                      <Link className="lib-name lib-link" to={classesPath(c.class_key || c.position_class)} onClick={(e) => e.stopPropagation()}>
                         {c.position_class}
                       </Link>
                     ) : <span className="lib-name">{c.position_class}</span>}
                   </td>
                   <td className="lib-n lib-opt">{c.positions}</td>
-                  <td className="lib-n">{cell(c.position_class)}</td>
+                  <td className="lib-n">{cell(c.class_key || c.position_class)}</td>
                   <td className="lib-date lib-opt">{c.model.distribution || "—"}</td>
                 </tr>
               ))}

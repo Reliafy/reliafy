@@ -14,7 +14,7 @@ test("a position's dialog counts what goes, in plain words", () => {
   assert.equal(deleteTitle(propulsion), "Delete “Propulsion” and everything inside it?");
   assert.deepEqual(deleteLines(propulsion), [
     "12 positions inside it",
-    "4 fitted items kept, unfitted: they stay in Items",
+    "4 fitted items kept, unfitted: they stay on the Assets list",
     "9 scheduled tasks: no longer scheduled",
     "3 open work orders: cancelled",
     "2 functions and 5 failure modes (its RCM)",
@@ -38,8 +38,8 @@ test("a location counts the places inside and the positions there", () => {
   assert.deepEqual(deleteLines(site), [
     "2 locations inside it",
     "4 positions there, with everything inside them",
-    "1 fitted item kept, unfitted: it stays in Items (with the 2 positions on it)",
-    "1 item stored there kept, with no place now: it stays in Items",
+    "1 fitted item kept, unfitted: it stays on the Assets list (with the 2 positions on it)",
+    "1 item stored there kept, with no place now: it stays on the Assets list",
     "Stock recorded there: kept",
   ]);
   assert.equal(deleteButton(site), "Delete 3 locations and 4 positions");

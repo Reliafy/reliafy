@@ -19,7 +19,7 @@ import {
 import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
 import { itemWhere } from "../maintenanceLocations.js";
 import { explorerPath } from "../assetTree.js";
-import { EXPLORER_LABEL } from "../navigation.js";
+import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import { MeasurementsCard } from "./MaintenancePosition.jsx";
 import { ItemKindCard, useKinds } from "../components/MaintenanceItemClasses.jsx";
@@ -29,7 +29,7 @@ import "./Maintenance.css";
 import "./MaintenanceProducts.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
-import { ITEMS_PATH, itemTreePath, productPath } from "../products.js";
+import { itemTreePath, productPath } from "../products.js";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -53,7 +53,7 @@ export default function MaintenanceItem() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !item) return <div className="app"><LoadFailed header error={error} notFound="Item not found." to={ITEMS_PATH} label="Open Items" /></div>;
+  if (error && !item) return <div className="app"><LoadFailed header error={error} notFound="Item not found." to={EXPLORER_PATH} label="Open the Explorer" /></div>;
   if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const plate = Object.entries(item.nameplate || {});
@@ -62,8 +62,8 @@ export default function MaintenanceItem() {
     <div className="app">
       <PageTitle name={item?.name} />
       <PageHeader
-        // An item's page is under Items; one built from a product names it, and its tree.
-        crumbs={[{ label: "Items", to: ITEMS_PATH },
+        // An item's page is under Assets; one built from a product names it, and its tree.
+        crumbs={[{ label: "Assets", to: "/asset-register" },
           item.product ? { label: item.product.name, to: productPath(item.product.id, "items") }
             // In the Explorer: the position it's fitted to, else where it's kept.
             : { label: EXPLORER_LABEL, to: item.fitted_to ? explorerPath("positions", { sel: item.fitted_to.id })
