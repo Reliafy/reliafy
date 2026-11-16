@@ -208,12 +208,13 @@ class PositionModelOps:
         """The position class's fitted model ({position_class, model_id, ...}), or None."""
         sv = _sv()
         p = self._get(position_id, "Position")
-        name = (p.get("position_class") or "").strip()
+        name = self._class_key(p)
         if not name:
             return None
         node = self.s.node(self.org, sv.class_id(self.org, name)) or {}
         model = node.get("model")
-        return {"position_class": node.get("name") or name, **model} if model and model.get("model_id") else None
+        return {"position_class": self._class_label(node.get("name") or name), "class_key": node.get("name") or name,
+                **model} if model and model.get("model_id") else None
 
     def class_models(self) -> dict:
         """Each position class with a fitted model: {class name: {model_id, fitted_on,
@@ -815,7 +816,7 @@ def stale(m, link: dict) -> str | None:
     sv = _sv()
     try:
         if src.get("scope") == "class":
-            rows = m.class_life_data(src.get("class_name") or "")["rows"]
+            rows = m.class_life_data(src.get("class_key") or src.get("class_name") or "")["rows"]
         elif src.get("scope") == "position":
             rows = m.life_data(link["position_id"])
         else:
@@ -1067,6 +1068,11 @@ def link_saved(m, db, owners, hidden, position_id: str, model_type: str, model_i
                                  None, replace_link_id)
 
 
+def cm_label(m, p: dict) -> str:
+    """A position's class as shown (product › … › position for a design class)."""
+    return m._class_label(m._class_key(p))
+
+
 def link_from_class(m, db, owners, hidden, position_id: str, failure_mode_ids=None, note: str = "",
                     replace_link_id: str | None = None) -> dict:
     """Attach the position class's fitted model to the position."""
@@ -1074,14 +1080,14 @@ def link_from_class(m, db, owners, hidden, position_id: str, failure_mode_ids=No
     p = m._get(position_id, "Position")
     cm = m.class_model_of(position_id)
     if cm is None:
-        if not (p.get("position_class") or "").strip():
+        if not m._class_key(p):
             raise sv.Invalid(f"{p['name']} has no position class: set one, or assign a saved model.")
-        raise sv.Invalid(f"The class {p['position_class']} has no fitted model yet: fit one from its pooled history "
+        raise sv.Invalid(f"The class {cm_label(m, p)} has no fitted model yet: fit one from its pooled history "
                          "(Fit from history…, or maintenance reliability.fit_class_model).")
     doc = fetcher(db, owners, hidden)("model", cm["model_id"])
     return m.link_position_model(position_id, "model", cm["model_id"], "class", failure_mode_ids,
                                  doc.name if doc is not None else f"{cm['position_class']} (class model)", note,
-                                 {"class_name": cm["position_class"]}, replace_link_id)
+                                 {"class_name": cm["position_class"], "class_key": cm["class_key"]}, replace_link_id)
 
 
 def _rows_for(m, rows: list[dict], texts: set[str]) -> list[dict]:
@@ -1139,13 +1145,14 @@ def fit_position_model(m, db, position_id: str, distribution: str = "weibull", f
 
     needed = 1 if distribution == "exponential" else loop.MIN_FAILURES
     rows, failures = usable(own)
-    used, class_name = own_scope, ""
+    used, class_name, class_key = own_scope, "", ""
     class_failures = None
     if scope == "class" or (scope == "auto" and failures < needed):
-        class_name = (p.get("position_class") or "").strip()
-        if class_name:
+        class_key = m._class_key(p)
+        class_name = m._class_label(class_key)
+        if class_key:
             try:
-                crows, class_failures = usable(m.class_life_data(class_name)["rows"])
+                crows, class_failures = usable(m.class_life_data(class_key)["rows"])
             except sv.NotFound:
                 crows, class_failures = [], 0
             if scope == "class" or class_failures >= needed:
@@ -1179,7 +1186,8 @@ def fit_position_model(m, db, position_id: str, distribution: str = "weibull", f
                                               buf.getvalue().encode(), m.org)
     model = models_service.save_model(db, name, dataset, distribution, mapping, [], None, "days", owner_id=m.org)
     source = {"scope": used, "failures": failures, "suspensions": len(rows) - failures,
-              "distribution": model.distribution_id} | ({"class_name": class_name} if used == "class" else {})
+              "distribution": model.distribution_id} | (
+                  {"class_name": class_name, "class_key": class_key} if used == "class" else {})
     return m.link_position_model(position_id, "model", model.id, "fitted", modes, model.name, note, source,
                                  replace_link_id)
 

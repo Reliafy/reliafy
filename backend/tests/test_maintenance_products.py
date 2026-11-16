@@ -270,8 +270,10 @@ def test_the_rollup_shows_each_item_and_pools_the_life_data(m):
     assert {x["serial"] for x in life["rows"]} == {"0007", "0008", "0009"}
     failed = [x for x in life["rows"] if x["c"] == 0]
     assert [x["x"] for x in failed] == [90, 90] and failed[0]["failure_mode"] == "Bearing worn"
-    # The same row shape as class_life_data (which pools by position class).
-    cls = m.class_life_data("Motor")
+    # The same row shape as class_life_data (which pools by position class: here the design
+    # position Motor 1 is the class of the positions built from it).
+    cls = m.class_life_data(f"design:{ids['motor']}")
+    assert len(cls["rows"]) == 5 and cls["position_class"] == "UAV Mk2 › Propulsion › Motor 1"
     assert {k for k in cls["rows"][0]} <= {k for k in life["rows"][0]}
     # The product's top rolls up too: one row per item, nothing fitted at the design itself.
     top = m.design_rollup(ids["root"])

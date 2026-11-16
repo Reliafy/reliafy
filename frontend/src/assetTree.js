@@ -469,7 +469,7 @@ export function rowText(r) {
   if (isRcmRow(r)) return rcmRowText(r);
   if (isMeasRow(r) || isModelRow(r)) return r.ref.search;
   const p = r.ref;
-  return [p.name, p.tag, p.item?.name, p.item?.serial, p.serial, p.position_class, p.item_class?.name,
+  return [p.name, p.tag, p.item?.name, p.item?.serial, p.serial, p.position_class, p.class_label, p.item_class?.name,
     p.manufacturer, p.model, p.part_number]
     .filter(Boolean).join(" ").toLowerCase();
 }

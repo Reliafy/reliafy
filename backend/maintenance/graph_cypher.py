@@ -602,12 +602,16 @@ WHERE w.status IN ['open', 'planned', 'in_progress', 'waiting'] AND NOT coalesce
 RETURN p.id AS id, p.name AS position, collect(w.number) AS open_work_orders
 ORDER BY position"""},
     {"name": "failures_by_class",
-     "question": "Failures in the last 3 years by position class, from the fitment history.",
+     "question": "Failures in the last 3 years by position class, from the fitment history (a position built "
+                 "from a product's design is of its design position's class, shown by product and path).",
      "params": {},
      "cypher": """MATCH (p:Position {ns: $ns, org: $org})<-[:AT]-(f:Fitment)
 WHERE f.end_reason = 'failure' AND NOT coalesce(f.voided, false)
   AND f.to >= toString(date() - duration({years: 3}))
-RETURN CASE WHEN p.position_class = '' THEN '(no class)' ELSE p.position_class END AS position_class,
+OPTIONAL MATCH (p)-[:IMPLEMENTS]->(d:Position)
+WITH f, p, d, CASE WHEN d IS NULL THEN [] ELSE [(d)-[:PART_OF*]->(a:Position) | a.name] END AS above
+RETURN CASE WHEN d IS NOT NULL THEN reduce(s = d.name, n IN above | n + ' › ' + s)
+            WHEN coalesce(p.position_class, '') = '' THEN '(no class)' ELSE p.position_class END AS position_class,
        count(f) AS failures, count(DISTINCT p) AS positions
 ORDER BY failures DESC, position_class"""},
     {"name": "critical_spares_short",

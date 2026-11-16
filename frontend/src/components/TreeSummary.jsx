@@ -11,7 +11,8 @@ import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
 import { annualLsa, annualText, nextVisit } from "../lsaTab.js";
 import { explorerHere } from "../products.js";
-import { getOperatingPlan } from "../api.js";
+import { getMaintenanceLocation, getOperatingPlan } from "../api.js";
+import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../positionClass.js";
 import { hoursWords, planWords } from "../operatingPlan.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
@@ -25,8 +26,11 @@ import { hoursWords, planWords } from "../operatingPlan.js";
 // A product's design (`design`) has no maintenance done to it: no status
 // chips, nothing fitted or located, no work, measurements or due dates, only
 // its class, where it's placed in the product's layout, operating context,
-// what's inside and its documents; a design location (the layout's rows) says
-// what it is and what's placed there. A product's
+// what's inside, its documents and the positions built from it ("Built as …",
+// links only: fleet views stay on Assets); a design location (the layout's rows)
+// says what it is, what's placed there and the copies built items carry. A
+// position built from a product shows its design position as its class, and a
+// location a built item carries its design location (positionClass.js). A product's
 // own row passes its facts (`facts`) and its sections (`children`: the items
 // built, their failure reports, its analyses) in their place.
 
@@ -59,7 +63,10 @@ function Facts({ r, display, fittedFrom, design = false }) {
     rows.push(["What", "Part of the product's physical layout: where its positions sit. Items built from it carry a copy."]);
   }
   if (r.type === "pos" && !design) {
-    rows.push(["Position class", p.position_class || quiet("None")]);
+    // Built from a product's design: its design position is its class (by product and path).
+    rows.push(["Position class", isDesignClass(p) ? (
+      <>{classLabel(p)}<span className="td-quiet td-sub">From its product's design</span></>
+    ) : (p.position_class || quiet("None"))]);
     rows.push(["Fitted", p.item ? (
       <>
         <Link to={`/asset-register/items/${p.item.id}`}>{p.item.name}</Link>
@@ -104,6 +111,67 @@ function Facts({ r, display, fittedFrom, design = false }) {
       </dl>
     </Section>
   );
+}
+
+// A design position on its product's page: the positions built from it (its class's
+// members), each a link to it on its item. Fleet views of them stay on Assets.
+function BuiltAs({ state }) {
+  const built = state.data?.built_as;
+  if (!built) return null;
+  return (
+    <Section title={builtAsTitle(built.length)} count={null}
+             tip="Every position built from this one is of its class: fleet views group them on Assets.">
+      {built.length === 0 ? <p className="td-quiet">Build an item from the product and its copy of this position shows here.</p> : (
+        <ul className="td-rows">
+          {built.map((b) => (
+            <Row key={b.id} title={<Link to={`/asset-register/positions/${b.id}`}>{b.serial ? `Serial ${b.serial}` : b.name}</Link>}
+                 meta={b.path} />
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
+// A location's class, read from the location: on a design location, the copies the
+// built units carry ("Carried as 2 locations", each a link); on a carried location,
+// the design location it was copied from.
+function LocationClass({ r, design }) {
+  const [state, setState] = useState({ key: null, data: null });
+  const wanted = r.type === "loc" && (design || !!r.ref.carried_by);
+  useEffect(() => {
+    if (!wanted) return undefined;
+    let live = true;
+    getMaintenanceLocation(r.key).then((d) => live && setState({ key: r.key, data: d }), () => live && setState({ key: r.key, data: null }));
+    return () => { live = false; };
+  }, [r.key, wanted]);
+  const data = wanted && state.key === r.key ? state.data : null;
+  if (!data) return null;
+  if (design && data.carried_as) {
+    const rows = data.carried_as;
+    return (
+      <Section title={carriedAsTitle(rows.length)}>
+        {rows.length === 0 ? <p className="td-quiet">Build an item from the product and its copy of this location shows here.</p> : (
+          <ul className="td-rows">
+            {rows.map((c) => (
+              <Row key={c.id} title={<Link to={`/asset-register/locations/${c.id}`}>{c.serial ? `Serial ${c.serial}` : c.unit.name}</Link>}
+                   meta={[c.unit.name, n(c.positions, "position"), c.items ? n(c.items, "item") : null].filter(Boolean).join(" · ")} />
+            ))}
+          </ul>
+        )}
+      </Section>
+    );
+  }
+  if (!design && data.location_class) {
+    return (
+      <Section title="Location class">
+        <ul className="td-rows">
+          <Row title={data.location_class.label} meta="From its product's design: the same place on every item built from it" />
+        </ul>
+      </Section>
+    );
+  }
+  return null;
 }
 
 // A row of a list: an icon or nothing, the title, a meta line, chips at the right.
@@ -431,6 +499,8 @@ export default function TreeSummary({
       )}
       {facts || <Facts r={row} display={display} design={design} fittedFrom={row.type === "pos" ? position.data?.fitted : null} />}
       {children}
+      {row.type === "pos" && design && <BuiltAs state={position} />}
+      {row.type === "loc" && <LocationClass r={row} design={design} />}
       {row.type === "pos" && !design && <Work r={row} state={position} today={today} fullPage={fullPage} logEvent={logEvent} />}
       {(row.type === "pos" || row.type === "item") && !design && <OperatingPlanLine r={row} />}
       {row.type === "pos" && (

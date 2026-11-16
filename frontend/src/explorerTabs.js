@@ -49,6 +49,8 @@
 // the others. A class shows its one tab without the address naming it; walking
 // on from it to a position keeps that tab (tabCarried).
 
+import { classKey, classLabel } from "./positionClass.js";
+
 // Derryn, 8 Nov 2026: hidden for now, may come back. Off, `tabsFor` leaves out
 // Parts and stock and Classes on every row (an asset's, a product's design),
 // so a `?tab=parts` or `?tab=classes` address shows Summary, and the old pages'
@@ -230,13 +232,18 @@ export function partsInBranch(parts = [], branch, { design = false } = {}) {
 }
 
 // The position classes used in a branch, with how many of its positions have
-// each: [{position_class, here}], A–Z.
+// each: [{position_class (as shown), class_key, here}], A–Z. A position built
+// from a product's design counts under its design position (positionClass.js).
 export function classesInBranch(display, branch) {
   const count = new Map();
   for (const k of branch.pos) {
-    const c = display.rows.get(k)?.ref?.position_class;
-    if (c) count.set(c, (count.get(c) || 0) + 1);
+    const ref = display.rows.get(k)?.ref;
+    const key = classKey(ref);
+    if (!key) continue;
+    const got = count.get(key) || { position_class: classLabel(ref), class_key: key, here: 0 };
+    got.here += 1;
+    count.set(key, got);
   }
-  return [...count].map(([position_class, here]) => ({ position_class, here }))
+  return [...count.values()]
     .sort((a, b) => a.position_class.localeCompare(b.position_class, "en", { numeric: true, sensitivity: "base" }));
 }

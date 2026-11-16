@@ -147,8 +147,8 @@ export function ClassStocking({ data, name, serviceLevel, reviewDays, onOptions,
         </>
       )}
       <div className="maint-row" style={{ flexWrap: "wrap", gap: "0.5rem" }}>
-        <button className="secondary" onClick={() => saveText(stockingCsv(data.spares, { positionClass: name, period: data.period }),
-          fileName(name))}>Export stocking plan (CSV)</button>
+        <button className="secondary" onClick={() => saveText(stockingCsv(data.spares, { positionClass: data.position_class || name, period: data.period }),
+          fileName(data.position_class || name))}>Export stocking plan (CSV)</button>
       </div>
       {meta.note && <p className="lib-date">{meta.note}</p>}
       {editing && <PartStockingModal spare={editing} onClose={() => setEditing(null)}
