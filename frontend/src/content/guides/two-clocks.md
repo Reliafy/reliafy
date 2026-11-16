@@ -66,7 +66,8 @@ low, typical and high rates side by side.
 ## Use it
 
 - **In a block diagram**, pick the saved model for a block and set its rate.
-  The block is the life at that rate.
+  The block is the life at that rate, and the diagram's 90% band includes the
+  model's own uncertainty, the worth of the second clock too.
 - **In the Explorer**, link the model to a position.
   - When the second clock is **starts** or **runs**, the rate comes from the
     position's **operating plan**: its runs and hours over the next 12 months

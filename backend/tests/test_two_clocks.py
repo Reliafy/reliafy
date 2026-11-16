@@ -183,17 +183,12 @@ def rbd_db(monkeypatch):
     return d
 
 
-@pytest.mark.parametrize("native", [False, True])
-def test_rbd_block_at_a_rate_matches_a_hand_calculation(rbd_db, monkeypatch, native):
+def test_rbd_block_at_a_rate_matches_a_hand_calculation(rbd_db):
     from backend.services import rbd_analysis as ra
     from backend.services import rbd_two_clocks, rbds, repy_compat
 
-    if native and not repy_compat.native_usage_blocks():
-        # RePyability 0.19 still analyses a LifeAtUsage (it has sf/ff/random); the native block adds saving
-        # and the lever. Forced here so the native path is covered before the pin moves.
-        monkeypatch.setattr(repy_compat, "native_usage_blocks", lambda: True)
-    elif not native:
-        monkeypatch.setattr(repy_compat, "native_usage_blocks", lambda: False)
+    # RePyability 0.19.1, the pin, takes the life at a rate as a block itself (no stand-in).
+    assert repy_compat.native_usage_blocks()
     doc = _save_two_clock(rbd_db)
     alpha, beta, k = (p["value"] for p in doc.results["params"])
     block = {"source": "saved", "kind": "two_clock", "modelId": doc.id, "usage_rate": 0.125}
@@ -205,7 +200,65 @@ def test_rbd_block_at_a_rate_matches_a_hand_calculation(rbd_db, monkeypatch, nat
     three = ra.analyze(_diagram(block, n=3), resolve_model=resolve_model, at_times=[1000.0])
     assert three["at"]["sf"][0] == pytest.approx(hand[0] ** 3, rel=1e-6)
     life = rbd_two_clocks.block_life(block, "Turbine", resolve_model)
-    assert (type(life).__name__ == "LifeAtUsage") == native
+    assert isinstance(life, sp.LifeAtUsage) and life.rate == 0.125
+
+
+def test_rbd_block_goes_to_repyability_as_the_life_at_a_rate(rbd_db, monkeypatch):
+    """The diagram RePyability is given holds the LifeAtUsage itself (its native block), and an
+    older RePyability without it is refused in words rather than given a stand-in."""
+    import repyability
+    from repyability.rbd import _usage
+
+    from backend.services import rbd_analysis as ra
+    from backend.services import rbds, repy_compat
+
+    doc = _save_two_clock(rbd_db)
+    block = {"source": "saved", "kind": "two_clock", "modelId": doc.id, "usage_rate": 0.125}
+    _, resolve_model = rbds.resolvers(rbd_db, OWNER)
+    given = []
+    real = repyability.NonRepairableRBD.__init__
+
+    def spy(self, edges, reliabilities, *args, **kwargs):
+        given.extend(v for v in dict(reliabilities).values() if _usage.is_life_at_usage(v))
+        real(self, edges, reliabilities, *args, **kwargs)
+
+    monkeypatch.setattr(repyability.NonRepairableRBD, "__init__", spy)
+    ra.analyze(_diagram(block), resolve_model=resolve_model, at_times=[1000.0])
+    assert given and all(life.rate == 0.125 for life in given)
+
+    monkeypatch.setattr(repy_compat, "native_usage_blocks", lambda: False)
+    with pytest.raises(ra.AnalysisError, match="RePyability 0.19.1"):
+        ra.analyze(_diagram(block), resolve_model=resolve_model, at_times=[1000.0])
+
+
+def test_rbd_band_carries_the_two_clock_fits_uncertainty(rbd_db):
+    """The confidence band draws the two-clock fit's parameters, k included: the block is
+    uncertain (not fixed), the band holds the point curve, and a faster rate (where k
+    matters more) widens it."""
+    from backend.services import rbd_analysis as ra
+    from backend.services import rbds
+
+    doc = _save_two_clock(rbd_db)
+    _, resolve_model = rbds.resolvers(rbd_db, OWNER)
+
+    def run(rate):
+        block = {"source": "saved", "kind": "two_clock", "modelId": doc.id, "usage_rate": rate}
+        return ra.analyze(_diagram(block), resolve_model=resolve_model, at_times=[5000.0],
+                          band={"level": 0.9, "times": [5000.0]})
+
+    out = run(0.125)
+    band = out["band"]
+    assert [u["id"] for u in band["uncertain"]] == ["a"] and not band["fixed"]
+    (row,) = band["targets"]["reliability"]
+    assert row["lower"] < out["at"]["sf"][0] < row["upper"]
+    # The draws agree with SurPyval's own 90% bounds on the life at the rate (delta method).
+    live = resolve_model(doc.id)["model"]
+    (lo, hi), = live.at_usage(0.125).cb(np.array([5000.0]), on="sf", alpha_ci=0.1)
+    assert row["lower"] == pytest.approx(lo, abs=0.01) and row["upper"] == pytest.approx(hi, abs=0.01)
+    fast = run(0.3)["band"]["targets"]["reliability"][0]
+    slow = run(0.0)["band"]["targets"]["reliability"][0]
+    assert slow["upper"] - slow["lower"] > 0.0 and fast["upper"] - fast["lower"] > 0.0
+    assert fast["value"] < slow["value"]
 
 
 def test_rbd_block_without_a_rate_says_to_set_one(rbd_db):
