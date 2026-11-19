@@ -20,6 +20,7 @@ import { NOFAIL_HINT } from "./rcmWorksheet.js";
 import { MEAS_CHIPS, isMeasRow } from "./explorerMeasurements.js";
 import { MODEL_CHIPS, isModelRow } from "./explorerModels.js";
 import { flattenClasses } from "./maintenanceItemClasses.js";
+import { riskText } from "./joint.js";
 
 // The outline's own model (open to a level, flatten, pinned rows, the drawn
 // window, type-ahead), shared with the RCM worksheet.
@@ -219,8 +220,9 @@ const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" })
 export const byName = (a, b) => collator.compare(a.name || "", b.name || "");
 
 // A row's own status: its overdue tasks, open work orders, readings past an
-// alarm limit, open failure reports (the Failure reports tab), and its next due.
-const blank = () => ({ overdue: 0, open_work: 0, alarms: 0, open_reports: 0, next_due: null, not_analysed: 0 });
+// alarm limit, open failure reports (the Failure reports tab), tasks that can't
+// be scheduled yet (by use, with no counter to count from), and its next due.
+const blank = () => ({ overdue: 0, open_work: 0, alarms: 0, open_reports: 0, unscheduled: 0, next_due: null, not_analysed: 0 });
 
 // The last group in Locations: what's at no location. On a product's page,
 // the positions not placed in its layout yet; on an item's tree, those not
@@ -453,6 +455,7 @@ function rollUp(rows, roots) {
       sum.open_work += s.open_work;
       sum.alarms += s.alarms;
       sum.open_reports += s.open_reports;
+      sum.unscheduled += s.unscheduled;
       sum.not_analysed += s.not_analysed;
       sum.positions += s.positions + (c.type === "pos" ? 1 : 0);
       sum.empty += s.empty + (c.type === "pos" && c.ref.position_class && !c.ref.item ? 1 : 0);
@@ -595,17 +598,75 @@ export function statusWords(r) {
   add("open", r.own.open_work, "open work order", undefined, "");
   add("alarm", r.own.alarms, "reading past an alarm limit", "readings past an alarm limit", "");
   add("report", r.own.open_reports, "open failure report", undefined, "");
+  const unscheduled = (n, where) => n && out.push({
+    kind: "unscheduled", text: `${n === 1 ? "1 task" : `${n} tasks`}${where} can't be scheduled yet`, inside: !!where });
+  unscheduled(r.own.unscheduled || 0, "");
   if (r.kids.length) {
     const inner = {
       overdue: r.sum.overdue - r.own.overdue, open: r.sum.open_work - r.own.open_work, alarm: r.sum.alarms - r.own.alarms,
-      report: r.sum.open_reports - r.own.open_reports,
+      report: r.sum.open_reports - r.own.open_reports, unscheduled: (r.sum.unscheduled || 0) - (r.own.unscheduled || 0),
     };
     add("overdue", inner.overdue, "overdue", "overdue", " inside");
     add("open", inner.open, "open work order", undefined, " inside");
     add("alarm", inner.alarm, "alarm", undefined, " inside");
     add("report", inner.report, "open failure report", undefined, " inside");
+    unscheduled(inner.unscheduled, " inside");
   }
   return out;
+}
+
+// What would put a position's own unschedulable tasks on dates, from why each
+// has no date (its limits' notes, e.g. "needs a hours counter on the
+// position"): "add an hours counter", "record its counter readings", or null
+// when there's no one fix for them all. `tasks`: the position's tasks (and its
+// item's) as the position read gives them.
+export function scheduleFix(tasks = []) {
+  const fixes = new Set();
+  for (const t of tasks || []) {
+    if (t.next_due || t.on_event || t.out_of_service) continue;
+    const note = (t.limits || []).map((l) => l.note).find(Boolean);
+    if (!note) continue;
+    const counter = /needs an? (.+?) counter/.exec(note);
+    if (counter) fixes.add(`add ${/^([aeiou]|hour)/i.test(counter[1]) ? "an" : "a"} ${counter[1]} counter`);
+    else if (/needs counter readings/.test(note)) fixes.add("record its counter readings");
+    else fixes.add(null);
+  }
+  return fixes.size === 1 ? [...fixes][0] : null;
+}
+
+// Its risk now as the Condition monitoring tab gives it (GET
+// /positions/:id/condition), as one status word: "High risk: 66% in 90 days"
+// (50% or more over the tab's middle horizon) or "Medium risk: 15% in 90 days"
+// (10% or more): the tab's own high and medium (joint.js riskTone). Null when
+// it isn't scored or the risk is low.
+export function riskWord(read) {
+  const m = read?.member;
+  if (!read?.model || !m?.scored || !Array.isArray(m.risk)) return null;
+  const labels = read.horizons?.labels || [];
+  const col = labels.length > 1 ? 1 : 0;
+  const p = m.risk[col];
+  if (p == null || !Number.isFinite(Number(p)) || p < 0.1) return null;
+  return { kind: "risk", level: p >= 0.5 ? "high" : "medium",
+    text: `${p >= 0.5 ? "High" : "Medium"} risk: ${riskText(p)} in ${labels[col] || "the next while"}` };
+}
+
+// The Summary badge's words, all of them: the row's status (statusWords), its
+// tasks that can't be scheduled with what would fix them, and its risk now.
+// `risk`: undefined while the read is out, null when it failed (or isn't
+// asked for), else the read. `clear` (the green "nothing overdue…") only once
+// every source has answered and nothing applies: never while the risk is
+// still coming, and never when it couldn't be read.
+export function summaryStatus(r, { risk = null, riskAsked = false, tasks = null } = {}) {
+  const words = statusWords(r);
+  const fix = r.own.unscheduled ? scheduleFix(tasks || []) : null;
+  if (fix) {
+    const own = words.find((w) => w.kind === "unscheduled" && !w.inside);
+    if (own) own.text = `${own.text}: ${fix}`;
+  }
+  const word = risk ? riskWord(risk) : null;
+  if (word) words.push(word);
+  const answered = !riskAsked || (risk !== undefined && risk !== null);
+  return { words, clear: !words.length && answered, failed: riskAsked && risk === null };
 }
 
 // "84 positions · 4 empty" for what's inside a row ("" for nothing).

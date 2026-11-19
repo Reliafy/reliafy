@@ -6,12 +6,12 @@ import ClampLines from "./ui/ClampLines.jsx";
 import { fmtDate, fmtDated } from "./MaintenanceParts.jsx";
 import { RowIcon } from "./TreePane.jsx";
 import OperatingContextCard from "./OperatingContextCard.jsx";
-import { byName, insideWords, statusWords } from "../assetTree.js";
+import { byName, insideWords, summaryStatus } from "../assetTree.js";
 import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
 import { annualLsa, annualText, nextVisit } from "../lsaTab.js";
 import { explorerHere } from "../products.js";
-import { getMaintenanceLocation, getOperatingPlan } from "../api.js";
+import { getMaintenanceLocation, getOperatingPlan, getPositionCondition } from "../api.js";
 import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../positionClass.js";
 import { hoursWords, planWords } from "../operatingPlan.js";
 
@@ -39,12 +39,50 @@ const STATUS = { open: "Open", planned: "Planned", in_progress: "In progress", w
 const n = (k, one, many = `${one}s`) => `${k.toLocaleString("en-AU")} ${k === 1 ? one : many}`;
 const quiet = (text) => <span className="td-quiet">{text}</span>;
 
-function StatusChips({ r }) {
-  const words = statusWords(r);
+// A position's risk now, the numbers its Condition monitoring tab shows (without the
+// curves): undefined while it's read, null when it couldn't be, else the read.
+function useRiskNow(positionId, version) {
+  const [state, setState] = useState({ key: null, read: undefined });
+  useEffect(() => {
+    if (!positionId) return undefined;
+    let live = true;
+    getPositionCondition(positionId, { curves: false })
+      .then((d) => live && setState({ key: positionId, read: d }), () => live && setState({ key: positionId, read: null }));
+    return () => { live = false; };
+  }, [positionId, version]);
+  return state.key === positionId ? state.read : undefined;
+}
+
+const TONE = { open: "accent", risk: "warning", unscheduled: "warning" };
+// Where a word's chip goes: the tab that explains it (and is where it's dealt with).
+const TAB = { risk: "condition", unscheduled: "measurements" };
+
+// The status badge: what's overdue, open, past an alarm, can't be scheduled
+// and at risk now (summaryStatus). The green "nothing…" only once every part
+// has answered and none applies.
+function StatusChips({ r, position, version }) {
+  const { pathname, search } = useLocation();
+  const asked = r.type === "pos";
+  const risk = useRiskNow(asked ? r.key : null, version);
+  const tasks = position?.data ? [...(position.data.tasks || []), ...(position.data.item_tasks || [])] : null;
+  const { words, clear, failed } = summaryStatus(r, { risk, riskAsked: asked, tasks });
+  const chip = (w, i) => {
+    const tone = TONE[w.kind] || "danger";
+    const text = tone === "warning" ? `! ${w.text}` : w.text;
+    const tab = !w.inside && TAB[w.kind];
+    if (!tab) return <Chip key={i} tone={tone}>{text}</Chip>;
+    return (
+      <Link key={i} className="td-status-go" to={explorerHere(pathname, search, { sel: r.key, tab })}
+            title={w.kind === "risk" ? "Its risk now, on the Condition monitoring tab" : "Its counters and readings, on the Measurements tab"}>
+        <Chip tone={tone}>{text}</Chip>
+      </Link>
+    );
+  };
   return (
     <div className="chip-row td-status">
-      {words.length ? words.map((w, i) => <Chip key={i} tone={w.kind === "open" ? "accent" : "danger"}>{w.text}</Chip>)
-        : <Chip tone="success">✓ Nothing overdue, no open work and no alarms{r.kids.length ? ", here or inside" : ""}</Chip>}
+      {words.map(chip)}
+      {clear && <Chip tone="success">✓ Nothing overdue, no open work and no alarms{r.kids.length ? ", here or inside" : ""}</Chip>}
+      {!words.length && failed && <Chip>Its risk now couldn't be read: open Condition monitoring to try again</Chip>}
     </div>
   );
 }
@@ -486,6 +524,7 @@ function Footer({ actions }) {
 // Directly inside, the rest the footer.
 export default function TreeSummary({
   row, display, today, onSelect, position, fullPage, onContextSaved, actions = [], design = false, facts = null, children = null,
+  version = null,
 }) {
   const add = actions.find((a) => a.id === "tree-new") || null;
   const logEvent = actions.find((a) => a.id === "event-log") || null;
@@ -494,7 +533,7 @@ export default function TreeSummary({
   const rest = actions.filter((a) => a.id !== "tree-new" && a.id !== "event-log" && a.id !== "pos-here");
   return (
     <div className="td-sum">
-      {!design && <StatusChips r={row} />}
+      {!design && <StatusChips r={row} position={row.type === "pos" ? position : null} version={version} />}
       {row.type === "pos" && position.data?.description && (
         <ClampLines className="td-desc" text={position.data.description} what="the description" />
       )}

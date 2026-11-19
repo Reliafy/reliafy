@@ -6726,6 +6726,17 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return min((w for w in work_orders if w.get("status") in OPEN_STATUSES),
                    key=lambda w: (w.get("due") or "9999-12-31", w["number"]), default=None)
 
+    @staticmethod
+    def late_counts(work_orders, tasks) -> dict:
+        """The one count of late work that Home, Orders and Assets all show: open work
+        orders past their due date, however they were raised (from a task, a package's
+        visit or by hand), and tasks overdue with no work order open for them yet. A task
+        with a work order open counts once, as its work order. ``work_orders``: open work
+        orders, each with ``overdue`` (_wo_brief); ``tasks``: task views (_task_view)."""
+        return {"work_orders_late": sum(1 for w in work_orders if w.get("overdue")),
+                "tasks_overdue_without_work_order": sum(
+                    1 for t in tasks if t.get("overdue") and not t.get("open_work_order"))}
+
     def _wo_overdue(self, w: dict) -> bool:
         """Whether a work order is overdue: it's open and its due date is before today.
         The one rule behind every list, count and badge. A work package's visit keeps its
@@ -13470,6 +13481,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         def blank() -> dict:
             return {"positions": 0, "items": 0, "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None}
 
+        # Each bucket's open work orders and due tasks, for its late counts (late_counts).
+        work: dict[int, tuple[dict, list, list]] = {}
+
+        def note(b: dict, wo: dict | None = None, task: dict | None = None) -> None:
+            entry = work.setdefault(id(b), (b, [], []))
+            if wo is not None:
+                entry[1].append(wo)
+            if task is not None:
+                entry[2].append(task)
+
         # A product's design locations and the ones a built unit carries aren't assets.
         roots = sorted((loc for loc in self.s.nodes(self.org, "Location")
                         if self._parent(loc["id"]) is None and not loc.get("retired")
@@ -13547,8 +13568,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for w in self.s.nodes(self.org, "WorkOrder"):
             subject = w["status"] in OPEN_STATUSES and self.s.out(self.org, w["id"], "ON")
             if subject and subject[0]["id"] not in products:
+                late = {"overdue": self._wo_overdue(w)}
                 for b in buckets(subject[0]):
                     b["open_work_orders"] += 1
+                    note(b, wo=late)
         for task in self.s.nodes(self.org, "Task"):
             subject = not task.get("retired") and _subject(self.s, self.org, task)
             if not subject or subject.get("retired") or subject["id"] in products:
@@ -13559,6 +13582,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     b["due"] += 1
                     b["overdue"] += 1 if view["overdue"] else 0
                     b["next_due"] = min(filter(None, (b["next_due"], view["next_due"])))
+                    note(b, task=view)
+        # late: the same count of late work as Home and Orders (late_counts); overdue, kept
+        # for older readers, counts every overdue task, with a work order open or not.
+        for b in [*out.values(), not_placed, *roots.values()]:
+            _, wos, tasks = work.get(id(b), (b, [], []))
+            b["late"] = self.late_counts(wos, tasks)
         not_placed["roots"] = sorted(roots.values(), key=lambda r: (r["name"].lower(), r["id"]))
         return {"places": list(out.values()), "not_placed": not_placed, "horizon_days": horizon_days}
 
@@ -14480,6 +14509,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             else:
                 due = self._tree_task_due(t, "Item" if subject in items else "")
                 overdue = bool(due) and due < today
+                if not due and not _on_event_only(t):
+                    # Can't be put on a date yet: by use with no counter (or no readings) to count from.
+                    on_node(subject)["unscheduled"] += 1
             if due:
                 st = on_node(subject)
                 st["next_due"] = min(st["next_due"] or due, due)
@@ -16007,16 +16039,17 @@ def _product_marks(p: dict, top: bool, every: dict) -> dict:
 
 
 def _blank_status() -> dict:
-    return {"overdue": 0, "open_work": 0, "alarms": 0, "open_reports": 0, "next_due": None}
+    # unscheduled: tasks that can't be put on a date yet (by use, with no counter to count from).
+    return {"overdue": 0, "open_work": 0, "alarms": 0, "open_reports": 0, "unscheduled": 0, "next_due": None}
 
 
 def _add_status(into: dict, *more: dict | None) -> dict:
-    """Adds counts (overdue, open work, alarms, open failure reports) into ``into``;
-    keeps the earliest next due."""
+    """Adds counts (overdue, open work, alarms, open failure reports, tasks that can't be
+    scheduled) into ``into``; keeps the earliest next due."""
     for st in more:
         if not st:
             continue
-        for k in ("overdue", "open_work", "alarms", "open_reports"):
+        for k in ("overdue", "open_work", "alarms", "open_reports", "unscheduled"):
             into[k] += st.get(k, 0)
         if st["next_due"] and (into["next_due"] is None or st["next_due"] < into["next_due"]):
             into["next_due"] = st["next_due"]

@@ -3412,8 +3412,9 @@ export function getClassFleet(id, within = null) {
 // One position's risk now: its row as a class's fleet gives it, with its curves when it is scored
 // (`member`, null with nothing fitted: `why`), and the condition and life model that scores it
 // (`model`, null with none linked). Whatever its item's class.
-export function getPositionCondition(id) {
-  return request(`/api/maintenance/positions/${encodeURIComponent(id)}/condition`);
+// ``curves`` false: the numbers alone (the Summary's status badge), not the charts' curves.
+export function getPositionCondition(id, { curves = true } = {}) {
+  return request(`/api/maintenance/positions/${encodeURIComponent(id)}/condition${curves ? "" : "?curves=false"}`);
 }
 export function createItemClass(body) {
   return postJson("/api/maintenance/item-classes", body);

@@ -14,8 +14,8 @@ import {
 import { SAMPLE_MODEL, useFirstRun } from "../firstRun.js";
 import { TYPE_LABEL, loadAllModels } from "../allModels.js";
 import {
-  ATTENTION_ROWS, RECENT_ROWS, attentionReady, attentionRest, attentionRows, dueRows, fleetRows, otherRecent,
-  recentFor, recentRows, sparesRows, startersPlace, waitingFigures, workTodayRows,
+  ATTENTION_ROWS, RECENT_ROWS, attentionFailed, attentionReady, attentionRest, attentionRows, dueRows, fleetRows,
+  lateFigures, lateSummary, otherRecent, recentFor, recentRows, sparesRows, startersPlace, waitingFigures, workTodayRows,
 } from "../home.js";
 import { RBDS_LABEL, RBDS_PATH, homeCards } from "../navigation.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
@@ -26,12 +26,17 @@ import { StartHere, StartHereCompact, useActivation } from "../components/FirstR
 import WhatChangedPanel, { ChangeList } from "../components/WhatChanged.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 import PlaceholderRows from "../components/PlaceholderRows.jsx";
+import LoadFailed from "../components/LoadFailed.jsx";
 import { partsPath } from "../redirects.js";
 import { ORDERS_PATH, ordersPath } from "../maintenanceOrders.js";
 
-// A list that can't be read counts as empty: Home is a summary, and each
-// section's own page reports its errors.
-const quiet = (p, key) => p.then((d) => (key ? d[key] : d) || []).catch(() => []);
+// A list that can't be read counts as empty for the rows Home draws (each
+// section's own page reports its errors), but `failed` is told: Home then says
+// it couldn't load, never that there's nothing.
+const quiet = (p, key, failed) => p.then((d) => (key ? d[key] : d) || []).catch(() => {
+  failed();
+  return [];
+});
 
 const CARD_ROWS = 5;
 
@@ -42,8 +47,10 @@ const NO_OVERVIEW = <>Couldn't load the maintenance work. <Link to={ORDERS_PATH}
 // One of Home's lists: a heading (with a link to the whole list, or a note),
 // then rows in the "What changed" style, or `empty` when there are none.
 // While `loading`, placeholder rows: the empty sentence is only for an answer
-// that has arrived.
-function HomeList({ id, title, note, all, rows, empty, loading = false, children }) {
+// that has arrived. `failed` ({ text, onRetry }): part of what it reads
+// couldn't be loaded: the error card (LoadFailed) with Try again, then any
+// rows that did load, and never the empty sentence.
+function HomeList({ id, title, note, all, rows, empty, loading = false, failed = null, children }) {
   return (
     <section className="wc-panel home-list" aria-labelledby={id} data-card={id}>
       <div className="recent-models-head">
@@ -51,11 +58,14 @@ function HomeList({ id, title, note, all, rows, empty, loading = false, children
         {note && <span className="home-note">{note}</span>}
         {all && <Link to={all.to}>{all.label} →</Link>}
       </div>
-      <div className="wc-card">
-        {children}
-        {loading ? <PlaceholderRows label={`Loading ${title}…`} />
-          : rows.length > 0 ? <ChangeList rows={rows} /> : empty && <p className="home-none">{empty}</p>}
-      </div>
+      {failed && !loading && <LoadFailed error={failed.text} onRetry={failed.onRetry} />}
+      {(loading || !failed || rows.length > 0 || children) && (
+        <div className="wc-card">
+          {children}
+          {loading ? <PlaceholderRows label={`Loading ${title}…`} />
+            : rows.length > 0 ? <ChangeList rows={rows} /> : !failed && empty && <p className="home-none">{empty}</p>}
+        </div>
+      )}
     </section>
   );
 }
@@ -145,10 +155,10 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
       return (
         <HomeList id={id} title="Due and at risk" all={{ to: ordersPath("due"), label: "Maintenance" }}
                   rows={first(due)} loading={maintenance === undefined}
-                  empty={maintenance ? "Nothing due in the next 30 days." : NO_OVERVIEW}>
+                  empty={maintenance ? "No open work orders and nothing due in the next 30 days." : NO_OVERVIEW}>
           {maintenance && (
             <Figures items={[
-              { label: "overdue", n: (maintenance.due || []).filter((t) => t.overdue).length, to: ordersPath("due"), alert: true },
+              ...lateFigures(maintenance),
               { label: "due in 30 days", n: (maintenance.due || []).length, to: ordersPath("due") },
               { label: "critical spares short", n: (maintenance.critical_spares || []).length, to: partsPath(), alert: true },
               { label: "changes proposed", n: (maintenance.proposals || []).length, to: ORDERS_PATH },
@@ -214,24 +224,36 @@ export default function HomePage() {
   // couldn't be read.
   const [maintenance, setMaintenance] = useState(undefined);
   const [rcm, setRcm] = useState(undefined);
+  // Try again: each press reads everything again.
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setLists(null);
+    setChanges(undefined);
+    setMaintenance(undefined);
+    setRcm(undefined);
+    setAttempt((n) => n + 1);
+  };
 
   useEffect(() => {
     let live = true;
+    let failed = false;
+    let trackedFailed = false;
+    const fail = () => { failed = true; };
     Promise.all([
-      loadAllModels().catch(() => []),
-      quiet(listDatasets(), "datasets"),
-      quiet(listRbds(), "rbds"),
-      quiet(listFleets(), "fleets"),
-      quiet(listStrategyAnalyses(), "analyses"),
-      quiet(listTrackedFleets(), "fleets"),
+      loadAllModels().catch(() => { fail(); return []; }),
+      quiet(listDatasets(), "datasets", fail),
+      quiet(listRbds(), "rbds", fail),
+      quiet(listFleets(), "fleets", fail),
+      quiet(listStrategyAnalyses(), "analyses", fail),
+      quiet(listTrackedFleets(), "fleets", () => { fail(); trackedFailed = true; }),
     ]).then(([models, datasets, rbds, forecasts, analyses, tracked]) => {
-      if (live) setLists({ models, datasets, rbds, forecasts, analyses, tracked });
+      if (live) setLists({ models, datasets, rbds, forecasts, analyses, tracked, failed, trackedFailed });
     });
     getWorkspaceChanges().then((d) => live && setChanges(d)).catch(() => live && setChanges(null));
     return () => {
       live = false;
     };
-  }, []);
+  }, [attempt]);
 
   useEffect(() => {
     if (!configLoaded) return undefined;
@@ -255,7 +277,7 @@ export default function HomePage() {
     return () => {
       live = false;
     };
-  }, [access]);
+  }, [access, attempt]);
 
   useActivation(lists?.models);
 
@@ -263,17 +285,22 @@ export default function HomePage() {
     ? recentRows({ ...lists, models: lists.models.map((m) => ({ ...m, kind: TYPE_LABEL[m.type] })) })
     : [];
   const ownCount = recent.length;
-  const firstRun = useFirstRun(lists ? ownCount > 0 : undefined);
+  // A list that failed makes the count a guess: no new-account welcome then.
+  const firstRun = useFirstRun(lists && !lists.failed ? ownCount > 0 : undefined);
   // Where the ways to start go, once the lists say how much work there is.
-  const place = lists ? startersPlace(ownCount) : null;
+  const place = lists && !lists.failed ? startersPlace(ownCount) : null;
   const lifeSamples = (lists?.models || []).filter((r) => r.is_sample && r.type === "life");
   const sampleModelId = (lifeSamples.find((r) => r.id === SAMPLE_MODEL) || lifeSamples[0])?.id || null;
-  const attention = attentionRows({ changes, tracked: lists?.tracked, maintenance });
-  const attentionIn = attentionReady({ changes, tracked: lists?.tracked, access, maintenance });
+  const tracked = lists ? (lists.trackedFailed ? null : lists.tracked) : undefined;
+  const attention = attentionRows({ changes, tracked, maintenance });
+  const attentionIn = attentionReady({ changes, tracked, access, maintenance });
+  // Something it reads failed (or the lists Home is built from): say so, with Try again.
+  const attentionError = attentionIn && (attentionFailed({ changes, tracked, access, maintenance }) || lists?.failed);
+  const late = maintenance ? lateSummary(maintenance) : "";
 
   // The roles' cards, and what they already show (left out of the lists below).
   const cards = homeCards(roles).filter((c) => has.maintenance || !["due", "work-today", "spares", "waiting"].includes(c));
-  const cardShows = (r) => (cards.includes("due") && r.key.startsWith("due-"))
+  const cardShows = (r) => (cards.includes("due") && (r.key.startsWith("due-") || r.key.startsWith("order-")))
     || (cards.includes("fleets") && (r.key.startsWith("alert-") || r.key.startsWith("track-")));
   const needs = attention.filter((r) => !cardShows(r));
   const rest = otherRecent(cards, recent);
@@ -322,8 +349,12 @@ export default function HomePage() {
           {/* "Nothing" before every source has answered would be a guess. */}
           <HomeList id="home-attention" title="Needs attention" rows={needs.slice(0, ATTENTION_ROWS)}
                     loading={!attentionIn}
+                    failed={attentionError ? { text: "Couldn't load what needs you.", onRetry: retry } : null}
                     note={attentionIn && needs.length > ATTENTION_ROWS ? <AttentionNote rows={needs} /> : null}
-                    empty={access && maintenance === null ? NO_OVERVIEW : "Nothing needs you right now."} />
+                    empty="Nothing needs you right now.">
+            {/* The late work in the words Orders and Assets use. */}
+            {attentionIn && late && <p className="home-none home-late">{late}</p>}
+          </HomeList>
 
           {rest.length > 0 && (
             <HomeList id="home-recent" title={rest.length < recent.length ? "Other recent work" : "Recent"}

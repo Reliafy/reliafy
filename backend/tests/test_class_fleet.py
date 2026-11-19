@@ -561,6 +561,10 @@ def test_the_fleet_over_rest(client):
     mine = client.get(f"/api/maintenance/positions/{a}/condition")
     assert mine.status_code == 200, mine.text
     assert mine.json()["member"] == one["member"] and mine.json()["model"]["id"] == JOINT
+    # The Summary badge's read (curves=false): the same risk numbers, without the curves.
+    lean = client.get(f"/api/maintenance/positions/{a}/condition", params={"curves": "false"}).json()
+    assert lean["member"]["risk"] == mine.json()["member"]["risk"] and lean["member"]["scored"]
+    assert "unit" not in lean["member"] and lean["horizons"] == mine.json()["horizons"]
     plain = client.get(f"/api/maintenance/positions/{b}/condition").json()
     assert plain["item_class"] is None and plain["model"] is None and plain["member"]["item"]["name"] == "Unclassed"
     assert client.get("/api/maintenance/positions/nope/condition").status_code == 404

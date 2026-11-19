@@ -9835,6 +9835,15 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 .home-none { margin: 0; padding: 14px 16px; font-size: var(--fs-14); color: var(--text-secondary); }
 .home-none a { color: var(--accent-text); font-weight: 500; text-decoration: none; }
 .home-none a:hover, .home-none a:focus-visible { text-decoration: underline; }
+/* Needs attention's count of late work, above its rows (the words Orders and Assets use). */
+.home-late { color: var(--text); font-weight: 500; border-bottom: 1px solid var(--border-subtle); }
+/* A list that couldn't be read (LoadFailed): the error card in place of the rows. */
+.home-list .load-failed { margin: 0; }
+/* LoadFailed's "Try again", under the reason. */
+.load-failed .load-failed-retry { margin-top: var(--space-3); }
+@media (max-width: 720px) {
+  .load-failed .load-failed-retry { min-height: var(--control-lg); }
+}
 .home .start-compact { margin-top: 28px; }
 /* With only a little work saved, the ways to start sit first, under the title. */
 .home .home-start-first .start-compact { margin-top: 16px; }

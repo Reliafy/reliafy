@@ -117,7 +117,7 @@ export default function MaintenanceOrders() {
         <>
           <Proposals proposals={data.proposals} onDecided={refresh} />
           <p className="maint-answer">
-            {ordersSummary({ open: data.open_work_orders || [], due, horizon, today: data.today })}
+            {ordersSummary({ open: data.open_work_orders || [], due, horizon, today: data.today, late: data.late })}
           </p>
           <Tabs tabs={ORDER_TABS} value={tab} onChange={(id) => setParam("tab", id === "open" ? "" : id)}
                 label="Work orders" idPrefix="orders" />

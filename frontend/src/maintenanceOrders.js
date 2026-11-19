@@ -72,23 +72,30 @@ export function orderKind(wo) {
   return wo?.type === "preventive" ? "task" : "hand";
 }
 
-// The answer first, above the tabs: "3 open, 1 late by 4 days. 12 due in the next 30 days."
-export function ordersSummary({ open = [], due = null, horizon = 30, today = null } = {}) {
-  const late = open.filter((w) => w.overdue);
-  const parts = [];
-  if (!open.length) parts.push("No open work orders");
-  else {
-    let s = `${open.length} open`;
-    if (late.length === 1) {
-      const d = daysLate(late[0], today);
-      s += d ? `, 1 late by ${d === 1 ? "1 day" : `${d} days`}` : ", 1 late";
-    } else if (late.length > 1) {
-      const worst = Math.max(...late.map((w) => daysLate(w, today) || 0));
-      s += `, ${late.length} late${worst ? ` (the latest by ${worst === 1 ? "1 day" : `${worst} days`})` : ""}`;
-    }
-    parts.push(s);
-  }
-  let text = `${parts.join("")}.`;
+// The late work in the one wording Home, Orders and Assets share, from the
+// server's one count of it (Maintenance.late_counts: `late` on the overview and
+// on each asset): "27 work orders late · 5 tasks overdue with no work order".
+// A task with a work order open counts as its work order, so nothing is counted
+// twice. `worst`: the most days any is late, said after the work orders
+// ("27 work orders late (the latest by 33 days)"). "" when nothing is late.
+export function lateWorkText(late, { worst = 0 } = {}) {
+  const wos = late?.work_orders_late || 0;
+  const tasks = late?.tasks_overdue_without_work_order || 0;
+  const by = worst > 0 ? ` (the latest by ${worst === 1 ? "1 day" : `${worst} days`})` : "";
+  return [
+    wos ? `${plural(wos, "work order", "work orders")} late${by}` : null,
+    tasks ? `${plural(tasks, "task", "tasks")} overdue with no work order` : null,
+  ].filter(Boolean).join(" · ");
+}
+
+// The answer first, above the tabs: "38 open work orders. 27 work orders late (the
+// latest by 33 days) · 5 tasks overdue with no work order. 54 due in the next 30 days."
+// `late`: the overview's late counts (lateWorkText).
+export function ordersSummary({ open = [], due = null, horizon = 30, today = null, late = null } = {}) {
+  let text = open.length ? `${plural(open.length, "open work order", "open work orders")}.` : "No open work orders.";
+  const worst = Math.max(0, ...open.filter((w) => w.overdue).map((w) => daysLate(w, today) || 0));
+  const lateText = lateWorkText(late, { worst });
+  text += lateText ? ` ${lateText}.` : open.length ? " None late." : "";
   if (due) text += ` ${due.length ? due.length : "Nothing"} due in the next ${horizon} days.`;
   return text;
 }
