@@ -25,7 +25,8 @@ marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
 ## Find your way around the RCM tab
 
-Open **Assets → Explorer** and pick the **RCM** tab. The tree of
+Open **Assets → Explorer** and pick the **RCM** tab (on a narrow screen it may be
+under **⋯** at the end of the tabs). The tree of
 positions is the first column, and under each position sit its functions,
 their performance standards, functional failures and failure modes, with the
 RCM's columns beside every row. If your tree is empty, add a position, or

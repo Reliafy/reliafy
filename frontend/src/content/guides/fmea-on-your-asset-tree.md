@@ -23,7 +23,8 @@ score or an effect edited on one shows on the other at once. Nothing is copied.
 
 ## Open the FME(C)A tab
 
-Open **Assets → Explorer** and pick the **FME(C)A** tab. If your tree is empty,
+Open **Assets → Explorer** and pick the **FME(C)A** tab (on a narrow screen it
+may be under **⋯** at the end of the tabs). If your tree is empty,
 add a position, or bring your hierarchy in with **Import from Excel**. Everything below
 works the same on a product's design (its **Functional structure** tab is the
 same Explorer, scoped to the design) and on your asset tree. The **RCM** tab

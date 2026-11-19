@@ -1161,7 +1161,7 @@ visits is a layer on it (checked with the same rule as a layer being made); one
 that doesn't (monthly on a fortnightly package) is a top of its own. A layer's
 create names its top as `parent_id: "@<ref>"`, so the drafts run as one
 `maintenance apply`, or through the app's `create_packages` (all or nothing,
-rehearsed first on a scratch copy of the graph). The Explorer's LSA tab
+rehearsed first on a scratch copy of the graph). The Explorer's Maintenance › What it needs
 uses both, and `packages(position_id | location_id)` for its list.
 
 Not built yet: tolerance in hours, packages by use, shutdown packages, review
@@ -1196,7 +1196,7 @@ how. Each task carries its LSA record: what doing it needs.
 - **Rollups.** `Maintenance.lsa_rollup(tasks)` adds a set up: labour hours by
   trade (a line with no trade takes its task's), tools once each (the most any
   task needs), spares and consumables summed, permits. A package's read and
-  each row of `packages()` carry it as `rollup`; the Explorer's LSA tab shows it
+  each row of `packages()` carry it as `rollup`; the Explorer's Maintenance › What it needs shows it
   for the tasks ticked, and a position's Summary gives annual labour (hours ×
   365.25 ÷ the interval in days; tasks raised by an event or by use are left
   out and counted).
@@ -1260,7 +1260,7 @@ work order (the seasonal change-over) and the history should say so.
   and whether a value was taken at it. `readings_taken` lists what was;
   `readings_by_task` counts them per task ("Readings: 2 of 3 recorded").
 
-## Life models on positions (the Modelling tab)
+## Life models on positions (the Models tab's Life models)
 
 A position (a functional location, or a position of a product's design) can
 carry the life models that describe it: a Weibull fitted to its own history,

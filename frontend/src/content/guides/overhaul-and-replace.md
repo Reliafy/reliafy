@@ -82,7 +82,7 @@ Press **Save analysis** to keep the answer. It's worked out again on the server
 from the inputs, so it can be evidence for an RCM decision.
 
 On a repairable model's own page the same tool is under **Plan ahead →
-Overhaul and replace**. In the Explorer's **Modelling** tab, a model's ⋯ menu
+Overhaul and replace**. In the Explorer's **Models › Life models**, a model's ⋯ menu
 has **Add a strategy…**: the strategy tools for that kind of model open beside
 the tree, the position's class costs filled in where they're set. Once you save
 one there, the model has a **Strategy** row under it.

@@ -246,7 +246,7 @@ reliafy maintenance rcm.ff_interval --failure-rate 0.1 --target-unavailability 0
 (These two were `rcm.interval_on_condition` and `rcm.interval_failure_finding`
 until Nov 2026; `parts.build_positions` was `parts.positions_from_structure`.)
 
-Life models on positions (the Explorer's Modelling tab): `maintenance
+Life models on positions (the Explorer's Models › Life models): `maintenance
 models.link` attaches a model to a position (a link, never a copy): a saved one
 (`model_id`, with `model_type` `model` (the default), `recurrent_model`,
 `degradation_model` or `alt_model`), the position class's (`from_class: true`)
@@ -336,7 +336,7 @@ register is `maintenance get.item_class` with `fleet: true` (`POST
 /api/v1/maintenance/get.item_class`; `reliafy maintenance get.item_class
 --id … --fleet true`).
 
-One position on its own (the Explorer's Condition monitoring tab on a
+One position on its own (the Explorer's Monitoring › Life left on a
 position): `GET /api/maintenance/positions/{id}/condition` answers `{position,
 item_class, today, age_unit, horizons, member, model, why}`. `member` is the
 position's row as above, with `unit` when it is scored, whatever its item's
@@ -344,7 +344,7 @@ class (`item_class` null with none); with nothing fitted `member` is null and
 `why` says so. `model` is the condition and life model that scores it, null
 with none linked. It is a read for the page, with no tool or CLI twin.
 
-Missions (the Explorer's Missions tab): a non-repairable RBD can carry several
+Missions (the Explorer's Models › Missions): a non-repairable RBD can carry several
 named phased missions over the same blocks, in `graph.missions` (`[{id, name,
 phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,
 named by `mission_name`). A phase is `{name, duration, not_needed?: [block
@@ -609,7 +609,7 @@ own routes do the same: `GET /api/maintenance/packages/propose?weekday=`,
 `POST /api/maintenance/packages/batch` (`packages`: the creates, all or
 nothing) and `GET /api/maintenance/packages?position_id=` (those there or
 inside it, or holding a task there). `GET /api/maintenance/task-table?position_id=` (or
-`location_id=`) is the Explorer's Packages tab: every task there and below, one
+`location_id=`) is the Explorer's Maintenance › What it needs: every task there and below, one
 row each, with its failure modes, kind, interval, trade, next due and package.
 
 ### Things only the API can do
