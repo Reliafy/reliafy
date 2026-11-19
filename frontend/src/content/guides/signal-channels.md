@@ -17,10 +17,10 @@ trends and projected alarm dates work on it as they do on any other.
 This is in beta. A slow sensor, like a pressure transducer, works the same way
 without the spectrum.
 
-## The Measurements tab
+## Monitoring › Readings
 
-Pick a position in **Assets → Explorer** and open the **Measurements** tab. It
-reads like the RCM tab: the position tree is the first column, and under each
+Pick a position in **Assets → Explorer**, open the **Monitoring** tab and choose
+**Readings**. It reads like the RCM tab: the position tree is the first column, and under each
 position hang what's measured, set or added there, worst first: measuring
 points, counters, settings, sensor channels and consumables. Beside each row
 are its kind (*Condition*, *Setting*, *Counter*, *Fed*, *Consumable*), the
@@ -60,11 +60,11 @@ work order or *by hand*, the year's total, and, when a task's LSA lists the
 consumable, the dose it says beside what was really added. A part used on a
 work order at the position counts too.
 
-## Channels are rows of Measurements
+## Channels are rows of Readings
 
 A channel lives with the hand-read measuring points on the same position. Open
-**Assets → Explorer**, pick the position (or item) and open the **Measurements**
-tab: each channel is a row, marked **Fed** because nobody reads it by hand. A
+**Assets → Explorer**, pick the position (or item) and open **Monitoring ›
+Readings**: each channel is a row, marked **Fed** because nobody reads it by hand. A
 smart plug's power on the *Filter pump* position sits beside the pressure and
 flow you read on your round. The row shows:
 
@@ -84,7 +84,7 @@ fitted to, and go with the item when it moves.
 
 ## 1. Add a channel
 
-On the **Measurements** tab, choose **Add a sensor channel…** from the **⋯**
+On **Monitoring › Readings**, choose **Add a sensor channel…** from the **⋯**
 menu at the top right of the panel (just under **Add a measuring point…**). It
 goes on the position or item you picked. Give it:
 
@@ -145,7 +145,7 @@ only the first part. Nothing is sent until you press **Add the snapshot**.
 
 ## 3. Read the spectrum
 
-Open the channel: click its row on the Measurements tab, or choose
+Open the channel: click its row on **Monitoring › Readings**, or choose
 **Open** from its **⋯** menu. Its details open beside the table; expand them
 across it for room to read the spectrum.
 
@@ -178,11 +178,11 @@ that range from every snapshot, old and new, and draws it in **Level over time**
 
 - Choose **Running speed** under *Follow* to set the band in multiples of the
   machine's speed, so it stays on the 1× peak when the speed drifts.
-- The band is also a **measurement point**, listed on the **Measurements** tab
+- The band is also a **measurement point**, listed on **Monitoring › Readings**
   (marked **Fed**) beside the channel itself and every other measuring point on
   the row and everything inside it, hand-read ones too, worst first. Give it
   alarm limits there and a snapshot past the limit opens an inspection.
-- **Open a measuring point.** Click its row in the Measurements tab, or
+- **Open a measuring point.** Click its row in **Monitoring › Readings**, or
   choose **Open** from its **⋯** menu. Its details open beside the table: the
   latest reading against its alarm limits, a chart of the readings with the
   limits drawn in, the trend and the date it should reach a limit, and every
@@ -190,7 +190,7 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   panel's **…** menu; each reading's **⋯** menu corrects or voids it. A voided
   reading stays listed, struck out, and is left out of rates, due dates and
   alarms.
-- **Move…** (in a point's **⋯** menu in the Measurements tab, or in the **⋯**
+- **Move…** (in a point's **⋯** menu in **Monitoring › Readings**, or in the **⋯**
   menu while its details are open) moves a hand-read or fed point to another position, for when it
   was added to the wrong one. Its readings and any open alarm work order go
   with it, and tasks that counted it keep counting it. A band or level stays
@@ -201,12 +201,12 @@ that range from every snapshot, old and new, and draws it in **Level over time**
 
 Not everything is measured. A chlorinator's output %, a pump timer's hours a
 day or a solar controller's setpoint is **set**, and changed now and then. Add
-it with **Add a setting…** in the Measurements tab's **…** menu, or turn an existing
+it with **Add a setting…** in the **…** menu of **Monitoring › Readings**, or turn an existing
 point into one with **Edit…** or **Edit limits…** in its **⋯** menu (What it
 is → Setting). A setting:
 
-- shows its current value and when it was set (*Set 1 Oct 2026*) on the
-  Measurements tab, and is never due or alarmed;
+- shows its current value and when it was set (*Set 1 Oct 2026*) on
+  **Monitoring › Readings**, and is never due or alarmed;
 - draws as steps when opened (the value holds until the next change), with
   each change listed: *Set to 60% on 1 Oct 2026 (from 45%) · WO 123*;
 - can have a lowest and highest allowed value, which only catches typing
@@ -223,7 +223,7 @@ chlorinator's history then names that work order.
 
 ### Change a band, and set levels
 
-Choose **Edit bands…** from the channel's **⋯** menu on the Measurements tab (or
+Choose **Edit bands…** from the channel's **⋯** menu on **Monitoring › Readings** (or
 scroll to *Watch bands and levels* on its page) and press **Edit** beside a band to change its name, its range, or its levels.
 
 ![Editing a band: its range and its warning and alarm levels](/guides/img/signals-03-edit-band.png)
@@ -301,7 +301,7 @@ applied to a snapshot already stored.
 ## A pressure sensor
 
 A slow pressure (a reading a minute, say) has no spectrum. Add a channel in kPa, send
-`{"tag": "...", "time": "...", "value": 190.4}`: its row on the Measurements tab
+`{"tag": "...", "time": "...", "value": 190.4}`: its row on **Monitoring › Readings**
 shows the latest value and trend, and its page draws the readings. To trend it and set alarm limits, add a **level** with stat `value`
 (`maintenance signals.add_level`): it becomes a measurement point like a band.
 For a very frequent slow sensor the plain readings feed

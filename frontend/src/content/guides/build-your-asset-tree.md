@@ -102,7 +102,7 @@ Locations and Classes sheets.
 
 ## Where to go next
 
-- The Explorer's **Modelling** tab: life models on positions.
+- The Explorer's **Models** tab (**Life models**): life models on positions.
 - The Explorer's **RCM** tab: decide what to do about each way a position can
   fail.
 - **Maintenance → Orders**: the work raised on your positions.

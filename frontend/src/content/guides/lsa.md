@@ -1,16 +1,16 @@
 ---
-title: "Say what each task needs, and package tasks into visits (the LSA tab)"
+title: "Say what each task needs, and package tasks into visits (Maintenance › What it needs)"
 task: "How do I record the labour, tools, spares and consumables each task needs, and bundle the tasks of an area so each visit raises one work order?"
 category: "Maintenance strategy"
 prerequisites: "A position or location in your asset tree with some tasks on it (from its RCM decisions, or added by hand)."
 order: 27
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# LSA tab itself and stays out of the index until Maintenance opens.
+# Maintenance › What it needs view itself and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
-The **LSA** tab (logistic support analysis) holds the *how* of your
-maintenance. The RCM says what is done and why; the LSA says what each task
+The LSA (logistic support analysis) holds the *how* of your maintenance. In
+the Explorer it's the **What it needs** view of the **Maintenance** tab. The RCM says what is done and why; the LSA says what each task
 needs to be done: who does it and for how long, the tools and instruments, the
 spares and consumables to bring, access and downtime, and the method. It's
 also where tasks are packaged into visits.
@@ -29,8 +29,8 @@ visit.
 
 ## See the tasks here
 
-Open **Assets → Explorer**, pick a position or a location and choose the
-**LSA** tab. It's a table of every task on that row and everything
+Open **Assets → Explorer**, pick a position or a location, choose the
+**Maintenance** tab and then **What it needs**. It's a table of every task on that row and everything
 inside it, set out like the RCM table, one row per task:
 
 - **Position** — where the task is done;
@@ -48,7 +48,7 @@ from the panel's **More actions (…)** › **Columns…**.
 
 ## Say what a task needs
 
-Click a task (its row or its name) to open its LSA in the tab (**← All tasks
+Click a task (its row or its name) to open its LSA in the view (**← All tasks
 here** goes back). It shows the task's kind, interval, position and the
 failure modes it serves, then a section for each thing it needs. Each section
 saves when you leave it and says **✓ Saved**:
@@ -108,8 +108,8 @@ package stay where they are.
 
 To let Reliafy draft the packages for you, right-click the row in the tree (or
 press its **⋯**) and choose **Package the tasks here…**, the first item on
-this tab. **Package the tasks…** in **More actions (…)** does the same for the
-row you're on. The drafts open in the tab, in place of the table (**← All
+this view. **Package the tasks…** in **More actions (…)** does the same for the
+row you're on. The drafts open in the view, in place of the table (**← All
 tasks here** goes back). It groups every task here that isn't in a package by
 how often it's due and by trade: the weekly ones visit on the day you pick,
 and monthly and longer ones become layers on those visits (the first of that
@@ -118,7 +118,11 @@ or none.
 
 ## Look after a package
 
-Click a package's name in the **Package** column to open it in the tab (**← All packages here** goes back to the table). You see its tasks, each with where it
+Click a package's name in the **Package** column to open it in the view (**← All packages here** goes back).
+**Maintenance › Packages** lists every package on that part of the tree and
+below (how often, trade, how many tasks, and whether it's paused); click a
+name there to open it the same way. A product's design has no packages: they
+belong to the built items. You see its tasks, each with where it
 is, its visit rule ("every visit", "every 4th visit"), what it covers and
 **Owed** when it wasn't done on the last visit (it goes on the next one), and
 its layers, and **Each visit needs**: its tasks' labour, tools, spares and

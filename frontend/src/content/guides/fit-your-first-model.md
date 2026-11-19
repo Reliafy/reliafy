@@ -335,7 +335,7 @@ mode's share, and the constant rate an RBD block would use.
 
 A model you fit is in no library until you put it there. Open a saved model
 and choose **Add to library…** from its ⋯ menu (or, in the Explorer's
-Modelling tab, **Life model › Add to library…** for a position's life model).
+**Models › Life models**, **Life model › Add to library…** for a position's life model).
 The library keeps a copy as it is now; a later refit doesn't change it. You can
 share a library with other workspaces or publish it: the
 [Build and share a library](/guides/build-and-share-a-library) guide covers

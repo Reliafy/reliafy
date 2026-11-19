@@ -5,14 +5,15 @@ category: "Maintenance strategy"
 prerequisites: "A position in your asset tree."
 order: 26
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Failure reports tab itself and stays out of the index until Maintenance opens.
+# Explorer's History tab itself and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
 A failure report records one thing that went wrong, at one position in your
 asset tree, and follows it until it can't happen again. Engineers call the
 whole loop FRACAS (failure reporting, analysis and corrective action system);
-in Reliafy it's the **Failure reports** tab of the Explorer, and the loop has
+in Reliafy it's the **History** tab of the Explorer (**Field reports** on a
+product's design), and the loop has
 five stages:
 
 1. **Reported** — what happened, where, when, who found it, and how bad it was.
@@ -30,7 +31,8 @@ Every change is kept with who made it and when, so the history is the record.
 ## See what has failed, here and below
 
 Open **Assets → Explorer**, pick a position in the tree and choose
-the **Failure reports** tab. The list shows every report at that position and
+the **History** tab (on a narrow screen it may be under **⋯** at the end of
+the tabs). The list shows every report at that position and
 at everything inside it, open ones first, with the level each sits at under
 the row you picked. Pick a higher row to see more of the tree; pick a location
 to see the reports at the positions there; pick an item to see the failures it
