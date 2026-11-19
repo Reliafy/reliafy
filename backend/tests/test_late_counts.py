@@ -1,7 +1,7 @@
-"""One count of late work for Home, Orders and Assets (persona review W5, 19 Nov 2026):
+"""One count of late work for Home, Orders and Assets (Nov 2026):
 open work orders past due however they were raised (from a task, a package or by
 hand), and tasks overdue with no work order open yet; and the tree's count of tasks
-that can't be scheduled (W6)."""
+that can't be scheduled."""
 
 from datetime import date, timedelta
 

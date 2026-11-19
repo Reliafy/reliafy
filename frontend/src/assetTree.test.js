@@ -738,7 +738,7 @@ test("a via with no ancestor sent (another asset's parent): the position stays a
   assert.deepEqual(d.roots, ["g"]);
 });
 
-// W6 (persona review 19 Nov 2026): the Summary badge said a green "Nothing
+// Before Nov 2026 the Summary badge said a green "Nothing
 // overdue…" beside a 66% risk in 90 days, and beside tasks that can't be scheduled.
 const pump = (status = {}) => buildDisplay({ positions: [{ id: "p101", name: "Pump 1", parent_id: null, status }],
   locations: [] }, "positions").rows.get("p101");

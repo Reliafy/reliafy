@@ -32,7 +32,7 @@ import { ORDERS_PATH, ordersPath } from "../maintenanceOrders.js";
 
 // A list that can't be read counts as empty for the rows Home draws (each
 // section's own page reports its errors), but `failed` is told: Home then says
-// it couldn't load, never that there's nothing (W7).
+// it couldn't load, never that there's nothing.
 const quiet = (p, key, failed) => p.then((d) => (key ? d[key] : d) || []).catch(() => {
   failed();
   return [];
@@ -285,7 +285,7 @@ export default function HomePage() {
     ? recentRows({ ...lists, models: lists.models.map((m) => ({ ...m, kind: TYPE_LABEL[m.type] })) })
     : [];
   const ownCount = recent.length;
-  // A list that failed makes the count a guess: no new-account welcome then (W7).
+  // A list that failed makes the count a guess: no new-account welcome then.
   const firstRun = useFirstRun(lists && !lists.failed ? ownCount > 0 : undefined);
   // Where the ways to start go, once the lists say how much work there is.
   const place = lists && !lists.failed ? startersPlace(ownCount) : null;

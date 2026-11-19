@@ -174,7 +174,7 @@ test("role cards: the manager's figures, from the tree's RCM rollup and the over
     ["changes to decide", "work orders late", "tasks overdue with no work order", "open work orders"]);
 });
 
-// W5 (persona review 19 Nov 2026): hand-raised work orders a month late never
+// Before Nov 2026 hand-raised work orders a month late never
 // reached Home, which listed only work raised from tasks.
 const HOUSE = {
   today: "2026-11-20",
@@ -225,7 +225,7 @@ test("one count, one wording: Home, Orders and Assets say the late work the same
   assert.equal(lateSummary(null), "");
 });
 
-// W7: a failed load said "Nothing needs you right now" and welcomed a new account.
+// Before Nov 2026 a failed load said "Nothing needs you right now" and welcomed a new account.
 test("needs attention says it failed, not that there's nothing, when what it reads didn't load", () => {
   const ok = { changes: { alerts: [] }, tracked: [], access: false };
   assert.equal(attentionFailed(ok), false);
