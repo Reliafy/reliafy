@@ -46,7 +46,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(row(page, `Report pump ${tag}`)).toHaveAttribute("aria-selected", "true");
 
   // The tab is there for a position; empty, it says how to add one and links the guide.
-  await page.getByRole("tab", { name: "Failure reports" }).click();
+  await page.getByRole("tab", { name: "History", exact: true }).click();
   await expect.poll(() => query(page).get("tab")).toBe("reports");
   await expect(panel(page)).toContainText("No failure reports here yet");
   await expect(panel(page).getByRole("button", { name: "How failure reports work" })).toBeVisible();
@@ -184,7 +184,7 @@ test("Failure reports at 400 px: the ⋯ button offers Add failure report…, th
   // The report, as its own screen, on the Failure reports tab.
   await expect.poll(() => query(page).get("report")).toBeTruthy();
   await expect(detail(page).locator(".fr-h2")).toContainText(/Flow dropped to half/);
-  await expect(page.getByRole("tab", { name: "Failure reports" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "History", exact: true })).toHaveAttribute("aria-selected", "true");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await shot(page, "reports-phone-report");
   await detail(page).getByRole("button", { name: "Corrective actions" }).click();

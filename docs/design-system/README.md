@@ -156,7 +156,7 @@ Write like an engineer briefing a manager: **the answer first, then the detail.*
 - Don't nest grey panels in a card; divide it with `Section`s.
 - A thing's own actions go in a `ContextMenu` on right-click, and also behind its ⋯ button, never only on right-click.
 - A page's help is one `HelpLink` after its purpose: "Take the tour" or "Read the guide", never "Show me how".
-- Pick a saved value from a few with `ChoiceChips`. Switch a view with `SegmentedControl`, move between panels with `Tabs`, and apply a setting at once with `Switch`.
+- Pick a saved value from a few with `ChoiceChips`. Switch a view with `SegmentedControl`, move between panels with `Tabs` (more panels than fit: `Tabs` with `overflow`, the rest under "⋯ N"), and apply a setting at once with `Switch`.
 
 ## Iconography
 

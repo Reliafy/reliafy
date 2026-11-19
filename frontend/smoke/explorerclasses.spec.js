@@ -83,7 +83,7 @@ test("Classes on one asset's tree covers only that asset; a class opens on Condi
   // A class has a tab bar with one tab, picked without being asked for.
   const tabs = panel.getByRole("tab");
   await expect(tabs).toHaveCount(1);
-  await expect(tabs).toHaveText("Condition monitoring");
+  await expect(tabs).toHaveText("Monitoring");
   await expect(tabs).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("region", { name: "Risk now" })).toBeVisible();
 
@@ -120,23 +120,23 @@ test("Classes on one asset's tree covers only that asset; a class opens on Condi
   // From the class to one of its positions: the class's tab stays, on the position's own tabs.
   await fleet.getByRole("button", { name: `North pump 1 ${tag}` }).click();
   await expect(row(page, `North pump 1 ${tag}`)).toHaveAttribute("aria-selected", "true");
-  await expect(panel.getByRole("tab", { name: "Condition monitoring" })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByRole("tab", { name: "Monitoring", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(panel.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "false");
   await expect(panel.getByRole("region", { name: "This position's risk now" })).toContainText("no condition and life model is linked to this position");
 
   // Another tab in the address: the class still shows its own, and a position walked to shows the one asked for.
   await open(page, `/asset-register/explorer?arrange=classes&root=${north.top.id}&sel=${encodeURIComponent(clsKey)}&tab=reports`);
-  await expect(panel.getByRole("tab", { name: "Condition monitoring" })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByRole("tab", { name: "Monitoring", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".cf-answer")).toContainText("2 positions");
   await fleet.getByRole("button", { name: `North pump 2 ${tag}` }).click();
   await expect(row(page, `North pump 2 ${tag}`)).toHaveAttribute("aria-selected", "true");
-  await expect(panel.getByRole("tab", { name: "Failure reports" })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByRole("tab", { name: "History", exact: true })).toHaveAttribute("aria-selected", "true");
 
   // A tree-table's tab in the address (they're by position) doesn't take the tree off the class.
   await open(page, `/asset-register/explorer?arrange=classes&root=${north.top.id}&sel=${encodeURIComponent(clsKey)}&tab=rcm`);
   await expect(sw.getByRole("radio", { name: "Classes" })).toHaveAttribute("aria-checked", "true");
   await expect(classRow).toHaveAttribute("aria-selected", "true");
-  await expect(panel.getByRole("tab", { name: "Condition monitoring" })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByRole("tab", { name: "Monitoring", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".cf-answer")).toContainText("2 positions");
 
   // South's asset: its one position, nothing of North's.
@@ -208,7 +208,7 @@ test("a class on a phone: its heading, its one tab and the way back fit 400 px",
   await expect(panel.getByRole("button", { name: /Explorer/ })).toBeVisible();
   const tabs = panel.getByRole("tab");
   await expect(tabs).toHaveCount(1);
-  await expect(tabs).toHaveText("Condition monitoring");
+  await expect(tabs).toHaveText("Monitoring");
   await expect(panel.locator(".cf-answer")).toContainText("2 positions");
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "class-condition-tab-400");
@@ -223,7 +223,7 @@ test("a position's Condition monitoring: its risk in words and two charts, or wh
   const tag = `m${Date.now()}`;
   const { cls, top, scored, unread, bare } = await monitored(request, tag);
   const panel = details(page);
-  const tabOn = panel.getByRole("tab", { name: "Condition monitoring" });
+  const tabOn = panel.getByRole("tab", { name: "Monitoring", exact: true });
   const risk = panel.getByRole("region", { name: "This position's risk now" });
   const rowA = row(page, `Feed pump A ${tag}`);
   const rowB = row(page, `Feed pump B ${tag}`);
@@ -244,7 +244,9 @@ test("a position's Condition monitoring: its risk in words and two charts, or wh
   await page.getByRole("region", { name: "Risk now" }).getByRole("button", { name: `Feed pump A ${tag}` }).click();
   await expect(rowA).toHaveAttribute("aria-selected", "true");
   await expect(tabOn).toHaveAttribute("aria-selected", "true");
-  await expect(tabOn).toHaveAttribute("title", /^This position's risk now/);
+  // Monitoring's Life left view (the tab's title names both its views).
+  await expect(page.getByRole("radiogroup", { name: "Monitoring: what to show" }).getByRole("radio", { name: "Life left" }))
+    .toHaveAttribute("aria-checked", "true");
   await expect(page).toHaveURL(/tab=condition/);
   const words = risk.locator(".joint-unit-sum");
   await expect(words).toContainText(`Position Feed pump A ${tag}, age 90 days, 3 readings.`);
@@ -266,14 +268,14 @@ test("a position's Condition monitoring: its risk in words and two charts, or wh
   await expect(risk).toContainText("can't score this position");
   await expect(risk).toContainText("No measurement point for");
   await expect(risk.getByRole("link", { name: /feed pumps/i })).toBeVisible();
-  await expect(risk.getByRole("button", { name: "Open the Modelling tab" })).toHaveCount(0);
+  await expect(risk.getByRole("button", { name: "Open Models › Life models" })).toHaveCount(0);
   await shot(page, "position-condition-not-scored-1440");
 
   // And the next: no model linked says so, and how to link one.
   await rowC.click();
   await expect(tabOn).toHaveAttribute("aria-selected", "true");
   await expect(risk).toContainText("No risk to show yet: no condition and life model is linked to this position.");
-  await expect(risk).toContainText("open this position's Modelling tab");
+  await expect(risk).toContainText("open this position's Models › Life models");
   await expect(risk).toContainText(`Fitted here: Feed pump C unit ${tag}`);
   await expect(risk).not.toContainText(/NaN|Infinity|undefined/);
   await shot(page, "position-condition-no-model-1440");
@@ -299,9 +301,9 @@ test("a position's Condition monitoring: its risk in words and two charts, or wh
   await expect(risk).toContainText(`Fitted here: Feed pump C unit ${tag}`);
 
   // The way to link a model: the position's Modelling tab, opened from the note.
-  await risk.getByRole("button", { name: "Open the Modelling tab" }).click();
+  await risk.getByRole("button", { name: "Open Models › Life models" }).click();
   await expect(page).toHaveURL(/tab=models/);
-  await expect(page.getByRole("tab", { name: "Modelling" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Models", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page).toHaveURL(new RegExp(`sel=${bare.id}`));
 
   // An address that names the tab opens on it, by any arrangement.
@@ -321,13 +323,13 @@ test("a design's position has no Condition monitoring: nothing is fitted or read
   await open(page, `/products/${product.id}?view=condition&sel=${motor.id}`);
   await expect(row(page, `Motor ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expect(panel.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
-  await expect(panel.getByRole("tab", { name: "Modelling" })).toBeVisible();
-  await expect(panel.getByRole("tab", { name: "Condition monitoring" })).toHaveCount(0);
+  await expect(panel.getByRole("tab", { name: "Models", exact: true })).toBeVisible();
+  await expect(panel.getByRole("tab", { name: "Monitoring", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "This position's risk now" })).toHaveCount(0);
   // The product's own row the same.
   await row(page, `Dosing skid ${tag}`).click();
   await expect(panel.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
-  await expect(panel.getByRole("tab", { name: "Condition monitoring" })).toHaveCount(0);
+  await expect(panel.getByRole("tab", { name: "Monitoring", exact: true })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "a design's position" });
 });
 
@@ -338,7 +340,7 @@ test("a position's Condition monitoring on a phone: the words and the charts fit
   await open(page, `/asset-register/explorer?arrange=classes&root=${top.id}`);
   await expect(arrangeSwitch(page).getByRole("radio", { name: "Classes" })).toHaveAttribute("aria-checked", "true");
   const panel = page.getByRole("region", { name: "Details" });
-  const tabOn = panel.getByRole("tab", { name: "Condition monitoring" });
+  const tabOn = panel.getByRole("tab", { name: "Monitoring", exact: true });
   const risk = panel.getByRole("region", { name: "This position's risk now" });
 
   // From the class's fleet to a position: its own tab, the same one.
@@ -362,10 +364,12 @@ test("a position's Condition monitoring on a phone: the words and the charts fit
   await panel.getByRole("button", { name: /Explorer/ }).click();
   await row(page, `Feed pump C ${tag}`).locator(".tp-nm").click();
   await expect(panel.getByRole("heading", { name: `Feed pump C ${tag}` })).toBeVisible();
+  // Monitoring opens on Readings (a tree-table: on a phone, the tree); its Life left view is the risk.
   await tabOn.click();
+  await page.getByRole("radiogroup", { name: "Monitoring: what to show" }).getByRole("radio", { name: "Life left" }).click();
   await expect(tabOn).toHaveAttribute("aria-selected", "true");
   await expect(risk).toContainText("No risk to show yet: no condition and life model is linked to this position.");
-  await expect(risk.getByRole("button", { name: "Open the Modelling tab" })).toBeVisible();
+  await expect(risk.getByRole("button", { name: "Open Models › Life models" })).toBeVisible();
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "position-condition-no-model-400");
   await panel.getByRole("button", { name: /Explorer/ }).click();

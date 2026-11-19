@@ -45,7 +45,8 @@ test("missions: a product's mission by phase, its covariates with the blocks the
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=missions`);
-  await expect(page.getByRole("tab", { name: "Missions" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Models", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("radiogroup", { name: "Models: what to show" }).getByRole("radio", { name: "Missions" })).toHaveAttribute("aria-checked", "true");
   const mission = nameRow(page, `Corridor inspection ${tag}`);
   await expect(mission).toBeVisible();
   await expect(mission).toContainText("2 phases: Take-off, Survey");

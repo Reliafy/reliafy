@@ -10,6 +10,7 @@ import RecurrentOverhaul from "./RecurrentOverhaul.jsx";
 import { getPositionClass } from "../api.js";
 import { explorerPath } from "../assetTree.js";
 import { classPresets, rowInputs, strategiesFor } from "../positionStrategy.js";
+import { tabPlace } from "../explorerTabs.js";
 import "./StrategyPane.css";
 import { classKey } from "../positionClass.js";
 
@@ -69,7 +70,7 @@ export default function StrategyPane({ link, position, saved = [], how = null, o
       case "conditionMonitoring":
         body = (
           <p className="sp-link">
-            {tool.words} <Link to={explorerPath("positions", { root: position.root || null, sel: position.id, tab: "condition" })}>Open its Condition monitoring →</Link>
+            {tool.words} <Link to={explorerPath("positions", { root: position.root || null, sel: position.id, tab: "condition" })}>Open {tabPlace("condition")} →</Link>
           </p>
         );
         break;

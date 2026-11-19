@@ -1449,3 +1449,21 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
   text-overflow: ellipsis;
 }
 .tp-tabs-for strong { color: var(--text); font-weight: 600; }
+
+/* The panel's tabs (TreeDetail HeaderTabs, EXPLORER_PANEL_TABS): the flat row with "⋯ N" (the
+   shared Tabs with overflow) taking the width it's given, then the tab's inner views under it. */
+.ptabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ptabs > .tabs-strip.tt-tabs { flex: none; min-height: 40px; }
+.ptabs > .tabs-strip.tp-tabs { margin: 2px 0 0; }
+.tabs-fit > .tabs { flex: 1 1 auto; }
+.ptabs-views { align-self: flex-start; margin: var(--space-2) 0; }
+@media (max-width: 560px) {
+  /* A phone: the inner views share the width in equal parts, one line each. */
+  .ptabs-views { align-self: stretch; display: flex; }
+  .ptabs-views .seg-btn { flex: 1 1 0; min-width: 0; text-align: center; justify-content: center; white-space: nowrap; padding-left: var(--space-2); padding-right: var(--space-2); }
+}

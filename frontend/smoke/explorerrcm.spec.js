@@ -8,7 +8,7 @@
 // by, the levels, Show only, Reset); full screen.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { details, openColumns, reveal } from "./explorer.js";
+import { details, openColumns, reveal, pickTab } from "./explorer.js";
 
 const M = "/api/maintenance";
 // With SMOKE_SHOTS_DIR set, the decision dialog's states are saved there too (for the pull request).
@@ -86,7 +86,7 @@ test("RCM: the tree and the RCM are one table; Summary: the tree and the page; t
   await expect(page.getByText(`Pump water ${tag}`)).toHaveCount(0);
   const before = await placeOf(page, treeitem(page, `Rcm pump ${tag}`));
 
-  await page.getByRole("tab", { name: "RCM" }).click();
+  await pickTab(page, "RCM");
   await expect(page).toHaveURL(/tab=rcm/);
   // One table: no tree of its own beside it, the positions and their RCM in the same rows.
   await expect(table(page)).toBeVisible();
@@ -459,7 +459,7 @@ test("at 400 px nothing scrolls sideways, on either tab; a mode opens as a sheet
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
   expect((await overflow(page)).side).toBe(0);
-  await page.getByRole("tab", { name: "RCM" }).click();
+  await pickTab(page, "RCM");
   await expect(table(page)).toBeVisible();
   expect((await overflow(page)).side).toBe(0);
   await pickRow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`);

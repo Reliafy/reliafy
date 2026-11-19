@@ -11,7 +11,7 @@
 // position with RCM rows and one with none; opened on either tab.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { flashes, frameOf, movedBetween, watchFrames } from "./explorer.js";
+import { flashes, frameOf, movedBetween, watchFrames, pickTab } from "./explorer.js";
 
 const M = "/api/maintenance";
 
@@ -44,12 +44,12 @@ const settled = async (page) => {
 };
 
 // One switch: the frame before and after, the frames in between, the focus.
-async function check(page, label, go, { wantTab, focusTab = true, rows = true, scrolls = {} } = {}) {
+async function check(page, label, go, { wantTab, focusTab = true, rows = true, scrolls = {}, read = true } = {}) {
   const before = await frameOf(page);
   // Opening the RCM tab reads the RCM again; its rows (and so the tree's
   // scroll, which keeps the row picked in place) are only final once that read
   // is in. On a loaded machine with a big workspace it can take over a second.
-  const rcmRead = wantTab === "RCM"
+  const rcmRead = wantTab === "RCM" && read
     ? page.waitForResponse((r) => r.request().method() === "GET" && new URL(r.url()).pathname === `${M}/rcm`, { timeout: 15_000 })
     : null;
   const stop = await watchFrames(page);
@@ -81,12 +81,19 @@ async function check(page, label, go, { wantTab, focusTab = true, rows = true, s
 async function switchEveryWay(page, start, options = {}) {
   const [a, b] = start === "RCM" ? ["RCM", "Summary"] : ["Summary", "RCM"];
   const opts = { ...options, scrolls: { [a]: await frameOf(page) } };
-  await check(page, `click ${b}`, () => tab(page, b).click(), { ...opts, wantTab: b });
-  await check(page, `click ${a}`, () => tab(page, a).click(), { ...opts, wantTab: a });
+  await check(page, `click ${b}`, () => pickTab(page, b), { ...opts, wantTab: b });
+  await check(page, `click ${a}`, () => pickTab(page, a), { ...opts, wantTab: a });
   // The arrow keys move along the tabs and open the next.
-  await tab(page, a).focus();
-  await check(page, `arrow to ${b}`, () => page.keyboard.press(b === "RCM" ? "ArrowRight" : "ArrowLeft"), { ...opts, wantTab: b });
-  await check(page, `arrow to ${a}`, () => page.keyboard.press(a === "RCM" ? "ArrowRight" : "ArrowLeft"), { ...opts, wantTab: a });
+  // The keyboard: the tabs are ordered by use (Summary · Maintenance · Monitoring · RCM · FME(C)A …),
+  // so from RCM the arrows go to its neighbour FME(C)A (the other tree-table) and back, and Home
+  // goes to Summary.
+  if (a === "Summary") await check(page, "click RCM", () => pickTab(page, "RCM"), { ...opts, wantTab: "RCM" });
+  await tab(page, "RCM").focus();
+  await check(page, "arrow to FME(C)A", () => page.keyboard.press("ArrowRight"), { ...opts, wantTab: "FME(C)A" });
+  // FME(C)A reads the same RCM, so coming back to RCM from it reads nothing new.
+  await check(page, "arrow to RCM", () => page.keyboard.press("ArrowLeft"), { ...opts, wantTab: "RCM", read: false });
+  await check(page, "Home to Summary", () => page.keyboard.press("Home"), { ...opts, wantTab: "Summary" });
+  if (a === "RCM") await check(page, "click RCM", () => pickTab(page, "RCM"), { ...opts, wantTab: "RCM" });
   // The browser's Back and Forward, over an address that changes ?tab=.
   await page.evaluate((to) => {
     const u = new URL(location.href);
@@ -185,7 +192,7 @@ test("on a phone with a branch pinned, switching tabs leaves the frame where it 
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.top.id}`);
   await expect(page.getByRole("treeitem", { name: new RegExp(`^Pinned: Steady plant ${tag}`) })).toBeVisible();
   const scrolls = { Summary: await frameOf(page) };
-  await check(page, "phone, pinned: to RCM", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls });
+  await check(page, "phone, pinned: to RCM", () => pickTab(page, "RCM"), { wantTab: "RCM", rows: false, scrolls });
   await check(page, "phone, pinned: to Summary", () => tab(page, "Summary").click(), { wantTab: "Summary", rows: false, scrolls });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "explorer steady tabs, phone, pinned" });
@@ -208,11 +215,11 @@ test("on a phone, switching tabs leaves the title, the tabs, the search box and 
   // room yet to scroll the row up to its place, so it sits a row lower than on later visits,
   // when the read is in at once. So the first visit checks the frame, and the visits after it
   // the scroll each tab comes back to.
-  await check(page, "phone: to RCM, first", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls: {} });
+  await check(page, "phone: to RCM, first", () => pickTab(page, "RCM"), { wantTab: "RCM", rows: false, scrolls: {} });
   await check(page, "phone: back to Summary", () => tab(page, "Summary").click(), { wantTab: "Summary", rows: false, scrolls });
-  await check(page, "phone: to RCM", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls });
+  await check(page, "phone: to RCM", () => pickTab(page, "RCM"), { wantTab: "RCM", rows: false, scrolls });
   await check(page, "phone: to Summary", () => tab(page, "Summary").click(), { wantTab: "Summary", rows: false, scrolls });
-  await check(page, "phone: to RCM again", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls });
+  await check(page, "phone: to RCM again", () => pickTab(page, "RCM"), { wantTab: "RCM", rows: false, scrolls });
   const side = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   expect(side).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "explorer steady tabs, phone" });

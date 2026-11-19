@@ -17,6 +17,7 @@ import SignalBandEditor from "./SignalBandEditor.jsx";
 import SignalStorage from "./SignalStorage.jsx";
 import NewChannel from "./SignalChannelForm.jsx";
 import { usePanelMenu } from "../panelMenu.js";
+import { tabPlace } from "../explorerTabs.js";
 import "./SignalsPanel.css";
 
 const flag = (key, fallback = false) => {
@@ -669,7 +670,7 @@ export function ChannelView({ summary, all, onChanged, focusBands = false }) {
                                 onChanged?.();
                               }} />
           )}
-          <p className="sg-hint">Each band is also a measurement point (a row of the Explorer's Measurements tab), so its alarm limits, trend and projected alarm date work as for any other.</p>
+          <p className="sg-hint">Each band is also a measurement point (a row of the Explorer's {tabPlace("measurements")}), so its alarm limits, trend and projected alarm date work as for any other.</p>
         </section>
       )}
       {bands.length > 0 && <TimeToLimit bands={bands} channelName={ch.name} selectedId={bandSel === "preview" ? null : bandSel} />}

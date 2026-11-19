@@ -5,6 +5,8 @@
 // strategy tools that fit the model's type, pre-filled with the model and the position's class
 // costs where known. Pure functions, tested in positionStrategy.test.js.
 
+import { tabPlace } from "./explorerTabs.js";
+
 // The strategy tools, each the shared Strategy component (one per job) shown in the pane.
 export const STRATEGY_CHOICES = {
   replacement: { id: "replacement", label: "Optimal replacement", kind: "optimal_replacement",
@@ -20,7 +22,7 @@ export const STRATEGY_CHOICES = {
   conditionRisk: { id: "conditionRisk", label: "Risk now", kind: null, link: true,
     words: "Each unit's chance of failing soon from its latest readings, on the model's page." },
   conditionMonitoring: { id: "conditionMonitoring", label: "Condition monitoring", kind: null, link: true,
-    words: "This position's condition, remaining life and alarms (its Condition monitoring tab)." },
+    words: `This position's condition, remaining life and alarms (${tabPlace("condition")}).` },
 };
 
 // The kinds a saved strategy analysis can have here (those with a kind).

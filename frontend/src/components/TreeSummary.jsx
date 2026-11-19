@@ -11,6 +11,7 @@ import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
 import { annualLsa, annualText, nextVisit } from "../lsaTab.js";
 import { explorerHere } from "../products.js";
+import { tabPlace } from "../explorerTabs.js";
 import { getMaintenanceLocation, getOperatingPlan, getPositionCondition } from "../api.js";
 import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../positionClass.js";
 import { hoursWords, planWords } from "../operatingPlan.js";
@@ -73,7 +74,7 @@ function StatusChips({ r, position, version }) {
     if (!tab) return <Chip key={i} tone={tone}>{text}</Chip>;
     return (
       <Link key={i} className="td-status-go" to={explorerHere(pathname, search, { sel: r.key, tab })}
-            title={w.kind === "risk" ? "Its risk now, on the Condition monitoring tab" : "Its counters and readings, on the Measurements tab"}>
+            title={w.kind === "risk" ? `Its risk now, on ${tabPlace("condition")}` : `Its counters and readings, on ${tabPlace("measurements")}`}>
         <Chip tone={tone}>{text}</Chip>
       </Link>
     );
@@ -82,7 +83,7 @@ function StatusChips({ r, position, version }) {
     <div className="chip-row td-status">
       {words.map(chip)}
       {clear && <Chip tone="success">✓ Nothing overdue, no open work and no alarms{r.kids.length ? ", here or inside" : ""}</Chip>}
-      {!words.length && failed && <Chip>Its risk now couldn't be read: open Condition monitoring to try again</Chip>}
+      {!words.length && failed && <Chip>Its risk now couldn't be read: open {tabPlace("condition")} to try again</Chip>}
     </div>
   );
 }

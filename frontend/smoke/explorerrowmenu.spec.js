@@ -229,7 +229,8 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   await expect(addRow).toHaveText(`+New position at Menu site ${tag}`);
 
   // LSA: the tree ends at its last row, and a position's menu leads with the tab's own action.
-  await page.getByRole("tab", { name: "LSA" }).click();
+  await page.getByRole("tab", { name: "Maintenance", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Maintenance: what to show" }).getByRole("radio", { name: "What it needs" }).click();
   await expect.poll(() => query(page).get("tab")).toBe("lsa");
   await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
   await expect(addRow).toHaveCount(0);

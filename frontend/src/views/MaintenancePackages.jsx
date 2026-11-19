@@ -12,6 +12,7 @@ import {
   lateText, packageMatches, packagePath, packageStatusText,
 } from "../maintenanceOrders.js";
 import { PACKAGES_LABEL } from "../navigation.js";
+import { tabPlace } from "../explorerTabs.js";
 import "./Maintenance.css";
 
 const HELP = { guide: "maintenance-work-orders" };
@@ -84,7 +85,7 @@ export default function MaintenancePackages() {
         {rows == null ? null : rows.length === 0 ? (
           <div className="empty">
             <p className="lib-date">
-              {status ? "No packages with that status." : <>No packages yet. Tick tasks on the Explorer's <Link to={LSA_PATH}>LSA tab</Link> to package them into visits.</>}
+              {status ? "No packages with that status." : <>No packages yet. Tick tasks in the Explorer's <Link to={LSA_PATH}>{tabPlace("lsa")}</Link> to package them into visits.</>}
             </p>
           </div>
         ) : shown.length === 0 ? (

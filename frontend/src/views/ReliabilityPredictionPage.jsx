@@ -12,6 +12,7 @@ import { deletePrediction, getPrediction } from "../api.js";
 import { deleteOrRemoveConfirm } from "../confirm.js";
 import { PREDICTIONS_LABEL, PREDICTIONS_PATH, newPredictionPath } from "../predictions.js";
 import { productPath } from "../products.js";
+import { tabPlace } from "../explorerTabs.js";
 import "./Predictions.css";
 
 // A saved reliability prediction, read from its stored results (computed
@@ -74,7 +75,7 @@ export default function ReliabilityPredictionPage() {
       >
         {doc.inputs?.position?.id && maintenance && (
           <p className="hint">
-            The parts count of <b>{doc.inputs.position.name}</b>, made on its Modelling tab ·{" "}
+            The parts count of <b>{doc.inputs.position.name}</b>, made on its {tabPlace("models")} ·{" "}
             <Link to={`/asset-register/explorer?arrange=positions&sel=${encodeURIComponent(doc.inputs.position.id)}&tab=models`}>Open on the asset</Link>.
           </p>
         )}

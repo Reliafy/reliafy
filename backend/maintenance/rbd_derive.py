@@ -139,7 +139,7 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -
         notes.append(f"No non-repairable model yet for {', '.join(placeholders)}: a placeholder is used. Fit one for "
                      "the position's class, or give each block a model in the RBD builder." if block_model is None else
                      f"No model in use yet for {', '.join(placeholders)}: a placeholder (flagged) stands in. Give "
-                     "each a model on the Modelling tab and rebuild, or set one in the RBD builder.")
+                     "each a model in Models › Life models and rebuild, or set one in the RBD builder.")
     graph = {"nodes": nodes, "unit": unit,
              "edges": [{"source": s, "target": t} for (s, t) in sorted(edges)]}
     return {"graph": graph, "notes": notes, "placeholders": placeholders, "scope": scope, "redundancy": used}
