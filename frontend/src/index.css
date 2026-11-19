@@ -7265,6 +7265,24 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   line-height: var(--lh-13);
 }
 
+/* The fit wizard's warning when a status column's name ("failed") and its
+   reading (0 = failed) disagree, with the one-click flip beside it. */
+.fit-flag-warn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+}
+.fit-flag-warn > span { flex: 1 1 16rem; min-width: 0; }
+
 /* ---- Landing pricing ------------------------------------------------------ */
 .landing-pricing {
   max-width: 1080px;
