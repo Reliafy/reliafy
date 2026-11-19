@@ -727,14 +727,87 @@ def describe(m, db, owners, hidden, links: list[dict], age: float | None = None)
             text = rbd_source(link, model)
         if model and model.get("covariate_words") and link.get("role") in ("assigned", "design"):
             text = f"{text} ({model['covariate_words']})"
-        if model and link.get("role") == "prediction":
+        if model and is_prediction(link):
+            # A parts count (or a built item's copy of its design's): said as one, with what it
+            # covers in the headline and its figures rounded as the parts count rounds them (W4).
+            pred = prediction_doc_of(db, owners, link, doc)
             model = {**model, "kind": "Prediction (parts count)", "family": "life",
+                     "numbers": [_round_number(n) for n in model.get("numbers") or []],
                      "quality": {"word": "Predicted", "tone": "neutral",
                                  "why": "A handbook parts count: no failure data behind it, and no bounds."}}
+            covers = prediction_covers((pred.results or {}) if pred is not None else {})
+            if covers:
+                model["covers"] = covers
         out.append({**link, "model": model,
                     "source_text": text, "stale": stale(m, link),
                     "used_by": {"decisions": used, "rbds": rbds.get(link["model_id"], [])}})
     return out
+
+
+def is_prediction(link: dict) -> bool:
+    """A parts-count row: the position's own (role prediction), or a built item's copy of its
+    design's (role design, from a prediction)."""
+    return link.get("role") == "prediction" or (
+        link.get("role") == "design" and (link.get("source") or {}).get("design_role") == "prediction")
+
+
+def prediction_doc_of(db, owners, link: dict, model_doc=None):
+    """The saved parts count behind a parts-count row (its own link names it; a built item's copy
+    reads it from the model), or None."""
+    from backend.services import reliability_prediction as rp
+
+    pid = (link.get("source") or {}).get("prediction_id") or (
+        (getattr(model_doc, "results", None) or {}).get("prediction_id") if model_doc is not None else None)
+    return rp.get_prediction(db, pid, owners) if pid else None
+
+
+def _sig3(x: float) -> float:
+    import math
+
+    if not x:
+        return x
+    return round(x, 2 - int(math.floor(math.log10(abs(x)))))
+
+
+def _round_number(n: dict) -> dict:
+    """A parts count's figure shown to three significant figures (``text``), as its own page
+    writes it, so one page never shows 5,768 and 5,770 for the same MTBF."""
+    if not isinstance(n, dict) or n.get("text") or not isinstance(n.get("value"), (int, float)):
+        return n
+    v = _sig3(float(n["value"]))
+    unit = str(n.get("unit") or "").lower()
+    shown = f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.3g}"
+    return {**n, "text": f"{shown}{(' ' + unit) if unit else ''}"}  # the value itself stays exact
+
+
+def prediction_covers(results: dict) -> dict | None:
+    """What a parts count leaves out, for its headline: {short ("electronics only: 3 lines left
+    out"), words (with the lines' names), left_out: [{name, quantity, why}]}, or None when it
+    covers its whole parts list. Why: "MTBF 5,768 h · All failures of this position" over a
+    count that left out the battery, propellers and airframe overstated what it covers."""
+    def q(ln):
+        n = ln.get("quantity") or 1
+        return ln.get("name") or ln.get("reference") or "a line", n
+
+    out = []
+    for key, why in (("excluded", "not an electronic part"), ("unassigned", "no handbook part type"),
+                     ("needs_conditions", "needs its conditions"), ("left_out", "left out by hand")):
+        for ln in results.get(key) or []:
+            name, n = q(ln)
+            out.append({"name": name, "quantity": n, "why": why})
+    if not out:
+        return None
+    k = len(out)
+    electronic = any(x["why"] == "not an electronic part" for x in out)
+    lead = "electronics only" if electronic else "part of the parts list"
+    short = f"{lead}: {k} line{'s' if k != 1 else ''} left out"
+    names = "; ".join(_qty_name(x) for x in out[:8])
+    more = f" and {k - 8} more" if k > 8 else ""
+    return {"short": short, "words": f"{short[0].upper()}{short[1:]} ({names}{more})", "left_out": out}
+
+
+def _qty_name(x: dict) -> str:
+    return x["name"] if x["quantity"] == 1 else f"{x['name']} ×{x['quantity']:g}"
 
 
 def _placeholders(graph: dict) -> list[str]:
@@ -752,16 +825,30 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
     and its placeholders."""
     from backend.services import rbds as rbds_service
 
+    from backend.services import rbd_placeholders
+
     graph = doc.graph or {}
     unit = graph.get("unit") or ""
     blocks = [n for n in graph.get("nodes") or [] if n.get("type") not in ("input", "output")]
-    ph = _placeholders(graph)
+    # Placeholders counted through every sub-system (W2, 19 Nov 2026): a diagram of six
+    # sub-systems whose 27 blocks are all placeholders says "27 of 27", never "1 placeholder".
+    resolve_subsystem, _ = rbds_service.resolvers(db, owners)
+    t = rbd_placeholders.tally(graph, resolve_subsystem)
+    ph = list(t["names"])
+    most = rbd_placeholders.mostly(t)
     out = {"name": doc.name, "unit": unit, "family": "rbd", "kind": "RBD", "numbers": [], "trend": None,
-           "counts": {"blocks": len(blocks), "placeholders": len(ph)}, "placeholders": ph,
+           # blocks: the diagram's own; placeholders: basic blocks that are placeholders, at any depth.
+           "counts": {"blocks": len(blocks), "placeholders": t["placeholders"], "basic_blocks": t["basic"],
+                      "basic_placeholders": t["placeholders"], "nested": rbd_placeholders.nested(t)},
+           "placeholders": ph, "placeholder_blocks": rbd_placeholders.summary(t),
            "path": f"/systems/b/{doc.id}", "repairable": bool(graph.get("repairable")),
-           "quality": ({"word": f"{len(ph)} placeholder{'s' if len(ph) != 1 else ''}", "tone": "warning",
-                        "why": f"Placeholder models stand in for {', '.join(ph)}: the figures aren't real until they "
-                               "have models."} if ph else {"word": "", "tone": "neutral", "why": ""})}
+           "quality": ({"word": f"{t['placeholders']:,} of {t['basic']:,} placeholders" if rbd_placeholders.nested(t)
+                        else f"{t['placeholders']} placeholder{'s' if t['placeholders'] != 1 else ''}",
+                        "tone": "danger" if most else "warning",
+                        "why": (f"{rbd_placeholders.words(t).capitalize()} ({rbd_placeholders.names_text(t)}): "
+                                + ("most of the answer rests on invented lives, so " if most else "")
+                                + "the figures aren't real until they have models.")}
+                       if ph else {"word": "", "tone": "neutral", "why": ""})}
     if graph.get("repairable"):
         out["numbers"].append({"id": "reference", "label": "", "text": "a repairable diagram: open it to simulate "
                                                                        "availability"})
@@ -797,8 +884,13 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
 def rbd_source(link: dict, model: dict | None) -> str:
     """An RBD row's Source: "Built from 5 positions inside · 2 placeholders" or "Linked: <name>"."""
     src = link.get("source") or {}
-    ph = len((model or {}).get("placeholders") or [])
-    tail = f" · {ph} placeholder{'s' if ph != 1 else ''}" if ph else ""
+    counts = (model or {}).get("counts") or {}
+    ph = counts.get("basic_placeholders", len((model or {}).get("placeholders") or []))
+    basic = counts.get("basic_blocks") or 0
+    if ph and basic > 1 and counts.get("nested"):
+        tail = f" · {ph:,} of {basic:,} basic blocks {'is a placeholder' if ph == 1 else 'are placeholders'}"
+    else:
+        tail = f" · {ph} placeholder{'s' if ph != 1 else ''}" if ph else ""
     if src.get("built_from") is not None:
         n = int(src["built_from"])
         return f"Built from {n} position{'s' if n != 1 else ''} inside{tail}"
@@ -954,6 +1046,8 @@ def source_text(link: dict, position_name: str = "") -> str:
     if role == "bayesian":
         return src.get("label") or f"Bayesian update of {src.get('baseline') or 'a baseline'}"
     if role == "design":
+        if src.get("design_role") == "prediction":
+            return "From the product's design: its parts count"
         return "From the product's design"
     if role == "library":
         from backend.maintenance.library_models import source_text as library_source
@@ -977,7 +1071,7 @@ def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dic
     if link["model_type"] == "rbd":
         return {**row, "position": {"id": pos.get("id"), "name": pos.get("name", "")}, "params": [],
                 "curves": (row.get("model") or {}).get("curves"), "origin": "", "model_notes": "",
-                "blocks": rbd_blocks(m, link, doc) if doc is not None else [], "stress_note": None, "prediction": None}
+                "blocks": rbd_blocks(m, link, doc, _rbd_resolver(db, owners)) if doc is not None else [], "stress_note": None, "prediction": None}
     notes = ""
     if doc is not None:
         notes = str(((doc.spec or {}).get("notes")) or (doc.results or {}).get("notes") or "")
@@ -995,7 +1089,7 @@ def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dic
                 "Shown as fitted. The stress (or covariates) at this position is set where the model is "
                 "used: an RBD block or a calculation." if (row.get("model") or {}).get("covariate_words")
                 else None),
-            "prediction": prediction_detail(db, owners, link) if link.get("role") == "prediction" else None}
+            "prediction": prediction_detail(db, owners, link, doc) if is_prediction(link) else None}
 
 
 def usage_rate_for(m, link: dict, doc) -> dict | None:
@@ -1495,13 +1589,10 @@ def _model_note(name: str, results: dict, environment: str) -> str:
     return note
 
 
-def prediction_detail(db, owners, link: dict) -> dict | None:
-    """The saved prediction behind a prediction row: every line's contribution, the factors and
-    the handbook, as the Predictions page shows them."""
-    from backend.services import reliability_prediction as rp
-
-    pid = (link.get("source") or {}).get("prediction_id")
-    doc = rp.get_prediction(db, pid, owners) if pid else None
+def prediction_detail(db, owners, link: dict, model_doc=None) -> dict | None:
+    """The saved prediction behind a prediction row (or a built item's copy of one): every line's
+    contribution, the factors and the handbook, as the Predictions page shows them."""
+    doc = prediction_doc_of(db, owners, link, model_doc)
     if doc is None:
         return None
     return {"id": doc.id, "name": doc.name, "results": doc.results, "environment": (doc.inputs or {}).get("environment"),
@@ -1519,10 +1610,21 @@ def _model_words(model: dict) -> str:
     return f"{name}{(' (' + params + ')') if params and not model.get('name') else ''}"
 
 
-def rbd_blocks(m, link: dict, doc) -> list[dict]:
+def _rbd_resolver(db, owners):
+    from backend.services import rbds as rbds_service
+
+    return rbds_service.resolvers(db, owners)[0]
+
+
+def rbd_blocks(m, link: dict, doc, resolve_subsystem=None) -> list[dict]:
     """An RBD's blocks for the panel: each block's label, its model in words (placeholder or not),
-    and the position it came from (a block built from a position inside this one)."""
+    and the position it came from (a block built from a position inside this one). A sub-system
+    whose blocks are all placeholders is a placeholder too; one with some says how many
+    (``inside``: {basic, placeholders})."""
     from backend.maintenance import rbd_derive
+    from backend.services import rbd_placeholders
+
+    t = rbd_placeholders.tally(doc.graph or {}, resolve_subsystem)
 
     kids = {rbd_derive._bid(c["id"]): c for c in m.s.inn(m.org, link["position_id"], "PART_OF")
             if c["label"] == "Position"}
@@ -1534,9 +1636,14 @@ def rbd_blocks(m, link: dict, doc) -> list[dict]:
         model = d.get("model") or {}
         sub = d.get("rbd") or {}
         kid = kids.get(n.get("id"))
+        row = t["by_node"].get(str(n.get("id"))) or {}
+        whole = bool(row) and row["basic"] > 0 and row["placeholders"] == row["basic"]
         out.append({"id": n.get("id"), "label": d.get("label") or n.get("id"), "type": n.get("type"),
                     "model": (f"RBD: {sub.get('name') or 'a sub-system'}" if sub else _model_words(model)) or "—",
-                    "placeholder": bool(model.get("placeholder")), "source": d.get("model_source") or None,
+                    "placeholder": bool(model.get("placeholder")) or (bool(sub) and whole),
+                    **({"inside": {"basic": row["basic"], "placeholders": row["placeholders"]}}
+                       if sub and row else {}),
+                    "source": d.get("model_source") or None,
                     "position": {"id": kid["id"], "name": kid["name"]} if kid else None})
     return out
 
@@ -1669,6 +1776,18 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
                 return life(child, cd, f"Its class's fitted model ({cm['position_class']}: {cd.name})")
             inside = [c for c in m.s.inn(m.org, child["id"], "PART_OF") if c["label"] == "Position"
                       and not c.get("retired")]
+            if not inside:
+                # A leaf with no model but a parts-count rate: an exponential block at that rate,
+                # marked as from the parts count (W3), never a placeholder life.
+                from backend.maintenance import position_rates
+
+                rate = position_rates.parts_count_rate(m, db, owners, child["id"])
+                if rate is not None:
+                    conv = _convert("exponential", [{"name": "failure_rate", "value": rate["per_hour"]}],
+                                    _factor("Hours", unit) or 1.0)
+                    if conv is not None:
+                        return ({"model": {"distribution_id": "exponential", "params": conv},
+                                 "data": {"model_source": rate["text"], "rate_source": "parts count"}}, None)
             if inside and owner_id is not None and depth < MAX_NEST and child["id"] != position_id:
                 if _open_covariates_below(m, child["id"]):
                     return None, (f"{child['name']}'s parts have models with covariates left open, which a "
@@ -1704,6 +1823,8 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
         if x["model_type"] != "model" or d.kind not in ("distribution", "regression"):
             return None, (f"{child['name']}'s model in use ({d.name}) isn't a life distribution an RBD block can take: "
                           "a placeholder stands in.")
+        if x.get("role") == "prediction":
+            return life(child, d, f"From the parts count ({d.name})")
         return life(child, d, f"Its model in use ({d.name})")
 
     return p, fetch, children, unit, block, nested_placeholders

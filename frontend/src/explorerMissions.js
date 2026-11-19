@@ -683,22 +683,53 @@ const listed = (names) => (names.length <= 1 ? names.join("") : `${names.slice(0
 // system"), without (the chance with those blocks left out; null when there is none to give)}.
 // `result`: a calculation (placeholders: [{id, label}], blocks) or a list row's kept result
 // (placeholders: [labels], without_placeholders: the number).
+//
+// Placeholders are counted through every sub-system (`placeholder_blocks`: {basic, placeholders,
+// mostly}): a sub-system whose blocks are all placeholders is one of `names`; one with only some
+// is in `partly`. `basic`/`guessed`: the basic blocks and how many are placeholders ("27 of 27
+// basic blocks are placeholders"); `mostly`: half or more, so the warning is made prominent.
 export function placeholderWarning(result) {
-  const names = (result?.placeholders || []).map((p) => (typeof p === "string" ? p : p.label));
-  if (!names.length) return null;
+  const label = (p) => (typeof p === "string" ? p : p.label);
+  const names = (result?.placeholders || []).map(label);
+  const partly = (result?.partly_placeholders || []).map(label);
+  if (!names.length && !partly.length) return null;
   const n = names.length;
   const of = Number(result.blocks) || null;
   const w = result.without_placeholders;
   const without = w == null ? null : typeof w === "number" ? w : w.reliability ?? null;
-  const count = of && of > n ? `${n} of ${of} blocks have no model` : of === n && n > 1 ? `none of the ${n} blocks has a model`
-    : n === 1 ? (of === 1 ? "the block has no model" : "1 block has no model") : `${n} blocks have no model`;
-  return { n, of, names, count, list: listed(names), without: result.reliability == null ? null : without };
+  const held = result.placeholder_blocks || null;
+  const basic = Number(held?.basic) || null;
+  const guessed = Number(held?.placeholders) || null;
+  const nested = !!held?.nested && basic != null && guessed != null;
+  const mostly = held ? !!held.mostly || (basic ? guessed * 2 >= basic : false) : (of ? n * 2 >= of : false);
+  let count;
+  if (nested) {
+    count = `${guessed.toLocaleString("en-AU")} of ${basic.toLocaleString("en-AU")} basic blocks ${guessed === 1 ? "is a placeholder" : "are placeholders"}`;
+  } else if (!n) {
+    count = `${listed(partly)} ${partly.length === 1 ? "rests" : "rest"} partly on placeholders`;
+  } else {
+    count = of && of > n ? `${n} of ${of} blocks have no model` : of === n && n > 1 ? `none of the ${n} blocks has a model`
+      : n === 1 ? (of === 1 ? "the block has no model" : "1 block has no model") : `${n} blocks have no model`;
+  }
+  return {
+    n, of, names, partly, basic, guessed, nested, mostly, count, list: listed(names.length ? names : partly),
+    // Leaving every block out would leave nothing to work out.
+    canLeaveOut: n > 0 && !(of != null && n >= of),
+    without: result.reliability == null ? null : without,
+  };
+}
+// The chip's tone for a figure worked out on placeholders: danger when most of it rests on them.
+export function placeholderTone(result) {
+  const ph = placeholderWarning(result);
+  return ph ? (ph.mostly ? "danger" : "warning") : null;
 }
 // The Completes cell's hover for a mission worked out on placeholders.
 export function placeholderTitle(result) {
   const ph = placeholderWarning(result);
   if (!ph) return "";
-  return `Not a real figure: ${ph.list} ${ph.n === 1 ? "has" : "have"} no model, so a placeholder stands in.`
+  if (!ph.n) return `Not a real figure: ${ph.count}.`;
+  const nested = ph.nested;
+  return `Not a real figure: ${nested ? `${ph.count}. ` : ""}${ph.list} ${ph.n === 1 ? "has" : "have"} no model, so a placeholder stands in.`
     + (ph.without != null ? ` Without ${ph.n === 1 ? "it" : "them"}: ${pct(ph.without)}.` : "");
 }
 // Every phase with the placeholder blocks Not needed (left out of the mission): the rows to keep.
@@ -714,6 +745,7 @@ export function answerText(result) {
   if (result.reliability != null) {
     const risky = result.riskiest && (result.phases || []).length > 1 ? ` ${result.riskiest.name} is the riskiest phase.` : "";
     const ph = placeholderWarning(result);
+    if (ph && ph.mostly) return `Not a real figure: ${ph.count}, so most of this answer rests on invented lives. With placeholders standing in, the mission completes with probability ${pct(result.reliability)}.`;
     if (ph) return `Not a real figure yet: ${ph.count}. With a placeholder standing in for ${ph.n === 1 ? "it" : "each"}, the mission completes with probability ${pct(result.reliability)}.`;
     return `The mission completes with probability ${pct(result.reliability)}.${risky}`;
   }

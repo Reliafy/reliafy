@@ -61,6 +61,8 @@
 /* The blocks with no model (a placeholder stands in), under the answer. */
 .mission-ph { border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: var(--radius-md, 8px); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-13); min-width: 0; overflow-wrap: anywhere; }
 .mission-ph p { margin: 0; }
+/* Most of the answer rests on placeholders: said as a bad verdict, not a caveat (W2). */
+.mission-ph-most { border-color: var(--danger-border); background: var(--danger-bg); }
 .mission-ph-do { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .mission-ph-do button { min-height: 32px; vertical-align: baseline; }
 .mission-ph-also, .mission-ph-out { margin: 0; color: var(--text-secondary); }

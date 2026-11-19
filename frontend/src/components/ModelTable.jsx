@@ -49,7 +49,7 @@ export function useTreeModels({ on, within = null }) {
   return { links: state.links, classModels: state.classModels, error: state.error, load };
 }
 
-const QUALITY_TONE = { success: "success", warning: "warning", neutral: "neutral" };
+const QUALITY_TONE = { success: "success", warning: "warning", danger: "danger", neutral: "neutral" };
 
 // One cell of a model row (the tree row `r`, its link r.ref.link).
 export function ModelCell({ r, col }) {
@@ -333,7 +333,11 @@ function RbdDetails({ d, model, age, onAge }) {
   return (
     <section aria-label="The diagram" className="ml-rbd">
       {model?.placeholders?.length > 0 && (
-        <p className="ml-stale" role="note">Placeholders stand in for {model.placeholders.join(", ")}: the figures aren't real until they have models.</p>
+        <p className={`ml-stale${model.placeholder_blocks?.mostly ? " is-most" : ""}`} role="note">
+          {model.placeholder_blocks?.words ? `${model.placeholder_blocks.words.charAt(0).toUpperCase()}${model.placeholder_blocks.words.slice(1)}: ` : ""}
+          placeholders stand in for {model.placeholders.slice(0, 8).join(", ")}{model.placeholders.length > 8 ? ` and ${model.placeholders.length - 8} more` : ""}
+          {model.placeholder_blocks?.mostly ? ". Most of the answer rests on invented lives, so" : ":"} the figures aren't real until they have models.
+        </p>
       )}
       {model?.repairable && <p className="rim-tquiet">A repairable diagram: its availability is simulated on its own page.</p>}
       <Field label={`System reliability at an age${u ? ` (${u})` : ""}`} optional>
@@ -348,14 +352,16 @@ function RbdDetails({ d, model, age, onAge }) {
           <thead><tr><th>Block</th><th>Model</th></tr></thead>
           <tbody>
             {blocks.map((b) => {
-              const where = b.placeholder ? "No model in use, from its class or inside it" : b.source || "";
+              const where = b.placeholder ? (b.inside ? "Every block inside it is a placeholder" : "No model in use, from its class or inside it")
+                : b.inside?.placeholders ? `${b.inside.placeholders} of ${b.inside.basic} blocks inside it are placeholders` : b.source || "";
               const from = b.position && b.position.name !== b.label ? `position ${b.position.name}` : "";
               const hover = [where, from].filter(Boolean).join(" · ");
               return (
                 <tr key={b.id} title={hover || undefined}>
                   <td>{b.label}</td>
                   <td>
-                    {b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}
+                    {b.placeholder ? <Chip tone="warning" title={b.inside ? "Every block inside this sub-system is a placeholder" : "A placeholder: no model in use for this position yet"}>{b.inside ? `Placeholders (${b.inside.placeholders} of ${b.inside.basic})` : "Placeholder"}</Chip>
+                      : b.inside?.placeholders ? <>{b.model} <Chip tone="warning">{b.inside.placeholders} of {b.inside.basic} placeholders</Chip></> : b.model}
                     {hover && <span className="sr-only">. {hover}</span>}
                   </td>
                 </tr>

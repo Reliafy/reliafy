@@ -7,7 +7,7 @@ import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
   BLOCK_STATES, MAX_PHASES, changedPhases, completesText, covStatus, covValueText, isCovRow, isPhaseRow, isRuleRow, lengthText,
-  pct, phaseKey, phaseOfText, phaseResult, phaseSettingsText, placeholderTitle, ruleKey, ruleState, ruleText, covKey,
+  pct, phaseKey, phaseOfText, phaseResult, phaseSettingsText, placeholderTitle, placeholderTone, ruleKey, ruleState, ruleText, covKey,
   withBlockState, withValue, isSchedule,
 } from "../explorerMissions.js";
 import PhaseCovValue from "./PhaseCovValue.jsx";
@@ -137,7 +137,7 @@ function MissionDetails({ r, m, rbd, busy, viewOnly, savePhases, onAction, onSel
             ) : (
               <p className="msd-big">
                 <span className="msd-figure">{completesText(m)}</span> chance of completing the mission
-                {res.placeholders?.length ? <> <Chip tone="warning" title={placeholderTitle(res)}>Placeholders</Chip></> : null}
+                {placeholderTone(res) ? <> <Chip tone={placeholderTone(res)} title={placeholderTitle(res)}>Placeholders</Chip></> : null}
               </p>
             )}
         {res?.reliability != null && <p className="rim-tquiet">{res.method === "simulated" ? "Simulated" : "Worked out exactly"} from each block&apos;s model at its point values, over {lengthText(m.duration, m.unit)}.</p>}

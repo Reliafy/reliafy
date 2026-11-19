@@ -14,11 +14,19 @@
 // the RCM's).
 
 import {
-  AP_LABEL, CLASS_LABEL, SOURCE_LABEL, STATUS_LABEL, cmOf, fmt3, rpnOf, score,
+  AP_LABEL, CLASS_LABEL, RATE_FROM_LABEL, SOURCE_LABEL, STATUS_LABEL, cmOf, fmt3, rateOf, rpnOf, score,
 } from "./fmea.js";
 import { COLUMN as RCM_COLUMN, blank as rcmBlank, checkValue as rcmCheckValue, modeCounts } from "./rcmWorksheet.js";
 
 const isMode = (r) => r.type === "mode";
+// The Rate source cell: the label typed on a mode with a rate of its own; else where the
+// position's rate it uses came from ("Parts count").
+export function rateSourceText(m) {
+  const typed = m.failure_rate !== "" && m.failure_rate != null;
+  if (!typed && m.rate_from && m.rate_from.source !== "typed") return RATE_FROM_LABEL[m.rate_from.source] || "";
+  const label = SOURCE_LABEL[m.rate_source] || "";
+  return typed && m.rate_from?.position_rate != null ? `${label || "Typed"} (override)` : label;
+}
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 
 // ---- counts -----------------------------------------------------------------------
@@ -31,7 +39,7 @@ export const hasActionOpen = (m) => !!String(m?.action || "").trim() && m?.actio
 
 export function fmeaCounts(m) {
   const rpn = m.rpn ?? rpnOf(m.severity, m.occurrence, m.detection);
-  const cm = m.cm ?? cmOf(m);
+  const cm = m.cm ?? cmOf({ ...m, failure_rate: rateOf(m) });
   return {
     scored: rpn != null ? 1 : 0,
     high: m.ap === "H" ? 1 : 0,
@@ -151,17 +159,25 @@ export const COLUMNS = [
   { ...RCM_COLUMN.consequence, on: false, rcm: true },
   { ...RCM_COLUMN.decision, on: false, rcm: true },
   { ...RCM_COLUMN.task, on: false, rcm: true },
-  numCol("failure_rate", "Failure rate", 100, 80, "λ: failures per unit of time (the time unit column)", { min: 0 }),
+  {
+    // Typed on the mode (an override), else the position's own rate, shown as such (W3).
+    ...numCol("failure_rate", "Failure rate", 100, 80, "λ: failures per unit of time (the time unit column). Blank: the position's own rate (its parts count or model in use)", { min: 0 }),
+    text: (r) => (isMode(r) ? fmt3(rateOf(r.ref)) : ""),
+    sort: (r) => (isMode(r) && rateOf(r.ref) != null ? Number(rateOf(r.ref)) : null),
+  },
   textCol("time_unit", "Time unit", 84, 70, "The unit the failure rate and operating time are in (hours unless set)", false),
-  choiceCol("rate_source", "Rate source", 110, 90, "Where the failure rate came from", SOURCE_LABEL),
+  {
+    ...choiceCol("rate_source", "Rate source", 110, 90, "Where the failure rate came from: typed on the mode, or the position's parts count or model", SOURCE_LABEL),
+    text: (r) => (isMode(r) ? rateSourceText(r.ref) : ""),
+  },
   numCol("mode_ratio", "Mode ratio (α)", 100, 84, "The share of the item's failures that are this mode, 0 to 1", { min: 0, max: 1 }),
   numCol("loss_probability", "Loss probability (β)", 120, 96, "The chance the mode's effect is the loss named by the severity class, 0 to 1", { min: 0, max: 1 }),
   numCol("operating_time", "Operating time (t)", 120, 96, "The time the criticality is figured over, in the time unit", { min: 0, exclusiveMin: true }),
   {
     id: "cm", label: "Mode criticality (Cm)", width: 130, min: 100, on: false, align: "num",
     title: "β × α × λ × t (a parent row: Cr, the sum over the modes inside it)",
-    text: (r) => (isMode(r) ? fmt3(r.ref.cm ?? cmOf(r.ref)) : r.sum.with_cm ? fmt3(r.sum.cr) : ""),
-    sort: (r) => (isMode(r) ? r.ref.cm ?? cmOf(r.ref) : r.sum.with_cm ? r.sum.cr : null),
+    text: (r) => (isMode(r) ? fmt3(r.ref.cm ?? cmOf({ ...r.ref, failure_rate: rateOf(r.ref) })) : r.sum.with_cm ? fmt3(r.sum.cr) : ""),
+    sort: (r) => (isMode(r) ? r.ref.cm ?? cmOf({ ...r.ref, failure_rate: rateOf(r.ref) }) : r.sum.with_cm ? r.sum.cr : null),
   },
   choiceCol("severity_class", "Severity class", 110, 90, "I Catastrophic, II Critical, III Marginal, IV Minor", CLASS_LABEL),
 ];

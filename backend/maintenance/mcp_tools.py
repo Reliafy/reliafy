@@ -1284,7 +1284,7 @@ def register() -> None:
             from backend.maintenance import rcm_graph
 
             sheet = run(m.rcm_worksheet, rid, _d(scope, "below"))
-            return _lean_rcm(rcm_graph.resolve(_db(), sheet, _reader(_caller(ctx)).read_owners))
+            return _lean_rcm(rcm_graph.resolve(_db(), sheet, _reader(_caller(ctx)).read_owners, m=m))
         if kind == "failure_mode":
             from backend.maintenance import rcm_graph
 

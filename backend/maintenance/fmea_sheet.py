@@ -59,13 +59,28 @@ def _standard_cell(fn: dict, fail: dict | None) -> str:
     return fn.get("standard") or ""
 
 
+def _rate(m: dict):
+    """The failure rate the mode's Cm uses: typed, else the position's (rate_from)."""
+    if m.get("failure_rate") is not None:
+        return m["failure_rate"]
+    return (m.get("rate_from") or {}).get("value")
+
+
+def _rate_source(m: dict) -> str:
+    """Where that rate came from: as typed ("entered"…), else the position's ("parts count")."""
+    src = (m.get("rate_from") or {}).get("source")
+    if m.get("failure_rate") is None and src:
+        return src
+    return m.get("rate_source") or ""
+
+
 def _scores(m: dict) -> list:
     return [
         m.get("cause") or "", m.get("effect_local") or "", m.get("effect_next") or "",
         m.get("detection_method") or "", m.get("severity"), m.get("occurrence"), m.get("detection"), m.get("rpn"),
         _AP.get(m.get("ap") or "", ""), m.get("action") or "", m.get("action_owner") or "", m.get("action_due") or "",
-        (m.get("action_status") or "").replace("_", " "), m.get("failure_rate"), m.get("time_unit") or "",
-        m.get("rate_source") or "", m.get("mode_ratio"), m.get("loss_probability"), m.get("operating_time"),
+        (m.get("action_status") or "").replace("_", " "), _rate(m), m.get("time_unit") or "",
+        _rate_source(m), m.get("mode_ratio"), m.get("loss_probability"), m.get("operating_time"),
         m.get("cm"), m.get("severity_class") or "",
     ]
 
