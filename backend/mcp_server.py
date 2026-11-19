@@ -3277,9 +3277,10 @@ def list_datasets(ctx: Context) -> dict[str, Any]:
     """Saved datasets with their columns and row counts (and their measurements, where added)."""
     user, db = _caller(ctx), _db()
     datasets = datasets_service.list_datasets(db, user["uid"])
+    lasts = datasets_service.last_mappings(db, _owners(user["uid"]), datasets)
     return {"datasets": [
         {"id": d.id, "name": d.name, "n_rows": d.n_rows, "columns": [c["name"] for c in d.columns],
-         **datasets_service.dataset_tags(d),
+         **datasets_service.dataset_tags(d, lasts.get(d.id)),
          **({"measurements": {"n_rows": d.measurements.n_rows,
                               "columns": [c["name"] for c in d.measurements.columns]}}
             if d.measurements is not None else {}),

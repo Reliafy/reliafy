@@ -316,10 +316,12 @@ export function calendarNext(body) {
 // from the result payload (functions.evaluate_path) and differs for unsaved
 // (in-memory) vs saved (re-fit) models.
 // Optional { xMin, xMax } recompute the curves over a custom x-axis range.
-function rangeQuery({ xMin, xMax } = {}) {
+// ``at``: exact times to evaluate at instead of the grid (the Calculator's answer).
+function rangeQuery({ xMin, xMax, at } = {}) {
   const q = [];
   if (xMin != null) q.push(`x_min=${xMin}`);
   if (xMax != null) q.push(`x_max=${xMax}`);
+  for (const t of at || []) q.push(`at=${encodeURIComponent(t)}`);
   return q.length ? `?${q.join("&")}` : "";
 }
 

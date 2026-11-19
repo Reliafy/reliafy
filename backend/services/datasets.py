@@ -635,6 +635,35 @@ def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -
     ]
 
 
+def last_mappings(db, owner_id, datasets, hidden=frozenset()) -> dict[str, dict]:
+    """``{dataset_id: last_mapping}`` for the ``datasets`` with no saved
+    reading: how the newest model fitted from each read its columns
+    (``dataset_reading.last_model_mapping``), in one query, so the Data list
+    counts failures the way the dataset's page and the fit wizard do."""
+    from types import SimpleNamespace
+
+    from backend.services import dataset_reading  # local: it imports this module
+
+    wanted = {d.id: d for d in datasets if not isinstance(getattr(d, "reading", None), dict) or not d.reading}
+    if not wanted:
+        return {}
+    by_dataset: dict[str, list] = {}
+    for m in db.models.find(
+        {"dataset_id": {"$in": list(wanted)}, "owner_id": {"$in": access.owner_in(owner_id)}},
+        {"dataset_id": 1, "spec.mapping": 1, "spec.options": 1, "spec.unit": 1, "name": 1, "created_at": 1},
+    ).sort("created_at", -1):
+        if m["_id"] in hidden:
+            continue
+        by_dataset.setdefault(m["dataset_id"], []).append(
+            SimpleNamespace(spec=m.get("spec") or {}, results={}, name=m.get("name")))
+    out = {}
+    for ds_id, models in by_dataset.items():
+        last = dataset_reading.last_model_mapping(models, wanted[ds_id].columns)
+        if last:
+            out[ds_id] = last
+    return out
+
+
 # Every saved model kind that keeps a reference to the dataset it was fitted
 # to, and refits from it (life and regression models, ALT, recurrent and
 # degradation models).
@@ -904,18 +933,49 @@ def _reading_roles(df: pd.DataFrame, reading: dict | None) -> dict | None:
     return roles
 
 
-def detect_tags(df: pd.DataFrame, reading: dict | None = None) -> dict:
+def detect_tags(df: pd.DataFrame, reading: dict | None = None, count_reading: dict | None = None) -> dict:
     """``{"tags": [...], "use_for": [...]}`` for a dataset's columns.
 
     ``reading``: the dataset's saved reading (which column is which, and what
     the status values mean). When it names the life columns, the tags and the
     summary read the table the way a fit from it does: its item, time and
     status columns, its c_invert / c_map and its count column, rather than a
-    guess from the column names. Only its columns are looked at."""
+    guess from the column names. Only its columns are looked at.
+
+    ``count_reading``: with no saved reading, how the newest model fitted
+    from the dataset read its columns (``count_reading_of``). The tags are
+    still guessed, but the count ("900 units · 900 failed") is read its way,
+    so the list, the dataset's page and the fit wizard count the failures
+    once, by the same rule."""
     df = df.dropna(how="all")  # a blank row in a sheet is no unit (the fit skips it too)
     roles = _reading_roles(df, reading)
     if roles is not None:
         return _detect_with_reading(df, reading, roles)
+    out = _detect_guessed(df)
+    count_roles = _reading_roles(df, count_reading)
+    if count_roles is not None:
+        out["summary"] = _reading_summary(df, count_reading, count_roles, out["tags"])
+    return out
+
+
+def count_reading_of(last_mapping: dict | None) -> dict | None:
+    """A reading for the count from the newest model's mapping
+    (``dataset_reading.last_model_mapping``): its columns and how it read the
+    status column (c_invert / c_map). None without one."""
+    if not last_mapping:
+        return None
+    mapping = last_mapping.get("mapping") or {}
+    if not (mapping.get("x") or mapping.get("xl")):
+        return None
+    opts = last_mapping.get("options") or {}
+    return {**{r: mapping.get(r) or "" for r in ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e")},
+            "c_invert": bool(opts.get("c_invert")), "c_map": opts.get("c_map") or None,
+            # Fits read a mapping with no status column as every row failed.
+            "all_failed": not (mapping.get("c") or mapping.get("xl"))}
+
+
+def _detect_guessed(df: pd.DataFrame) -> dict:
+    """``detect_tags`` from the columns alone (no saved reading)."""
     tags: set[str] = set()
     unit = _unit_column(df)
     censor = _censor_column(df)
@@ -1461,22 +1521,28 @@ def with_reading_covariates(detected: dict, z: list[str]) -> dict:
     return {**detected, "tags": [t for t in TAGS if t in tags], "use_for": use_for}
 
 
-def dataset_tags(dataset: Dataset) -> dict:
+def dataset_tags(dataset: Dataset, last_mapping: dict | None = None) -> dict:
     """``detect_tags`` for a saved dataset (with its measurements part folded
     in), cached by its content (datasets are content-addressed, so the
-    checksums name the tables)."""
+    checksums name the tables). ``last_mapping``: how the newest model fitted
+    from it read its columns (``dataset_reading.last_model_mapping``); with no
+    saved reading, the count is read that way, as the dataset's page and the
+    fit wizard read it."""
     part = dataset.measurements
     reading = dataset.reading if isinstance(dataset.reading, dict) else None
+    count_reading = None if reading else count_reading_of(last_mapping)
     z = None if reading is None else sorted(str(c) for c in reading.get("z") or [])
     # The reading decides how the rows are counted (which column says failed,
     # and which way round), so a changed reading is a new entry.
     read_key = "" if reading is None else json.dumps(
         {k: reading.get(k) for k in (*_READING_KEYS, "z")}, sort_keys=True, default=str)
+    if count_reading is not None:
+        read_key = "count:" + json.dumps(count_reading, sort_keys=True, default=str)
     key = ((dataset.checksum or dataset.id) + (f"|{part.checksum}" if part is not None else "")
            + ("" if z is None else "|z:" + "\x1f".join(z)) + ("" if not read_key else "|r:" + read_key))
     if key not in _TAG_CACHE:
         try:
-            out = detect_tags(load_dataframe(dataset), reading)
+            out = detect_tags(load_dataframe(dataset), reading, count_reading)
             if z is not None:
                 out = with_reading_covariates(out, z)
             if part is not None:

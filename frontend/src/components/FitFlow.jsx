@@ -24,7 +24,7 @@ import { answerParts } from "../modelFrame.js";
 import { tvcProblems } from "../tvcData.js";
 import Covariates from "./Covariates.jsx";
 import {
-  EMPTY_MAPPING, columnFacts, statusSummary, summaryParts,
+  EMPTY_MAPPING, columnFacts, statusSummary, summaryParts, flagNameContradicts,
   dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, mappingColumns,
 } from "../lifeData.js";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -408,6 +408,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const summary = !csv || tvc || itemLives ? null
     : inspection ? (reading && !reading.error ? reading : null)
     : statusSummary(mapping, facts, csv.n_rows);
+  // A status column named "failed" read as 0 = failed (a column of zeros then counts every unit as
+  // failed): said beside the count, with the flip one click away. The data itself is never changed.
+  const flagClash = detail && csv && !tvc && !itemLives && !inspection
+    ? flagNameContradicts(mapping, facts, csv.n_rows) : null;
   const waitingFor = unconfirmed ? "First check how the columns are read: Looks right, or Change."
     : readingProblems.length ? "First change the reading: see the note under it."
     : null;
@@ -831,6 +835,15 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 return <span key={part}>{i > 0 && ", "}<b>{num}</b> {rest.join(" ")}</span>;
               })}
             </p>
+          )}
+          {!rd.editing && flagClash && (
+            <div className="fit-flag-warn" role="status">
+              <span><span aria-hidden="true">! </span>{flagClash.text}</span>
+              <button type="button" className="secondary sm" disabled={rd.saving}
+                      onClick={() => rd.keep({ ...rd.reading, c_invert: flagClash.invert, c_map: null })}>
+                {flagClash.action}
+              </button>
+            </div>
           )}
           {!rd.editing && (fromReading?.z.length > 0 || itemTimeline) && (
             <div className="fit-z" role="group" aria-label="Covariates">

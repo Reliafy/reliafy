@@ -3875,13 +3875,35 @@ def _custom_grid(grid, x_min=None, x_max=None) -> np.ndarray:
     return np.linspace(lo, hi, n)
 
 
-def evaluate(model_id: str, values: dict, x_min=None, x_max=None, *, owner: str | None = None) -> dict:
+#: The most points ``at`` may ask for in one call (the calculator asks for one
+#: or two: the time, and the age survived to).
+MAX_AT_POINTS = 50
+
+
+def _points_at(at) -> np.ndarray:
+    """The exact times ``at`` (a number or a list) as an array, checked: the
+    calculator's answer at the time typed, not read off the plotted grid."""
+    values = at if isinstance(at, (list, tuple)) else [at]
+    if not values or len(values) > MAX_AT_POINTS:
+        raise FitError(f"Ask for between 1 and {MAX_AT_POINTS} times at once.")
+    try:
+        pts = np.asarray([float(v) for v in values], dtype=float)
+    except (TypeError, ValueError):
+        raise FitError("Each time must be a number.") from None
+    if not np.isfinite(pts).all():
+        raise FitError("Each time must be a finite number.")
+    return pts
+
+
+def evaluate(model_id: str, values: dict, x_min=None, x_max=None, *, owner: str | None = None, at=None) -> dict:
     """Re-evaluate the reliability functions at given covariate ``values``,
-    optionally over a custom ``[x_min, x_max]`` grid. ``owner`` restricts the
-    lookup to a model bound to that account (see :func:`bind_owner`)."""
+    optionally over a custom ``[x_min, x_max]`` grid — or, with ``at``, at
+    exactly those times (the calculator's answer; the grid is only drawn).
+    ``owner`` restricts the lookup to a model bound to that account (see
+    :func:`bind_owner`)."""
     entry = _entry_for(model_id, owner)
     model, fields = entry["model"], entry["fields"]
-    grid = _custom_grid(entry["grid"], x_min, x_max)
+    grid = _points_at(at) if at is not None else _custom_grid(entry["grid"], x_min, x_max)
 
     row = {}
     for f in fields:
@@ -3919,8 +3941,10 @@ def confidence_bounds(
     *,
     owner: str | None = None,
     values: Optional[dict] = None,
+    at=None,
 ) -> dict:
-    """Confidence bounds of a fitted model's ``on`` function over its grid.
+    """Confidence bounds of a fitted model's ``on`` function over its grid,
+    or with ``at`` at exactly those times (the calculator's answer).
 
     Wraps SurPyval's ``model.cb`` — configurable significance ``alpha_ci`` and
     ``bound`` (two-sided / lower / upper). Available for plain, discrete and
@@ -3938,7 +3962,7 @@ def confidence_bounds(
 
     entry = _entry_for(model_id, owner)
     model = entry["model"]
-    grid = _custom_grid(entry["grid"], x_min, x_max)
+    grid = _points_at(at) if at is not None else _custom_grid(entry["grid"], x_min, x_max)
     regression = regression_bands.is_regression(entry)
     if regression and not regression_bands.has_bands(model):
         raise FitError(regression_bands.band_note(model))

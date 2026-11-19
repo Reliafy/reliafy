@@ -436,6 +436,36 @@ export function flagsLookSwapped(mapping, summary) {
   return { code: mapping.c_invert ? "0" : "1" };
 }
 
+// A 0/1 status column whose name says one thing and whose reading says the
+// other: "failed" (1 = failed by its name) read as 0 = failed, so a column of
+// zeros counts every unit as failed. Reliafy reads 0 as failed unless told
+// otherwise; this asks before a fit, with the flip one click away. Null when
+// the name doesn't say which way round, the column isn't plain 0/1 codes, or
+// the reading already agrees with the name. Returns { column, invert (the
+// c_invert that agrees with the name), now, flipped (the counts each way),
+// text }.
+export function flagNameContradicts(mapping, facts, nRows) {
+  const col = mapping?.c;
+  if (!col || mapping.c_map || !statusCodesOnly(facts?.[col]?.values)) return null;
+  // Only a name that says it ("failed", "Failed (1=yes)", "censored"): a bare "status" is flagQuestion's.
+  const said = flagHeaderMeaning(col);
+  if (!said) return null;
+  const invert = said === "failed";
+  if (!!mapping.c_invert === invert) return null;
+  const now = countsWay(mapping, facts, nRows, !!mapping.c_invert);
+  const flipped = countsWay(mapping, facts, nRows, invert);
+  if (!now || !flipped) return null;
+  const words = (s) => summaryParts(s).join(", ");
+  const rule = invert ? "1 = failed" : "0 = failed";
+  return {
+    column: col, invert, now, flipped,
+    text: `“${col}” sounds like ${invert ? "1 means failed" : "1 means still running"}, but it's read the other way round `
+      + `(${mapping.c_invert ? "1 = failed" : "0 = failed"}): ${words(now)}. If ${invert ? "0" : "1"} in this column means the unit `
+      + `didn't fail, read it as ${rule}: ${words(flipped)}.`,
+    action: `Read it as ${rule}`,
+  };
+}
+
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 // "15 failures, 6 still running" — numbers to show bold, as parts.

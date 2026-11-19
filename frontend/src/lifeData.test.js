@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, statusMeaning, setStatusMeaning, encodeStatus,
   statusSummary, summaryParts, dataStepProblems, isSimplePaste, dataSplit,
-  countProblem, setMappingField, flagsLookSwapped,
+  countProblem, setMappingField, flagsLookSwapped, flagNameContradicts,
 } from "./lifeData.js";
 
 // A CMMS export: id, hours, a text status, a site.
@@ -235,4 +235,25 @@ test("a life chart's axis says Time only for a time unit", async () => {
   assert.equal(valueAxisTitle("Cycles"), "Cycles");
   assert.equal(valueAxisTitle(""), "Time");
   assert.equal(valueAxisTitle("units"), "Time");
+});
+
+test("flagNameContradicts: a column named failed, all 0, read as 0 = failed is said, with the flip", () => {
+  const facts = { hours: { values: null, blanks: 0 }, failed: { values: { 0: 900 }, blanks: 0 } };
+  const m = { ...EMPTY_MAPPING, x: "hours", c: "failed" };
+  const w = flagNameContradicts(m, facts, 900);
+  assert.equal(w.invert, true);
+  assert.deepEqual(w.now, { failed: 900, running: 0, left: 0, interval: 0 });
+  assert.deepEqual(w.flipped, { failed: 0, running: 900, left: 0, interval: 0 });
+  assert.match(w.text, /“failed” sounds like 1 means failed/);
+  assert.match(w.text, /900 failures/);
+  assert.equal(w.action, "Read it as 1 = failed");
+  // Once flipped, the name and the reading agree: nothing to say.
+  assert.equal(flagNameContradicts({ ...m, c_invert: true }, facts, 900), null);
+  // A name that says 1 = still running, read as 1 = failed.
+  const cens = { ...m, c: "censored", c_invert: true };
+  assert.equal(flagNameContradicts(cens, { ...facts, censored: { values: { 0: 3, 1: 5 } } }, 8).invert, false);
+  // A bare "status" doesn't say which way round (flagQuestion asks), nor do words.
+  assert.equal(flagNameContradicts({ ...m, c: "status" }, { ...facts, status: { values: { 0: 3, 1: 5 } } }, 8), null);
+  assert.equal(flagNameContradicts(m, { ...facts, failed: { values: { Yes: 3, No: 5 } } }, 8), null);
+  assert.equal(flagNameContradicts({ ...m, c: "" }, facts, 900), null);
 });

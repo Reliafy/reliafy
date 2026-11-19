@@ -576,11 +576,12 @@ def two_clock_live(db, model: Model, owner_id) -> object:
     return live
 
 
-def evaluate(db, model_id: str, values: dict, owner_id: str, x_min=None, x_max=None) -> dict:
+def evaluate(db, model_id: str, values: dict, owner_id: str, x_min=None, x_max=None, at=None) -> dict:
     """Evaluate the model's functions at covariate ``values``, re-fitting if the
-    live model isn't cached. ``x_min``/``x_max`` recompute over a custom grid."""
+    live model isn't cached. ``x_min``/``x_max`` recompute over a custom grid;
+    ``at`` evaluates at exactly those times instead."""
     return fitting.evaluate(
-        _live_cache_id(db, model_id, owner_id), values, x_min=x_min, x_max=x_max
+        _live_cache_id(db, model_id, owner_id), values, x_min=x_min, x_max=x_max, at=at
     )
 
 
@@ -694,7 +695,7 @@ def evaluate_at(db, model: Model, times, owner_id, covariates: dict | None = Non
     return out
 
 
-def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max=None) -> dict:
+def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max=None, at=None) -> dict:
     """Confidence bounds of a saved model's function (configurable level /
     bound), re-fitting on demand if the live model isn't cached."""
     model = get_model(db, model_id, owner_id)
@@ -708,6 +709,7 @@ def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max
         x_min=x_min,
         x_max=x_max,
         values=params.get("values"),
+        at=at,
     )
 
 

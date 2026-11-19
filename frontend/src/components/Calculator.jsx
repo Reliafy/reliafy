@@ -15,6 +15,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
 import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, requestKey } from "../calcSeries.js";
+import { answerFor, exactBound, exactKey, exactTimes, exactValues } from "../calcExact.js";
 import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } from "../rateSpread.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
@@ -61,7 +62,10 @@ const MAX_SERIES = 6;
 const B_LIVES = [[99, "B1"], [95, "B5"], [90, "B10"], [50, "B50"]];
 
 // Linear interpolation of y at xq from the (x, y) grid; null y points are
-// treated as gaps. Returns null outside the grid or across a gap.
+// treated as gaps. Returns null outside the grid or across a gap. For drawing
+// only (the conditional curves, a marker): every number shown is the model's
+// own value at the time typed (calcExact.js), except where the model can't be
+// asked, and then it is marked "≈".
 function interp(x, y, xq) {
   if (!x || !y || xq < x[0] || xq > x[x.length - 1]) return null;
   for (let i = 1; i < x.length; i++) {
@@ -379,6 +383,58 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const view = (curves) => (cond > 0 && curves ? conditionalize(curves, cond) : curves);
   const xMaxView = cond > 0 ? x[x.length - 1] - cond : x[x.length - 1];
 
+  // The answer at exactly the time typed, asked of the model (calcExact.js): each
+  // function's value per series, and the bound on the active one. The grid only
+  // draws: read off it, a steep early curve's value and bound came out wrong.
+  const tNum = tCheck.ok ? tCheck.value : null;
+  const canAsk = !!evaluatePath;
+  const askTimes = !timeMode && Number.isFinite(cond) && cond >= 0 ? exactTimes(tNum, cond) : null;
+  const exact = state.exact || {};
+  const exactKeyOf = (s) => exactKey(s?.values, tNum, cond);
+  const exactWanted = JSON.stringify(series.map((s) => [s.id, exactKeyOf(s)]));
+  // The key each series waits for: an answer that arrives late, for a time since changed, is dropped.
+  const exactWant = useRef({});
+  useEffect(() => {
+    if (!canAsk || !askTimes) return undefined;
+    const timers = series.map((s) => {
+      const key = exactKeyOf(s);
+      exactWant.current[s.id] = key;
+      const have = exact[s.id];
+      if (have?.key === key && (have.data || have.error)) return null;
+      return setTimeout(() => {
+        const put = (v) => exactWant.current[s.id] === key
+          && setState((st) => ({ ...st, exact: { ...(st.exact || {}), [s.id]: v } }));
+        evaluateAt(evaluatePath, s.values || {}, { at: askTimes })
+          .then((res) => put({ key, data: exactValues(res.curves, cond), error: null }))
+          .catch((err) => put({ key, data: null, error: err.message }));
+      }, 300);
+    });
+    return () => timers.forEach((id) => id && clearTimeout(id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAsk, evaluatePath, exactWanted, timeMode]);
+
+  // The bound at exactly that time (the first series; unconditioned only, as the band).
+  const ptBandKey = `${active}|${ciAlpha}|${bound}|${tNum}|${hasCov ? JSON.stringify(series[0]?.values) : ""}`;
+  const wantPtBand = ciValid && bound !== "none" && ci.bound !== "none" && tNum != null && cond === 0
+    && !timeMode && !!series[0];
+  const ptBand = state.ptBand || {};
+  const ptWant = useRef(null);
+  useEffect(() => {
+    if (!wantPtBand) return undefined;
+    ptWant.current = ptBandKey;
+    if (ptBand.key === ptBandKey && (ptBand.data || ptBand.error)) return undefined;
+    const id = setTimeout(() => {
+      const put = (v) => ptWant.current === ptBandKey && setState((st) => ({ ...st, ptBand: v }));
+      confidenceAt(confidencePath, {
+        on: active, alpha_ci: ciAlpha, bound, ...(hasCov ? { values: series[0].values } : {}),
+      }, { at: [tNum] })
+        .then((res) => put({ key: ptBandKey, data: exactBound(res), error: null }))
+        .catch((err) => put({ key: ptBandKey, data: null, error: err.message }));
+    }, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantPtBand, ptBandKey, confidencePath]);
+
   const baseLabel = FUNCTIONS[active]?.axis || fnLabel(active, meta);
   const activeLabel = cond > 0 ? `${baseLabel} | survived to ${sLabel}` : baseLabel;
   const tAxisLabel =
@@ -447,6 +503,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const tarPoint = timeMode && lifePath && tar.key === tarKey ? tar.data?.points?.[0] : null;
   // Read off a curve only when it is the curve for the values on screen.
   const current = series.map(curveIsCurrent);
+  // Function ``fn`` of series ``i`` at the time typed: the model's value, or "working", or
+  // (only where the model can't be asked) the drawn curve's, marked approximate.
+  const answerOf = (i, fn) => answerFor(exact[series[i]?.id], exactKeyOf(series[i]), fn, {
+    canAsk: canAsk && !!askTimes,
+    gridValue: () => (current[i] && tNum != null ? interp(views[i]?.x, views[i]?.[fn], tNum) : null),
+  });
+  const shownValue = (a, fn) => (a.value == null ? "—" : `${a.state === "approx" ? "≈ " : ""}${fmtFn(fn, a.value, unit)}`);
+  const answer0 = !timeMode && series[0] ? answerOf(0, active) : null;
   const tarTimes = series.map((s, i) =>
     i === 0 && tarPoint && !multi ? tarPoint.time
       : multi && tarOf(s)?.time != null ? tarOf(s).time
@@ -454,7 +518,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   );
   // The answer is on its way: say so, rather than show the one before.
   const working = timeMode ? tarTimes[0] == null && rValid && (!!series[0]?.pending || (lifePath && tar.key !== tarKey))
-    : !!series[0]?.pending;
+    : answer0?.state === "working";
   const WORKING = "Working it out…";
 
   // Backend flags impossible reliability (sf > 1 from a negative cumulative
@@ -473,7 +537,6 @@ export default function Calculator({ functions, unit, params, state, setState, n
     // "we're NaN% sure" or "150% sure" about bounds worked out at another level.
     return ci.bound !== "none" && ciOk && b && b.on === active && cond === 0 ? b : null;
   };
-  const band = series[0] ? bandOf(series[0]) : null;
 
   // Chart: the active function for every series, plus a marker at t.
   const traces = [];
@@ -515,9 +578,9 @@ export default function Calculator({ functions, unit, params, state, setState, n
       if (tarTimes[i] != null) traces.push({ ...pointMarker(color), x: [tarTimes[i]], y: [rNum / 100] });
       return;
     }
-    const y = current[i] ? interp(cv.x, cv[active], Number(t)) : null;
-    if (y != null) {
-      traces.push({ ...pointMarker(color), x: [Number(t)], y: [y] });
+    const y = answerOf(i, active).value;
+    if (y != null && tNum != null) {
+      traces.push({ ...pointMarker(color), x: [tNum], y: [y] });
     }
   });
 
@@ -597,16 +660,19 @@ export default function Calculator({ functions, unit, params, state, setState, n
         {!multi && (
           <span className="calc-answer-value">
             <b aria-live="polite">{working ? WORKING
-              : tCheck.ok && current[0] ? fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)), unit) : "—"}</b>
-            {band && tCheck.ok && current[0] && (() => {
-              // In words (#292): "we're 90% sure it's at least 38%".
-              const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
-              const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
-              if (band.spread) {
+              : tCheck.ok && answer0 ? shownValue(answer0, active) : "—"}</b>
+            {tCheck.ok && !working && answer0?.value != null && (() => {
+              // In words (#292): "we're 90% sure it's at least 38%", at exactly the time typed.
+              if (spreadBand) {
+                const sp = spreadCurves(spread, active, [tNum]);
+                const lo = sp?.lower?.[0];
+                const hi = sp?.upper?.[0];
                 return lo != null && hi != null
                   ? <span className="calc-answer-ci"> — {spreadRangeText(lo, hi, (v) => fmtFn(active, v, unit))}</span> : null;
               }
-              const words = boundWords(ciLevel, band.bound, lo, hi, (v) => fmtFn(active, v, unit));
+              const pb = wantPtBand && ptBand.key === ptBandKey ? ptBand.data : null;
+              if (!pb) return null;
+              const words = boundWords(ciLevel, pb.bound, pb.lower, pb.upper, (v) => fmtFn(active, v, unit));
               return words ? <span className="calc-answer-ci"> — {words}</span> : null;
             })()}
           </span>
@@ -696,7 +762,11 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </td>
                 {meta.map((m) => (
                   <td key={m.id}>
-                    {s.pending ? "…" : current[i] ? fmtFn(m.id, interp(views[i]?.x, views[i]?.[m.id], Number(t))) : "—"}
+                    {(() => {
+                      const a = answerOf(i, m.id);
+                      if (a.state === "working") return "…";
+                      return a.value == null ? "—" : `${a.state === "approx" ? "≈ " : ""}${fmtFn(m.id, a.value)}`;
+                    })()}
                   </td>
                 ))}
               </tr>
