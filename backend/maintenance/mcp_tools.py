@@ -1205,9 +1205,12 @@ def register() -> None:
         For how-tos (building the register, planning, running work, learning from failures, the data
         rules) read maintenance guide."""
         m = m_for(ctx)
-        return run(lambda: {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(),
-                            "tree": m.tree(), "due": m.due_tasks(30),
-                            "open_work_orders": m.work_orders("open"), "critical_spares": m.critical_spares_short()})
+        def read():
+            due, wos = m.due_tasks(30), m.work_orders("open")
+            return {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
+                    "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
+                    "critical_spares": m.critical_spares_short()}
+        return run(read)
 
     # "graph" is a topic only for the people who may run graph queries: listed
     # tools hide it from everyone else's schema (list_tools below), and the call

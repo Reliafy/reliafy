@@ -156,7 +156,10 @@ def test_assets_with_no_location_are_listed_by_their_top_position(m, today):
     borehole, riverside = rest["roots"]
     assert riverside == {"id": station, "name": "Riverside pumping station", "tag": "",
                          "description": "Raw water intake", "positions": 5, "items": 1, "open_work_orders": 2,
-                         "due": 2, "overdue": 1, "next_due": "2026-10-20"}
+                         "due": 2, "overdue": 1, "next_due": "2026-10-20",
+                         # The late work as Home and Orders count it: the seal's work order (due
+                         # 1 Nov) and the motor's task, overdue with none raised.
+                         "late": {"work_orders_late": 1, "tasks_overdue_without_work_order": 1}}
     assert {k: borehole[k] for k in ("positions", "items", "open_work_orders", "due", "overdue", "next_due")} == {
         "positions": 1, "items": 0, "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None}
     # Together they are the positions with no location.

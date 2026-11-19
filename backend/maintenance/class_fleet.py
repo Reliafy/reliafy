@@ -381,7 +381,7 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
     return out
 
 
-def position(m, db, owners, hidden, position_id: str) -> dict:
+def position(m, db, owners, hidden, position_id: str, curves: bool = True) -> dict:
     """One position's risk now (the Explorer's Condition monitoring tab on a
     position): ``member`` is its row as a class's fleet gives it, with its
     curves when it is scored, whatever its item's class (``item_class`` None
@@ -393,7 +393,7 @@ def position(m, db, owners, hidden, position_id: str) -> dict:
     out = {"position": _position_brief(m, p),
            "item_class": m._class_brief(member[3]) if member else None, "today": today, "age_unit": AGE_UNIT,
            "horizons": {"labels": horizons["labels"], "values": horizons["values"]},
-           "member": row_for(member, with_curves=True) if member else None,
+           "member": row_for(member, with_curves=curves) if member else None,
            "model": doc and _model_view(doc), "why": None}
     if member is None:
         out["why"] = ("No item is fitted here, so there is no age or readings to work a risk out from. Fit an item "

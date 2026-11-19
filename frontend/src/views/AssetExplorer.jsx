@@ -115,6 +115,7 @@ import {
 } from "../products.js";
 import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
+import LoadFailed from "../components/LoadFailed.jsx";
 import "./AssetExplorer.css";
 import { classFields, classKey } from "../positionClass.js";
 
@@ -2199,10 +2200,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <p>Reliafy Maintenance (positions, locations and work orders) isn't on for this account yet.</p>
     </div>
   ) : error ? (
-    <div className="card error td-error">
-      <p>The tree didn't load: {error.text} Your data is safe; check your connection and try again.</p>
-      <button type="button" className="secondary" onClick={load}>Try again</button>
-    </div>
+    <LoadFailed className="td-error" onRetry={load}
+                error={`The tree didn't load: ${error.text} Your data is safe; check your connection and try again.`} />
   ) : !data ? (
     <div className="card empty">Loading…</div>
   ) : nothing ? (

@@ -6,7 +6,7 @@ import { rcmDetail } from "./changes.js";
 import { formatDate } from "./dates.js";
 import { datasetPath } from "./navigation.js";
 import { partsPath } from "./redirects.js";
-import { ORDERS_PATH, ordersPath } from "./maintenanceOrders.js";
+import { ORDERS_PATH, daysLate, lateText, lateWorkText, ordersPath, workOrderPath } from "./maintenanceOrders.js";
 
 // Most rows each list shows (the counts above them are complete).
 export const ATTENTION_ROWS = 6;
@@ -35,11 +35,55 @@ export function dayText(iso) {
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+// Reliafy Maintenance's work, from its overview: every open work order,
+// however it was raised (from a task, a package's visit or by hand), and the
+// tasks due in the next 30 days with no work order open yet. Together, oldest
+// due first (work orders with no due date last). A task with a work order open
+// shows once, as its work order: the rows count what Maintenance.late_counts
+// counts, so Home, Orders and Assets agree.
+export function maintenanceRows(maintenance) {
+  const today = maintenance?.today || null;
+  const rows = [];
+  for (const w of maintenance?.open_work_orders || []) {
+    rows.push({
+      key: `order-${w.id}`,
+      kind: w.overdue ? "Late" : "Open",
+      tone: w.overdue ? "danger" : null,
+      name: `#${w.number} ${w.title}`,
+      url: workOrderPath(w.id),
+      detail: [w.due ? `Due ${dayText(w.due)}` : "No due date", lateText(daysLate(w, today)) || null,
+        w.subject?.name || null].filter(Boolean).join(" · "),
+      due: w.due || null,
+      at: null,
+    });
+  }
+  for (const t of maintenance?.due || []) {
+    if (!t.next_due || t.open_work_order) continue;
+    rows.push({
+      key: `due-${t.id}`,
+      kind: t.overdue ? "Overdue" : "Due soon",
+      tone: t.overdue ? "danger" : null,
+      name: t.name,
+      url: ordersPath("due"),
+      detail: `Due ${dayText(t.next_due)} · no work order yet`,
+      due: t.next_due,
+      at: null,
+    });
+  }
+  const key = (r) => r.due || "9999-12-31";
+  return rows.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+}
+
+// The late work in Home's words, the same as Orders and Assets say it (lateWorkText):
+// "27 work orders late · 5 tasks overdue with no work order". "" with none, or no overview.
+export const lateSummary = (maintenance) => lateWorkText(maintenance?.late);
+
 // What needs the user: fleet alerts that fired and RCM decisions whose
 // evidence now contradicts them (from GET /api/changes), tracked items due
 // for replacement (the tracked fleets' health), and — for Maintenance
-// operators — overdue and due-soon tasks (the Maintenance overview).
-// Worst first: danger, then warning, then the rest; newest first within each.
+// operators — every open work order and the tasks due with no work order yet
+// (maintenanceRows). Worst first: danger, then warning, then the rest; within
+// each, in the order given (the maintenance rows oldest due first).
 export function attentionRows({ changes = null, tracked = [], maintenance = null } = {}) {
   const rows = [];
   for (const a of changes?.alerts || []) {
@@ -60,18 +104,7 @@ export function attentionRows({ changes = null, tracked = [], maintenance = null
         url: `/risk/${f.id}`, detail: `${plural(t.plan, "item")} to plan a replacement for`, at: null });
     }
   }
-  for (const t of maintenance?.due || []) {
-    if (!t.next_due) continue;
-    rows.push({
-      key: `due-${t.id}`,
-      kind: t.overdue ? "Overdue" : "Due soon",
-      tone: t.overdue ? "danger" : null,
-      name: t.name,
-      url: t.open_work_order ? `/maintenance/work-orders/${t.open_work_order.id}` : ordersPath("due"),
-      detail: `Due ${dayText(t.next_due)}${t.open_work_order ? ` · work order #${t.open_work_order.number}` : " · no work order yet"}`,
-      at: null,
-    });
-  }
+  rows.push(...maintenanceRows(maintenance));
   const rank = { danger: 0, warning: 1 };
   return rows
     .map((r, i) => ({ r, i }))
@@ -82,16 +115,26 @@ export function attentionRows({ changes = null, tracked = [], maintenance = null
 // Whether everything "Needs attention" reads has answered, so "nothing" is
 // the answer and not a guess. Each input is `undefined` while it loads:
 // `changes` (GET /api/changes; null once it failed), `tracked` (the tracked
-// fleets), `access` (whether this viewer has Reliafy Maintenance: true or
-// false) and, with access, `maintenance` (the overview; null once it failed).
+// fleets; null once they failed), `access` (whether this viewer has Reliafy
+// Maintenance: true or false) and, with access, `maintenance` (the overview;
+// null once it failed).
 export function attentionReady({ changes, tracked, access, maintenance } = {}) {
   if (changes === undefined || tracked === undefined || access === undefined) return false;
   return access === false || maintenance !== undefined;
 }
 
+// Whether any of what "Needs attention" reads failed (null), once all have
+// answered: then Home says it couldn't load what needs you, with Try again,
+// never "Nothing needs you" nor the new-account welcome (an empty answer that
+// would be a guess).
+export function attentionFailed({ changes, tracked, access, maintenance } = {}) {
+  return changes === null || tracked === null || (access === true && maintenance === null);
+}
+
 // The page that lists every row of a kind, by the row key's prefix.
 const ATTENTION_HOMES = [
-  ["due-", { to: ordersPath("due"), label: "Maintenance" }],
+  ["order-", { to: ORDERS_PATH, label: "Orders" }],
+  ["due-", { to: ordersPath("due"), label: "Due soon" }],
   ["track-", { to: "/risk", label: "Condition monitoring" }],
   ["alert-", { to: "/changes", label: "What changed" }],
   ["rcm-", { to: "/changes", label: "What changed" }],
@@ -170,9 +213,20 @@ export function fleetRows(attention = [], recent = []) {
   return [...alerts, ...recentFor("fleets", recent).filter((r) => !seen.has(r.url))];
 }
 
-// Planner: Reliafy Maintenance's tasks overdue or due in the next 30 days.
+// Planner: Reliafy Maintenance's open work orders and the tasks due in the next
+// 30 days with none yet, worst first (attentionRows' maintenance rows).
 export function dueRows(maintenance) {
-  return attentionRows({ maintenance }).filter((r) => r.key.startsWith("due-"));
+  return attentionRows({ maintenance }).filter((r) => r.key.startsWith("due-") || r.key.startsWith("order-"));
+}
+
+// The late work as two figures, in the shared wording (lateWorkText): work
+// orders late (on Orders) and tasks overdue with no work order (on Due soon).
+export function lateFigures(maintenance) {
+  const late = maintenance?.late || {};
+  return [
+    { label: "work orders late", n: late.work_orders_late || 0, to: ORDERS_PATH, alert: true },
+    { label: "tasks overdue with no work order", n: late.tasks_overdue_without_work_order || 0, to: ordersPath("due"), alert: true },
+  ];
 }
 
 // Technician: open work orders due today or before, oldest first.
@@ -225,7 +279,7 @@ export function waitingFigures(rollup = null, maintenance = null) {
   if (maintenance) {
     figures.push(
       { label: "changes to decide", n: (maintenance.proposals || []).length, to: ORDERS_PATH, alert: true },
-      { label: "tasks overdue", n: (maintenance.due || []).filter((t) => t.overdue).length, to: ordersPath("due"), alert: true },
+      ...lateFigures(maintenance),
       { label: "open work orders", n: (maintenance.open_work_orders || []).length, to: ORDERS_PATH },
     );
   }

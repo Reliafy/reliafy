@@ -309,11 +309,13 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
 
 @router.get("/overview")
 def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {
-        "summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
-        "due": m.due_tasks(30), "open_work_orders": m.work_orders("open"), "proposals": m.proposals("pending"),
-        "critical_spares": m.critical_spares_short(),
-    })
+    """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts)."""
+    def read():
+        due, wos = m.due_tasks(30), m.work_orders("open")
+        return {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
+                "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
+                "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short()}
+    return _run(read)
 
 
 @router.get("/tree")
@@ -2344,13 +2346,14 @@ def get_class_fleet(class_id: str, position_id: str | None = None, within: str |
 
 
 @router.get("/positions/{position_id}/condition")
-def get_position_condition(position_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
-                           m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def get_position_condition(position_id: str, curves: bool = True, session=Depends(get_session),
+                           ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """One position's risk now, from the item fitted there and the condition and life model linked to
-    the position: its row as a class's fleet gives it, with its curves; whatever its item's class."""
+    the position: its row as a class's fleet gives it, with its curves; whatever its item's class.
+    curves=false leaves the curves out (the Summary badge needs only the numbers)."""
     from backend.maintenance import class_fleet
 
-    return _run(class_fleet.position, m, session, ctx.read_owners, ctx.hidden, position_id)
+    return _run(class_fleet.position, m, session, ctx.read_owners, ctx.hidden, position_id, curves)
 
 
 @router.post("/item-classes")

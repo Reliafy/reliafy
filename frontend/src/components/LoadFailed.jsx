@@ -15,19 +15,26 @@ import { isNotFound } from "./loadFailed.js";
 //             found."), for a server that only says "Not found."
 //   header    true on a page that has no header of its own: adds one, titled
 //             "Not found" (or "Couldn't open this"), so the page isn't blank
-export default function LoadFailed({ error, to, label, notFound, header = false }) {
+//   onRetry   loads it again: a "Try again" button under the reason (a part of
+//             a page, or a page, whose read failed: Home's lists, the Explorer's tree)
+//   className more classes on the card (where it sits in a page)
+export default function LoadFailed({ error, to, label, notFound, header = false, onRetry = null, className = "" }) {
   const missing = isNotFound(error);
   const text = missing && notFound ? notFound : error;
   return (
     <>
       {header && <PageHeader title={missing ? "Not found" : "Couldn't open this"} />}
-      <div className={"card load-failed" + (missing ? "" : " error")} role={missing ? "status" : "alert"}>
+      <div className={"card load-failed" + (missing ? "" : " error") + (className ? ` ${className}` : "")}
+           role={missing ? "status" : "alert"}>
         <p style={{ margin: 0 }}>{text}</p>
         {to && (
           <p style={{ margin: "6px 0 0" }}>
             {missing ? "It may have been deleted, or the link may be mistyped." : "Try again in a moment, or go back to the list."}{" "}
             <Link to={to}>{label}</Link>
           </p>
+        )}
+        {onRetry && (
+          <button type="button" className="secondary load-failed-retry" onClick={onRetry}>Try again</button>
         )}
       </div>
     </>

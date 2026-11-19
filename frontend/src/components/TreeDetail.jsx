@@ -113,10 +113,10 @@ function Summary({ row: picked, display: shownIn, structure, today, onSelect, ve
   const { row, display } = structuralRow(structure, picked, shownIn);
   const position = usePosition(row.type === "pos" ? row.key : null, version);
   const props = {
-    row, display, today, onSelect, position, fullPage: fullPagePath(row), actions,
+    row, display, today, onSelect, position, fullPage: fullPagePath(row), actions, version,
     onContextSaved: (text) => rememberChange(row.key, version, { operating_context: text }),
   };
-  if (isProductRow(row)) return <ProductSummary {...props} version={version} />;
+  if (isProductRow(row)) return <ProductSummary {...props} />;
   return <TreeSummary {...props} design={isDesignRow(row)} />;
 }
 
