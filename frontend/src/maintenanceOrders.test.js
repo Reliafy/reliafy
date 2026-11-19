@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  createDetail, createLabel, createPlan, dueSearchText, inArea, daysLate, doneText, dueWindow, groupDue, lateText, linesText,
+  lateWorkText, createDetail, createLabel, createPlan, dueSearchText, inArea, daysLate, doneText, dueWindow, groupDue, lateText, linesText,
   orderKind, orderTab, ordersPath, ordersSummary, packageMatches, packagePath, packageStatusText, splitOpen,
 } from "./maintenanceOrders.js";
 
@@ -45,13 +45,30 @@ test("splitOpen: overdue first, most late first; the rest keep the server's orde
   assert.deepEqual(open.map((w) => w.id), ["b", "d"]);
 });
 
-test("ordersSummary puts the answer first", () => {
+test("ordersSummary puts the answer first, the late work in the shared wording", () => {
   assert.equal(ordersSummary({ open: [], due: [] }), "No open work orders. Nothing due in the next 30 days.");
   const open = [{ overdue: true, due: "2026-11-06" }, { overdue: false }, { overdue: false }];
-  assert.equal(ordersSummary({ open, due: new Array(12), horizon: 30, today: TODAY }),
-    "3 open, 1 late by 4 days. 12 due in the next 30 days.");
+  assert.equal(ordersSummary({ open, due: new Array(12), horizon: 30, today: TODAY,
+    late: { work_orders_late: 1, tasks_overdue_without_work_order: 2 } }),
+  "3 open work orders. 1 work order late (the latest by 4 days) · 2 tasks overdue with no work order. 12 due in the next 30 days.");
   const two = [{ overdue: true, due: "2026-11-09" }, { overdue: true, due: "2026-11-03" }];
-  assert.equal(ordersSummary({ open: two, today: TODAY }), "2 open, 2 late (the latest by 7 days).");
+  assert.equal(ordersSummary({ open: two, today: TODAY, late: { work_orders_late: 2, tasks_overdue_without_work_order: 0 } }),
+    "2 open work orders. 2 work orders late (the latest by 7 days).");
+  assert.equal(ordersSummary({ open: [{ overdue: false }], late: { work_orders_late: 0, tasks_overdue_without_work_order: 0 } }),
+    "1 open work order. None late.");
+  // No open work orders, but tasks overdue with none raised yet: still said.
+  assert.equal(ordersSummary({ open: [], late: { work_orders_late: 0, tasks_overdue_without_work_order: 5 } }),
+    "No open work orders. 5 tasks overdue with no work order.");
+});
+
+test("lateWorkText: one wording for the late work on Home, Orders and Assets", () => {
+  assert.equal(lateWorkText({ work_orders_late: 27, tasks_overdue_without_work_order: 5 }),
+    "27 work orders late · 5 tasks overdue with no work order");
+  assert.equal(lateWorkText({ work_orders_late: 1, tasks_overdue_without_work_order: 0 }), "1 work order late");
+  assert.equal(lateWorkText({ work_orders_late: 0, tasks_overdue_without_work_order: 1 }), "1 task overdue with no work order");
+  assert.equal(lateWorkText({ work_orders_late: 0, tasks_overdue_without_work_order: 0 }), "");
+  assert.equal(lateWorkText(null), "");
+  assert.equal(lateWorkText({ work_orders_late: 3 }, { worst: 1 }), "3 work orders late (the latest by 1 day)");
 });
 
 test("groupDue: packages by name, then the tasks in none", () => {

@@ -4,7 +4,7 @@
 // arranged by positions, filtered to them (AssetExplorer's ?place=none).
 
 import { explorerPath } from "./assetTree.js";
-import { ordersPath } from "./maintenanceOrders.js";
+import { lateWorkText, ordersPath } from "./maintenanceOrders.js";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -56,11 +56,14 @@ export function insideText(place) {
 
 // What's due in the next horizon days (overdue included), in words: { text,
 // overdue }. text: "Nothing due", "3 due, next 4 Nov 2026", or "3 due" when some
-// are overdue (overdue: "1 overdue"; the next date would be a past one).
+// are overdue (the next date would be a past one). overdue: the late work in the
+// wording Home and Orders use, from the asset's `late` counts ("2 work orders
+// late · 1 task overdue with no work order"; lateWorkText).
 export function dueText(row, fmtDate = (d) => d) {
-  if (!row?.due) return { text: "Nothing due", overdue: "" };
-  if (row.overdue) return { text: `${row.due} due`, overdue: `${row.overdue} overdue` };
-  return { text: `${row.due} due${row.next_due ? `, next ${fmtDate(row.next_due)}` : ""}`, overdue: "" };
+  const overdue = lateWorkText(row?.late);
+  if (!row?.due) return { text: "Nothing due", overdue };
+  if (row.overdue) return { text: `${row.due} due`, overdue };
+  return { text: `${row.due} due${row.next_due ? `, next ${fmtDate(row.next_due)}` : ""}`, overdue };
 }
 
 // The list's summary line: "2 assets · 30 positions" (with the ones at no place).

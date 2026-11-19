@@ -348,10 +348,22 @@ def validate_graph(db, graph: dict, owner_id: str) -> dict:
     from backend.services import rbd_network, rbd_phases
 
     if rbd_network.is_network(graph):
-        return rbd_network.validate(graph, resolve_subsystem=resolve_subsystem)
+        return _with_placeholders(rbd_network.validate(graph, resolve_subsystem=resolve_subsystem), graph,
+                                  resolve_subsystem)
     out = rbd_analysis.validate_graph(graph, resolve_subsystem=resolve_subsystem)
     extra = rbd_phases.validation_warnings(graph)
-    return {**out, "warnings": [*(out.get("warnings") or []), *extra]} if extra else out
+    out = {**out, "warnings": [*(out.get("warnings") or []), *extra]} if extra else out
+    return _with_placeholders(out, graph, resolve_subsystem)
+
+
+def _with_placeholders(check: dict, graph: dict, resolve_subsystem) -> dict:
+    """A check plus ``placeholder_blocks`` (rbd_placeholders.summary: the basic blocks, at any
+    depth, that are placeholders) where there are any, so the Calculator counts the blocks inside
+    sub-systems too."""
+    from backend.services import rbd_placeholders
+
+    held = rbd_placeholders.summary(rbd_placeholders.tally(graph, resolve_subsystem))
+    return {**check, "placeholder_blocks": held} if held else check
 
 
 def with_series_hints(check: dict, graph: dict) -> dict:

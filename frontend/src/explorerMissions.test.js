@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import {
-  BLOCK_STATES, MAX_PHASES, covKey, ruleKey, isCovRow, isRuleRow, covStatus, ruleText, ruleState, phaseSettingsText, answerText, leaveOut, placeholderTitle, placeholderWarning, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
+  BLOCK_STATES, MAX_PHASES, covKey, ruleKey, isCovRow, isRuleRow, covStatus, ruleText, ruleState, phaseSettingsText, answerText, leaveOut, placeholderTitle, placeholderTone, placeholderWarning, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
   isPhaseRow, latestOnly, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
   phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
   withBlockValue, withNewPhase, withoutPhase, withValue,
@@ -199,8 +199,12 @@ test("a result resting on placeholders says so first, with the figure without th
   assert.equal(ph.count, "3 of 5 blocks have no model");
   assert.equal(ph.list, "Battery, Control panel and Fuel system");
   assert.equal(ph.without, 0.99431);
+  // Three of five: most of the answer rests on placeholders, so it says so first.
+  assert.equal(ph.mostly, true);
   assert.equal(answerText(result),
-    "Not a real figure yet: 3 of 5 blocks have no model. With a placeholder standing in for each, the mission completes with probability 73.7%.");
+    "Not a real figure: 3 of 5 blocks have no model, so most of this answer rests on invented lives. With placeholders standing in, the mission completes with probability 73.7%.");
+  assert.equal(answerText({ ...result, placeholders: result.placeholders.slice(0, 1) }),
+    "Not a real figure yet: 1 of 5 blocks have no model. With a placeholder standing in for it, the mission completes with probability 73.7%.");
   // A list row's kept result: labels and the number.
   const kept = { reliability: 0.7366, placeholders: ["Battery"], without_placeholders: 0.99431 };
   assert.equal(placeholderWarning(kept).count, "1 block has no model");
@@ -212,6 +216,27 @@ test("a result resting on placeholders says so first, with the figure without th
   const none = placeholderWarning({ reliability: 0.8, blocks: 2, placeholders: [{ id: "a", label: "A" }, { id: "b", label: "B" }], without_placeholders: null });
   assert.equal(none.count, "none of the 2 blocks has a model");
   assert.equal(none.without, null);
+});
+
+test("placeholders inside sub-systems are counted, and a sub-system of them is no block with a model", () => {
+  // The quadcopter: Comms and five sub-systems, all 27 basic blocks placeholders.
+  const result = { reliability: 0.509, blocks: 6, phases: [{}],
+    placeholders: ["Airframe", "Comms", "Flight control", "Payload gimbal", "Power", "Propulsion"].map((l) => ({ id: l, label: l })),
+    placeholder_blocks: { basic: 27, placeholders: 27, nested: true, mostly: true }, without_placeholders: null };
+  const ph = placeholderWarning(result);
+  assert.equal(ph.count, "27 of 27 basic blocks are placeholders");
+  assert.equal(ph.mostly, true);
+  assert.equal(ph.without, null);
+  assert.equal(ph.canLeaveOut, false); // leaving all six out would leave nothing
+  assert.equal(placeholderTone(result), "danger");
+  assert.match(answerText(result), /^Not a real figure: 27 of 27 basic blocks are placeholders, so most of this answer rests on invented lives\./);
+  assert.match(placeholderTitle(result), /^Not a real figure: 27 of 27 basic blocks are placeholders\. Airframe, /);
+  // A sub-system with only some placeholders inside is said too.
+  const partly = placeholderWarning({ reliability: 0.9, blocks: 3, placeholders: [], partly_placeholders: [{ id: "p", label: "Propulsion" }],
+    placeholder_blocks: { basic: 6, placeholders: 2, nested: true, mostly: false } });
+  assert.equal(partly.n, 0);
+  assert.equal(partly.count, "2 of 6 basic blocks are placeholders");
+  assert.equal(placeholderTone({ reliability: 0.9, blocks: 4, placeholders: [{ id: "a", label: "A" }] }), "warning");
 });
 
 test("leaving placeholders out marks them Not needed in every phase, whatever they were", () => {
@@ -387,4 +412,20 @@ test("a phase's schedule is kept, typed as it is and said in words", async () =>
   assert.deepEqual(errors, []);
   assert.deepEqual(phases[0].values, { flow: sched });
   assert.equal(covStatus({ value: sched, unit: "%" }).text, "follows 100 if t % 24 < 16 else 40");
+});
+
+test("a standby block's chance of starting rides with its state (A18)", () => {
+  let phase = { name: "Duty", duration: 500 };
+  phase = { ...phase, ...withBlockState(phase, "b", "standby", 0.1, 0.95) };
+  assert.deepEqual(phase.standby, ["b"]);
+  assert.deepEqual(phase.start_probability, { b: 0.95 });
+  assert.equal(ruleText({ state: "standby", dormancy: 0.1, start_probability: 0.95 }), "Standby (warm, ages at 10%; starts 95%)");
+  assert.equal(ruleText({ state: "standby", dormancy: 0, start_probability: 1 }), "Standby (cold)");
+  // Always starting is the default, so not stored; another state drops it.
+  assert.deepEqual(withBlockState(phase, "b", "standby", 0, 1).start_probability, {});
+  assert.deepEqual(withBlockState(phase, "b", "working").start_probability, {});
+  const { phases } = cleanPhases([{ ...editablePhase({ ...phase, models: { a: { distribution_id: "exponential", params: [] } } }) }],
+    { blocks: [{ id: "a" }, { id: "b" }], votes: [] });
+  assert.deepEqual(phases[0].start_probability, { b: 0.95 });
+  assert.equal(phases[0].models.a.distribution_id, "exponential");
 });

@@ -35,17 +35,29 @@ Each phase's diagram is the drawn diagram with:
   with it;
 * each vote node's required count taken from ``votes`` where given.
 
-A block can also be on ``standby`` in a phase (``"standby": ["c2"]``): there,
-ready, but not running. RePyability's standby groups are one block holding its
-spares, not a setting per phase, so a block on standby is modelled as not
-exposed in that phase: its clock stops for the phase (it neither ages nor
-fails in it) and the phase's diagram keeps it, working if it was still working
-when the phase began. Its age carries on when it next runs. The result says so
-(``STANDBY_NOTE``). A block whose covariates change by phase can't also stand
-by (its life is already a function of the mission's clock). ``dormancy``
-(``{"c2": 0.1}``) makes a standby block warm: idle, it ages at that fraction of
-the clock (0 cold, the default; 1 hot, as if running), RePyability's
-``BlockSetting(dormancy_factor=...)``.
+The mission is RePyability's ``PhasedMission.from_diagram`` (A18, 16 Nov 2026):
+the drawn diagram once, and each phase a ``MissionPhase`` setting its blocks'
+states, models and vote counts. A block can be on ``standby`` in a phase
+(``"standby": ["c2"]``): idle until the phase's structure needs it (a block it
+backs up has failed), then running to the phase's end. Idle, a cold spare
+neither ages nor fails; ``dormancy`` (``{"c2": 0.1}``) makes it warm, ageing at
+that fraction of the clock (RePyability's ``dormancy_factor``).
+``start_probability`` (``{"c2": 0.95}``) is the chance it starts when called
+on; one that fails to start has failed for the rest of the mission and the next
+spare is tried. Spares may differ: each keeps its own model. A block whose
+covariates change by phase can't also stand by (its life is already a function
+of the mission's clock).
+
+A block can run on a life model of the phase's own (``"models": {"c2":
+{distribution_id, params}}``): it runs on that model through the phase, its age
+carried in and out (RePyability's ``BlockSetting(model=...)``).
+
+Exact where RePyability is: with no block on standby, the phases' decision
+diagram (Esary and Ziehms); with blocks on standby, a Markov chain when every
+block's life has a constant failure rate. Otherwise the take-overs can only be
+simulated (``analysis_routes()`` says which): a seeded simulation, Pro like
+every simulation (:func:`rbd_standby.simulation`). A mission too large for the
+decision diagram is simulated as before.
 
 A block can be ``guaranteed`` working in a phase (``"guaranteed": ["c4"]``):
 it runs and ages there but can't fail in it (RePyability's ``"guaranteed"``
@@ -105,10 +117,18 @@ NO_BOUND_NOTE = ("No bound: the mission is worked out exactly from each block's 
                  "the uncertainty in a fitted model isn't carried into it (and figures typed in have none to carry).")
 SIM_RANGE_NOTE = ("The range ({level}, two-sided) is the simulation's own precision ({n:,} missions), not the "
                   "uncertainty in the blocks' models, which isn't carried into a mission.")
-STANDBY_NOTE = ("Standby: the block is there but not running, so it neither ages nor fails in that phase; it counts "
-                "as working if it was still working when the phase began, and its age carries on when it next runs. "
-                "Switching over is taken as perfect, and a standby block's running time after it takes over within "
-                "the phase isn't counted.")
+STANDBY_NOTE = ("Standby: the block is idle until the phase needs it (when a block it backs up fails), then it "
+                "runs to the phase's end. Idle, a cold spare neither ages nor fails. Called on, it starts with its "
+                "start chance (always, unless set); one that fails to start has failed for the rest of the mission.")
+#: Why a mission with blocks on standby was simulated, and how.
+STANDBY_SIM_REASON = ("Blocks on standby take over when they're needed, and with lives that don't have a constant "
+                      "failure rate that can only be simulated: {n:,} missions, seeded so the figures repeat.")
+MODEL_NOTE = ("A block given a life model for a phase runs on that model in the phase, its age carried in and out.")
+#: A Free user's mission that can only be simulated (402, code pro_required).
+MISSION_PRO_MESSAGE = ("This mission has blocks on standby whose lives don't have a constant failure rate, so it can "
+                       "only be simulated, and simulations are part of Pro. Subscribe to Pro, give those blocks "
+                       "exponential lives so it's worked out exactly, or download the RBD as Python and run it with "
+                       "RePyability.")
 
 
 WARM_NOTE = ("Warm standby: a block given a dormancy ages and can fail while idle at that fraction of the clock "
@@ -176,6 +196,56 @@ def _dormancy(value, where: str, standby: list[str]) -> dict[str, float]:
             raise PhaseError(f"{where}: the dormancy of '{key}' must be a number from 0 to 1.")
         if str(key) in standby and number > 0:
             out[str(key)] = number
+    return out
+
+
+def _start_probability(value, where: str, standby: list[str]) -> dict[str, float]:
+    """{block id: the chance it starts when the phase calls on it, 0 to 1}: kept only for the blocks
+    on standby in the phase; 1 (it always starts) is the default, so left out."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise PhaseError(f"{where}: start_probability maps a standby block's id to the chance it starts (0 to 1).")
+    out = {}
+    for key, p in value.items():
+        if isinstance(p, bool):
+            raise PhaseError(f"{where}: the chance '{key}' starts must be a number from 0 to 1.")
+        try:
+            number = float(p)
+        except (TypeError, ValueError):
+            raise PhaseError(f"{where}: the chance '{key}' starts must be a number from 0 to 1.") from None
+        if not math.isfinite(number) or number < 0 or number > 1:
+            raise PhaseError(f"{where}: the chance '{key}' starts must be a number from 0 to 1.")
+        if str(key) in standby and number < 1:
+            out[str(key)] = number
+    return out
+
+
+#: The most blocks a phase may give a life model of their own.
+MAX_PHASE_MODELS = 50
+
+
+def _models(value, where: str) -> dict[str, dict]:
+    """{block id: its life model in this phase}, in a block's own model shape (a distribution with
+    its parameters; a saved model's id and name may ride along): the block runs on it through the
+    phase, its age carried in and out. Built when the mission is worked out."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise PhaseError(f"{where}: models maps a block's id to its life model in this phase.")
+    if len(value) > MAX_PHASE_MODELS:
+        raise PhaseError(f"{where}: at most {MAX_PHASE_MODELS} blocks can have a model of their own in a phase.")
+    out = {}
+    for key, model in value.items():
+        nid = str(key).strip()
+        if not nid or model is None:
+            continue
+        if not isinstance(model, dict) or not model.get("distribution_id") or not isinstance(model.get("params"), list):
+            raise PhaseError(f"{where}: the model of block '{nid}' must be a distribution with its parameters "
+                             "({distribution_id, params: [{name, value}]}).")
+        keep = {k: model[k] for k in ("distribution_id", "distribution", "params", "extras", "model_id", "name")
+                if model.get(k) is not None}
+        out[nid] = keep
     return out
 
 
@@ -299,6 +369,12 @@ def parse_phases(raw) -> list[dict]:
         dormancy = _dormancy(phase.get("dormancy"), where, standby)
         if dormancy:
             clean["dormancy"] = dormancy
+        starts = _start_probability(phase.get("start_probability"), where, standby)
+        if starts:
+            clean["start_probability"] = starts
+        models = _models(phase.get("models"), where)
+        if models:
+            clean["models"] = models
         votes = _votes(phase.get("votes"), where)
         if votes:
             clean["votes"] = votes
@@ -380,7 +456,8 @@ def validation_warnings(graph: dict) -> list[str]:
             feeding[e["target"]] = feeding.get(e["target"], 0) + 1
     out = []
     for phase in phases:
-        gone = [b for b in [*phase.get("not_needed", []), *phase.get("standby", []), *phase.get("guaranteed", [])]
+        gone = [b for b in [*phase.get("not_needed", []), *phase.get("standby", []), *phase.get("guaranteed", []),
+                            *(phase.get("models") or {})]
                 if b not in nodes]
         if gone:
             out.append(f"Phase “{phase['name']}” lists blocks that aren't in the diagram any more "
@@ -400,102 +477,6 @@ def validation_warnings(graph: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 # The mission
 # ---------------------------------------------------------------------------
-def _stand_in(nid: str, j: int) -> str:
-    """The name of block ``nid``'s perfectly reliable stand-in in phase ``j``."""
-    return f"{nid}~phase{j + 1}"
-
-
-class _Paused:
-    """A block's life on the mission's clock with its phase states applied (one model through the
-    whole mission). On standby (``paused``: [(start, end, dormancy)] of the mission's clock) it is
-    idle: it runs at ``dormancy`` of the clock (0, cold: its clock stops, it neither ages nor
-    fails), so at mission time ``t`` it has run ``t`` less the idle time not counted. Guaranteed
-    working (``guaranteed``: [(start, end)]) it runs and ages but can't fail: the hazard of those
-    stretches isn't spent, so R(t) = R₀(r(t)) · Π R₀(r(s)) / R₀(r(e)) over the guaranteed stretches
-    [s, e] begun by ``t`` (``e`` capped at ``t``)."""
-
-    def __init__(self, base, paused, guaranteed=()):
-        self.base = base
-        self.dist = getattr(base, "dist", None)
-        spans = sorted((float(sp[0]), float(sp[1]), float(sp[2]) if len(sp) > 2 else 0.0)
-                       for sp in paused if sp[1] > sp[0])
-        merged: list = []
-        for a, b, f in spans:
-            if merged and a <= merged[-1][1] and f == merged[-1][2]:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], b), f)
-            else:
-                merged.append((a, b, f))
-        self.paused = merged
-        held = sorted((float(a), float(b)) for a, b in guaranteed if b > a)
-        joined: list = []
-        for a, b in held:
-            if joined and a <= joined[-1][1]:
-                joined[-1] = (joined[-1][0], max(joined[-1][1], b))
-            else:
-                joined.append((a, b))
-        self.guaranteed = joined
-
-    def running(self, x) -> np.ndarray:
-        """The time the block has run by mission time ``x``."""
-        x = np.atleast_1d(np.asarray(x, dtype=float))
-        out = x.copy()
-        for a, b, f in self.paused:
-            out -= (1.0 - f) * np.clip(x - a, 0.0, b - a)
-        return np.maximum(out, 0.0)
-
-    def _base_sf(self, x) -> np.ndarray:
-        return np.ravel(np.asarray(self.base.sf(self.running(x)), dtype=float))
-
-    def sf(self, x) -> np.ndarray:
-        x = np.atleast_1d(np.asarray(x, dtype=float))
-        out = self._base_sf(x)
-        for a, b in self.guaranteed:
-            lo = np.minimum(x, a)
-            hi = np.minimum(x, b)
-            s_lo = self._base_sf(lo)
-            s_hi = self._base_sf(hi)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                ratio = np.where(s_hi > 0, s_lo / np.where(s_hi > 0, s_hi, 1.0), 1.0)
-            out = out * ratio
-        return np.clip(out, 0.0, 1.0)
-
-    def ff(self, x) -> np.ndarray:
-        return 1.0 - self.sf(x)
-
-    def random(self, size) -> np.ndarray:
-        """A life on the mission's clock. Cold standby only: drawn in running time and moved on by
-        each standby span begun before it ran out. Otherwise the same draw's survival level
-        (R₀ at the running-time life) found on this block's own curve, by bisection."""
-        life = np.ravel(np.asarray(self.base.random(size), dtype=float))
-        if not self.guaranteed and all(f == 0.0 for _, _, f in self.paused):
-            out = life.copy()
-            done = 0.0  # standby time before each span
-            for a, b, _ in self.paused:
-                out = np.where(life > a - done, out + (b - a), out)
-                done += b - a
-            return out
-        level = np.ravel(np.asarray(self.base.sf(life), dtype=float))
-        end = max([b for _, b, _ in self.paused] + [b for _, b in self.guaranteed] + [1.0])
-        lo = np.zeros_like(life)
-        hi = np.full_like(life, end)
-        for _ in range(60):  # widen until each draw's level is reached
-            short = self.sf(hi) > level
-            if not short.any():
-                break
-            hi = np.where(short, hi * 2.0, hi)
-        for _ in range(60):
-            mid = 0.5 * (lo + hi)
-            alive = self.sf(mid) > level
-            lo = np.where(alive, mid, lo)
-            hi = np.where(alive, hi, mid)
-        return np.where(level <= 0, np.inf, hi)
-
-    def cs(self, x, X) -> np.ndarray:
-        from backend.services.rbd_analysis import conditional_survival
-
-        return conditional_survival(self, x, X)
-
-
 class _Aged:
     """A block's life from now, given it has already run ``age`` (As of now):
     R(t) = R₀(age + t) / R₀(age). The mission's clock starts at 0 for every
@@ -542,6 +523,26 @@ class _Aged:
         return conditional_survival(self, x, X)
 
 
+def _aged(model, age: float):
+    """``model`` from ``age`` on: an exponential stays itself (memoryless, so its constant rate is
+    still seen and a standby mission stays exact); anything else conditioned on the age."""
+    if age <= 0:
+        return model
+    rate = _constant_rate(model)
+    return model if rate is not None else _Aged(model, age)
+
+
+def _constant_rate(model) -> Optional[float]:
+    """The model's failure rate when it is an exponential life (constant), else None."""
+    dist = getattr(model, "dist", None)
+    if getattr(dist, "name", None) == "Exponential":
+        try:
+            return float(np.ravel(model.params)[0])
+        except (AttributeError, TypeError, ValueError, IndexError):
+            return None
+    return None
+
+
 AS_OF_NOW_NOTE = ("As of now: each block given an age starts the mission at that age (its reliability given it has "
                   "lasted that long), and a block marked failed is failed throughout.")
 
@@ -557,34 +558,8 @@ def with_state(built: tuple, state: Optional[dict]) -> tuple:
     for nid, v in state.items():
         model = rel.get(nid)
         if "age" in v and model is not None and not isinstance(model, str) and hasattr(model, "sf"):
-            rel[nid] = _Aged(model, v["age"])
+            rel[nid] = _aged(model, float(v["age"]))
     return rbd, labels, node_types, rel, working, set(broken) | failed, baseline
-
-
-def _standby_spans(phases: list[dict], repeats: dict) -> dict:
-    """{block id: [(start, end, dormancy)]}: the stretches of the mission's clock each block stands
-    by in, and how fast it ages there (a repeated block's copy names its original)."""
-    out: dict = {}
-    start = 0.0
-    for phase in phases:
-        end = start + float(phase["duration"])
-        dormancy = phase.get("dormancy") or {}
-        for nid in phase.get("standby", []):
-            out.setdefault(repeats.get(nid, nid), []).append((start, end, float(dormancy.get(nid) or 0.0)))
-        start = end
-    return out
-
-
-def _guaranteed_spans(phases: list[dict], repeats: dict) -> dict:
-    """{block id: [(start, end)]}: the stretches each block is guaranteed working in."""
-    out: dict = {}
-    start = 0.0
-    for phase in phases:
-        end = start + float(phase["duration"])
-        for nid in phase.get("guaranteed", []):
-            out.setdefault(repeats.get(nid, nid), []).append((start, end))
-        start = end
-    return out
 
 
 def has_guaranteed(phases) -> bool:
@@ -593,6 +568,10 @@ def has_guaranteed(phases) -> bool:
 
 def has_standby(phases) -> bool:
     return any(p.get("standby") for p in phases or [])
+
+
+def has_models(phases) -> bool:
+    return any(p.get("models") for p in phases or [])
 
 
 def _refuse(graph: dict) -> None:
@@ -608,6 +587,14 @@ def _refuse(graph: dict) -> None:
                             "them. Remove the diagram's common-cause groups to analyse the mission.")
 
 
+def _phase_model(spec: dict, label: str, phase: str, resolve_model, age: Optional[float]):
+    """A block's life model in one phase (``models``), from its spec, from the block's age now."""
+    from backend.services import rbd_analysis as ra
+
+    model = ra._build_distribution(spec, f"{label} in phase “{phase}”", resolve_model)
+    return _aged(model, age) if age else model
+
+
 def build_mission(
     graph: dict,
     resolve_subsystem: Optional[Callable[[str], dict]] = None,
@@ -616,16 +603,20 @@ def build_mission(
     phases: Optional[list] = None,
     perfect: frozenset = frozenset(),
     built: Optional[tuple] = None,
+    state: Optional[dict] = None,
 ):
     """``(PhasedMission, phases, labels, notes)`` for a diagram with phases
-    (``phases``: these instead of the diagram's own); ``notes`` are the
-    covariate schedules' warnings (#52). ``perfect``: blocks held perfectly
-    reliable throughout (what a block costs the mission). ``built``: the
-    diagram's blocks already built (``_build_rbd``'s result), so holding one
-    block perfect doesn't build every model again. Raises
-    :class:`AnalysisError` in plain words for what a phased mission can't
-    take."""
-    from repyability import PhasedMission
+    (``phases``: these instead of the diagram's own): RePyability's
+    ``PhasedMission.from_diagram`` over the drawn diagram, each phase's block
+    states, models and vote counts as ``MissionPhase`` settings. ``notes``
+    are the covariate schedules' warnings (#52). ``perfect``: blocks held
+    perfectly reliable throughout (what placeholders cost the mission).
+    ``built``: the diagram's blocks already built (``_build_rbd``'s result,
+    :func:`with_state` applied), so holding one block perfect doesn't build
+    every model again; ``state``: the blocks' states now, for the ages a
+    phase's own model starts from. Raises :class:`AnalysisError` in plain
+    words for what a phased mission can't take."""
+    from repyability import BlockSetting, MissionPhase, PhasedMission
     from repyability.rbd.helper_classes import PerfectReliability, PerfectUnreliability
     from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 
@@ -646,22 +637,20 @@ def build_mission(
 
     notes = rbd_tvc.notes_of(reliabilities)
     nodes = graph.get("nodes") or []
+    by_id = {n.get("id"): n for n in nodes}
     edges = [(e["source"], e["target"]) for e in graph.get("edges") or [] if e.get("source") and e.get("target")]
     feeding: dict = {}
     for _, t in edges:
         feeding[t] = feeding.get(t, 0) + 1
-    node_ids = {n.get("id") for n in nodes}
+    node_ids = set(by_id)
     io = {"input_node": "input" if "input" in node_ids else None,
           "output_node": "output" if "output" in node_ids else None}
     k = {n.get("id"): max(int((n.get("data") or {}).get("n") or 1), 1) for n in nodes if n.get("type") == "knode"}
     repeats, _ = rbd_repeats.find_repeats(nodes)
-    copies: dict = {}
-    for copy, original in repeats.items():
-        copies.setdefault(original, []).append(copy)
 
     base = dict(reliabilities)
-    # Blocks pinned working or failed stay so through the mission (a copy
-    # names its original, so it follows).
+    # Blocks pinned working or failed stay so through the mission (a copy names its original, so
+    # it follows).
     for nid in working:
         base[nid] = PerfectReliability
     for nid in broken:
@@ -669,52 +658,64 @@ def build_mission(
     for nid in perfect:
         if nid in base:
             base[nid] = PerfectReliability
-    # Blocks on standby in some phases: their clocks stop (or slow) there (one model through the
-    # mission, so every phase's diagram shares it).
-    # Blocks guaranteed working in some phases: their hazard there isn't spent.
-    standby_spans = _standby_spans(phases, repeats)
-    held_spans = _guaranteed_spans(phases, repeats)
-    for nid in sorted(set(standby_spans) | set(held_spans)):
-        model = base.get(nid)
-        if model is None or isinstance(model, str) or model is PerfectReliability or model is PerfectUnreliability \
-                or node_types.get(nid) == "knode":
-            continue
-        base[nid] = _Paused(model, standby_spans.get(nid, []), held_spans.get(nid, []))
+    try:
+        diagram = NonRepairableRBD(edges, base, k=k, on_infeasible_rbd="raise", **io)
+    except ValueError as exc:
+        raise AnalysisError(f"The mission's diagram isn't valid: {ra._repyability_message(exc)}.") from None
 
-    built = []
-    for j, phase in enumerate(phases):
-        rel = dict(base)
-        kk = dict(k)
+    def settable(nid: str) -> bool:
+        """A block a phase can set: one of the diagram's components that can fail (not a vote node,
+        a repeated copy, or a block held perfectly reliable)."""
+        model = base.get(nid)
+        return (nid in base and nid not in repeats and node_types.get(nid) != "knode"
+                and not isinstance(model, str) and model is not PerfectReliability)
+
+    ages = {nid: float(v["age"]) for nid, v in (state or {}).items() if "age" in v}
+    settings = []
+    for phase in phases:
+        name = phase["name"]
         for nid, n in (phase.get("votes") or {}).items():
-            if nid not in k:
-                continue
-            if n > feeding.get(nid, 0):
+            if nid in k and n > feeding.get(nid, 0):
                 raise AnalysisError(
-                    f"Phase “{phase['name']}”: the vote node “{labels.get(nid, nid)}” needs {n} working inputs "
+                    f"Phase “{name}”: the vote node “{labels.get(nid, nid)}” needs {n} working inputs "
                     f"but only {feeding.get(nid, 0)} feed it.")
-            kk[nid] = n
-        stand: set = set()
+        votes = {nid: n for nid, n in (phase.get("votes") or {}).items() if nid in k}
+        blocks: dict = {}
+        dormancy = phase.get("dormancy") or {}
+        starts = phase.get("start_probability") or {}
+        models = phase.get("models") or {}
+
+        def model_of(nid: str):
+            spec = models.get(nid)
+            if spec is None or base.get(nid) is PerfectUnreliability or node_types.get(nid) != "component":
+                return None
+            return _phase_model(spec, labels.get(nid, nid), name, resolve_model, ages.get(nid))
+
         for nid in phase.get("not_needed", []):
             original = repeats.get(nid, nid)
-            if original not in rel or node_types.get(original) == "knode":
-                continue
-            stand.add(original)
-            stand.update(copies.get(original, []))
-        rename = {nid: _stand_in(nid, j) for nid in stand}
-        for nid in stand:
-            del rel[nid]
-            rel[rename[nid]] = PerfectReliability
-        phase_edges = [(rename.get(a, a), rename.get(b, b)) for a, b in edges]
-        try:
-            diagram = NonRepairableRBD(phase_edges, rel, k=kk, on_infeasible_rbd="raise", **io)
-        except ValueError as exc:
-            raise AnalysisError(f"Phase “{phase['name']}” isn't a valid diagram: "
-                                f"{ra._repyability_message(exc)}.") from None
-        built.append((phase["name"], phase["duration"], diagram))
+            if original in base and original not in repeats and node_types.get(original) != "knode" \
+                    and base.get(original) is not PerfectReliability:
+                blocks[original] = BlockSetting(state="not_needed", model=model_of(original))
+        # Standby blocks are called on in the order the phase lists them.
+        for nid in phase.get("standby", []):
+            if settable(nid) and base.get(nid) is not PerfectUnreliability:
+                blocks[nid] = BlockSetting(state="standby", model=model_of(nid),
+                                           dormancy_factor=float(dormancy.get(nid) or 0.0),
+                                           start_probability=float(starts.get(nid, 1.0)))
+        for nid in phase.get("guaranteed", []):
+            if settable(nid) and base.get(nid) is not PerfectUnreliability:
+                blocks[nid] = BlockSetting(state="guaranteed", model=model_of(nid))
+        for nid in models:
+            if nid not in blocks and settable(nid):
+                got = model_of(nid)
+                if got is not None:
+                    blocks[nid] = BlockSetting(model=got)
+        settings.append(MissionPhase(name, phase["duration"], blocks=blocks, k=votes))
     try:
-        mission = PhasedMission(built)
-    except ValueError as exc:
-        raise AnalysisError(f"The mission can't be built: {exc}") from None
+        with ignore_warnings():
+            mission = PhasedMission.from_diagram(diagram, settings)
+    except (ValueError, TypeError) as exc:
+        raise AnalysisError(f"The mission can't be built: {ra._repyability_message(exc)}") from None
     return mission, phases, labels, notes
 
 
@@ -722,9 +723,42 @@ def _plain_unit(graph: dict) -> str:
     return (graph.get("unit") or "").strip()
 
 
-#: The most blocks whose part in each phase's failures is worked out (one
-#: mission per block): beyond it the weakest block per phase isn't given.
+#: The most blocks whose part in each phase's failures is worked out exactly (once more per
+#: block): beyond it the weakest block per phase isn't given.
 MAX_WEAKEST_BLOCKS = 60
+#: How many blocks are named as driving each phase's failures.
+DRIVERS_SHOWN = 3
+
+
+def _route(mission) -> str:
+    """How RePyability works the whole mission out: "exact" (the decision diagram, or the Markov chain
+    for blocks on standby with constant rates), "simulated" (blocks on standby it can only simulate),
+    or "refused" (the decision diagram is too large)."""
+    try:
+        route = mission.analysis_routes()["summary"].route
+    except NotImplementedError:
+        return "refused"
+    return {"simulated": "simulated", "refused": "refused"}.get(route, "exact")
+
+
+def _grid(phases: list[dict]) -> np.ndarray:
+    """The times the whole-mission curve is read at: 20 steps through each phase, every phase
+    boundary included (RePyability's own default for ``summary``)."""
+    start, parts = 0.0, []
+    for p in phases:
+        end = start + float(p["duration"])
+        parts.append(np.linspace(start, end, 21))
+        start = end
+    return np.unique(np.concatenate(parts)) if parts else np.array([0.0])
+
+
+def _clean_curve(times, values, lower=None, upper=None) -> dict:
+    out = {"t": [float(t) for t in np.ravel(times)],
+           "reliability": [float(min(max(v, 0.0), 1.0)) for v in np.ravel(values)]}
+    if lower is not None and upper is not None:
+        out["lower"] = [float(v) for v in np.ravel(lower)]
+        out["upper"] = [float(v) for v in np.ravel(upper)]
+    return out
 
 
 def analyze_phases(
@@ -737,30 +771,57 @@ def analyze_phases(
     weakest: bool = False,
     current_state: Optional[dict] = None,
 ) -> dict:
-    """The mission's reliability, each phase's chance of being where the
-    mission fails, the reliability at the end of each phase, and the riskiest
-    phase. Exact where the decision diagram fits; otherwise simulated (with
-    an interval), and the result says which. ``phases``: these instead of the
-    diagram's own; ``varying``: the blocks whose covariates change by phase
-    (for the notes); ``weakest``: add each phase's weakest block (exact
-    missions only); ``current_state``: the blocks' states now (as analyse
-    rbd takes them), so the mission flies from the blocks' ages."""
+    """The mission's reliability, its reliability over the mission's clock (one curve), each
+    phase's chance of being where the mission fails, the reliability at the end of each phase, the
+    riskiest phase and (``weakest``) the blocks that drive each phase's failures. Exact where
+    RePyability is; a mission with blocks on standby it can only simulate is simulated (seeded) for
+    a caller allowed to simulate (Pro, :func:`rbd_standby.simulation`), else refused with
+    :class:`rbd_standby.SimulationNeedsPro`; a mission too large to work out exactly is simulated
+    (with an interval). The result says which. ``phases``: these instead of the diagram's own;
+    ``varying``: the blocks whose covariates change by phase (for the notes); ``current_state``:
+    the blocks' states now (as analyse rbd takes them), so the mission flies from their ages."""
     from backend.services import rbd_analysis as ra
+    from backend.services import rbd_standby
 
     _refuse(graph)
     state = ra.parse_nonrepairable_state(graph, current_state)
     built = with_state(ra._build_rbd(graph, resolve_subsystem, None, resolve_model, covariates), state)
     mission, phases, labels, schedule_notes = build_mission(graph, resolve_subsystem, resolve_model, covariates,
-                                                            phases=phases, built=built)
+                                                            phases=phases, built=built, state=state)
     interval = None
     reason = None
-    try:
+    curve = None
+    drivers = None
+    route = _route(mission)
+    grid = _grid(phases)
+    if route == "simulated":
+        if not rbd_standby.simulation_allowed():
+            raise rbd_standby.SimulationNeedsPro(MISSION_PRO_MESSAGE)
+        try:
+            with ignore_warnings():
+                summary = mission.summary(grid, method="simulate", mc_samples=SIM_MISSIONS, seed=SIM_SEED,
+                                          confidence=SIM_CONFIDENCE)
+        except (NotImplementedError, AttributeError, TypeError, ValueError) as exc:
+            raise AnalysisError("The mission can only be simulated, and one of its blocks can't be simulated "
+                                f"({client_message(exc)}).") from None
+        reliability = float(summary.reliability)
+        unreliability = float(summary.unreliability)
+        failing = {p.name: float(p.failure_probability) for p in summary.phases}
+        ci = summary.interval
+        interval = {"lower": float(ci.lower), "upper": float(ci.upper), "confidence": float(ci.confidence),
+                    "n_samples": int(ci.n_samples)}
+        curve = _clean_curve(summary.times, summary.reliability_over_time, summary.lower, summary.upper)
+        drivers = summary.drivers
+        reason = STANDBY_SIM_REASON.format(n=SIM_MISSIONS)
+        method = "simulated"
+    elif route == "exact":
         with ignore_warnings():
             reliability = float(mission.reliability())
             unreliability = float(mission.unreliability())
             failing = mission.phase_failure_probabilities()
+            curve = _clean_curve(grid, mission.reliability_over_time(grid, method="exact"))
         method = "exact"
-    except NotImplementedError:
+    else:
         reason = ("The mission is too large to work out exactly, so it was simulated "
                   f"({SIM_MISSIONS:,} missions).")
         try:
@@ -802,6 +863,9 @@ def analyze_phases(
         gu = [labels.get(n, n) for n in phase.get("guaranteed", []) if n in labels]
         if gu:
             row["guaranteed"] = gu
+        own = [labels.get(n, n) for n in (phase.get("models") or {}) if n in labels]
+        if own:
+            row["own_models"] = own
         votes = [{"id": n, "label": labels.get(n, n), "n": v} for n, v in (phase.get("votes") or {}).items()
                  if n in labels]
         if votes:
@@ -823,6 +887,8 @@ def analyze_phases(
                                                           for n in graph.get("nodes") or [] if n.get("id") not in varying)
                   else [] if varying else [STRESS_NOTE]) + ([PHASE_VALUES_NOTE, *schedule_notes] if varying else []),
     }
+    if curve is not None:
+        out["curve"] = curve
     if state:
         out["current_state"] = state
         out["notes"].insert(0, AS_OF_NOW_NOTE)
@@ -834,6 +900,8 @@ def analyze_phases(
             out["notes"].append(WARM_NOTE)
     if has_guaranteed(phases):
         out["notes"].append(GUARANTEED_NOTE)
+    if has_models(phases):
+        out["notes"].append(MODEL_NOTE)
     if interval is not None:
         out["interval"] = interval
         out["bound_note"] = SIM_RANGE_NOTE.format(n=interval["n_samples"], level=levels.pct(interval.get("confidence") or SIM_CONFIDENCE))
@@ -841,10 +909,10 @@ def analyze_phases(
         out["bound_note"] = NO_BOUND_NOTE
     if reason:
         out["method_reason"] = reason
-    guessed = _add_placeholders(out, graph, resolve_subsystem, resolve_model, covariates, phases, built, labels)
+    guessed = _add_placeholders(out, graph, resolve_subsystem, resolve_model, covariates, phases, built, labels,
+                                state)
     if weakest:
-        _add_weakest(out, graph, resolve_subsystem, resolve_model, covariates, phases, built, labels,
-                     skip=frozenset(guessed))
+        _add_weakest(out, mission, graph, built, labels, drivers, skip=frozenset(guessed))
     return out
 
 
@@ -865,6 +933,8 @@ def _candidates(graph: dict, built: tuple) -> list[str]:
 
 PLACEHOLDER_NOTE = ("{names} {have} no model: a placeholder life stands in, so the result is not a real figure "
                     "until {they} {have} one.")
+PARTLY_NOTE = ("{names} rest partly on placeholders inside: the result carries invented lives until they have "
+               "models.")
 WEAKEST_PLACEHOLDER_NOTE = ("The weakest block in each phase is the weakest of the blocks with a model: a block "
                             "with a placeholder isn't ranked.")
 
@@ -876,7 +946,7 @@ def placeholder_ids(graph: dict) -> list[str]:
 
 
 def _add_placeholders(out: dict, graph: dict, resolve_subsystem, resolve_model, covariates, phases, built,
-                      labels) -> list[str]:
+                      labels, state=None) -> list[str]:
     """Say which blocks the result rests on a placeholder for, and what it is without them.
 
     ``placeholders``: the blocks with a placeholder model that some phase needs ({id, label});
@@ -884,24 +954,48 @@ def _add_placeholders(out: dict, graph: dict, resolve_subsystem, resolve_model, 
     result); ``blocks``: how many blocks can fail; ``without_placeholders``: the mission with
     every placeholder block never failing ({reliability, unreliability}; None where that can't be
     worked out exactly). Returns the placeholder ids that count."""
+    from backend.services import rbd_placeholders
+
     blocks = _candidates(graph, built)
     out["blocks"] = len(blocks)
-    guessed = [nid for nid in placeholder_ids(graph) if nid in set(blocks)]
+    # Counted through every sub-system (W2): a sub-system whose blocks are all placeholders is a
+    # placeholder itself, never "a block with a model"; one with some is partly placeholders.
+    t = rbd_placeholders.tally(graph, resolve_subsystem)
+    whole = set(placeholder_ids(graph)) | set(rbd_placeholders.all_placeholder_ids(t))
+    partly = set(rbd_placeholders.partly_placeholder_ids(t))
+    guessed = [nid for nid in blocks if nid in whole]
     never = set.intersection(*(set(p.get("not_needed", [])) for p in phases)) if phases else set()
     counted = [nid for nid in guessed if nid not in never]
     out["placeholders"] = [{"id": nid, "label": labels.get(nid, nid)} for nid in counted]
     out["placeholders_left_out"] = [{"id": nid, "label": labels.get(nid, nid)} for nid in guessed if nid in never]
+    partly_needed = [nid for nid in blocks if nid in partly and nid not in never]
+    if partly_needed:
+        out["partly_placeholders"] = [{"id": nid, "label": labels.get(nid, nid),
+                                       "basic": t["by_node"][nid]["basic"],
+                                       "placeholders": t["by_node"][nid]["placeholders"]} for nid in partly_needed]
+    needed = [nid for nid in blocks if nid not in never]
+    basic = sum((t["by_node"].get(nid) or {"basic": 1})["basic"] for nid in needed)
+    guessed_basic = sum((t["by_node"].get(nid) or {"placeholders": 0})["placeholders"] for nid in needed)
+    if guessed_basic:
+        tt = {"basic": basic, "placeholders": guessed_basic, "names": [], "by_node": {
+            nid: t["by_node"][nid] for nid in needed if nid in t["by_node"]}}
+        nested = any((t["by_node"].get(nid) or {}).get("subsystem") for nid in needed)
+        out["placeholder_blocks"] = {"basic": basic, "placeholders": guessed_basic, "nested": nested,
+                                     "mostly": rbd_placeholders.mostly(tt), "words": rbd_placeholders.words(tt)}
     out["without_placeholders"] = None
     if not counted:
         return counted
     # With no block left that has a model, "without them" would be a certain 100%: not a figure.
-    if len(guessed) < len(blocks) and out["method"] == "exact":
+    # Nor while a block still needed rests partly on placeholders inside it: that figure would
+    # still carry invented lives.
+    if len(guessed) < len(blocks) and out["method"] == "exact" and not partly_needed:
         try:
             mission, _, _, _ = build_mission(graph, resolve_subsystem, resolve_model, covariates, phases=phases,
-                                             perfect=frozenset(counted), built=built)
-            with ignore_warnings():
-                r = float(mission.reliability())
-            out["without_placeholders"] = {"reliability": r, "unreliability": 1.0 - r}
+                                             perfect=frozenset(counted), built=built, state=state)
+            if _route(mission) == "exact":
+                with ignore_warnings():
+                    r = float(mission.reliability())
+                out["without_placeholders"] = {"reliability": r, "unreliability": 1.0 - r}
         except (AnalysisError, NotImplementedError, ValueError):
             pass
     return counted
@@ -910,52 +1004,64 @@ def _add_placeholders(out: dict, graph: dict, resolve_subsystem, resolve_model, 
 def placeholder_note(result: dict) -> Optional[str]:
     """The sentence that goes with a result resting on placeholders, or None."""
     names = [p["label"] for p in result.get("placeholders") or []]
-    if not names:
+    partly = [p["label"] for p in result.get("partly_placeholders") or []]
+    held = result.get("placeholder_blocks") or {}
+    if not names and not partly:
         return None
     one = len(names) == 1
-    text = PLACEHOLDER_NOTE.format(names=", ".join(names), have="has" if one else "have", they="it" if one else "they")
+    text = (PLACEHOLDER_NOTE.format(names=", ".join(names), have="has" if one else "have", they="it" if one else "they")
+            if names else "")
+    if partly:
+        text = (text + " " if text else "") + PARTLY_NOTE.format(names=", ".join(partly))
+    if held.get("words") and held.get("nested"):
+        text = f"{held['words'][0].upper()}{held['words'][1:]}. " + text
     without = (result.get("without_placeholders") or {}).get("reliability")
     if without is not None and result.get("reliability") is not None:
         text += f" With {'that block' if one else 'those blocks'} left out, the mission's reliability is {without:.4g}."
     return text
 
 
-def _add_weakest(out: dict, graph: dict, resolve_subsystem, resolve_model, covariates, phases, built,
-                 labels, skip: frozenset = frozenset()) -> None:
-    """Each phase's weakest block: the one whose failures end the most missions in that phase. For
-    each block, the mission is worked out again with that block never failing; the fall in the
-    chance of failing in each phase is the block's part in it (those parts add up, over the phases,
-    to how much the mission's reliability would rise). Exact missions only. ``skip``: blocks not
+def _add_weakest(out: dict, mission, graph: dict, built, labels, drivers=None,
+                 skip: frozenset = frozenset()) -> None:
+    """What drives each phase's failures: RePyability's ``failure_drivers``, for each block the fall
+    in the phase's failure probability if it never failed (those falls add up, over the phases, to
+    how much the mission's reliability would rise). ``drivers``: already worked out (a simulated
+    mission's, from the same missions); else worked out exactly. Each phase gets its ``drivers``
+    (the top few, {id, label, part, share}) and its ``weakest`` (the first). ``skip``: blocks not
     ranked (those with a placeholder model: a guessed life is never named the weakest)."""
     rows = out["phases"]
-    if out["method"] != "exact" or out["unreliability"] <= 0:
-        if out["method"] != "exact":
-            out["weakest_note"] = "The weakest block per phase is worked out for missions solved exactly."
+    if out["unreliability"] <= 0:
         return
     blocks = [nid for nid in _candidates(graph, built) if nid not in skip]
     if skip:
         out["weakest_note"] = WEAKEST_PLACEHOLDER_NOTE
-    if len(blocks) > MAX_WEAKEST_BLOCKS:
-        out["weakest_note"] = (f"The weakest block per phase is worked out for up to {MAX_WEAKEST_BLOCKS} blocks; "
-                               f"this diagram has {len(blocks)}.")
-        return
-    base = [r["failure_probability"] for r in rows]
-    best: list = [None] * len(rows)
-    for nid in blocks:
+    if drivers is None:
+        if out["method"] != "exact":
+            out["weakest_note"] = "The weakest block per phase is worked out for missions solved exactly."
+            return
+        if len(blocks) > MAX_WEAKEST_BLOCKS:
+            out["weakest_note"] = (f"The weakest block per phase is worked out for up to {MAX_WEAKEST_BLOCKS} "
+                                   f"blocks; this diagram has {len(blocks)}.")
+            return
         try:
-            mission, _, _, _ = build_mission(graph, resolve_subsystem, resolve_model, covariates, phases=phases,
-                                             perfect=frozenset({nid}), built=built)
             with ignore_warnings():
-                failing = mission.phase_failure_probabilities()
-        except (AnalysisError, NotImplementedError, ValueError):
-            continue
-        for j, phase in enumerate(phases):
-            part = base[j] - float(max(failing.get(phase["name"], 0.0), 0.0))
-            if part > 1e-15 and (best[j] is None or part > best[j]["part"]):
-                best[j] = {"id": nid, "label": labels.get(nid, nid), "part": part,
-                           "share": part / base[j] if base[j] > 0 else 0.0}
-    for row, b in zip(rows, best):
-        row["weakest"] = b
+                drivers = mission.failure_drivers(method="exact")
+        except (NotImplementedError, ValueError):
+            return
+    keep = set(blocks)
+    for row in rows:
+        name = row["name"]
+        base = row["failure_probability"]
+        parts = sorted(((float(falls.get(name, 0.0)), nid) for nid, falls in drivers.falls.items() if nid in keep),
+                       key=lambda pn: -pn[0])
+        top = [{"id": nid, "label": labels.get(nid, nid), "part": part, "share": part / base if base > 0 else 0.0}
+               for part, nid in parts if part > 1e-15][:DRIVERS_SHOWN]
+        row["weakest"] = top[0] if top else None
+        if top:
+            row["drivers"] = top
+    if drivers.method != "exact":
+        out["drivers_note"] = ("What drives each phase's failures comes from the same simulated missions, played "
+                               "again with each block never failing.")
 
 
 def analyze_for_owner(db, graph: dict, owner_id, covariates: Optional[dict] = None,
@@ -982,7 +1088,9 @@ def agent_summary(result: dict) -> dict:
         "phases": [{**{k: r[k] for k in ("name", "duration", "end", "failure_probability", "reliability_at_end",
                                          "conditional_failure", "waiting") if k in r},
                     **({"weakest_block": r["weakest"]["label"], "weakest_share": r["weakest"]["share"]}
-                       if r.get("weakest") else {})} for r in result["phases"]],
+                       if r.get("weakest") else {}),
+                    **({"drivers": [{"block": d["label"], "share": d["share"]} for d in r["drivers"]]}
+                       if len(r.get("drivers") or []) > 1 else {})} for r in result["phases"]],
         "riskiest_phase": (result.get("riskiest") or {}).get("name"),
         "notes": list(result.get("notes") or []),
     }
@@ -997,7 +1105,11 @@ def agent_summary(result: dict) -> dict:
         out["notes"].insert(0, result["method_reason"])
     note = placeholder_note(result)
     if note:
-        out["placeholders"] = [p["label"] for p in result["placeholders"]]
+        out["placeholders"] = [p["label"] for p in result.get("placeholders") or []]
+        if result.get("partly_placeholders"):
+            out["partly_placeholders"] = [p["label"] for p in result["partly_placeholders"]]
+        if result.get("placeholder_blocks"):
+            out["placeholder_blocks"] = {k: result["placeholder_blocks"].get(k) for k in ("basic", "placeholders")}
         without = (result.get("without_placeholders") or {}).get("reliability")
         if without is not None and result.get("reliability") is not None:
             out["mission_reliability_without_placeholders"] = without
@@ -1010,71 +1122,76 @@ def agent_summary(result: dict) -> dict:
 # ---------------------------------------------------------------------------
 _MISSION_CODE = '''
 # ---------------------------------------------------------------------------
-# Phased mission: the phases in order, each with its duration, the blocks it
-# doesn't need (they stand in as perfectly reliable for that phase, but their
-# own lives still run on) and the vote nodes whose required count differs.
+# Phased mission: the drawn diagram run through its phases in order
+# (RePyability's PhasedMission.from_diagram). Each phase has its duration, how
+# some blocks behave in it (a BlockSetting: "not_needed" — taken as working,
+# while it still ages; "standby" — idle until the phase needs it; "guaranteed"
+# — it runs but can't fail; or a life model of the phase's own) and the vote
+# nodes whose required count differs.
 # ---------------------------------------------------------------------------
-PHASES = [
+__MODELS__PHASES = [
 __PHASES__
 ]
 SIM_MISSIONS = __SIMS__
 SIM_SEED = __SEED__
+SIM_CONFIDENCE = __CONF__
 
 
-def phase_diagram(index, not_needed, votes):
-    """One phase's diagram over the same blocks as the whole mission."""
+def mission_diagram():
+    """The diagram the mission runs on, with the blocks pinned working or failed."""
     reliabilities = dict(RELIABILITIES)
     for node in WORKING_NODES:
         reliabilities[node] = PerfectReliability
     for node in BROKEN_NODES:
         reliabilities[node] = PerfectUnreliability
-    stand = set()
-    for node in not_needed:
-        stand.add(node)
-        # A repeated block's copies go with it.
-        stand.update(n for n, v in RELIABILITIES.items() if isinstance(v, str) and v == node)
-    rename = {node: f"{node}~phase{index + 1}" for node in stand}
-    for node in stand:
-        del reliabilities[node]
-        reliabilities[rename[node]] = PerfectReliability
-    edges = [(rename.get(a, a), rename.get(b, b)) for a, b in EDGES]
     return NonRepairableRBD(
-        edges,
+        EDGES,
         reliabilities,
-        k={**K, **votes},
+        k=K,
 __IO__    )
 
 
-mission = PhasedMission([
-    (name, duration, phase_diagram(i, not_needed, votes))
-    for i, (name, duration, not_needed, votes) in enumerate(PHASES)
-])
+mission = PhasedMission.from_diagram(mission_diagram(), PHASES)
 
 
 def report_mission():
     """The mission's reliability and where it fails, as Reliafy reports it:
-    exact, or simulated when the mission is too large to work out exactly."""
+    exact where RePyability is (a Markov chain for blocks on standby with
+    constant failure rates); simulated, seeded, where blocks on standby can
+    only be simulated; simulated as well when it is too large to work out
+    exactly."""
     unit = f" {UNIT_TEXT}" if UNIT_TEXT else ""
-    try:
-        reliability = mission.reliability()
-        failing = mission.phase_failure_probabilities()
-        method = "exact"
-    except NotImplementedError:
-        interval = mission.reliability_interval(SIM_MISSIONS, seed=SIM_SEED)
+    route = mission.analysis_routes()["summary"].route
+    if route == "simulated":
+        summary = mission.summary(
+            method="simulate", mc_samples=SIM_MISSIONS, seed=SIM_SEED,
+            confidence=SIM_CONFIDENCE,
+        )
+        reliability = summary.reliability
+        failing = {p.name: p.failure_probability for p in summary.phases}
+        method = f"simulated, {SIM_MISSIONS:,} missions"
+    elif route == "refused":
+        interval = mission.reliability_interval(
+            SIM_MISSIONS, seed=SIM_SEED, confidence=SIM_CONFIDENCE
+        )
         reliability = interval.estimate
         failing = mission.phase_failure_probabilities(
             "simulate", mc_samples=SIM_MISSIONS, seed=SIM_SEED
         )
         method = f"simulated, {SIM_MISSIONS:,} missions"
+    else:
+        reliability = mission.reliability()
+        failing = mission.phase_failure_probabilities()
+        method = "exact"
     print(f"\\nPhased mission ({method}): reliability {reliability:.6f} "
           f"over {mission.duration:,.6g}{unit}")
     reached = 1.0
     rows = []
-    for name, duration, _, _ in PHASES:
-        fail = failing[name]
+    for phase in PHASES:
+        fail = failing[phase.name]
         reached = max(reached - fail, 0.0)
-        rows.append((name, fail, reached))
-        print(f"  {name[:28]:<28} fails in it: {fail:.4g}  "
+        rows.append((phase.name, fail, reached))
+        print(f"  {phase.name[:28]:<28} fails in it: {fail:.4g}  "
               f"reliability at its end: {reached:.6f}")
     riskiest = max(rows, key=lambda r: r[1])
     print(f"Riskiest phase: {riskiest[0]}")
@@ -1110,11 +1227,82 @@ def _covariate_comment(phases: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _phase_lines(graph: dict, phases: list[dict], unit: str) -> tuple[list[str], list[str]]:
+    """``(model lines, phase lines)``: each phase as a ``MissionPhase`` literal, the blocks' settings
+    as Reliafy builds them (:func:`build_mission`), and the phases' own models as named constants."""
+    from backend.services.rbd_export import _Missing, _dist_expr, _lit, _num
+
+    nodes = graph.get("nodes") or []
+    by_id = {n.get("id"): n for n in nodes}
+    knodes = {nid for nid, n in by_id.items() if n.get("type") == "knode"}
+    repeats, _ = rbd_repeats.find_repeats(nodes)
+    blocks = {nid for nid, n in by_id.items() if n.get("type") not in ("input", "output", "knode")
+              and nid not in repeats}
+    state = {nid: (n.get("data") or {}).get("state") for nid, n in by_id.items()}
+    pinned = {nid for nid, st in state.items() if st in ("working", "failed")}
+    model_lines: list[str] = []
+    lines: list[str] = []
+    for j, p in enumerate(phases):
+        settings: dict = {}
+        models = p.get("models") or {}
+        named: dict = {}
+        for nid, spec in models.items():
+            node = by_id.get(nid)
+            if nid not in blocks or nid in pinned or node is None or node.get("type") != "component":
+                continue
+            label = (node.get("data") or {}).get("label") or nid
+            try:
+                expr, desc = _dist_expr(spec, label, unit)
+            except _Missing as exc:
+                model_lines.append(f"# {label} in phase {p['name']}: {exc}")
+                continue
+            var = f"MODEL_{j + 1}_{len(model_lines) + 1}"
+            model_lines.append(f"{var} = {expr}  # {label[:30]} in {p['name'][:20]}: {desc}"[:200])
+            named[nid] = var
+
+        def setting(nid: str, state: Optional[str] = None, **extra) -> str:
+            args = [f"state={_lit(state)}"] if state else []
+            if nid in named:
+                args.append(f"model={named[nid]}")
+            args += [f"{k}={_num(v)}" for k, v in extra.items()]
+            return f"BlockSetting({', '.join(args)})"
+
+        for nid in p.get("not_needed", []):
+            original = repeats.get(nid, nid)
+            if original in blocks and state.get(original) != "working":
+                settings[original] = setting(original, "not_needed")
+        for nid in p.get("standby", []):
+            if nid in blocks and nid not in pinned:
+                extra = {}
+                if (p.get("dormancy") or {}).get(nid):
+                    extra["dormancy_factor"] = float(p["dormancy"][nid])
+                if nid in (p.get("start_probability") or {}):
+                    extra["start_probability"] = float(p["start_probability"][nid])
+                settings[nid] = setting(nid, "standby", **extra)
+        for nid in p.get("guaranteed", []):
+            if nid in blocks and nid not in pinned:
+                settings[nid] = setting(nid, "guaranteed")
+        for nid in named:
+            if nid not in settings:
+                settings[nid] = setting(nid)
+        votes = {n: v for n, v in (p.get("votes") or {}).items() if n in knodes}
+        args = [_lit(p["name"]), _num(p["duration"])]
+        if settings:
+            inner = "".join(f"            {_lit(n)}: {v},\n" for n, v in settings.items())
+            args.append("blocks={\n" + inner + "        }")
+        if votes:
+            args.append("k={" + ", ".join(f"{_lit(n)}: {v}" for n, v in votes.items()) + "}")
+        lines.append("    MissionPhase(\n        " + ",\n        ".join(args) + ",\n    ),")
+    return model_lines, lines
+
+
 def python_section(body: str, graph: dict, script) -> str:
     """Add the phased mission to a non-repairable "Download as Python" body:
-    the phases, a diagram per phase and ``report_mission()``, run after the
-    diagram's own calculation. A diagram with common-cause groups gets a
-    comment instead (the app refuses those missions too)."""
+    ``PhasedMission.from_diagram`` over the diagram, a ``MissionPhase`` per
+    phase and ``report_mission()``, run after the diagram's own calculation,
+    with the same route, seed and number of missions as Reliafy, so it gives
+    the same numbers. A diagram with common-cause groups gets a comment
+    instead (the app refuses those missions too)."""
     if not has_phases(graph) or graph.get("repairable") or graph.get("network"):
         return body
     try:
@@ -1123,8 +1311,6 @@ def python_section(body: str, graph: dict, script) -> str:
         return body
     if not phases:
         return body
-    from backend.services.rbd_export import _lit, _num
-
     tail = '\n\nif __name__ == "__main__":\n    main()'
     if not body.rstrip().endswith(tail.strip()):
         return body
@@ -1134,33 +1320,24 @@ def python_section(body: str, graph: dict, script) -> str:
         note = ("# The diagram's phased mission isn't exported: a phased mission doesn't model\n"
                 "# common-cause groups (Reliafy doesn't analyse it either).")
         return f"{head}\n\n\n{note}\n\n\nif __name__ == \"__main__\":\n    main()\n"
-    if has_standby(phases) or has_guaranteed(phases):
-        note = ("# The diagram's phased mission isn't exported: some of its blocks stand by in\n"
-                "# some phases, or are guaranteed working in some phases, which this script\n"
-                "# doesn't model.")
-        return f"{head}\n\n\n{note}\n\n\nif __name__ == \"__main__\":\n    main()\n"
     ids = {n.get("id") for n in graph.get("nodes") or []}
-    knodes = {n.get("id") for n in graph.get("nodes") or [] if n.get("type") == "knode"}
-    repeats, _ = rbd_repeats.find_repeats(graph.get("nodes") or [])
-    lines = []
-    for p in phases:
-        nn = sorted({repeats.get(b, b) for b in p.get("not_needed", [])
-                     if b in ids and repeats.get(b, b) not in knodes})
-        votes = {n: v for n, v in (p.get("votes") or {}).items() if n in knodes}
-        nn_lit = "{" + ", ".join(_lit(b) for b in nn) + "}" if nn else "set()"
-        votes_lit = "{" + ", ".join(f"{_lit(n)}: {v}" for n, v in votes.items()) + "}"
-        lines.append(f"    ({_lit(p['name'])}, {_num(p['duration'])}, {nn_lit}, {votes_lit}),")
+    model_lines, lines = _phase_lines(graph, phases, getattr(script, "unit", "") or "")
     io = ""
     if "input" in ids:
         io += "        input_node=\"input\",\n"
     if "output" in ids:
         io += "        output_node=\"output\",\n"
-    code = (_MISSION_CODE.replace("__PHASES__", "\n".join(lines)).replace("__SIMS__", f"{SIM_MISSIONS:_}")
-            .replace("__SEED__", str(SIM_SEED)).replace("__IO__", io)).strip("\n")
+    if any("surv." in line for line in model_lines):
+        script.uses_surv = True
+    models = ("# Life models some blocks run on in a phase of their own.\n" + "\n".join(model_lines) + "\n\n"
+              if model_lines else "")
+    code = (_MISSION_CODE.replace("__MODELS__", models).replace("__PHASES__", "\n".join(lines))
+            .replace("__SIMS__", f"{SIM_MISSIONS:_}").replace("__SEED__", str(SIM_SEED))
+            .replace("__CONF__", repr(SIM_CONFIDENCE)).replace("__IO__", io)).strip("\n")
     covs = _covariate_comment(phases)
     if covs:
         code = covs + "\n" + code
-    script.imports.update({"PhasedMission", "PerfectReliability", "PerfectUnreliability"})
+    script.imports.update({"PhasedMission", "MissionPhase", "BlockSetting", "PerfectReliability",
+                           "PerfectUnreliability"})
     return (f"{head}\n\n\n{code}\n\n\nif __name__ == \"__main__\":\n    results = main()\n"
             "    results[\"phased_mission\"] = report_mission()\n    save_results(results)\n")
-

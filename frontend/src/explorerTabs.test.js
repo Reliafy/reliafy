@@ -175,7 +175,8 @@ test("a branch's parts and classes: what's kept or used there and inside it", ()
   assert.deepEqual(partsInBranch(parts, branchOf(display, "p1")).map((p) => p.id), ["b"]);
   // A design's parts list: by parts lists only, never by stock.
   assert.deepEqual(partsInBranch(parts, site, { design: true }).map((p) => p.id), ["b"]);
-  assert.deepEqual(classesInBranch(display, site), [{ position_class: "Motor", here: 1 }, { position_class: "Pump", here: 1 }]);
+  assert.deepEqual(classesInBranch(display, site), [{ position_class: "Motor", class_key: "Motor", here: 1 },
+    { position_class: "Pump", class_key: "Pump", here: 1 }]);
 });
 
 test("a product's design locations have the design's tabs: no Failure reports, Signals, or Parts and stock", () => {
@@ -403,4 +404,17 @@ test("text that sends you to a tab names it as the row shows it", () => {
   assert.equal(tabPlace("condition"), "Monitoring › Life left");
   assert.equal(tabPlace("rcm"), "RCM");
   assert.equal(tabPlace("reports"), "History");
+});
+
+test("positions built from a product's design count under their design position, whatever their text", () => {
+  const rows = new Map([
+    ["a", { key: "a", type: "pos", ref: { position_class: "Motor", class_key: "design:m1", class_label: "UAV › Motor 1" }, kids: [] }],
+    ["b", { key: "b", type: "pos", ref: { position_class: "Brushless", class_key: "design:m1", class_label: "UAV › Motor 1" }, kids: [] }],
+    ["c", { key: "c", type: "pos", ref: { position_class: "Motor" }, kids: [] }],
+  ]);
+  const branch = { pos: new Set(["a", "b", "c"]), loc: new Set() };
+  assert.deepEqual(classesInBranch({ rows }, branch), [
+    { position_class: "Motor", class_key: "Motor", here: 1 },
+    { position_class: "UAV › Motor 1", class_key: "design:m1", here: 2 },
+  ]);
 });

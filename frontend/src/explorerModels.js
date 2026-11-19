@@ -8,8 +8,10 @@
 // what's inside it too. Pure functions, tested in explorerModels.test.js; the cells are
 // drawn by ModelTable.jsx. The links come from GET /api/maintenance/position-models.
 
+import { classKey } from "./positionClass.js";
 import { handbookCovariates } from "./predictions.js";
 import { isCovariateId, lineConditions } from "./covariate.js";
+import { strategiesFor, strategyKey } from "./positionStrategy.js";
 
 export const MODEL_TYPE = "pmodel";
 export const isModelRow = (r) => r?.type === MODEL_TYPE;
@@ -106,6 +108,8 @@ export function headline(model) {
   const mean = byId(model, "mean");
   if (mean && model.family === "rbd") parts.unshift(`Mean life ${withBounds(mean, lv)}`);
   else if (!parts.length && mean) parts.push(`Mean life ${withBounds(mean, lv)}`);
+  // A parts count that left lines out says what it covers ("electronics only: 3 lines left out").
+  if (model.covers?.short && parts.length) parts.push(model.covers.short);
   return parts.join(" · ");
 }
 
@@ -118,7 +122,14 @@ export function countsText(model) {
   const c = model?.counts || {};
   const n = (v, one, many = `${one}s`) => `${Number(v).toLocaleString("en-AU")} ${Number(v) === 1 ? one : many}`;
   if (c.units != null) return n(c.units, "unit measured", "units measured");
-  if (c.blocks != null) return [n(c.blocks, "block"), c.placeholders ? n(c.placeholders, "placeholder") : ""].filter(Boolean).join(", ");
+  if (c.blocks != null) {
+    // Placeholders are counted through every sub-system ("27 of 27 basic blocks placeholders").
+    const basic = c.basic_blocks;
+    if (c.placeholders && basic != null && c.nested) {
+      return `${n(c.blocks, "block")}; ${Number(c.placeholders).toLocaleString("en-AU")} of ${n(basic, "basic block")} ${c.placeholders === 1 ? "is a placeholder" : "are placeholders"}`;
+    }
+    return [n(c.blocks, "block"), c.placeholders ? n(c.placeholders, "placeholder") : ""].filter(Boolean).join(", ");
+  }
   const out = [];
   if (c.failures != null) out.push(n(c.failures, "failure"));
   if (c.suspensions != null) out.push(n(c.suspensions, "suspension"));
@@ -137,13 +148,17 @@ export function usedText(link) {
 }
 
 // What a link is for: its failure modes, or every failure of the position.
+// A parts count that left lines out covers only what it counted, so it never says "All failures".
 export const forText = (link) => (link?.failure_modes?.length
-  ? link.failure_modes.map((f) => f.text).join(", ") : "All failures of this position");
+  ? link.failure_modes.map((f) => f.text).join(", ")
+  : link?.model?.covers?.words ? `the failures of what it counted. ${link.model.covers.words}` : "All failures of this position");
 
 // The tree with each position's model rows in it. The display given is left as it
 // is; position rows gain `lsum` (their own rows' counts), `lall` (theirs and every
 // position's inside them) and `modelKids`.
-export function graftModels(display, links = []) {
+// `strategies` ({link id: [saved strategy analysis]}, positionStrategy.strategiesByLink): a model row
+// with any gets a Strategy row under it (Strategy is optional: none, no row).
+export function graftModels(display, links = [], strategies = {}) {
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, models: true };
@@ -171,6 +186,18 @@ export function graftModels(display, links = []) {
           search: [name, link.model?.kind, link.source_text, forText(link)].filter(Boolean).join(" ").toLowerCase(),
         },
       });
+      const saved = strategies?.[link.id] || [];
+      if (saved.length) {
+        const sk = strategyKey(link.id);
+        rows.get(key).kids = [sk];
+        rows.set(sk, {
+          key: sk, type: MODEL_TYPE, parent: key, kids: [], depth: p.depth + 2, own: noStatus(), sum: noStatus(),
+          ref: {
+            name: "Strategy", strategy: true, saved, link, position_id: pk, family: "strategy", many: false,
+            search: ["strategy", ...saved.map((a) => `${a.name} ${a.headline || ""}`)].join(" ").toLowerCase(),
+          },
+        });
+      }
       keys.push(key);
       p.lsum.n += 1;
       if (link.stale) p.lsum.stale += 1;
@@ -219,7 +246,8 @@ export function rollupText(r, open = false) {
 // position's until it's attached, so the roll-up never counts it.
 export function classModelHint(r, classModels, { short = false } = {}) {
   if (!r || r.type !== "pos" || (r.lsum?.n || 0) > 0) return "";
-  const name = (r.ref?.position_class || "").trim();
+  // Keyed by the class's key: a built position's is its design position's ("design:<id>").
+  const name = classKey(r.ref);
   const cm = name && classModels ? classModels[name] : null;
   if (!cm) return "";
   const fresh = Number.isFinite(cm.failures_now) && Number.isFinite(cm.failures) ? cm.failures_now - cm.failures : 0;
@@ -242,6 +270,11 @@ export function inUseWords(link) {
 export function rowActions(r, { viewOnly = null } = {}) {
   const link = r.ref.link;
   const off = viewOnly ? { disabled: true, title: viewOnly } : {};
+  // A model's Strategy row: open it (the pane: its saved strategies and the tools that fit).
+  if (r.ref.strategy) return [{ id: "model-strategy-open", label: "Open" }];
+  // Strategy is optional (Derryn, 16 Nov 2026): offered quietly on a model a strategy tool takes.
+  const strategy = strategiesFor(link).choices.length
+    ? { id: "model-strategy-add", label: (r.kids || []).length ? "Add another strategy…" : "Add a strategy…" } : null;
   const rbd = link.model_type === "rbd";
   return [
     opensInPane(link) ? { id: "model-rbd-pane", label: "Open in the pane" } : { id: "model-open", label: "Open" },
@@ -261,6 +294,7 @@ export function rowActions(r, { viewOnly = null } = {}) {
     isLifeModelLink(link) ? { id: "model-to-library", label: "Add to library…", pro: true, ...off } : null,
     // Typed-in parameters (Assumed): changed in place, without unlinking and entering them again.
     link.model?.entered ? { id: "model-params-edit", label: "Edit parameters…", ...off } : null,
+    strategy,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
     { id: "model-unlink", label: "Unlink…", ...off },
   ].filter(Boolean);
@@ -299,7 +333,7 @@ export function lifeModelOf(links, positionId) {
 // The tab's chip: models behind their history or gone.
 export const MODEL_CHIPS = [
   { id: "stale", label: "Stale", rcmOnly: true, tab: "models",
-    title: "Fitted models with failures recorded since, and models that are gone", test: (r) => isModelRow(r) && (!!r.ref.link.stale || !r.ref.link.model) },
+    title: "Fitted models with failures recorded since, and models that are gone", test: (r) => isModelRow(r) && !r.ref.strategy && (!!r.ref.link.stale || !r.ref.link.model) },
 ];
 
 // The positions to open when the tab opens: the way down to the one picked.

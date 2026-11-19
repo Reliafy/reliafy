@@ -86,7 +86,7 @@ from surpyval import GumbelPH, LogisticPH
 from surpyval import AFT, AH, PH, PO
 from surpyval.univariate.regression import CoxPH
 
-from backend import levels, life_bounds, np_life, param_intervals
+from backend import levels, life_bounds, np_life, param_intervals, two_clocks
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
@@ -356,7 +356,8 @@ def serialize_live(cache_id: str) -> dict | None:
         return None
     try:
         return {
-            "model": model.to_dict(),  # BSON-safe per surpyval 0.15+
+            # BSON-safe per surpyval 0.15+; a two-clock model keeps its second clock's unit too.
+            "model": two_clocks.to_dict(model) if two_clocks.is_model(model) else model.to_dict(),
             "grid": np.asarray(entry.get("grid"), dtype=float).tolist(),
             "fields": entry.get("fields") or [],
         }
@@ -370,7 +371,8 @@ def restore_live(serialized: dict) -> str:
     to refit-on-demand."""
     import surpyval
 
-    model = surpyval.from_dict(serialized["model"])
+    model = two_clocks.from_dict(serialized["model"]) if serialized["model"].get("second_unit") \
+        else surpyval.from_dict(serialized["model"])
     grid = np.asarray(serialized.get("grid") or [], dtype=float)
     return _store_model(model, grid, serialized.get("fields") or [])
 
@@ -1658,9 +1660,11 @@ def options_from_form(
     frailty_family: Optional[str] = None,
     u_col: Optional[str] = None,
     item_lives: Optional[str] = None,
+    x2_unit: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers).
-    ``c_map`` is a JSON object of status words to censor codes."""
+    ``c_map`` is a JSON object of status words to censor codes; ``x2_unit`` the
+    second clock's unit of a fit on two clocks ("cycles")."""
 
     def truthy(v):
         return str(v or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -1700,6 +1704,8 @@ def options_from_form(
         opts["u_col"] = str(u_col).strip()  # unit_column.UNIT_COLUMN_KEY
     if truthy(item_lives):
         opts[ITEM_LIVES_KEY] = True
+    if x2_unit and str(x2_unit).strip():
+        opts[two_clocks.UNIT_KEY] = two_clocks.clean_unit(x2_unit)
     return opts if any(opts.values()) else None
 
 
@@ -2051,6 +2057,12 @@ def fit(
     cox_opts = options.pop(regression_diagnostics.COX_KEY, None)
     # #179: the Group by column is a frailty model's alone.
     mapping = more_models.check_group(distribution, mapping, covariates)
+    # The second clock's unit ("cycles"): read by a fit on two clocks only.
+    second_unit = options.pop(two_clocks.UNIT_KEY, None)
+    if two_clocks.is_two_clock(distribution) or mapping.get(two_clocks.X2):
+        # Two clocks (hours and starts, cycles, landings...): its own fit, and none of the options below.
+        return _json_safe(_fit_two_clock(distribution, df, mapping, unit, options, covariates, formula,
+                                         c_invert, c_map, second_unit))
     options = normalize_options(distribution, options)
     if mapping.get("i"):
         # #60: an item column means covariates that change over time.
@@ -2149,6 +2161,39 @@ def fit(
     # values at the extremes (e.g. a Weibull bound that maps to ±inf/NaN). These
     # are not valid JSON, so coerce them to null — Plotly renders them as gaps.
     return _json_safe(result)
+
+
+def _fit_two_clock(distribution, df, mapping, unit, options, covariates, formula, c_invert, c_map,
+                   second_unit=None) -> dict:
+    """A life on two clocks (:mod:`backend.two_clocks`): SurPyval's equivalent-time-scale
+    fit, kept live like any other fit so a saved model rehydrates from its ``to_dict``.
+    ``second_unit``: the second clock's unit ("cycles"; from its column's name if blank)."""
+    if not two_clocks.is_two_clock(distribution):
+        raise FitError("A second clock column needs a model on two clocks: pick "
+                       f"{', '.join(e['name'] for e in two_clocks.MODELS.values())}, or clear the second clock.")
+    if not mapping.get(two_clocks.X2):
+        raise FitError("A model on two clocks needs the second clock's column: give each unit's second measure "
+                       "of use (starts, cycles, landings...) beside its first.")
+    if covariates or formula:
+        raise FitError("A model on two clocks takes no covariates.")
+    stray = sorted(k for k, v in (options or {}).items() if v)
+    if stray:
+        raise FitError(f"A model on two clocks takes no fit options ({', '.join(stray)}).")
+    try:
+        model, result = two_clocks.fit(distribution, df, mapping, canonical_unit(unit), second_unit or "")
+    except two_clocks.TwoClockError as exc:
+        raise FitError(str(exc)) from None
+    cache_id = _store_model(model, np.asarray(result["at_rate"]["curves"]["x"]
+                                              if result.get("at_rate") else [0.0, 1.0], dtype=float), [])
+    result["functions"] = {"model_id": cache_id}
+    result["unit"] = canonical_unit(unit)
+    # The second clock's unit rides in the options, so a saved model's refit keeps it.
+    result["options"] = {two_clocks.UNIT_KEY: result["second_unit"]}
+    if c_invert:
+        result["options"][CENSOR_INVERT_KEY] = True
+    if c_map:
+        result["options"][CENSOR_MAP_KEY] = c_map
+    return result
 
 
 def late_entry(df: pd.DataFrame, mapping: dict) -> Optional[dict]:
@@ -3830,13 +3875,35 @@ def _custom_grid(grid, x_min=None, x_max=None) -> np.ndarray:
     return np.linspace(lo, hi, n)
 
 
-def evaluate(model_id: str, values: dict, x_min=None, x_max=None, *, owner: str | None = None) -> dict:
+#: The most points ``at`` may ask for in one call (the calculator asks for one
+#: or two: the time, and the age survived to).
+MAX_AT_POINTS = 50
+
+
+def _points_at(at) -> np.ndarray:
+    """The exact times ``at`` (a number or a list) as an array, checked: the
+    calculator's answer at the time typed, not read off the plotted grid."""
+    values = at if isinstance(at, (list, tuple)) else [at]
+    if not values or len(values) > MAX_AT_POINTS:
+        raise FitError(f"Ask for between 1 and {MAX_AT_POINTS} times at once.")
+    try:
+        pts = np.asarray([float(v) for v in values], dtype=float)
+    except (TypeError, ValueError):
+        raise FitError("Each time must be a number.") from None
+    if not np.isfinite(pts).all():
+        raise FitError("Each time must be a finite number.")
+    return pts
+
+
+def evaluate(model_id: str, values: dict, x_min=None, x_max=None, *, owner: str | None = None, at=None) -> dict:
     """Re-evaluate the reliability functions at given covariate ``values``,
-    optionally over a custom ``[x_min, x_max]`` grid. ``owner`` restricts the
-    lookup to a model bound to that account (see :func:`bind_owner`)."""
+    optionally over a custom ``[x_min, x_max]`` grid — or, with ``at``, at
+    exactly those times (the calculator's answer; the grid is only drawn).
+    ``owner`` restricts the lookup to a model bound to that account (see
+    :func:`bind_owner`)."""
     entry = _entry_for(model_id, owner)
     model, fields = entry["model"], entry["fields"]
-    grid = _custom_grid(entry["grid"], x_min, x_max)
+    grid = _points_at(at) if at is not None else _custom_grid(entry["grid"], x_min, x_max)
 
     row = {}
     for f in fields:
@@ -3874,8 +3941,10 @@ def confidence_bounds(
     *,
     owner: str | None = None,
     values: Optional[dict] = None,
+    at=None,
 ) -> dict:
-    """Confidence bounds of a fitted model's ``on`` function over its grid.
+    """Confidence bounds of a fitted model's ``on`` function over its grid,
+    or with ``at`` at exactly those times (the calculator's answer).
 
     Wraps SurPyval's ``model.cb`` — configurable significance ``alpha_ci`` and
     ``bound`` (two-sided / lower / upper). Available for plain, discrete and
@@ -3893,7 +3962,7 @@ def confidence_bounds(
 
     entry = _entry_for(model_id, owner)
     model = entry["model"]
-    grid = _custom_grid(entry["grid"], x_min, x_max)
+    grid = _points_at(at) if at is not None else _custom_grid(entry["grid"], x_min, x_max)
     regression = regression_bands.is_regression(entry)
     if regression and not regression_bands.has_bands(model):
         raise FitError(regression_bands.band_note(model))

@@ -14,6 +14,7 @@ import { itemName } from "../components/LibRows";
 import { PageTitle } from "../components/usePageTitle.js";
 import CalendarReplacementResult from "../components/CalendarReplacementResult.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
+import OverhaulReplaceResult from "../components/OverhaulReplaceResult.jsx";
 import { inputRows, reopenLink } from "../analysisInputs.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 
@@ -25,6 +26,7 @@ const KIND_LABEL = {
   on_condition_interval: "Check interval (P-F)",
   failure_finding_interval: "Test interval",
   calendar_replacement: "Shutdown calendar",
+  overhaul_replace: "Overhaul and replace",
 };
 
 // A saved strategy analysis, rendered read-only from its stored results.
@@ -78,6 +80,7 @@ export default function StrategyAnalysisPage() {
       <div className="card">
         {doc.kind === "calendar_replacement" && <CalendarReplacementResult result={doc.results} name={doc.name} />}
         {doc.kind === "optimal_replacement" && <ReplacementResult result={doc.results} name={doc.name} />}
+        {doc.kind === "overhaul_replace" && <OverhaulReplaceResult result={doc.results} name={doc.name} />}
         {doc.kind === "compare_two" && <CompareResult result={doc.results} name={doc.name} />}
         {doc.kind === "failure_finding" && <FfiResult result={doc.results} />}
         {doc.kind === "demonstration_test" && <DemoTestResult result={doc.results} />}

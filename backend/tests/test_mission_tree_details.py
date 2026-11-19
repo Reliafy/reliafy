@@ -91,13 +91,20 @@ def test_guaranteed_in_parallel_matches_repyability():
 
 
 def test_warm_standby_ages_at_its_dormancy():
-    graph = _diagram([("input", "a"), ("a", "output")], {"a": _exp(0.01)})
-    cold = rbd_phases.analyze_phases(graph, phases=[{"name": "one", "duration": 10, "standby": ["a"]},
+    # A runs; B stands by through phase one, ageing at half A's rate while idle, and is called on if
+    # A fails; both run in phase two. By hand (exponential lives, rate 0.01): A survives phase one
+    # (B alive or not), or A fails at s and B, still alive, runs from s to 30.
+    graph = _diagram([("input", "a"), ("input", "b"), ("a", "output"), ("b", "output")],
+                     {"a": _exp(0.01), "b": _exp(0.01)})
+    cold = rbd_phases.analyze_phases(graph, phases=[{"name": "one", "duration": 10, "standby": ["b"]},
                                                     {"name": "two", "duration": 20}])
-    warm = rbd_phases.analyze_phases(graph, phases=[{"name": "one", "duration": 10, "standby": ["a"],
-                                                     "dormancy": {"a": 0.5}}, {"name": "two", "duration": 20}])
-    assert cold["reliability"] == pytest.approx(E(-0.01 * 20), rel=1e-9)
-    assert warm["reliability"] == pytest.approx(E(-0.01 * 25), rel=1e-9)
+    warm = rbd_phases.analyze_phases(graph, phases=[{"name": "one", "duration": 10, "standby": ["b"],
+                                                     "dormancy": {"b": 0.5}}, {"name": "two", "duration": 20}])
+    pair = 1 - (1 - E(-0.2)) ** 2
+    assert cold["reliability"] == pytest.approx(E(-0.1) * pair + 0.1 * E(-0.3), rel=1e-9)
+    hand = E(-0.1) * (E(-0.05) * pair + (1 - E(-0.05)) * E(-0.2)) + 2 * E(-0.3) * (1 - E(-0.05))
+    assert warm["reliability"] == pytest.approx(hand, rel=1e-9)
+    assert warm["reliability"] < cold["reliability"]
     assert rbd_phases.WARM_NOTE in warm["notes"]
 
 
@@ -111,12 +118,16 @@ def test_a_node_status_rule_changes_the_mission_result():
     assert held["reliability"] == pytest.approx(E(-0.01 * 30) * E(-0.02 * 20), rel=1e-9)
 
 
-def test_python_export_leaves_out_a_mission_with_guaranteed_blocks():
+def test_python_export_reproduces_a_mission_with_guaranteed_blocks(tmp_path):
     from backend.services import rbd_export
+    from backend.tests.test_rbd_export import _run
 
-    graph = {**_series(_exp(0.01), _exp(0.02)), "phases": [{"name": "one", "duration": 1, "guaranteed": ["a"]}]}
+    graph = {**_series(_exp(0.01), _exp(0.02)), "phases": [{"name": "one", "duration": 10, "guaranteed": ["a"]},
+                                                            {"name": "two", "duration": 20}]}
     code = rbd_export.to_python(graph, "Held")
-    assert "guaranteed working in some phases" in code and "report_mission" not in code
+    assert 'BlockSetting(state="guaranteed")' in code
+    results, _ = _run(code, tmp_path)
+    assert results["phased_mission"]["reliability"] == pytest.approx(E(-0.02 * 30) * E(-0.01 * 20), rel=1e-9)
 
 
 # ---- covariates: automatic from the RBD's life models -------------------------------------------
@@ -179,7 +190,8 @@ def test_rules_and_result_phases_for_the_tree():
         {"name": "One", "duration": 10, "standby": ["b"], "dormancy": {"b": 0.2}},
         {"name": "Two", "duration": 10, "guaranteed": ["a"], "not_needed": ["gone"]}]}
     info = rm.tree_info(graph, mission, [])
-    assert info["phase_settings"][0]["rules"] == [{"block": "b", "label": "B", "state": "standby", "dormancy": 0.2}]
+    assert info["phase_settings"][0]["rules"] == [{"block": "b", "label": "B", "state": "standby", "dormancy": 0.2,
+                                                    "start_probability": 1.0}]
     # A block no longer in the diagram has no row.
     assert info["phase_settings"][1]["rules"] == [{"block": "a", "label": "A", "state": "guaranteed"}]
     result = rm.analyze(None, [], graph, mission["phases"], inputs_for=lambda b: [])

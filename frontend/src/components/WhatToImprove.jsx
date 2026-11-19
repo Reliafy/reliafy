@@ -58,9 +58,13 @@ function jobText(job) {
 }
 
 // "8.37 → 7.54 h", "720 → 648 h", "1 → 2".
+// A time lever's unit: running hours for a task counted in them (#365).
+const leverUnit = (row, unit) => (row.kind === "mean" || row.kind === "time")
+  ? (row.running ? `running ${unit ? unit.toLowerCase() : "time"}` : unit ? unit.toLowerCase() : "") : "";
+
 function span(row, unit) {
   if (row.shown_value == null || row.shown_to == null) return null;
-  const u = unit && (row.kind === "mean" || row.kind === "time") ? ` ${unit.toLowerCase()}` : "";
+  const u = leverUnit(row, unit) ? ` ${leverUnit(row, unit)}` : "";
   return `${num(row.shown_value)} → ${num(row.shown_to)}${u}`;
 }
 
@@ -383,7 +387,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                       {!editLimits && r.limit && (
                         <div className="muted">
                           {r.limit.min != null ? `Can't go below ${num(r.limit.min)}` : `Can't go above ${num(r.limit.max)}`}
-                          {r.kind === "mean" || r.kind === "time" ? (unit ? ` ${unit.toLowerCase()}` : "") : ""}
+                          {leverUnit(r, unit) ? ` ${leverUnit(r, unit)}` : ""}
                         </div>
                       )}
                     </td>
@@ -494,7 +498,7 @@ function LimitInput({ row, unit, limits, setLimits }) {
       <input type="number" step="any" value={value} placeholder="—"
              aria-label={`${side === "min" ? "Lowest" : "Highest"} ${row.name} for ${row.block}`}
              onChange={(e) => setLimits((prev) => ({ ...prev, [row.id]: { side, value: e.target.value } }))} />
-      {timeLike && unit ? <span>{unit.toLowerCase()}</span> : null}
+      {timeLike && leverUnit(row, unit) ? <span>{leverUnit(row, unit)}</span> : null}
     </label>
   );
 }

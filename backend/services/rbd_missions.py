@@ -299,6 +299,10 @@ def signature(graph: dict, phases: list) -> str:
     body = {"nodes": nodes, "edges": edges, "unit": (graph or {}).get("unit") or "",
             "conditions": (graph or {}).get("conditions") or [], "ccf": (graph or {}).get("ccf_groups") or [],
             "phases": phases}
+    if any(isinstance(p, dict) and p.get("standby") for p in phases or []):
+        # A18 (16 Nov 2026): standby is now RePyability's true standby, so a result kept from the
+        # old stand-in no longer holds (missions without standby keep theirs: same numbers).
+        body["standby"] = "phased-mission"
     return hashlib.sha1(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()[:20]
 
 
@@ -323,6 +327,8 @@ def summary(graph: dict, mission: dict, results: Optional[dict] = None) -> dict:
         if got.get("placeholders"):  # the blocks it rests on a placeholder for, and the figure without them
             out["result"]["placeholders"] = list(got["placeholders"])
             out["result"]["without_placeholders"] = got.get("without_placeholders")
+        if got.get("placeholder_blocks"):
+            out["result"]["placeholder_blocks"] = dict(got["placeholder_blocks"])
     return out
 
 
@@ -334,6 +340,8 @@ def result_record(graph: dict, phases: list, result: dict) -> dict:
     if result.get("placeholders"):
         out["placeholders"] = [p["label"] for p in result["placeholders"]]
         out["without_placeholders"] = (result.get("without_placeholders") or {}).get("reliability")
+    if result.get("placeholder_blocks"):
+        out["placeholder_blocks"] = {k: result["placeholder_blocks"].get(k) for k in ("basic", "placeholders", "nested", "mostly")}
     # Each phase's own: the chance of getting through it once started, and the mission's at its end
     # (for the Explorer's phase rows and their details).
     out["phases"] = [{"name": p.get("name"), "waiting": bool(p.get("waiting")),
@@ -700,6 +708,11 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
         raise AnalysisError(f"{', '.join(labels.get(b, b) for b in both)}: its covariates change from phase to phase, "
                             "so it can't also stand by in a phase. Set it Working or Not needed there, or give it the "
                             "same values in every phase.")
+    own = sorted({b for p in clean[:gap] for b in (p.get("models") or {})} & varying)
+    if own:
+        labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id") for n in graph.get("nodes") or []}
+        raise AnalysisError(f"{', '.join(labels.get(b, b) for b in own)}: its covariates change from phase to phase, "
+                            "so it can't also take a life model of a phase's own. Give it one or the other.")
     resolve_subsystem, resolve_model = rbds_service.resolvers(db, owner_id)
     out = rbd_phases.analyze_phases(merged, resolve_subsystem, resolve_model, merged_covs or None,
                                     phases=clean[:gap], varying=varying, weakest=weakest,
@@ -740,7 +753,12 @@ def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callab
     feeding: dict = {}
     for e in (graph or {}).get("edges") or []:
         feeding[e.get("target")] = feeding.get(e.get("target"), 0) + 1
-    guessed = set(rbd_phases.placeholder_ids(graph or {}))
+    from backend.services import rbd_placeholders
+    from backend.services import rbds as rbds_service
+
+    # A sub-system whose blocks are all placeholders is a placeholder too (W2).
+    held = rbd_placeholders.tally(graph or {}, rbds_service.resolvers(db, owner_id)[0])
+    guessed = set(rbd_phases.placeholder_ids(graph or {})) | set(rbd_placeholders.all_placeholder_ids(held))
     blocks = [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or n.get("id"),
                "placeholder": n.get("id") in guessed}
               for n in nodes if n.get("type") not in ("input", "output", "knode")
@@ -767,9 +785,11 @@ RULE_STATES = ("standby", "guaranteed", "not_needed")
 
 def phase_rules(phase: dict, labels: dict) -> list[dict]:
     """A phase's node status rules: one per block not left Working, in the diagram's block order
-    ({block, label, state, dormancy (standby only)}); blocks no longer in the diagram are left out."""
+    ({block, label, state, dormancy and start_probability (standby only)}); blocks no longer in the
+    diagram are left out."""
     out = []
     dormancy = phase.get("dormancy") or {}
+    starts = phase.get("start_probability") or {}
     states = {}
     for state in RULE_STATES:
         for b in phase.get(state) or []:
@@ -779,6 +799,7 @@ def phase_rules(phase: dict, labels: dict) -> list[dict]:
             row = {"block": b, "label": label, "state": states[b]}
             if states[b] == "standby":
                 row["dormancy"] = float(dormancy.get(b) or 0.0)
+                row["start_probability"] = float(starts.get(b, 1.0))
             out.append(row)
     return out
 

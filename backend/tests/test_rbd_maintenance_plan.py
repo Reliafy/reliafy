@@ -45,7 +45,8 @@ def test_an_operating_time_interval_goes_through_the_duty():
         _pump(duty=0.5, preventive={**pm, "interval": 1160, "operating_interval": None}), n_simulations=N)
     assert by_duty["steady_state_availability"] == pytest.approx(on_clock["steady_state_availability"], rel=1e-12)
     spec = rbd_maintenance.preventive_spec({"duty": 0.5, "preventive": pm}, "P")
-    assert spec["interval"] == pytest.approx(1160)
+    # Saved before the basis: read as 580 running hours, which RePyability puts on the clock (1160).
+    assert spec["interval"] == pytest.approx(580) and spec["basis"] == "operating"
 
 
 def test_an_operating_time_interval_with_a_blank_duty_runs_all_the_time():
@@ -85,9 +86,10 @@ def test_duty_travels_through_the_graph_format_edits_and_export():
 
 def test_applying_an_interval_keeps_an_operating_time_basis():
     g = _pump(duty=0.5, preventive={"policy": "age", "interval": 1000, "operating_interval": 500})
-    out = rbd_intervals.apply_plan(g, [{"id": "p", "interval": 800}])
+    # The plan answers in the task's own unit (running hours), so the interval is written as is.
+    out = rbd_intervals.apply_plan(g, [{"id": "p", "interval": 400}])
     pm = next(n for n in out["nodes"] if n["id"] == "p")["data"]["preventive"]
-    assert pm["interval"] == 800 and pm["operating_interval"] == pytest.approx(400)
+    assert pm["interval"] == 400 and pm["basis"] == "operating" and "operating_interval" not in pm
 
 
 def test_planned_and_unplanned_split_downtime_and_cost():

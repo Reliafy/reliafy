@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import TwoClockLife from "./TwoClockLife.jsx";
+import { clockWords } from "../twoClocks.js";
 import { Link, useLocation } from "react-router-dom";
 import {
   createModelFromParams, getMaintenancePosition, getPositionModel, linkPositionModel, listAltModels, listDegradationModels, listModels,
+  setPositionModelUsageRate,
   listPositionModels, listRbds, listRecurrentModels, unlinkPositionModel, updateModelParams,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
@@ -20,6 +23,7 @@ import {
   MODEL_COLUMNS, b10Text, boundsLabel, countsText, enteredParams, enteredStart, exponentialLabel, fmt, forText, headline,
   implausibleExponential, meanText, rowActions, unitOne, unitWord, usedText, withBounds,
 } from "../explorerModels.js";
+import { strategyHeadline } from "../positionStrategy.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
 import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
@@ -45,11 +49,21 @@ export function useTreeModels({ on, within = null }) {
   return { links: state.links, classModels: state.classModels, error: state.error, load };
 }
 
-const QUALITY_TONE = { success: "success", warning: "warning", neutral: "neutral" };
+const QUALITY_TONE = { success: "success", warning: "warning", danger: "danger", neutral: "neutral" };
 
 // One cell of a model row (the tree row `r`, its link r.ref.link).
 export function ModelCell({ r, col }) {
   const link = r.ref.link;
+  // A model's Strategy row: what was saved for it there.
+  if (r.ref.strategy) {
+    if (col.id === "kind") return <Chip tone="neutral" className="pk-kind">Strategy</Chip>;
+    if (col.id === "numbers") {
+      const text = strategyHeadline(r.ref.saved);
+      return <span className="ml-num" title={text}>{text}</span>;
+    }
+    if (col.id === "source") return <span className="ml-src">{r.ref.saved.length} saved</span>;
+    return <span className="rw-blank" />;
+  }
   const model = link.model;
   if (!model) {
     return col.id === "kind" ? <Chip tone="warning" title="The saved model was deleted, or isn't yours to open any more">Missing</Chip>
@@ -95,6 +109,7 @@ export function ModelCell({ r, col }) {
 // A row's second line on a phone: its kind and headline; the quality as its chip.
 export function modelPhoneRow(r, rollup) {
   if (r.type !== "pmodel") return { line: rollup || "", status: null };
+  if (r.ref.strategy) return { line: strategyHeadline(r.ref.saved), status: null };
   const link = r.ref.link;
   const model = link.model;
   if (!model) return { line: link.source_text, status: <Chip tone="warning">Missing</Chip> };
@@ -154,12 +169,19 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
   const [state, setState] = useState({ id: null, data: null, error: null });
   const [age, setAge] = useState("");
   const askAge = link.model_type === "rbd" && Number(age) > 0 ? Number(age) : null;
+  // Read again after the row's usage rate changes (a life on two clocks).
+  const [nonce, setNonce] = useState(0);
+  const [rateBusy, setRateBusy] = useState(false);
   useEffect(() => {
     let live = true;
     const t = setTimeout(() => getPositionModel(link.id, { age: askAge }).then((data) => live && setState({ id: link.id, data, error: null }),
       (e) => live && setState({ id: link.id, data: null, error: e.message })), askAge ? 300 : 0);
     return () => { live = false; clearTimeout(t); };
-  }, [link.id, askAge]);
+  }, [link.id, askAge, nonce]);
+  const setRate = async (rate) => {
+    setRateBusy(true);
+    try { await setPositionModelUsageRate(link.id, rate); setNonce((n) => n + 1); } finally { setRateBusy(false); }
+  };
   useEffect(() => {
     onMenu?.(rowActions(r).filter((a) => a.id !== "model-open").map((a) => ({
       ...a, id: `side-${a.id}`, onSelect: () => onAction(r, a.id),
@@ -212,7 +234,28 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
             {!d && !state.error && <p className="rim-tquiet">Reading the model…</p>}
             {d?.stress_note && <p className="rim-tquiet ml-stress">{d.stress_note}</p>}
             {link.model_type === "rbd" && <RbdDetails d={d} model={model} age={age} onAge={setAge} />}
-            {d && <ModelPlot curves={d.curves} unit={unit} name={r.ref.name} />}
+            {d?.two_clock && (() => {
+              // Two clocks: the life at this position's usage rate (its operating plan's when the plan can
+              // say it, i.e. starts or runs; else set here, or the fleet's typical rate).
+              const tc = d.two_clock;
+              const words = clockWords(tc.at_rate?.clocks || tc.clocks || tc.usage_rate?.clocks, unit);
+              const title = `At this position's ${words.rate_unit}`;
+              const resetLabel = tc.usage_rate?.plan ? "Use the operating plan's rate" : "Use the fleet's typical rate";
+              return (
+                <section aria-label={title}>
+                  <h3 className="ml-h">{title}</h3>
+                  {tc.at_rate ? (
+                    <TwoClockLife compact atRate={tc.at_rate} unit={unit} busy={rateBusy} clocks={words}
+                                  source={{ text: tc.usage_rate?.text, kind: tc.usage_rate?.source }}
+                                  onRate={setRate} onReset={() => setRate(null)} resetLabel={resetLabel} />
+                  ) : (
+                    <TwoClockLife compact atRate={null} unit={unit} busy={rateBusy} clocks={words}
+                                  source={{ text: tc.usage_rate?.text }} onRate={setRate} />
+                  )}
+                </section>
+              );
+            })()}
+            {d && !d.two_clock && <ModelPlot curves={d.curves} unit={unit} name={r.ref.name} />}
             {d?.prediction && (
               <section aria-label="The parts count">
                 <h3 className="ml-h">The parts count <Link className="rw-sum" to={predictionPath(d.prediction.id)}>Open in Predictions</Link></h3>
@@ -290,7 +333,11 @@ function RbdDetails({ d, model, age, onAge }) {
   return (
     <section aria-label="The diagram" className="ml-rbd">
       {model?.placeholders?.length > 0 && (
-        <p className="ml-stale" role="note">Placeholders stand in for {model.placeholders.join(", ")}: the figures aren't real until they have models.</p>
+        <p className={`ml-stale${model.placeholder_blocks?.mostly ? " is-most" : ""}`} role="note">
+          {model.placeholder_blocks?.words ? `${model.placeholder_blocks.words.charAt(0).toUpperCase()}${model.placeholder_blocks.words.slice(1)}: ` : ""}
+          placeholders stand in for {model.placeholders.slice(0, 8).join(", ")}{model.placeholders.length > 8 ? ` and ${model.placeholders.length - 8} more` : ""}
+          {model.placeholder_blocks?.mostly ? ". Most of the answer rests on invented lives, so" : ":"} the figures aren't real until they have models.
+        </p>
       )}
       {model?.repairable && <p className="rim-tquiet">A repairable diagram: its availability is simulated on its own page.</p>}
       <Field label={`System reliability at an age${u ? ` (${u})` : ""}`} optional>
@@ -305,14 +352,16 @@ function RbdDetails({ d, model, age, onAge }) {
           <thead><tr><th>Block</th><th>Model</th></tr></thead>
           <tbody>
             {blocks.map((b) => {
-              const where = b.placeholder ? "No model in use, from its class or inside it" : b.source || "";
+              const where = b.placeholder ? (b.inside ? "Every block inside it is a placeholder" : "No model in use, from its class or inside it")
+                : b.inside?.placeholders ? `${b.inside.placeholders} of ${b.inside.basic} blocks inside it are placeholders` : b.source || "";
               const from = b.position && b.position.name !== b.label ? `position ${b.position.name}` : "";
               const hover = [where, from].filter(Boolean).join(" · ");
               return (
                 <tr key={b.id} title={hover || undefined}>
                   <td>{b.label}</td>
                   <td>
-                    {b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}
+                    {b.placeholder ? <Chip tone="warning" title={b.inside ? "Every block inside this sub-system is a placeholder" : "A placeholder: no model in use for this position yet"}>{b.inside ? `Placeholders (${b.inside.placeholders} of ${b.inside.basic})` : "Placeholder"}</Chip>
+                      : b.inside?.placeholders ? <>{b.model} <Chip tone="warning">{b.inside.placeholders} of {b.inside.basic} placeholders</Chip></> : b.model}
                     {hover && <span className="sr-only">. {hover}</span>}
                   </td>
                 </tr>

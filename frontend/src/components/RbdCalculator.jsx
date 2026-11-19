@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
-import { analyzeRbd, cancelRbdJob, getActiveRbdJob, getRbdJob } from "../api.js";
+import { analyzeRbd, cancelRbdJob, getActiveRbdJob, getRbdJob, validateRbd } from "../api.js";
+import { hasSubsystems, placeholderNote } from "../rbdPlaceholders.js";
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import { graphSignature, resultIsStale } from "../rbdSignature.js";
@@ -1455,9 +1456,24 @@ export default function RbdCalculator({
 
   // Blocks whose non-repairable model is a guessed starting point (the assistant marks
   // them placeholder:true). The numbers run fine; the results just aren't real.
-  const placeholderCount = useMemo(
-    () => (graph.nodes || []).filter((n) => n.data?.model?.placeholder).length,
-    [graph.nodes]
+  // Counted through every sub-system by the server (the diagram's check); until it has checked
+  // a diagram with sub-systems, the count is asked for here (W2: never "1 placeholder" for 27).
+  const [heldTally, setHeldTally] = useState(null); // {sig, held}
+  const withSubs = hasSubsystems(graph);
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  const checked = !!validation?.placeholder_blocks;
+  useEffect(() => {
+    if (!withSubs || checked) return undefined;
+    let live = true;
+    validateRbd(graphRef.current)
+      .then((v) => { if (live) setHeldTally({ sig: graphSig, held: v?.placeholder_blocks || null }); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [withSubs, checked, graphSig]);
+  const phNote = useMemo(
+    () => placeholderNote(graph, validation?.placeholder_blocks || (heldTally?.sig === graphSig ? heldTally.held : null)),
+    [graph, validation, heldTally, graphSig]
   );
 
   // Nodes backed by a proportional-hazards model need covariate values before
@@ -1868,12 +1884,9 @@ export default function RbdCalculator({
 
   return (
     <div className="rbd-calc">
-      {placeholderCount > 0 && (
-        <div className="rbd-placeholder-note" role="status">
-          {placeholderCount === 1
-            ? "1 block uses placeholder parameters"
-            : `${placeholderCount} blocks use placeholder parameters`}
-          {" — results are illustrative until you set real values."}
+      {phNote && (
+        <div className={`rbd-placeholder-note${phNote.mostly ? " is-most" : ""}`} role="status">
+          {phNote.text}
         </div>
       )}
 

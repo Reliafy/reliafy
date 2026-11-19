@@ -54,6 +54,18 @@ export function inputRows(kind, inputs, currency = "$") {
     add("Each test takes", withUnit(i.test_duration, unit));
     add("Cost per test", blank(i.test_cost) ? null : formatCost(i.test_cost, currency));
     add("Each test", i.renewed_at_test === false ? "leaves a working device as it was" : "renews the device");
+  } else if (kind === "overhaul_replace") {
+    add("Model", i.model_name || modelText({ distribution_id: i.form, params: i.params }));
+    add("Time unit", i.unit);
+    add("Repair cost, per failure", blank(i.cost_repair) ? null : formatCost(i.cost_repair, currency));
+    add("Overhaul cost", blank(i.cost_overhaul) ? null : formatCost(i.cost_overhaul, currency));
+    add("Replacement cost", blank(i.cost_replace) ? null : formatCost(i.cost_replace, currency));
+    add("An overhaul takes off", blank(i.overhaul_restores) ? null : `${formatNumber(i.overhaul_restores, { sig: 4 })}% of its age`);
+    add("Hours down per repair", blank(i.downtime_repair) ? null : formatNumber(i.downtime_repair, { sig: 4 }));
+    add("Hours down per overhaul", blank(i.downtime_overhaul) ? null : formatNumber(i.downtime_overhaul, { sig: 4 }));
+    add("Hours down per replacement", blank(i.downtime_replace) ? null : formatNumber(i.downtime_replace, { sig: 4 }));
+    add("Cost of an hour down", blank(i.downtime_cost) ? null : formatCost(i.downtime_cost, currency));
+    add("Most overhauls searched", blank(i.max_overhauls) ? null : formatNumber(i.max_overhauls, { sig: 4 }));
   } else if (kind === "calendar_replacement") {
     add("Model", modelText(i));
     add("Time unit", i.unit);
@@ -81,6 +93,12 @@ export function reopenLink(kind, inputs) {
   if (kind === "failure_finding") {
     if (!blank(i.target_availability)) q.set("target", String(Number((i.target_availability * 100).toPrecision(10))));
     return { to: `/strategy/failure-finding?${q}`, label: "Open in Failure finding" };
+  }
+  if (kind === "overhaul_replace") {
+    for (const [k, key] of [["cost_repair", "repair"], ["cost_overhaul", "overhaul"], ["cost_replace", "replace"], ["overhaul_restores", "restores"]]) {
+      if (!blank(i[k])) q.set(key, String(i[k]));
+    }
+    return { to: `/strategy/overhaul-replace?${q}`, label: "Open in Overhaul and replace" };
   }
   if (kind === "calendar_replacement") {
     q.set("mode", "calendar");

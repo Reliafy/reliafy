@@ -16,8 +16,13 @@ test("what's inside and what's due, in words", () => {
   assert.equal(insideText({ locations: 1 }), "1 place inside");
   assert.equal(insideText({ locations: 27 }), "27 places inside");
   assert.deepEqual(dueText({ due: 0 }), { text: "Nothing due", overdue: "" });
-  assert.deepEqual(dueText({ due: 3, overdue: 1, next_due: "2026-10-01" }, (d) => `on ${d}`),
-    { text: "3 due", overdue: "1 overdue" });
+  // The late line is the shared wording, from the asset's late counts (not its overdue tasks alone).
+  assert.deepEqual(dueText({ due: 3, overdue: 1, next_due: "2026-10-01",
+    late: { work_orders_late: 2, tasks_overdue_without_work_order: 1 } }, (d) => `on ${d}`),
+  { text: "3 due", overdue: "2 work orders late · 1 task overdue with no work order" });
+  // A hand-raised work order late with no task due: still said.
+  assert.deepEqual(dueText({ due: 0, late: { work_orders_late: 1, tasks_overdue_without_work_order: 0 } }),
+    { text: "Nothing due", overdue: "1 work order late" });
   assert.deepEqual(dueText({ due: 1, overdue: 0, next_due: "2026-11-04" }), { text: "1 due, next 2026-11-04", overdue: "" });
 });
 

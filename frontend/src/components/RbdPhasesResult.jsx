@@ -10,6 +10,8 @@ import { formatNumber, formatPercent } from "../format.js";
 import { unitInText } from "./unitText.js";
 import "./RbdMission.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import MissionCurve, { MissionProNote, driversText } from "./MissionCurve.jsx";
+import { placeholderWarning } from "../explorerMissions.js";
 
 // The Calculator tab's "Phased mission" section (#160), under the diagram's
 // own results when it has phases: the mission's reliability (exact, or
@@ -28,7 +30,7 @@ export default function RbdPhasesResult({ graph, active, name, onEdit, currentSt
     () => JSON.stringify({ g: graphSignature(graph), p: phases || null, c: graph?.ccf_groups || null, s: now }),
     [graph, phases, now]
   );
-  const [state, setState] = useState({ sig: null, result: null, error: null, loading: false });
+  const [state, setState] = useState({ sig: null, result: null, error: null, pro: false, loading: false });
   const latest = useRef(null);
 
   useEffect(() => {
@@ -37,8 +39,8 @@ export default function RbdPhasesResult({ graph, active, name, onEdit, currentSt
       latest.current = sig;
       setState((s) => ({ ...s, loading: true }));
       rbdPhases(graph, now)
-        .then((result) => latest.current === sig && setState({ sig, result, error: null, loading: false }))
-        .catch((e) => latest.current === sig && setState({ sig, result: null, error: e.message, loading: false }));
+        .then((result) => latest.current === sig && setState({ sig, result, error: null, pro: false, loading: false }))
+        .catch((e) => latest.current === sig && setState({ sig, result: null, error: e.message, pro: e.code === "pro_required", loading: false }));
     }, 300);
     return () => window.clearTimeout(timer);
     // graph is read through sig.
@@ -61,7 +63,7 @@ export default function RbdPhasesResult({ graph, active, name, onEdit, currentSt
   return (
     <section className="rbd-mission" aria-label="Phased mission" aria-busy={loading}>
       <MissionHead onEdit={onEdit} />
-      {error && !stale && <p className="rbd-mission-error" role="alert">{error}</p>}
+      {error && !stale && (state.pro ? <MissionProNote message={error} /> : <p className="rbd-mission-error" role="alert">{error}</p>)}
       {!result && !error && <p className="muted-line">Working out the mission…</p>}
       {result && <MissionAnswer result={result} unit={graph.unit} name={name} dim={stale || loading} />}
     </section>
@@ -88,10 +90,13 @@ function MissionAnswer({ result, unit, name, dim }) {
   // Blocks with no model (a placeholder stands in): said with the answer, never left unsaid.
   const guessed = (result.placeholders || []).map((p) => p.label);
   const without = result.without_placeholders?.reliability ?? null;
+  // Counted through every sub-system: "27 of 27 basic blocks are placeholders".
+  const ph = placeholderWarning(result);
   const how = simulated
     ? <>, simulated from {iv?.n_samples?.toLocaleString() || "many"} missions
         {iv ? <> ({Math.round((iv.confidence || 0.95) * 100)}% interval {pct(iv.lower)} to {pct(iv.upper)})</> : null}</>
     : ", worked out exactly";
+  const why = simulated && result.method_reason ? ` ${result.method_reason}` : "";
   const sentence = (
     <>
       {result.current_state ? "From the blocks' ages now, the" : "The"} mission succeeds with
@@ -121,15 +126,17 @@ function MissionAnswer({ result, unit, name, dim }) {
   const chartH = Math.min(360, 70 + 34 * rows.length);
   return (
     <div className={"rbd-mission-body" + (dim ? " is-stale" : "")}>
-      <ResultSummary tone={guessed.length ? "caveat" : "neutral"} sentence={sentence} stats={stats}>
+      <ResultSummary tone={ph?.mostly ? "bad" : ph ? "caveat" : "neutral"} sentence={sentence} stats={stats}>
+        {ph && !guessed.length ? <>Not a real figure yet: {ph.count}. Give the blocks inside a model.</> : null}
         {guessed.length ? (
           <>
-            Not a real figure yet: {guessed.join(", ")} {guessed.length === 1 ? "has" : "have"} no model, so a placeholder
+            Not a real figure yet: {ph?.nested ? `${ph.count}${ph.mostly ? ", so most of the answer rests on invented lives" : ""}. ` : ""}{guessed.join(", ")} {guessed.length === 1 ? "has" : "have"} no model, so a placeholder
             stands in. {without != null ? `With ${guessed.length === 1 ? "that block" : "those blocks"} left out, the mission succeeds with probability ${pct(without)}. ` : ""}
             Give {guessed.length === 1 ? "it a model" : "each a model"}, or mark {guessed.length === 1 ? "it" : "them"} not needed in the phases.
           </>
         ) : null}
       </ResultSummary>
+      <MissionCurve result={result} unit={unit} name={name || "Mission"} />
       {rows.length > 1 && (
         <div className="rbd-mission-chart">
           <Plot
@@ -156,6 +163,7 @@ function MissionAnswer({ result, unit, name, dim }) {
                 <th title="The chance the mission fails in this phase">Fails in it</th>
                 <th title="The chance the mission is still going at the phase's end">Reliability at its end</th>
                 <th title="Of the missions that reach this phase, the share that fail in it">If reached, fails in it</th>
+                <th title="The block whose failures end the most missions in this phase, and its share of them">Weakest block</th>
               </tr>
             </thead>
             <tbody>
@@ -163,10 +171,11 @@ function MissionAnswer({ result, unit, name, dim }) {
                 <tr key={r.name}>
                   <td className="calc-row-label">
                     {r.name}
-                    {(r.not_needed?.length || r.votes?.length) ? (
+                    {(r.not_needed?.length || r.standby?.length || r.votes?.length) ? (
                       <span className="rbd-mission-needs">
                         {[
                           r.not_needed?.length ? `without ${r.not_needed.join(", ")}` : null,
+                          r.standby?.length ? `${r.standby.join(", ")} on standby` : null,
                           ...(r.votes || []).map((v) => `${v.label} needs ${v.n}`),
                         ].filter(Boolean).join(" · ")}
                       </span>
@@ -177,6 +186,10 @@ function MissionAnswer({ result, unit, name, dim }) {
                   <td>{formatNumber(r.failure_probability)}</td>
                   <td>{pct(r.reliability_at_end)}</td>
                   <td>{r.conditional_failure == null ? "—" : formatNumber(r.conditional_failure)}</td>
+                  <td>
+                    {r.weakest ? <>{r.weakest.label} ({formatPercent(r.weakest.share, { sig: 2 })})</> : "—"}
+                    {driversText(r) ? <span className="rbd-mission-needs">also {driversText(r)}</span> : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -185,7 +198,7 @@ function MissionAnswer({ result, unit, name, dim }) {
         <p className="muted-line">
           A block that fails in one phase stays failed in the later ones, so the mission's reliability isn't the
           product of the phases'. {(result.notes || []).join(" ")}
-          {result.method_reason ? ` ${result.method_reason}` : ""}
+          {why}
         </p>
       </ResultDetails>
     </div>

@@ -86,7 +86,8 @@ def test_the_data_choices_and_the_labels(m, db):
         fit_life.fit(m, db, OWNERS, set(), new, data="position", method="mle")
     pooled = fit_life.fit(m, db, OWNERS, set(), new, data="class", method="mle")
     assert pooled["counts"]["failures"] == 8 and "confidence" in pooled["words"]
-    assert pooled["class_history"] == {"name": "Slurry pump", "positions": 3, "failures": 8, "suspensions": 3}
+    assert pooled["class_history"] == {"name": "Slurry pump", "class_key": "Slurry pump", "positions": 3, "failures": 8,
+                                       "suspensions": 3}
     with pytest.raises(Invalid, match="count it twice"):
         fit_life.fit(m, db, OWNERS, set(), new, data="class", method="bayes", prior={"kind": "class"})
     with_model = fit_life.fit(m, db, OWNERS, set(), new, data="class", method="bayes",

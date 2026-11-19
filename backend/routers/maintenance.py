@@ -309,11 +309,13 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
 
 @router.get("/overview")
 def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {
-        "summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
-        "due": m.due_tasks(30), "open_work_orders": m.work_orders("open"), "proposals": m.proposals("pending"),
-        "critical_spares": m.critical_spares_short(),
-    })
+    """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts)."""
+    def read():
+        due, wos = m.due_tasks(30), m.work_orders("open")
+        return {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
+                "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
+                "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short()}
+    return _run(read)
 
 
 @router.get("/tree")
@@ -545,14 +547,15 @@ def verify_failure_report(report_id: str, body: dict = Body(...), ctx: AccessCtx
 
 # ---- a position's RCM: functions, functional failures, decisions ------------------------
 
-def _rcm_read(session, ctx: AccessCtx, fn, *args) -> JSONResponse:
-    """A read of the RCM with the evidence checked as the reader sees it."""
+def _rcm_read(session, ctx: AccessCtx, fn, *args, m: Maintenance | None = None) -> JSONResponse:
+    """A read of the RCM with the evidence checked as the reader sees it (with ``m``, each failure
+    mode's failure rate and where it came from: rcm_graph.with_rate)."""
     from backend.maintenance import rcm_graph
 
     def go():
         out = fn(*args)
         if "positions" in out:
-            return rcm_graph.resolve(session, out, ctx.read_owners, ctx.hidden)
+            return rcm_graph.resolve(session, out, ctx.read_owners, ctx.hidden, m=m)
         return rcm_graph.mode_status(session, out, ctx.read_owners, ctx.hidden)
     return _run(go)
 
@@ -563,7 +566,7 @@ def workspace_rcm(within: str | None = None, session=Depends(get_session), ctx: 
     """Every position's RCM (those with any), for the asset tree's RCM tab, with each
     decision's evidence check as the reader sees it. within: one asset's alone (a
     position, or a place: everything the Explorer opened on it shows)."""
-    return _rcm_read(session, ctx, m.rcm_all, within or None)
+    return _rcm_read(session, ctx, m.rcm_all, within or None, m=m)
 
 
 @router.get("/positions/{position_id}/rcm")
@@ -571,7 +574,7 @@ def position_rcm(position_id: str, scope: str = "below", session=Depends(get_ses
                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The position's RCM from the graph (scope below: it and everything inside it; this: it alone):
     functions › functional failures › failure modes, each mode's decision, task and evidence check."""
-    return _rcm_read(session, ctx, m.rcm_worksheet, position_id, scope)
+    return _rcm_read(session, ctx, m.rcm_worksheet, position_id, scope, m=m)
 
 
 @router.get("/positions/{position_id}/fmea.xlsx")
@@ -585,7 +588,7 @@ def position_fmea_xlsx(position_id: str, scope: str = "below", session=Depends(g
     from backend.maintenance import fmea_sheet, rcm_graph
 
     try:
-        sheet = rcm_graph.resolve(session, m.rcm_worksheet(position_id, scope), ctx.read_owners, ctx.hidden)
+        sheet = rcm_graph.resolve(session, m.rcm_worksheet(position_id, scope), ctx.read_owners, ctx.hidden, m=m)
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
     except Invalid as err:
@@ -1522,6 +1525,14 @@ def preview_position_fit(position_id: str, body: dict = Body(default={}), sessio
         return JSONResponse(content={"refused": client_message(err), **(getattr(err, "context", None) or {})})
 
 
+@router.put("/position-models/{link_id}/usage-rate")
+def set_position_model_usage_rate(link_id: str, body: dict = Body(default={}),
+                                  m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A row on a life on two clocks given its own usage rate (usage_rate: its second clock per unit
+    of the first), or put back on the position's operating plan or the fleet's rate (usage_rate null)."""
+    return _run(m.set_link_usage_rate, link_id, body.get("usage_rate"))
+
+
 @router.delete("/position-models/{link_id}")
 def unlink_position_model(link_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Take a model off its position (the model stays in Models)."""
@@ -2336,13 +2347,14 @@ def get_class_fleet(class_id: str, position_id: str | None = None, within: str |
 
 
 @router.get("/positions/{position_id}/condition")
-def get_position_condition(position_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
-                           m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def get_position_condition(position_id: str, curves: bool = True, session=Depends(get_session),
+                           ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """One position's risk now, from the item fitted there and the condition and life model linked to
-    the position: its row as a class's fleet gives it, with its curves; whatever its item's class."""
+    the position: its row as a class's fleet gives it, with its curves; whatever its item's class.
+    curves=false leaves the curves out (the Summary badge needs only the numbers)."""
     from backend.maintenance import class_fleet
 
-    return _run(class_fleet.position, m, session, ctx.read_owners, ctx.hidden, position_id)
+    return _run(class_fleet.position, m, session, ctx.read_owners, ctx.hidden, position_id, curves)
 
 
 @router.post("/item-classes")

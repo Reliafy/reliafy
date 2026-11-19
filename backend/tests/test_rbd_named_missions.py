@@ -386,7 +386,7 @@ def test_missions_over_rest_belong_to_their_position_and_are_not_inherited(clien
 
 def test_a_named_mission_flies_from_the_blocks_ages_now_over_rest(client):
     """``current_state`` on a named mission's calculate (as #905's /api/rbds/phases): an aged block
-    starts at its age and keeps it through a standby phase, a failed block stays failed, the note
+    starts at its age, a failed block stays failed, the note
     says "As of now", and an as-of-now result is never kept as the mission's from-new one."""
     graph = {"unit": "hours", "nodes": [*IO, _node("a", "Gearbox", _weibull(100, 2))],
              "edges": [{"source": "input", "target": "a"}, {"source": "a", "target": "output"}]}
@@ -395,12 +395,14 @@ def test_a_named_mission_flies_from_the_blocks_ages_now_over_rest(client):
         {"name": "Wait", "duration": 30, "standby": ["a"]}, {"name": "Run", "duration": 20}]}))["mission"]["id"]
     url = f"/api/rbds/{rbd}/missions/{mid}/calculate"
     new = _ok(client.post(url, json={}))
-    assert new["reliability"] == pytest.approx(_sf(100, 2, 20), abs=1e-9)
+    # A18: alone, the block on standby is needed at once, so it runs all 50 h (simulated: Weibull).
+    assert new["method"] == "simulated"
+    assert new["reliability"] == pytest.approx(_sf(100, 2, 50), abs=0.01)
     assert rbd_phases.AS_OF_NOW_NOTE not in new["notes"] and "current_state" not in new
 
-    # Aged 50 h: stood by for 30 h (no wear), then runs 50 -> 70 h.
+    # Aged 50 h: runs 50 -> 100 h.
     aged = _ok(client.post(url, json={"current_state": {"a": {"age": 50}}}))
-    assert aged["reliability"] == pytest.approx(_sf(100, 2, 70) / _sf(100, 2, 50), abs=1e-9)
+    assert aged["reliability"] == pytest.approx(_sf(100, 2, 100) / _sf(100, 2, 50), abs=0.01)
     assert aged["notes"][0] == rbd_phases.AS_OF_NOW_NOTE and aged["current_state"] == {"a": {"age": 50.0}}
     failed = _ok(client.post(url, json={"current_state": {"a": {"failed": True}}}))
     assert failed["reliability"] == pytest.approx(0.0, abs=1e-12)

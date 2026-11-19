@@ -3,6 +3,7 @@ import { calculateMission, getMission, getRbd, updateMission } from "../api.js";
 import TablePane from "./TablePane.jsx";
 import CovariateInputs from "./CovariateInputs.jsx";
 import MissionBlockGrid from "./MissionBlockGrid.jsx";
+import MissionCurve, { MissionProNote, driversText } from "./MissionCurve.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import Chip from "./ui/Chip.jsx";
 import { saveErrorText } from "../confirm.js";
@@ -112,7 +113,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
       setCalc({ busy: false, error: null, stale: false });
       if (!dirty) onSaved?.(null);
     } catch (e) {
-      setCalc({ busy: false, error: e.message, stale: false });
+      setCalc({ busy: false, error: e.message, pro: e.code === "pro_required", stale: false });
     }
   };
   // Opening a mission with phases works it out straight away.
@@ -178,7 +179,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
               </label>
               <p className="rim-tquiet mission-on">
                 Runs on <b>{detail.rbd.name}</b>{onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}{u ? `, in ${u}` : ""}: {rows.length} phase{rows.length === 1 ? "" : "s"},{" "}
-                {lengthText(total, unit)} in all. The blocks age through the whole mission, except while they stand by: wear in one phase stays for the next.{" "}
+                {lengthText(total, unit)} in all. The blocks age through the whole mission (a spare idle on standby only as fast as its setting): wear in one phase stays for the next.{" "}
                 <ShowMe help={{ guide: "missions-and-phases" }}>Show me how</ShowMe>
               </p>
             </div>
@@ -191,8 +192,8 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                 </p>
               </section>
             )}
-            <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} stale={calc.stale}
-                           total={total} unit={unit} />
+            <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} pro={calc.pro}
+                           stale={calc.stale} total={total} unit={unit} name={title} />
             {!calc.stale && !calc.error && (
               <MissionPlaceholders result={result} readOnly={readOnly} onOpenRbd={onOpenRbd}
                                    onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
@@ -251,7 +252,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                       )}
                     </div>
                     <p className="mission-phase-line">{phaseLine(row, { blocks, votes })}
-                      {res?.weakest ? <> · {result?.placeholders?.length ? "Weakest with a model" : "Weakest"}: <b>{res.weakest.label}</b> ({fmt(res.weakest.share * 100)}% of this phase's failures)</> : null}
+                      {res?.weakest ? <> · {result?.placeholders?.length ? "Weakest with a model" : "Weakest"}: <b>{res.weakest.label}</b> ({fmt(res.weakest.share * 100)}% of this phase's failures){driversText(res) ? `; also ${driversText(res)}` : ""}</> : null}
                     </p>
                     {isOpen && (
                       <div className="mission-phase-body" id={bodyId}>
@@ -385,7 +386,8 @@ export function NewMissionPane({ position, taken = [], phone = false, headingRef
 }
 
 // The answer first: the chance the mission completes, in words, then the numbers.
-function MissionAnswer({ result, busy, error, stale, total, unit }) {
+function MissionAnswer({ result, busy, error, pro, stale, total, unit, name }) {
+  if (error && pro) return <MissionProNote message={error} />;
   if (error) return <p className="field-error" role="alert">{error}</p>;
   if (!result) {
     return <p className="rim-tquiet mission-wait" role="status">{busy ? "Working the mission out…" : stale ? "Changed: Calculate to work it out again." : "Calculate to work out the chance the mission completes."}</p>;
@@ -394,7 +396,8 @@ function MissionAnswer({ result, busy, error, stale, total, unit }) {
   const risky = result.riskiest;
   const ph = placeholderWarning(result);
   return (
-    <ResultSummary tone={waiting || ph ? "caveat" : "neutral"} className="mission-answer" sentence={answerText(result)}
+    <>
+    <ResultSummary tone={ph?.mostly && !waiting ? "bad" : waiting || ph ? "caveat" : "neutral"} className="mission-answer" sentence={answerText(result)}
                    stats={waiting ? [] : [
                      { label: ph ? "With placeholders" : "Completes", value: pct(result.reliability), hint: ph ? "not a real figure" : undefined },
                      ph ? (ph.without != null ? { label: `Without ${ph.n === 1 ? "it" : "them"}`, value: pct(ph.without), hint: "the blocks with models" } : null)
@@ -404,8 +407,10 @@ function MissionAnswer({ result, busy, error, stale, total, unit }) {
                      risky && (result.phases || []).length > 1 ? { label: "Riskiest phase", value: risky.name } : null,
                    ]}>
       {waiting && result.needs?.length ? result.needs.map((n) => `${n.phase}: ${n.lines.join("; ")}`).join(" · ") : null}
-      {!waiting ? `${result.method === "exact" ? "Worked out exactly." : "Simulated: the mission is too large to work out exactly."} ${result.bound_note ? `${result.bound_note} ` : ""}${(result.notes || []).filter((n) => n !== result.series_warning).join(" ")}` : null}
+      {!waiting ? `${result.method === "exact" ? "Worked out exactly." : (result.method_reason || "Simulated.")} ${result.bound_note ? `${result.bound_note} ` : ""}${(result.notes || []).filter((n) => n !== result.series_warning).join(" ")}` : null}
     </ResultSummary>
+    {!waiting && <MissionCurve result={result} unit={unit} name={name} />}
+    </>
   );
 }
 
@@ -425,25 +430,34 @@ function MissionPlaceholders({ result, readOnly, onOpenRbd, onLeaveOut }) {
   }
   const them = ph.n === 1 ? "it" : "them";
   return (
-    <section className="mission-ph" role="note" aria-label="Blocks with no model">
-      <p className="mission-ph-what">
-        <b>{ph.count.charAt(0).toUpperCase() + ph.count.slice(1)}:</b> {ph.list}. A placeholder life stands in for {ph.n === 1 ? "it" : "each"}, and the answer depends on {them}
-        {ph.without != null ? <>: <b>{pct(result.reliability)}</b> with {them}, <b>{pct(ph.without)}</b> from the blocks with models alone.</> : "."}
-        {result.phases?.some((p) => p.weakest) ? " The weakest block in each phase is picked from the blocks with models." : ""}
-      </p>
+    <section className={`mission-ph${ph.mostly ? " mission-ph-most" : ""}`} role="note" aria-label="Blocks with no model">
+      {ph.n > 0 ? (
+        <p className="mission-ph-what">
+          <b>{ph.count.charAt(0).toUpperCase() + ph.count.slice(1)}:</b> {ph.list}. A placeholder life stands in for {ph.n === 1 ? "it" : "each"}, and the answer depends on {them}
+          {ph.without != null ? <>: <b>{pct(result.reliability)}</b> with {them}, <b>{pct(ph.without)}</b> from the blocks with models alone.</> : "."}
+          {ph.mostly ? " Most of the answer rests on invented lives, so don't use it for decisions yet." : ""}
+          {result.phases?.some((p) => p.weakest) ? " The weakest block in each phase is picked from the blocks with models." : ""}
+        </p>
+      ) : (
+        <p className="mission-ph-what">
+          <b>{ph.count.charAt(0).toUpperCase() + ph.count.slice(1)}.</b> A placeholder life stands in for the blocks inside with no model, so the answer isn't a real figure until they have one.
+        </p>
+      )}
       <ul className="mission-ph-do">
         <li>
           <b>Give {them} a model:</b> set each block's model in the mission's RBD.{" "}
           {onOpenRbd && <button type="button" className="secondary sm" onClick={onOpenRbd}>Open the RBD</button>}
         </li>
-        <li>
-          <b>Leave {them} out:</b> mark {them} Not needed in every phase, so the mission is worked out from the blocks with models.{" "}
-          {!readOnly && (
-            <button type="button" className="secondary sm" onClick={() => onLeaveOut(result.placeholders.map((p) => p.id))}>
-              Leave {ph.n === 1 ? "it" : `all ${ph.n}`} out
-            </button>
-          )}
-        </li>
+        {ph.canLeaveOut && (
+          <li>
+            <b>Leave {them} out:</b> mark {them} Not needed in every phase, so the mission is worked out from the blocks with models.{" "}
+            {!readOnly && ph.canLeaveOut && (
+              <button type="button" className="secondary sm" onClick={() => onLeaveOut(result.placeholders.map((p) => p.id))}>
+                Leave {ph.n === 1 ? "it" : `all ${ph.n}`} out
+              </button>
+            )}
+          </li>
+        )}
         <li><b>Or one at a time:</b> set a block Not needed in the phases that don't use it, in the grid below.</li>
       </ul>
       {out.length > 0 && <p className="mission-ph-also">Already left out: {out.join(", ")}.</p>}

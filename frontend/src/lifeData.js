@@ -10,16 +10,26 @@ import {
 // competing risks only. ``u``: a column giving each row's time unit (sent as
 // the ``u_col`` fit option): every time is converted to the fit's unit first.
 export const EMPTY_MAPPING = {
-  x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", e: "", g: "", u: "", c_invert: false, c_map: null,
+  x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", e: "", g: "", u: "", x2: "", x2_unit: "", c_invert: false,
+  c_map: null,
 };
+
+// Mapping keys that hold something other than a column name: the second clock's unit.
+const NOT_COLUMNS = new Set(["x2_unit"]);
+
+// The columns a mapping gives a role (its string values, less the second clock's unit).
+export const mappingColumns = (mapping) => Object.entries(mapping || {})
+  .filter(([k, v]) => !NOT_COLUMNS.has(k) && typeof v === "string" && v).map(([, v]) => v);
 
 // The form fields a mapping is sent as, in order: [[field, value]] (api.js's
 // fit and save requests). ``u``, a column of per-row units, goes as the
 // ``u_col`` fit option; the status meanings with the status column only.
 export function mappingFields(mapping) {
-  const { c_invert, c_map, u, ...columns } = mapping || {};
+  const { c_invert, c_map, u, x2_unit: x2Unit, ...columns } = mapping || {};
   const out = [];
   if (u) out.push(["u_col", u]);
+  // The second clock's unit ("cycles"), sent only beside its column.
+  if (columns.x2 && x2Unit) out.push(["x2_unit", x2Unit]);
   for (const [field, column] of Object.entries(columns)) {
     if (column) out.push([field, column]);
   }
@@ -155,7 +165,8 @@ export function savedMapping(saved, columns) {
   if (!m || !(m.x || m.xl)) return null;
   const have = new Set(columns || []);
   // ``i``: the item column of rows whose covariates change over time (#60).
-  const fields = Object.entries(m).filter(([k, v]) => (k in EMPTY_MAPPING || k === "i") && typeof v === "string" && v);
+  const fields = Object.entries(m).filter(([k, v]) => (k in EMPTY_MAPPING || k === "i") && !NOT_COLUMNS.has(k)
+    && typeof v === "string" && v);
   if (!fields.length || fields.some(([, v]) => !have.has(v))) return null;
   const opts = saved.options || {};
   return {
@@ -294,7 +305,7 @@ function unitQuestion(mapping, facts, columns) {
   // A time column that names its unit ("Hours in service") is in that unit;
   // a column of per-row units then belongs to another time column.
   if (mapping.u || unitColumnIsAnothers(mapping.x, columns, facts)) return null;
-  const used = Object.values(mapping).filter((v) => typeof v === "string" && v);
+  const used = mappingColumns(mapping);
   const mixed = guessUnitColumn((columns || []).map((name) => ({ name, ...facts[name] })), used);
   if (!mixed) return null;
   return {
@@ -307,7 +318,7 @@ function unitQuestion(mapping, facts, columns) {
 
 function otherQuestions(mapping, facts, columns, nRows, answered) {
   const cols = (columns || []).map((name) => ({ name, ...facts[name] }));
-  const used = new Set(Object.values(mapping).filter((v) => typeof v === "string" && v));
+  const used = new Set(mappingColumns(mapping));
   const likely = likelyStatusColumns(cols.filter((c) => !used.has(c.name)));
   const out = [];
   const mode = likely.mode.find((c) => c.blanks > 0 && c.blanks < nRows);
@@ -423,6 +434,36 @@ export function flagsLookSwapped(mapping, summary) {
   const total = summary.failed + summary.running;
   if (!total || summary.running * 2 <= total) return null;
   return { code: mapping.c_invert ? "0" : "1" };
+}
+
+// A 0/1 status column whose name says one thing and whose reading says the
+// other: "failed" (1 = failed by its name) read as 0 = failed, so a column of
+// zeros counts every unit as failed. Reliafy reads 0 as failed unless told
+// otherwise; this asks before a fit, with the flip one click away. Null when
+// the name doesn't say which way round, the column isn't plain 0/1 codes, or
+// the reading already agrees with the name. Returns { column, invert (the
+// c_invert that agrees with the name), now, flipped (the counts each way),
+// text }.
+export function flagNameContradicts(mapping, facts, nRows) {
+  const col = mapping?.c;
+  if (!col || mapping.c_map || !statusCodesOnly(facts?.[col]?.values)) return null;
+  // Only a name that says it ("failed", "Failed (1=yes)", "censored"): a bare "status" is flagQuestion's.
+  const said = flagHeaderMeaning(col);
+  if (!said) return null;
+  const invert = said === "failed";
+  if (!!mapping.c_invert === invert) return null;
+  const now = countsWay(mapping, facts, nRows, !!mapping.c_invert);
+  const flipped = countsWay(mapping, facts, nRows, invert);
+  if (!now || !flipped) return null;
+  const words = (s) => summaryParts(s).join(", ");
+  const rule = invert ? "1 = failed" : "0 = failed";
+  return {
+    column: col, invert, now, flipped,
+    text: `“${col}” sounds like ${invert ? "1 means failed" : "1 means still running"}, but it's read the other way round `
+      + `(${mapping.c_invert ? "1 = failed" : "0 = failed"}): ${words(now)}. If ${invert ? "0" : "1"} in this column means the unit `
+      + `didn't fail, read it as ${rule}: ${words(flipped)}.`,
+    action: `Read it as ${rule}`,
+  };
 }
 
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;

@@ -6,11 +6,11 @@
 // by both test suites). Pure, so `node --test src/` covers it.
 //
 //   reading = {
-//     x, xl, xr, c, n, tl, tr, i, m, e, s, u, // column names, "" for none
+//     x, xl, xr, c, n, tl, tr, i, m, e, s, u, x2, // column names, "" for none (x2: a second clock beside x)
 //                                           // (s: the state during the row, multi-state; kept, not yet fitted)
 //     c_invert, c_map,                      // what the status values mean
 //     all_failed,                           // no status column, on purpose: every row failed
-//     unit, m_unit,                         // x's unit (any unit), m's
+//     unit, m_unit, x2_unit,                // x's unit (any unit), m's, the second clock's ("cycles")
 //     z: [col], z_units: { col: unit },     // the covariates, with optional units
 //     not_used: [col],                      // columns read as nothing
 //   }
@@ -19,16 +19,25 @@ import {
 } from "./lifeData.js";
 import { isNumeric } from "./datasetGuess.js";
 import { guessTvc, tvcUnit } from "./tvcData.js";
+import { cleanUnit, defaultSecondUnit } from "./twoClocks.js";
 
-export const ROLES = ["x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u"];
-// The selectors the upload shows, in order (x carries its range xl to xr).
-export const READING_ROWS = ["x", "c", "n", "tl", "tr", "i", "m", "e", "s"];
-const LABEL = { e: "failure mode" };
+export const ROLES = ["x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u", "x2"];
+// The selectors the upload shows, in order (x carries its range xl to xr): x, c and n
+// first, then the less common roles folded under "More columns" (READING_MORE).
+export const READING_MAIN = ["x", "c", "n"];
+export const READING_MORE = ["tl", "tr", "i", "m", "e", "s", "x2"];
+export const READING_ROWS = [...READING_MAIN, ...READING_MORE];
+// x2: a second clock beside x (a second measure of use: starts, cycles, landings), for a
+// life worn by both; x2_unit its unit.
+const LABEL = { e: "failure mode", x2: "second clock" };
 
 export const emptyReading = () => ({
   ...Object.fromEntries(ROLES.map((r) => [r, ""])),
-  c_invert: false, c_map: null, all_failed: false, unit: "", m_unit: "", z: [], z_units: {}, not_used: [],
+  c_invert: false, c_map: null, all_failed: false, unit: "", m_unit: "", x2_unit: "", z: [], z_units: {}, not_used: [],
 });
+
+// The second clock's unit: as typed ("cycles"), else from its column's name; blank without one.
+export const secondClockUnit = (r) => (r?.x2 ? cleanUnit(r.x2_unit) || defaultSecondUnit(r.x2) : "");
 
 const words = (name) => String(name || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-./()[\]#:]+/g, " ").trim();
 const ITEM_NAMES = /\b(tag|serial|sn|asset|equipment|unit|item|pump|motor|machine|vehicle|truck|engine|compressor|component|system|subject|specimen|sample|pad|position)\b/i;
@@ -145,9 +154,10 @@ export function guessReading(columns, facts, nRows) {
 export function lifeMapping(r) {
   if (!r) return { ...EMPTY_MAPPING };
   const m = { ...EMPTY_MAPPING };
-  for (const k of ["x", "c", "n", "xl", "xr", "tl", "tr", "e", "u"]) m[k] = r[k] || "";
+  for (const k of ["x", "c", "n", "xl", "xr", "tl", "tr", "e", "u", "x2"]) m[k] = r[k] || "";
   m.c_invert = !!r.c_invert && !!r.c;
   m.c_map = r.c ? r.c_map || null : null;
+  m.x2_unit = secondClockUnit(r);
   return m;
 }
 
@@ -228,6 +238,11 @@ export function readingParts(r) {
   for (const k of ["n", "tl", "tr", "i", "m", "e", "s"]) {
     if (r[k]) out.push({ key: k, label: LABEL[k] || k, value: r[k] + (k === "m" && r.m_unit ? ` (${r.m_unit})` : "") });
   }
+  if (r.x2) {
+    // Its unit when the column's name doesn't already say it ("lnd (landings)", not "landings (landings)").
+    const u = secondClockUnit(r);
+    out.push({ key: "x2", label: LABEL.x2, value: r.x2 + (u.toLowerCase() === r.x2.toLowerCase() ? "" : ` (${u})`) });
+  }
   if (r.z?.length) out.push({ key: "z", label: "Z", value: r.z.join(", "), list: true });
   return out;
 }
@@ -253,6 +268,10 @@ export function setRole(r, role, col, facts, nRows) {
   const next = { ...r, [role]: col };
   if (col) for (const k of ROLES) if (k !== role && next[k] === col) next[k] = "";
   if (role === "c") next.all_failed = next.all_failed && !col;
+  // The second clock's unit follows its column, unless the user typed their own.
+  if (role === "x2" && (!col || !r.x2_unit || r.x2_unit === defaultSecondUnit(r.x2))) {
+    next.x2_unit = col ? defaultSecondUnit(col) : "";
+  }
   return withZ(next, r, facts, nRows);
 }
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 
 from backend import config
@@ -118,7 +118,9 @@ def _measurements_detail(dataset) -> dict | None:
     }
 
 
-def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
+def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0, last_mapping: dict | None = None) -> dict:
+    # ``last_mapping``: the newest model's reading of the columns, so the count
+    # ("900 units · 900 failed") is the one the fit wizard shows.
     return {
         "id": dataset.id,
         "name": dataset.name,
@@ -127,7 +129,7 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
         "n_columns": len(dataset.columns or []),
         "n_models": n_models,
         "checksum": dataset.checksum,
-        **datasets_service.dataset_tags(dataset),
+        **datasets_service.dataset_tags(dataset, last_mapping),
         "measurements": _measurements_summary(dataset),
         "created_at": dataset.created_at.isoformat(),
         "is_sample": samples_service.is_sample(dataset.owner_id),
@@ -147,7 +149,8 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     # a direct share of the dataset doesn't show those either.
     public = access_service.is_public_link(ctx)
     models = [] if public else datasets_service.models_for_dataset(session, dataset.id, ctx.read_owners, ctx.hidden)
-    summary = _dataset_summary(dataset, ctx, n_models=len(models))
+    last = _last_mapping(models, dataset.columns)
+    summary = _dataset_summary(dataset, ctx, n_models=len(models), last_mapping=last)
     try:
         preview = datasets_service.preview_rows(dataset, distinct=True)
     except Exception as exc:  # pragma: no cover - defensive
@@ -167,7 +170,6 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
             session, dataset.id, ctx.read_owners, ctx.hidden))
         if d["collection"] != "models"
     ]
-    last = _last_mapping(models, dataset.columns)
     try:
         reading, reading_source = dataset_reading.for_dataset(dataset, last, preview if preview.get("dtypes") else None)
     except Exception as exc:  # pragma: no cover - defensive
@@ -214,9 +216,11 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
     # Models of every kind fitted to each dataset ("Used by N models").
     counts = datasets_service.dependent_counts(session, ctx.read_owners, ctx.hidden)
     datasets = datasets_service.list_datasets(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
+    # Each dataset's count read as its page reads it (the newest model's mapping when it keeps no reading).
+    lasts = datasets_service.last_mappings(session, ctx.read_owners, datasets, ctx.hidden)
     return {
         "datasets": [
-            {**_dataset_summary(d, ctx, n_models=counts.get(d.id, 0)),
+            {**_dataset_summary(d, ctx, n_models=counts.get(d.id, 0), last_mapping=lasts.get(d.id)),
              **({"shared_by": shared_by[d.id]} if d.id in shared_by else {})}
             for d in datasets
         ]
@@ -808,6 +812,8 @@ def save_model(
     xr: str | None = Form(default=None),
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
+    x2: str | None = Form(default=None),
+    x2_unit: str | None = Form(default=None),
     i: str | None = Form(default=None),
     e: str | None = Form(default=None),
     g: str | None = Form(default=None),
@@ -847,6 +853,8 @@ def save_model(
     mapping = {
         "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
         "i": i, "e": e, "g": g, "group": group,
+        # Two clocks: the second clock's column (its unit, x2_unit, goes in the options).
+        "x2": x2,
     }
     try:
         if dataset_id:
@@ -872,7 +880,7 @@ def save_model(
             options=regression_diagnostics.with_cox_form(options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
                 include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
-            frailty_family=frailty_family, u_col=u_col, item_lives=item_lives,
+            frailty_family=frailty_family, u_col=u_col, item_lives=item_lives, x2_unit=x2_unit,
             ), cox),
             covariate_units=covariate_units_from_form(covariate_units),
         )
@@ -1246,9 +1254,13 @@ def evaluate_model(
     values: dict = Body(default={}),
     x_min: float | None = None,
     x_max: float | None = None,
+    at: list[float] | None = Query(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
+    """A saved model's functions at covariate ``values`` over its grid (or
+    ``x_min``..``x_max``), or with ``at`` (repeatable) at exactly those times:
+    the calculator's answer, never read off the plotted grid."""
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
@@ -1256,7 +1268,7 @@ def evaluate_model(
         return JSONResponse(
             content=models_service.evaluate(
                 session, model_id, values, [*ctx.read_owners, model.owner_id],
-                x_min=x_min, x_max=x_max,
+                x_min=x_min, x_max=x_max, at=at,
             )
         )
     except models_service.ModelNotFound:
@@ -1271,11 +1283,13 @@ def confidence_model(
     params: dict = Body(default={}),
     x_min: float | None = None,
     x_max: float | None = None,
+    at: list[float] | None = Query(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Confidence bounds of a saved model's reliability function, at a
-    configurable significance level and bound (two-sided / lower / upper)."""
+    configurable significance level and bound (two-sided / lower / upper),
+    over its grid or with ``at`` at exactly those times."""
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
@@ -1283,7 +1297,7 @@ def confidence_model(
         return JSONResponse(
             content=models_service.confidence(
                 session, model_id, params, [*ctx.read_owners, model.owner_id],
-                x_min=x_min, x_max=x_max,
+                x_min=x_min, x_max=x_max, at=at,
             )
         )
     except models_service.ModelNotFound:
@@ -1313,6 +1327,36 @@ def life_model(
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid life request.")})
+
+
+@router.post("/models/{model_id}/at-rate")
+def model_at_rate(
+    model_id: str,
+    body: dict = Body(default={}),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A saved model on two clocks for a unit used at ``rate`` (its second clock per unit
+    of the first: starts per hour, landings per flight hour; the fleet's typical rate when
+    left out): its B-lives with 90% one-sided
+    lower bounds, the curve with its band, and, with ``times`` or ``reliability``, the
+    calculator's answers there. Free."""
+    from backend import two_clocks
+
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None or model.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if model.kind != two_clocks.KIND:
+        return JSONResponse(status_code=422, content={"detail": "Only a model on two clocks takes a usage "
+                                                                "rate."})
+    try:
+        live = models_service.two_clock_live(session, model, [*ctx.read_owners, model.owner_id])
+        body = {**(body or {}), "default_rate": (model.results or {}).get("default_rate")}
+        return JSONResponse(content=two_clocks.answer(live, body, (model.results or {}).get("unit") or ""))
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid usage rate.")})
 
 
 @router.post("/models/{model_id}/compare")

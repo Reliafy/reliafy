@@ -3775,13 +3775,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """Failure modes recorded at other positions of the same class and not
         on this one: what to offer when something here fails."""
         position = self._get(position_id, "Position")
-        cls = (position.get("position_class") or "").strip().lower()
+        cls = self._class_key(position)
         if not cls:
             return []
         here = {" ".join(fm["text"].lower().split()) for fm in self._modes_on(position_id)}
         found: dict[str, str] = {}
-        for p in self.s.nodes(self.org, "Position"):
-            if p["id"] == position_id or (p.get("position_class") or "").strip().lower() != cls:
+        for p in self._class_members(cls, retired=True):
+            if p["id"] == position_id:
                 continue
             for fm in self._modes_on(p["id"]):
                 key = " ".join(fm["text"].lower().split())
@@ -6385,17 +6385,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         "unit": task.get("unit")}, "twins": []}
         if not here or here["label"] != "Position":
             return out
-        cls = (here.get("position_class") or "").strip().lower()
+        cls = " ".join(self._class_key(here).lower().split())
+        designs = self._design_classes()
         parent = self._parent(here["id"])
         stem = self._name_stem(here["name"])
         want = " ".join(str(task["name"] or "").lower().split())
 
         def alike(p: dict) -> bool:
-            if p["id"] == here["id"] or p.get("retired"):
+            if p["id"] == here["id"] or p.get("retired") or p["id"] in designs:
                 return False
+            mine = " ".join(self._class_key(p).lower().split())
             if cls:
-                return (p.get("position_class") or "").strip().lower() == cls
-            if (p.get("position_class") or "").strip():
+                return mine == cls
+            if mine:
                 return False
             mine = self._parent(p["id"])
             return bool(parent and mine and mine["id"] == parent["id"] and stem != " ".join(p["name"].lower().split())
@@ -6723,6 +6725,17 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         (one with no due date last), then the lowest number."""
         return min((w for w in work_orders if w.get("status") in OPEN_STATUSES),
                    key=lambda w: (w.get("due") or "9999-12-31", w["number"]), default=None)
+
+    @staticmethod
+    def late_counts(work_orders, tasks) -> dict:
+        """The one count of late work that Home, Orders and Assets all show: open work
+        orders past their due date, however they were raised (from a task, a package's
+        visit or by hand), and tasks overdue with no work order open for them yet. A task
+        with a work order open counts once, as its work order. ``work_orders``: open work
+        orders, each with ``overdue`` (_wo_brief); ``tasks``: task views (_task_view)."""
+        return {"work_orders_late": sum(1 for w in work_orders if w.get("overdue")),
+                "tasks_overdue_without_work_order": sum(
+                    1 for t in tasks if t.get("overdue") and not t.get("open_work_order"))}
 
     def _wo_overdue(self, w: dict) -> bool:
         """Whether a work order is overdue: it's open and its due date is before today.
@@ -13249,7 +13262,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         own = [c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
         fitted_to = current and self._fitment_view(current)["position"]
         position = fitted_to and self.s.node(self.org, fitted_to["id"])
-        cls = (position or {}).get("position_class", "").strip()
+        cls = self._class_key(position) if position else ""
         class_cost = cls and (self.s.node(self.org, class_id(self.org, cls)) or {}).get("replacement_cost")
         return {
             **{k: item.get(k, "") for k in self.ITEM_FIELDS}, "id": id, "nameplate": item.get("nameplate") or {},
@@ -13258,7 +13271,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "created": item.get("created"), "coordinates": item.get("coordinates"),
             **{k: _dated_view(item.get(k)) for k in ("purchase_date", "in_service_date", "manufacture_date")},
             "replacement_cost": item.get("replacement_cost"),
-            "class_replacement_cost": class_cost and {**class_cost, "position_class": cls},
+            "class_replacement_cost": class_cost and {**class_cost, "position_class": self._class_label(cls),
+                                                      "class_key": cls},
             "warranty": warranty_view(item.get("warranty"), self.today()),
             "documents": self.documents_of(id),
             "fitted_to": fitted_to,
@@ -13349,6 +13363,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "carried_by": {"id": owner[1], "name": (owner_node or {}).get("name", ""),
                            "design_location_id": loc.get("design_location_id")}
             if owner and owner[0] == "unit" else None,
+            # Its location class: the design location a built unit's copy came from.
+            "location_class": self._location_class(loc) if owner and owner[0] == "unit" else None,
+            # A design location across every built unit: the copies they carry.
+            "carried_as": self.carried_as(id) if owner and owner[0] == "design" else None,
             "children": [{"id": c["id"], "name": c["name"], "positions": count(found, c["id"]),
                           "items": count(loose, c["id"])} for c in kids],
             "counts": {
@@ -13463,6 +13481,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         def blank() -> dict:
             return {"positions": 0, "items": 0, "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None}
 
+        # Each bucket's open work orders and due tasks, for its late counts (late_counts).
+        work: dict[int, tuple[dict, list, list]] = {}
+
+        def note(b: dict, wo: dict | None = None, task: dict | None = None) -> None:
+            entry = work.setdefault(id(b), (b, [], []))
+            if wo is not None:
+                entry[1].append(wo)
+            if task is not None:
+                entry[2].append(task)
+
         # A product's design locations and the ones a built unit carries aren't assets.
         roots = sorted((loc for loc in self.s.nodes(self.org, "Location")
                         if self._parent(loc["id"]) is None and not loc.get("retired")
@@ -13540,8 +13568,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for w in self.s.nodes(self.org, "WorkOrder"):
             subject = w["status"] in OPEN_STATUSES and self.s.out(self.org, w["id"], "ON")
             if subject and subject[0]["id"] not in products:
+                late = {"overdue": self._wo_overdue(w)}
                 for b in buckets(subject[0]):
                     b["open_work_orders"] += 1
+                    note(b, wo=late)
         for task in self.s.nodes(self.org, "Task"):
             subject = not task.get("retired") and _subject(self.s, self.org, task)
             if not subject or subject.get("retired") or subject["id"] in products:
@@ -13552,6 +13582,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     b["due"] += 1
                     b["overdue"] += 1 if view["overdue"] else 0
                     b["next_due"] = min(filter(None, (b["next_due"], view["next_due"])))
+                    note(b, task=view)
+        # late: the same count of late work as Home and Orders (late_counts); overdue, kept
+        # for older readers, counts every overdue task, with a work order open or not.
+        for b in [*out.values(), not_placed, *roots.values()]:
+            _, wos, tasks = work.get(id(b), (b, [], []))
+            b["late"] = self.late_counts(wos, tasks)
         not_placed["roots"] = sorted(roots.values(), key=lambda r: (r["name"].lower(), r["id"]))
         return {"places": list(out.values()), "not_placed": not_placed, "horizon_days": horizon_days}
 
@@ -13559,11 +13595,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """Each class of position ('Centrifugal pump'), with how many positions and
         how much life data it pools."""
         classes: dict[str, dict] = {}
+        designs = self._design_classes()
         for p in self.s.nodes(self.org, "Position"):
-            name = (p.get("position_class") or "").strip()
+            # A design's own positions are classes, not members: positions built from them are.
+            name = "" if p["id"] in designs else self._class_key(p)
             if not name or p.get("retired"):
                 continue
-            entry = classes.setdefault(name, {"position_class": name, "positions": 0, "fitments": 0, "failures": 0})
+            entry = classes.setdefault(name, {**self._class_view(name), "positions": 0, "fitments": 0,
+                                              "failures": 0})
             if "costs" not in entry:
                 node = self.s.node(self.org, class_id(self.org, name)) or {}
                 entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target")}
@@ -13601,12 +13640,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return self.position_class(name)
 
     def _class_name(self, position_class) -> str:
-        """A class some position has (case and spacing aside), or NotFound."""
+        """A class some position has, as its key (``_resolve_class``: a free-text class,
+        case and spacing aside, or a design class by its key, design position id or
+        label), or NotFound."""
         name = _text(position_class, "class", required=True)
-        if not any((p.get("position_class") or "").strip().lower() == name.lower()
-                   for p in self.s.nodes(self.org, "Position")):
+        key = self._resolve_class(name)
+        if key is None:
             raise NotFound(name)
-        return name
+        return key
 
     def set_class_replacement_cost(self, position_class: str, replacement_cost) -> dict:
         """What an item doing this class's job costs to replace ({amount, currency,
@@ -13619,14 +13660,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return self.position_class(name)
 
     def position_class(self, position_class: str) -> dict:
-        found = next((c for c in self.position_classes()
-                      if c["position_class"].lower() == (position_class or "").strip().lower()), None)
-        if found is None:
+        key = self._resolve_class(position_class)
+        found = key is not None and next((c for c in self.position_classes() if c["class_key"] == key), None)
+        if not found:
             raise NotFound(position_class)
         return {**found, "proposals": [p for p in self.proposals("pending")
-                                       if (p.get("class_name") or "").lower() == found["position_class"].lower()],
+                                       if " ".join((p.get("class_name") or "").lower().split())
+                                       == " ".join(key.lower().split())],
                 # What its lives can be counted in: days, or a unit of use its positions' counters count.
-                "life_units": self.life_units(found["position_class"])}
+                "life_units": self.life_units(key)}
 
     def proposals(self, status: str | None = "pending") -> list[dict]:
         out = []
@@ -13676,24 +13718,22 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         position's counter in that unit went up by while the item was fitted
         (:meth:`life_data_in_use`), with the lives the readings can't bound listed in
         ``excluded`` (not counted) and the counters used in ``counters``."""
-        wanted = (position_class or "").strip().lower()
+        key = self._resolve_class(position_class)
         use = self._life_unit(unit)
         rows, excluded, counters = [], [], {}
-        for p in self.s.nodes(self.org, "Position"):
-            if (p.get("position_class") or "").strip().lower() == wanted and not p.get("retired"):
-                here = {"position": p["name"], "position_id": p["id"]}
-                if use is None:
-                    rows += [{**r, **here} for r in self.life_data(p["id"])]
-                    continue
-                got = self.life_data_in_use(p["id"], use)
-                rows += [{**r, **here} for r in got["rows"]]
-                excluded += [{**r, **here} for r in got["excluded"]]
-                if got["counter"]:
-                    counters[got["counter"]["id"]] = got["counter"]
-        if not rows and not excluded and not any((p.get("position_class") or "").strip().lower() == wanted
-                                                 for p in self.s.nodes(self.org, "Position")):
+        for p in (self._class_members(key) if key else []):
+            here = {"position": p["name"], "position_id": p["id"]}
+            if use is None:
+                rows += [{**r, **here} for r in self.life_data(p["id"])]
+                continue
+            got = self.life_data_in_use(p["id"], use)
+            rows += [{**r, **here} for r in got["rows"]]
+            excluded += [{**r, **here} for r in got["excluded"]]
+            if got["counter"]:
+                counters[got["counter"]["id"]] = got["counter"]
+        if not rows and not excluded and not (key and self._class_members(key, retired=True)):
             raise NotFound(position_class)
-        out = {"position_class": position_class, "rows": sorted(rows, key=lambda r: r["from"]),
+        out = {**self._class_view(key), "rows": sorted(rows, key=lambda r: r["from"]),
                "failures": sum(1 for r in rows if r["c"] != 1), "suspensions": sum(1 for r in rows if r["c"] == 1),
                "uncertain": sum(1 for r in rows if "xl" in r)}
         if use is None:
@@ -14469,6 +14509,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             else:
                 due = self._tree_task_due(t, "Item" if subject in items else "")
                 overdue = bool(due) and due < today
+                if not due and not _on_event_only(t):
+                    # Can't be put on a date yet: by use with no counter (or no readings) to count from.
+                    on_node(subject)["unscheduled"] += 1
             if due:
                 st = on_node(subject)
                 st["next_due"] = min(st["next_due"] or due, due)
@@ -14496,6 +14539,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             rows[pid] = {
                 "id": pid, "name": p["name"], "tag": p.get("tag", ""),
                 "position_class": p.get("position_class", ""), "parent_id": parent[pid],
+                "class_key": self._class_key(p),
                 "carried_by": {"id": up, "name": items[up].get("name", "")} if up else None,
                 "item": self._item_brief(item),
                 "location_id": located_at.get(pid) if located_at.get(pid) in locations else None,
@@ -14685,6 +14729,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             r = rows[pid]
             node = {
                 "id": pid, "name": r["name"], "tag": r["tag"], "position_class": r["position_class"],
+                **self._design_class_marks(r),
                 "item": r["item"], "tasks": r["tasks"], "next_due": r["own_next_due"],
                 "open_work_orders": r["own_open"],
                 "fitted": r["item"] is not None, "status": r["status"], "inside": inside[pid],
@@ -14695,6 +14740,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             into[at_] = node
             stack.extend((c, node["children"], i) for i, c in enumerate(kids.get(pid, [])))
         return out
+
+    def _design_class_marks(self, r: dict) -> dict:
+        """A tree row's design class, when it has one: class_key (pass it to the class
+        reads) and class_label (product › … › position, to show in place of the
+        free-text position_class). Left out otherwise: the free text is the class."""
+        key = r.get("class_key") or ""
+        if not key.startswith("design:"):
+            return {}
+        return {"class_key": key, "class_label": self._class_label(key)}
 
     def tree_rows(self, within: str | None = None) -> dict:
         """The asset trees for the app's tree pane, flat: every live position once
@@ -14745,6 +14799,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             for key in ("tag", "position_class", "location_id", "location", "carried_by"):
                 if r[key]:
                     row[key] = r[key]
+            row.update(self._design_class_marks(r))
             if r.get("via"):  # its parent, outside this place (one of `ancestors`)
                 row["via"] = r["via"]
             if r["item"]:
@@ -14802,6 +14857,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {
             "id": p["id"], "name": p["name"], "tag": p.get("tag", ""),
             "position_class": p.get("position_class", ""), "description": p.get("description", ""),
+            # The class it groups under (position_class above is the free text as written):
+            # the design position it implements when built from a product, else that text.
+            "class": self._class_view(self._class_key(p)) if self._class_key(p) else None,
             "operating_context": p.get("operating_context", ""),
             "path": path, "retired": bool(p.get("retired")),
             # Out of service until a date, if marked (its tasks aren't due meanwhile).
@@ -14829,6 +14887,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "rbd_id": p.get("rbd_id"),
             # A product's design (on its top position), or what a built position implements.
             "design": self._design_view(p), "implements": self._provenance(p),
+            # A design's position: the positions built from it (its class's members).
+            "built_as": self.built_as(id) if id in self._design_classes() else None,
             # The product whose design this position is in (none for a plain or built tree).
             "in_design": (lambda root: root and {"id": root["id"], "name": root["name"]})(self._design_root_of(id)),
             # Whose locations it can be placed at besides the places you look after: its product's
@@ -14949,7 +15009,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         "fitted": current and self._fitment_view(current),
                         "failure_modes": [self._mode_view(m) for m in
                                           sorted(self._modes_on(pid), key=lambda m: m["text"].lower())],
-                        "class_failure_modes": self.class_failure_modes(pid) if p.get("position_class") else [],
+                        "class_failure_modes": self.class_failure_modes(pid) if self._class_key(p) else [],
                         "parts_list": self._parts_list(pid)})
         return out
 
@@ -15882,11 +15942,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def life_units(self, position_class: str) -> list[str]:
         """The units a class's lives can be counted in: days, and the unit of every use
         counter its positions have (their own or one above them)."""
-        wanted = (position_class or "").strip().lower()
+        key = self._resolve_class(position_class)
         units: list[str] = []
-        for p in self.s.nodes(self.org, "Position"):
-            if (p.get("position_class") or "").strip().lower() != wanted or p.get("retired"):
-                continue
+        for p in (self._class_members(key) if key else []):
             for node_id in (p["id"], *self._ancestor_ids(p["id"])):
                 for mp in self.s.inn(self.org, node_id, "ON"):
                     if mp["label"] == "MeasurementPoint" and mp.get("kind") == "counter" \
@@ -15981,16 +16039,17 @@ def _product_marks(p: dict, top: bool, every: dict) -> dict:
 
 
 def _blank_status() -> dict:
-    return {"overdue": 0, "open_work": 0, "alarms": 0, "open_reports": 0, "next_due": None}
+    # unscheduled: tasks that can't be put on a date yet (by use, with no counter to count from).
+    return {"overdue": 0, "open_work": 0, "alarms": 0, "open_reports": 0, "unscheduled": 0, "next_due": None}
 
 
 def _add_status(into: dict, *more: dict | None) -> dict:
-    """Adds counts (overdue, open work, alarms, open failure reports) into ``into``;
-    keeps the earliest next due."""
+    """Adds counts (overdue, open work, alarms, open failure reports, tasks that can't be
+    scheduled) into ``into``; keeps the earliest next due."""
     for st in more:
         if not st:
             continue
-        for k in ("overdue", "open_work", "alarms", "open_reports"):
+        for k in ("overdue", "open_work", "alarms", "open_reports", "unscheduled"):
             into[k] += st.get(k, 0)
         if st["next_due"] and (into["next_due"] is None or st["next_due"] < into["next_due"]):
             into["next_due"] = st["next_due"]

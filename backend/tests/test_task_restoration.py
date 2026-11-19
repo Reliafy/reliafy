@@ -189,7 +189,7 @@ def test_operating_basis_goes_through_the_duty_and_a_meter_proposes_one(m, db, l
     m.record_reading(meter, 1000 + 100 * 6, on=(start + timedelta(days=100)).isoformat())  # 6 h a day
     graph = _graph(db, rbd)
     ra = tp.plans_for_graph(m, rbd, graph)["blocks"][_block_of(graph, "Pump A")["id"]]
-    assert ra["plan"]["interval"] is None and ra["plan"]["operating_interval"] == 6 * 730.5
+    assert ra["plan"]["interval"] == 6 * 730.5 and ra["plan"]["basis"] == "operating"
     prop = ra["duty_proposal"]
     assert prop["duty"] == 0.25 and prop["words"] == "Runs 25% of the time" and prop["point"]["id"] == meter
 

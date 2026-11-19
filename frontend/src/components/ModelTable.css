@@ -7,6 +7,8 @@
 .ml-pbody { display: flex; flex-direction: column; gap: 12px; }
 .ml-lead { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .ml-stale { margin: 0; color: var(--warning, #b45309); }
+/* Most of the answer rests on placeholders: said as a bad verdict (W2). */
+.ml-stale.is-most { color: var(--danger-text); font-weight: 500; }
 .ml-h { font-size: 0.85rem; margin: 4px 0 6px; color: var(--text-secondary, #5f6670); text-transform: none; }
 .ml-params { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .ml-params th, .ml-params td { padding: 4px 8px; border-bottom: 1px solid var(--border, #e9ebee); text-align: left; }

@@ -77,8 +77,11 @@ def test_a_rebuild_names_blocks_whose_positions_were_deleted(m, db):
 def test_running_time_with_runs_blank_is_calendar_time():
     data = {"preventive": {"policy": "age", "operating_interval": 12000}}
     assert rbd_maintenance.preventive_spec(data, "Pump")["interval"] == pytest.approx(12000)
+    assert "basis" not in rbd_maintenance.preventive_spec(data, "Pump")  # all the time: calendar hours
     half = {**data, "duty": 0.5}
-    assert rbd_maintenance.preventive_spec(half, "Pump")["interval"] == pytest.approx(24000)
+    spec = rbd_maintenance.preventive_spec(half, "Pump")
+    assert spec["interval"] == pytest.approx(12000) and spec["basis"] == "operating"  # RePyability divides
+    assert rbd_maintenance.calendar_interval(half["preventive"], half, "Pump") == pytest.approx(24000)
 
 
 def test_the_missions_read_names_positions_whose_model_cant_be_a_block(m, db):

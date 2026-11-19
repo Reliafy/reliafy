@@ -24,8 +24,8 @@ import { answerParts } from "../modelFrame.js";
 import { tvcProblems } from "../tvcData.js";
 import Covariates from "./Covariates.jsx";
 import {
-  EMPTY_MAPPING, columnFacts, statusSummary, summaryParts,
-  dataStepIssues, dataSplit, parsePastedValues, addMissingFlags,
+  EMPTY_MAPPING, columnFacts, statusSummary, summaryParts, flagNameContradicts,
+  dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, mappingColumns,
 } from "../lifeData.js";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { Select } from "./ui/Controls.jsx";
@@ -186,11 +186,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Inspection data (an earliest and a latest time) takes Turnbull, not the
   // estimators that need exact failure times: those aren't offered.
   const intervalTimes = !!(mapping.xl || mapping.xr);
+  // A second clock column (x2: starts, cycles, landings...) takes only the models on two clocks, and they need it.
+  const twoClocks = !!mapping.x2;
   const options = useMemo(
     () => (byMode ? CR_OPTIONS : distributions)
-      .filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false)
-        && !(intervalTimes && EXACT_TIMES_ONLY.includes(d.id))),
-    [distributions, hasCovariates, byMode, tvc, intervalTimes]
+      .filter((d) => !!d.two_clock === twoClocks
+        && (twoClocks || (!!d.covariates === hasCovariates && (!tvc || d.tvc !== false)
+          && !(intervalTimes && EXACT_TIMES_ONLY.includes(d.id))))),
+    [distributions, hasCovariates, byMode, tvc, intervalTimes, twoClocks]
   );
 
   // Keep the selected model valid for the current filtered list.
@@ -367,7 +370,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   // Columns given a role in the mapping (x/xl/xr/c/n/tl/tr/i/e) can't also be covariates.
   const mappedColumns = useMemo(
-    () => new Set(Object.values(mapping).filter((v) => typeof v === "string" && v)),
+    () => new Set(mappingColumns(mapping)),
     [mapping]
   );
 
@@ -405,6 +408,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const summary = !csv || tvc || itemLives ? null
     : inspection ? (reading && !reading.error ? reading : null)
     : statusSummary(mapping, facts, csv.n_rows);
+  // A status column named "failed" read as 0 = failed (a column of zeros then counts every unit as
+  // failed): said beside the count, with the flip one click away. The data itself is never changed.
+  const flagClash = detail && csv && !tvc && !itemLives && !inspection
+    ? flagNameContradicts(mapping, facts, csv.n_rows) : null;
   const waitingFor = unconfirmed ? "First check how the columns are read: Looks right, or Change."
     : readingProblems.length ? "First change the reading: see the note under it."
     : null;
@@ -828,6 +835,15 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 return <span key={part}>{i > 0 && ", "}<b>{num}</b> {rest.join(" ")}</span>;
               })}
             </p>
+          )}
+          {!rd.editing && flagClash && (
+            <div className="fit-flag-warn" role="status">
+              <span><span aria-hidden="true">! </span>{flagClash.text}</span>
+              <button type="button" className="secondary sm" disabled={rd.saving}
+                      onClick={() => rd.keep({ ...rd.reading, c_invert: flagClash.invert, c_map: null })}>
+                {flagClash.action}
+              </button>
+            </div>
           )}
           {!rd.editing && (fromReading?.z.length > 0 || itemTimeline) && (
             <div className="fit-z" role="group" aria-label="Covariates">

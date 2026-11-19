@@ -368,8 +368,10 @@ function RenameLocation({ loc, onClose, onDone }) {
 // every class in the register, with the item classes and conditions (the
 // taxonomy). A class picked (?class=) opens its panel: its model, costs,
 // forecast and pooled life data, as the Classes page had them.
-// `here`: [{position_class, here}] for the branch (explorerTabs.js
-// classesInBranch); `scopeName`: the row's name.
+// `here`: [{position_class, class_key, here}] for the branch (explorerTabs.js
+// classesInBranch); `scopeName`: the row's name. A class is picked (`open`, ?class=)
+// by its key: a position built from a product's design is of its design position's
+// class ("design:<id>"), shown by product and path.
 export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, open = null, onOpen }) {
   const [classes, setClasses] = useState(null);
   const [data, setData] = useState(null);
@@ -381,16 +383,19 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
     getPositionClasses().then((d) => setClasses(d.classes)).catch((e) => setError(e.message));
   }, []);
   useEffect(() => { setLifeUnit(null); }, [open]);
-  const byName = new Map((classes || []).map((c) => [c.position_class, c]));
+  const keyOf = (c) => c.class_key || c.position_class;
+  const byName = new Map((classes || []).map((c) => [keyOf(c), c]));
   const unit = lifeUnit || byName.get(open)?.model?.unit || "days";
+  // The open class as shown (its product and path, for a design class).
+  const openLabel = byName.get(open)?.position_class || open;
   useEffect(() => {
     setClassError(null);
     if (!open || classes === null) return;
     setData(null);
     getClassLifeData(open, unit).then(setData).catch((e) => setClassError(e.message));
   }, [open, unit, classes === null]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const rows = all ? (classes || []).map((c) => ({ ...c, here: here.find((h) => h.position_class === c.position_class)?.here || 0 }))
-    : here.map((h) => ({ positions: 0, fitments: 0, failures: 0, ...byName.get(h.position_class), ...h }));
+  const rows = all ? (classes || []).map((c) => ({ ...c, here: here.find((h) => keyOf(h) === keyOf(c))?.here || 0 }))
+    : here.map((h) => ({ positions: 0, fitments: 0, failures: 0, ...byName.get(keyOf(h)), ...h }));
   const missing = open && isNotFound(classError);
   return (
     <div className="td-tab-page">
@@ -415,10 +420,11 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
             <thead><tr><th>Class</th><th className="num">Here</th><th className="num">Positions</th><th className="num">Fitments</th><th className="num">Failures</th></tr></thead>
             <tbody>
               {rows.map((c) => (
-                <tr key={c.position_class} className="lib-row" onClick={() => onOpen?.(c.position_class)}
-                    aria-current={c.position_class === open ? "true" : undefined}>
-                  <td><button type="button" className="link lib-name" onClick={(e) => { e.stopPropagation(); onOpen?.(c.position_class); }}>
-                    {c.position_class}</button></td>
+                <tr key={keyOf(c)} className="lib-row" onClick={() => onOpen?.(keyOf(c))}
+                    aria-current={keyOf(c) === open ? "true" : undefined}>
+                  <td><button type="button" className="link lib-name" onClick={(e) => { e.stopPropagation(); onOpen?.(keyOf(c)); }}>
+                    {c.position_class}</button>
+                    {c.design_position_id && <div className="lib-date">From the product's design</div>}</td>
                   <td className="num" data-label="Here">{c.here}</td>
                   <td className="num" data-label="Positions">{c.positions}</td>
                   <td className="num" data-label="Fitments">{c.fitments}</td>
@@ -430,17 +436,17 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
         </div>
       )}
       {missing && (
-        <div className="card error">Class not found: {open}. <button type="button" className="link" onClick={() => onOpen?.(null)}>Close it</button></div>
+        <div className="card error">Class not found: {openLabel}. <button type="button" className="link" onClick={() => onOpen?.(null)}>Close it</button></div>
       )}
       {classError && !missing && <div className="card error">{classError}</div>}
       {open && !missing && (
         <>
-          <div className="maint-row"><button type="button" className="secondary sm" onClick={() => onOpen?.(null)}>Close {open}</button></div>
-          <ClassPanel name={open} unit={unit} onUnit={setLifeUnit}
+          <div className="maint-row"><button type="button" className="secondary sm" onClick={() => onOpen?.(null)}>Close {openLabel}</button></div>
+          <ClassPanel name={open} label={openLabel} unit={unit} onUnit={setLifeUnit}
                       onChanged={() => getPositionClasses().then((d) => setClasses(d.classes))} />
           <section className="card">
             <div className="maint-head">
-              <h2>{open}: pooled life data{unit !== "days" ? ` in ${unit}` : ""}</h2>
+              <h2>{openLabel}: pooled life data{unit !== "days" ? ` in ${unit}` : ""}</h2>
               {data && <span className="lib-date">{data.failures} failures · {data.suspensions} suspensions
                 {data.uncertain ? (data.unit ? ` · ${data.uncertain} failed between readings (fitted as ranges)`
                   : ` · ${data.uncertain} with dates known only roughly (fitted as ranges)`) : ""}
@@ -477,7 +483,8 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
   );
 }
 
-function ClassPanel({ name, unit = "days", onUnit, onChanged }) {
+// `name`: the class's key (what the reads take); `label`: the class as shown.
+function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
   const [c, setC] = useState(null);
   const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "" });
   const [distribution, setDistribution] = useState("weibull");
@@ -511,7 +518,7 @@ function ClassPanel({ name, unit = "days", onUnit, onChanged }) {
   return (
     <>
       <section className="card">
-        <div className="maint-head"><h2>{name}: non-repairable model and costs</h2></div>
+        <div className="maint-head"><h2>{label}: non-repairable model and costs</h2></div>
         {error && <div className="card error">{error}</div>}
         <div className="rcm-form">
           <Field label="A planned replacement costs"><input type="number" inputMode="decimal" min="0" step="any" value={costs.planned_cost}
@@ -549,19 +556,19 @@ function ClassPanel({ name, unit = "days", onUnit, onChanged }) {
         )}
         {made !== null && <p className="lib-date">{made ? `${made} change${made === 1 ? "" : "s"} proposed.` : "No changes to propose (no scheduled tasks here, or they already match)."}</p>}
       </section>
-      {model && <ForecastCard key={model.model_id} name={name} />}
+      {model && <ForecastCard key={model.model_id} name={name} label={label} />}
       <Proposals proposals={c.proposals} onDecided={load} />
       {model && c.costs?.planned_cost != null && c.costs?.failure_cost != null
-        && <EconomicsCard key={model.model_id} name={name} modelUnit={model.unit || "days"} />}
-      <ReplacementCostCard name={name} cost={c.replacement_cost} onSaved={(d) => { setC(d); onChanged?.(); }} />
-      <DocumentsCard title={`${name}: documents`} documents={c.documents} target={{ position_class: name }} onChanged={load} />
+        && <EconomicsCard key={model.model_id} name={name} label={label} modelUnit={model.unit || "days"} />}
+      <ReplacementCostCard name={name} label={label} cost={c.replacement_cost} onSaved={(d) => { setC(d); onChanged?.(); }} />
+      <DocumentsCard title={`${label}: documents`} documents={c.documents} target={{ position_class: name }} onChanged={load} />
     </>
   );
 }
 
 // What an item doing this class's job costs to replace: the default for items with
 // no replacement cost of their own (for renewal planning).
-function ReplacementCostCard({ name, cost, onSaved }) {
+function ReplacementCostCard({ name, label = name, cost, onSaved }) {
   const [f, setF] = useState({ amount: cost?.amount ?? "", currency: cost?.currency || "", source: cost?.source || "",
     as_of: cost?.as_of || "" });
   const [busy, setBusy] = useState(false);
@@ -573,7 +580,7 @@ function ReplacementCostCard({ name, cost, onSaved }) {
   };
   return (
     <section className="card">
-      <div className="maint-head"><h2>{name}: replacement cost</h2>
+      <div className="maint-head"><h2>{label}: replacement cost</h2>
         <span className="lib-date">{cost ? costText(cost, fmtDate) : "not set"}</span></div>
       {error && <div className="card error">{error}</div>}
       <p className="lib-date">The default for items in these positions with no replacement cost of their own.</p>
@@ -589,7 +596,7 @@ function ReplacementCostCard({ name, cost, onSaved }) {
   );
 }
 
-function EconomicsCard({ name, modelUnit = "days" }) {
+function EconomicsCard({ name, label = name, modelUnit = "days" }) {
   const byUse = modelUnit !== "days";
   const [data, setData] = useState(null);
   const [whatIf, setWhatIf] = useState("");
@@ -606,7 +613,7 @@ function EconomicsCard({ name, modelUnit = "days" }) {
   const money = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
   return (
     <section className="card">
-      <div className="maint-head"><h2>{name}: what the plan costs</h2></div>
+      <div className="maint-head"><h2>{label}: what the plan costs</h2></div>
       {error && <div className="card error">{error}</div>}
       <div className="maint-row" style={{ marginTop: 0 }}>
         <span className="lib-date">What if every</span>
@@ -645,7 +652,7 @@ function EconomicsCard({ name, modelUnit = "days" }) {
 
 // The class's failure forecast from the register (#407): the answer first, then
 // the periods, the positions most at risk, the spares and the budget.
-function ForecastCard({ name }) {
+function ForecastCard({ name, label = name }) {
   const [period, setPeriod] = useState("month");
   const [periods, setPeriods] = useState(12);
   const [data, setData] = useState(null);
@@ -668,7 +675,7 @@ function ForecastCard({ name }) {
   const budget = data?.budget;
   return (
     <section className="card" data-testid="class-forecast">
-      <div className="maint-head"><h2>{name}: failure forecast</h2></div>
+      <div className="maint-head"><h2>{label}: failure forecast</h2></div>
       <div className="maint-row" style={{ marginTop: 0 }}>
         <span className="lib-date">Next</span>
         <input type="number" inputMode="numeric" min="1" max={most} value={periods} style={{ width: "4.5rem" }}

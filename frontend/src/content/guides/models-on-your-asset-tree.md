@@ -206,7 +206,9 @@ off-line (its LSA), what it costs each time and its work package. The tasks
 are read each time the diagram is shown or calculated; nothing is copied into
 the diagram. In the builder's **Maintenance plan** those rows are read only,
 with **Edit in the tree**; a position with no tasks runs to failure, with
-**Add a task in the tree**. The diagram keeps only its own settings: how much of the time a block runs (**Runs**), crew
+**Add a task in the tree**. A task due by use on a running-hours or flight-hours
+counter is counted in running hours on the diagram, a replacement or a proof
+test alike, and put on the calendar through the block's **Runs**. The diagram keeps only its own settings: how much of the time a block runs (**Runs**), crew
 priority, and under **More** what a task can't say (an on-condition
 replacement's threshold, cost and time off-line). What nothing says (a cost, a
 repair time) is left blank and flagged. A saved simulation run before a task

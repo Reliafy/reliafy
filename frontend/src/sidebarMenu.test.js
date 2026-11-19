@@ -14,7 +14,7 @@ test("entries with sub-pages toggle; the rest are links", () => {
   const live = liveEntries(ALL);
   const top = Object.fromEntries(live.map((e) => [e.id, toggles(e)]));
   assert.deepEqual(top, {
-    home: false, products: false, assets: false, items: false, maintenance: true,
+    home: false, products: false, assets: false, maintenance: true,
     modelling: true, libraries: true, decisions: true, reports: false, agent: false,
   });
   const second = (id) => Object.fromEntries(find(live, id).entries.map((e) => [e.id, toggles(e)]));
@@ -35,7 +35,7 @@ test("a group lists its entries; an entry lists exactly its children, never its 
   // Libraries opens on All libraries and lists it first.
   assert.deepEqual(labels(subItems(find(live, "libraries"))), ["All libraries", "Data", "Models"]);
   assert.deepEqual(labels(subItems(find(live, "strategy"))), ["Optimal replacement", "Compare two models", "Failure finding",
-    "Test planning"]);
+    "Overhaul and replace", "Test planning"]);
   // Maintenance opens on Orders and lists it first, then its other sub-pages.
   assert.deepEqual(labels(subItems(find(live, "maintenance"))), ["Orders", "Packages", "RCM studies", "Requests"]);
   assert.equal(subItems(find(live, "maintenance"))[0].to, "/maintenance/work-orders");
@@ -49,7 +49,7 @@ test("a group lists its entries; an entry lists exactly its children, never its 
     }
   }
   // No sub-pages, nothing.
-  for (const id of ["home", "assets", "items", "data", "forecasts", "reports"]) assert.deepEqual(subItems(find(live, id)), [], id);
+  for (const id of ["home", "assets", "data", "forecasts", "reports"]) assert.deepEqual(subItems(find(live, id)), [], id);
 });
 
 test("an entry whose landing page isn't available opens on its first child; with nothing left under it, it's a link", () => {

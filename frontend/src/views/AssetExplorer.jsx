@@ -23,6 +23,9 @@ import {
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import RedundancyPane from "../components/RedundancyPane.jsx";
+import StrategyPane from "../components/StrategyPane.jsx";
+import { SAVED_EVENT } from "../components/SaveAnalysisButton.jsx";
+import { isStrategyRow, strategiesByLink } from "../positionStrategy.js";
 import OperatingPlanPane from "../components/OperatingPlanPane.jsx";
 import TreeSheetPane from "../components/TreeSheetPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
@@ -35,6 +38,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import {
   createPositionMission, deleteMission, getMission, updateMission, calculateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getWorkspaceRcm, getPositionRcm, getRcmOptions,
   hasFmeaExcel, linkPositionModel, restoreRcm, restoreTree, updateMaintenanceLocation, updateMaintenancePosition,
+  listStrategyAnalyses,
 } from "../api.js";
 import MergeAssetPane from "../components/MergeAssetPane.jsx";
 import { mergeSourceKind, separateChange, separateConfirm } from "../assetMerge.js";
@@ -111,7 +115,9 @@ import {
 } from "../products.js";
 import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
+import LoadFailed from "../components/LoadFailed.jsx";
 import "./AssetExplorer.css";
+import { classFields, classKey } from "../positionClass.js";
 
 // The new-position (or new-location) dialog opened from the tree's last row:
 // at the top level, whatever row is picked.
@@ -532,13 +538,30 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const meas = useTreeMeasurements({ on: measOn && !!data, display: data ? base : null });
   // The Modelling tab: every model attached to a position.
   const pmodels = useTreeModels({ on: modelsOn && !!data, within: root });
+  // The strategies saved for models on positions (a model's Strategy row shows once it has one): read
+  // with the tab, and again when one is saved. Only rows of this tree's models are grafted, so no
+  // other asset's strategy shows here.
+  const [strategyList, setStrategyList] = useState(null);
+  const [strategyTick, setStrategyTick] = useState(0);
+  useEffect(() => {
+    const onSaved = () => setStrategyTick((t) => t + 1);
+    window.addEventListener(SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(SAVED_EVENT, onSaved);
+  }, []);
+  useEffect(() => {
+    if (!modelsOn || !data) return undefined;
+    let live = true;
+    listStrategyAnalyses().then((d) => live && setStrategyList(d.analyses || [])).catch(() => live && setStrategyList([]));
+    return () => { live = false; };
+  }, [modelsOn, !!data, strategyTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const strategies = useMemo(() => strategiesByLink(strategyList || []), [strategyList]);
   // The Missions tab: every position's RBDs and their missions.
   const pmissions = useTreeMissions({ on: missionsOn && !!data, within: root });
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
-      : modelsOn && pmodels.links ? graftModels(base, pmodels.links)
+      : modelsOn && pmodels.links ? graftModels(base, pmodels.links, strategies)
         : missionsOn && pmissions.links ? graftMissions(base, pmissions.links, pmissions.hasModel, pmissions.otherModel)
-          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel]);
+          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, strategies, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -714,6 +737,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const more = openForModels(display, selected.positions);
     setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
   }, [modelsOn, pmodels.links, display, whole, selected.positions]);
+  // A model with a Strategy (one saved for it here) shows it: the picked position's model rows that
+  // have one open when the strategies are read (and again after a save).
+  useLayoutEffect(() => {
+    if (!modelsOn || !strategyList) return;
+    const p = display.rows.get(selected.positions);
+    const more = (p?.kids || []).filter((k) => isModelRow(display.rows.get(k)) && (display.rows.get(k)?.kids || []).length);
+    if (more.length) setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
+  }, [modelsOn, strategyList, pmodels.links, selected.positions]); // eslint-disable-line react-hooks/exhaustive-deps
   // Opening the Missions tab opens the position picked, so its missions show.
   const openedMissions = useRef(false);
   useLayoutEffect(() => {
@@ -941,19 +972,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     : (measOn || tab === "summary") && paneQuery?.kind === "plan" ? paneQuery : null;
   const paneRow = paneAt && whole.rows.has(paneAt.id) ? whole.rows.get(paneAt.id) : null;
   const panePosition = paneRow?.type === "pos"
-    ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", position_class: paneRow.ref.position_class || "" } : null;
+    ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", ...classFields(paneRow.ref) } : null;
   const paneKind = panePosition ? paneAt.kind : null;
   // An address for a position that isn't in the tree (deleted, or another tree): the table as usual.
   useEffect(() => {
     if (paneAt && data && !panePosition) setQuery_((q) => { for (const k of PANE_PARAMS) q.delete(k); });
   }, [paneAt?.id, data, !!panePosition]); // eslint-disable-line react-hooks/exhaustive-deps
-  const openPane = (kind, position, { start = {}, link = null, query = null, rbd = null, built = null, from = null } = {}) => {
+  const openPane = (kind, position, { start = {}, link = null, query = null, rbd = null, built = null, from = null, how = null } = {}) => {
     paneDirty.current = false;
     setPaneSeed((s) => ({ kind, id: position.id, start, link, built, n: (s?.n || 0) + 1 }));
     setPanel(false);
     if (selPos !== position.id && display.rows.has(position.id)) reveal(position.id);
     setQuery_((q) => {
-      setPaneQuery(q, kind, position.id, { rbd, from });
+      setPaneQuery(q, kind, position.id, { rbd, from, how });
       query?.(q);
     });
     setTimeout(() => paneHeading.current?.focus({ preventScroll: true }), 0);
@@ -1090,6 +1121,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       closePane({ focusRow: false });
     }
     pick(key, opts);
+    // A model's Strategy row: a click opens its pane (it has no details of its own).
+    if (modelsOn && opts.go && isStrategyRow(r) && !(paneKind === "strategy" && paneAt?.strategy === r.ref.link.id)) {
+      openStrategy(r.ref.link);
+    }
   };
 
   // Adding from a row's menu, the heading or the details: the new row is
@@ -1449,7 +1484,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     hasInside: insideOf(pid).length > 0 });
   const attachAt = (pid, id) => {
     const rr = whole.rows.get(pid);
-    const position = { id: pid, name: rr?.ref.name || "(no name)", position_class: rr?.ref.position_class || "" };
+    const position = { id: pid, name: rr?.ref.name || "(no name)", ...classFields(rr?.ref) };
     if (id === "model-attach-fit-life") return openFit(position);
     if (id === "model-attach-predict") return openPredict(position);
     if (id === "model-refresh-predict") return openPredict(position, predictionOf(pid));
@@ -1466,8 +1501,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
   // A model row's details spread across the table (a double-click, Open, Enter), as a measurement row's.
   // An RBD row opens the builder in the table area instead (opensInPane).
+  // A model's Strategy (its row, or Add a strategy… on the model's row): the pane beside the tree.
+  const openStrategy = async (link, how = null) => {
+    if (!link || !(await leavePane())) return;
+    const pr = whole.rows.get(link.position_id);
+    openPane("strategy", { id: link.position_id, name: pr?.ref.name || "(no name)" }, { rbd: link.id, how });
+  };
   const openModel = (key) => {
-    const link = whole.rows.get(key)?.ref?.link;
+    const row = whole.rows.get(key);
+    if (isStrategyRow(row)) return openStrategy(row.ref.link);
+    const link = row?.ref?.link;
     if (opensInPane(link)) {
       const pr = whole.rows.get(link.position_id);
       return openRbd({ id: link.position_id, name: pr?.ref.name || "(no name)" }, link.model_id);
@@ -1479,12 +1522,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const modelAction = (r, id) => {
     const link = r.ref.link;
     const position = { id: r.ref.position_id, name: whole.rows.get(r.ref.position_id)?.ref.name || "(no name)" };
-    if (id === "model-open") openModel(r.key);
+    if (id === "model-strategy-add" || id === "model-strategy-open") openStrategy(link);
+    else if (id === "model-open") openModel(r.key);
     else if (id === "model-rbd-pane") openRbd(position, link.model_id);
     else if (id === "model-page" && link.model?.path) leavePane().then((ok) => ok && navigate(link.model.path));
     else if (id === "model-refit") {
       const scope = link.source?.scope;
-      openFit({ ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" },
+      openFit({ ...position, ...classFields(whole.rows.get(r.ref.position_id)?.ref) },
         { link, start: { data: scope === "class" ? "class" : "position" } });
     }
     else if (id === "model-predict") openPredict(position, link);
@@ -1498,7 +1542,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       }, (e) => say(e.message, "error"));
     }
     else if (id === "model-bayes") {
-      const withClass = { ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" };
+      const withClass = { ...position, ...classFields(whole.rows.get(r.ref.position_id)?.ref) };
       // The fit pane with this row's model as the prior: a Bayesian row takes its new failures (its own prior kept).
       openFit(withClass, { ...priorFrom(link), from: link.id });
     }
@@ -1618,7 +1662,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const missionAction = (r, id) => {
     const pid = r.type === "pos" ? r.key : r.ref.position_id;
     const pr = whole.rows.get(pid);
-    const position = { id: pid, name: pr?.ref.name || "(no name)", position_class: pr?.ref.position_class || "" };
+    const position = { id: pid, name: pr?.ref.name || "(no name)", ...classFields(pr?.ref) };
     if (id === "mission-open" || id === "mission-phase-open") return openMissionRow(r);
     // Under a phase: its covariates (set in their details) and node status rules.
     if (id === "mission-rule-add") {
@@ -1712,7 +1756,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         // Two levels (Derryn, 9 Nov 2026): Life model ›, RBD ›, Prediction ›, a line, then only the
         // position items that make sense here (Rename…, Focus ›, Pin this branch).
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
-        return [...modelGroups(r.key, r.ref.position_class), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
+        return [...modelGroups(r.key, classKey(r.ref)), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
       }
       if (measOn || modelsOn) {
         if (isMeasRow(r)) return measRowActions(r);
@@ -2172,10 +2216,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <p>Reliafy Maintenance (positions, locations and work orders) isn't on for this account yet.</p>
     </div>
   ) : error ? (
-    <div className="card error td-error">
-      <p>The tree didn't load: {error.text} Your data is safe; check your connection and try again.</p>
-      <button type="button" className="secondary" onClick={load}>Try again</button>
-    </div>
+    <LoadFailed className="td-error" onRetry={load}
+                error={`The tree didn't load: ${error.text} Your data is safe; check your connection and try again.`} />
   ) : !data ? (
     <div className="card empty">Loading…</div>
   ) : nothing ? (
@@ -2245,7 +2287,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     // ?fit_prior_cov=<JSON>: the record's covariates given on the Library page.
     let covariates = {};
     try { covariates = JSON.parse(params.get("fit_prior_cov") || "{}") || {}; } catch { covariates = {}; }
-    openFit({ id: posRow.key, name: posRow.ref.name || "(no name)", position_class: posRow.ref.position_class || "" },
+    openFit({ id: posRow.key, name: posRow.ref.name || "(no name)", ...classFields(posRow.ref) },
       { start: { method: "bayes", priorKind: "library", recordId: fitPrior, covariates },
         query: (q) => { q.delete("fit_prior"); q.delete("fit_prior_cov"); } });
   }, [fitPrior, data, modelsOn, posRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2416,7 +2458,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const modelPosition = posRow?.type === "pos" ? { id: posRow.key, name: posRow.ref.name || "(no name)" } : null;
   // The heading's "…": the same three groups (two levels), a line, Columns… and the row picked's own.
   const modelMenu = modelsOn && modelPosition ? [
-    ...modelGroups(modelPosition.id, posRow.ref.position_class).map((g) => ({
+    ...modelGroups(modelPosition.id, classKey(posRow.ref)).map((g) => ({
       ...g, items: g.items.map((it) => ({ ...it, title: it.reason, onSelect: () => attachAt(modelPosition.id, it.id) })),
     })),
     { separator: true },
@@ -2604,7 +2646,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     </div>
   ) : null;
   // The Modelling tab with a model row picked: its details beside the table (a sheet on a phone).
-  const modelRow = modelsOn && panel && isModelRow(focusRow) ? focusRow : null;
+  const modelRow = modelsOn && panel && isModelRow(focusRow) && !isStrategyRow(focusRow) ? focusRow : null;
   const modelSide = modelRow ? (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
@@ -2684,6 +2726,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                      removeMission(panePosition.id, rbdId, m, !!ref?.rbd?.mission_rbd).then((gone) => gone && closePane());
                    }} />
     </div>
+  ) : paneKind === "strategy" ? (
+    // Waits for the models, so the row's link (its model, the tools that fit) is known.
+    (pmodels.links || []).find((l) => l.id === paneAt.strategy && l.position_id === panePosition.id) ? (
+      <div className="rw tt-side">
+        <StrategyPane key={paneAt.strategy} position={{ ...panePosition, root: root || null }} phone={phone} headingRef={paneHeading}
+                      link={(pmodels.links || []).find((l) => l.id === paneAt.strategy)} saved={strategies[paneAt.strategy] || []}
+                      how={paneAt.how || null} onClose={() => closePane()}
+                      onHow={(h) => setQuery_((q) => { setPaneQuery(q, "strategy", panePosition.id, { rbd: paneAt.strategy, how: h }); })} />
+      </div>
+    ) : null
   ) : paneKind === "redundancy" ? (
     <div className="rw tt-side">
       <RedundancyPane key={`${panePosition.id}:${seed?.n || 0}`} position={panePosition} phone={phone} headingRef={paneHeading}

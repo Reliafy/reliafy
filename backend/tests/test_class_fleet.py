@@ -102,7 +102,8 @@ def test_members_are_the_positions_whose_item_is_of_the_class_or_inside_it(m, db
     assert out["horizons"] == {"labels": ["30 days", "90 days", "365 days"], "values": [30.0, 90.0, 365.0]}
     assert [r["position"]["name"] for r in out["members"]] == ["Pump A", "Pump B", "Pump C"] and out["positions"] == 3
     rows = _by_name(out)
-    assert rows["Pump A"]["position"] == {"id": a, "name": "Pump A", "tag": "PUMP-A", "position_class": "Feed pump"}
+    assert rows["Pump A"]["position"] == {"id": a, "name": "Pump A", "tag": "PUMP-A", "position_class": "Feed pump",
+                                        "class_key": "Feed pump"}
     assert rows["Pump A"]["item"] == {"id": a_item, "name": "Pump A unit", "serial": "S-A"}
     assert rows["Pump A"]["age"] == 300.0 and rows["Pump A"]["in_service"] == _day(m, 300)
     assert rows["Pump A"]["item_class"]["name"] == "Centrifugal pump" and rows["Pump B"]["item_class"]["name"] == "Pump"
@@ -233,7 +234,8 @@ def test_one_position_whatever_its_item_class(m, db):
     got, want = one(a), _fleet(m, db, pump, a)
     assert got["member"] == want["member"] and got["model"] == want["model"]
     assert got["item_class"]["name"] == "Centrifugal pump" and got["why"] is None
-    assert got["position"] == {"id": a, "name": "Pump A", "tag": "PUMP-A", "position_class": "Feed pump"}
+    assert got["position"] == {"id": a, "name": "Pump A", "tag": "PUMP-A", "position_class": "Feed pump",
+                                        "class_key": "Feed pump"}
     assert (got["today"], got["age_unit"], got["horizons"]) == (want["today"], want["age_unit"], want["horizons"])
     # An item with no class is scored the same way: the class was never part of the sums.
     got = one(b)
@@ -559,6 +561,10 @@ def test_the_fleet_over_rest(client):
     mine = client.get(f"/api/maintenance/positions/{a}/condition")
     assert mine.status_code == 200, mine.text
     assert mine.json()["member"] == one["member"] and mine.json()["model"]["id"] == JOINT
+    # The Summary badge's read (curves=false): the same risk numbers, without the curves.
+    lean = client.get(f"/api/maintenance/positions/{a}/condition", params={"curves": "false"}).json()
+    assert lean["member"]["risk"] == mine.json()["member"]["risk"] and lean["member"]["scored"]
+    assert "unit" not in lean["member"] and lean["horizons"] == mine.json()["horizons"]
     plain = client.get(f"/api/maintenance/positions/{b}/condition").json()
     assert plain["item_class"] is None and plain["model"] is None and plain["member"]["item"]["name"] == "Unclassed"
     assert client.get("/api/maintenance/positions/nope/condition").status_code == 404

@@ -30,6 +30,12 @@ Events (new types only; older logs replay unchanged):
   another saved model of the same kind (or the same one), with the name and note it
   carries from then on. The link itself and what it is for stay as they were.
 
+* ``position.model_rate_set {id, usage_rate, on}`` (Nov 2026): a row on a life on two clocks given its
+  own usage rate (``usage_rate``: its second clock per unit of the first, starts per hour or landings
+  per flight hour; null: back to the operating plan's, or the fleet's). Without one the rate comes
+  from the position's operating plan when the second clock is starts or runs (a plan counts runs),
+  else from the fleet's typical rate in the data.
+
 An RBD is a row too (``model_type`` and ``role`` ``rbd``, Nov 2026: "every position can
 either have a life model, an RBD, or a prediction"): a saved diagram, built from the
 positions inside (each block the child's model in use, else a flagged placeholder) or
@@ -98,7 +104,12 @@ def _model_relinked(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"model_id": p["model_id"], "name": p["name"], "note": p["note"]})
 
 
+def _model_rate_set(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"usage_rate": p.get("usage_rate")})
+
+
 PROJECTORS = {
+    "position.model_rate_set": _model_rate_set,
     "position.model_linked": _model_linked,
     "position.model_unlinked": _model_unlinked,
     "position.model_in_use_set": _model_in_use_set,
@@ -131,7 +142,7 @@ class PositionModelOps:
         return {"id": link["id"], "position_id": link.get("position_id"), "model_type": link.get("model_type"),
                 "model_id": link.get("model_id"), "role": link.get("role"), "name": link.get("name") or "",
                 "note": link.get("note") or "", "source": link.get("source") or None, "failure_modes": modes,
-                "linked_on": link.get("linked_on")}
+                "linked_on": link.get("linked_on"), "usage_rate": link.get("usage_rate")}
 
     def position_models(self, position_id: str) -> list[dict]:
         """The models attached to a position, oldest first, the one in use marked (``in_use``)."""
@@ -197,12 +208,13 @@ class PositionModelOps:
         """The position class's fitted model ({position_class, model_id, ...}), or None."""
         sv = _sv()
         p = self._get(position_id, "Position")
-        name = (p.get("position_class") or "").strip()
+        name = self._class_key(p)
         if not name:
             return None
         node = self.s.node(self.org, sv.class_id(self.org, name)) or {}
         model = node.get("model")
-        return {"position_class": node.get("name") or name, **model} if model and model.get("model_id") else None
+        return {"position_class": self._class_label(node.get("name") or name), "class_key": node.get("name") or name,
+                **model} if model and model.get("model_id") else None
 
     def class_models(self) -> dict:
         """Each position class with a fitted model: {class name: {model_id, fitted_on,
@@ -300,6 +312,45 @@ class PositionModelOps:
             "name": sv._text(name, "model's name", required=True)[:sv.SHORT_TEXT],
             "note": sv._text(note, "note")})
         return self.model_link(link_id)
+
+    def set_link_usage_rate(self, link_id: str, usage_rate) -> dict:
+        """A row on a life on two clocks given its own usage rate (its second clock per unit of
+        the first), or (``usage_rate`` None) put back on the operating plan's rate (or the fleet's)."""
+        from backend import two_clocks
+
+        sv = _sv()
+        link = self._get(link_id, "ModelLink")
+        if link.get("removed"):
+            raise sv.Invalid("That model was taken off its position.")
+        rate = None
+        if usage_rate not in (None, ""):
+            try:
+                rate = two_clocks.check_rate(usage_rate)
+            except two_clocks.TwoClockError as exc:
+                raise sv.Invalid(str(exc)) from None
+        self._emit("position.model_rate_set", {"id": link_id, "usage_rate": rate})
+        return self.model_link(link_id)
+
+    def plan_usage_rate(self, position_id: str) -> dict | None:
+        """Starts per running hour from the position's operating plan (its own, or the one
+        it runs to), over the next 12 months, by RePyability's ``UsageForecast.rate``:
+        {rate, text, holder}. None without a plan, or a plan that says nothing of starts
+        (a rate of hours a day) or gives no hours."""
+        from datetime import date, timedelta
+
+        duty = self.duty_of(position_id)
+        if not duty:
+            return None
+        start = date.fromisoformat(self.today())
+        try:
+            usage = duty["plan"].forecast(start, start + timedelta(days=365))
+            rate = float(usage.rate("starts", per="hours"))
+        except (KeyError, ValueError, TypeError):
+            return None
+        holder = self.s.node(self.org, duty["holder"]) if duty.get("holder") else None
+        where = "" if not holder or holder.get("id") == position_id else f" of {holder.get('name', '')}"
+        return {"rate": rate, "plan": duty.get("text") or "", "holder": duty.get("holder"),
+                "text": f"From the operating plan{where} ({duty.get('text') or 'as planned'}) over the next 12 months."}
 
     def _copy_model_links(self, mapping: dict) -> int:
         """A built item's positions take their design positions' models (role design),
@@ -478,6 +529,24 @@ def summary(model_type: str, doc) -> dict:
                                if _num(c.get("value")) is not None)
                 out["numbers"].append({"id": "reference", "label": "at", "text": f"the fit's average covariates ({at})"})
             out["quality"] = _quality(failed, "life", warning=r.get("fit_warning"))
+            return out
+        if kind == "two_clock":
+            # Two clocks: what one unit of the second clock costs, and the life at the fleet's typical rate
+            # (the row's own rate, from the position's operating plan or set by hand, is in the detail).
+            from backend import two_clocks
+
+            words = two_clocks.results_words(r)
+            k = params.get("k") or {}
+            out["kind"] = r.get("distribution") or "Two clocks"
+            if k.get("value") is not None:
+                lo, hi = _ci(k)
+                label = f"{words['first_word'][:1].upper()}{words['first_word'][1:]} per {words['second_one']}"
+                out["numbers"].append(_number("k", label, k.get("value"), lo, hi, unit))
+            row = next((x for x in r.get("rate_table") or [] if x.get("label") == "Typical"), None)
+            if row and row.get("b10") is not None:
+                out["numbers"].append(_number("b10", f"B10 life at {row.get('rate_words')}", row["b10"],
+                                              row.get("b10_lower"), None, unit, "lower"))
+            out["quality"] = _quality(failed, "life")
             return out
         if r.get("method") == "bayesian_update":
             # Posterior medians with 90% credible intervals (bayes_life.py), never confidence bounds.
@@ -658,14 +727,87 @@ def describe(m, db, owners, hidden, links: list[dict], age: float | None = None)
             text = rbd_source(link, model)
         if model and model.get("covariate_words") and link.get("role") in ("assigned", "design"):
             text = f"{text} ({model['covariate_words']})"
-        if model and link.get("role") == "prediction":
+        if model and is_prediction(link):
+            # A parts count (or a built item's copy of its design's): said as one, with what it
+            # covers in the headline and its figures rounded as the parts count rounds them (W4).
+            pred = prediction_doc_of(db, owners, link, doc)
             model = {**model, "kind": "Prediction (parts count)", "family": "life",
+                     "numbers": [_round_number(n) for n in model.get("numbers") or []],
                      "quality": {"word": "Predicted", "tone": "neutral",
                                  "why": "A handbook parts count: no failure data behind it, and no bounds."}}
+            covers = prediction_covers((pred.results or {}) if pred is not None else {})
+            if covers:
+                model["covers"] = covers
         out.append({**link, "model": model,
                     "source_text": text, "stale": stale(m, link),
                     "used_by": {"decisions": used, "rbds": rbds.get(link["model_id"], [])}})
     return out
+
+
+def is_prediction(link: dict) -> bool:
+    """A parts-count row: the position's own (role prediction), or a built item's copy of its
+    design's (role design, from a prediction)."""
+    return link.get("role") == "prediction" or (
+        link.get("role") == "design" and (link.get("source") or {}).get("design_role") == "prediction")
+
+
+def prediction_doc_of(db, owners, link: dict, model_doc=None):
+    """The saved parts count behind a parts-count row (its own link names it; a built item's copy
+    reads it from the model), or None."""
+    from backend.services import reliability_prediction as rp
+
+    pid = (link.get("source") or {}).get("prediction_id") or (
+        (getattr(model_doc, "results", None) or {}).get("prediction_id") if model_doc is not None else None)
+    return rp.get_prediction(db, pid, owners) if pid else None
+
+
+def _sig3(x: float) -> float:
+    import math
+
+    if not x:
+        return x
+    return round(x, 2 - int(math.floor(math.log10(abs(x)))))
+
+
+def _round_number(n: dict) -> dict:
+    """A parts count's figure shown to three significant figures (``text``), as its own page
+    writes it, so one page never shows 5,768 and 5,770 for the same MTBF."""
+    if not isinstance(n, dict) or n.get("text") or not isinstance(n.get("value"), (int, float)):
+        return n
+    v = _sig3(float(n["value"]))
+    unit = str(n.get("unit") or "").lower()
+    shown = f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.3g}"
+    return {**n, "text": f"{shown}{(' ' + unit) if unit else ''}"}  # the value itself stays exact
+
+
+def prediction_covers(results: dict) -> dict | None:
+    """What a parts count leaves out, for its headline: {short ("electronics only: 3 lines left
+    out"), words (with the lines' names), left_out: [{name, quantity, why}]}, or None when it
+    covers its whole parts list. Why: "MTBF 5,768 h · All failures of this position" over a
+    count that left out the battery, propellers and airframe overstated what it covers."""
+    def q(ln):
+        n = ln.get("quantity") or 1
+        return ln.get("name") or ln.get("reference") or "a line", n
+
+    out = []
+    for key, why in (("excluded", "not an electronic part"), ("unassigned", "no handbook part type"),
+                     ("needs_conditions", "needs its conditions"), ("left_out", "left out by hand")):
+        for ln in results.get(key) or []:
+            name, n = q(ln)
+            out.append({"name": name, "quantity": n, "why": why})
+    if not out:
+        return None
+    k = len(out)
+    electronic = any(x["why"] == "not an electronic part" for x in out)
+    lead = "electronics only" if electronic else "part of the parts list"
+    short = f"{lead}: {k} line{'s' if k != 1 else ''} left out"
+    names = "; ".join(_qty_name(x) for x in out[:8])
+    more = f" and {k - 8} more" if k > 8 else ""
+    return {"short": short, "words": f"{short[0].upper()}{short[1:]} ({names}{more})", "left_out": out}
+
+
+def _qty_name(x: dict) -> str:
+    return x["name"] if x["quantity"] == 1 else f"{x['name']} ×{x['quantity']:g}"
 
 
 def _placeholders(graph: dict) -> list[str]:
@@ -683,16 +825,30 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
     and its placeholders."""
     from backend.services import rbds as rbds_service
 
+    from backend.services import rbd_placeholders
+
     graph = doc.graph or {}
     unit = graph.get("unit") or ""
     blocks = [n for n in graph.get("nodes") or [] if n.get("type") not in ("input", "output")]
-    ph = _placeholders(graph)
+    # Placeholders counted through every sub-system (W2, 19 Nov 2026): a diagram of six
+    # sub-systems whose 27 blocks are all placeholders says "27 of 27", never "1 placeholder".
+    resolve_subsystem, _ = rbds_service.resolvers(db, owners)
+    t = rbd_placeholders.tally(graph, resolve_subsystem)
+    ph = list(t["names"])
+    most = rbd_placeholders.mostly(t)
     out = {"name": doc.name, "unit": unit, "family": "rbd", "kind": "RBD", "numbers": [], "trend": None,
-           "counts": {"blocks": len(blocks), "placeholders": len(ph)}, "placeholders": ph,
+           # blocks: the diagram's own; placeholders: basic blocks that are placeholders, at any depth.
+           "counts": {"blocks": len(blocks), "placeholders": t["placeholders"], "basic_blocks": t["basic"],
+                      "basic_placeholders": t["placeholders"], "nested": rbd_placeholders.nested(t)},
+           "placeholders": ph, "placeholder_blocks": rbd_placeholders.summary(t),
            "path": f"/systems/b/{doc.id}", "repairable": bool(graph.get("repairable")),
-           "quality": ({"word": f"{len(ph)} placeholder{'s' if len(ph) != 1 else ''}", "tone": "warning",
-                        "why": f"Placeholder models stand in for {', '.join(ph)}: the figures aren't real until they "
-                               "have models."} if ph else {"word": "", "tone": "neutral", "why": ""})}
+           "quality": ({"word": f"{t['placeholders']:,} of {t['basic']:,} placeholders" if rbd_placeholders.nested(t)
+                        else f"{t['placeholders']} placeholder{'s' if t['placeholders'] != 1 else ''}",
+                        "tone": "danger" if most else "warning",
+                        "why": (f"{rbd_placeholders.words(t).capitalize()} ({rbd_placeholders.names_text(t)}): "
+                                + ("most of the answer rests on invented lives, so " if most else "")
+                                + "the figures aren't real until they have models.")}
+                       if ph else {"word": "", "tone": "neutral", "why": ""})}
     if graph.get("repairable"):
         out["numbers"].append({"id": "reference", "label": "", "text": "a repairable diagram: open it to simulate "
                                                                        "availability"})
@@ -728,8 +884,13 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
 def rbd_source(link: dict, model: dict | None) -> str:
     """An RBD row's Source: "Built from 5 positions inside · 2 placeholders" or "Linked: <name>"."""
     src = link.get("source") or {}
-    ph = len((model or {}).get("placeholders") or [])
-    tail = f" · {ph} placeholder{'s' if ph != 1 else ''}" if ph else ""
+    counts = (model or {}).get("counts") or {}
+    ph = counts.get("basic_placeholders", len((model or {}).get("placeholders") or []))
+    basic = counts.get("basic_blocks") or 0
+    if ph and basic > 1 and counts.get("nested"):
+        tail = f" · {ph:,} of {basic:,} basic blocks {'is a placeholder' if ph == 1 else 'are placeholders'}"
+    else:
+        tail = f" · {ph} placeholder{'s' if ph != 1 else ''}" if ph else ""
     if src.get("built_from") is not None:
         n = int(src["built_from"])
         return f"Built from {n} position{'s' if n != 1 else ''} inside{tail}"
@@ -747,7 +908,7 @@ def stale(m, link: dict) -> str | None:
     sv = _sv()
     try:
         if src.get("scope") == "class":
-            rows = m.class_life_data(src.get("class_name") or "")["rows"]
+            rows = m.class_life_data(src.get("class_key") or src.get("class_name") or "")["rows"]
         elif src.get("scope") == "position":
             rows = m.life_data(link["position_id"])
         else:
@@ -885,6 +1046,8 @@ def source_text(link: dict, position_name: str = "") -> str:
     if role == "bayesian":
         return src.get("label") or f"Bayesian update of {src.get('baseline') or 'a baseline'}"
     if role == "design":
+        if src.get("design_role") == "prediction":
+            return "From the product's design: its parts count"
         return "From the product's design"
     if role == "library":
         from backend.maintenance.library_models import source_text as library_source
@@ -908,13 +1071,14 @@ def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dic
     if link["model_type"] == "rbd":
         return {**row, "position": {"id": pos.get("id"), "name": pos.get("name", "")}, "params": [],
                 "curves": (row.get("model") or {}).get("curves"), "origin": "", "model_notes": "",
-                "blocks": rbd_blocks(m, link, doc) if doc is not None else [], "stress_note": None, "prediction": None}
+                "blocks": rbd_blocks(m, link, doc, _rbd_resolver(db, owners)) if doc is not None else [], "stress_note": None, "prediction": None}
     notes = ""
     if doc is not None:
         notes = str(((doc.spec or {}).get("notes")) or (doc.results or {}).get("notes") or "")
         if not isinstance(notes, str):
             notes = ""
     return {**row, "position": {"id": pos.get("id"), "name": pos.get("name", "")},
+            "two_clock": two_clock_detail(m, db, owners, link, doc),
             "source_text": row["source_text"],
             "params": _params(doc) if doc is not None else [],
             "curves": _curves(link["model_type"], doc, db, owners) if doc is not None else None,
@@ -925,7 +1089,64 @@ def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dic
                 "Shown as fitted. The stress (or covariates) at this position is set where the model is "
                 "used: an RBD block or a calculation." if (row.get("model") or {}).get("covariate_words")
                 else None),
-            "prediction": prediction_detail(db, owners, link) if link.get("role") == "prediction" else None}
+            "prediction": prediction_detail(db, owners, link, doc) if is_prediction(link) else None}
+
+
+def usage_rate_for(m, link: dict, doc) -> dict | None:
+    """The usage rate (second clock per unit of the first) a row on a life on two clocks uses,
+    and where it came from: the row's own (set by hand) first, then the position's operating plan
+    (only when the second clock is starts or runs: a plan counts runs, not landings or cycles),
+    then the fleet's typical rate in the data it was fitted to. {rate, source (set | plan | fleet),
+    text, plan (the plan's rate, when it applies), clocks (the words), plan_refused (a plan that
+    can't give this unit, in words)}; None for any other model."""
+    from backend import two_clocks
+
+    if doc is None or getattr(doc, "kind", "") != two_clocks.KIND:
+        return None
+    words = two_clocks.results_words(doc.results)
+    runs = words["second_word"].lower() in two_clocks.RUN_UNITS
+    plan = m.plan_usage_rate(link["position_id"]) if link.get("position_id") else None
+    refused = None
+    if plan is not None and not runs:
+        # The plan counts runs (its starts), so it can't say how many landings or cycles the unit makes.
+        refused = (f"The operating plan counts runs, not {words['second_word']}: set the {words['rate_unit']} "
+                   "here.")
+        plan = None
+    own = link.get("usage_rate")
+    base = {"clocks": words, "plan_refused": refused}
+    if own is not None:
+        return {**base, "rate": float(own), "source": "set", "plan": plan,
+                "text": "Set here by hand" + (f" (the operating plan gives {two_clocks.rate_words(plan['rate'], words)})."
+                                               if plan else ".")}
+    if plan is not None:
+        return {**base, "rate": plan["rate"], "source": "plan", "plan": plan, "text": plan["text"]}
+    typical = (doc.results or {}).get("default_rate")
+    lead = refused or (f"No operating plan here says how often it starts: set the {words['rate_unit']}." if runs
+                       else f"Set the {words['rate_unit']} this position sees.")
+    if typical is None:
+        return {**base, "rate": None, "source": None, "plan": None, "text": lead}
+    return {**base, "rate": float(typical), "source": "fleet", "plan": None,
+            "text": f"{lead} Until then this is the typical rate in the data it was fitted to."}
+
+
+def two_clock_detail(m, db, owners, link: dict, doc) -> dict | None:
+    """A row on a life on two clocks: the rate it uses and where from, and the life at it."""
+    from backend import two_clocks
+    from backend.services import models as models_service
+
+    rate = usage_rate_for(m, link, doc)
+    if rate is None:
+        return None
+    out = {"usage_rate": rate, "at_rate": None, "clocks": rate.get("clocks")}
+    if rate["rate"] is None:
+        return out
+    try:
+        live = models_service.two_clock_live(db, doc, owners)
+        out["at_rate"] = two_clocks.at_rate(live, rate["rate"], (doc.results or {}).get("unit") or "",
+                                            {"kind": rate["source"], "text": rate["text"]})
+    except Exception:  # noqa: BLE001 - the row still shows; the life waits for a working model
+        out["at_rate"] = None
+    return out
 
 
 def link_saved(m, db, owners, hidden, position_id: str, model_type: str, model_id: str, failure_mode_ids=None,
@@ -941,6 +1162,11 @@ def link_saved(m, db, owners, hidden, position_id: str, model_type: str, model_i
                                  None, replace_link_id)
 
 
+def cm_label(m, p: dict) -> str:
+    """A position's class as shown (product › … › position for a design class)."""
+    return m._class_label(m._class_key(p))
+
+
 def link_from_class(m, db, owners, hidden, position_id: str, failure_mode_ids=None, note: str = "",
                     replace_link_id: str | None = None) -> dict:
     """Attach the position class's fitted model to the position."""
@@ -948,14 +1174,14 @@ def link_from_class(m, db, owners, hidden, position_id: str, failure_mode_ids=No
     p = m._get(position_id, "Position")
     cm = m.class_model_of(position_id)
     if cm is None:
-        if not (p.get("position_class") or "").strip():
+        if not m._class_key(p):
             raise sv.Invalid(f"{p['name']} has no position class: set one, or assign a saved model.")
-        raise sv.Invalid(f"The class {p['position_class']} has no fitted model yet: fit one from its pooled history "
+        raise sv.Invalid(f"The class {cm_label(m, p)} has no fitted model yet: fit one from its pooled history "
                          "(Fit from history…, or maintenance reliability.fit_class_model).")
     doc = fetcher(db, owners, hidden)("model", cm["model_id"])
     return m.link_position_model(position_id, "model", cm["model_id"], "class", failure_mode_ids,
                                  doc.name if doc is not None else f"{cm['position_class']} (class model)", note,
-                                 {"class_name": cm["position_class"]}, replace_link_id)
+                                 {"class_name": cm["position_class"], "class_key": cm["class_key"]}, replace_link_id)
 
 
 def _rows_for(m, rows: list[dict], texts: set[str]) -> list[dict]:
@@ -1013,13 +1239,14 @@ def fit_position_model(m, db, position_id: str, distribution: str = "weibull", f
 
     needed = 1 if distribution == "exponential" else loop.MIN_FAILURES
     rows, failures = usable(own)
-    used, class_name = own_scope, ""
+    used, class_name, class_key = own_scope, "", ""
     class_failures = None
     if scope == "class" or (scope == "auto" and failures < needed):
-        class_name = (p.get("position_class") or "").strip()
-        if class_name:
+        class_key = m._class_key(p)
+        class_name = m._class_label(class_key)
+        if class_key:
             try:
-                crows, class_failures = usable(m.class_life_data(class_name)["rows"])
+                crows, class_failures = usable(m.class_life_data(class_key)["rows"])
             except sv.NotFound:
                 crows, class_failures = [], 0
             if scope == "class" or class_failures >= needed:
@@ -1053,7 +1280,8 @@ def fit_position_model(m, db, position_id: str, distribution: str = "weibull", f
                                               buf.getvalue().encode(), m.org)
     model = models_service.save_model(db, name, dataset, distribution, mapping, [], None, "days", owner_id=m.org)
     source = {"scope": used, "failures": failures, "suspensions": len(rows) - failures,
-              "distribution": model.distribution_id} | ({"class_name": class_name} if used == "class" else {})
+              "distribution": model.distribution_id} | (
+                  {"class_name": class_name, "class_key": class_key} if used == "class" else {})
     return m.link_position_model(position_id, "model", model.id, "fitted", modes, model.name, note, source,
                                  replace_link_id)
 
@@ -1361,13 +1589,10 @@ def _model_note(name: str, results: dict, environment: str) -> str:
     return note
 
 
-def prediction_detail(db, owners, link: dict) -> dict | None:
-    """The saved prediction behind a prediction row: every line's contribution, the factors and
-    the handbook, as the Predictions page shows them."""
-    from backend.services import reliability_prediction as rp
-
-    pid = (link.get("source") or {}).get("prediction_id")
-    doc = rp.get_prediction(db, pid, owners) if pid else None
+def prediction_detail(db, owners, link: dict, model_doc=None) -> dict | None:
+    """The saved prediction behind a prediction row (or a built item's copy of one): every line's
+    contribution, the factors and the handbook, as the Predictions page shows them."""
+    doc = prediction_doc_of(db, owners, link, model_doc)
     if doc is None:
         return None
     return {"id": doc.id, "name": doc.name, "results": doc.results, "environment": (doc.inputs or {}).get("environment"),
@@ -1385,10 +1610,21 @@ def _model_words(model: dict) -> str:
     return f"{name}{(' (' + params + ')') if params and not model.get('name') else ''}"
 
 
-def rbd_blocks(m, link: dict, doc) -> list[dict]:
+def _rbd_resolver(db, owners):
+    from backend.services import rbds as rbds_service
+
+    return rbds_service.resolvers(db, owners)[0]
+
+
+def rbd_blocks(m, link: dict, doc, resolve_subsystem=None) -> list[dict]:
     """An RBD's blocks for the panel: each block's label, its model in words (placeholder or not),
-    and the position it came from (a block built from a position inside this one)."""
+    and the position it came from (a block built from a position inside this one). A sub-system
+    whose blocks are all placeholders is a placeholder too; one with some says how many
+    (``inside``: {basic, placeholders})."""
     from backend.maintenance import rbd_derive
+    from backend.services import rbd_placeholders
+
+    t = rbd_placeholders.tally(doc.graph or {}, resolve_subsystem)
 
     kids = {rbd_derive._bid(c["id"]): c for c in m.s.inn(m.org, link["position_id"], "PART_OF")
             if c["label"] == "Position"}
@@ -1400,9 +1636,14 @@ def rbd_blocks(m, link: dict, doc) -> list[dict]:
         model = d.get("model") or {}
         sub = d.get("rbd") or {}
         kid = kids.get(n.get("id"))
+        row = t["by_node"].get(str(n.get("id"))) or {}
+        whole = bool(row) and row["basic"] > 0 and row["placeholders"] == row["basic"]
         out.append({"id": n.get("id"), "label": d.get("label") or n.get("id"), "type": n.get("type"),
                     "model": (f"RBD: {sub.get('name') or 'a sub-system'}" if sub else _model_words(model)) or "—",
-                    "placeholder": bool(model.get("placeholder")), "source": d.get("model_source") or None,
+                    "placeholder": bool(model.get("placeholder")) or (bool(sub) and whole),
+                    **({"inside": {"basic": row["basic"], "placeholders": row["placeholders"]}}
+                       if sub and row else {}),
+                    "source": d.get("model_source") or None,
                     "position": {"id": kid["id"], "name": kid["name"]} if kid else None})
     return out
 
@@ -1535,6 +1776,18 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
                 return life(child, cd, f"Its class's fitted model ({cm['position_class']}: {cd.name})")
             inside = [c for c in m.s.inn(m.org, child["id"], "PART_OF") if c["label"] == "Position"
                       and not c.get("retired")]
+            if not inside:
+                # A leaf with no model but a parts-count rate: an exponential block at that rate,
+                # marked as from the parts count (W3), never a placeholder life.
+                from backend.maintenance import position_rates
+
+                rate = position_rates.parts_count_rate(m, db, owners, child["id"])
+                if rate is not None:
+                    conv = _convert("exponential", [{"name": "failure_rate", "value": rate["per_hour"]}],
+                                    _factor("Hours", unit) or 1.0)
+                    if conv is not None:
+                        return ({"model": {"distribution_id": "exponential", "params": conv},
+                                 "data": {"model_source": rate["text"], "rate_source": "parts count"}}, None)
             if inside and owner_id is not None and depth < MAX_NEST and child["id"] != position_id:
                 if _open_covariates_below(m, child["id"]):
                     return None, (f"{child['name']}'s parts have models with covariates left open, which a "
@@ -1555,9 +1808,23 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
             return bound, None
         if x["model_type"] == "rbd":
             return {"data": {"rbd": {"id": d.id, "name": d.name}, "model_source": f"Its RBD in use ({d.name})"}}, None
+        if x["model_type"] == "model" and d.kind == "two_clock":
+            # Two clocks: the block runs at the position's usage rate (its own, else its plan's or the fleet's).
+            rate = usage_rate_for(m, x, d) or {}
+            per = (rate.get("clocks") or {}).get("rate_unit") or "usage rate"
+            if rate.get("rate") is None or _factor((d.results or {}).get("unit") or unit, unit) != 1.0:
+                return None, (f"{child['name']}'s model in use ({d.name}) is on two clocks and "
+                              + (f"needs its {per}" if rate.get("rate") is None
+                                 else f"is in {(d.results or {}).get('unit')}, not {unit}") + ": a placeholder stands in.")
+            return ({"model": {"saved_model_id": d.id, "usage_rate": rate["rate"],
+                               "usage_rate_source": rate.get("source")},
+                     "data": {"model_source": f"Its model in use ({d.name}), at {rate['rate']:.4g} {per}: "
+                                              f"{rate.get('text') or ''}"}}, None)
         if x["model_type"] != "model" or d.kind not in ("distribution", "regression"):
             return None, (f"{child['name']}'s model in use ({d.name}) isn't a life distribution an RBD block can take: "
                           "a placeholder stands in.")
+        if x.get("role") == "prediction":
+            return life(child, d, f"From the parts count ({d.name})")
         return life(child, d, f"Its model in use ({d.name})")
 
     return p, fetch, children, unit, block, nested_placeholders

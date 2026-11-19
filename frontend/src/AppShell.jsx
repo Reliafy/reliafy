@@ -47,6 +47,7 @@ const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
 const StrategyReplacement = lazy(() => import("./views/StrategyReplacement.jsx"));
 const StrategyCompare = lazy(() => import("./views/StrategyCompare.jsx"));
 const StrategyFailureFinding = lazy(() => import("./views/StrategyFailureFinding.jsx"));
+const StrategyOverhaulReplace = lazy(() => import("./views/StrategyOverhaulReplace.jsx"));
 const StrategyTestPlanning = lazy(() => import("./views/StrategyTestPlanning.jsx"));
 const StrategyAnalyses = lazy(() => import("./views/StrategyAnalyses.jsx"));
 const StrategyTracking = lazy(() => import("./views/StrategyTracking.jsx"));
@@ -76,7 +77,6 @@ const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
 const AssetExplorer = lazy(() => import("./views/AssetExplorer.jsx"));
 const MaintenanceProducts = lazy(() => import("./views/MaintenanceProducts.jsx"));
 const ProductDetail = lazy(() => import("./views/MaintenanceProducts.jsx").then((m) => ({ default: m.ProductDetail })));
-const MaintenanceItemsList = lazy(() => import("./views/MaintenanceItemsList.jsx"));
 const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
 const MaintenancePart = lazy(() => import("./views/MaintenancePart.jsx"));
 // A point's and a channel's earlier own pages: they open in the Explorer's Measurements tab now.
@@ -242,7 +242,6 @@ function Shell() {
             {/* Products (the designs) and Items (every serial-numbered thing). */}
             {maintenanceEnabled && <Route path="/products" element={<MaintenanceProducts />} />}
             {maintenanceEnabled && <Route path="/products/:id" element={<ProductDetail />} />}
-            {maintenanceEnabled && <Route path="/items" element={<MaintenanceItemsList />} />}
             {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceAssets />} />}
             {maintenanceEnabled && <Route path="/asset-register/explorer" element={<AssetExplorer />} />}
             {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
@@ -297,6 +296,7 @@ function Shell() {
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
+            <Route path="/strategy/overhaul-replace" element={<StrategyOverhaulReplace />} />
             <Route path="/strategy/test-planning" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/sequential" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/life" element={<StrategyTestPlanning />} />

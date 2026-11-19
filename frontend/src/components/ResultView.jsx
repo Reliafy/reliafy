@@ -6,6 +6,7 @@ import SurvivalPlot from "./SurvivalPlot.jsx";
 import Calculator, { initCalcState } from "./Calculator.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CompetingRisksResult from "./CompetingRisksResult.jsx";
+import TwoClockResult from "./TwoClockResult.jsx";
 import LifeAside, { paramView } from "./LifeSummary.jsx";
 import ModelCharacteristics from "./ModelCharacteristics.jsx";
 import { distColor } from "../instrument.js";
@@ -167,6 +168,11 @@ export default function ResultView(props) {
   if (props.result.kind === "competing_risks") {
     return <CompetingRisksResult result={props.result} name={props.name} datasetId={props.datasetId || null}
                                  tab={props.tab} onTab={props.onTab || null} />;
+  }
+  // Two clocks: the life at a usage rate, in tabs of its own.
+  if (props.result.kind === "two_clock") {
+    return <TwoClockResult result={props.result} modelId={props.modelId || null} split={props.split || null}
+                           datasetId={props.datasetId || null} tab={props.tab} onTab={props.onTab || null} />;
   }
   return <LifeResult {...props} />;
 }

@@ -488,6 +488,14 @@ def _build_distribution(
                             "Environment values).")
     if model.get("kind") == "alt_stress":
         return _alt_stress_reliability(model, where, resolve_model)
+    if model.get("kind") == "two_clock":  # two clocks, at the block's usage rate
+        from backend.services import rbd_two_clocks
+
+        try:
+            life = rbd_two_clocks.block_life(model, where, resolve_model)
+        except rbd_two_clocks.BlockError as exc:
+            raise AnalysisError(str(exc)) from None
+        return PerfectReliability if life is None else life
     if model.get("kind") == "phase_rates":  # a mission's phases (rbd_missions.py)
         return _phase_rates_reliability(model, where)
     from backend.services import rbd_mixture
@@ -2976,6 +2984,9 @@ def _component_message(text: str, labels: dict) -> str:
     from backend.services import rbd_tvc  # a block on a covariate schedule (#372): the library's words, no code
 
     text = rbd_tvc.plain_refusal(text)
+    from backend.services import rbd_maintenance  # a task in running hours it can't take (#365)
+
+    text = rbd_maintenance.plain_refusal(text)
     # A common-cause group whose members differ, in plain words.
     same = _CCF_NOT_IDENTICAL.match(text)
     if same:

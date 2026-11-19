@@ -967,6 +967,11 @@ class _Converter:
             x = _finite(spec.get(field))
             if x is not None:
                 out[field] = x
+        if spec.get("basis") == "operating":
+            out["basis"] = "operating"  # counted in running hours, through the block's duty (#365)
+        elif spec.get("basis") not in (None, "calendar"):
+            self.note(f"“{label}”: its {key} basis {spec.get('basis')!r} isn't calendar or operating, so it's "
+                      "counted on the calendar.")
         duration = spec.get("duration", "instant")
         if duration != "instant":
             fixed = self._fixed_time(duration)

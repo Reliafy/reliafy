@@ -182,6 +182,7 @@ class _Lever:
                       else labels.get(lever.key, str(lever.key)))
         self.id = "repair_crews" if lever.key is None else f"{self.block_id}|{lever.name}"
         self.unit = unit
+        self.running = False  # a task's time counted in running hours (_mark_running)
         self.model = None
         self.mean_kind = None  # how the mean moves the parameter, for a mean lever
         self.mean = None
@@ -692,6 +693,7 @@ def analyze_sensitivity(
     pinned = set(working) | set(broken)
     unit = (graph.get("unit") or "").strip()
     found = _levers(rbd, labels, unit, pinned, gate_ids)
+    _mark_running(found, graph)
     unknown = sorted(set(costs) - {lv.id for lv in found})
     if unknown:
         raise AnalysisError(f"costs names {', '.join(unknown)}, which are not levers of this diagram.")
@@ -763,6 +765,22 @@ def analyze_sensitivity(
     })
     out["compute_seconds"] = time.perf_counter() - started
     return out
+
+
+#: The levers that are a task's times: in running hours when the task is (#365).
+_TASK_TIME_LEVERS = {"preventive.interval": "preventive", "preventive.opportunity": "preventive",
+                     "inspection.interval": "inspection", "inspection.offset": "inspection"}
+
+
+def _mark_running(found: list, graph: dict) -> None:
+    """Flag each lever that is a time of a task counted in running hours:
+    RePyability gives and takes it in running hours, so it reads so."""
+    from backend.services import rbd_maintenance as rm
+
+    data = {n.get("id"): n.get("data") or {} for n in (graph or {}).get("nodes") or []}
+    for lv in found:
+        key = _TASK_TIME_LEVERS.get(lv.name)
+        lv.running = bool(key and lv.block_id in data and rm.running_hours(data[lv.block_id], key))
 
 
 def _levers(rbd, labels, unit, pinned, gate_ids) -> list:
@@ -869,6 +887,7 @@ def _row(lv: _Lever, derivative: dict, quantities) -> dict:
         "lever": lv.name,
         "name": lv.label,
         "kind": lv.kind,
+        **({"running": True} if getattr(lv, "running", False) else {}),
         "discrete": lv.discrete,
         "value": lv.value,
         "shown_value": lv.shown(lv.value),
@@ -1150,6 +1169,8 @@ def finish_rows(result: dict) -> dict:
     unit = result.get("unit") or ""
     for row in result.get("levers") or []:
         row["unit_word"] = (" " + unit_in_text(unit)) if unit and row.get("kind") in ("mean", "time") else ""
+        if row.get("running") and row["unit_word"]:
+            row["unit_word"] = " running" + row["unit_word"]
         row["per_word"] = _per(unit)
         row["_rank_by"] = result.get("rank_by")
         row["plain"] = plain_effect(row)
