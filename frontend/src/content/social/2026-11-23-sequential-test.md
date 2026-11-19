@@ -1,5 +1,5 @@
 ---
-date: 2026-11-11
+date: 2026-11-23
 link: /guides/check-a-requirement-and-plan-a-test
 image: /guides/img/req-03-sequential.png
 ---

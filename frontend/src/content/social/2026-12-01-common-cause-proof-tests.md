@@ -1,5 +1,5 @@
 ---
-date: 2026-11-20
+date: 2026-12-01
 link: /guides/common-cause-group
 ---
 Two transmitters voting 1oo2, each with a dangerous undetected failure rate of 5 × 10⁻⁶ per hour, proof-tested once a year. Tests take about 2 hours, repairs about 8.
