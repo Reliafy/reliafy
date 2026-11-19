@@ -1,5 +1,5 @@
 ---
-date: 2026-11-19
+date: 2026-11-27
 link: /guides/forecast-fleet-failures-and-spares
 ---
 How many spare final drives for next year? An illustrative haul fleet: 12 trucks, 24 final drives aged 1,500 to 19,000 hours, each running 500 hours a month, against a Weibull life (scale 25,000 hours, shape 2.2).

@@ -1,5 +1,5 @@
 ---
-date: 2026-11-18
+date: 2026-11-26
 link: /guides/covariates-and-regression
 image: /social/ph-check-schoenfeld.png
 ---

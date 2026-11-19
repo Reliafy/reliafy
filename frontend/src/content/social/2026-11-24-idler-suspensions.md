@@ -1,5 +1,5 @@
 ---
-date: 2026-11-12
+date: 2026-11-24
 link: /learn/censored-data-suspensions
 image: /social/idler-suspensions.png
 ---

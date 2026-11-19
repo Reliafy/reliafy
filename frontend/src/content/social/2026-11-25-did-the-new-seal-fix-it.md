@@ -1,5 +1,5 @@
 ---
-date: 2026-11-13
+date: 2026-11-25
 link: /guides/compare-groups
 image: /social/seal-change-power.png
 ---
