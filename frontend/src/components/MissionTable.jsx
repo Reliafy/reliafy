@@ -3,7 +3,7 @@ import { listPositionMissions } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import {
   completesText, covStatus, feedsList, isCovRow, isPhaseRow, isRuleRow, latestOnly, lengthText, pct, phaseLengthText, phaseOfText, phasesText,
-  placeholderTitle, ruleText,
+  placeholderTitle, placeholderTone, ruleText,
 } from "../explorerMissions.js";
 
 // The Explorer's Missions tab is the tree with each position's missions in it
@@ -83,8 +83,8 @@ export function MissionCell({ r, col }) {
       if (!m.result) return <span className="rw-blank" title="Open it and Calculate">—</span>;
       if (m.result.reliability == null) return <Chip tone="warning" title={text}>Needs values</Chip>;
       // Worked out on placeholders: the figure is shown as what it is, never alone.
-      if (m.result.placeholders?.length) {
-        return <Chip tone="warning" title={placeholderTitle(m.result)}>{text} · placeholders</Chip>;
+      if (placeholderTone(m.result)) {
+        return <Chip tone={placeholderTone(m.result)} title={placeholderTitle(m.result)}>{text} · placeholders</Chip>;
       }
       return <span className="ml-num" title="The chance the mission completes">{text}</span>;
     }
@@ -115,7 +115,7 @@ export function missionPhoneRow(r, rollup) {
   const done = m.result?.reliability != null;
   return {
     line: [phasesText(m), m.phases ? lengthText(m.duration, m.unit) : null].filter(Boolean).join(" · "),
-    status: done && m.result.placeholders?.length ? <Chip tone="warning" title={placeholderTitle(m.result)}>{completesText(m)} · placeholders</Chip>
+    status: done && placeholderTone(m.result) ? <Chip tone={placeholderTone(m.result)} title={placeholderTitle(m.result)}>{completesText(m)} · placeholders</Chip>
       : done ? <Chip tone="neutral" title="The chance the mission completes">{completesText(m)}</Chip>
       : m.result ? <Chip tone="warning">Needs values</Chip> : null,
   };

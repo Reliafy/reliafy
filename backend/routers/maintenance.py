@@ -545,14 +545,15 @@ def verify_failure_report(report_id: str, body: dict = Body(...), ctx: AccessCtx
 
 # ---- a position's RCM: functions, functional failures, decisions ------------------------
 
-def _rcm_read(session, ctx: AccessCtx, fn, *args) -> JSONResponse:
-    """A read of the RCM with the evidence checked as the reader sees it."""
+def _rcm_read(session, ctx: AccessCtx, fn, *args, m: Maintenance | None = None) -> JSONResponse:
+    """A read of the RCM with the evidence checked as the reader sees it (with ``m``, each failure
+    mode's failure rate and where it came from: rcm_graph.with_rate)."""
     from backend.maintenance import rcm_graph
 
     def go():
         out = fn(*args)
         if "positions" in out:
-            return rcm_graph.resolve(session, out, ctx.read_owners, ctx.hidden)
+            return rcm_graph.resolve(session, out, ctx.read_owners, ctx.hidden, m=m)
         return rcm_graph.mode_status(session, out, ctx.read_owners, ctx.hidden)
     return _run(go)
 
@@ -563,7 +564,7 @@ def workspace_rcm(within: str | None = None, session=Depends(get_session), ctx: 
     """Every position's RCM (those with any), for the asset tree's RCM tab, with each
     decision's evidence check as the reader sees it. within: one asset's alone (a
     position, or a place: everything the Explorer opened on it shows)."""
-    return _rcm_read(session, ctx, m.rcm_all, within or None)
+    return _rcm_read(session, ctx, m.rcm_all, within or None, m=m)
 
 
 @router.get("/positions/{position_id}/rcm")
@@ -571,7 +572,7 @@ def position_rcm(position_id: str, scope: str = "below", session=Depends(get_ses
                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The position's RCM from the graph (scope below: it and everything inside it; this: it alone):
     functions › functional failures › failure modes, each mode's decision, task and evidence check."""
-    return _rcm_read(session, ctx, m.rcm_worksheet, position_id, scope)
+    return _rcm_read(session, ctx, m.rcm_worksheet, position_id, scope, m=m)
 
 
 @router.get("/positions/{position_id}/fmea.xlsx")
@@ -585,7 +586,7 @@ def position_fmea_xlsx(position_id: str, scope: str = "below", session=Depends(g
     from backend.maintenance import fmea_sheet, rcm_graph
 
     try:
-        sheet = rcm_graph.resolve(session, m.rcm_worksheet(position_id, scope), ctx.read_owners, ctx.hidden)
+        sheet = rcm_graph.resolve(session, m.rcm_worksheet(position_id, scope), ctx.read_owners, ctx.hidden, m=m)
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
     except Invalid as err:

@@ -7,7 +7,7 @@ import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { PanelField } from "./PanelField.jsx";
 import { Field as FormField, FormModal } from "./MaintenanceParts.jsx";
 import {
-  AP_LABEL, AP_TONE, CLASS_LABEL, SCORES, SCORE_ENDS, SOURCE_LABEL, STATUS_LABEL, apOf, bandOf, bandWords, cmOf, cmWords, fmt3, rpnOf,
+  AP_LABEL, AP_TONE, CLASS_LABEL, RATE_FROM_LABEL, SCORES, SCORE_ENDS, SOURCE_LABEL, STATUS_LABEL, apOf, bandOf, bandWords, cmOf, cmWords, fmt3, rateOf, rateWords, rpnOf,
 } from "../fmea.js";
 import "./FmeaPanels.css";
 
@@ -94,20 +94,26 @@ export function FmeaGroup({ r, opts, readOnly, saved = {}, onCommit, consequence
 export function CriticalityGroup({ r, readOnly, saved = {}, onCommit }) {
   const m = r.ref;
   const unit = m.time_unit || "hours";
-  const cm = m.cm ?? cmOf(m);
-  const num = (label, col, range, { help = null, suffix = null } = {}) => (
+  const cm = m.cm ?? cmOf({ ...m, failure_rate: rateOf(m) });
+  const num = (label, col, range, { help = null, suffix = null, placeholder = null } = {}) => (
     <PanelField key={`${r.key}:${col}`} label={label} type="number" range={range} value={m[col] ?? ""} readOnly={readOnly} optional
-                help={help} suffix={suffix} saved={saved[col]} onCommit={(raw) => onCommit(col, raw)} />
+                help={help} suffix={suffix} placeholder={placeholder} saved={saved[col]} onCommit={(raw) => onCommit(col, raw)} />
   );
+  // Where the rate comes from: typed here (an override), else the position's own (W3).
+  const fromWords = rateWords(m);
+  const inherited = m.failure_rate == null && m.rate_from && m.rate_from.source !== "typed" ? m.rate_from : null;
   return (
     <Section title="Criticality" label="Criticality" className="rw-crit"
              tip="Mode criticality Cm = β × α × λ × t: the loss probability, the mode's share of the item's failures, the item's failure rate and the operating time. Item criticality Cr is the sum of Cm over the position's failure modes.">
       <div className="rw-fields">
-        {num("Failure rate (λ)", "failure_rate", { min: 0 }, { suffix: `/${unit}`, help: "The item's failure rate, failures per unit of time" })}
+        {num("Failure rate (λ)", "failure_rate", { min: 0 }, {
+          suffix: `/${unit}`, help: fromWords || "The item's failure rate, failures per unit of time",
+          placeholder: inherited ? fmt3(inherited.value) : null,
+        })}
         <PanelField key={`${r.key}:time_unit`} label="Time unit" value={m.time_unit ?? ""} placeholder="hours" readOnly={readOnly} optional
                     help="The unit the failure rate and operating time are in" saved={saved.time_unit} onCommit={(raw) => onCommit("time_unit", raw)} />
         <Field label="Rate source" saved={saved.rate_source} optional>
-          {readOnly ? <span className="rw-fval">{SOURCE_LABEL[m.rate_source] || "—"}</span> : (
+          {inherited ? <span className="rw-fval">{RATE_FROM_LABEL[inherited.source] || "The position's"}</span> : readOnly ? <span className="rw-fval">{SOURCE_LABEL[m.rate_source] || "—"}</span> : (
             <ChoiceChips label="Rate source" clearable value={m.rate_source || ""}
                          options={Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label }))}
                          onChange={(v) => onCommit("rate_source", v)} />

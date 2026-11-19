@@ -1479,6 +1479,12 @@ h6 {
   color: var(--warning-text);
   font-size: var(--fs-13);
 }
+/* Most of the answer rests on placeholders: a bad verdict, not a caveat (W2). */
+.rbd-placeholder-note.is-most {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
 
 /* Availability (repairable) is a paid feature: upgrade card + saved-result note. */
 .rbd-upgrade { margin: 4px 0 12px; }

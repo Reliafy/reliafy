@@ -159,10 +159,35 @@ export function fmt3(x) {
 // The Cm line for a mode with the figures that make it (the details and the
 // matrix's table): "1.0 × 0.6 × 2e-5 /h × 100 h = 0.0012".
 export function cmWords(m) {
-  const cm = m?.cm ?? cmOf(m);
+  const cm = m?.cm ?? cmOf({ ...m, failure_rate: rateOf(m) });
   if (cm == null) return "";
   const u = m.time_unit || "hours";
-  return `${fmt3(m.loss_probability)} × ${fmt3(m.mode_ratio)} × ${fmt3(m.failure_rate)} /${u} × ${fmt3(m.operating_time)} ${u} = ${fmt3(cm)}`;
+  return `${fmt3(m.loss_probability)} × ${fmt3(m.mode_ratio)} × ${fmt3(rateOf(m))} /${u} × ${fmt3(m.operating_time)} ${u} = ${fmt3(cm)}`;
+}
+
+// ---- where the failure rate comes from (W3) ---------------------------------------
+// The server says which rate a mode's Cm uses (`rate_from`: {source, value, time_unit,
+// text, position_rate?}): one typed on the mode is the analyst's override; with none
+// typed, the position's own (its parts count or its model in use), so one part has one
+// rate on every tab.
+export const RATE_FROM_LABEL = { typed: "Typed", "parts count": "Parts count", "fitted model": "Fitted model", "assigned model": "Assigned model" };
+
+// The rate Cm uses: typed, else the position's.
+export function rateOf(m) {
+  if (m?.failure_rate !== "" && m?.failure_rate != null) return m.failure_rate;
+  return m?.rate_from && m.rate_from.source !== "typed" ? m.rate_from.value : null;
+}
+
+// Where it came from, in words (null when the server said nothing).
+export function rateWords(m) {
+  const r = m?.rate_from;
+  const u = m?.time_unit || "hours";
+  if (m?.failure_rate !== "" && m?.failure_rate != null) {
+    if (r?.position_rate == null) return null;
+    return `Typed here, overriding the position's ${fmt3(r.position_rate)} /${u} (${(RATE_FROM_LABEL[r.position_source] || "its own rate").toLowerCase()}). Clear it to use the position's.`;
+  }
+  if (!r || r.source === "typed") return null;
+  return `Uses the position's rate: ${fmt3(r.value)} /${u}. ${r.text || ""} Type a rate to override it.`.replace(/\s+/g, " ").trim();
 }
 
 // ---- the criticality matrix (a position's details) ------------------------------

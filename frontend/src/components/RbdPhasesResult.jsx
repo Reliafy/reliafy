@@ -11,6 +11,7 @@ import { unitInText } from "./unitText.js";
 import "./RbdMission.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import MissionCurve, { MissionProNote, driversText } from "./MissionCurve.jsx";
+import { placeholderWarning } from "../explorerMissions.js";
 
 // The Calculator tab's "Phased mission" section (#160), under the diagram's
 // own results when it has phases: the mission's reliability (exact, or
@@ -89,6 +90,8 @@ function MissionAnswer({ result, unit, name, dim }) {
   // Blocks with no model (a placeholder stands in): said with the answer, never left unsaid.
   const guessed = (result.placeholders || []).map((p) => p.label);
   const without = result.without_placeholders?.reliability ?? null;
+  // Counted through every sub-system: "27 of 27 basic blocks are placeholders".
+  const ph = placeholderWarning(result);
   const how = simulated
     ? <>, simulated from {iv?.n_samples?.toLocaleString() || "many"} missions
         {iv ? <> ({Math.round((iv.confidence || 0.95) * 100)}% interval {pct(iv.lower)} to {pct(iv.upper)})</> : null}</>
@@ -123,10 +126,11 @@ function MissionAnswer({ result, unit, name, dim }) {
   const chartH = Math.min(360, 70 + 34 * rows.length);
   return (
     <div className={"rbd-mission-body" + (dim ? " is-stale" : "")}>
-      <ResultSummary tone={guessed.length ? "caveat" : "neutral"} sentence={sentence} stats={stats}>
+      <ResultSummary tone={ph?.mostly ? "bad" : ph ? "caveat" : "neutral"} sentence={sentence} stats={stats}>
+        {ph && !guessed.length ? <>Not a real figure yet: {ph.count}. Give the blocks inside a model.</> : null}
         {guessed.length ? (
           <>
-            Not a real figure yet: {guessed.join(", ")} {guessed.length === 1 ? "has" : "have"} no model, so a placeholder
+            Not a real figure yet: {ph?.nested ? `${ph.count}${ph.mostly ? ", so most of the answer rests on invented lives" : ""}. ` : ""}{guessed.join(", ")} {guessed.length === 1 ? "has" : "have"} no model, so a placeholder
             stands in. {without != null ? `With ${guessed.length === 1 ? "that block" : "those blocks"} left out, the mission succeeds with probability ${pct(without)}. ` : ""}
             Give {guessed.length === 1 ? "it a model" : "each a model"}, or mark {guessed.length === 1 ? "it" : "them"} not needed in the phases.
           </>

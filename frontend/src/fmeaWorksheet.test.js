@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   CHIPS, COLUMN, COLUMNS, DEFAULT_COLUMNS, FIELDS, SCORE_ERROR, addSums, apSummary, blankSums, checkValue, fmeaCounts, loadPrefs, modeSums,
-  nextSort, phoneLine, savePrefs, scoredWords, siblingOrder, tableCols, usualCols, withTableCols,
+  nextSort, phoneLine, rateSourceText, savePrefs, scoredWords, siblingOrder, tableCols, usualCols, withTableCols,
 } from "./fmeaWorksheet.js";
 import { buildDisplay, flatten } from "./assetTree.js";
 import { graftFmea } from "./explorerFmea.js";
@@ -165,4 +165,16 @@ test("a column header sorts the failure modes under each function, blanks last, 
   assert.deepEqual(nextSort({ col: "rpn", dir: -1 }, "rpn"), { col: "rpn", dir: 1 });
   assert.equal(nextSort({ col: "rpn", dir: 1 }, "rpn"), null);
   assert.deepEqual(nextSort({ col: "rpn", dir: 1 }, "ap"), { col: "ap", dir: -1 });
+});
+
+test("the rate cells: the position's rate where none is typed, said as such; a typed one marked an override", () => {
+  const parts = { rate_from: { source: "parts count", value: 3e-5, time_unit: "hours" }, mode_ratio: 0.5, loss_probability: 1, operating_time: 150 };
+  assert.equal(COLUMN.failure_rate.text(mode("a", parts)), "0.00003");
+  assert.equal(rateSourceText(parts), "Parts count");
+  assert.equal(COLUMN.cm.text(mode("a", parts)), "0.00225");
+  const typed = { failure_rate: 8e-5, rate_source: "entered", rate_from: { source: "typed", value: 8e-5, position_rate: 3e-5 } };
+  assert.equal(COLUMN.failure_rate.text(mode("b", typed)), "0.00008");
+  assert.equal(rateSourceText(typed), "Entered (override)");
+  assert.equal(rateSourceText({ failure_rate: 8e-5, rate_source: "entered" }), "Entered");
+  assert.equal(fmeaCounts(parts).with_cm, 1);
 });

@@ -604,42 +604,51 @@ def prediction_rates(db, product_id, owners, docs: list[dict] | None = None) -> 
     for doc in (docs if docs is not None else _reliability_docs(db, owners)):
         if not isinstance(doc, dict) or not _is_for(doc, product_id):
             continue
-        results = doc.get("results") if isinstance(doc.get("results"), dict) else {}
-        rows = results.get("lines")
-        if not isinstance(rows, list) or not rows:
-            continue
-        sums: dict[str, list[float]] = {}
-        lines, unrated = [], []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            ref = next((" ".join(str(row.get(k)).split()) for k in _REF_KEYS if str(row.get(k) or "").strip()), "")
-            label = " ".join(str(row.get("name") or "").split()) or ref or "a line"
-            quantity = _number(row.get("quantity"))
-            quantity = 1.0 if quantity is None else quantity
-            total = _number(row.get("rate_per_million_hours"))
-            each = _number(row.get("each_per_million_hours"))
-            if total is None and each is not None:
-                total = each * quantity
-            if total is None or row.get("excluded") or quantity <= 0:
-                unrated.append(label)
-                continue
-            key = ref_key(ref)
-            if key:
-                held = sums.setdefault(key, [0.0, 0.0])
-                held[0] += total
-                held[1] += quantity
-            lines.append({"key": key, "label": label, "total": total})
-        return {
-            "id": doc.get("_id"), "name": doc.get("name") or "reliability prediction",
-            "stamp": str(doc.get("updated_at") or ""), "unit": "per_million_hours",
-            "rates": {key: held[0] / held[1] for key, held in sums.items()},
-            "quantities": {key: held[1] for key, held in sums.items()},
-            "lines": lines, "unrated": unrated,
-            "failure_rate": _number(results.get("failure_rate_per_million_hours")),
-            "mtbf_hours": _number(results.get("mtbf_hours")),
-        }
+        got = rates_of(doc)
+        if got is not None:
+            return got
     return None
+
+
+def rates_of(doc: dict) -> dict | None:
+    """One saved parts count's rates by part number (:func:`prediction_rates`'s shape), or None
+    when it has no lines. Also read by the FME(C)A and the RBD built from the tree
+    (backend/maintenance/position_rates.py), so one part has one rate everywhere."""
+    results = doc.get("results") if isinstance(doc.get("results"), dict) else {}
+    rows = results.get("lines")
+    if not isinstance(rows, list) or not rows:
+        return None
+    sums: dict[str, list[float]] = {}
+    lines, unrated = [], []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ref = next((" ".join(str(row.get(k)).split()) for k in _REF_KEYS if str(row.get(k) or "").strip()), "")
+        label = " ".join(str(row.get("name") or "").split()) or ref or "a line"
+        quantity = _number(row.get("quantity"))
+        quantity = 1.0 if quantity is None else quantity
+        total = _number(row.get("rate_per_million_hours"))
+        each = _number(row.get("each_per_million_hours"))
+        if total is None and each is not None:
+            total = each * quantity
+        if total is None or row.get("excluded") or quantity <= 0:
+            unrated.append(label)
+            continue
+        key = ref_key(ref)
+        if key:
+            held = sums.setdefault(key, [0.0, 0.0])
+            held[0] += total
+            held[1] += quantity
+        lines.append({"key": key, "label": label, "total": total})
+    return {
+        "id": doc.get("_id"), "name": doc.get("name") or "reliability prediction",
+        "stamp": str(doc.get("updated_at") or ""), "unit": "per_million_hours",
+        "rates": {key: held[0] / held[1] for key, held in sums.items()},
+        "quantities": {key: held[1] for key, held in sums.items()},
+        "lines": lines, "unrated": unrated,
+        "failure_rate": _number(results.get("failure_rate_per_million_hours")),
+        "mtbf_hours": _number(results.get("mtbf_hours")),
+    }
 
 
 def follows_parts_count(results: dict | None) -> bool:
