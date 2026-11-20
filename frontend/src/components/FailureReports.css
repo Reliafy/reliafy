@@ -121,8 +121,12 @@ button.fr-step-btn:focus-visible {  }
 .fr-card-sum { font-weight: 400; font-size: var(--fs-13); }
 .fr-form { margin-top: 8px; gap: 10px; }
 .fr-form-foot { display: flex; justify-content: flex-end; gap: 8px; }
-.fr-modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.fr-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+/* minmax(0, 1fr): a column never grows to its widest control's own width (a select with a long
+   option pushed the phone page sideways); the controls fill the column instead. */
+.fr-modal-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.fr-row-3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+.fr-modal-row > * { min-width: 0; }
+.fr-modal-row :is(input, select) { min-width: 0; max-width: 100%; }
 .fr-modal-where { margin: 0; }
 .fr-modal-item { margin: 0; }
 .fr-radios { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -147,6 +151,6 @@ button.fr-step-btn:focus-visible {  }
   .fr-row { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "label title" "label sub" "label when" "label pills"; }
   .fr-pills { justify-content: flex-start; }
   .fr-modal-row,
-  .fr-row-3 { grid-template-columns: 1fr; }
+  .fr-row-3 { grid-template-columns: minmax(0, 1fr); }
   .fr-step-btn { line-height: 24px; }
 }
