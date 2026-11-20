@@ -1,5 +1,6 @@
 import ColumnMapper from "./ColumnMapper.jsx";
-import { ROLES, readingIssues, setRole, toggleZ, withZ, zLine, notUsedReason } from "../datasetReading.js";
+import { dataStepNotes } from "../lifeData.js";
+import { ROLES, lifeMapping, readingIssues, setRole, toggleZ, withZ, zLine, notUsedReason } from "../datasetReading.js";
 import { READING_MAIN, READING_MORE } from "../datasetReading.js";
 import { defaultSecondUnit } from "../twoClocks.js";
 
@@ -19,6 +20,8 @@ import { defaultSecondUnit } from "../twoClocks.js";
 // a table of readings needs none): readingIssues says why beside the selector.
 export default function ReadingEditor({ columns, facts, nRows, reading, onChange, disabled = false }) {
   const issues = readingIssues(reading, facts, nRows);
+  // A 0 in x, named (a failure there can't be fitted). Readings (m) start at 0 as a matter of course.
+  const notes = reading.x && !reading.m ? dataStepNotes(lifeMapping(reading), facts) : [];
   const update = (fn) => onChange((cur) => fn(cur || reading));
   const range = !!(reading.xl || reading.xr);
   const cMissing = !reading.c && !range && !reading.m;
@@ -74,6 +77,7 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
           i: "— none —", m: "— none —", e: "— none —", s: "— none —", x2: "— none —",
         }}
         issues={issues}
+        notes={notes}
         asides={{ c: failedTick ? [failedTick] : [] }}
       />
       <section className="reading-z" aria-label="Covariates (Z)">
