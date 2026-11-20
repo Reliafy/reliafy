@@ -105,3 +105,22 @@ def test_fit_recurrent_model_is_pro_only():
     from backend.mcp_server import PRO_ONLY_TOOLS
 
     assert "change.model_fit_recurrent" in PRO_ONLY_TOOLS
+
+
+def test_fit_recurrent_model_from_a_dataset_with_one_end_of_test(env):
+    """With a dataset, observed_to as one number is the end of test for every
+    system: the time-terminated Crow-AMSAA answer."""
+    import math
+
+    a = env.token[A]
+    times = [5, 18, 37, 70, 112, 160, 240, 330, 450, 590, 760, 940]
+    csv = "unit,hours\n" + "".join(f"P1,{t}\n" for t in times)
+    ds = _ok(_call(a, "change", {"action": "dataset_upload", "name": "Prototype", "csv": csv}))
+    out = _ok(_call(a, "change", {"action": "model_fit_recurrent", "save": False, "model": "crow_amsaa",
+        "dataset_id": ds["id"], "system_column": "unit", "time_column": "hours", "observed_to": 1000,
+        "unit": "hours"}))
+    beta = len(times) / sum(math.log(1000 / t) for t in times)
+    assert out["mtbf"] == pytest.approx(1000 / (len(times) * beta), rel=1e-3)
+    assert out["record_ends"].startswith("time-terminated")
+    _err(_call(a, "change", {"action": "model_fit_recurrent", "save": False, "dataset_id": ds["id"],
+        "system_column": "unit", "time_column": "hours", "observed_to": [1000, 1000]}))

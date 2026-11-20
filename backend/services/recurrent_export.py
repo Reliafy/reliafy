@@ -586,6 +586,9 @@ def export_python(db, model, owners=None) -> tuple[str, str]:
     if dataset is None:
         raise FitError("This model's dataset is gone, so there's no data to put in the script.")
     df = datasets_service.load_dataframe(dataset)
+    if spec.get("record_end") is not None:  # a typed end of test: the column it stands for
+        df, mapping = rec.with_record_end(df, spec.get("mapping") or {}, spec["record_end"])
+        model = model.model_copy(update={"spec": {**spec, "mapping": mapping}})
     model_id = spec.get("model_id", "crow_amsaa")
     if model_id in rec.MODELS:
         return name, _nhpp_script(model, df)

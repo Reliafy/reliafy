@@ -49,9 +49,10 @@ export function guessRecurrentMapping(columns, { dtypes = null, preview = [] } =
 }
 
 // The warning the Data step shows while no end of record is mapped.
-export const NO_RECORD_END = "No end of record is mapped, so each system's record will be taken to end at its "
-  + "last failure, which makes failures look closer together at the end than they were. Map tr, the column that "
-  + "says how far each item's record goes, or add a row for each item's end of record, flagged 1 in c.";
+export const NO_RECORD_END = "No end of record is given, so each system's record will be taken to end at its "
+  + "last failure (failure-terminated), which makes failures look closer together at the end than they were if "
+  + "the test ran on. Enter when the test ended below, or map tr, the column that says how far each item's "
+  + "record goes, or add a row for each item's end of record, flagged 1 in c.";
 
 // A dataset's ``last_recurrent_mapping`` (how its newest repairable model read
 // the columns) as { mapping, unit, from }, or null when it doesn't fit these
@@ -94,15 +95,24 @@ export const RECURRENT_NONE = {
 
 // What stops a repairable mapping, or needs saying, beside its selector:
 // [{ row, text, note? }] (``note``: said, but doesn't stop Next).
-export function recurrentIssues(map, windows = "") {
+export function recurrentIssues(map, windows = "", recordEnd = "") {
   const out = [];
   if (!map.i) out.push({ row: "i", text: "Pick i: the column saying which item each row belongs to." });
   if (!map.x) out.push({ row: "x", text: "Pick x: the column with the value at each failure." });
   if (map.i && map.x && map.i === map.x) out.push({ row: "x", text: "x and i are the same column: pick a different one for each." });
-  if (out.length === 0 && !map.tr && !map.c && !(map.ws && map.we) && !String(windows || "").trim()) {
+  if (out.length === 0 && !map.tr && !map.c && !(map.ws && map.we) && !String(windows || "").trim()
+      && !String(recordEnd ?? "").trim()) {
     out.push({ row: "tr", text: NO_RECORD_END, note: true });
   }
   return out;
+}
+
+// What's wrong with a typed end of test, in words (null: fine or blank).
+export function recordEndIssue(value) {
+  const v = String(value ?? "").trim();
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? null : "Enter the time the test stopped, above 0.";
 }
 
 // The column fields a repairable fit is sent as (api.js recurrentForm):
