@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   lateWorkText, createDetail, createLabel, createPlan, dueSearchText, inArea, daysLate, doneText, dueWindow, groupDue, lateText, linesText,
-  orderKind, orderTab, ordersPath, ordersSummary, packageMatches, packagePath, packageStatusText, splitOpen,
+  orderCardMeta, orderKind, orderTab, ordersPath, ordersSummary, packageMatches, packagePath, packageStatusText, splitOpen,
 } from "./maintenanceOrders.js";
 
 const TODAY = "2026-11-10";
@@ -150,4 +150,14 @@ test("dueSearchText: a due task is found by its site and what its position sits 
   });
   assert.ok(words.includes("Riverside › Pump 3"));
   assert.ok(words.includes("Riverside › Bay 3"));
+});
+
+test("a work order on a phone: when, then where, under its title", () => {
+  const fmt = (d) => `[${d}]`;
+  const late = { overdue: true, due: "2026-10-23", location: { name: "Pool Area" }, subject: { name: "Media filter" } };
+  assert.deepEqual(orderCardMeta(late, TODAY, fmt), { when: "18 days late", late: true, where: "Pool Area" });
+  assert.deepEqual(orderCardMeta({ due: "2026-12-04", subject: { name: "Media filter" } }, TODAY, fmt),
+    { when: "Due [2026-12-04]", late: false, where: "Media filter" });
+  assert.deepEqual(orderCardMeta({ overdue: true }, TODAY, fmt), { when: "Late", late: true, where: "" });
+  assert.deepEqual(orderCardMeta({}, TODAY, fmt), { when: "No due date", late: false, where: "" });
 });

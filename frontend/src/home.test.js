@@ -59,6 +59,9 @@ test("needs attention is ready only once every source it reads has answered", ()
   // A source that failed (null) has answered: the page doesn't wait for ever.
   assert.equal(attentionReady({ ...loaded, changes: null }), true);
   assert.equal(attentionReady({ ...loaded, access: true, maintenance: null }), true);
+  // The Maintenance access check itself failed: ready (no "Loading…" for ever) and failed (Try again).
+  assert.equal(attentionReady({ ...loaded, access: null }), true);
+  assert.equal(attentionFailed({ ...loaded, access: null }), true);
 });
 
 test("needs attention: the rows not shown are linked to the pages that list them", () => {

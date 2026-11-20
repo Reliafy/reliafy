@@ -18,7 +18,7 @@ import { ancestorsOf } from "../outlineTree.js";
 import {
   CATEGORY_LABEL, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, EVIDENT_LABEL, consequenceText, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, decisionBody, belowPending, phoneLine, consequenceWords, checkCounts, decisionText, insideWords,
-  intervalText, isCombination, memberEvidenceLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, checkValue,
+  intervalText, isCombination, memberEvidenceLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, taskSumTip, checkValue,
   OUTCOME_LABEL, decisionWithMemberEvidence, everyText, memberEvidenceText, taskKindText, taskServesTip, taskSharedText,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
@@ -86,6 +86,8 @@ const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${
 // text.
 export function cellTip(col, r, can) {
   const text = col.text(r);
+  // A row with failure modes inside: what its Task cell counts, in words.
+  if (text && col.id === "task" && r.type !== "mode" && r.type !== "task") return taskSumTip(r) || text;
   if (text) return r.type === "mode" && col.id === "decision" && r.ref.decision?.notes ? `${text}: ${r.ref.decision.notes}` : text;
   return can ? "Double-click to edit" : undefined;
 }

@@ -20,8 +20,9 @@ import { DueChip, LocationPicker, Proposals, flatten, fmtDate } from "../compone
 import { ImportModal, NewPositionModal, SubjectCell, TimeZoneNudge } from "./MaintenanceHome.jsx";
 import {
   DUE_WINDOWS, ORDER_TABS, createDetail, createLabel, createPlan, daysLate, doneText, dueSearchText, dueWindow, groupDue,
-  inArea, lateText, linesText, orderKind, orderTab, ordersSummary, packagePath, splitOpen, workOrderPath,
+  inArea, lateText, linesText, orderCardMeta, orderKind, orderTab, ordersSummary, packagePath, splitOpen, workOrderPath,
 } from "../maintenanceOrders.js";
+import usePhone from "../usePhone.js";
 import { ORDERS_LABEL } from "../navigation.js";
 import "./Maintenance.css";
 
@@ -168,6 +169,10 @@ function OpenTab({ rows, today, locations, locationId, onLocation, navigate }) {
     && matches(query, String(w.number), `#${w.number}`, w.title, w.subject?.name, w.location?.name, w.trade, w.package?.name)),
   [rows, query, kind]);
   const { overdue, open } = splitOpen(shown, today);
+  // On a phone each work order is a card row (title, then "18 days late · place"): the
+  // table's Due column fell off the side of a narrow card.
+  const phone = usePhone();
+  const List = phone ? OpenCards : OpenTable;
   return (
     <section className="card">
       <div className="tablebar section-tablebar maint-filters">
@@ -193,14 +198,14 @@ function OpenTab({ rows, today, locations, locationId, onLocation, navigate }) {
         <>
           {overdue.length > 0 && (
             <>
-              <h3 className="maint-subhead maint-overdue">Overdue ({overdue.length})</h3>
-              <OpenTable rows={overdue} today={today} navigate={navigate} />
+              <h3 className="maint-subhead maint-overdue">Late ({overdue.length})</h3>
+              <List rows={overdue} today={today} navigate={navigate} />
             </>
           )}
           {open.length > 0 && (
             <>
               {overdue.length > 0 && <h3 className="maint-subhead">Open ({open.length})</h3>}
-              <OpenTable rows={open} today={today} navigate={navigate} />
+              <List rows={open} today={today} navigate={navigate} />
             </>
           )}
         </>
@@ -239,6 +244,47 @@ function OpenTable({ rows, today, navigate }) {
         })}
       </tbody>
     </table></div>
+  );
+}
+
+// The open work orders on a phone: one card row each, "#12 Title", then when and where.
+function OpenCards({ rows, today }) {
+  return (
+    <ul className="maint-cards">
+      {rows.map((w) => {
+        const m = orderCardMeta(w, today, fmtDate);
+        return (
+          <li key={w.id}>
+            <Link to={workOrderPath(w.id)} className="maint-card-row">
+              <span className="maint-card-title">#{w.number} {w.title}
+                {w.under_warranty && <> <span className="maint-badge">warranty</span></>}</span>
+              <span className="maint-card-meta">
+                <span className={m.late ? "maint-card-late" : undefined}>{m.when}</span>
+                {[m.where, w.package?.name, linesText(w)].filter(Boolean).map((t) => ` · ${t}`).join("")}
+              </span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// The closed work orders on a phone: "#12 Title", then when it closed and what was done.
+function ClosedCards({ rows }) {
+  return (
+    <ul className="maint-cards">
+      {rows.map((w) => (
+        <li key={w.id}>
+          <Link to={workOrderPath(w.id)} className="maint-card-row">
+            <span className="maint-card-title">#{w.number} {w.title}</span>
+            <span className="maint-card-meta">
+              {[`Closed ${fmtDate(w.closed)}`, doneText(w), w.subject?.name].filter(Boolean).join(" · ")}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -379,6 +425,7 @@ function ClosedTab({ navigate }) {
     return () => { live = false; clearTimeout(wait); };
   }, [query]);
   const rows = found?.work_orders;
+  const phone = usePhone();
   return (
     <section className="card">
       <div className="tablebar section-tablebar maint-filters">
@@ -392,7 +439,7 @@ function ClosedTab({ navigate }) {
       {failed && <div className="card error">{failed}</div>}
       {rows == null ? null : rows.length === 0 ? (
         <p className="lib-date">{query ? "Nothing closed matches." : "None closed yet."}</p>
-      ) : (
+      ) : phone ? <ClosedCards rows={rows} /> : (
         <div className="maint-scroll"><table className="lib-table">
           <thead><tr><th>#</th><th>Title</th><th>On</th><th>Closed</th><th>What was done</th></tr></thead>
           <tbody>

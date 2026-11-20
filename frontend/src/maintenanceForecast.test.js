@@ -32,3 +32,34 @@ test("money has no decimals and an optional currency", () => {
   assert.equal(moneyRange([12000, 20000]), "12,000–20,000");
   assert.equal(moneyRange([12000, 12000], "AUD"), "AUD 12,000");
 });
+
+test("an item class's forecast: its positions by position class, counted at those positions alone", async () => {
+  const { classForecastGroups, scopedForecast } = await import("./maintenanceForecast.js");
+  const pos = (id, cls, extra = {}) => [id, { key: id, type: "pos", kids: [], ref: { name: id.toUpperCase(), class_key: cls, position_class: cls, ...extra } }];
+  const display = { rows: new Map([
+    ["cls:pump", { key: "cls:pump", type: "cls", kids: ["cls:sub", "p1", "p2"] }],
+    ["cls:sub", { key: "cls:sub", type: "cls", kids: ["p3", "p4"] }],
+    pos("p1", "Pool pump"), pos("p2", "Pool pump"), pos("p3", "Transfer pump"), pos("p4", ""),
+  ]) };
+  const { groups, none, count } = classForecastGroups(display, display.rows.get("cls:pump"));
+  assert.deepEqual(groups.map((g) => [g.key, g.positions.map((p) => p.id)]), [["Pool pump", ["p1", "p2"]], ["Transfer pump", ["p3"]]]);
+  assert.deepEqual(none.map((p) => p.id), ["p4"]);
+  assert.equal(count, 4);
+  // Pool pump's read ranks another asset's position too (px): left out; p2 isn't forecast.
+  const reads = {
+    "Pool pump": { n_forecast: 3, period: "month", periods: 12, model: { unit: "days" },
+      at_risk: [{ position: { id: "px", name: "Elsewhere" }, expected_failures: 5 }, { position: { id: "p1", name: "P1" }, expected_failures: 0.4 }],
+      not_forecast: [{ position: { id: "p2" }, reason: "nothing fitted" }] },
+    "Transfer pump": { n_forecast: 0, headline: "No fitted life model yet." },
+  };
+  const out = scopedForecast(groups, reads);
+  assert.equal(out.expected, 0.4);
+  assert.deepEqual(out.rows.map((r) => r.position.id), ["p1"]);
+  assert.deepEqual(out.missing.map((m) => [m.position.id, m.reason]), [["p2", "nothing fitted"], ["p3", "No fitted life model yet."]]);
+  assert.equal(out.pending, 0);
+  assert.equal(out.period, "month");
+  // A read still coming: counted as pending, nothing guessed.
+  assert.equal(scopedForecast(groups, { "Pool pump": reads["Pool pump"] }).pending, 1);
+  assert.equal(scopedForecast(groups, { "Pool pump": { error: true } }).missing[0].reason, "its position class's forecast didn't load");
+  assert.equal(scopedForecast(groups, { "Pool pump": { error: "Fit a model first." } }).missing[0].reason, "Fit a model first.");
+});
