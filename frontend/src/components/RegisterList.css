@@ -99,3 +99,74 @@
     border-top: 0;
   }
 }
+
+/* Assets' "Items of your products" row: it opens in place (a disclosure, not a link). */
+.reg-table .reg-disclose {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reg-table .reg-disclose:hover {
+  background: none;
+  color: var(--accent-text);
+}
+
+.reg-table .reg-disclose-mark {
+  display: inline-block;
+  width: 1em;
+  color: var(--text-secondary);
+}
+
+/* Its items, one line each, indented under it. */
+.reg-table .reg-child td:first-child {
+  padding-left: var(--space-8);
+}
+
+/* What the search finds inside the assets, under the list. */
+.reg-found {
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .reg-table .reg-child {
+    display: block;
+  }
+
+  .reg-table .reg-child td:first-child {
+    padding-left: var(--space-4);
+  }
+
+  /* The found list keeps its headings (Position, Item) on a phone. */
+  .reg-found-table thead {
+    display: block;
+    padding: var(--space-2) 0.25rem 0;
+  }
+
+  .reg-found-table thead tr {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+
+  .reg-found-table thead th {
+    display: block;
+    padding-left: 0;
+    border: 0;
+  }
+
+  .reg-found-table tbody tr {
+    display: block;
+  }
+}

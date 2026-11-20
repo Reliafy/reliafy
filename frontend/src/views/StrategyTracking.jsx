@@ -90,7 +90,7 @@ export default function StrategyTracking() {
     return () => { cancelled = true; };
   }, [fleet, selectedId, confidence]);
 
-  if (error && !fleet) return <div className="app"><LoadFailed header error={error} notFound="Tracked fleet not found." to="/risk" label="See condition monitoring" /></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Tracked fleet not found." to="/risk" label="See condition monitoring" /></div>;
   if (!fleet) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const model = fleet.model || null;

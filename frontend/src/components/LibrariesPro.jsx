@@ -32,7 +32,7 @@ export function LibrariesProNotice({ children = null }) {
 // The upgrade prompt that New library…, Add to library… and Upload into a library open without Pro.
 export function LibrariesProDialog({ onClose }) {
   return (
-    <Modal title={LIBRARIES_PRO_TITLE} onClose={onClose} trapFocus
+    <Modal title={LIBRARIES_PRO_TITLE} onClose={onClose}
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose}>Not now</button>

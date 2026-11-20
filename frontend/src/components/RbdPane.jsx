@@ -5,6 +5,7 @@ import Field from "./ui/Field.jsx";
 import { TextInput } from "./ui/Controls.jsx";
 import "./ModelTable.css";
 import "./RbdPane.css";
+import { plainLoadError } from "./loadFailed.js";
 
 // The builder loads with the pane (React Flow is large), as it does with its own page.
 const RbdEditor = lazy(() => import("./RbdEditor.jsx"));
@@ -50,7 +51,7 @@ export default function RbdPane({ rbdId, position, built = null, onRebuild = nul
             <p>
               {failed.status === 404 || failed.status === 403
                 ? "This RBD isn't there any more: it was deleted, or isn't yours to open. Unlink it from the position, or link another."
-                : `Something stopped the diagram loading: ${failed.message || "an unknown error"}. Try again in a moment.`}
+                : `Something stopped the diagram loading. ${plainLoadError(failed)}`}
             </p>
           </div>
         ) : (

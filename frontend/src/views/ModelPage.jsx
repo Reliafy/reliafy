@@ -22,6 +22,7 @@ import { answerParts, modelTabs } from "../modelFrame.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import LoadFailed from "../components/LoadFailed.jsx";
 
 const CRUMBS = [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
 
@@ -38,10 +39,13 @@ export default function ModelPage() {
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useTabParam();
+  const [loadError, setLoadError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     setModel(null);
     setError(null);
+    setLoadError(null);
     setMissing(false);
     getModel(id)
       .then((m) => {
@@ -52,8 +56,8 @@ export default function ModelPage() {
         // The Strategy tools start on the model used last (#294).
         rememberModel(m.id);
       })
-      .catch((err) => (err.status === 404 ? setMissing(true) : setError(err.message)));
-  }, [id, navigate]);
+      .catch((err) => (err.status === 404 ? setMissing(true) : setLoadError(err)));
+  }, [id, navigate, attempt]);
 
   const confirm = useConfirm();
   const askText = useAskText();
@@ -137,6 +141,8 @@ export default function ModelPage() {
           />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="life" />
+        : loadError ? <LoadFailed what="Couldn't open this model." error={loadError} to="/models" label="See all your models"
+                                  onRetry={() => setAttempt((n) => n + 1)} />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       {editModal}
       {adding && model && <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} collection="models" onClose={() => setAdding(false)} />}

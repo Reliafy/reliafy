@@ -54,7 +54,7 @@ p.td-quiet { margin: 0; }
 .td-row-chips { flex: 0 1 auto; justify-content: flex-end; margin-top: 1px; }
 .td-row button.td-go { font-size: var(--fs-14); font-weight: 500; color: var(--text); text-align: left; text-decoration: none; padding: 0; overflow-wrap: anywhere; }
 .td-row button.td-go:hover:not(:disabled) { color: var(--accent-text); text-decoration: underline; }
-.td-row a:focus-visible, .td-row button.td-go:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+.td-row a:focus-visible, .td-row button.td-go:focus-visible {  border-radius: 2px; }
 a.td-more { align-self: flex-start; font-size: var(--fs-13); }
 
 /* The sort beside "Directly inside". */

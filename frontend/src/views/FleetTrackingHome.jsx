@@ -53,14 +53,16 @@ export default function FleetTrackingHome() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listTrackedFleets()
       .then((d) => {
         setFleets(d.fleets || []);
         // A workspace with fleets of its own uses Risk: show it in the menu.
         if ((d.fleets || []).some((f) => !f.is_sample)) noteUse("risk");
       })
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, [noteUse]);
   useEffect(() => refresh(), [refresh]);
 
@@ -137,6 +139,8 @@ export default function FleetTrackingHome() {
       <WatchedBandsNote />
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={fleets}
         noun={["tracked fleet", "tracked fleets"]}
         fields={(f) => [f.name, f.model_name]}

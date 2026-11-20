@@ -1536,15 +1536,26 @@ def _ensure_covariance(model) -> None:
         pass
 
 
-def failure_positions_mask(model, n_points: int):
-    """Mask over ``get_plot_data()``'s ``x_``/``F`` keeping only exact failures.
+def failure_positions_mask(model, n_points: int, plot_data: dict | None = None):
+    """Mask over ``get_plot_data()``'s ``x_``/``F`` keeping only the failures.
 
     On probability paper only failures are plotted; censored units adjust the
     failures' plotting positions but are not points themselves. SurPyval returns
     a position for every observation, giving each censored one the *previous
     failure's* F — which would draw a duplicated, misleading point (and pull the
     apparent fit away from the line). Filter them out.
+
+    With ``plot_data`` (what ``get_plot_data()`` returned), SurPyval's own
+    ``failed`` mask is used: the rows its ``plot()`` draws. That is the only
+    right answer for inspection data, whose Turnbull positions are interval
+    ends, not rows with ``c == 0``: by the flags alone an all-interval data set
+    plotted no points at all.
     """
+    failed = plot_data.get("failed") if isinstance(plot_data, dict) else None
+    if failed is not None:
+        failed = np.asarray(failed, dtype=bool).ravel()
+        if failed.size == n_points:
+            return failed
     data = getattr(model, "data", None)
     c = None
     if isinstance(data, dict):
@@ -1625,7 +1636,7 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
 
     scatter_x = tx(data["x_"])
     scatter_y = ty(data["F"])
-    keep = failure_positions_mask(model, scatter_x.size)
+    keep = failure_positions_mask(model, scatter_x.size, data)
     scatter_x, scatter_y = scatter_x[keep], scatter_y[keep]
 
     line_x = tx(data["x_model"])

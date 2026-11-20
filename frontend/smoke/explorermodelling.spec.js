@@ -943,12 +943,16 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
     const dlg = page.getByRole("dialog", { name: "New part" });
     await dlg.getByLabel("Part number").fill(pn);
     await dlg.getByLabel("Name").fill(name);
-    await dlg.getByRole("combobox", { name: "On", exact: true }).selectOption(on);
+    // The position picker is the shared searchable Select: open it, type the name, pick it.
+    await dlg.getByRole("combobox", { name: "On", exact: true }).click();
+    await page.getByRole("searchbox", { name: "Find in the list" }).fill(on.name);
+    await page.getByRole("listbox").getByRole("option")
+      .filter({ has: page.locator(".sel-option-label", { hasText: new RegExp(`^${on.name}$`) }) }).click();
     await dlg.getByLabel("Quantity").fill(String(quantity));
     await dlg.getByRole("button", { name: "Add" }).click();
     await expect(dlg).toHaveCount(0);
   };
-  await addPart(`C-${tag}`, `Capacitor ${tag}`, board.id, 2);
+  await addPart(`C-${tag}`, `Capacitor ${tag}`, board, 2);
   const rows = pane.locator(".pred2-table tbody tr");
   await expect(rows).toHaveCount(1);
   const capType = pane.getByRole("combobox", { name: `Handbook part type of Capacitor ${tag}` });
@@ -962,7 +966,7 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
   const one = await big.textContent();
 
   // A second part, on the position itself, from the foot of the table.
-  await addPart(`U-${tag}`, `Opto-isolator ${tag}`, power.id, 1);
+  await addPart(`U-${tag}`, `Opto-isolator ${tag}`, power, 1);
   await expect(rows).toHaveCount(2);
   const optoType = pane.getByRole("combobox", { name: `Handbook part type of Opto-isolator ${tag}` });
   await expect(optoType).toBeFocused();

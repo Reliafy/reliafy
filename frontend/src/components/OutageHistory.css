@@ -20,7 +20,7 @@
   border: 1px solid var(--border); border-radius: var(--radius-md); padding: 6px 9px; font-size: var(--fs-13); min-width: 0;
   background: var(--bg-surface); color: var(--text);
 }
-.outage-input:focus { outline: none; border-color: var(--accent); }
+.outage-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 
 .outage-mapper { display: flex; flex-direction: column; gap: 10px; }
 .outage-map-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }

@@ -1,7 +1,8 @@
 // Shared pieces of the saved-item lists (#312): the row actions, and the
 // "Samples" group that replaces a "(sample)" suffix plus a chip on every row.
 
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import MoreMenu from "./ui/MoreMenu.jsx";
 import { rowOpen } from "../rowLinks.js";
 
 export { rowOpen };
@@ -64,39 +65,43 @@ export function SampleGroups({ rows, cols, render }) {
   );
 }
 
-// The actions cell every list row ends with: Open (left out when there's no
-// onOpen, e.g. where the row click already opens), any extras, then Delete
-// (which, for a shared sample or an item shared with you, hides it from your
-// view). Clicks don't reach the row's own open handler.
-// ``to`` makes Open a link (so it opens in a new tab too); ``onOpen`` alone keeps
-// a button for rows that don't have an address.
-export function RowActions({ item, onOpen, to, onDelete, children }) {
-  const stop = (fn) => (e) => {
-    e.stopPropagation();
-    fn(e);
-  };
+// The actions cell every list row ends with: one ⋯ button and the shared row
+// menu (MoreMenu → RowMenu), in the design system's order: Open, the row's own
+// actions (`actions`: [{id, label, onSelect, disabled?, reason?}]), then
+// Delete after a line (for a shared sample or an item shared with you it
+// reads "Remove from my view"). A row with Open as its only action keeps a
+// plain Open button instead of a menu of one. Clicks don't reach the row's own
+// open handler.
+// ``to`` makes Open go to that address; ``onOpen`` alone runs it for rows that
+// don't have one.
+export function RowActions({ item, onOpen, to, onDelete, actions = [] }) {
+  const navigate = useNavigate();
+  const stop = (e) => e.stopPropagation();
+  const open = to ? () => navigate(to) : onOpen;
+  const items = [
+    ...(open ? [{ id: "open", label: "Open", onSelect: open }] : []),
+    ...actions.filter(Boolean),
+    ...(onDelete
+      ? [...(open || actions.length ? [{ separator: true }] : []),
+         { id: "delete", label: item?.read_only ? "Remove from my view" : "Delete…", danger: true, onSelect: onDelete }]
+      : []),
+  ];
+  const name = itemName(item);
   return (
-    <td className="lib-actions">
+    <td className="lib-actions" onClick={stop}>
       <div className="lib-acts">
-        {to ? (
-          <Link className="act act-open" to={to} title="Open" aria-label="Open" onClick={(e) => e.stopPropagation()}>
-            <OpenIcon />
-          </Link>
-        ) : onOpen && (
-          <button className="act act-open" title="Open" aria-label="Open" onClick={stop(onOpen)}>
-            <OpenIcon />
-          </button>
-        )}
-        {children}
-        {onDelete && (
-          <button
-            className="act del"
-            title={item?.read_only ? "Remove from my view" : "Delete"}
-            aria-label={item?.read_only ? "Remove from my view" : "Delete"}
-            onClick={stop(onDelete)}
-          >
-            <TrashIcon />
-          </button>
+        {items.length === 1 && items[0].id === "open" ? (
+          to ? (
+            <Link className="act act-open" to={to} title="Open" aria-label="Open">
+              <OpenIcon />
+            </Link>
+          ) : (
+            <button className="act act-open" title="Open" aria-label="Open" onClick={onOpen}>
+              <OpenIcon />
+            </button>
+          )
+        ) : items.length > 0 && (
+          <MoreMenu label={name ? `Actions for ${name}` : "Actions"} items={items} />
         )}
       </div>
     </td>

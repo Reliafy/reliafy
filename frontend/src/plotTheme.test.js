@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  DOWNLOAD_OVER, DOWNLOAD_ROW, MIN_PLOT_AREA, PLOTLY_HEIGHT, downloadCorner, logTicks, minPlotSize, ownHeight, reachesCorner, shorterBy, themedLayout,
+  DOWNLOAD_OVER, DOWNLOAD_ROW, MIN_PLOT_AREA, PLOTLY_HEIGHT, downloadCorner, logTicks, minPlotSize, ownHeight, probabilityHoverText, reachesCorner, shorterBy, themedLayout,
 } from "./plotTheme.js";
 
 const box = (left, top, width, height = 14) => ({ left, top, right: left + width, bottom: top + height });
@@ -138,4 +138,12 @@ test("a log axis labels values under 1 in full: 0.4, not 4", () => {
   assert.ok(narrow.tickvals.length >= 3);
   narrow.tickvals.forEach((v, i) => assert.equal(Number(narrow.ticktext[i]), v));
   assert.equal(logTicks(0, 2), null);
+});
+
+test("a probability plot's hover reads in the axes' units, not paper coordinates", () => {
+  assert.deepEqual(probabilityHoverText([812.4382, 1240.019], [0.0566, 0.38123], "hours"),
+    ["812.4 hours · 5.66% failed", "1,240 hours · 38% failed"]);
+  // No raw values, or a mismatch: no hover text (the trace then shows none).
+  assert.equal(probabilityHoverText(undefined, [0.1], "hours"), null);
+  assert.equal(probabilityHoverText([1, 2], [0.1], "hours"), null);
 });

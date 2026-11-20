@@ -359,7 +359,10 @@ def given_rows(x, c) -> list[dict]:
 # ---- the update -------------------------------------------------------------------------
 
 def _fit(dist_id: str, x, c, priors, unit):
-    model = DISTS[dist_id].fit_bayes(x, c, priors=priors, unit=unit or None)
+    from backend.fitting import surpyval_unit
+
+    # The app's one spelling ("days" -> "Days"), as every other fit and the downloaded script give it.
+    model = DISTS[dist_id].fit_bayes(x, c, priors=priors, unit=surpyval_unit(unit))
     ex = getattr(getattr(model, "posterior", None), "exact", None) or {}
     return _StableLomax(model, ex) if ex.get("family") == "gamma" else model
 
@@ -642,7 +645,7 @@ def plot_for(model, dist_id: str, x, c) -> dict | None:
             band = np.asarray(model.cri(grid, on="ff", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
             shaped["line"] = {"x": tx.tolist(), "y": ty(model.ff(grid)).tolist()}
             shaped["bounds"] = {"x": tx.tolist(), "lower": ty(band[:, 0]).tolist(), "upper": ty(band[:, 1]).tolist()}
-        keep = fitting.failure_positions_mask(plain, len(data["x_"]))
+        keep = fitting.failure_positions_mask(plain, len(data["x_"]), data)
         shaped["empirical"] = fitting._empirical_points(model, data, keep, "Nelson-Aalen")
         return shaped
     except Exception:  # noqa: BLE001 - a plot is a convenience, never a reason not to save

@@ -383,3 +383,14 @@ export function fitFromReading(reading, facts, nRows) {
   }
   return { mapping, unit: reading.unit || "", itemTimeline, z: reading.z || [] };
 }
+
+// The reading of pasted values (lifeData's parsePastedValues): known from the
+// paste itself, so the fit flow saves it without asking. One column is times
+// to failure, every one a failure; two are a time and its flag (0 = failed,
+// 1 = still running). The unit is left blank: the Model step asks for it.
+export function pastedReading(parsed) {
+  const r = { ...emptyReading(), x: "time" };
+  if (parsed?.cols === 2) r.c = "censored";
+  else r.all_failed = true;
+  return readingPayload(r);
+}

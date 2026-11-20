@@ -191,7 +191,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   // The Calculator tab unmounts when you switch away, so its inputs live here
   // and survive tab switches. When the result itself changes in place (e.g.
   // fitting another model in the workspace) reset them for the new model.
-  const [calc, setCalc] = useState(() => initCalcState(result.functions));
+  const [calc, setCalc] = useState(() => initCalcState(result.functions, result.plot?.empirical?.x));
   const calcNextId = useRef(1);
   // One confidence for the calculator's bounds and the mean life's (#288).
   const level = Number(calc.ci.level);
@@ -202,7 +202,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   if (result !== prevResult) {
     setPrevResult(result);
     setTvcCalc(result.tvc ? initTvcState(result) : null);
-    setCalc(initCalcState(result.functions));
+    setCalc(initCalcState(result.functions, result.plot?.empirical?.x));
     calcNextId.current = 1;
     setOwn(resolveTab(modelTabs(result) || [], null));
   }
@@ -222,7 +222,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
         <PlotPanel
           plot={<PlotCard><ProbabilityPlot fill plot={result.plot} unit={result.unit} download={`${label} — probability plot`}
                                                   {...(intervalLevel(result).credible ? { bandName: `${intervalLevel(result).label} band`, lineName: "Updated model" } : {})} /></PlotCard>}
-          side={<LifeAside result={result} split={split} bestFit={bestFit} compare={compare} onPick={onPick}
+          side={<LifeAside result={result} split={split} bestFit={bestFit} compare={compare} onPick={onPick} name={label}
                            modelId={modelId} onStats={onStats} showUse={false} />}
         />
       );
@@ -233,7 +233,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
       ) : (
         <PlotPanel
           plot={<PlotCard><SurvivalPlot fill estimate={result.estimate} unit={result.unit} download={`${label} — survival curve`} /></PlotCard>}
-          side={<LifeAside result={result} split={split} modelId={modelId} showUse={false} />}
+          side={<LifeAside result={result} split={split} modelId={modelId} showUse={false} name={label} />}
         />
       );
       break;
@@ -266,7 +266,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
       break;
     case "chars":
       body = (
-        <ModelCharacteristics result={result} level={level} onLevel={setLevel} onBLives={showBLives}
+        <ModelCharacteristics result={result} level={level} onLevel={setLevel} onBLives={showBLives} name={label}
                               calc={calc} tvc={tvcCalc} onCalc={toCalc} />
       );
       break;

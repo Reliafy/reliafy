@@ -19,7 +19,11 @@ export default function JointHome() {
   const [models, setModels] = useState(null);
   const [error, setError] = useState(null);
 
-  const refresh = () => listJointModels().then((r) => setModels(r.models)).catch(() => setModels([]));
+  const [loadError, setLoadError] = useState(null);
+  const refresh = () => {
+    setLoadError(null);
+    listJointModels().then((r) => setModels(r.models)).catch(setLoadError);
+  };
   useEffect(() => { refresh(); }, []);
 
   const confirm = useConfirm();
@@ -47,6 +51,8 @@ export default function JointHome() {
       />
       {error && <div className="card error">{error}</div>}
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={models}
         noun={["model", "models"]}
         fields={(m) => [m.name, m.marker, m.path_model]}

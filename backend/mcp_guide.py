@@ -96,7 +96,14 @@ the diagram's unit (change rbd_create unit; change rbd_edit set unit relabels, n
 number, and ask the user when unsure: never assume hours.
 - The unit is the model's own: pass unit when fitting or saving from params; it is kept on the model (and its \
 Download as Python) and every model read returns it. Any text works ("landings"); blank means unknown.
-- A saved model used on a diagram block must be in the diagram's unit; analyses warn when they differ.
+- A saved model on a diagram block in another unit of the same kind (days on an hours diagram; km and miles) is \
+converted to the diagram's unit before the analysis (24 hours a day, 7 days a week, 365.25/12 days a month, \
+365.25 days a year): the result's unit_conversions says which blocks. Units of different kinds (cycles on an \
+hours diagram) and blank units aren't converted; analyses warn about those.
+- The same rule wherever a saved model meets another clock: a calculator given model_id and a unit of the same \
+kind (a model in days, unit=months) converts the model and answers in that unit (unit_conversion says so); \
+RCM evidence in another time unit is read in the task interval's unit; a class model by use in km proposes for \
+a task in miles.
 - Rates: an exponential failure_rate is per unit time (1/MTBF). An MTBF or MTTR can be given as a block's mean \
 (with its shape, e.g. weibull {beta}) instead of params.
 - Imported diagram files that state no unit come back with unit_warning: ask, then pass time_unit (or change \
@@ -165,7 +172,7 @@ point, give different values per class, set placeholder=true on every guessed mo
 output}; two parallel blocks fan out from the node before and join at the node after; "2 of 3": three blocks \
 into one knode (n=2). Stages form: stages in series, each with components in parallel (k_of_n voting).
 - Block models: inline distribution_id + params, a mean (MTBF/MTTR) with its shape, a mixture, or a saved \
-model (saved_model_id; same time unit).
+model (saved_model_id; one in another time unit is converted to the diagram's, see guide units).
 - Standby as plants run it: k units running, spares cold (dormancy 0), warm (0-1: ageing at that share while \
 waiting) or hot (1), startProb the chance a spare starts (one that doesn't is skipped). Units may differ: \
 standbyModel for every spare, runningModels / spareModels (lists, null = the default) for single units, up to \

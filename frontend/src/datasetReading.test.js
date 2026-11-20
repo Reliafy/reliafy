@@ -196,3 +196,18 @@ test("the x line doesn't repeat a unit the column name already carries", () => {
   assert.equal(x({ x: "Age", unit: "Hours" }), "Age (hours)");
   assert.equal(x({ x: "Age (h)", unit: "Hours" }), "Age (h)");
 });
+
+test("pasted values carry their own reading: no columns to ask about", async () => {
+  const { pastedReading } = await import("./datasetReading.js");
+  const { parsePastedValues } = await import("./lifeData.js");
+  const two = pastedReading(parsePastedValues("1200 0\n1850 0\n2000 1\n"));
+  assert.equal(two.x, "time");
+  assert.equal(two.c, "censored");
+  assert.equal(two.c_invert, false);
+  assert.equal(two.all_failed, false);
+  assert.equal(two.unit, "");
+  const one = pastedReading(parsePastedValues("1200\n1850\n2000\n"));
+  assert.equal(one.x, "time");
+  assert.equal(one.c, "");
+  assert.equal(one.all_failed, true);
+});

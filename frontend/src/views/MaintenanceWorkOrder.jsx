@@ -17,7 +17,7 @@ import { mergeValues, progressText, readingRows, readingsToSend } from "../workO
 import { partChoices, stockText } from "../maintenanceSpares.js";
 import {
   actionKinds, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, followUps, foundFailedText, itemAtText, newItemBody,
-  replaceReason, replaceRecordText, subjectPath,
+  replaceReason, replaceRecordText, subjectPath, closeActionBlocker,
 } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
@@ -58,7 +58,7 @@ export default function MaintenanceWorkOrder() {
   // what was typed (a functional update, so it can't race a keystroke after a Record or a checklist tick).
   useEffect(() => { if (wo) setValues((prev) => mergeValues(readingRows(wo), prev)); }, [wo]);
 
-  if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to={ORDERS_PATH} label="Back to Orders" /></div>;
+  if (error && !wo) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Work order not found." to={ORDERS_PATH} label="Back to Orders" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (
@@ -230,14 +230,18 @@ function CloseForm({ wo, onClosed, readings }) {
   // A work package's work order: its lines say what was done (a problem is recorded at its line's
   // position), so it starts with no action of its own.
   const lines = wo.package ? wo.lines || [] : null;
-  // A breakdown (a corrective work order) starts its replacement as a failure, so the
-  // defaults never record a failure as planned.
+  // A breakdown (a corrective work order) starts at nothing: the person picks what was
+  // done and, for a replacement, whether it failed (the Close button says what's missing).
   // Where each action is recorded: the work order's own position, or one inside it (the
   // seal inside the pump); the task's failure mode, when it's inside, is the starting point.
   const inside = lines ? [] : wo.inside_positions || [];
   const startWhere = wo.suggested_position_id || "";
   const [actions, setActions] = useState(lines ? [] : [{ kind: defaultCloseKind(wo), failed: defaultFailed(wo), where: startWhere }]);
-  const blocker = lines && closeBlocker(lines);
+  // Why Close can't be pressed yet, in words on the button: the package's lines, then each action.
+  const blocker = (lines && closeBlocker(lines))
+    || actions.map((a) => closeActionBlocker(a, {
+      atPosition, modeReady: a.kind === "checked" || a.kind === "other" || (a.kind === "replace" && !a.failed) || failureModeReady(a.mode),
+    })).find(Boolean) || "";
   const left = lines ? unanswered(lines) : [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -303,6 +307,7 @@ function CloseForm({ wo, onClosed, readings }) {
             )}
             <Field label="What was done">
               <select value={a.kind} onChange={(e) => update(i, { kind: e.target.value })}>
+                {!a.kind && <option value="">Choose…</option>}
                 {kinds.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
               </select>
             </Field>
@@ -318,13 +323,14 @@ function CloseForm({ wo, onClosed, readings }) {
             )}
             {a.kind === "replace" && atPosition && (
               <Field label="Did it fail?">
-                <select value={a.failed ? "yes" : "no"} onChange={(e) => update(i, { failed: e.target.value === "yes" })}>
+                <select value={a.failed == null ? "" : a.failed ? "yes" : "no"} onChange={(e) => update(i, { failed: e.target.value === "yes" })}>
+                  {a.failed == null && <option value="">Choose…</option>}
                   <option value="yes">Yes, it failed</option>
                   <option value="no">No, a planned replacement</option>
                 </select>
               </Field>
             )}
-            {a.kind !== "other" && a.kind !== "checked" && atPosition && (a.kind !== "replace" || a.failed) && (
+            {a.kind && a.kind !== "other" && a.kind !== "checked" && atPosition && (a.kind !== "replace" || a.failed) && (
               <Field label={a.kind === "replace" ? "Which way did it fail?" : "Failure mode (optional)"}>
                 <FailureModePicker modes={target.failure_modes} classModes={target.class_failure_modes} value={a.mode}
                                    onChange={(mode) => update(i, { mode })}
@@ -374,7 +380,7 @@ function CloseForm({ wo, onClosed, readings }) {
         );
       })}
       <div className="maint-row">
-        <button className="secondary" onClick={() => setActions((as) => [...as, { kind: "repair", failed: defaultFailed(wo), where: as[as.length - 1]?.where || startWhere }])}>{actions.length ? "Add another action" : "Add an action"}</button>
+        <button className="secondary" onClick={() => setActions((as) => [...as, { kind: "", failed: defaultFailed(wo), where: as[as.length - 1]?.where || startWhere }])}>{actions.length ? "Add another action" : "Add an action"}</button>
       </div>
       <div className="rcm-form">
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
@@ -384,7 +390,7 @@ function CloseForm({ wo, onClosed, readings }) {
         <Field label="Closing notes (optional; the notes above are kept)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">
-        <button onClick={submit} disabled={busy || !!blocker || !actions.every((a) => a.kind === "checked" || (a.kind === "replace" && !a.failed) || failureModeReady(a.mode))}>
+        <button onClick={submit} disabled={busy || !!blocker}>
           {busy ? "Closing…" : blocker || "Close work order"}
         </button>
         {wo.subject && <Link to={subjectPath(wo.subject)} className="lib-date">Back to {wo.subject.name}</Link>}

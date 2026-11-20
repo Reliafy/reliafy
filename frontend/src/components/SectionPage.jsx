@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import ListSearch, { matches } from "./ListSearch.jsx";
 import PageHeader from "./ui/PageHeader.jsx";
+import LoadFailed from "./LoadFailed.jsx";
 import HelpLink from "./ui/HelpLink.jsx";
 import Select from "./Select.jsx";
 import { ShowMeHow } from "./Walkthrough.jsx";
@@ -118,13 +119,17 @@ export function SectionEmpty({ title, body, action, help }) {
 //   tagsOf    optional (row) => its tags: chips that filter the list (a row must
 //             have every chip that's on)
 //   initialType a type to filter by on arrival (a link's ?kind=)
+//   loadError the list's read failed (the Error or its message): the shared
+//             LoadFailed card in place of the list, never "Loading…" under it
+//   onRetry   loads the list again (LoadFailed's Try again)
 export function SectionList({
   rows, noun, fields, types, typeOf, tagsOf, head, render, empty, help, placeholder, className = "",
-  initialType = "",
+  initialType = "", loadError = null, onRetry = null,
 }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState(initialType || "");
   const [on, setOn] = useState([]);
+  if (loadError) return <LoadFailed what={`Couldn't load your ${noun[1]}.`} error={loadError} onRetry={onRetry} />;
   if (rows === null || rows === undefined) return <div className="card empty">Loading…</div>;
   if (!rows.length) return <SectionEmpty {...empty} help={help} />;
   const [one, many] = noun;

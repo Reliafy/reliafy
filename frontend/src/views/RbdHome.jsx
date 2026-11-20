@@ -19,22 +19,6 @@ import { isCapRefusal } from "../plan.js";
 
 const HELP = { walkthrough: "rbd", guide: "build-an-rbd" };
 
-const PencilIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-  </svg>
-);
-const ShareIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="6" cy="12" r="2.6" /><circle cx="17" cy="5.5" r="2.6" /><circle cx="17" cy="18.5" r="2.6" />
-    <path d="m8.4 10.8 6.2-4M8.4 13.2l6.2 4" />
-  </svg>
-);
-const CopyIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="8" y="8" width="13" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
-  </svg>
-);
 const ImportIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     {/* An upload arrow (into Reliafy), not a download one. */}
@@ -81,10 +65,12 @@ export default function RbdHome() {
     else setImported({ file: file.name, diagrams });
   };
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listRbds()
       .then((d) => setRbds(d.rbds))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
 
   useEffect(() => refresh(), [refresh]);
@@ -95,6 +81,17 @@ export default function RbdHome() {
     if (!(await confirm(deleteOrRemoveConfirm(r, "diagram", { name: itemName(r) })))) return;
     try {
       await deleteRbd(r.id);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const onRename = async (r) => {
+    const name = changedText(await askText(renamePrompt({ kind: "diagram", name: r.name })), r.name);
+    if (!name) return;
+    try {
+      await renameRbd(r.id, name);
       refresh();
     } catch (err) {
       setError(err.message);
@@ -205,6 +202,8 @@ export default function RbdHome() {
       )}
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={nested}
         noun={["diagram", "diagrams"]}
         fields={rbdNames}
@@ -241,33 +240,11 @@ export default function RbdHome() {
             <td className="lib-n lib-opt">{(r.n_nodes ?? 0).toLocaleString()}</td>
             <td className="lib-n lib-opt">{(r.n_edges ?? 0).toLocaleString()}</td>
             <td className="lib-date lib-opt">{relativeTime(r.updated_at || r.created_at)}</td>
-            <RowActions item={r} to={pathOf(r.id)} onDelete={() => onDelete(r)}>
-              <button className="act" title="Duplicate" aria-label="Duplicate" disabled={duplicating === r.id}
-                      onClick={(e) => { e.stopPropagation(); onDuplicate(r); }}>
-                <CopyIcon />
-              </button>
-              {!r.read_only && (
-                <button className="act" title="Rename" aria-label="Rename" onClick={async (e) => {
-                  e.stopPropagation();
-                  const name = changedText(await askText(renamePrompt({ kind: "diagram", name: r.name })), r.name);
-                  if (name) {
-                    try {
-                      await renameRbd(r.id, name);
-                      refresh();
-                    } catch (err) {
-                      setError(err.message);
-                    }
-                  }
-                }}>
-                  <PencilIcon />
-                </button>
-              )}
-              {!r.read_only && workspace === "personal" && (
-                <button className="act" title="Share" aria-label="Share" onClick={(e) => { e.stopPropagation(); setSharing(r); }}>
-                  <ShareIcon />
-                </button>
-              )}
-            </RowActions>
+            <RowActions item={r} to={pathOf(r.id)} onDelete={() => onDelete(r)} actions={[
+              { id: "duplicate", label: "Duplicate", disabled: duplicating === r.id, onSelect: () => onDuplicate(r) },
+              !r.read_only && { id: "rename", label: "Rename…", onSelect: () => onRename(r) },
+              !r.read_only && workspace === "personal" && { id: "share", label: "Share…", onSelect: () => setSharing(r) },
+            ]} />
           </tr>
           {(r.children || []).map(renderRow)}
           </Fragment>

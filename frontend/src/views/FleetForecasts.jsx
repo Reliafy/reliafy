@@ -110,10 +110,12 @@ export default function FleetForecasts() {
     setTicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-MAX_COMPARE)));
   };
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listFleets()
       .then((d) => setFleets(d.fleets || []))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -242,6 +244,8 @@ export default function FleetForecasts() {
         <FleetCompare ids={ticked} onClear={() => { setComparing(false); setTicked([]); }} />
       )}
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={fleets}
         noun={["forecast", "forecasts"]}
         help={HELP}

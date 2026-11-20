@@ -36,15 +36,17 @@ export default function StrategyAnalysisPage() {
   const [error, setError] = useState(null);
   const currency = useCurrency();
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    setError(null);
     getStrategyAnalysis(id).then(setDoc).catch((e) => setError(e.message));
-  }, [id]);
+  }, [id, attempt]);
 
   if (error) {
     return (
       <div className="app">
         <header><h1>Saved analysis</h1></header>
-        <LoadFailed error={error} to="/strategy" label="See all saved analyses" />
+        <LoadFailed onRetry={() => setAttempt((n) => n + 1)} error={error} to="/strategy" label="See all saved analyses" />
       </div>
     );
   }

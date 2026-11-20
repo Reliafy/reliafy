@@ -194,7 +194,7 @@ history** checks the diagram against the outages it really had (see
 
 ## Take it with you: download as Python
 
-Once a diagram is saved, **Save → Download as Python** in the toolbar gives you a
+Once a diagram is saved, **⋯ → Download as Python** in the toolbar gives you a
 standalone script that rebuilds the same diagram with the open-source
 [SurPyval](https://github.com/derrynknife/SurPyval) and
 [RePyability](https://github.com/derrynknife/RePyability) libraries and runs the

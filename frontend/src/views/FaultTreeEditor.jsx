@@ -276,6 +276,7 @@ export default function FaultTreeEditor() {
   const [analysis, setAnalysis] = useState({ phase: "idle", error: null, sig: null });
   const [tInput, setTInput] = useState("");
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (isNew) return;
     setLoadError(null);
@@ -289,7 +290,7 @@ export default function FaultTreeEditor() {
         setSelected(null);
       })
       .catch((e) => setLoadError(e.message || String(e)));
-  }, [routeId, isNew]);
+  }, [routeId, isNew, attempt]);
 
   const readOnly = !!doc?.read_only; // a sample: edits are kept by "Save a copy"
   const rows = useMemo(() => outlineRows(tree), [tree]);
@@ -433,7 +434,7 @@ export default function FaultTreeEditor() {
     return (
       <div className="app">
         <PageHeader crumbs={crumbs} title="Fault tree" />
-        <LoadFailed error={loadError} to={FAULT_TREES_PATH} label="See all fault trees" notFound="Fault tree not found." />
+        <LoadFailed onRetry={() => setAttempt((n) => n + 1)} error={loadError} to={FAULT_TREES_PATH} label="See all fault trees" notFound="Fault tree not found." />
       </div>
     );
   }
