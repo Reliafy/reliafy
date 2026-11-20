@@ -94,6 +94,8 @@ Units.
 - A model's parameters and every time given to or returned by it are in the model's time unit; a diagram's in \
 the diagram's unit (change rbd_create unit; change rbd_edit set unit relabels, never rescales). Always state the unit with a \
 number, and ask the user when unsure: never assume hours.
+- The unit is the model's own: pass unit when fitting or saving from params; it is kept on the model (and its \
+Download as Python) and every model read returns it. Any text works ("landings"); blank means unknown.
 - A saved model used on a diagram block must be in the diagram's unit; analyses warn when they differ.
 - Rates: an exponential failure_rate is per unit time (1/MTBF). An MTBF or MTTR can be given as a block's mean \
 (with its shape, e.g. weibull {beta}) instead of params.
