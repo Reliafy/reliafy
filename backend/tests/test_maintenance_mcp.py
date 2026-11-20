@@ -485,6 +485,23 @@ def test_a_class_forecast_over_mcp(env):
     assert "class_forecast" in guide["guide"]
 
 
+def test_a_class_with_no_model_says_so_in_words_and_names_the_tool_over_mcp(env):
+    from backend.maintenance.service import Maintenance
+    from backend.routers import maintenance as router
+
+    m = Maintenance(router._store, UID, UID)
+    m.create_position("Feed pump", position_class="Feed pump")
+
+    async def flow(client):
+        return await _get(client, "class_forecast", "Feed pump")
+
+    refused = _session(env["token"], flow)
+    # The people's words (what the app shows), then the tool call for an agent.
+    assert refused.is_error
+    text = refused.content[0].text
+    assert "has no fitted life model yet" in text and text.endswith("Fit it with maintenance reliability.fit_class_model.")
+
+
 def test_spares_stock_levels_over_mcp(env):
     # #31: set a part's lead time with maintenance parts.update, read hold N and the
     # plan with maintenance get.class_forecast / spares_plan.

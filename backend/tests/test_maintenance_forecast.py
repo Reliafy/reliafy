@@ -193,8 +193,12 @@ def test_it_follows_the_register_and_is_kept_until_the_next_change(m):
 
 def test_bad_requests_are_refused(m):
     _pumps(m)
-    with pytest.raises(Invalid, match="Fit a non-repairable model"):
+    # For people: what's missing and where to do it in the app, with no tool's name in it;
+    # the tool call is kept apart, for an agent (the MCP side adds it).
+    with pytest.raises(Invalid, match="has no fitted life model yet") as refused:
         forecast.class_forecast(m, "Pump")
+    assert "Modelling tab" in str(refused.value) and "maintenance " not in str(refused.value)
+    assert refused.value.agent == "Fit it with maintenance reliability.fit_class_model."
     _model(m, "Pump")
     with pytest.raises(Invalid):
         forecast.class_forecast(m, "Pump", "fortnight")

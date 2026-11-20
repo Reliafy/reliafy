@@ -46,8 +46,8 @@ export function ClassForecastTab({ row, display, onSelect }) {
     for (const key of keys ? keys.split("\n") : []) {
       getClassForecast(key)
         .then((f) => live && setReads((s) => ({ ...s, [key]: f })))
-        // The reason in words ("Fit a non-repairable model for … first"), without a tool's name after it.
-        .catch((e) => live && setReads((s) => ({ ...s, [key]: { error: String(e?.message || "").replace(/\s*\((maintenance|get|list|analyse|change) [^)]*\)\.?$/, ".") || true } })));
+        // The reason in words, as the server writes it for people ("… has no fitted life model yet …").
+        .catch((e) => live && setReads((s) => ({ ...s, [key]: { error: String(e?.message || "") || true } })));
     }
     return () => { live = false; };
   }, [keys]);
