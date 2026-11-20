@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { listMaintenancePlaces } from "../api.js";
+import { listItemsOfProducts, listMaintenancePlaces } from "../api.js";
 import RegisterList, { CountCell } from "../components/RegisterList.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
 import { NewLocationModal } from "./MaintenanceLists.jsx";
 import TreeSheetPane from "../components/TreeSheetPane.jsx";
+import AssetSearchResults from "../components/AssetSearchResults.jsx";
+import { itemPagePath } from "../products.js";
 import usePhone from "../usePhone.js";
 import {
-  NOT_PLACED_PATH, assetOpenPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
+  NOT_PLACED_PATH, assetOpenPath, assetsSummary, dueText, insideText, itemHitText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
 import "./Maintenance.css";
 
@@ -20,16 +22,26 @@ const HELP = { guide: "build-your-asset-tree" };
 // it. The positions at no place are one row at the end, opening the Explorer
 // filtered to them. Opening an asset opens the Explorer on it; Parts and stock
 // and Classes are tabs there. The same page as Products (RegisterList), with
-// the maintenance columns: open work and what's due.
+// the maintenance columns: open work and what's due. The search finds the assets
+// by name, and under them the positions (name or tag) and items (name or serial)
+// inside them; the items of your products (built from one) are one row at the end
+// too, opening in place to list them.
 export default function MaintenanceAssets() {
   const navigate = useNavigate();
   const [view, setView] = useState(null);
   const [modal, setModal] = useState(false);
   const [error, setError] = useState(null);
   const reload = useCallback(() => {
-    listMaintenancePlaces().then(setView).catch((e) => setError(e.message));
+    setError(null);
+    listMaintenancePlaces().then(setView).catch((e) => setError(e));
   }, []);
   useEffect(() => reload(), [reload]);
+  // The items of your products: built from one, or of a product's part (null while loading).
+  const [productItems, setProductItems] = useState(null);
+  const [itemsOpen, setItemsOpen] = useState(false);
+  useEffect(() => {
+    listItemsOfProducts().then((d) => setProductItems(d.items || [])).catch(() => setProductItems([]));
+  }, []);
   // Delete… on a row: the asset with everything at it ({id, name}), then the toast with Undo.
   const [deleting, setDeleting] = useState(null);
   const location = useLocation();
@@ -93,6 +105,37 @@ export default function MaintenanceAssets() {
     </tr>
   );
 
+  const ofProducts = productItems?.length > 0 && (
+    <>
+      <tr className="lib-row maint-not-placed reg-products-row" onClick={() => setItemsOpen((o) => !o)}>
+        <td>
+          <button type="button" className="reg-disclose" aria-expanded={itemsOpen}
+                  onClick={(e) => { e.stopPropagation(); setItemsOpen((o) => !o); }}>
+            <span aria-hidden="true" className="reg-disclose-mark">{itemsOpen ? "▾" : "›"}</span> Items of your products
+          </button>
+          <div className="lib-date">Each item built from a product, by serial. Open one for its page and its tree.</div>
+        </td>
+        {columns.map((c) => (
+          <td key={c.key} className={c.num ? "num" : undefined} data-label={c.label}>
+            {c.key === "items" ? productItems.length : <span className="lib-date">—</span>}
+          </td>
+        ))}
+        <td />
+      </tr>
+      {itemsOpen && productItems.map((it) => {
+        const t = itemHitText(it);
+        return (
+          <tr key={it.id} className="lib-row reg-child" onClick={() => navigate(itemPagePath(it.id))}>
+            <td colSpan={columns.length + 2}>
+              <Link to={itemPagePath(it.id)} className="lib-name maint-node-name" onClick={(e) => e.stopPropagation()}>{t.title}</Link>
+              <div className="lib-date reg-sub" title={t.sub}>{t.sub}</div>
+            </td>
+          </tr>
+        );
+      })}
+    </>
+  );
+
   return (
     <>
       <RegisterList
@@ -100,10 +143,12 @@ export default function MaintenanceAssets() {
         purpose={fromExplorer != null ? "Pick an asset to open it in the Explorer. Each asset opens on its own."
           : "The places you look after, and everything at each one."}
         help={HELP} primary={newAsset} menu={menu} pane={sheetPane}
-        error={error} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
+        loadError={error} onRetry={reload} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
         count={assetsSummary(view)} search={(p) => [p.name, p.description]}
         name={(p) => ({ to: assetOpenPath(p.id, fromExplorer || ""), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
-        columns={columns} after={notPlaced || null}
+        columns={columns} after={notPlaced || ofProducts ? <>{notPlaced || null}{ofProducts || null}</> : null}
+        found={(q, shown) => <AssetSearchResults query={q} shown={shown} />}
+        placeholder="Name, tag or serial…"
         // Merge into another asset… opens the asset in the Explorer with the merge pane beside its tree.
         rowMenu={(p) => [
           { id: "merge", label: "Merge into another asset…", onSelect: () => navigate(assetOpenPath(p.id, "merge=1")) },

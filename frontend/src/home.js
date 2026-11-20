@@ -120,7 +120,8 @@ export function attentionRows({ changes = null, tracked = [], maintenance = null
 // null once it failed).
 export function attentionReady({ changes, tracked, access, maintenance } = {}) {
   if (changes === undefined || tracked === undefined || access === undefined) return false;
-  return access === false || maintenance !== undefined;
+  // access null: the check itself failed (attentionFailed says so), so nothing more is waited for.
+  return access === false || access === null || maintenance !== undefined;
 }
 
 // Whether any of what "Needs attention" reads failed (null), once all have
@@ -128,7 +129,7 @@ export function attentionReady({ changes, tracked, access, maintenance } = {}) {
 // never "Nothing needs you" nor the new-account welcome (an empty answer that
 // would be a guess).
 export function attentionFailed({ changes, tracked, access, maintenance } = {}) {
-  return changes === null || tracked === null || (access === true && maintenance === null);
+  return changes === null || tracked === null || access === null || (access === true && maintenance === null);
 }
 
 // The page that lists every row of a kind, by the row key's prefix.

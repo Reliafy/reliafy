@@ -2145,6 +2145,13 @@ async function downloadFile(url, fallbackName, opts = {}, fetcher = authedFetch)
   return name;
 }
 
+// "Download CSV" on the dataset page: the rows as saved (every row, not the
+// preview). ``part`` "measurements" gives the readings part when there is one.
+export function downloadDatasetCsv(id, part = "life", name = "dataset") {
+  const q = part === "measurements" ? "?part=measurements" : "";
+  return downloadFile(`/api/datasets/${encodeURIComponent(id)}/csv${q}`, `${name || "dataset"}.csv`);
+}
+
 export const PYTHON_EXPORT_TIP =
   "A standalone script that rebuilds this diagram with SurPyval + RePyability and runs it locally.";
 
@@ -2570,6 +2577,28 @@ export function createMaintenanceItem(body) {
 // (the locations it carries) instead of the places you look after.
 export function listMaintenanceLocations(of = null) {
   return request(`/api/maintenance/locations${of ? `?of=${encodeURIComponent(of)}` : ""}`);
+}
+
+// What's inside the assets, for the Assets list's search: positions by name or tag,
+// items by name, serial or part number, each with the asset it's at (site).
+export function searchAssets(q, { signal } = {}) {
+  return request(`/api/maintenance/search?q=${encodeURIComponent(q)}`, signal ? { signal } : undefined);
+}
+
+// Every item of a product (built from one, or of a product's part), with where it is.
+export function listItemsOfProducts() {
+  return request("/api/maintenance/items/of-products");
+}
+
+// Delete an item: dryRun (the default) says what would go, or why it can't. The item is
+// retired, its history kept; a built item at the top of its tree takes the tree too.
+export function deleteMaintenanceItem(id, { dryRun = true } = {}) {
+  return postJson(`/api/maintenance/items/${encodeURIComponent(id)}/delete`, { dry_run: dryRun });
+}
+
+// Undo an item's delete (with the tree that went with it).
+export function undeleteMaintenanceItem(id) {
+  return postJson(`/api/maintenance/items/${encodeURIComponent(id)}/undelete`, {});
 }
 
 // The assets: the top-level places with what each holds, and the positions at none.

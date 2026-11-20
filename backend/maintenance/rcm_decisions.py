@@ -354,10 +354,14 @@ def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
     """Inconclusive result when the task interval's unit contradicts the
     evidence's time unit. Units are free text, so only a definite
     disagreement (both present, different after normalisation) trips this —
-    a missing unit on either side passes.
+    a missing unit on either side passes. Two units of the same kind (an
+    analysis in hours, a task in days) are no mismatch: the evidence is read
+    in the task's unit (:func:`_unit_conversion`).
     """
     task_unit = _norm_unit(decision.get("interval_unit"))
     ev_unit = _norm_unit(evidence_unit)
+    if _unit_conversion(decision, evidence_unit) is not None:
+        return None
     if task_unit and ev_unit and task_unit != ev_unit:
         return {
             "status": "inconclusive",
@@ -368,6 +372,29 @@ def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
             ),
         }
     return None
+
+
+def _unit_conversion(decision: dict, evidence_unit) -> dict | None:
+    """``{"from", "to", "factor"}`` when the evidence's unit converts to the task interval's
+    (hours, days, weeks, months, years to each other; km and miles); None otherwise."""
+    from backend.services import model_units
+
+    return model_units.conversion({"unit": evidence_unit}, decision.get("interval_unit"))
+
+
+def _with_conversion(result: dict, decision: dict, evidence_unit) -> dict:
+    """An evidence check's result with what it converted said: "evidence in hours, task
+    interval in days: converted at 1 day = 24 hours" (on the summary too)."""
+    conv = _unit_conversion(decision, evidence_unit)
+    if conv is None or result.get("status") == "inconclusive":
+        return result
+    from backend.services import model_units
+
+    note = model_units.used_note(conv, "task interval", "evidence")
+    out = {**result, "unit_conversion": note}
+    if out.get("summary"):
+        out["summary"] = f"{out['summary']} ({note[:1].upper()}{note[1:]}.)"
+    return out
 
 
 # What each outcome expects as evidence (None = default action, no evidence).
@@ -905,7 +932,9 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         mismatch = _unit_mismatch(decision, (artifact.results or {}).get("unit"))
         if mismatch:
             return {**base, **mismatch}
-        return {**base, **_check_replacement(artifact, want_beneficial=True)}
+        conv = _unit_conversion(decision, (artifact.results or {}).get("unit"))
+        return {**base, **_with_conversion(_check_replacement(artifact, want_beneficial=True, conv=conv), decision,
+                                           (artifact.results or {}).get("unit"))}
     if outcome == "on_condition":
         mismatch = _unit_mismatch(decision, (artifact.results or {}).get("unit"))
         if mismatch:
@@ -935,8 +964,10 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         interval = r.get("interval")
         if interval is not None:
             unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
-            return {**base, "status": "supported",
-                    "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."}
+            return {**base, **_with_conversion({
+                "status": "supported",
+                "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."},
+                decision, r.get("unit"))}
         return {**base, "status": "inconclusive", "reason": "The analysis has no computed interval."}
     return {**base, "status": "inconclusive", "reason": "Unrecognised decision."}
 
@@ -1019,8 +1050,9 @@ def _check_randomness(model) -> dict:
             "reason": "No confidence interval on β — re-save the model to compute it."}
 
 
-def _check_replacement(analysis, want_beneficial: bool) -> dict:
-    """Evidence check against a saved optimal-replacement analysis."""
+def _check_replacement(analysis, want_beneficial: bool, conv: dict | None = None) -> dict:
+    """Evidence check against a saved optimal-replacement analysis. ``conv``: the analysis's
+    unit converted to the task's, so its interval is also given in the task's unit."""
     if analysis.kind != "optimal_replacement":
         return {"status": "inconclusive",
                 "reason": "The linked analysis isn't an optimal-replacement calculation."}
@@ -1030,8 +1062,11 @@ def _check_replacement(analysis, want_beneficial: bool) -> dict:
     if beneficial and want_beneficial:
         t = r.get("optimal_time")
         savings = r.get("savings") or 0
+        also = ""
+        if conv is not None and t is not None:
+            also = f", about {fmt_num(float(t) * conv['factor'])} {unit_in_text(conv['to'])}"
         return {"status": "supported",
-                "summary": f"Optimal interval ≈ {fmt_num(t)}{unit} ({savings:.0%} saving vs run-to-failure)."}
+                "summary": f"Optimal interval ≈ {fmt_num(t)}{unit}{also} ({savings:.0%} saving vs run-to-failure)."}
     if not beneficial and not want_beneficial:
         return {"status": "supported",
                 "summary": "Preventive replacement shows no cost benefit — run-to-failure is optimal."}

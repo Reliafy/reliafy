@@ -37,12 +37,12 @@ import { METHOD_CHOICES, METHOD_LINE, initialFit, refusalWords, showsTrust } fro
 import {
   DATASET_PRIOR_CHOICES, priorAsksDistribution, priorBlocked, priorProblem, priorRequest,
 } from "../priorFit.js";
-import { fitDatasetWithPrior, getDataReading, getLibraryRecord, getLibrarySources, listModels } from "../api.js";
+import { fitDatasetWithPrior, getDataReading, getLibraryRecord, getLibrarySources, listModels, uploadDataset } from "../api.js";
 import { rowFromDetail } from "../libraryPicker.js";
 import NewDatasetModal from "./NewDatasetModal.jsx";
 import ReadingSummary, { ReadingChange } from "./ReadingSummary.jsx";
 import { useDatasetReading } from "../useDatasetReading.js";
-import { datasetReading, detailColumns, fitFromReading, readingIssues } from "../datasetReading.js";
+import { datasetReading, detailColumns, fitFromReading, pastedReading, readingIssues } from "../datasetReading.js";
 
 // The steps shown (``n``: the flow's own step; 2, the old column step, is gone:
 // a dataset's reading says which column is which).
@@ -351,8 +351,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     pickFile(e.dataTransfer.files?.[0]);
   };
 
-  // Pasted values become a small CSV file, saved as a dataset like any file.
-  const usePasted = () => {
+  // Pasted values become a small CSV file, saved as a dataset straight away:
+  // the paste already says which column is which (a time, and a 0/1 flag if
+  // given), so there is nothing to ask before the Model step, which asks the
+  // unit. The dataset's reading can still be changed there.
+  const usePasted = async () => {
     let parsed;
     setPasteFix(null);
     try {
@@ -362,7 +365,16 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       if (err.fix === "add-flags") setPasteFix(err.lines);
       return;
     }
-    pickFile(new File([parsed.csv], PASTED, { type: "text/csv" }));
+    setError(null);
+    setLoading(true);
+    try {
+      const file = new File([parsed.csv], PASTED, { type: "text/csv" });
+      onDatasetSaved(await uploadDataset(file, dataName({ fileName: PASTED }), null, null, pastedReading(parsed)));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleCovariate = (col) =>

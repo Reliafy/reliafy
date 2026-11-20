@@ -168,6 +168,56 @@ export function modeCounts(m) {
 
 export const hasTask = (m) => !!(m && (tasksOf(m).length || (m.decision && (String(m.decision.task || "").trim() || m.decision.interval))));
 
+// The tasks inside a row, each counted once however many failure modes it serves
+// (the persona review, Nov 2026: the RCM said "66 tasks" where Maintenance listed 17,
+// because it counted the failure modes with a task, run-to-failure ones included).
+// `ids`: the maintenance tasks (by id); `named`: decisions that name a scheduled task
+// with no maintenance task behind it yet (one each); `modes`: the failure modes served.
+// A run-to-failure decision's text is the action on failure, not a task.
+export const blankTasks = () => ({ ids: new Set(), modes: 0, named: 0 });
+
+// Adds a failure mode's tasks to a row's tally (`row.tk`, made when missing).
+export function addModeTasks(row, m) {
+  if (!hasTask(m)) return;
+  const ids = tasksOf(m).map((t) => t?.id).filter(Boolean);
+  const d = m.decision;
+  if (!ids.length && d && !isCombination(d) && !SCHEDULED_OUTCOMES.has(d.outcome)) return;
+  const tk = row.tk || (row.tk = blankTasks());
+  tk.modes += 1;
+  if (!ids.length) tk.named += 1;
+  for (const id of ids) tk.ids.add(id);
+}
+
+// Adds one tally into another (a position's own into each position above it).
+export function addTasks(into, tk) {
+  if (!tk) return;
+  for (const id of tk.ids) into.ids.add(id);
+  into.modes += tk.modes;
+  into.named += tk.named;
+}
+
+// How many tasks a row's Task cell counts: its maintenance tasks, once each, and the
+// decisions naming a task with none behind it yet. A row read without a tally (a
+// linked cause's chain) counts its failure modes with a task.
+export const taskTotal = (r) => (r.tk ? r.tk.ids.size + r.tk.named : r.sum?.tasks || 0);
+
+// The Task cell of a row with failure modes inside: "17 tasks"; for a linked cause's
+// chain, what it counts: "5 with a task".
+export function taskSumText(r) {
+  if (!r.tk) return r.sum?.tasks ? `${r.sum.tasks.toLocaleString("en-AU")} with a task` : "";
+  const n = taskTotal(r);
+  return n ? plural(n, "task") : "";
+}
+
+// Its tooltip: what is counted, in words.
+export function taskSumTip(r) {
+  if (!r.tk) return r.sum?.tasks ? `${plural(r.sum.tasks, "failure mode")} with a task` : "";
+  const n = taskTotal(r);
+  if (!n) return "";
+  return `${plural(n, "task")} ${n === 1 ? "serves" : "serve"} ${plural(r.tk.modes, "failure mode")} here. ` +
+    "A task that serves several failure modes is counted once, as the Maintenance tab counts it; run-to-failure actions aren't tasks.";
+}
+
 // A failure mode's tasks: every live task serving it, its decision's own
 // first (the server's `tasks` on the mode, also on its decision). Takes the
 // mode or its decision; an older read with only the decision's one task
@@ -216,6 +266,7 @@ export function buildRcmDisplay(functions) {
   const add = (type, ref, at, parent) => {
     const key = keyFor(ref.id, type, at);
     const r = { key, type, ref, at, parent, kids: [], depth: at.length - 1, sum: blank() };
+    if (type !== "mode") r.tk = blankTasks();
     rows.set(key, r);
     (parent == null ? roots : rows.get(parent).kids).push(key);
     counts[type] += 1;
@@ -232,6 +283,8 @@ export function buildRcmDisplay(functions) {
           x.sum[k] += m.sum[k];
           f.sum[k] += m.sum[k];
         }
+        addModeTasks(x, mode);
+        addModeTasks(f, mode);
       });
     });
   });
@@ -776,7 +829,7 @@ export function phoneLine(r) {
     const s = r.sum;
     const where = r.ref.inside === false ? `no longer inside ${r.ref.effect_position || "it"}` : null;
     return [`on ${r.ref.on}`, where, s.modes ? decidedWords(s) : "no failure modes yet",
-      s.tasks ? plural(s.tasks, "task") : null].filter(Boolean).join(" · ");
+      s.tasks ? `${s.tasks.toLocaleString("en-AU")} with a task` : null].filter(Boolean).join(" · ");
   }
   if (r.type === "fail" && belowOf(r)) {
     return belowOf(r).own ? `${insideWords(r)} · ${belowDecisionText(r)}` : belowDecisionText(r);
@@ -867,10 +920,10 @@ export const COLUMNS = [
   },
   {
     id: "task", label: "Task", width: 190, min: 110, on: true,
-    title: "What is done (the decision's own task, and how many more), and for run-to-failure the action on failure",
+    title: "What is done (the decision's own task, and how many more), and for run-to-failure the action on failure. Above a failure mode: the tasks, each counted once however many failure modes it serves",
     text: (r) => (isTask(r) ? taskRowWords(r) : isMode(r) ? [d(r)?.task || tasksOf(r.ref)[0]?.text || "", moreTasks(r.ref)].filter(Boolean).join(" · ")
-      : [r.sum.tasks ? plural(r.sum.tasks, "task") : "", belowOf(r)?.tasks ? `${belowOf(r).tasks.toLocaleString("en-AU")} below` : ""].filter(Boolean).join(" · ")),
-    sort: (r) => (isTask(r) ? null : isMode(r) ? d(r)?.task || null : r.sum.tasks || null),
+      : [taskSumText(r), belowOf(r)?.tasks ? `${belowOf(r).tasks.toLocaleString("en-AU")} with a task below` : ""].filter(Boolean).join(" · ")),
+    sort: (r) => (isTask(r) ? null : isMode(r) ? d(r)?.task || null : taskTotal(r) || null),
     edit: "text", can: (r) => isMode(r) && TASK_OUTCOMES.has(d(r)?.outcome), field: "task", onDecision: true,
   },
   {

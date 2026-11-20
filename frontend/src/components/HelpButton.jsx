@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
 import { guidesByCategory, getGuide } from "../guides.js";
@@ -8,6 +8,7 @@ import { publicUrl } from "../firebase.js";
 import GuideBody from "./GuideBody.jsx";
 import ReferenceEntry from "./ReferenceEntry.jsx";
 import ListSearch from "./ListSearch.jsx";
+import { trapTab, useDialogFocus } from "./focusTrap.js";
 
 // Open the Help drawer at a specific guide from anywhere (contextual
 // "How do I…?" links on features). No shared store needed — a window event.
@@ -61,6 +62,11 @@ export default function HelpButton({ openSlug = null }) {
     return () => window.removeEventListener("reliafy:help", onHelp);
   }, []);
 
+  // The drawer holds the keyboard like a modal: focus moves in when it opens,
+  // Tab stays inside, and focus goes back to the opener when it closes.
+  const drawer = useRef(null);
+  useDialogFocus(drawer, open);
+
   // Escape closes the drawer, as it does a modal (#302).
   useEffect(() => {
     if (!open) return undefined;
@@ -82,7 +88,8 @@ export default function HelpButton({ openSlug = null }) {
       {open && createPortal(
         <>
           <div className="help-drawer-backdrop" onClick={() => setOpen(false)} />
-          <aside className="help-drawer" role="dialog" aria-label="Help">
+          <aside className="help-drawer" role="dialog" aria-modal="true" aria-label="Help" ref={drawer} tabIndex={-1}
+                 onKeyDown={(e) => trapTab(e, drawer.current)}>
             <div className="help-drawer-head">
               {guide || entry ? (
                 <button className="secondary" onClick={back}>← All guides</button>

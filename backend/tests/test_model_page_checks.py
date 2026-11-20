@@ -44,6 +44,29 @@ def test_distribution_plot_carries_the_failures_on_the_time_scale():
     assert emp["model_F"][0] == pytest.approx(1 - np.exp(-((4.0 / alpha) ** beta)), rel=1e-6)
 
 
+# Inspection data: every failure lies between two checks, none is seen exactly.
+INSPECTIONS = "last_ok,found_failed,count\n0,100,2\n100,200,5\n200,300,8\n300,400,4\n400,,6\n"
+
+
+def test_interval_censored_fit_plots_its_turnbull_points():
+    # By the flags alone (c == 0) an all-interval data set plotted no points
+    # and left Diagnostics empty; SurPyval's own ``failed`` mask places them.
+    import surpyval as sp
+
+    result = fit("weibull", _df(INSPECTIONS), {"xl": "last_ok", "xr": "found_failed", "n": "count"})
+    plot = result["plot"]
+    emp = plot["empirical"]
+    assert emp is not None and emp["method"] == "Turnbull"
+    # The same points SurPyval's plot() draws, at the interval ends.
+    model = sp.Weibull.fit(x=np.array([[0, 100], [100, 200], [200, 300], [300, 400], [400, 400]], dtype=float),
+                           c=[2, 2, 2, 2, 1], n=[2, 5, 8, 4, 6])
+    d = model.get_plot_data(heuristic="Turnbull")
+    assert emp["x"] == pytest.approx(np.asarray(d["x_"])[d["failed"]].tolist())
+    assert emp["F"] == pytest.approx(np.asarray(d["F"])[d["failed"]].tolist())
+    assert emp["x"] == pytest.approx([100.0, 200.0, 300.0, 400.0])
+    assert len(plot["scatter"]["x"]) == 4
+
+
 def test_offset_fit_points_are_on_the_raw_time_scale():
     df = _df("hours\n" + "".join(f"{v}\n" for v in (140, 160, 175, 190, 205, 230, 260, 300, 340, 410)))
     result = fit("weibull", df, {"x": "hours"}, options={"offset": True, "how": "MPS"})

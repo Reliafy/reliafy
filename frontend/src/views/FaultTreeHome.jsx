@@ -29,8 +29,10 @@ export default function FaultTreeHome() {
   const confirm = useConfirm();
   const askText = useAskText();
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
-    listFaultTrees().then((d) => setTrees(d.fault_trees)).catch((e) => setError(e.message));
+    setLoadError(null);
+    listFaultTrees().then((d) => setTrees(d.fault_trees)).catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -125,6 +127,8 @@ export default function FaultTreeHome() {
       )}
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={trees}
         noun={["fault tree", "fault trees"]}
         help={HELP}

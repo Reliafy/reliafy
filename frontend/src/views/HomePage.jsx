@@ -121,7 +121,9 @@ function Figures({ items }) {
 
 // A role's card (navigation.js ROLES `home`), from what Home loaded. Cards
 // that need Reliafy Maintenance draw nothing without it.
-function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
+function RoleCard({ card, recent, attention, maintenance, rcm, has, onRetry }) {
+  // Maintenance's overview (or the check for it) failed: the one error state, with Try again.
+  const overviewFailed = maintenance === null ? { text: "Couldn't load your maintenance work.", onRetry } : null;
   const id = `home-${card}`;
   const first = (rows) => rows.slice(0, CARD_ROWS);
   switch (card) {
@@ -154,7 +156,7 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
       const due = dueRows(maintenance);
       return (
         <HomeList id={id} title="Due and at risk" all={{ to: ordersPath("due"), label: "Maintenance" }}
-                  rows={first(due)} loading={maintenance === undefined}
+                  rows={first(due)} loading={maintenance === undefined} failed={overviewFailed}
                   empty={maintenance ? "No open work orders and nothing due in the next 30 days." : NO_OVERVIEW}>
           {maintenance && (
             <Figures items={[
@@ -173,7 +175,7 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
       return (
         <HomeList id={id} title="Today's work orders"
                   all={{ to: ORDERS_PATH, label: maintenance ? `All ${open.length} open` : "Maintenance" }}
-                  rows={first(workTodayRows(maintenance))} loading={maintenance === undefined}
+                  rows={first(workTodayRows(maintenance))} loading={maintenance === undefined} failed={overviewFailed}
                   empty={!maintenance ? NO_OVERVIEW : open.length ? "Nothing due today." : "No open work orders."} />
       );
     }
@@ -181,7 +183,7 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
       if (!has.maintenance) return null;
       return (
         <HomeList id={id} title="Critical spares short" all={{ to: partsPath(), label: "Parts and stock" }}
-                  rows={first(sparesRows(maintenance))} loading={maintenance === undefined}
+                  rows={first(sparesRows(maintenance))} loading={maintenance === undefined} failed={overviewFailed}
                   empty={maintenance ? "Every critical spare is stocked." : NO_OVERVIEW} />
       );
     case "waiting": {
@@ -191,7 +193,7 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
       const figures = waitingFigures(rcm, maintenance);
       return (
         <HomeList id={id} title="Targets and what's waiting" all={{ to: "/reports", label: "Reports" }} rows={[]}
-                  loading={!figures.length && (rcm === undefined || maintenance === undefined)}
+                  loading={!figures.length && (rcm === undefined || maintenance === undefined)} failed={overviewFailed}
                   empty={figures.length ? null : NO_OVERVIEW}>
           {figures.length > 0 && <Figures items={figures} />}
         </HomeList>
@@ -217,7 +219,8 @@ export default function HomePage() {
   const [lists, setLists] = useState(null);
   const [changes, setChanges] = useState(undefined);
   // Whether this viewer has Reliafy Maintenance (the menu's check; the answer
-  // is fetched once and shared): undefined until it is known.
+  // is fetched once and shared): undefined until it is known, null when the check failed
+  // (then "Needs attention" says it couldn't load, with Try again, never "Loading…" for ever).
   const [access, setAccess] = useState(undefined);
   // The Maintenance overview and the RCM on the asset tree (one rollup of
   // every decision's evidence check): undefined while loading, null when they
@@ -231,6 +234,7 @@ export default function HomePage() {
     setChanges(undefined);
     setMaintenance(undefined);
     setRcm(undefined);
+    setAccess((a) => (a === null ? undefined : a));
     setAttempt((n) => n + 1);
   };
 
@@ -262,11 +266,16 @@ export default function HomePage() {
       return undefined;
     }
     let live = true;
-    getMaintenanceAccess().then((a) => live && setAccess(!!a.allowed));
+    getMaintenanceAccess().then((a) => live && setAccess(!!a?.allowed)).catch(() => {
+      if (!live) return;
+      setAccess(null);
+      setMaintenance(null);
+      setRcm(null);
+    });
     return () => {
       live = false;
     };
-  }, [configLoaded, maintenanceOn]);
+  }, [configLoaded, maintenanceOn, attempt]);
 
   // Maintenance work and the tree's RCM, for Reliafy Maintenance's operators only.
   useEffect(() => {
@@ -336,7 +345,7 @@ export default function HomePage() {
           {cards.map((card) => (
             <div key={card} className="home-slot">
               <RoleCard card={card} recent={recent} attention={attention} maintenance={maintenance}
-                        rcm={rcm} has={has} />
+                        rcm={rcm} has={has} onRetry={retry} />
             </div>
           ))}
 

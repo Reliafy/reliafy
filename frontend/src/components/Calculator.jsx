@@ -7,10 +7,14 @@ import Plot from "./Plot.jsx";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
+import { calendarUnit } from "../friendlyTime.js";
+import { csvFileName } from "../csv.js";
+import { curveCsvRows, paramsCsvRows } from "../modelCsv.js";
+import CsvButton from "./CsvButton.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
 import { AUTO_BOUND, boundOptions, effectiveBound } from "../levels.js";
-import { boundWords, checkTime, perUnit, precisePercent, timeAtValue, timeInWords } from "../lifeResults.js";
+import { STARTING_WORDS, boundWords, checkTime, perUnit, precisePercent, startingTime, timeAtValue, timeInWords } from "../lifeResults.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
@@ -21,20 +25,23 @@ import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } 
 // The calculator's inputs (covariate combinations, active function, evaluation
 // time, conditional age) live in the parent (ResultView) so they survive tab
 // switches — the tab body unmounts when you leave it. This builds the initial
-// state for a set of fitted functions.
-export function initCalcState(functions) {
+// state for a set of fitted functions. ``times`` are the fit's failure times
+// (the probability plot's points): "At a time" starts inside the data.
+export function initCalcState(functions, times = null) {
   const covariates = functions?.covariates || [];
   const hasCov = covariates.length > 0 && !!functions?.evaluate_path;
   const values = hasCov
     ? Object.fromEntries(covariates.map((c) => [c.name, c.default]))
     : null;
-  const x = functions?.curves?.x || [];
-  const mid = x.length ? x[Math.floor(x.length / 2)] : 0;
+  const start = startingTime(functions?.curves, times);
   return {
     series: functions ? [{ id: 0, values, curves: functions.curves, error: null }] : [],
     active: "sf",
-    // A round example time (1000, not 996.2): only the starting input.
-    t: x.length ? Number(mid.toPrecision(2)) : 0,
+    // A round time inside the data (310, not 307.4): only the starting input,
+    // and the words beside it say where it came from until it is changed.
+    t: start.t,
+    tStart: start.t,
+    tFrom: start.from,
     condAge: "", // conditional survival age s
     xMin: "", // blank = auto-range from the data
     xMax: "",
@@ -271,12 +278,21 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // be re-evaluated — the curves and confidence band are recomputed over the
   // new range so the lines extend (or refine) to the chosen limits, not just
   // clip the view.
+  const x = functions.curves.x;
+  // The times as typed, checked: blank is not zero, a negative time is
+  // refused with a message beside its box, and a time may carry a unit ("1
+  // year"), converted to the model's by the app's calendar convention.
+  const example = x.length ? Number(x[Math.floor(x.length / 2)].toPrecision(2)) : null;
+  const tCheck = checkTime(t, { example, unit });
+  const condCheck = checkTime(condInput, { optional: true, unit });
+  const tNum = tCheck.ok ? tCheck.value : null;
+
   const xLoNum = xMin !== "" && !Number.isNaN(Number(xMin)) ? Number(xMin) : null;
   const xHiNum = xMax !== "" && !Number.isNaN(Number(xMax)) ? Number(xMax) : null;
   const manualX = xLoNum != null || xHiNum != null;
   // A time past the end of the curves (they stop at the 99% life) is still answered: the curves are
   // worked out again out to just beyond it, rather than the answer reading "—".
-  const autoHi = manualX ? null : autoRangeEnd(functions, timeMode ? null : Number(t) + (Number(condInput) || 0));
+  const autoHi = manualX ? null : autoRangeEnd(functions, timeMode || tNum == null ? null : tNum + (condCheck.ok ? condCheck.value : 0));
   const effHi = xHiNum ?? autoHi;
   const evalRange = manualX ? { xMin: xLoNum, xMax: xHiNum } : autoHi != null ? { xMin: null, xMax: autoHi } : undefined;
   // The axis now, beside its button: "Auto", or the range that's set.
@@ -373,20 +389,15 @@ export default function Calculator({ functions, unit, params, state, setState, n
   }, [timeMode, lifePath, rValid, ciOk, hasCov, seriesValues, rNum, ciLevel, tarBound]);
   const tarOf = (s) => (tars[s.id]?.key === tarKeyOf(s) ? tars[s.id]?.data?.points?.[0] : null);
 
-  const x = functions.curves.x;
-
-  const cond = condAge === "" ? 0 : Number(condAge);
+  // A survived age typed badly counts as none (its box says why).
+  const cond = timeMode || !condCheck.ok ? 0 : condCheck.value;
   const sLabel = timeInWords(cond, unit);
-  // The time as typed, checked: blank is not zero, and a negative time is
-  // refused with a message beside its box.
-  const tCheck = checkTime(t, { example: x.length ? Number(x[Math.floor(x.length / 2)].toPrecision(2)) : null });
   const view = (curves) => (cond > 0 && curves ? conditionalize(curves, cond) : curves);
   const xMaxView = cond > 0 ? x[x.length - 1] - cond : x[x.length - 1];
 
   // The answer at exactly the time typed, asked of the model (calcExact.js): each
   // function's value per series, and the bound on the active one. The grid only
   // draws: read off it, a steep early curve's value and bound came out wrong.
-  const tNum = tCheck.ok ? tCheck.value : null;
   const canAsk = !!evaluatePath;
   const askTimes = !timeMode && Number.isFinite(cond) && cond >= 0 ? exactTimes(tNum, cond) : null;
   const exact = state.exact || {};
@@ -617,7 +628,20 @@ export default function Calculator({ functions, unit, params, state, setState, n
           ...(rValid ? [referenceShape({ y: rNum / 100, line: { dash: "dot" } })] : []),
           ...(tarTimes[0] != null ? [referenceShape({ x: tarTimes[0], line: { dash: "dot" } })] : []),
         ]
-      : [referenceShape({ x: Number(t), line: { dash: "dot" } })],
+      : tNum != null ? [referenceShape({ x: tNum, line: { dash: "dot" } })] : [],
+  };
+  // "CSV" beside the chart's PNG and SVG: the curve drawn, every function at
+  // full precision, with the bound on the function shown (modelCsv.js).
+  const csvBand = (s) => {
+    const b = bandOf(s);
+    return b && !b.spread ? { fn: active, level: ciLevel, credible, x: b.x, lower: b.lower, upper: b.upper } : null;
+  };
+  const curveCsv = {
+    filename: csvFileName(name || "Model", "curve"),
+    rows: () => curveCsvRows({
+      series: series.map((s, i) => ({ label: labelOf(s), curve: views[i], band: csvBand(s) })).filter((s) => s.curve),
+      unit, given: Number.isFinite(cond) ? cond : 0,
+    }),
   };
   const unitWord = unit ? ` ${unitInText(unit)}` : "";
   const fmtTime = (v) => `${formatNumber(v)}${unitWord}`;
@@ -740,7 +764,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
           <thead>
             <tr>
               <th>
-                at t = {t}
+                at t = {tNum != null ? formatNumber(tNum, { sig: 6 }) : "—"}
                 {cond > 0 ? ` | ${sLabel}` : ""}
               </th>
               {meta.map((m) => (
@@ -786,7 +810,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
           labelOf={labelOf}
         />
       )}
-      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} />
+      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} csv={curveCsv} />
         </div>
 
         <div className="calc-side-rail">
@@ -830,30 +854,38 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </label>
                 <label className="calc-t">
                   <span>{cond > 0 ? "For a further" : "At"}{unit ? ` (${unitInText(unit)})` : ""}</span>
+                  {/* Text, not a number box: a time may carry its unit ("1 year"). */}
                   <input
-                    type="number" inputMode="decimal"
+                    type="text" inputMode="decimal" autoComplete="off" spellCheck={false}
                     aria-label={`${cond > 0 ? "For a further" : "At"} time${unit ? ` (${unitInText(unit)})` : ""}`}
                     value={t}
-                    min={0}
-                    max={evaluatePath ? undefined : xMaxView}
-                    step="any"
                     aria-invalid={!tCheck.ok || undefined}
                     onChange={(e) => setT(e.target.value)}
                   />
-                  {!tCheck.ok && <span className="combo-err" role="alert">{tCheck.message}</span>}
+                  {!tCheck.ok ? <span className="combo-err" role="alert">{tCheck.message}</span>
+                    : tCheck.note ? <span className="calc-t-note">{tCheck.note}</span>
+                    : (() => {
+                      // Where it started (until changed), and that a unit may be typed.
+                      const words = [
+                        state.tFrom && STARTING_WORDS[state.tFrom] && String(t) === String(state.tStart)
+                          ? STARTING_WORDS[state.tFrom] : null,
+                        calendarUnit(unit) ? "A unit works too, e.g. 6 months or 1 year." : null,
+                      ].filter(Boolean);
+                      return words.length ? <span className="calc-t-note">{words.join(" ")}</span> : null;
+                    })()}
                 </label>
                 <label className="calc-t">
                   <span>Given survived to{unit ? ` (${unitInText(unit)})` : ""}</span>
                   <input
-                    type="number" inputMode="decimal"
+                    type="text" inputMode="decimal" autoComplete="off" spellCheck={false}
                     aria-label={`Given survived to${unit ? ` (${unitInText(unit)})` : ""}`}
                     value={condAge}
-                    min={0}
-                    max={x[x.length - 1]}
-                    step="any"
                     placeholder="0"
+                    aria-invalid={!condCheck.ok || undefined}
                     onChange={(e) => setCondAge(e.target.value)}
                   />
+                  {!condCheck.ok ? <span className="combo-err" role="alert">{condCheck.message}</span>
+                    : condCheck.note ? <span className="calc-t-note">{condCheck.note}</span> : null}
                 </label>
                 </>
                 )}
@@ -891,7 +923,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
             </div>
             {params && params.length > 0 && (
               <div className="calc-rail-card calc-rail-params">
-                <div className="gofh">Parameters</div>
+                <div className="gofh calc-params-h">
+                  Parameters
+                  <CsvButton what="the parameters" filename={csvFileName(name || "Model", "parameters")}
+                             rows={() => paramsCsvRows({
+                               params: params.map((p) => ({ ...p, label: paramLabel ? paramLabel(p) : p.name })),
+                               ciLabel: ciLabel || "90%",
+                             })} />
+                </div>
                 {params.map((p) => (
                   <div className="gofr" key={p.name}>
                     <span className="gk">{paramLabel ? paramLabel(p) : p.name}</span>

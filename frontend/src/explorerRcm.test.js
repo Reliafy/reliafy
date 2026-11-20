@@ -8,7 +8,7 @@ import {
 import { isolateOpen, levelsBelow } from "./treeIsolate.js";
 import { isolateItems } from "./treeRowMenu.js";
 import { dropZones } from "./rcmDrag.js";
-import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
+import { COLUMN, DEFAULT_COLUMNS, taskSumTip, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
 
 const DATA = {
   positions: [
@@ -222,7 +222,7 @@ test("the Task cell with the interval folded in", () => {
   assert.equal(taskWithInterval(m({ outcome: "rtf", task: "Replace the motor" })), "Replace the motor");
   assert.equal(taskWithInterval(m(null)), "");
   // A parent row: what's inside it, as the Task column says.
-  assert.equal(taskWithInterval({ type: "fn", ref: {}, sum: { tasks: 2 } }), "2 tasks");
+  assert.equal(taskWithInterval({ type: "fn", ref: {}, sum: { tasks: 2 }, tk: { ids: new Set(["a"]), named: 1, modes: 2 } }), "2 tasks");
   assert.equal(TASK_WITH_INTERVAL.id, "task");
   assert.equal(TASK_WITH_INTERVAL.edit, "text"); // still edits the task itself
 });
@@ -312,10 +312,10 @@ test("the Decision and Task cells say what is below, and the panel and phone lin
   const cell = (key) => ({ ...d.rows.get(key), sum: d.rows.get(key).rsum });
   // Own failure modes and a chain with one still to decide.
   assert.equal(COLUMN.decision.text(cell("px")), "All decided · 1 to decide below");
-  assert.equal(COLUMN.task.text(cell("px")), "1 below");
+  assert.equal(COLUMN.task.text(cell("px")), "1 with a task below");
   // No failure modes of its own, all decided below.
   assert.equal(COLUMN.decision.text(cell("py")), "Explained below");
-  assert.equal(COLUMN.task.text(cell("py")), "2 below");
+  assert.equal(COLUMN.task.text(cell("py")), "2 with a task below");
   assert.equal(belowDecisionText(cell("py")), "Explained below");
   assert.equal(insideWords(cell("py")), "Explained below");
   assert.equal(phoneLine(cell("py")), "Explained below");
@@ -867,4 +867,36 @@ test("a decision whose task is done on an event (no interval, no task of its own
   // Run to failure and combinations aren't scheduled tasks.
   assert.equal(onlyOnEvent({ ...d, outcome: "rtf" }, []), false);
   assert.equal(onlyOnEvent(null, []), false);
+});
+
+test("the Task cell counts each task once, however many failure modes it serves, and no run-to-failure actions", () => {
+  const preflight = { id: "t-pre", name: "Pre-flight check", interval: 1, unit: "flights" };
+  const replace = { id: "t-rep", name: "Replace the bearing", interval: 2, unit: "years" };
+  const sched = (task) => ({ outcome: "on_condition", task: task.name, task_id: task.id, interval: task.interval, tasks: [task] });
+  const m = (id, decision) => ({ ...mode(id, id, decision), tasks: decision?.tasks || [] });
+  const rcm = {
+    positions: [
+      { id: "pump", functions: [{ id: "f1", text: "Pump water", failures: [{ id: "x1", text: "No flow", modes: [
+        m("m1", sched(preflight)), m("m2", sched(preflight)), m("m3", sched(replace)),
+        // Run to failure: its words are the action on failure, not a task.
+        m("m4", { outcome: "rtf", task: "Replace it when it fails" }),
+        // A scheduled decision with its task named but no maintenance task yet: one task.
+        m("m5", { outcome: "fixed_interval", task: "Grease it", interval: 3, interval_unit: "months" }),
+      ] }] }] },
+      { id: "motor", functions: [{ id: "f2", text: "Drive", failures: [{ id: "x2", text: "No drive", modes: [
+        m("m6", sched(preflight)),
+      ] }] }] },
+    ],
+  };
+  const d = graftRcm(buildDisplay(DATA, "positions"), rcm);
+  const cell = (key) => cellRow(d.rows.get(key));
+  // Five failure modes with a task under the pump (the run-to-failure one included), but three tasks.
+  assert.equal(d.rows.get("pump").ownSum.tasks, 4 + 1);
+  assert.equal(COLUMN.task.text(cell("x1")), "3 tasks");
+  // The pre-flight check also serves the motor's failure mode: counted once above both.
+  assert.equal(COLUMN.task.text(cell("motor")), "1 task");
+  assert.equal(COLUMN.task.text(cell("pump")), "3 tasks");
+  assert.equal(COLUMN.task.text(cell("plant")), "3 tasks");
+  assert.equal(COLUMN.task.sort(cell("plant")), 3);
+  assert.match(taskSumTip(cell("plant")), /^3 tasks serve 5 failure modes here\. A task that serves several failure modes is counted once/);
 });

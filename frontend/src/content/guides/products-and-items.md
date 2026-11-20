@@ -70,6 +70,14 @@ under **⋯** at the end of the row):
 Products) deletes the design and everything inside it. Items built from it stay. Its
 history stays, and **Undo** in the message that follows brings it back.
 
+The items built from your products are on **Assets** too: open **Items of your
+products** at the end of the list, or search for a serial. To delete one, choose
+**Delete…** from the **⋯** menu on the item's page. An item still at the top of
+its own tree takes the tree with it. One fitted anywhere else, or with open work
+orders, can't be deleted until you take it out or close them; the dialog says
+which. Nothing is erased: its history stays, and **Restore** on its page brings
+it back with its tree.
+
 ## Physical layout
 
 A product has a physical layout as well as a functional structure: where each

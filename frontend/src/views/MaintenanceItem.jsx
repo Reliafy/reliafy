@@ -8,8 +8,11 @@ import {
   listMaintenanceLocations,
   moveMaintenanceItem,
   placeMaintenanceItem,
+  undeleteMaintenanceItem,
   updateMaintenanceItem,
 } from "../api.js";
+import DeleteItemModal from "../components/DeleteItem.jsx";
+import { deletedBanner } from "../itemDelete.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import {
@@ -52,8 +55,19 @@ export default function MaintenanceItem() {
     getMaintenanceItem(id).then(setItem).catch((e) => setError(e.message));
   }, [id]);
   useEffect(() => refresh(), [refresh]);
+  const [restoring, setRestoring] = useState(false);
+  const restore = async () => {
+    setRestoring(true);
+    try {
+      setItem(await undeleteMaintenanceItem(id));
+      setError(null);
+    } catch (e) {
+      setError(`Couldn't restore it: ${e.message}`);
+    }
+    setRestoring(false);
+  };
 
-  if (error && !item) return <div className="app"><LoadFailed header error={error} notFound="Item not found." to={EXPLORER_PATH} label="Open the Explorer" /></div>;
+  if (error && !item) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Item not found." to={EXPLORER_PATH} label="Open the Explorer" /></div>;
   if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const plate = Object.entries(item.nameplate || {});
@@ -71,7 +85,7 @@ export default function MaintenanceItem() {
         title={item.name}
         meta={[item.manufacturer, item.model, item.serial && `serial ${item.serial}`].filter(Boolean).join(" · ") || "Item"}
         id={item.id}
-        actions={
+        actions={item.retired ? null : (
           <>
             {/* A fitted item is where its position is: only an item that isn't fitted is placed. */}
             {item.product?.top_position_id && <Link className="pp-tree-link" to={itemTreePath(item.product.top_position_id)}>Its tree</Link>}
@@ -79,10 +93,21 @@ export default function MaintenanceItem() {
             <button className="secondary" onClick={() => setModal("move")}>Move to a position</button>
             <button className="secondary" onClick={() => setModal("more")}>Dates, cost and warranty</button>
           </>
-        }
-        primary={<button onClick={() => setModal("edit")}>Edit details</button>}
+        )}
+        primary={item.retired ? <button onClick={restore} disabled={restoring}>{restoring ? "Restoring…" : "Restore"}</button>
+          : <button onClick={() => setModal("edit")}>Edit details</button>}
+        // Delete… (last in the menu): the item is retired, its history kept; a built item takes its tree.
+        menu={item.retired ? null : (
+          <button type="button" className="ovm-item danger" onClick={() => setModal("delete")}>Delete…</button>
+        )}
       />
       {error && <div className="card error">{error}</div>}
+      {item.retired && (
+        <section className="card" role="status">
+          <p className="field-warning">{deletedBanner(item, fmtDate)}</p>
+          <p className="lib-date">Restore brings it back{item.product ? ", with its tree if that went with it" : ""}. It isn't fitted anywhere until you fit or place it.</p>
+        </section>
+      )}
 
       <section className="card">
         <div className="maint-head"><h2>Details</h2></div>
@@ -188,6 +213,10 @@ export default function MaintenanceItem() {
       {modal === "more" && <DetailsModal item={item} onClose={() => setModal(null)} onDone={(d) => { setItem(d); setModal(null); }} />}
       {modal === "move" && <MoveModal item={item} onClose={() => setModal(null)} onDone={(d) => { setItem(d); setModal(null); }} />}
       {modal === "place" && <PlaceModal item={item} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
+      {modal === "delete" && (
+        <DeleteItemModal item={item} onClose={() => setModal(null)}
+                         onDone={() => { setModal(null); refresh(); window.scrollTo?.(0, 0); }} />
+      )}
       {modal === "child" && (
         <ChildModal item={item} onClose={() => setModal(null)} onDone={(p) => navigate(`/asset-register/positions/${p.id}`)} />
       )}

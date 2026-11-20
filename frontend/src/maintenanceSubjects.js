@@ -61,9 +61,13 @@ const CHECK_OUTCOMES = ["on_condition", "failure_finding"];
 // that asks for a reading): "checked" (sent as an inspection that found it OK). A
 // fixed-interval task: a replacement where one can be recorded. Otherwise as before:
 // a replacement at a position, a repair elsewhere. Only the form's starting point:
-// the user picks what was really done.
+// the user picks what was really done. A corrective work order (a breakdown) starts
+// at nothing: what was done after a breakdown varies too much to guess, and a
+// guessed "Replaced it" closed in a hurry records a failure and a new item that
+// never happened (the persona review, Nov 2026). The form waits for a choice.
 export function defaultCloseKind(wo) {
   const atPosition = wo?.can_replace !== false;
+  if (wo?.type === "corrective") return "";
   if (wo?.type === "inspection" || wo?.subject?.kind === "location") return "inspect";
   const tasks = wo?.tasks?.length ? wo.tasks : wo?.task ? [wo.task] : [];
   const read = new Set((wo?.reading_points || [])
@@ -78,12 +82,22 @@ export function closeActionKind(kind) {
   return kind === "checked" ? { kind: "inspect", finding: "ok" } : { kind };
 }
 
-// Whether a replacement on this work order starts as a failure. A corrective work
-// order is a breakdown: its replacement starts as "Yes, it failed", so closing it with
-// the defaults records a failure, not a planned removal (which life fits count as
-// still running). Preventive and other work starts as a planned replacement.
+// Whether a replacement on this work order starts as a failure. On a corrective work
+// order (a breakdown) it starts unanswered (null): the person says whether the old
+// item failed, so neither a failure nor a planned removal is recorded by default.
+// Preventive and other work starts as a planned replacement.
 export function defaultFailed(wo) {
-  return wo?.type === "corrective";
+  return wo?.type === "corrective" ? null : false;
+}
+
+// Why one close-form action can't be sent yet, in words for the Close button, or ""
+// when it can: nothing picked under "What was done", a replacement not yet saying
+// whether it failed, or a new failure mode with no words.
+export function closeActionBlocker(action, { atPosition = true, modeReady = true } = {}) {
+  if (!action?.kind) return "Choose what was done";
+  if (action.kind === "replace" && atPosition && action.failed == null) return "Say whether it failed";
+  if (!modeReady) return "Name the new failure mode";
+  return "";
 }
 
 // A close form's replacement as the API takes it: why the old item came out, and its
@@ -98,6 +112,10 @@ export function replaceRecordText(action, wo, modeName = "") {
   const where = wo?.position?.name || (wo?.subject?.kind === "position" ? wo.subject.name : "");
   const what = old ? `${old}'s time${where ? ` at ${where}` : ""}` : "The fitted item's time";
   if (!wo?.fitted) return "Nothing is fitted here, so no life ends; the new item starts its life today.";
+  if (action?.failed == null) {
+    const its = old ? what : "the fitted item's time";
+    return `Say whether it failed: a failure ends ${its} as failed in life fits; a planned replacement counts it as still running.`;
+  }
   if (action?.failed) {
     return `Records a failure: ${what} ends as a failure${modeName ? ` (${modeName})` : " (mode not known)"}. Life fits count it as failed.`;
   }

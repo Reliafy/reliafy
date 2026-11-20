@@ -21,10 +21,12 @@ export default function ReliabilityPredictions() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listPredictions()
       .then((d) => setRows(d.predictions || []))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -52,6 +54,8 @@ export default function ReliabilityPredictions() {
         many="saved reliability predictions" refreshKey={rows} />
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={rows}
         noun={["prediction", "predictions"]}
         placeholder="Search predictions…"

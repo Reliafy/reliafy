@@ -52,10 +52,12 @@ export default function DatasetsHome() {
     }
   }, [location.state]);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listDatasets()
       .then((d) => setDatasets(d.datasets))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
 
   useEffect(() => refresh(), [refresh]);
@@ -106,6 +108,8 @@ export default function DatasetsHome() {
       <StorageCapNotice kind="datasets" one="saved dataset" many="saved datasets" refreshKey={datasets} />
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={datasets}
         noun={["dataset", "datasets"]}
         className="ds-lib"

@@ -1050,7 +1050,7 @@ h6 {
   padding: var(--space-1) var(--space-2);
 }
 /* Room above the chips that overhang the bottom edge, so no line sits under them. */
-.rbd-comp:has(> .rbd-chips) { padding-bottom: var(--space-4); }
+.rbd-comp:has(> .rbd-chips), .rbd-block:has(> .rbd-chips) { padding-bottom: var(--space-4); }
 
 .react-flow__node.selected .rbd-comp {
   border-color: var(--accent);
@@ -4346,6 +4346,13 @@ h1 .chip,
   font-size: var(--fs-14);
   font-family: inherit;
   width: 160px;
+}
+
+/* Beside a Calculator time: where it started, or what "1 year" became. */
+.calc-t-note {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: 1.35;
 }
 
 .calc-t input:focus {
@@ -8250,6 +8257,9 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .sel-option-main { display: flex; flex-direction: column; min-width: 0; }
 .sel-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-option-hint { font-size: var(--fs-12); color: var(--text-secondary); }
+/* A long list (a tree of positions) never runs off a phone's screen; the position picker fills its field. */
+.sel-menu { max-width: calc(100vw - 32px); }
+.sel-trigger.position-picker { width: 100%; }
 .sel-group {
   padding: 8px 12px 4px;
   font-size: var(--fs-12);
@@ -10241,3 +10251,15 @@ main.content:focus { outline: none; }
 @media (max-width: 720px) {
   .friendly-unit-switch .seg-btn { min-height: 40px; }
 }
+
+/* A greyed menu item's reason, under its label ("Save first"). */
+.ovm-item:has(> .ovm-why) { display: flex; flex-direction: column; align-items: flex-start; }
+.ovm-item .ovm-why { display: block; margin-top: 2px; font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); white-space: normal; line-height: var(--lh-12); }
+
+/* "Download CSV" on a card (CsvButton): the chart download buttons' look, at
+   the right of the card's heading. */
+.csv-btn { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px; margin-left: auto; flex: none; }
+.csv-btn > svg { width: 14px; height: 14px; }
+.life-head-actions { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.life-head-actions .csv-btn { margin-left: 0; }
+.calc-params-h { display: flex; align-items: center; gap: 8px; }

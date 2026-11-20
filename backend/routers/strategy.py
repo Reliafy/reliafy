@@ -203,6 +203,11 @@ def compare_two_endpoint(
         result = strategy_service.compare_two(a, b, unit=unit)
         bounds = {k: _saved_bounds(session, side.get("model_id"), ctx) for k, side in (("a", a), ("b", b))
                   if isinstance(side, dict) and side.get("model_id")}
+        # A side converted to the comparison's unit: its saved fit's bounds are converted too.
+        for k, factor in (result.get("factors") or {}).items():
+            if bounds.get(k):
+                bounds[k] = {**bounds[k], **{m: (bounds[k][m] * factor if bounds[k].get(m) is not None else None)
+                                             for m in ("b10", "median")}}
         if any(bounds.values()):
             result = strategy_service.with_life_bounds(result, bounds)
         return JSONResponse(content=result)

@@ -4,6 +4,7 @@ import { SectionHeader, ShowMe } from "./SectionPage.jsx";
 import ListSearch, { matches } from "./ListSearch.jsx";
 import { RowActions } from "./LibRows.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
+import LoadFailed from "./LoadFailed.jsx";
 import "./RegisterList.css";
 
 // The landing page of a register: Assets (the places you look after) and
@@ -24,9 +25,15 @@ import "./RegisterList.css";
 // ⋯ menu (Assets' Excel import and export), drawn under the header, above the list.
 // `rowMenu(row)`: a ⋯ menu at the end of each row in place of the bin ([{id,
 // label, danger?, onSelect}]: Assets' Merge into another asset… and Delete…).
+// `loadError`: the list's read failed (the Error or its message): the shared
+// LoadFailed card in place of the list, with Try again from `onRetry`. `error`
+// stays for a failed action (a delete), shown above the list.
+// `found(query, shown)`: what else the query finds, drawn under the list while
+// there's a query (Assets: the positions and items inside the assets); it then
+// says "nothing matches" itself, with `shown` the rows the list kept.
 export default function RegisterList({
   title, purpose, help, primary, actions = null, menu, error, rows, noun, count, search, placeholder, columns, name, after = null, empty,
-  className = "", onDelete = null, pane = null, rowMenu = null,
+  className = "", onDelete = null, pane = null, rowMenu = null, loadError = null, onRetry = null, found = null,
 }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -38,7 +45,9 @@ export default function RegisterList({
       <SectionHeader title={title} purpose={purpose} help={help} primary={primary} actions={actions} menu={menu} />
       {pane}
       {error && <div className="card error">{error}</div>}
-      {rows === null ? (
+      {loadError ? (
+        <LoadFailed what={`Couldn't load your ${many}.`} error={loadError} onRetry={onRetry} />
+      ) : rows === null ? (
         !error && <div className="card empty">Loading…</div>
       ) : all.length === 0 && !after ? (
         <div className="card empty section-empty">
@@ -55,9 +64,9 @@ export default function RegisterList({
           <div className="tablebar section-tablebar">
             <span className="count">{query ? `${visible.length} of ${all.length} ${many}` : count}</span>
             <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder={`Search ${many}…`} />
+            <ListSearch value={query} onChange={setQuery} placeholder={placeholder || `Search ${many}…`} />
           </div>
-          <div className="lib maint-scroll">
+          {!(found && query.trim() && !visible.length) && <div className="lib maint-scroll">
             <table className="lib-table reg-table">
               <colgroup>
                 <col className="reg-col-name" />
@@ -95,8 +104,9 @@ export default function RegisterList({
                 {!query && after}
               </tbody>
             </table>
-            {!visible.length && query && <p className="section-nomatch">No {one} matches.</p>}
-          </div>
+            {!visible.length && query && !found && <p className="section-nomatch">No {one} matches.</p>}
+          </div>}
+          {query.trim() && found && found(query.trim(), visible.length)}
         </>
       )}
     </div>

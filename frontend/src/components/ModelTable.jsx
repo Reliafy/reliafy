@@ -393,7 +393,7 @@ export function RbdLinkModal({ position, onClose, onDone }) {
   };
   const groups = [["Yours", (list || []).filter((x) => !x.is_sample)], ["Samples", (list || []).filter((x) => x.is_sample)]];
   return (
-    <Modal title="Link an existing RBD" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+    <Modal title="Link an existing RBD" onClose={onClose} locked={busy} className="ml-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -441,7 +441,7 @@ export function NewRbdModal({ position, hasInside = false, hasModel = false, onC
     }
   };
   return (
-    <Modal title="New blank RBD" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+    <Modal title="New blank RBD" onClose={onClose} locked={busy} className="ml-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -521,7 +521,7 @@ export function ParamsModal({ position, link = null, onClose, onDone }) {
     }
   };
   return (
-    <Modal title={link ? "Edit parameters" : "Enter parameters"} onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+    <Modal title={link ? "Edit parameters" : "Enter parameters"} onClose={onClose} locked={busy} className="ml-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -600,7 +600,7 @@ export function LibraryAttachModal({ position, onClose, onDone, onBind = null })
     }
   };
   return (
-    <Modal title="From the data library" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+    <Modal title="From the data library" onClose={onClose} locked={busy} className="ml-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -734,7 +734,7 @@ function AttachModal({ modal, onClose, onDone }) {
     }
   };
   return (
-    <Modal title={title} onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+    <Modal title={title} onClose={onClose} locked={busy} className="ml-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>

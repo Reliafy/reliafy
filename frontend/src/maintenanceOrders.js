@@ -50,6 +50,16 @@ export function daysLate(wo, today) {
 
 export const lateText = (days) => (days == null ? "" : days === 1 ? "1 day late" : `${days} days late`);
 
+// A work order as a phone shows it, under its "#12 Title": when, then where
+// ("18 days late · Pool Area", "Due 4 Dec 2026 · Media filter"). `late` marks the
+// first part as late (the words say it too). Where: its location, else what it's on.
+export function orderCardMeta(wo, today = null, fmt = (d) => d) {
+  const days = daysLate(wo, today);
+  const late = days != null || !!wo?.overdue;
+  const when = days != null ? lateText(days) : wo?.overdue ? "Late" : wo?.due ? `Due ${fmt(wo.due)}` : "No due date";
+  return { when, late, where: wo?.location?.name || wo?.subject?.name || "" };
+}
+
 // The Open tab's two sections: the overdue ones, most late first, then the rest
 // in the order the server gives (by due date, those with none last).
 export function splitOpen(rows = [], today = null) {

@@ -25,6 +25,8 @@ const PartsPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) =
 // The LSA tab's body (what each task needs, and the work packages: tasks done together on one visit).
 const LsaPanel = lazy(() => import("./LsaPanel.jsx"));
 const ClassFleet = lazy(() => import("./ClassFleet.jsx"));
+const ClassForecastTab = lazy(() => import("./ClassForecastTab.jsx").then((m) => ({ default: m.ClassForecastTab })));
+const ClassSparesTab = lazy(() => import("./ClassForecastTab.jsx").then((m) => ({ default: m.ClassSparesTab })));
 const PositionRisk = lazy(() => import("./PositionRisk.jsx"));
 const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.ClassesPanel })));
 
@@ -385,6 +387,11 @@ const TreeDetail = forwardRef(function TreeDetail({
           ? <Suspense fallback={loading}><PositionRisk positionId={row.key} version={version} detail onModelling={() => onTab("models")} /></Suspense>
           // By Classes, a class's row: the fleet (every position under it, with risk now; `within`:
           // the one asset on show, its top position's id: only the positions inside it).
+          // By Classes, a class's Forecast and Spares (through its positions' position classes).
+          : shown === "forecast" && row.type === "cls"
+          ? <Suspense fallback={loading}><ClassForecastTab row={row} display={display} onSelect={onSelect} /></Suspense>
+          : shown === "spares" && row.type === "cls"
+          ? <Suspense fallback={loading}><ClassSparesTab row={row} display={display} /></Suspense>
           : shown === "condition"
           ? <Suspense fallback={loading}><ClassFleet row={row} version={version} onSelect={onSelect} within={within} /></Suspense>
           : <Summary row={row} display={display} structure={structure} today={today} onSelect={onSelect} version={version} actions={actions} />}

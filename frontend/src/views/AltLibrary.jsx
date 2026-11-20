@@ -9,10 +9,12 @@ const ALT_COLOR = CATEGORY.teal;
 
 // Saved accelerated-life models, laid out like the life-data and recurrent
 // lists. ``models`` is null while loading.
-export default function AltLibrary({ models, hrefFor, onDelete, help, empty }) {
+export default function AltLibrary({ models, hrefFor, onDelete, help, empty, loadError = null, onRetry = null }) {
   const navigate = useNavigate();
   return (
     <SectionList
+      loadError={loadError}
+      onRetry={onRetry}
       rows={models}
       noun={["model", "models"]}
       fields={(m) => [m.name, m.distribution, m.life_model]}

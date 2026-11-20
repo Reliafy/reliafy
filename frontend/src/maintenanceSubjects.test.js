@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  actionKinds, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, followUps, foundFailedText, itemAtText, newItemBody, replaceReason, replaceRecordText, subjectApiPath, subjectBadge, subjectPath, taskUnits, whileStoredText,
+  actionKinds, closeActionBlocker, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, followUps, foundFailedText, itemAtText, newItemBody, replaceReason, replaceRecordText, subjectApiPath, subjectBadge, subjectPath, taskUnits, whileStoredText,
 } from "./maintenanceSubjects.js";
 
 test("each subject has its own page and API path", () => {
@@ -78,12 +78,24 @@ test("checked, nothing done is sent as an inspection that found it OK", () => {
   assert.deepEqual(closeActionKind("replace"), { kind: "replace" });
 });
 
-test("a breakdown's replacement starts as a failure; planned work as a planned replacement", () => {
+test("a breakdown's close starts at nothing: the person says what was done and whether it failed", () => {
   const fitted = { fitted: { item: { name: "Pump P1" } }, subject: { kind: "position", name: "Pump 3" } };
-  // A corrective work order closed with the defaults records a failure (c = 0 in the life data).
   const breakdown = { ...fitted, type: "corrective" };
-  assert.equal(defaultFailed(breakdown), true);
-  assert.equal(replaceReason({ kind: "replace", failed: defaultFailed(breakdown) }), "failure");
+  // No preset action and no preset answer: a hurried close can't record a failure nobody saw.
+  assert.equal(defaultCloseKind(breakdown), "");
+  assert.equal(defaultCloseKind({ ...breakdown, task: { id: "t", outcome: "fixed_interval" } }), "");
+  assert.equal(defaultFailed(breakdown), null);
+  assert.match(replaceRecordText({ failed: null }, breakdown), /^Say whether it failed: a failure ends Pump P1's time at Pump 3 as failed/);
+  // The Close button says what's missing, in order.
+  assert.equal(closeActionBlocker({ kind: "" }), "Choose what was done");
+  assert.equal(closeActionBlocker({ kind: "replace", failed: null }), "Say whether it failed");
+  assert.equal(closeActionBlocker({ kind: "replace", failed: null }, { atPosition: false }), "");
+  assert.equal(closeActionBlocker({ kind: "replace", failed: true }, { modeReady: false }), "Name the new failure mode");
+  assert.equal(closeActionBlocker({ kind: "replace", failed: true }), "");
+  assert.equal(closeActionBlocker({ kind: "replace", failed: false }), "");
+  assert.equal(closeActionBlocker({ kind: "checked" }), "");
+  // Once answered "Yes, it failed", it records a failure (c = 0 in the life data).
+  assert.equal(replaceReason({ kind: "replace", failed: true }), "failure");
   assert.match(replaceRecordText({ failed: true }, breakdown), /^Records a failure: Pump P1's time at Pump 3 ends as a failure \(mode not known\)/);
   assert.match(replaceRecordText({ failed: true }, breakdown, "Seal leaking"), /\(Seal leaking\)/);
   // Preventive work keeps the planned replacement, and says it's a suspension.

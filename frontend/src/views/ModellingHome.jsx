@@ -15,7 +15,7 @@ const HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 // Models › Non-repairable: the life-data models list.
 export default function ModellingHome() {
   const navigate = useNavigate();
-  const { models, loading, refresh } = useModels();
+  const { models, loading, error: loadError, refresh } = useModels();
   const [error, setError] = useState(null);
 
   const confirm = useConfirm();
@@ -46,6 +46,8 @@ export default function ModellingHome() {
       <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={models} />
 
       <ModelLibrary
+        loadError={loadError}
+        onRetry={refresh}
         models={loading ? null : models}
         hrefFor={(id) => `/models/m/${id}`}
         onDelete={onDelete}

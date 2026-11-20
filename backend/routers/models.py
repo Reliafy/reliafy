@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from backend import config
 from backend.db import get_session
@@ -606,6 +607,29 @@ def get_dataset(
     if dataset is None or dataset.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
+
+
+@router.get("/datasets/{dataset_id}/csv")
+def download_dataset_csv(
+    dataset_id: str,
+    part: str = Query("life", pattern="^(life|measurements)$"),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> Response:
+    """The dataset's rows as saved, as a CSV file (the dataset page's Download
+    CSV). ``part=measurements`` gives the readings part when the dataset has
+    one; otherwise the one table it holds."""
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    measured = part == "measurements" and dataset.measurements is not None
+    body = bytes(dataset.measurements.data if measured else dataset.data)
+    name = datasets_service.csv_filename(dataset.name, "measurements" if measured else None)
+    ascii_name = name.encode("ascii", "ignore").decode().replace('"', "") or "dataset.csv"
+    return Response(content=body, media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
+        "Cache-Control": "no-store",
+    })
 
 
 @router.delete("/datasets/{dataset_id}")

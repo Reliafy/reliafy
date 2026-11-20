@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
-import { filterOptions } from "../selectSearch.js";
+import { bestMatchIndex, filterOptions } from "../selectSearch.js";
 
 // Fully-styled dropdown replacing native <select> (whose popup list can't be
 // themed). A trigger button opens a portal-rendered listbox positioned under
@@ -12,7 +12,9 @@ import { filterOptions } from "../selectSearch.js";
 //           placeholder? disabled? className? title? ariaLabel? searchable? />
 //
 // `searchable` puts a "Find…" box at the top of the open list (a long list of
-// saved models): typing narrows it to the rows holding every word typed.
+// saved models, a tree of positions): typing narrows it to the rows holding every
+// word typed (in the label or the hint). Typing on the closed trigger opens it
+// with that letter already in the box.
 //
 // `options` entries may also be plain strings. `className` variants:
 //   sel-embedded — borderless, for selects fused inside a bordered parent
@@ -81,10 +83,11 @@ export default function Select({
     });
   }, []);
 
-  const openMenu = () => {
+  // seed: a letter typed on the closed trigger of a searchable list starts the search.
+  const openMenu = (seed = "") => {
     if (disabled) return;
     place();
-    setQuery("");
+    setQuery(seed);
     setActive(all.findIndex((o) => o.value === value));
     setOpen(true);
   };
@@ -134,6 +137,10 @@ export default function Select({
       if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) {
         e.preventDefault();
         openMenu();
+      } else if (searchable && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Type-ahead: typing on the closed list opens it with what was typed in its search box.
+        e.preventDefault();
+        openMenu(e.key);
       }
       return;
     }
@@ -146,7 +153,7 @@ export default function Select({
       e.preventDefault();
       // Typed into the search and pressed Enter: the first match.
       const pick = items[active] && !items[active]._header ? items[active]
-        : searchable && query ? items.find((o) => !o._header) : null;
+        : searchable && query ? items[bestMatchIndex(items, query)] : null;
       if (pick) choose(pick);
       else setOpen(false);
     }
@@ -192,7 +199,12 @@ export default function Select({
               value={query}
               placeholder="Find…"
               aria-label="Find in the list"
-              onChange={(e) => { setQuery(e.target.value); setActive(-1); }}
+              onChange={(e) => {
+                // Highlight the row Enter will take: the closest match.
+                const q = e.target.value;
+                setQuery(q);
+                setActive(q.trim() ? bestMatchIndex(filterOptions(all, q), q) : -1);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown" && active < 0) { e.preventDefault(); setActive(step(-1, 1)); return; }
                 onKeyDown(e);

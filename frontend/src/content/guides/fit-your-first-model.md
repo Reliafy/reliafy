@@ -151,8 +151,10 @@ Go to **Modelling → Models → Non-repairable**, press **New model** and choos
   column.
 - **Upload a file** takes a CSV or Excel file.
 
-Pasted values and a new file are saved as a dataset first, through the same
-**New dataset** screen, so they're read the same way; then the fit goes on.
+Pasted values are saved as a dataset straight away and the fit goes on to the
+**Model** step, where you choose their time unit: the paste already says which
+column is the time and which the status. A new file is saved as a dataset
+first, through the same **New dataset** screen, so it's read the same way.
 
 ![The new-model flow: pick a saved dataset, see its first rows and how its columns are read](/guides/img/fit-01-new.png)
 
@@ -293,8 +295,10 @@ clicking it says *β is above 1 at 90% confidence*.
 The **Calculator** tab lets you ask the model direct questions: reliability (or
 any other function) at a given time, or, with **Time at reliability**, the time
 by which a given fraction will have failed — the B-lives, with **B1**, **B5**,
-**B10** and **B50** one click each. Every answer comes with a confidence bound,
-stated in words. The
+**B10** and **B50** one click each. **At a time** starts at the middle failure
+time in the data. A time can carry its unit: *1 year* on a model in hours is
+8,766 hours (a year is 365.25 days, running all the time). Every answer comes
+with a confidence bound, stated in words. The
 [B-lives and confidence bounds](/guides/b-lives-and-confidence-bounds) guide
 reads them in detail.
 
@@ -344,6 +348,17 @@ The library keeps a copy as it is now; a later refit doesn't change it. You can
 share a library with other workspaces or publish it: the
 [Build and share a library](/guides/build-and-share-a-library) guide covers
 it all.
+
+## Take the numbers to a spreadsheet
+
+Every table and curve on the model page downloads as a CSV file, at full precision rather than the
+rounded figures on screen, with the units and the bounds' confidence in the column names:
+
+- **CSV** beside the Calculator chart's PNG and SVG buttons: the curve it draws, with time, reliability,
+  probability of failure, hazard rate, cumulative hazard and density, plus the bound you chose.
+- **CSV** in the heading of the **Parameters** card and the **B-lives** card (on **Model characteristics**).
+
+A dataset's own rows download from **⋯ → Download CSV** on its page, exactly as saved.
 
 ## Run it yourself in Python
 
