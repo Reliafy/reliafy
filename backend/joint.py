@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import FitError
-from backend.units import canonical_unit, normalize_unit, unit_in_text
+from backend.units import canonical_unit, normalize_unit, singular_unit, unit_in_text
 from backend.warn_capture import collect_warnings, ignore_warnings
 
 #: The path models offered, by id: (SurPyval's class name, label, formula,
@@ -45,6 +45,21 @@ PATHS: dict[str, tuple[str, str, str, str]] = {
                   "The rate of change itself changes with age. Slower to fit."),
 }
 DEFAULT_PATH = "linear"
+
+#: What of the reading the risk follows (SurPyval's ``link``), by id: (the
+#: library's link names, label, a plain description). Level first: the default.
+LINKS: dict[str, tuple[tuple[str, ...], str, str]] = {
+    "value": (("value",), "Level", "The risk follows where the reading is now."),
+    "slope": (("slope",), "Rate of change",
+              "The risk follows how fast the reading is moving, whatever its level."),
+    "value_slope": (("value", "slope"), "Level and rate of change",
+                    "The risk follows both where the reading is and how fast it is moving."),
+}
+DEFAULT_LINK = "value"
+#: The paths whose slope stays finite at age 0, so a rate-of-change link can
+#: start from new. A logarithmic path's slope (b / t) and a power path's (a b
+#: t^(b-1), for b below 1) run to infinity at age 0, which gives wrong fits.
+SLOPE_PATHS = ("linear", "exponential", "quadratic")
 
 #: The most units and readings one fit takes: the request travels to the
 #: compute service whole (Cloud Tasks caps a task near 1 MB).
@@ -77,12 +92,49 @@ def options() -> dict:
     return {
         "paths": [{"id": k, "name": v[1], "formula": v[2], "description": v[3]} for k, v in PATHS.items()],
         "default_path": DEFAULT_PATH,
+        "links": [{"id": k, "name": v[1], "description": v[2]} for k, v in LINKS.items()],
+        "default_link": DEFAULT_LINK,
+        "slope_paths": list(SLOPE_PATHS),
         "limits": {"units": MAX_UNITS, "readings": MAX_READINGS},
     }
 
 
 def path_label(path_id: str) -> str:
     return PATHS.get(path_id, PATHS[DEFAULT_PATH])[1]
+
+
+def link_id(link: Any) -> str:
+    """A link as its id here: ``"value"``, ``"slope"`` or ``"value_slope"``
+    (also given as SurPyval's names: ``["value", "slope"]``). None or "" is
+    the level (models saved before the choice). Raises :class:`FitError`."""
+    if link is None or link == "" or link == []:
+        return DEFAULT_LINK
+    if isinstance(link, (list, tuple)):
+        names = tuple(str(n).strip().lower() for n in link)
+        for k, v in LINKS.items():
+            if set(names) == set(v[0]) and len(names) == len(v[0]):
+                return k
+    else:
+        key = str(link).strip().lower().replace("+", "_").replace(" ", "_")
+        if key in LINKS:
+            return key
+        if key == "slope_value":
+            return "value_slope"
+    raise FitError(f"Unknown link {link!r}: use one of {', '.join(LINKS)} (what of the reading the risk follows).")
+
+
+def link_label(link: Any) -> str:
+    try:
+        return LINKS[link_id(link)][1]
+    except FitError:
+        return LINKS[DEFAULT_LINK][1]
+
+
+def check_link(path_id: str, link: str) -> None:
+    """Refuse a rate-of-change link on a path whose slope is infinite at age 0."""
+    if "slope" in LINKS[link][0] and path_id not in SLOPE_PATHS:
+        raise FitError(f"A {path_label(path_id).lower()} path's rate of change is infinite at age 0, so the risk "
+                       "can't follow it: use a linear or exponential path, or have the risk follow the level.")
 
 
 def _path_class(path_id: str):
@@ -93,12 +145,15 @@ def _path_class(path_id: str):
     return getattr(path_models, PATHS[path_id][0])
 
 
-def fitter(path_id: str = DEFAULT_PATH):
-    """The SurPyval joint fitter for a path: the Weibull baseline (the one
-    SurPyval's joint models have for now)."""
+def fitter(path_id: str = DEFAULT_PATH, link: str = DEFAULT_LINK):
+    """The SurPyval joint fitter for a path and a link: the Weibull baseline
+    (the one SurPyval's joint models have for now)."""
     from surpyval import JointPH, Weibull
 
-    return JointPH(Weibull, _path_class(path_id))
+    link = link_id(link)
+    check_link(path_id, link)
+    names = LINKS[link][0]
+    return JointPH(Weibull, _path_class(path_id), link=names[0] if len(names) == 1 else list(names))
 
 
 # ---- The data ------------------------------------------------------------------
@@ -342,7 +397,8 @@ def _check_parts(covariates: list[str], hazard: Optional[list], path: Any) -> tu
 
 
 def fit_model(items: list[dict], covariates: list[str], path_model: str = DEFAULT_PATH,
-              hazard_covariates: Optional[list] = None, path_covariates: Any = None):
+              hazard_covariates: Optional[list] = None, path_covariates: Any = None,
+              link: str = DEFAULT_LINK):
     """Fit the joint model to the records. Returns ``(model, warnings)``."""
     hazard, path = _check_parts(covariates, hazard_covariates, path_covariates)
     df = items_frame(items, covariates)
@@ -362,7 +418,7 @@ def fit_model(items: list[dict], covariates: list[str], path_model: str = DEFAUL
     with collect_warnings() as caught:
         try:
             with np.errstate(all="ignore"):
-                model = fitter(path_model).fit_from_df(df, **kwargs)
+                model = fitter(path_model, link).fit_from_df(df, **kwargs)
         except (ValueError, np.linalg.LinAlgError) as exc:
             raise FitError(str(exc)) from exc
     notes = []
@@ -432,9 +488,37 @@ def _part(heading: str) -> str:
     return "path"
 
 
-def parameter_rows(model) -> list[dict]:
+def per_time(unit: Optional[str]) -> str:
+    """"per day", "per cycle": a rate's time word in the model's unit."""
+    word = singular_unit(unit_in_text(unit)) if unit else ""
+    return f"per {word.lower() if word[:1].isupper() and word[1:] == word[1:].lower() else word}" if word \
+        else "per time unit"
+
+
+def rate_words(marker: str, marker_unit: str, unit: Optional[str]) -> str:
+    """"1 mm/s per day faster rise in vibration": one unit of the slope."""
+    return f"1 {(marker_unit or '').strip() or 'unit'} {per_time(unit)} faster rise in {marker}"
+
+
+def per_year(unit: Optional[str]) -> Optional[float]:
+    """How many of a calendar time unit make a year (None for a year itself
+    and for a unit that isn't calendar time): a slope effect per day is this
+    many times the effect per year."""
+    d = days_per(unit)
+    if d is None or normalize_unit(unit) == "year":
+        return None
+    return _DAYS_PER["year"] / d
+
+
+def _link_names(model) -> tuple:
+    return tuple(getattr(model, "link", None) or ("value",))
+
+
+def parameter_rows(model, unit: str = "", marker: str = "", marker_unit: str = "") -> list[dict]:
     """Each parameter with its standard error and 90% interval (and, for the
-    risk coefficients, the hazard ratio), and what it means in plain words."""
+    risk coefficients, the hazard ratio), and what it means in plain words.
+    A slope effect is per 1 unit of the reading per one of the model's time
+    unit (``unit``)."""
     table = model.summary(alpha_ci=ALPHA_CI).reset_index()
     pct = f"{round(100 * (1 - ALPHA_CI)):g}%"
     path_names = list(model.path_model.parameter_names)
@@ -455,12 +539,13 @@ def parameter_rows(model) -> list[dict]:
         if part in ("survival", "link") and name not in ("alpha", "beta"):
             rec.update(hr=_f(row.get("exp(coef)")), hr_lower=_f(row.get(f"exp(coef) lower {pct}")),
                        hr_upper=_f(row.get(f"exp(coef) upper {pct}")))
-        rec["meaning"] = _meaning(part, name, path_names, model)
+        rec["meaning"] = _meaning(part, name, path_names, model, unit, marker or "the reading", marker_unit)
         out.append(rec)
     return out
 
 
-def _meaning(part: str, name: str, path_names: list, model) -> str:
+def _meaning(part: str, name: str, path_names: list, model, unit: str = "", marker: str = "the reading",
+             marker_unit: str = "") -> str:
     if part == "path":
         base, _, cov = name.partition("_")
         if cov and base in path_names:
@@ -475,37 +560,76 @@ def _meaning(part: str, name: str, path_names: list, model) -> str:
         return "How the units' path parameters move together (a correlation, -1 to 1)."
     if part == "noise":
         return "Scatter of single readings about a unit's own path (a standard deviation)."
+    links = _link_names(model)
     if name == "alpha":
+        if "value" not in links:
+            return "Weibull scale: the characteristic life of a unit whose reading holds steady, with covariates at 0."
+        steady = " and holds steady" if "slope" in links else ""
         return (f"Weibull scale: the characteristic life of a unit whose reading stays at "
-                f"{model.marker_reference:.4g}, with covariates at 0.")
+                f"{model.marker_reference:.4g}{steady}, with covariates at 0.")
     if name == "beta":
         return "Weibull shape: below 1 early failures, near 1 random, above 1 wear-out (before the reading's effect)."
+    if part == "link" and name == "slope_effect":
+        return (f"Change in the log failure rate per {rate_words(marker, marker_unit, unit)} (its rate of "
+                "change); exp of it is the hazard ratio.")
     if part == "link":
         return "Change in the log failure rate per 1 unit of the reading; exp of it is the hazard ratio."
     return f"Change in the log failure rate per 1 unit of {name}, at the same reading."
 
 
-def hazard_ratios(rows: list[dict], marker: str, level: float = 1 - ALPHA_CI) -> list[dict]:
-    """The risk coefficients as hazard ratios, each said in plain words."""
+def _ratio_text(what: str, hr: float, lo: Optional[float], hi: Optional[float], level: float) -> str:
+    if hr >= 1:
+        text = f"Each {what} multiplies the failure rate by {hr:.3g}"
+    else:
+        text = f"Each {what} cuts the failure rate to {hr:.3g} times"
+    if lo is not None and hi is not None:
+        text += f" ({round(100 * level):g}% CI {lo:.3g} to {hi:.3g})"
+    return text
+
+
+def hazard_ratios(rows: list[dict], marker: str, level: float = 1 - ALPHA_CI, *, unit: str = "",
+                  marker_unit: str = "", link: str = DEFAULT_LINK) -> list[dict]:
+    """The risk coefficients as hazard ratios, each said in plain words. A
+    slope effect is per 1 unit of the reading per one of the model's time
+    unit; in days, weeks or months it also says the same per year."""
     out = []
+    names = LINKS.get(link, LINKS[DEFAULT_LINK])[0]
+    same = {("value",): f"the same {marker}", ("slope",): f"the same rate of change of {marker}"}.get(
+        names, f"the same {marker} and rate of change")
     for r in rows:
         if r.get("hr") is None:
             continue
-        what = f"1 unit higher {marker}" if r["part"] == "link" else f"1 unit higher {r['name']}"
+        slope = r["part"] == "link" and r["name"] == "slope_effect"
+        if slope:
+            what = rate_words(marker, marker_unit, unit)
+        elif r["part"] == "link":
+            what = f"1 unit higher {marker}"
+        else:
+            what = f"1 unit higher {r['name']}"
         hr = r["hr"]
         lo, hi = r.get("hr_lower"), r.get("hr_upper")
-        if hr >= 1:
-            text = f"Each {what} multiplies the failure rate by {hr:.3g}"
-        else:
-            text = f"Each {what} cuts the failure rate to {hr:.3g} times"
+        text = _ratio_text(what, hr, lo, hi, level)
         if r["part"] != "link":
-            text += f" at the same {marker}"
-        if lo is not None and hi is not None:
-            text += f" ({round(100 * level):g}% CI {lo:.3g} to {hi:.3g})"
-            if lo <= 1 <= hi:
-                text += "; the interval includes 1, so the data can't rule out no effect"
-        out.append({"name": r["name"], "kind": "marker" if r["part"] == "link" else "covariate",
-                    "hr": hr, "lower": lo, "upper": hi, "text": text + "."})
+            # Ahead of the CI: "... by 1.6 at the same vibration (90% CI ...)".
+            head, sep, tail = text.partition(" (")
+            text = f"{head} at {same}{sep}{tail}"
+        if lo is not None and hi is not None and lo <= 1 <= hi:
+            text += "; the interval includes 1, so the data can't rule out no effect"
+        rec = {"name": r["name"], "kind": "marker" if r["part"] == "link" else "covariate",
+               "hr": hr, "lower": lo, "upper": hi, "text": text + "."}
+        if slope:
+            rec.update(label=f"Rate of change of {marker}",
+                       unit=f"{(marker_unit or '').strip() or 'unit'} {per_time(unit)}")
+        years = per_year(unit) if slope else None
+        if years and r.get("value") is not None:
+            # Per year: the coefficient over the time units in a year.
+            yv, ylo, yhi = (None if r.get(k) is None else _f(math.exp(r[k] / years))
+                            for k in ("value", "lower", "upper"))
+            if yv is not None:
+                rec.update(per_year={"hr": yv, "lower": ylo, "upper": yhi})
+                rec["text"] += (" Per year: " + _ratio_text(
+                    f"1 {(marker_unit or '').strip() or 'unit'} per year faster rise", yv, ylo, yhi, level) + ".")
+        out.append(rec)
     return out
 
 
@@ -535,7 +659,10 @@ def at_level(results: dict) -> dict:
         rows.append(r)
     out = {**results, "params": rows, "ci_level": levels.LEVEL}
     if results.get("hazard_ratios") is not None:
-        out["hazard_ratios"] = hazard_ratios(rows, results.get("marker") or "the reading", levels.LEVEL)
+        out["hazard_ratios"] = hazard_ratios(rows, results.get("marker") or "the reading", levels.LEVEL,
+                                             unit=results.get("unit") or "",
+                                             marker_unit=results.get("marker_unit") or "",
+                                             link=results.get("link") or DEFAULT_LINK)
     return out
 
 
@@ -728,7 +855,9 @@ def results_payload(model, items: list[dict], covariates: list[str], *, path_mod
     """What the results page and MCP show for a fitted model."""
     unit = canonical_unit(unit)
     marker = (marker or "").strip() or "reading"
-    rows = parameter_rows(model)
+    marker_unit = (marker_unit or "").strip()
+    link = link_id(list(_link_names(model)))
+    rows = parameter_rows(model, unit, marker, marker_unit)
     alpha = next((r["value"] for r in rows if r["name"] == "alpha"), None)
     h = horizons(unit, alpha)
     inputs = unit_inputs(items, covariates)
@@ -748,15 +877,19 @@ def results_payload(model, items: list[dict], covariates: list[str], *, path_mod
                             "care, and check the data (enough failures, enough readings per unit).")
     return {
         "kind": "joint",
-        "distribution": f"Condition and life (Weibull, {path_label(path_model).lower()} path)",
+        "distribution": f"Condition and life (Weibull, {path_label(path_model).lower()} path"
+                        f"{'' if link == DEFAULT_LINK else ', risk follows ' + LINKS[link][1].lower()})",
         "distribution_id": f"joint_weibull_{path_model}",
         "path_model": path_model,
         "path_label": path_label(path_model),
         "path_formula": PATHS[path_model][2],
+        "link": link,
+        "link_label": LINKS[link][1],
+        "link_description": LINKS[link][2],
         "varying": list(model.varying),
         "unit": unit,
         "marker": marker,
-        "marker_unit": (marker_unit or "").strip(),
+        "marker_unit": marker_unit,
         "marker_reference": _f(model.marker_reference),
         "covariates": list(model.feature_names),
         "hazard_covariates": list(model.hazard_covariates) if model.hazard_covariates is not None
@@ -775,7 +908,7 @@ def results_payload(model, items: list[dict], covariates: list[str], *, path_mod
         "confidence": 1 - ALPHA_CI,
         "ci_level": 1 - ALPHA_CI,  # the parameters' and hazard ratios' intervals (at_level moves older fits)
         "params": rows,
-        "hazard_ratios": hazard_ratios(rows, marker),
+        "hazard_ratios": hazard_ratios(rows, marker, unit=unit, marker_unit=marker_unit, link=link),
         "path": {"sample": _sample_paths(items), **new_dict["marker"]},
         "survival_new": {"x": new_dict["x"], "sf": new_dict["sf"], "sf_lower": new_dict["sf_lower"],
                          "sf_upper": new_dict["sf_upper"], "remaining_life": new_dict["remaining_life"]},
@@ -817,10 +950,12 @@ def unit_view(model, covariates: Optional[dict], markers, age: Optional[float], 
 
 def fit_request(items: list[dict], covariates: list[str], *, path_model: str, hazard_covariates=None,
                 path_covariates=None, unit: str = "", marker: str = "", marker_unit: str = "",
-                summary: Optional[dict] = None) -> dict:
+                summary: Optional[dict] = None, link: Any = DEFAULT_LINK) -> dict:
     """A self-contained fit request: everything :func:`run_fit` needs."""
     if path_model not in PATHS:
         raise FitError(f"Unknown path model {path_model!r}: use one of {', '.join(PATHS)}.")
+    link = link_id(link)
+    check_link(path_model, link)
     if path_model == "quadratic" and len(items) > MAX_UNITS_QUADRATIC:
         raise FitError(f"The quadratic path takes up to {MAX_UNITS_QUADRATIC:,} units (its three varying "
                        f"parameters make each unit's fit slow); this fit has {len(items):,}. Use another path, "
@@ -829,7 +964,7 @@ def fit_request(items: list[dict], covariates: list[str], *, path_model: str, ha
     return {
         "items": items,
         "covariates": list(covariates),
-        "options": {"path_model": path_model, "hazard_covariates": hazard_covariates,
+        "options": {"path_model": path_model, "link": link, "hazard_covariates": hazard_covariates,
                     "path_covariates": path_covariates, "unit": unit or "", "marker": marker or "",
                     "marker_unit": marker_unit or ""},
         "summary": summary or {},
@@ -846,7 +981,7 @@ def run_fit(request: dict) -> dict:
     opts = request.get("options") or {}
     path_model = opts.get("path_model") or DEFAULT_PATH
     model, notes = fit_model(items, covariates, path_model, opts.get("hazard_covariates"),
-                             opts.get("path_covariates"))
+                             opts.get("path_covariates"), link_id(opts.get("link")))
     results = results_payload(model, items, covariates, path_model=path_model, unit=opts.get("unit") or "",
                               marker=opts.get("marker") or "", marker_unit=opts.get("marker_unit") or "",
                               notes=notes, summary=request.get("summary"))
@@ -863,6 +998,9 @@ def restore(model_dict: dict):
 # ---- Download as Python ---------------------------------------------------------------
 
 
+_LINK_WORDS = {"value": "level", "slope": "rate of change"}
+
+
 def _csv(df: pd.DataFrame) -> str:
     buf = io.StringIO()
     df.to_csv(buf, index=False, float_format="%.10g")
@@ -871,7 +1009,8 @@ def _csv(df: pd.DataFrame) -> str:
 
 def python_script(name: str, items: list[dict], covariates: list[str], *, path_model: str,
                   hazard_covariates=None, path_covariates=None, unit: str = "", marker: str = "",
-                  horizon: Optional[float] = None, versions: Optional[dict] = None) -> str:
+                  horizon: Optional[float] = None, versions: Optional[dict] = None,
+                  link: Any = DEFAULT_LINK) -> str:
     """A standalone script that refits the model with ``fit_from_df`` from
     the data it was fitted to (embedded), and predicts the riskiest running
     unit."""
@@ -883,6 +1022,9 @@ def python_script(name: str, items: list[dict], covariates: list[str], *, path_m
                             columns=["id", "age", "value"])
     interval = "age_lower" in frame.columns
     cls = PATHS[path_model][0]
+    names = LINKS[link_id(link)][0]
+    link_arg = "" if names == ("value",) else (
+        f", link={names[0]!r}" if len(names) == 1 else f", link={list(names)!r}")
     args = ['    markers_col="readings",', '    c_col="censored",  # 0 = failed, 1 = still running']
     args.insert(0, '    xl_col="age_lower", xr_col="age_upper",' if interval else '    x_col="age",')
     if "entry_age" in frame.columns:
@@ -928,7 +1070,9 @@ def python_script(name: str, items: list[dict], covariates: list[str], *, path_m
         'by_unit = {uid: dict(zip(g["age"], g["value"])) for uid, g in readings.groupby("id")}',
         'life["readings"] = [by_unit.get(uid, {}) for uid in life["id"]]',
         "",
-        f"model = JointPH(Weibull, {cls}).fit_from_df(",
+        *([f"# The risk follows the reading's {' and '.join(_LINK_WORDS[n] for n in names)}."]
+          if link_arg else []),
+        f"model = JointPH(Weibull, {cls}{link_arg}).fit_from_df(",
         "    life,",
         *args,
         ")",

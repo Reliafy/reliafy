@@ -317,3 +317,13 @@ test("effects over the data's range when +1 misleads (load spans 0.5 to 0.9)", (
   assert.match(text, /across the data's range, 0\.5 to 0\.9, it multiplies it by 8\.41 \(\d+% 3\.31 to 20\.9\)/);
   assert.doesNotMatch(effectText(dusty, "hazard ratio"), /across/);
 });
+
+test("a joint model's rate-of-change effect keeps its own label and unit", () => {
+  const rows = forestRows({ kind: "joint", marker: "vibration", marker_unit: "mm/s", hazard_ratios: [
+    { name: "slope_effect", kind: "marker", hr: 3, lower: 2, upper: 4, text: "t", label: "Rate of change of vibration", unit: "mm/s per day" },
+    { name: "marker_effect", kind: "marker", hr: 2, lower: 1.5, upper: 2.5, text: "u" },
+  ] });
+  assert.deepEqual(rows.map((r) => [r.name, r.unit]), [["Rate of change of vibration", "mm/s per day"], ["vibration", "mm/s"]]);
+  assert.ok(answerParts({ kind: "joint", link: "slope", link_label: "Rate of change" }).includes("risk follows its rate of change"));
+  assert.ok(!answerParts({ kind: "joint", link: "value", link_label: "Level" }).some((p) => String(p).includes("follows")));
+});

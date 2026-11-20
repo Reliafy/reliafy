@@ -246,6 +246,7 @@ export function answerParts(result, { split = null, saved = null } = {}) {
     case "joint": {
       add(r.n_items != null && `${r.n_items} units (${r.n_events} failed, ${r.n_running} running)`);
       add(r.n_readings != null && `${Number(r.n_readings).toLocaleString("en-US")} readings of ${r.marker || "the reading"}`);
+      add(r.link && r.link !== "value" && `risk follows its ${String(r.link_label || "rate of change").toLowerCase()}`);
       const top = (r.risk || [])[0];
       const mid = r.horizons?.labels?.[1];
       // The Risk now table's words: "> 99.9%", never "100%".
@@ -396,8 +397,9 @@ export function forestRows(result) {
   const level = ciPct(r);
   if (r.kind === "joint") {
     return (r.hazard_ratios || []).map((h) => ({
-      name: h.kind === "marker" ? r.marker || h.name : h.name, ratio: h.hr, lo: h.lower, hi: h.upper,
-      unit: h.kind === "marker" ? r.marker_unit || "" : "", text: h.text, level,
+      // A rate-of-change effect carries its own label and unit ("mm/s per day").
+      name: h.label || (h.kind === "marker" ? r.marker || h.name : h.name), ratio: h.hr, lo: h.lower, hi: h.upper,
+      unit: h.unit ?? (h.kind === "marker" ? r.marker_unit || "" : ""), text: h.text, level,
     }));
   }
   const table = Object.fromEntries((r.coef_table || []).filter((t) => t.part === "coefficients").map((t) => [t.name, t]));
