@@ -11,6 +11,8 @@ import { unitInText } from "./unitText.js";
 import { paramView } from "./LifeSummary.jsx";
 import { intervalLevel } from "../modelFrame.js";
 import { withUnit as covariateWithUnit } from "./stressName.js";
+import FriendlyUnitSwitch, { useFriendlyUnit } from "./FriendlyUnit.jsx";
+import { friendlyText } from "../friendlyTime.js";
 import { SPREAD_LABEL, rateSpread, spreadMean, spreadTime, spreadWords } from "../rateSpread.js";
 
 // The Model characteristics tab's mean life: the MTTF with its one-sided
@@ -100,8 +102,10 @@ const B_NAMES = { B50: "B50 (median)" };
 
 // The B-lives card: each with its one-sided lower bound at the page's
 // confidence, from the same life answer as the mean.
-function BLivesCard({ life, level, pending, unit, noun = "time", credible = false, spread = null }) {
+// ``friendly``: a calendar unit to show each B-life in as well (friendlyTime.js).
+function BLivesCard({ life, level, pending, unit, noun = "time", credible = false, spread = null, friendly = null }) {
   const u = unit ? ` ${unit}` : "";
+  const also = (v) => friendlyText(v, unit, friendly);
   const rows = (life?.b_lives || []).filter((b) => B_LABELS.some(([l]) => l === b.label));
   // A library model: each B-life's range across plants, from the rate's 5% and 95% (no fit, no lower bound).
   const across = (b) => {
@@ -121,7 +125,8 @@ function BLivesCard({ life, level, pending, unit, noun = "time", credible = fals
              title={`${b.label}: the ${noun} by which ${Math.round(b.p * 100)}% have failed`}>
           <span className="gk">{B_NAMES[b.label] || b.label}</span>
           <span className="gv">{b.value != null ? `${formatNumber(b.value)}${u}`
-            : b.between ? `${formatNumber(b.between[0])}–${formatNumber(b.between[1])}${u}` : "—"}</span>
+            : b.between ? `${formatNumber(b.between[0])}–${formatNumber(b.between[1])}${u}` : "—"}
+            {b.value != null && also(b.value) && <span className="friendly-unit">{also(b.value)}</span>}</span>
           <span className="life-lo" title={b.lower_note || undefined}>
             {spread ? across(b) : b.lower != null ? `≥ ${formatNumber(b.lower)}` : pending ? "…" : b.lower_note ? "no bound" : ""}
           </span>
@@ -163,6 +168,12 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
   const withUnit = (v) => `${formatNumber(v)}${unit ? ` ${unit}` : ""}`;
   const answer = meanLifeAnswer(result, life?.mttf);
   const median = medianOf(life);
+  // The answers also in a friendlier calendar unit ("9,730 days (≈ 26.6 years)").
+  const friendly = useFriendlyUnit(result.unit, median ?? life?.mttf?.value);
+  const also = (v) => {
+    const t = friendlyText(v, result.unit, friendly);
+    return t ? ` (${t})` : "";
+  };
   const np = result.kind === "nonparametric";
   const canPick = !!result.functions?.life_path && !!onLevel;
   const horizon = np ? (tau ?? life?.mttf?.tau ?? null) : null;
@@ -183,13 +194,14 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
   } else if (answer.kind === "none") {
     rows = [["mean", "Mean life (MTTF)", "None", answer.why]];
   } else {
+    const meanAlso = friendlyText(answer.value, result.unit, friendly);
     const lower = spreadLife
       ? `${SPREAD_LABEL}: ${withUnit(spreadLife.lower)} to ${spreadLife.upper == null ? "no upper limit" : withUnit(spreadLife.upper)}`
-      : answer.lower != null ? `≥ ${withUnit(answer.lower)} at ${levelText}` : pending ? "…" : null;
+      : answer.lower != null ? `≥ ${withUnit(answer.lower)}${also(answer.lower)} at ${levelText}` : pending ? "…" : null;
     rows = [[
       "mean",
       answer.kind === "restricted" ? `Mean to ${withUnit(answer.tau)}` : "Mean life (MTTF)",
-      withUnit(answer.value),
+      <>{withUnit(answer.value)}{meanAlso && <span className="friendly-unit">{meanAlso}</span>}</>,
       lower,
     ]];
   }
@@ -242,16 +254,17 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
               {answer.kind === "restricted"
                 ? "The average time to failure, counting only up to that time: some units were still running at the end of the data, so the full mean can't be estimated. Move the time to see how the mean grows."
                 : meanVsMedian(noun, answer, median)}
-              {median != null && answer.kind === "mean" && <> Here the median is <b>{withUnit(median)}</b>.</>}
+              {median != null && answer.kind === "mean" && <> Here the median is <b>{withUnit(median)}{also(median)}</b>.</>}
             </p>}
             {answer.kind === "none" && median != null && (
-              <p>The median (B50, when half have failed) is <b>{withUnit(median)}</b>: quote that instead.</p>
+              <p>The median (B50, when half have failed) is <b>{withUnit(median)}{also(median)}</b>: quote that instead.</p>
             )}
             {answer.caveat && <p className="hint">{answer.caveat}</p>}
             {unavailable && <p className="hint">{unavailable}</p>}
             {life.bounds_note && !spread && <p className="muted-line">{life.bounds_note}</p>}
           </div>
         )}
+        {life && <FriendlyUnitSwitch unit={result.unit} value={friendly} className="model-chars-friendly" />}
         {onBLives && (
           <button type="button" className="link model-chars-blives" onClick={onBLives}>
             Another reliability: use Time at reliability in the Calculator ›
@@ -259,7 +272,7 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
         )}
       </section>
       <BLivesCard life={life} level={shownLevel} pending={pending} unit={unit} noun={noun} credible={lv.credible}
-                  spread={spread} />
+                  spread={spread} friendly={friendly} />
       {lv.credible && <CredibleParams result={result} label={lv.label} />}
     </div>
   );

@@ -5,6 +5,8 @@ import { CATEGORY, fitLine, optimumMarker, referenceLine } from "../plotTheme.js
 import { unitInText } from "./unitText.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 import { formatCost, formatCostRate } from "../money.js";
+import FriendlyUnitSwitch, { useFriendlyUnit } from "./FriendlyUnit.jsx";
+import { friendlyRange, friendlyText } from "../friendlyTime.js";
 
 // Presentational renderer for an optimal-replacement result — used by the live
 // tool and by saved analyses (which render the stored payload without refetch).
@@ -17,6 +19,12 @@ export default function ReplacementResult({ result, name = null, actions = null,
   const currency = useCurrency();
   const per = unit ? unitInText(unit).replace(/s$/, "") : "unit time";
   const c = result.curve;
+  // The answers also in a friendlier calendar unit ("9,730 days (≈ 26.6 years)").
+  const friendly = useFriendlyUnit(unit, result.optimal_time ?? result.mttf);
+  const also = (v) => {
+    const t = friendlyText(v, unit, friendly);
+    return t ? ` (${t})` : "";
+  };
   const block = result.block || null;
   const traces = [fitLine({ x: c.t, y: c.cost_rate, name: "Age replacement", connectgaps: false })];
   if (c.block_cost_rate) {
@@ -60,6 +68,8 @@ export default function ReplacementResult({ result, name = null, actions = null,
   const span = result.optimal_time_range;
   const range = pays && span?.lower != null && span?.upper != null && span.upper > span.lower
     ? `${formatNumber(span.lower)}–${formatWithUnit(span.upper, unitInText(unit))}` : null;
+  const ageAlso = pays ? friendlyText(result.optimal_time, unit, friendly) : "";
+  const rangeAlso = range ? friendlyRange(span.lower, span.upper, unit, friendly) : "";
   const yearly = result.yearly;
   const money = (v) => formatCost(v, currency, { sig: 3 });
   const blockPays = block?.beneficial && block.optimal_time != null;
@@ -74,12 +84,14 @@ export default function ReplacementResult({ result, name = null, actions = null,
           wt={wt}
           sentence={
             <>
-              Replace preventively at about <b>{age}</b>. That lowers the long-run cost rate by{" "}
+              Replace preventively at about <b>{age}{also(result.optimal_time)}</b>. That lowers the long-run cost rate by{" "}
               <b>{saving}</b> versus running to failure.
             </>
           }
           stats={[
-            { label: "Replace at", value: `≈ ${age}`, hint: range ? `${range} across the fit's 90% bounds` : undefined },
+            { label: "Replace at",
+              value: <>≈ {age}{ageAlso && <span className="friendly-unit">{ageAlso}</span>}</>,
+              hint: range ? `${range}${rangeAlso ? ` (${rangeAlso})` : ""} across the fit's 90% bounds` : undefined },
             { label: "Saves", value: saving, hint: "of the run-to-failure cost rate" },
             yearly?.saving_per_year != null && {
               label: "Saves a year, per unit", value: money(yearly.saving_per_year),
@@ -93,7 +105,7 @@ export default function ReplacementResult({ result, name = null, actions = null,
           {blockPays && (
             <>
               Block replacement (every unit at fixed times) is best every about{" "}
-              {formatWithUnit(block.optimal_time, unitInText(unit))}
+              {formatWithUnit(block.optimal_time, unitInText(unit))}{also(block.optimal_time)}
               {blockVsAge != null
                 ? `, ${formatPercent(Math.abs(blockVsAge))} ${blockVsAge >= 0 ? "dearer" : "cheaper"} than replacing by age.`
                 : "."}
@@ -104,6 +116,7 @@ export default function ReplacementResult({ result, name = null, actions = null,
         <ResultSummary tone="caveat" sentence={result.recommendation} wt={wt} />
       )}
       {actions && <div className="rs-actions">{actions}</div>}
+      {pays && <FriendlyUnitSwitch unit={unit} value={friendly} />}
 
       <Plot data={traces} layout={layout} download={`${name || "Optimal replacement"} — cost rate`} />
 

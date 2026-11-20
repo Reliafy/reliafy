@@ -254,6 +254,10 @@ The panel beside the probability plot has:
 
 The **Model characteristics** tab has the mean life (MTTF) and the B-lives (B1,
 B5, B10 and B50), each with its lower bound at one confidence you choose.
+When the model's unit is hours, days, weeks, months or years, each answer also
+shows in a friendlier unit ("9,730 days, ≈ 26.6 years"): pick it under **Also
+in**, or pick the model's own unit to hide it. The model, its inputs and its
+plots stay in the data's unit.
 **Diagnostics** asks whether you can trust the fit: the fitted curve over the
 data's own estimate, a P-P plot of where the failures fell against where the
 model expects them, the ranking of every other distribution on the same data,
