@@ -1392,8 +1392,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     history (fit true; distribution, scope auto | position | class). failure_mode_ids: the failure modes it's
     for; replace_link_id: the model on the position it takes the place of; note. An RBD: rbd_id (an existing diagram, linked as
     it is), new_rbd {repairable, start: blank | self (one block, the position's own model in use)}, or
-    build_rbd true (a new one from the positions inside; with replace_link_id, rebuilt into the
-    same diagram). use_link_id: make that row the position's model in use.
+    build_rbd true (a new one from the positions inside, named ``name`` when given; with
+    replace_link_id, rebuilt into the same diagram). use_link_id: make that row the position's model in use.
     """
     from backend import fitting
     from backend.maintenance import position_models as pm
@@ -1427,7 +1427,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
         return _run(pm.new_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner,
                     bool(spec.get("repairable")), str(spec.get("start") or "blank"), note)
     if body.get("build_rbd"):
-        return _run(pm.build_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, replace, note)
+        return _run(pm.build_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, replace, note,
+                    name=str(body.get("name") or "").strip() or None)
     if body.get("rbd_id"):
         return _run(pm.link_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, body["rbd_id"], note, replace)
     if isinstance(body.get("prediction"), dict):

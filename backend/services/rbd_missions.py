@@ -117,16 +117,19 @@ def carry(graph: dict, out: dict) -> None:
 
 
 def mission_of(graph: dict) -> Optional[dict]:
-    """The position a mission's own RBD belongs to ({position_id}, and built_in_series true when its
-    blocks were put in series from the tree, which doesn't say what's redundant), or None for any
-    other diagram."""
+    """The position a mission's own RBD belongs to ({position_id}, built_in_series true when its
+    blocks were put in series from the tree, which doesn't say what's redundant, and from_rbd: the
+    diagram it was copied from), or None for any other diagram."""
     raw = (graph or {}).get("mission_of")
     if not isinstance(raw, dict):
         return None
     pid = str(raw.get("position_id") or "").strip()
     if not pid:
         return None
-    return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {})}
+    # from_rbd: the position's diagram it was started from (a copy), so the RBD list shows it under that one.
+    src = str(raw.get("from_rbd") or "").strip()
+    return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {}),
+            **({"from_rbd": src[:80]} if src else {})}
 
 
 def all_in_series(graph: dict) -> bool:

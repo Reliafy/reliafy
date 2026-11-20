@@ -46,3 +46,33 @@ test("guides filter: no match leaves no groups, and a guide with no task still m
   // The groups given are not changed.
   assert.equal(GROUPS[0].items.length, 2);
 });
+
+test("guides filter: matches a guide's text too, after the title and task matches", () => {
+  const groups = [{ category: "Life data", items: [
+    { slug: "body", title: "Fit a model", task: "", body: "β is the shape; α is the scale (the characteristic life)." },
+    { slug: "named", title: "Shape and scale explained", task: "" },
+    { slug: "none", title: "Other", body: "nothing here" },
+  ] }];
+  assert.deepEqual(slugs(filterGuideGroups(groups, "scale")), [["named", "body"]]);
+  assert.deepEqual(slugs(filterGuideGroups(groups, "characteristic life")), [["body"]]);
+});
+
+test("the ? opens the page's guide: its own first, else the longest related link that matches", async () => {
+  const { guideForPath } = await import("./guideFilter.js");
+  const guides = [
+    { slug: "first", order: 1, related: { href: "/models/new" } },
+    { slug: "covariates", order: 5, related: { href: "/models/new" } },
+    { slug: "perdemand", order: 6, related: { href: "/models/new?mode=perdemand" } },
+    { slug: "rbd", order: 3, related: { href: "/systems/b" } },
+    { slug: "rbds", order: 4, related: { href: "/systems/rbds" } },
+    { slug: "plain" },
+  ];
+  assert.equal(guideForPath(guides, "/models/new", ""), "first");
+  assert.equal(guideForPath(guides, "/models/new", "?mode=perdemand"), "perdemand");
+  assert.equal(guideForPath(guides, "/systems/b/abc123", ""), "rbd");
+  assert.equal(guideForPath(guides, "/systems/rbds", ""), "rbds");
+  assert.equal(guideForPath(guides, "/systems/bx", ""), null);
+  assert.equal(guideForPath(guides, "/home", ""), null);
+  assert.equal(guideForPath(guides, "/home", "", "rbds"), "rbds");
+  assert.equal(guideForPath(guides, "/models/new", "", "gone"), "first");
+});

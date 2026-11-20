@@ -13,7 +13,7 @@ import {
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import { FitPane } from "../components/FitLifeModel.jsx";
 import PredictionPane from "../components/PredictionPane.jsx";
-import RbdPane from "../components/RbdPane.jsx";
+import RbdPane, { NEW_RBD, NewRbdPane } from "../components/RbdPane.jsx";
 import MissionPane, { NewMissionPane } from "../components/MissionPane.jsx";
 import MissionSide, { phaseRowChange } from "../components/MissionSide.jsx";
 import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, MissionRollup, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
@@ -639,6 +639,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     pending.current = selParam;
     if (display.rows.has(selParam)) reveal(selParam);
   }, [selParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  // On a phone, a link that names a row (?sel=: from Home, Orders, a work order) opens that row's
+  // details, as a tap on it does, once its asset's tree is in: not the bare tree with the row
+  // highlighted. Once per visit, as a new entry, so Back still comes to the tree. Not the asset's
+  // own top row (opening an asset from the Assets list names it): that opens on its tree.
+  const arrivedDetail = useRef(false);
+  useEffect(() => {
+    if (arrivedDetail.current || !phone || !data || !selParam || selParam === root) return;
+    if (location.state?.treeDetail || tableOn || !display.rows.has(selParam)) return;
+    arrivedDetail.current = true;
+    navigate(location.pathname + location.search, { state: { ...(location.state || {}), treeDetail: selParam } });
+  }, [phone, data, display, selParam, tableOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With a tab open beyond Summary, the address follows the row picked
   // (?sel=), once the tree is in, so a link opens on it with that tab. A class
@@ -1055,9 +1066,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // and links it here; it then opens in the table area. A position has one built diagram: where
   // it has one already, Build opens that one (here when its rows are read, else by the backend,
   // which answers `existing`), so using the menu again never leaves a second. The Modelling and
-  // Missions tabs both build through here.
+  // Missions tabs both build through here. A new one is named first, once, in the table pane
+  // (NewRbdPane: `name` undefined opens it), and nothing is saved until it's named.
   const building = useRef(false);
-  const buildRbd = async (position, link = null) => {
+  const buildRbd = async (position, link = null, name = undefined) => {
     if (building.current) return;
     const had = link ? null : builtRbdLink(pmodels.links, position.id);
     if (had) return openRbd(position, had.model_id);
@@ -1066,11 +1078,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       say(`There are no positions inside ${position.name} to make blocks from.`, "error");
       return;
     }
+    if (!link && name === undefined) {
+      if (!(await leavePane())) return;
+      openPane("rbd", position, { rbd: NEW_RBD });
+      return;
+    }
     if (!(await leavePane())) return;
     building.current = true;
     say(`${link ? "Rebuilding" : "Building"} an RBD from what's inside ${position.name}…`);
     try {
-      const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}) });
+      const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}),
+                                                          ...(name ? { name } : {}) });
       say(made.existing ? `Opened ${made.name}: ${position.name} already has an RBD built from what's inside.`
         : `${link ? "Rebuilt" : "Built"} ${made.name}.`);
       pmodels.load();
@@ -2588,7 +2606,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // picked), so they don't read as tabs for the tree itself.
   const phoneTabs = phone && posRow && tabsFor(posRow).length > 1 && (
     <div className="tp-tabs-wrap">
-      <p className="tp-tabs-for">For <strong>{posRow.ref.name || "(no name)"}</strong></p>
+      {/* Its name opens its details, as a tap on its row does. */}
+      <p className="tp-tabs-for">For{" "}
+        <button type="button" className="link tp-tabs-for-name" onClick={() => pick(posRow.key, { go: true })}
+                title={`Open ${posRow.ref.name || "this row"}'s details`}>
+          <strong>{posRow.ref.name || "(no name)"}</strong>
+        </button>
+      </p>
       {EXPLORER_PANEL_TABS
         ? <HeaderTabs row={posRow} tab={tab} onTab={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} idPrefix="tp" className="tp-tabs" />
         : <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} className="tp-tabs" wholeTabs />}
@@ -2684,7 +2708,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   } : null;
   const predictLink = seed ? seed.link : panePosition ? predictionOf(panePosition.id) : null;
   const fitAt = panePosition ? fitPreset(seed, paneAt.from, pmodels.links) : null;
-  const paneSide = !panePosition ? null : paneKind === "rbd" ? (
+  const paneSide = !panePosition ? null : paneKind === "rbd" && paneAt.rbd === NEW_RBD ? (
+    <div className="rw tt-side">
+      <NewRbdPane position={panePosition} kids={insideOf(panePosition.id)} phone={phone} headingRef={paneHeading}
+                  onClose={() => closePane()} onCreate={(name) => buildRbd(panePosition, null, name)} />
+    </div>
+  ) : paneKind === "rbd" ? (
     <div className="rw tt-side">
       <RbdPane key={`${paneAt.rbd}:${seed?.n || 0}`} rbdId={paneAt.rbd} position={panePosition} built={seed?.built || null}
                onRebuild={seed?.start?.rebuild && seed.link && !viewOnly ? () => buildRbd(panePosition, seed.link) : null}

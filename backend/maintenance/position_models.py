@@ -1797,7 +1797,9 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
                 if sub.get("existing"):
                     nested_placeholders.extend(f"{child['name']} › {ph}" for ph in
                                                _placeholders((fetch("rbd", sub["model_id"]).graph or {})))
-                return ({"data": {"rbd": {"id": sub["model_id"], "name": sub["name"]}, "model_source": f"Its own RBD, built from the {len(inside)} position"
+                # sub_diagram: built for this diagram, so the RBD list shows it under this one.
+                return ({"data": {"rbd": {"id": sub["model_id"], "name": sub["name"]}, "sub_diagram": True,
+                                  "model_source": f"Its own RBD, built from the {len(inside)} position"
                                                   f"{'s' if len(inside) != 1 else ''} inside it ({sub['name']})"}},
                         None)
             return None, None
@@ -1848,7 +1850,7 @@ def _tree_graph(m, db, owners, hidden, position_id: str):
 
 def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = None,
               replace_link_id: str | None = None, note: str = "", _unit: str | None = None,
-              _depth: int = 0) -> dict:
+              _depth: int = 0, name: str | None = None) -> dict:
     """"Build an RBD from what's inside": a new diagram whose blocks are the positions one level
     inside (each block the child's model in use: a saved model, or its own RBD as a sub-system;
     else a placeholder, flagged, never invented), wired by their connections and redundancy
@@ -1859,7 +1861,12 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     One built diagram per position: asked to build where there is one already (no
     ``replace_link_id``), nothing is made or saved and that row comes back with ``existing``
     true, so building twice never leaves two diagrams. Where its diagram has since been deleted,
-    the row is built again in place."""
+    the row is built again in place.
+
+    ``name``: the new diagram's (asked once, in the app); else "<position> (from the tree)". A
+    sub-assembly's own diagram (made only where it has no model of its own, so its life is its
+    parts') is named after its position and marked on its block as a sub-diagram, so the RBD list
+    shows it under this one."""
     from backend.maintenance import rbd_derive
     from backend.services import rbds as rbds_service
     from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
@@ -1905,7 +1912,12 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
                 said = rbd_tree_plan.gone_note(gone, p["name"])
                 if said:
                     built["notes"].append(said)
-        name = existing.name if existing is not None else f"{p['name']} (from the tree)"
+        if existing is not None:
+            name = existing.name
+        elif _depth > 0:
+            name = p["name"]  # a sub-diagram: named after its position, listed under its parent
+        else:
+            name = (str(name or "").strip() or f"{p['name']} (from the tree)")[:200]
         rbd = rbds_service.save_rbd(db, name, graph, owner_id or m.org, rbd_id=existing.id if existing else None)
     except GraphError as err:
         raise sv.Invalid(f"The diagram couldn't be made: {err}") from None
@@ -2051,6 +2063,7 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
         notes = [f"Started from a copy of {src.name}, wired as it is there"
                  + (" (its repairs and planned work aren't part of a mission)." if was_repairable else ".")]
         source = "copy"
+        owner["from_rbd"] = src.id  # listed under that diagram on Systems › RBDs
     elif kids:
         graph, built, _, _, _ = _tree_graph(m, db, owners, hidden, position_id)
         notes, placeholders = built["notes"], built["placeholders"]

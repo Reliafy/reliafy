@@ -400,6 +400,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // The diagram's Use and Environment values, which blocks with covariates left open at their
   // positions take (covariate_binding.py): [{name, role, unit, value}].
   const [conditions, setConditions] = useState([]);
+  // The Calculator's "Evaluate at t" (null until it has one): the fault tree opens at the same time.
+  const [calcTime, setCalcTime] = useState(null);
   const network = !!mission.network;
   // Carried with the diagram wherever the costs are (save, validate, analyse).
   const costsField = useMemo(
@@ -2365,6 +2367,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: applyBlockExtras(n.data, updates[n.id]) } : n)))
         }
         onConditions={setConditions}
+        onTime={setCalcTime}
       />
       )}
       <RbdPhasesResult
@@ -2387,6 +2390,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         active={tab === "tree"}
         name={savedRbdName}
         onBuild={toBuilder}
+        calcTime={calcTime}
       />
       )}
     </div>

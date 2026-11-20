@@ -4,6 +4,7 @@ import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Chip from "./ui/Chip.jsx";
 import ModelNextSteps, { ReplacementLink } from "./ModelNextSteps.jsx";
 import { openGuide } from "./HelpButton.jsx";
+import { paramMeaning } from "../paramMeaning.js";
 import { formatNumber } from "../format.js";
 import { bestFitSentence, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
@@ -244,6 +245,7 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
                                    modelId = null, onUse = null, onStats = null, showUse = true }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const [readingOpen, setReadingOpen] = useState(false);
+  const [meaningOpen, setMeaningOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
   const id = distId(result);
   // Shape before scale: the reading turns on the shape.
@@ -252,6 +254,8 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
     order ? order.indexOf(a.name) - order.indexOf(b.name) : 0
   );
   const data = dataText(result, split);
+  // "What do these mean?": each parameter in plain words, read for this fit (paramMeaning.js).
+  const meanings = params.map((p) => paramMeaning(id, p.name, p.value, result.unit)).filter(Boolean);
   const friendly = useFriendlyUnit(result.unit, headlineLife(result));
   const reading = verdict(result, friendly);
   // Maximum likelihood goes without saying; another method is named.
@@ -275,9 +279,20 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
           <div className="gofh life-card-head">
             <span>Parameters</span>
             {/* #292: the guide to reading a fit, in the help drawer. */}
-            <button type="button" className="link life-help" onClick={() => openGuide("fit-your-first-model")}>
-              What do these mean?
+            <button type="button" className="link life-help" aria-expanded={meanings.length ? meaningOpen : undefined}
+                    onClick={() => (meanings.length ? setMeaningOpen((o) => !o) : openGuide("fit-your-first-model"))}>
+              {meaningOpen ? "Hide what these mean" : "What do these mean?"}
             </button>
+          </div>
+        )}
+        {meaningOpen && meanings.length > 0 && (
+          <div className="life-meanings">
+            <dl>
+              {meanings.map((m) => (
+                <div key={m.name}><dt>{m.name}</dt><dd>{m.text}</dd></div>
+              ))}
+            </dl>
+            <button type="button" className="link" onClick={() => openGuide("fit-your-first-model")}>Read the guide to reading a fit</button>
           </div>
         )}
         {result.method === "bayesian_update" && result.bayes?.label && (

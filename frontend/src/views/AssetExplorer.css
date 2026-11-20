@@ -1449,6 +1449,8 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
   text-overflow: ellipsis;
 }
 .tp-tabs-for strong { color: var(--text); font-weight: 600; }
+.tp-tabs-for-name { font: inherit; padding: 0; border: 0; background: none; color: inherit; text-decoration: underline;
+  text-decoration-color: var(--border-control); text-underline-offset: 2px; cursor: pointer; }
 
 /* The panel's tabs (TreeDetail HeaderTabs, EXPLORER_PANEL_TABS): the flat row with "⋯ N" (the
    shared Tabs with overflow) taking the width it's given, then the tab's inner views under it. */
