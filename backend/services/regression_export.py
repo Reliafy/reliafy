@@ -365,6 +365,9 @@ def _fixed_script(model, spec, results, distribution, df, mapping, options, note
                             kwargs.get("formula"))
     data, read = _data_lines(inputs["df"], columns)
     shown = _shown_unit(spec, results)
+    # The model carries the page's unit, as the app's does.
+    unit = fitting.surpyval_unit(results.get("unit") or spec.get("unit"))
+    sp_unit = {"unit": unit} if unit else {}
     covs = ", ".join(spec.get("covariates") or []) or (spec.get("formula") or "")
     what = f"{entry['name']}, life explained by {covs}" if covs else entry["name"]
     lines = _common_head(model, spec, results, what, notes)
@@ -381,6 +384,7 @@ def _fixed_script(model, spec, results, distribution, df, mapping, options, note
         f"model = {fitter_code(distribution, family)}.fit_from_df(",
         "    data,",
         *_kwargs_text(kwargs),
+        *_kwargs_text(sp_unit),
         ")",
         "print(model)",
     ]

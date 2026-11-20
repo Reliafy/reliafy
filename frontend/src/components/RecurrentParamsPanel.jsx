@@ -2,6 +2,8 @@ import { useState } from "react";
 import Select from "./Select.jsx";
 import { createRecurrentFromParams } from "../api.js";
 import { ErrorNotice } from "./StorageCap.jsx";
+import Units from "./Units.jsx";
+import { unitSettled } from "../lifeData.js";
 
 // Build a simple recurrent (repairable-system) model from known parameters —
 // no data. For reliability-growth planning and repair-vs-replace decisions
@@ -28,7 +30,8 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
 
   const na = Number(alpha), nb = Number(beta), nh = Number(horizon);
   const ok = (s, v) => s !== "" && !Number.isNaN(v) && v > 0;
-  const valid = name.trim() && ok(alpha, na) && ok(beta, nb) && ok(horizon, nh) && !busy;
+  // The time unit is one required choice: a unit, or "No unit" ticked.
+  const valid = name.trim() && ok(alpha, na) && ok(beta, nb) && ok(horizon, nh) && unitSettled(unit) && !busy;
   // Known parameters have no interval: β itself against 1 decides (as the server does).
   const growth = ok(beta, nb)
     ? (nb < 1 ? "improving — failures slowing" : nb > 1 ? "deteriorating — failures accelerating" : "stable — constant rate")
@@ -76,10 +79,10 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
           <span>Horizon (max time)</span>
           <input type="number" step="any" value={horizon} placeholder="e.g. 5000" onChange={(e) => setHorizon(e.target.value)} />
         </label>
-        <label className="login-field" style={{ width: 120 }}>
-          <span>Time unit</span>
-          <input type="text" value={unit} placeholder="e.g. hours" onChange={(e) => setUnit(e.target.value)} />
-        </label>
+      </div>
+
+      <div style={{ marginTop: "0.8rem" }}>
+        <Units value={unit} onChange={setUnit} listId="recurrent-units" />
       </div>
 
       {MODEL_DESC[model] && <p className="muted-line" style={{ margin: "0.6rem 0 0" }}>{MODEL_DESC[model]}</p>}

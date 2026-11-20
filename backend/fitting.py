@@ -377,6 +377,39 @@ def restore_live(serialized: dict) -> str:
     return _store_model(model, grid, serialized.get("fields") or [])
 
 
+def surpyval_unit(unit) -> Optional[str]:
+    """The time unit as it goes into SurPyval (``unit=`` on ``fit``,
+    ``fit_from_df`` and ``from_params``) and is kept as ``model.unit``: the
+    app's one spelling ("hours", "hrs" -> "Hours"), free text ("operating
+    hours", "landings") as typed, and None when blank (SurPyval's "unknown";
+    it refuses an empty label)."""
+    return canonical_unit(unit) or None
+
+
+def stamp_unit(model, unit) -> None:
+    """Give a live model the app's unit where it has none: a model saved
+    before the unit went into SurPyval (its ``to_dict`` has no ``unit``), or
+    one built by a path that doesn't pass ``unit=``. Never overwrites a unit
+    the model has, and never fails (the unit is a label)."""
+    label = surpyval_unit(unit)
+    if model is None or label is None:
+        return
+    target = vars(model).get("_model", model) if hasattr(model, "__dict__") else model  # a mixture's wrapper
+    try:
+        if getattr(target, "unit", None) is None:
+            target.unit = label
+    except Exception:  # noqa: BLE001 - a model that can't hold a unit keeps the app's
+        pass
+
+
+def model_unit(model, fallback=None) -> str:
+    """A live model's unit in the app's spelling ("Hours"): SurPyval's
+    ``model.unit``, else ``fallback`` (the unit the app was given), blank
+    when neither has one."""
+    held = getattr(model, "unit", None) if model is not None else None
+    return canonical_unit(held if isinstance(held, str) and held.strip() else fallback)
+
+
 class FitError(ValueError):
     """Raised when the uploaded data cannot be turned into a fitted model."""
 
@@ -1449,7 +1482,14 @@ def _ensure_covariance(model) -> None:
     overflow. The point estimates are untouched — only the (missing) covariance
     is filled in. On any failure the model is left as-is and the band is simply
     omitted.
+
+    A fit with weights is left exactly as SurPyval made it: its covariance is
+    the robust (sandwich) one, which a Hessian of the unweighted likelihood
+    would get wrong. With none, the band is omitted rather than wrong. Only
+    ``_covariance`` is written; ``hess_inv`` stays SurPyval's inverse Hessian.
     """
+    if getattr(model, "weighted", False):
+        return
     cov = _covariance_of(model)
     if cov is not None and np.all(np.isfinite(cov)):
         return  # SurPyval already produced a usable covariance.
@@ -1488,11 +1528,10 @@ def _ensure_covariance(model) -> None:
                 ) / (4 * step[i] * step[j])
         recomputed = np.linalg.inv(hess)
         if np.all(np.isfinite(recomputed)) and np.all(np.diag(recomputed) > 0):
-            # SurPyval 0.23 keeps the covariance in ``_covariance`` (read by
-            # ``covariance()``, saved by ``to_dict``); assigning the old
-            # ``cov_matrix`` name warns until 0.24 (#605).
+            # SurPyval keeps the covariance in ``_covariance`` (read by
+            # ``covariance()``, saved by ``to_dict``). ``hess_inv`` means the
+            # inverse Hessian only, so it is left alone.
             model._covariance = recomputed
-            model.hess_inv = recomputed
     except Exception:  # pragma: no cover - defensive; the band is just omitted
         pass
 
@@ -2074,20 +2113,20 @@ def fit(
         result = tvc.fit(distribution, df, mapping, covariates, formula, covariate_units)
     elif distribution in REGRESSION_MODELS:
         result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units, cox_opts,
-                                 frailty_family=options.get(more_models.FAMILY_KEY))
+                                 frailty_family=options.get(more_models.FAMILY_KEY), unit=unit)
     elif cox_opts:
         raise FitError("Tie methods, strata and clusters apply to Cox PH only. Choose Cox PH, or drop them.")
     elif distribution == BEST_ID:
-        result = _fit_best(df, mapping, options)
+        result = _fit_best(df, mapping, options, unit=unit)
     elif distribution in NONPARAMETRIC:
-        result = _fit_nonparametric(distribution, df, mapping)
+        result = _fit_nonparametric(distribution, df, mapping, unit=unit)
     elif distribution in DISCRETE:
-        result = _fit_discrete(distribution, df, mapping)
+        result = _fit_discrete(distribution, df, mapping, unit=unit)
     elif distribution == MIXTURE_ID:
         result = _fit_mixture(mixture_base(options), df, mapping,
-                              options.get("mixture") or MIXTURE_DEFAULT_COMPONENTS)
+                              options.get("mixture") or MIXTURE_DEFAULT_COMPONENTS, unit=unit)
     elif distribution in DISTRIBUTIONS:
-        result = _fit_distribution(distribution, df, mapping, options)
+        result = _fit_distribution(distribution, df, mapping, options, unit=unit)
     elif competing_risks.is_competing_risks(distribution):
         # Life data by failure mode (#177).
         if formula:
@@ -2104,7 +2143,12 @@ def fit(
         available = ", ".join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS,
                                *FLEXIBLE, *competing_risks.CR_MODELS])
         raise FitError(f"Unknown model '{distribution}'. Available: {available}.")
-    result["unit"] = canonical_unit(unit)  # #265: "hours", "hrs" → "Hours"
+    # The unit is the model's own (SurPyval's ``model.unit``), in the app's
+    # spelling (#265: "hours", "hrs" → "Hours"). A path that made its model
+    # without ``unit=`` gets it here, so every live (and saved) model has it.
+    live = (_MODEL_STORE.get((result.get("functions") or {}).get("model_id")) or {}).get("model")
+    stamp_unit(live, unit)
+    result["unit"] = model_unit(live, unit)
     if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
             result.get("params")):
         result["ci_note"] = param_intervals.CI_NOTE
@@ -2186,7 +2230,8 @@ def _fit_two_clock(distribution, df, mapping, unit, options, covariates, formula
     cache_id = _store_model(model, np.asarray(result["at_rate"]["curves"]["x"]
                                               if result.get("at_rate") else [0.0, 1.0], dtype=float), [])
     result["functions"] = {"model_id": cache_id}
-    result["unit"] = canonical_unit(unit)
+    stamp_unit(model, unit)
+    result["unit"] = model_unit(model, unit)
     # The second clock's unit rides in the options, so a saved model's refit keeps it.
     result["options"] = {two_clocks.UNIT_KEY: result["second_unit"]}
     if c_invert:
@@ -2347,7 +2392,7 @@ def result_from_params(
         if k in ("gamma", "p", "f0") and v is not None
     }
     try:
-        model = dist.from_params(values, **surpyval_extras(kwargs))
+        model = dist.from_params(values, **surpyval_extras(kwargs), unit=surpyval_unit(unit))
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
@@ -2361,7 +2406,7 @@ def result_from_params(
         "plot": None,
         "functions": {"meta": FUNCTIONS, "curves": _function_curves(model)},
         "gof": [],
-        "unit": canonical_unit(unit),
+        "unit": model_unit(model, unit),
         "params_only": True,
     }
     if kwargs:
@@ -2572,7 +2617,8 @@ def best_fit_guidance(ranking: list, criterion: str, failures: int, singles_only
     return notes
 
 
-def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -> dict:
+def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None, *,
+              unit: Optional[str] = None) -> dict:
     """Fit every plain distribution and return the full result for the
     lowest-AIC winner, with the ranking attached as ``selection``.
 
@@ -2646,7 +2692,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         try:
             check_fittable(dict(base_kwargs), f"a {entry['name']} mixture")
             with ignore_warnings():
-                raw = _fit_raw_mixture(entry["dist"], BEST_MIXTURE_COMPONENTS, dict(base_kwargs))
+                raw = _fit_raw_mixture(entry["dist"], BEST_MIXTURE_COMPONENTS, dict(base_kwargs), unit=unit)
         except Exception as exc:  # noqa: BLE001 - skipped, and listed
             failed.append({"id": cid, "name": label, "reason": _short_reason(
                 client_message(exc).splitlines() or [type(exc).__name__])})
@@ -2686,7 +2732,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
     winner = ranking[0]["id"]
     if winner in mixtures:
         base, raw = mixtures[winner]
-        result = _fit_mixture(base, df, mapping, BEST_MIXTURE_COMPONENTS, raw=raw)
+        result = _fit_mixture(base, df, mapping, BEST_MIXTURE_COMPONENTS, raw=raw, unit=unit)
         summary = mixture_summary(result)
         if summary:
             result["mixture_summary"] = summary
@@ -2694,7 +2740,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         win_options = dict(options)
         if win_options.get("offset") and not DISTRIBUTIONS[winner].get("offsetable"):
             win_options.pop("offset")
-        result = _fit_distribution(winner, df, mapping, win_options)
+        result = _fit_distribution(winner, df, mapping, win_options, unit=unit)
     # Each candidate's distance from the best on the chosen score (mixtures
     # are scored by BIC, but their rows carry every score).
     scored = [float(r[criterion]) for r in ranking if r.get(criterion) is not None]
@@ -3004,14 +3050,15 @@ class _MixtureFit:
         return self._k * math.log(max(self._ic_n, 1)) - 2 * self.log_likelihood
 
 
-def _fit_raw_mixture(dist, m: int, kwargs: dict):
-    """A SurPyval mixture of ``m`` copies of ``dist`` fitted to ``kwargs``."""
+def _fit_raw_mixture(dist, m: int, kwargs: dict, unit: Optional[str] = None):
+    """A SurPyval mixture of ``m`` copies of ``dist`` fitted to ``kwargs``, in ``unit``."""
     raw = MixtureModel(dist=dist, m=int(m))
-    raw.fit(**kwargs)
+    raw.fit(**kwargs, unit=surpyval_unit(unit))
     return note_fit(raw)
 
 
-def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int, raw=None) -> dict:
+def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int, raw=None, *,
+                 unit: Optional[str] = None) -> dict:
     """Fit a mixture of ``m`` copies of a plain distribution — two or more
     failure modes muddled into one dataset, which on probability paper is the
     classic S-curve that no single distribution can follow.
@@ -3028,7 +3075,7 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int, raw
         kwargs = build_fit_inputs(df, mapping)
         check_fittable(kwargs, f"a {entry['name']} mixture")
         if raw is None:
-            raw = _fit_raw_mixture(dist, m, kwargs)
+            raw = _fit_raw_mixture(dist, m, kwargs, unit=unit)
         # MixtureModel exposes a SurpyvalData object (attribute access), unlike a
         # plain Parametric whose .data is a dict.
         x = np.asarray(raw.data.x, dtype=float)
@@ -3076,7 +3123,8 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int, raw
 
 
 def _fit_distribution(
-    distribution: str, df: pd.DataFrame, mapping: dict, options: Optional[dict] = None
+    distribution: str, df: pd.DataFrame, mapping: dict, options: Optional[dict] = None, *,
+    unit: Optional[str] = None,
 ) -> dict:
     entry = DISTRIBUTIONS[distribution]
     dist = entry["dist"]
@@ -3095,7 +3143,7 @@ def _fit_distribution(
         # then return numbers anyway. Silently handing those to a user is worse
         # than the fit being unavailable, so capture and report it.
         with collect_warnings() as caught:
-            model = note_fit(dist.fit(**kwargs), kwargs.get("how"))
+            model = note_fit(dist.fit(**kwargs, unit=surpyval_unit(unit)), kwargs.get("how"))
         reissue_deprecations(caught)
         # No finite maximum (#230): say which parameter runs off, and why.
         no_max = no_maximum_notice(model, caught)
@@ -3234,7 +3282,7 @@ def _validate_discrete_inputs(kwargs: dict) -> None:
             )
 
 
-def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
+def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict, *, unit: Optional[str] = None) -> dict:
     """Fit a discrete lifetime distribution (Discrete Weibull / Geometric /
     Negative Binomial) to whole-count data.
 
@@ -3249,7 +3297,7 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
     try:
         kwargs = build_fit_inputs(df, mapping)
         _validate_discrete_inputs(kwargs)
-        model = note_fit(dist.fit(**kwargs))
+        model = note_fit(dist.fit(**kwargs, unit=surpyval_unit(unit)))
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
         metrics = _life_metrics(model)
@@ -3323,7 +3371,7 @@ def _discrete_counts(model) -> dict | None:
         return None
 
 
-def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
+def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict, *, unit: Optional[str] = None) -> dict:
     """Fit a non-parametric survival estimator (KM/NA/FH/Turnbull).
 
     Produces an empirical step survival curve with confidence bounds instead
@@ -3345,7 +3393,7 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
                        "inspections (or at the first one), so use Turnbull, which reads failures between two "
                        "times, or fit a distribution such as Weibull.")
     try:
-        model = note_fit(est.fit(**kwargs))
+        model = note_fit(est.fit(**kwargs, unit=surpyval_unit(unit)))
         xs = np.asarray(model.x, dtype=float)
         R = np.asarray(model.R, dtype=float)
         try:
@@ -3559,6 +3607,7 @@ def _fit_regression(
     covariate_units: Optional[dict] = None,
     cox_opts: Optional[dict] = None,
     frailty_family: Optional[str] = None,
+    unit: Optional[str] = None,
 ) -> dict:
     inputs = regression_inputs(distribution, df, mapping, covariates, formula, cox_opts, frailty_family)
     entry, fitter, df, mapping = inputs["entry"], inputs["fitter"], inputs["df"], inputs["mapping"]
@@ -3567,7 +3616,7 @@ def _fit_regression(
 
     try:
         with collect_warnings() as caught:
-            model = note_fit(fitter.fit_from_df(df, **fit_kwargs, **cox_kwargs))
+            model = note_fit(fitter.fit_from_df(df, **fit_kwargs, **cox_kwargs, unit=surpyval_unit(unit)))
         # A stratified Cox model reads its stratum from the covariate row.
         model = regression_diagnostics.stratify(model, cox_opts)
         reissue_deprecations(caught)

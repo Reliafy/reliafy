@@ -94,6 +94,8 @@ Units.
 - A model's parameters and every time given to or returned by it are in the model's time unit; a diagram's in \
 the diagram's unit (change rbd_create unit; change rbd_edit set unit relabels, never rescales). Always state the unit with a \
 number, and ask the user when unsure: never assume hours.
+- The unit is the model's own: pass unit when fitting or saving from params; it is kept on the model (and its \
+Download as Python) and every model read returns it. Any text works ("landings"); blank means unknown.
 - A saved model on a diagram block in another unit of the same kind (days on an hours diagram; km and miles) is \
 converted to the diagram's unit before the analysis (24 hours a day, 7 days a week, 365.25/12 days a month, \
 365.25 days a year): the result's unit_conversions says which blocks. Units of different kinds (cycles on an \

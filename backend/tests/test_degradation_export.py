@@ -104,3 +104,39 @@ def test_a_model_whose_data_is_gone_is_refused_plainly(client):
     db._db.datasets.delete_one({"_id": doc["dataset_id"]})
     r = client.get(f"/api/degradation/models/{mid}/export.py")
     assert r.status_code == 422 and "deleted" in r.json()["detail"]
+
+
+# ---- The unit is the model's own (SurPyval's model.unit) -------------------------------
+
+
+def _doc_key(test_db, model_id):
+    for name in test_db.list_collection_names():
+        for key in ({"id": model_id}, {"_id": model_id}):
+            if test_db[name].find_one(key):
+                return test_db[name], key
+    raise AssertionError(model_id)
+
+
+def test_the_time_unit_goes_into_surpyval_and_the_script(client, tmp_path):
+    from backend import db
+    from backend.services import degradation as degradation_service
+
+    mid = _save(client)  # unit "hours", readings in mm
+    degradation_service._LIVE.clear()
+    assert degradation_service.get_live_model(db.get_db(), mid, A).unit == "Hours"
+    source = client.get(f"/api/degradation/models/{mid}/export.py").text
+    assert "    unit='Hours'," in source
+    python_scripts.run(source, tmp_path)
+
+
+def test_a_degradation_model_saved_before_the_unit_loads_with_its_saved_unit(client):
+    from backend import db
+    from backend.services import degradation as degradation_service
+
+    mid = _save(client)
+    coll, key = _doc_key(db.get_db(), mid)
+    coll.update_one(key, {"$unset": {"serialized.model.unit": ""}})
+    before = coll.find_one(key)
+    degradation_service._LIVE.clear()
+    assert degradation_service.get_live_model(db.get_db(), mid, A).unit == "Hours"
+    assert coll.find_one(key)["serialized"] == before["serialized"]

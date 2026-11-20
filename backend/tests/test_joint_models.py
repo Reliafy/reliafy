@@ -707,3 +707,28 @@ def test_two_datasets_still_fit_as_before_and_refit_the_same_as_one(client):
     items_new, _ = joint_service.items_for(client.db, new["spec"], owners)
     assert items_old == items_new
     assert client.get(f"/api/joint/models/{old['id']}/export.py").status_code == 200
+
+
+# ---- The unit is the model's own (SurPyval's model.unit) -------------------------------
+
+
+def test_the_joint_fit_carries_its_unit_and_its_script_passes_it(fitted):
+    assert fitted["out"]["model"]["unit"] == "Days"  # the request's unit="Days"
+    assert fitted["model"].unit == "Days"
+    source = joint.python_script("Feed pumps", fitted["items"], ["load"], path_model="linear",
+                                 hazard_covariates=["load"], path_covariates=[], unit="Days")
+    assert "    unit='Days'," in source
+
+
+def test_a_joint_model_saved_before_the_unit_loads_with_its_saved_unit(fitted):
+    import copy
+
+    from backend.schema import Model
+    from backend.services import joint as joint_service
+
+    old = copy.deepcopy(fitted["out"]["model"])
+    old.pop("unit", None)
+    doc = Model(id="old-joint", name="Old", kind=joint_service.KIND, results={"unit": "Days"},
+                serialized={"format": "surpyval_joint", "model": old})
+    assert joint_service.live(doc).unit == "Days"
+    assert "unit" not in doc.serialized["model"]  # nothing rewritten

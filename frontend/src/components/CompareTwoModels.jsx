@@ -9,8 +9,10 @@ import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { modelFromSearch, plainName } from "../modelNext.js";
 import { guessLifeColumns } from "../datasetGuess.js";
-import { columnFacts } from "../lifeData.js";
-import { parseColumn, statusReading } from "../compareData.js";
+import { columnFacts, unitSettled } from "../lifeData.js";
+import Units from "./Units.jsx";
+import { unitInText } from "./unitText.js";
+import { parseColumn, sideUnit, statusReading } from "../compareData.js";
 
 
 // Editor for one side of the comparison: a parametric non-repairable model, or a CSV of
@@ -18,7 +20,7 @@ import { parseColumn, statusReading } from "../compareData.js";
 // Both sides start on "Saved model" (#294): side A with the one a link asked
 // for (``wanted``) or the one used last chosen, side B for the user to pick. A saved model names its side, unless
 // the side was named by hand.
-function SideEditor({ tag, side, onChange, wanted = null, onUnit = null }) {
+function SideEditor({ tag, side, onChange, wanted = null }) {
   const inputRef = useRef(null);
   const set = (patch) => onChange({ ...side, ...patch });
   const { toCsv, modal: sheetModal } = useSpreadsheet();
@@ -75,7 +77,6 @@ function SideEditor({ tag, side, onChange, wanted = null, onUnit = null }) {
           onChange={(m) => {
             const auto = [tag === "a" ? "Item A" : "Item B", "", plainName(side.model?.name)].includes(side.label);
             set({ model: m, ...(m?.source === "saved" && auto ? { label: plainName(m.name) } : {}) });
-            if (m?.unit) onUnit?.(m.unit);
           }}
         />
       ) : (
@@ -160,7 +161,11 @@ async function buildSpec(side, fallback) {
 export default function CompareTwoModels() {
   const [sideA, setSideA] = useState(() => EMPTY_SIDE("Item A"));
   const [sideB, setSideB] = useState(() => EMPTY_SIDE("Item B"));
-  const [unit, setUnit] = useState("");
+  // Typed only when neither side brings one (#UI): no default, a model in
+  // days read as hours is 24 times out.
+  const [typedUnit, setTypedUnit] = useState("");
+  const modelUnit = sideUnit(sideA) || sideUnit(sideB);
+  const unit = modelUnit || typedUnit;
   const [result, setResult] = useState(null);
   const [inputs, setInputs] = useState(null); // specs that produced the result
   const [error, setError] = useState(null);
@@ -187,18 +192,22 @@ export default function CompareTwoModels() {
   return (
     <div className="strategy-tool">
       <div className="compare-sides">
-        {/* A saved model brings its unit, unless one is already set. */}
-        <SideEditor tag="a" side={sideA} onChange={setSideA} wanted={wanted} onUnit={(u) => setUnit((v) => v || u)} />
-        <SideEditor tag="b" side={sideB} onChange={setSideB} onUnit={(u) => setUnit((v) => v || u)} />
+        <SideEditor tag="a" side={sideA} onChange={setSideA} wanted={wanted} />
+        <SideEditor tag="b" side={sideB} onChange={setSideB} />
       </div>
 
       <div className="strategy-actions">
-        <label className="calc-t">
-          <span>Unit (optional)</span>
-          <input type="text" placeholder="e.g. Hours" value={unit}
-            onChange={(e) => setUnit(e.target.value)} />
-        </label>
-        <button onClick={run} disabled={loading}>
+        {/* A saved model brings its unit: shown, not asked. Asked (required) only when neither side has one. */}
+        {modelUnit ? (
+          <div className="calc-t">
+            <span>Unit</span>
+            <span className="compare-unit-fixed">{unitInText(modelUnit)} (the {sideUnit(sideA) && sideUnit(sideB) ? "models'" : "model's"})</span>
+          </div>
+        ) : (
+          <Units value={typedUnit} onChange={setTypedUnit} listId="compare-units" />
+        )}
+        <button onClick={run} disabled={loading || !unitSettled(unit)}
+                title={unitSettled(unit) ? undefined : "Say the unit of the times, or tick no unit."}>
           {loading ? "Comparing…" : "Compare"}
         </button>
       </div>

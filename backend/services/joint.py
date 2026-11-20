@@ -311,6 +311,12 @@ def live(model: Model):
         jm = joint.restore(model.serialized["model"], (model.results or {}).get("exposure_above"))
     except Exception as exc:  # noqa: BLE001 - a saved fit SurPyval can't read back
         raise FitError(f"This model's saved fit couldn't be read back ({exc}). Fit it again.") from exc
+    # The unit is the model's own; one saved before it went into SurPyval takes the saved unit (in memory).
+    if getattr(jm, "unit", None) is None and str((model.results or {}).get("unit") or "").strip():
+        try:
+            jm.unit = str(model.results["unit"]).strip()
+        except Exception:  # noqa: BLE001 - a label only
+            pass
     _LIVE[model.id] = (fp, jm)
     while len(_LIVE) > _LIVE_MAX:
         _LIVE.popitem(last=False)
