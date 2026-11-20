@@ -1449,7 +1449,14 @@ def _ensure_covariance(model) -> None:
     overflow. The point estimates are untouched — only the (missing) covariance
     is filled in. On any failure the model is left as-is and the band is simply
     omitted.
+
+    A fit with weights is left exactly as SurPyval made it: its covariance is
+    the robust (sandwich) one, which a Hessian of the unweighted likelihood
+    would get wrong. With none, the band is omitted rather than wrong. Only
+    ``_covariance`` is written; ``hess_inv`` stays SurPyval's inverse Hessian.
     """
+    if getattr(model, "weighted", False):
+        return
     cov = _covariance_of(model)
     if cov is not None and np.all(np.isfinite(cov)):
         return  # SurPyval already produced a usable covariance.
@@ -1488,11 +1495,10 @@ def _ensure_covariance(model) -> None:
                 ) / (4 * step[i] * step[j])
         recomputed = np.linalg.inv(hess)
         if np.all(np.isfinite(recomputed)) and np.all(np.diag(recomputed) > 0):
-            # SurPyval 0.23 keeps the covariance in ``_covariance`` (read by
-            # ``covariance()``, saved by ``to_dict``); assigning the old
-            # ``cov_matrix`` name warns until 0.24 (#605).
+            # SurPyval keeps the covariance in ``_covariance`` (read by
+            # ``covariance()``, saved by ``to_dict``). ``hess_inv`` means the
+            # inverse Hessian only, so it is left alone.
             model._covariance = recomputed
-            model.hess_inv = recomputed
     except Exception:  # pragma: no cover - defensive; the band is just omitted
         pass
 

@@ -213,3 +213,51 @@ def test_a_publicly_shared_model_downloads_as_python_too(client, tmp_path):
     # A revoked link downloads nothing.
     assert client.delete(f"/api/public-links/{token}").status_code == 200
     assert client.get(f"/api/public/{token}/export.py").status_code == 404
+
+
+def _script_fill_covariance():
+    """The ``fill_covariance`` a downloaded script defines, run as the script would."""
+    import numpy as np
+
+    from backend.services import model_export
+
+    ns = {"np": np}
+    exec("\n".join(model_export._WALD), ns)  # noqa: S102 - the app's own script text
+    return ns["fill_covariance"]
+
+
+def _weighted_weibull():
+    import warnings
+
+    import surpyval as sp
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="The weights leave an effective sample size")
+        return sp.Weibull.fit([120, 340, 510, 700, 980, 1200, 1500, 1800], w=[1.0, 2.0, 1.0, 3.0, 1.0, 2.0, 1.0, 1.0])
+
+
+def test_the_scripts_backfill_leaves_a_weighted_fit_alone():
+    import numpy as np
+
+    fill = _script_fill_covariance()
+    model = _weighted_weibull()
+    robust, hess_inv = np.array(model.covariance(), copy=True), np.array(model.hess_inv, copy=True)
+    fill(model)
+    assert np.array_equal(model.covariance(), robust)
+    model._covariance = None
+    fill(model)
+    assert model._covariance is None
+    assert np.array_equal(model.hess_inv, hess_inv)
+
+
+def test_the_scripts_backfill_writes_the_covariance_not_hess_inv():
+    import numpy as np
+    import surpyval as sp
+
+    fill = _script_fill_covariance()
+    model = sp.Weibull.fit([120, 340, 510, 700, 980, 1200, 1500, 1800])
+    want, hess_inv = np.array(model.covariance(), copy=True), np.array(model.hess_inv, copy=True)
+    model._covariance = None
+    fill(model)
+    assert np.allclose(model.covariance(), want, rtol=1e-3)
+    assert np.array_equal(model.hess_inv, hess_inv)

@@ -140,7 +140,11 @@ def interval(value, se, lower=None, upper=None):
 def fill_covariance(model):
     """When SurPyval's own covariance comes out missing or not finite (a fit by
     probability plotting, say, or a large scale), the app works it out from a
-    finite-difference Hessian of the log-likelihood at the fitted values. Same here."""
+    finite-difference Hessian of the log-likelihood at the fitted values. Same here.
+    A fit with weights keeps SurPyval's robust covariance (or none), and only the
+    covariance is filled in, never hess_inv."""
+    if getattr(model, "weighted", False):
+        return
     try:
         cov = np.asarray(model.covariance(), dtype=float)
         if np.all(np.isfinite(cov)):
@@ -169,7 +173,6 @@ def fill_covariance(model):
         recomputed = np.linalg.inv(hess)
         if np.all(np.isfinite(recomputed)) and np.all(np.diag(recomputed) > 0):
             model._covariance = recomputed
-            model.hess_inv = recomputed
     except Exception:
         pass
 
