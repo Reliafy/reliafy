@@ -81,6 +81,9 @@ ALPHA_CI = 0.10
 LIFE_ALPHA = 0.10
 # The time the risk table may spend on its bounds (each unit about 0.05 s).
 BOUNDS_SECONDS = 20.0
+# The time the risk table may spend in all: a fast-growing path with the risk on
+# its accumulated exposure can take seconds a unit, and the fit's job has 290 s.
+RISK_SECONDS = 120.0
 #: The risk table's horizons in days, for a calendar time unit.
 HORIZON_DAYS = (30, 90, 365)
 _DAYS_PER = {"second": 1 / 86400, "minute": 1 / 1440, "hour": 1 / 24, "day": 1.0, "week": 7.0,
@@ -864,7 +867,7 @@ def _remaining_life(pred, library, p=0.5):
     """``pred.remaining_life(p)``; where the library's solver fails (it
     brackets on ages far past the data at once, and a fast-rising
     accumulated exposure can make one of them fail), the same found one age
-    at a time: doubling to bracket, then bisection on the survival. ``nan``
+    at a time: doubling to bracket, then regula falsi on the log survival. ``nan``
     where even that can't be worked out (never a made-up number)."""
     try:
         return library(p)
@@ -884,27 +887,44 @@ def _remaining_life(pred, library, p=0.5):
     def one(q: float) -> float:
         if not 0 < q < 1:
             return 0.0 if q <= 0 else math.inf
-        target = 1.0 - q
-        lo, hi = u, None
-        for k in range(-6, 14):  # up to 8,192 scales past its age
+        target = math.log1p(-q)
+        lo, f_lo, hi, f_hi = u, 0.0, None, None
+        for k in range(-4, 14):  # alpha / 16 up to 8,192 alphas past its age
             t = u + alpha * 2.0 ** k
             v = sf(t)
             if v is None:
                 return math.nan
-            if v <= target:
-                hi = t
+            g = (math.log(v) if v > 0 else -math.inf) - target
+            if g <= 0:
+                hi, f_hi = t, g
                 break
-            lo = t
+            lo, f_lo = t, g
         if hi is None:
             return math.inf
+        # Regula falsi (Illinois) on log survival, bisection where it stalls.
+        side = 0
         for _ in range(60):
-            mid = 0.5 * (lo + hi)
-            v = sf(mid)
-            if v is None:
-                return math.nan
-            lo, hi = (mid, hi) if v > target else (lo, mid)
             if hi - lo <= 1e-9 * max(1.0, hi):
                 break
+            t = lo + f_lo * (hi - lo) / (f_lo - f_hi) if math.isfinite(f_hi) else 0.5 * (lo + hi)
+            if not lo < t < hi:
+                t = 0.5 * (lo + hi)
+            v = sf(t)
+            if v is None:
+                return math.nan
+            g = (math.log(v) if v > 0 else -math.inf) - target
+            if abs(g) <= 1e-10:
+                return t - u
+            if g > 0:
+                lo, f_lo = t, g
+                if side == 1:
+                    f_hi /= 2
+                side = 1
+            else:
+                hi, f_hi = t, g
+                if side == -1:
+                    f_lo /= 2
+                side = -1
         return 0.5 * (lo + hi) - u
 
     qs = np.asarray(p, dtype=float)
@@ -989,7 +1009,8 @@ def median_left_lower(pred, alpha: float = LIFE_ALPHA) -> Optional[float]:
 
 
 def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS,
-               bounds_seconds: float = BOUNDS_SECONDS) -> tuple[list[dict], list[str]]:
+               bounds_seconds: float = BOUNDS_SECONDS,
+               risk_seconds: float = RISK_SECONDS) -> tuple[list[dict], list[str]]:
     """The running units' risk, highest first over the middle horizon. Each
     row has the 90% one-sided upper bound on each chance (``risk_upper``) and
     lower bound on its median life left (``median_lower``, ``life_level``),
@@ -1001,6 +1022,10 @@ def risk_table(model, inputs: dict, h: list[float], limit: int = MAX_RISK_UNITS,
     for k, (uid, inp) in enumerate(inputs.items()):
         if k >= limit:
             notes.append(f"Risk is listed for the first {limit} running units; open any other in the unit view.")
+            break
+        if time.monotonic() - started > risk_seconds:
+            notes.append(f"Risk is listed for the first {k} running units (the rest would take too long to work "
+                         "out here); open any other in the unit view.")
             break
         try:
             pred = predict(model, inp.get("covariates"), inp.get("markers"), inp.get("age"))

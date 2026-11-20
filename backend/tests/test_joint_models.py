@@ -127,6 +127,9 @@ def test_risk_bounds_stop_at_their_time_budget(fitted):
     rows, notes = joint.risk_table(model, units, h, bounds_seconds=-1.0)
     assert rows and not any(u.get("risk_upper") for u in rows)
     assert any("90% bounds" in n for n in notes)
+    # The whole table has a budget too: past it, the rest are left to the unit view.
+    rows, notes = joint.risk_table(model, units, h, risk_seconds=-1.0)
+    assert rows == [] and any("would take too long" in n for n in notes)
 
 
 def test_the_data_checks_say_what_to_fix():
