@@ -9,6 +9,8 @@
 // label. Several comparable series (covariate combinations, stress levels,
 // items) take COLORWAY in order.
 
+import { formatPercent, formatWithUnit } from "./format.js";
+
 export const ACCENT = "#235edf"; // accent (blue-600)
 export const INK = "#1b1915"; // text (neutral-950)
 export const MUTED = "#5f5e57"; // text-secondary (neutral-700)
@@ -143,6 +145,17 @@ export function themedLayout(layout = {}, { narrow = false } = {}) {
 }
 
 export const themedConfig = (config = {}) => deepMerge(PLOT_CONFIG, config);
+
+// ---- Probability-paper hover --------------------------------------------
+// The hover reads in the axes' own units ("1,240 hours · 38% failed"), never
+// the paper's transformed coordinates. The points' raw values come from the
+// fit's ``empirical`` check (same failures, same order); the curve's from
+// ``line.t`` / ``line.F`` when the fit sends them. Without them a trace shows
+// no hover rather than numbers no one can read.
+export function probabilityHoverText(t, F, unit) {
+  if (!Array.isArray(t) || !Array.isArray(F) || t.length !== F.length) return null;
+  return t.map((x, i) => `${formatWithUnit(x, unit, { sig: 4 })} · ${formatPercent(F[i], { sig: 3 })} failed`);
+}
 
 // ---- Series roles ----------------------------------------------------------
 // Each takes the rest of the trace (x, y, name, …) and fills in the role's

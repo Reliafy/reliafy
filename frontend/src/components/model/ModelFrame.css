@@ -221,7 +221,7 @@
 .mf-card-head > span { display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .mf-card-title { margin: 0; font-size: inherit; font-weight: inherit; }
 .mf-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.mf-scroll:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+.mf-scroll:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); }
 .mf-scroll .mini-table,
 .mf-scroll .calc-table { width: 100%; }
 .mf-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--bg-surface); }
@@ -367,7 +367,7 @@ button.use-model-primary { white-space: nowrap; }
 html.print-layout .app.model-frame { height: auto !important; overflow: visible !important; }
 
 /* A visible focus on the model tabs (the arrow keys move between them). */
-.mf-tabs .tab:focus-visible { outline: none; box-shadow: inset var(--focus-ring); border-radius: var(--radius-md) var(--radius-md) 0 0; }
+.mf-tabs .tab:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); border-radius: var(--radius-md) var(--radius-md) 0 0; }
 
 /* The model's own assumption checks: what to try, under the table. */
 .model-checks-advice { margin: 0; padding-left: 1.1rem; }

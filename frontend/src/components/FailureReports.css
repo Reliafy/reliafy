@@ -17,7 +17,7 @@
 .fr-filters { display: flex; flex-direction: column; gap: 8px; }
 .fr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fr-chips .chip { cursor: pointer; }
-.fr-chips .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fr-chips .chip:focus-visible {  }
 .fr-chip-n { margin-left: 4px; opacity: 0.75; font-weight: 400; }
 .fr-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .fr-controls input,
@@ -47,7 +47,7 @@
   white-space: normal;
 }
 .fr-row:hover { background: var(--bg-subtle); }
-.fr-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fr-row:focus-visible { outline-offset: -2px; }
 .fr-label { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-12); color: var(--text-secondary); white-space: nowrap; }
 .fr-row .fr-label { grid-area: label; padding-top: 3px; }
 .fr-title { grid-area: title; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
@@ -87,7 +87,7 @@
 .fr-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-18); line-height: var(--lh-18); }
 .fr-h2 .fr-label { font-size: var(--fs-14); }
 .fr-h2 > span:first-child { min-width: 0; overflow-wrap: anywhere; }
-.fr-h2 > span:first-child:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.fr-h2 > span:first-child:focus-visible {  border-radius: 3px; }
 
 .fr-steps { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
 .fr-step { display: flex; align-items: center; }
@@ -105,7 +105,7 @@
 }
 button.fr-step-btn { cursor: pointer; color: inherit; }
 button.fr-step-btn:hover:not(:disabled) { border-color: var(--accent-border); color: var(--accent-text); }
-button.fr-step-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.fr-step-btn:focus-visible {  }
 .fr-step.done .fr-step-btn { color: var(--success-text); border-color: var(--success-border); }
 .fr-step.current .fr-step-btn { color: var(--accent-text); background: var(--accent-subtle); border-color: var(--accent-border); font-weight: 600; }
 
@@ -116,7 +116,7 @@ button.fr-step-btn:focus-visible { outline: 2px solid var(--accent); outline-off
 .fr-fold { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
 .fr-fold:hover:not(:disabled),
 .fr-fold:active:not(:disabled) { background: none; color: var(--accent-text); box-shadow: none; }
-.fr-fold:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.fr-fold:focus-visible {  border-radius: 3px; }
 .fr-fold-arrow { display: inline-block; width: 1em; color: var(--text-secondary); }
 .fr-card-sum { font-weight: 400; font-size: var(--fs-13); }
 .fr-form { margin-top: 8px; gap: 10px; }

@@ -23,6 +23,18 @@ Right-click, the row's ⋯ button (`MoreMenu`), or Shift+F10 / the Menu key on a
 
 The same menu lists the tabs folded into a tab row's "⋯ N" (`Tabs` with `overflow`).
 
+## On a list row
+
+Every saved-item list (Data, models, RBDs, fault trees, forecasts, strategy, RCM studies, the registers) ends each row with one ⋯ button: `RowActions` in `components/LibRows.jsx`, which opens this menu through `MoreMenu`.
+
+- Pass `to` (or `onOpen`) for Open, `actions` for the row's own actions (`[{id, label, onSelect, disabled?, reason?}]`; falsy entries are skipped, so `!r.read_only && {…}` works), and `onDelete`.
+- The menu reads: Open, the actions, a line, then "Delete…" (or "Remove from my view" for a shared sample or an item shared with you).
+- A row with Open as its only action keeps a plain Open button rather than a menu of one.
+- The button is named "Actions for <row name>". The row's name stays a link, and a click on the row still opens it.
+- Never put icon buttons (copy, edit, share, a delete bin) in the row itself. A form's own editable rows (a line in a parts list) may keep a single remove button; that's editing the form, not a list row's actions.
+
+The menu's look lives in `index.css` (`.ovm-menu.row-menu`), not with any page, so it is styled wherever it opens.
+
 ## Look
 
 - A `bg-surface` card with a 1px `border`, `radius-lg`, `shadow-lg` and 4px padding. 200px at least.

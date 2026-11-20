@@ -58,7 +58,7 @@
   color: var(--text);
   cursor: pointer;
 }
-.ft-row-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ft-row-main:focus-visible { outline-offset: -2px; }
 /* Long names wrap inside the row (buttons don't wrap by default), so a
    phone-width outline never scrolls the page sideways. */
 .ft-row-main { white-space: normal; overflow-wrap: anywhere; }

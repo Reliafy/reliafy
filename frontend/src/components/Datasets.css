@@ -12,13 +12,6 @@
 .ds-row-link { display: inline-flex; color: inherit; text-decoration: none; }
 .ds-row-link:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-md); }
 .ds-lib .lib-name + .chip { margin-left: var(--space-2); }
-/* Delete shows on the row you point at (or focus); a touch screen, with no
-   hover, always shows it. */
-@media (hover: hover) {
-  .ds-lib .lib-row .act.del { opacity: 0; }
-  .ds-lib .lib-row:hover .act.del,
-  .ds-lib .lib-row:focus-within .act.del { opacity: 1; }
-}
 
 /* ---- Dataset page ------------------------------------------------------------ */
 /* The two parts (life data, measurements) as tabs above the preview. */
@@ -181,21 +174,17 @@
 
 /* What a dataset holds (#261): small tags on one line, the units count, and Fit. */
 .ds-tags { display: flex; flex-wrap: nowrap; gap: 4px; overflow: hidden; }
-.ds-tags .chip { font-size: 11px; padding: 1px 6px; white-space: nowrap; }
+.ds-tags .chip { font-size: var(--fs-12); padding: 1px 6px; white-space: nowrap; }
 .section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: 12px; }
 .section-tags .chip { font-size: 12px; padding: 1px 8px; }
 .section-tags .linkish { font-size: 12px; }
 .ds-units { font-size: 13px; white-space: nowrap; color: var(--text-secondary); }
-.ds-acts { position: relative; display: inline-flex; align-items: center; gap: 4px; }
-.ds-acts > button { background: none; border: 1px solid transparent; border-radius: 6px; min-height: 0; box-shadow: none; padding: 3px 8px; font-size: 13px; }
-.ds-acts .ds-more { color: var(--text-secondary); fill: currentColor; padding: 3px 5px; }
-.ds-acts > button:hover { background: var(--bg-subtle); }
 .ds-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px;
   display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; text-align: left; }
 .ds-menu button { text-align: left; background: none; border: 0; box-shadow: none; min-height: 0; color: inherit; font-size: 13px; font-weight: 400; padding: 7px 10px; border-radius: 6px; }
 .ds-menu button:hover, .ds-menu button:focus { background: var(--bg-subtle); }
-.ds-menu-h { font-size: 11px; font-weight: 400; color: var(--text-secondary); opacity: .75; padding: 8px 10px 2px; pointer-events: none; }
+.ds-menu-h { font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); opacity: .75; padding: 8px 10px 2px; pointer-events: none; }
 .ds-menu-h + button, .ds-menu-h ~ button:not(.ds-menu-del) { padding-left: 18px; }
 .ds-menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 .ds-menu .ds-menu-del { color: var(--danger, #c0392b); }

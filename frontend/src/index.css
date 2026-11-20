@@ -46,6 +46,16 @@ body {
 :where(a):hover, :where(a):focus-visible { text-decoration: underline; text-underline-offset: 2px; }
 .guide-prose a, .ref-prose a { text-decoration: underline; text-underline-offset: 2px; }
 
+/* One focus ring (design system › Focus): every keyboard focus stop shows the
+   same 2px accent ring, 2px clear of the control. Drawn as an outline, so it
+   never fights a component's own box-shadow and no control falls back to the
+   browser's ring. Don't write another focus style: where an outer ring would be
+   clipped (a row in a scroller, a tab, a joined group) set only
+   `outline-offset: -2px` on that element's :focus-visible. Mouse focus shows
+   nothing; text fields keep their accent border and ring on any focus. */
+:focus-visible { outline: 2px solid var(--focus-ink); outline-offset: 2px; }
+:focus:not(:focus-visible) { outline: none; }
+
 /* Three weights only (400, 500, 600): bold elements use the 600 face. */
 b,
 strong,
@@ -58,6 +68,10 @@ h5,
 h6 {
   font-weight: 600;
 }
+/* A heading with no size of its own stays on the type scale (the browser's
+   h3 is 18.72px). No weight, so every class rule still wins. */
+:where(h3) { font-size: var(--fs-16); line-height: var(--lh-16); }
+:where(h4, h5, h6) { font-size: var(--fs-14); line-height: var(--lh-14); }
 
 /* Top navigation bar */
 .navbar {
@@ -611,12 +625,6 @@ h6 {
 /* The third level: a group's current entry's children (Models › Repairable). */
 .side-grandchildren {
   margin: 0.05rem 0 0.2rem 0.7rem;
-}
-
-.side-item:focus-visible,
-.side-subitem:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 /* Strategy tools */
@@ -1697,7 +1705,7 @@ h6 {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   background: var(--bg-surface);
   border-radius: var(--radius-md);
   padding: 8px 11px;
@@ -2319,6 +2327,29 @@ button.more-btn svg { width: 16px; height: 16px; }
   button.add-row, button.psec-act { min-height: 40px; }
   .ctl.ia-box { min-height: 40px; }
   button.psec-tip { width: 28px; height: 28px; }
+}
+
+/* Touch (design system: control-lg on a phone). At phone width (usePhone's
+   720px) every control is at least 40px tall, and icon-only buttons 40px
+   wide, so a finger finds it. Written at no weight (:where), so a control that
+   sets its own size on purpose (a 20px "?" disc, a tree twisty) keeps it. */
+@media (max-width: 720px) {
+  :where(button:not(.link), a.btn, .ctl, select, [role="tab"], .seg-btn, .tablebar .search,
+         .side-item, .side-subitem,
+         input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"])) {
+    min-height: var(--control-lg);
+  }
+  .lib-acts .act, button.ds-more, button.plot-dl-btn { min-width: var(--control-lg); min-height: var(--control-lg); }
+  /* A row's name link: the whole cell height is the target, not its line of text. */
+  a.lib-link { display: inline-flex; align-items: center; min-height: var(--control-lg); }
+  a.lib-name { min-height: var(--control-lg); }
+  .side-subitem { display: flex; align-items: center; }
+  /* 16px text in anything you type into, so iOS doesn't zoom on every tap. The
+     one !important here: no field on a phone may sit under 16px, whatever its
+     own rule says. */
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), select, textarea) {
+    font-size: var(--fs-16) !important;
+  }
 }
 
 /* Chip (#310; components/ui/Chip.jsx): 12px sans, sentence case, 6px
@@ -2986,7 +3017,7 @@ h1 .chip,
   border-radius: 0; text-align: left; color: inherit; font: inherit; font-size: var(--fs-13); cursor: pointer; }
 .detail-panel .gofr.rec-cause-row:last-child { border-bottom: none; }
 .detail-panel .gofr.rec-cause-row:hover { background: var(--accent-wash); }
-.detail-panel .gofr.rec-cause-row:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+.detail-panel .gofr.rec-cause-row:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); }
 .detail-panel .gofr.rec-cause-row.on { background: var(--accent-subtle); }
 .detail-panel .gofr.rec-cause-row.on .gk { color: var(--text); font-weight: 500; }
 .rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 8px; vertical-align: 1px; }
@@ -4266,9 +4297,10 @@ h1 .chip,
   outline-offset: -1px;
 }
 
-/* The active segment's outline would hide the browser's focus ring. */
+/* The active segment's own outline would replace the focus ring: restate the
+   one ring (inset, as the segments are joined). */
 .seg-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ink);
   outline-offset: -2px;
 }
 
@@ -4276,6 +4308,11 @@ h1 .chip,
   min-height: calc(var(--control-sm) - 2px);
   padding: 0 var(--space-3);
   font-size: var(--fs-13);
+}
+/* Touch: a segment is 40px on a phone, like every control (the touch block
+   above can't reach these sizes, set here). */
+@media (max-width: 720px) {
+  .seg-btn, .seg-sm .seg-btn { min-height: var(--control-lg); }
 }
 
 /* A labelled control: the label sits above, like a form field's. */
@@ -7202,7 +7239,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-14);
   line-height: var(--lh-14);
 }
-.chat-input textarea:focus { outline: none; border-color: var(--accent); }
+.chat-input textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .chat-send {
   flex-shrink: 0;
   width: 38px;
@@ -7702,6 +7739,32 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .ovm-item:hover:not(:disabled) { background: var(--accent-subtle); color: var(--accent-text); }
 .ovm-item.danger { color: var(--danger-text); }
 .ovm-item.danger:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger-text); }
+/* A row's menu (RowMenu, MoreMenu, every list's ⋯): the app's menu look
+   (.ovm-menu), placed at the pointer. Shared, so it lives here, not with a page. */
+.ovm-menu.row-menu {
+  max-width: calc(100vw - 16px);
+  position: fixed;
+  right: auto;
+  z-index: 95; /* over the details sheet on a phone (90), under dialogs (100) */
+  min-width: 200px;
+}
+.row-menu .ovm-item { white-space: normal; }
+.row-menu .ovm-item:focus-visible { outline-offset: -2px; background: var(--accent-subtle); color: var(--accent-text); }
+.row-menu .ovm-item.danger:focus-visible { background: var(--danger-bg); color: var(--danger-text); }
+/* An item that can't be used now: greyed, with the reason under it. */
+.row-menu .ovm-item.off { flex-direction: column; align-items: flex-start; gap: 0; color: var(--text-tertiary); cursor: not-allowed; }
+.row-menu .ovm-item.off:hover, .row-menu .ovm-item.off:focus-visible { background: var(--bg-subtle, transparent); color: var(--text-secondary); }
+/* A submenu (Focus ›): its item has the arrow at its end; beside the menu
+   on a wide screen, in place under its item on a phone. The arrow is drawn,
+   not text (no alt text: the item's name stays "Focus"). */
+.row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: 12px; }
+.row-menu-sep { height: 1px; margin: 4px 8px; background: var(--border, #e9ebee); }
+.row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--text-secondary); }
+.row-menu-parent.inline::after { content: "▸" / ""; }
+.row-menu-parent.inline.open::after { content: "▾" / ""; }
+.row-menu .ovm-item.row-menu-parent.open { background: var(--accent-subtle); color: var(--accent-text); }
+.ovm-menu.row-submenu { z-index: 96; min-width: 190px; }
+.row-menu-inline { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; }
 
 /* ---- RCM: study tree, decision flow, evidence -------------------------- */
 .head-actions { display: inline-flex; flex-wrap: wrap; gap: 0.6rem; align-items: stretch; }
@@ -9227,7 +9290,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
   font-size: var(--fs-12); font-weight: 600; color: var(--accent-text); text-transform: none;
 }
 .rbd-range-toggle:hover:not(:disabled), .rbd-range-toggle:focus { text-decoration: underline; background: none; outline: none; box-shadow: none; }
-.rbd-range-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rbd-range-toggle:focus-visible {  }
 .rbd-range-inputs { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); }
 .rbd-cost-field .rbd-range-inputs input { width: 66px; padding-left: 8px; padding-right: 6px; -moz-appearance: textfield; appearance: textfield; }
 .rbd-range-inputs input::-webkit-outer-spin-button,
@@ -9722,7 +9785,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 }
 .detail-panel .gofr.gofr-link .gv { color: var(--accent-text); }
 .detail-panel .gofr.gofr-link:hover { background: var(--accent-wash); }
-.detail-panel .gofr.gofr-link:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+.detail-panel .gofr.gofr-link:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); }
 
 /* ---- RBD builder usability (#289, #298, #299) --------------------------- */
 /* A block's name at the top of its dialog, and renamed in place on the canvas. */
@@ -10052,7 +10115,7 @@ main.content:focus { outline: none; }
   background: var(--bg-surface);
   color: var(--text);
 }
-.sel-search:focus { outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
+.sel-search:focus { outline: none; box-shadow: var(--focus-ring-inset); }
 .sel-none { margin: 0; padding: 7px 10px; font-size: var(--fs-13); color: var(--text-secondary); }
 
 /* Forecast › Spares › stock to hold by period: numbers right-aligned under
