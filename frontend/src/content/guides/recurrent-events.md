@@ -48,7 +48,12 @@ it, whether or not it failed again. Without it the analysis
 can't tell the difference between a machine that stopped failing and a machine
 you stopped watching, and it will quietly conclude your fleet is improving.
 The upload guesses it from names like "observed to", "records end" or "end
-of record", and the Model step says so while the reading has none. A dataset
+of record", and the Model step says so while the reading has none. With no
+such column, enter the time in **When did the test end?** on the Model step:
+one value for every system (a growth test on one prototype that ran to 1,000
+hours, say). Leave it empty only if the test stopped at the last failure. The
+result says which it is: *time-terminated at 1,000 hours*, or
+*failure-terminated: ended at the last failure*. A dataset
 saved before it kept a reading starts from the columns and unit its last
 repairable model used. With no **i** in the reading, the Model step says so and
 offers **Change the reading** instead of fitting.
