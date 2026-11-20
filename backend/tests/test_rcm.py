@@ -190,3 +190,8 @@ def test_unit_mismatch_blocks_support(session):
     # Aliases of the same unit agree.
     assert status_for("hrs")["status"] == "supported"
     assert status_for("hours")["status"] == "supported"
+    # Another time unit is checked after conversion, not marked a mismatch, and says so.
+    days = status_for("days")
+    assert days["status"] == "supported" and "Unit mismatch" not in str(days)
+    assert days["unit_conversion"] == "evidence in hours, task interval in days: converted at 1 day = 24 hours"
+    assert "≈ 298 hours, about 12.4 days" in days["summary"], days["summary"]

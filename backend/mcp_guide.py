@@ -98,6 +98,10 @@ number, and ask the user when unsure: never assume hours.
 converted to the diagram's unit before the analysis (24 hours a day, 7 days a week, 365.25/12 days a month, \
 365.25 days a year): the result's unit_conversions says which blocks. Units of different kinds (cycles on an \
 hours diagram) and blank units aren't converted; analyses warn about those.
+- The same rule wherever a saved model meets another clock: a calculator given model_id and a unit of the same \
+kind (a model in days, unit=months) converts the model and answers in that unit (unit_conversion says so); \
+RCM evidence in another time unit is read in the task interval's unit; a class model by use in km proposes for \
+a task in miles.
 - Rates: an exponential failure_rate is per unit time (1/MTBF). An MTBF or MTTR can be given as a block's mean \
 (with its shape, e.g. weibull {beta}) instead of params.
 - Imported diagram files that state no unit come back with unit_warning: ask, then pass time_unit (or change \

@@ -156,16 +156,35 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
     life_unit = model_unit(model)
     by_use = life_unit != "days"
 
+    from backend.services import model_units
+    from backend.units import KM_PER, normalize_unit, unit_factor
+
+    def use_factor(unit: str):
+        """Task units per model unit for a task by use: 1 in the model's unit, the factor for
+        another distance (miles for a model in km), else None. A counter's hours are running
+        time, not the calendar's, so they never convert to a task in days."""
+        if svc._norm_unit(unit) == life_unit:
+            return 1.0
+        if normalize_unit(life_unit) in KM_PER and normalize_unit(unit) in KM_PER:
+            return unit_factor(life_unit, unit)
+        return None
+
     def in_task_unit(t: float, unit: str) -> float:
-        return _rounded(t) if by_use else _in_unit(t, unit)
+        return _rounded(t * use_factor(unit)) if by_use else _in_unit(t, unit)
+
+    def converted(unit: str) -> str:
+        """The proposal's note on a model by use converted to the task's unit; blank otherwise."""
+        conv = model_units.conversion({"unit": life_unit}, unit) if by_use and use_factor(unit) != 1.0 else None
+        return f" ({model_units.used_note(conv, 'task')[:1].upper()}{model_units.used_note(conv, 'task')[1:]}.)" \
+            if conv else ""
 
     made = []
     for position in m._class_members(position_class):
         for task in m._tasks_on(position["id"]):
             unit = task["unit"]
             if by_use:
-                if svc._norm_unit(unit) != life_unit:
-                    continue  # a model by use proposes for tasks by that use only
+                if use_factor(unit) is None:
+                    continue  # a model by use proposes for tasks by that use (or one of its kind) only
             elif unit not in DAYS_PER:
                 continue  # by use: needs a model in that unit (fit the class's model in it)
             proposal = None
@@ -184,7 +203,7 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
                                 f"{_describe(model)}. With a planned replacement at {node['planned_cost']:,.0f} "
                                 f"and a failure at {node['failure_cost']:,.0f}, replacing every "
                                 f"{in_task_unit(best, unit):g} {unit} has the lowest long-run cost, "
-                                f"{saving:.0%} below running to failure.")
+                                f"{saving:.0%} below running to failure.{converted(unit)}")
                 else:
                     proposal = ("retire", None, unit,
                                 f"{_describe(model)}. With these costs no replacement age beats replacing "
@@ -201,7 +220,7 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
                     proposal = ("interval", in_task_unit(every, unit), unit,
                                 f"{_describe(model)}. To keep the protective function available "
                                 f"{node['availability_target']:.1%} of the time, check it every "
-                                f"{in_task_unit(every, unit):g} {unit} (2 × (1 − A) × MTTF).")
+                                f"{in_task_unit(every, unit):g} {unit} (2 × (1 − A) × MTTF).{converted(unit)}")
             if proposal is None:
                 continue
             kind, interval, unit, reason = proposal

@@ -152,6 +152,8 @@ async function buildSpec(side, fallback) {
     kind: "parametric",
     distribution_id: m.distribution_id,
     params: m.params,
+    // Its unit: a side in another unit of the same kind is converted to the comparison's.
+    ...(m.unit ? { unit: m.unit } : {}),
     // A saved model: its own fit gives the B10's lower bound.
     ...(m.source === "saved" && m.modelId ? { model_id: m.modelId } : {}),
   };
@@ -205,6 +207,8 @@ export default function CompareTwoModels() {
 
       {error && <div className="error">{error}</div>}
 
+      {/* A side in another unit of the same kind, converted to the comparison's unit. */}
+      {(result?.unit_conversions || []).map((n) => <p className="muted-line" key={n}>{n}</p>)}
       {result && (
         <CompareResult
           result={result}
