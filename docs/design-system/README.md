@@ -21,6 +21,7 @@ This is version 2: the app's look, with every value following a few rules.
 - **Three weights:** 400 for reading, 500 for labels, 600 for headings and emphasis. Never 700.
 - **Everything sits on a 4px grid:** spacing, line heights and control heights.
 - **One control height per size:** buttons, inputs, selects and segmented controls are all 32px (`control-md`), or 28px compact (`control-sm`), or 40px on a phone (`control-lg`).
+- **Touch on a phone:** at 720px and under (`usePhone`), every button, input, select, tab, segment and sidebar entry is at least 40px tall (`control-lg`), icon-only buttons 40px wide, and anything you type into uses 16px text. One block in `index.css` does it at no weight, so a control that sets its own size on purpose keeps it.
 
 ## Colour
 
@@ -76,7 +77,12 @@ Turn it on with `data-theme="dark"` on `<html>`. To follow the system setting, s
 
 ### Focus
 
-Every control shows `focus-ring` on keyboard focus: a 2px gap in the surface colour, then a solid 2px accent ring (`blue-600` in light, `blue-400` in dark; 5:1 or better on any surface). Inside a joined group or a table cell, use `focus-ring-inset`. Never remove focus without replacing it.
+Every control shows one ring on keyboard focus: a 2px gap, then a solid 2px ring in `focus-ink` (`blue-600` in light, `blue-400` in dark; 5:1 or better on any surface).
+
+- **It's one global rule** in `index.css`: `:focus-visible { outline: 2px solid var(--focus-ink); outline-offset: 2px }`. Drawn as an outline, it never fights a component's own shadow, and no control falls back to the browser's ring. Don't write your own focus style.
+- **Where an outer ring would be clipped** (a row in a scroller, a tab, a segment, a joined group), set only `outline-offset: -2px` on that element's `:focus-visible` (or `box-shadow: var(--focus-ring-inset)` with `outline: none`).
+- **Text fields** keep their accent border plus `focus-ring` on any focus, mouse included, so you can see where you're typing.
+- Never remove focus without replacing it.
 
 ## Charts
 
@@ -155,6 +161,7 @@ Write like an engineer briefing a manager: **the answer first, then the detail.*
 - Use one primary button per view; everything else is secondary or ghost. Destructive actions are `danger` text and outline, never a red fill.
 - Don't nest grey panels in a card; divide it with `Section`s.
 - A thing's own actions go in a `ContextMenu` on right-click, and also behind its ⋯ button, never only on right-click.
+- **A list row's actions are one ⋯ button** (`RowActions` in `LibRows.jsx`, which opens the shared row menu): Open, the row's own actions, then Delete after a line. Never a row of icons, and never a bare delete bin beside Open. A row whose only action is Open keeps a plain Open button.
 - A page's help is one `HelpLink` after its purpose: "Take the tour" or "Read the guide", never "Show me how".
 - Pick a saved value from a few with `ChoiceChips`. Switch a view with `SegmentedControl`, move between panels with `Tabs` (more panels than fit: `Tabs` with `overflow`, the rest under "⋯ N"), and apply a setting at once with `Switch`.
 

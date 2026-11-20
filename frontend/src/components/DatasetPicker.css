@@ -54,7 +54,7 @@
 }
 .dsp-row:last-child { border-bottom: 0; }
 .dsp-row:hover:not(:disabled) { background: var(--bg-canvas); }
-.dsp-row:focus-visible { outline: 2px solid var(--focus-ring, var(--accent)); outline-offset: -2px; }
+.dsp-row:focus-visible { outline-offset: -2px; }
 .dsp-row.on { background: var(--accent-subtle); box-shadow: inset 3px 0 0 var(--accent); }
 .dsp-row.off { cursor: not-allowed; opacity: 1; }
 .dsp-row.off .dsp-name, .dsp-row.off .dsp-rows, .dsp-row.off .dsp-date, .dsp-row.off .dsp-tags { opacity: 0.55; }

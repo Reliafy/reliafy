@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createdState } from "../libraries.js";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { listDatasets, deleteDataset, renameDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import { PlusIcon, itemName, rowOpen } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, itemName, rowOpen } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { datasetPath } from "../navigation.js";
 import { fitOptions } from "../datasetFit.js";
-import useMenuDismiss from "../components/useMenuDismiss.js";
 import "../components/Datasets.css";
 import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
@@ -23,41 +22,16 @@ const FileIcon = () => (
   </svg>
 );
 
-// Each row's ⋯ menu: every fit for this data, the data (open, rename) and delete.
-function RowMenu({ d, onRename, onDelete }) {
+// Each row's ⋯ menu (the shared row menu): open the data, every fit for it,
+// rename, then delete.
+const fitLabel = (label) => `Fit a ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+function DatasetRowActions({ d, onRename, onDelete }) {
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  const trigger = useRef(null);
-  const closeMenu = useCallback(() => setOpen(false), []);
-  const options = fitOptions(d);
-  useMenuDismiss(open, closeMenu, ref);
-  // Focus goes back to the "More actions" button before the menu closes, so a
-  // dialog opened from it (rename, delete) returns focus there.
-  const act = (fn) => (e) => { e.stopPropagation(); trigger.current?.focus(); setOpen(false); fn(); };
   return (
-    <td className="lib-actions">
-      <div className="ds-acts" ref={ref} onClick={(e) => e.stopPropagation()}>
-        <button type="button" ref={trigger} className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
-          onClick={() => setOpen((o) => !o)}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></svg>
-        </button>
-        {open && (
-          <div className="ds-menu" role="menu">
-            <div className="ds-menu-h">Fit a model</div>
-            {options.map((o) => <button type="button" key={o.label} role="menuitem" onClick={act(() => navigate(o.to))}>{o.label}</button>)}
-            <div className="ds-menu-sep" />
-            <div className="ds-menu-h">Data</div>
-            <button type="button" role="menuitem" onClick={act(() => navigate(datasetPath(d.id)))}>Open and view the data</button>
-            {!d.read_only && <button type="button" role="menuitem" onClick={act(() => onRename(d))}>Rename</button>}
-            <div className="ds-menu-sep" />
-            <button type="button" role="menuitem" className="ds-menu-del" onClick={act(() => onDelete(d))}>
-              {d.read_only ? "Remove from my view" : "Delete"}
-            </button>
-          </div>
-        )}
-      </div>
-    </td>
+    <RowActions item={d} to={datasetPath(d.id)} onDelete={() => onDelete(d)} actions={[
+      ...fitOptions(d).map((o) => ({ id: `fit:${o.to}`, label: fitLabel(o.label), onSelect: () => navigate(o.to) })),
+      !d.read_only && { id: "rename", label: "Rename…", onSelect: () => onRename(d) },
+    ]} />
   );
 }
 
@@ -171,7 +145,7 @@ export default function DatasetsHome() {
             </td>
             <td className="lib-opt ds-tu">{d.time_unit ? `${d.time_unit}s` : <span className="ds-tu-none">—</span>}</td>
             <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
-            <RowMenu d={d} onRename={onRename} onDelete={onDelete} />
+            <DatasetRowActions d={d} onRename={onRename} onDelete={onDelete} />
           </tr>
         )}
       />

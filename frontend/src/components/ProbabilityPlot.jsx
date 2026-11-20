@@ -1,5 +1,5 @@
 import Plot from "./Plot.jsx";
-import { GRID, band, dataPoints, fitLine } from "../plotTheme.js";
+import { GRID, band, dataPoints, fitLine, probabilityHoverText as hoverText } from "../plotTheme.js";
 import { levelPct } from "../levels.js";
 import { valueAxisTitle } from "../lifeData.js";
 
@@ -13,6 +13,11 @@ import { valueAxisTitle } from "../lifeData.js";
 // like every other number on the page.
 const thousands = (label) => (/^-?\d{4,}(\.\d+)?$/.test(String(label).trim())
   ? Number(label).toLocaleString("en-US", { maximumFractionDigits: 6 }) : label);
+
+// Hover in the axes' units (plotTheme.probabilityHoverText), or none.
+const hover = (text, name) => (text
+  ? { text, hovertemplate: `%{text}<extra>${name}</extra>` }
+  : { hoverinfo: "skip" });
 
 export default function ProbabilityPlot({ plot, unit, download = null, fill = false, bandName = null, lineName = "Fit" }) {
   // The band's level as the fit gives it (90% two-sided; 95% on a plot saved before the rule).
@@ -28,8 +33,9 @@ export default function ProbabilityPlot({ plot, unit, download = null, fill = fa
       y: [...bounds.upper, ...[...bounds.lower].reverse()],
       name: bandName,
     })] : []),
-    fitLine({ x: line.x, y: line.y, name: lineName }),
-    dataPoints({ x: scatter.x, y: scatter.y, name: "Data" }),
+    fitLine({ x: line.x, y: line.y, name: lineName, ...hover(line.x.length === line.t?.length ? hoverText(line.t, line.F, unit) : null, lineName) }),
+    dataPoints({ x: scatter.x, y: scatter.y, name: "Data",
+                 ...hover(scatter.x.length === plot.empirical?.x?.length ? hoverText(plot.empirical.x, plot.empirical.F, unit) : null, "Data") }),
   ];
 
   const layout = {

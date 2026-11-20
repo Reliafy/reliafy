@@ -414,7 +414,8 @@ test("rename a diagram, and the delete dialog, in the app's own dialogs", async 
 
   await open(page, "/systems/rbds");
   const row = page.getByRole("row").filter({ hasText: "Smoke dialog diagram" });
-  await row.getByRole("button", { name: "Rename" }).click();
+  await row.getByRole("button", { name: "Actions for Smoke dialog diagram" }).click();
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
   const ask = page.getByRole("dialog", { name: "Rename this diagram" });
   const box = ask.getByRole("textbox", { name: "Diagram name" });
   await expect(box).toBeFocused();
@@ -423,7 +424,8 @@ test("rename a diagram, and the delete dialog, in the app's own dialogs", async 
   await expect(ask).toHaveCount(0);
   await expect(row).toBeVisible();
 
-  await row.getByRole("button", { name: "Rename" }).click();
+  await row.getByRole("button", { name: "Actions for Smoke dialog diagram" }).click();
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
   await box.fill("  ");
   await expect(ask.getByRole("button", { name: "Rename diagram" })).toBeDisabled();
   await box.fill("Smoke dialog diagram, renamed");
@@ -432,7 +434,8 @@ test("rename a diagram, and the delete dialog, in the app's own dialogs", async 
   const renamed = page.getByRole("row").filter({ hasText: "Smoke dialog diagram, renamed" });
   await expect(renamed).toBeVisible();
 
-  await renamed.getByRole("button", { name: "Delete", exact: true }).click();
+  await renamed.getByRole("button", { name: "Actions for Smoke dialog diagram, renamed" }).click();
+  await page.getByRole("menuitem", { name: "Delete…" }).click();
   const del = page.getByRole("alertdialog", { name: "Delete this diagram?" });
   await expect(del).toContainText("“Smoke dialog diagram, renamed” will be deleted. This can't be undone.");
   await expect(del.getByRole("button", { name: "Cancel" })).toBeFocused();

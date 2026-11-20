@@ -208,7 +208,7 @@
 .rw-row.rw-fail .rw-nm { font-weight: 500; }
 .rw-row.focus, .rw-row.focus .rw-name { background: linear-gradient(var(--accent-subtle), var(--accent-subtle)), var(--bg-surface); }
 .rw-row.focus { box-shadow: inset 3px 0 0 var(--accent); }
-.rw-row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); z-index: 1; }
+.rw-row:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); z-index: 1; }
 .rw-row.dim .rw-nm { color: var(--text-secondary); }
 .rw-row.pin .rw-name { background: var(--bg-subtle); }
 
@@ -356,7 +356,7 @@
 .rw-crumbs button.link:last-child { flex: 0 1 auto; min-width: min(100%, 8em); }
 .rw-crumbs.all button.link { flex: 0 1 auto; min-width: 0; }
 .rw-crumbs button.link:hover:not(:disabled) { color: var(--accent-text); text-decoration: underline; }
-.rw-crumbs button.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rw-crumbs button.link:focus-visible {  }
 .rw-crumbs button + button::before { content: "›"; color: var(--text-tertiary); margin-right: 6px; }
 /* A long description: two lines at most (the whole of it is in the tooltip,
    and in the Description field below). */

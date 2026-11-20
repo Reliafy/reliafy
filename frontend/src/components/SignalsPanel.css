@@ -161,8 +161,7 @@
 .sg-x:hover,
 .sg-x:focus-visible {
   color: var(--danger-text);
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  
 }
 
 .sg-band {

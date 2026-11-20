@@ -6,6 +6,6 @@
   padding: 6px 8px; border-radius: var(--radius-md); cursor: pointer; min-height: 44px;
 }
 .rp-fn:hover { background: var(--accent-wash); }
-.rp-fn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rp-fn:focus-visible { outline-offset: -2px; }
 .rp-fn-text { font-size: var(--fs-14); color: var(--accent-text); overflow-wrap: anywhere; }
 .rp-fn-meta, .rp-fn-std { font-size: var(--fs-13); color: var(--text-secondary); overflow-wrap: anywhere; }

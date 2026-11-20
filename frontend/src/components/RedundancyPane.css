@@ -27,5 +27,5 @@
 .redundancy-field input[type="number"] { width: 6rem; }
 .redundancy-field small { font-weight: 400; }
 .redundancy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.redundancy-badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px;
+.redundancy-badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: var(--fs-12);
   line-height: 18px; border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; vertical-align: middle; }

@@ -245,7 +245,7 @@
 .rsw-row.rsw-fail .rsw-nm { font-weight: 500; }
 .rsw-row.focus, .rsw-row.focus .rsw-name { background: linear-gradient(var(--accent-subtle), var(--accent-subtle)), var(--bg-surface); }
 .rsw-row.focus { box-shadow: inset 3px 0 0 var(--accent); }
-.rsw-row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); z-index: 1; }
+.rsw-row:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); z-index: 1; }
 .rsw-row.dim .rsw-nm { color: var(--text-secondary); }
 .rsw-row.pin .rsw-name { background: var(--bg-subtle); }
 
@@ -333,7 +333,7 @@
 }
 .rsw-unit { color: var(--text-secondary); font-size: var(--fs-12); flex: none; }
 /* A function's text being typed in its cell: the counter at its end. */
-.rsw-count { font-size: 11px; margin-left: 0; }
+.rsw-count { font-size: var(--fs-12); margin-left: 0; }
 .rsw-flabel-count { display: flex; align-items: baseline; gap: 8px; }
 .rsw-flabel-count .char-count { font-weight: 500; }
 .rsw-flabel-count .char-count.near, .rsw-flabel-count .char-count.over { font-weight: 600; }
