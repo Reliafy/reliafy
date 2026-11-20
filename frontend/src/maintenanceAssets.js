@@ -108,3 +108,56 @@ export function locationChoices(locations) {
   walk(null, []);
   return out;
 }
+
+// ---- the search inside the assets, and the items of products --------------------------------
+
+// The asset a search result is at, in words: "Riverside", "Survey quadcopter · Q-7 at
+// Riverside" (a built item's tree), "Not at a place yet" for a tree top with none.
+export function siteText(site) {
+  if (!site) return "";
+  if (site.unit && site.name && site.name !== site.unit) return `${site.unit} at ${site.name}`;
+  return site.unit || site.name || "Not at a place yet";
+}
+
+// A position found by the search: its title ("P-101 · Filter pump") and the line under
+// it (the asset, the way down, what's fitted).
+export function positionHitText(hit) {
+  const title = hit.tag && hit.tag !== hit.name ? `${hit.tag} · ${hit.name}` : hit.name;
+  // A built item's own tree top is named as the item: say neither twice.
+  const site = siteText(hit.site);
+  const item = hit.item && [hit.item.name !== hit.name ? hit.item.name : "", hit.item.serial && `serial ${hit.item.serial}`]
+    .filter(Boolean).join(", ");
+  return { title, sub: [site === hit.name ? "" : site.replace(`${hit.name} at `, "at "), hit.path, item ? `fitted: ${item}` : ""]
+    .filter(Boolean).join(" · ") };
+}
+
+// An item found by the search (or listed as a product's): its title ("Grundfos CR ·
+// serial SN-42") and where it is ("Riverside · fitted to Filter pump", "spare at Store
+// A", "not fitted or placed"), with the product it is.
+export function itemHitText(hit) {
+  // A built item is named "<product> · <serial>": its serial isn't said again.
+  const title = [hit.name, hit.serial && !String(hit.name).includes(hit.serial) && `serial ${hit.serial}`].filter(Boolean).join(" · ");
+  const w = hit.where || {};
+  const unit = hit.site?.unit;
+  // Fitted at the top of its own tree (built from a product): where the tree is, if anywhere.
+  const ownTree = w.how === "fitted" && unit && w.position.name === unit;
+  const where = ownTree ? (hit.site.name && hit.site.name !== unit ? `at ${hit.site.name}` : "")
+    : w.how === "fitted" ? `fitted to ${w.position.name}`
+      : w.how === "placed" ? `kept at ${w.location.name}` : "not fitted or placed";
+  const site = w.how && !ownTree ? siteText(hit.site) : "";
+  const product = hit.product ? `${hit.product.built ? "built from" : "a"} ${hit.product.name}` : "";
+  return { title, sub: [site && site !== "Not at a place yet" ? site : "", where, product].filter(Boolean).join(" · ") };
+}
+
+// The search's count line: "2 positions and 1 item inside your assets" ("" for none;
+// "first 50 of 120 positions" when the server stopped at its limit).
+export function matchesText(found) {
+  if (!found) return "";
+  const part = (shown, total, one) => {
+    if (!total) return null;
+    return shown < total ? `first ${shown} of ${plural(total, one)}` : plural(total, one);
+  };
+  const bits = [part(found.positions.length, found.positions_total, "position"),
+    part(found.items.length, found.items_total, "item")].filter(Boolean);
+  return bits.length ? `${bits.join(" and ")} inside your assets` : "";
+}

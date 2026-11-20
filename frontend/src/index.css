@@ -8194,6 +8194,9 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .sel-option-main { display: flex; flex-direction: column; min-width: 0; }
 .sel-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-option-hint { font-size: var(--fs-12); color: var(--text-secondary); }
+/* A long list (a tree of positions) never runs off a phone's screen; the position picker fills its field. */
+.sel-menu { max-width: calc(100vw - 32px); }
+.sel-trigger.position-picker { width: 100%; }
 .sel-group {
   padding: 8px 12px 4px;
   font-size: var(--fs-12);

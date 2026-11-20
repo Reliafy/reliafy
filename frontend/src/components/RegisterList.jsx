@@ -28,9 +28,12 @@ import "./RegisterList.css";
 // `loadError`: the list's read failed (the Error or its message): the shared
 // LoadFailed card in place of the list, with Try again from `onRetry`. `error`
 // stays for a failed action (a delete), shown above the list.
+// `found(query, shown)`: what else the query finds, drawn under the list while
+// there's a query (Assets: the positions and items inside the assets); it then
+// says "nothing matches" itself, with `shown` the rows the list kept.
 export default function RegisterList({
   title, purpose, help, primary, actions = null, menu, error, rows, noun, count, search, placeholder, columns, name, after = null, empty,
-  className = "", onDelete = null, pane = null, rowMenu = null, loadError = null, onRetry = null,
+  className = "", onDelete = null, pane = null, rowMenu = null, loadError = null, onRetry = null, found = null,
 }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -61,9 +64,9 @@ export default function RegisterList({
           <div className="tablebar section-tablebar">
             <span className="count">{query ? `${visible.length} of ${all.length} ${many}` : count}</span>
             <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder={`Search ${many}…`} />
+            <ListSearch value={query} onChange={setQuery} placeholder={placeholder || `Search ${many}…`} />
           </div>
-          <div className="lib maint-scroll">
+          {!(found && query.trim() && !visible.length) && <div className="lib maint-scroll">
             <table className="lib-table reg-table">
               <colgroup>
                 <col className="reg-col-name" />
@@ -101,8 +104,9 @@ export default function RegisterList({
                 {!query && after}
               </tbody>
             </table>
-            {!visible.length && query && <p className="section-nomatch">No {one} matches.</p>}
-          </div>
+            {!visible.length && query && !found && <p className="section-nomatch">No {one} matches.</p>}
+          </div>}
+          {query.trim() && found && found(query.trim(), visible.length)}
         </>
       )}
     </div>

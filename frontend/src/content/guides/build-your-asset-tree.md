@@ -34,6 +34,11 @@ that asset alone: its tree, search, tabs and pickers show nothing from any
 other asset. The **Explorer** always shows one asset. To look at another, go
 back to **Assets** and choose it there.
 
+To find something without knowing which asset it's in, type in the search box
+on **Assets**: an asset's name, a position's name or tag (P-101), or an item's
+name or serial. Under the assets that match, it lists the positions and items
+that match, each with the asset it's at. Choose one to open its page.
+
 To see two assets together, merge one into the other. Choose **Merge into
 another asset…** from the asset's **⋯** on the **Assets** page (or from its top
 row's menu in the Explorer). Pick the asset it joins and where in that asset's
