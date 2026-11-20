@@ -24,9 +24,12 @@ import "./RegisterList.css";
 // ⋯ menu (Assets' Excel import and export), drawn under the header, above the list.
 // `rowMenu(row)`: a ⋯ menu at the end of each row in place of the bin ([{id,
 // label, danger?, onSelect}]: Assets' Merge into another asset… and Delete…).
+// `found(query, shown)`: what else the query finds, drawn under the list while
+// there's a query (Assets: the positions and items inside the assets); it then
+// says "nothing matches" itself, with `shown` the rows the list kept.
 export default function RegisterList({
   title, purpose, help, primary, actions = null, menu, error, rows, noun, count, search, placeholder, columns, name, after = null, empty,
-  className = "", onDelete = null, pane = null, rowMenu = null,
+  className = "", onDelete = null, pane = null, rowMenu = null, found = null,
 }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -55,9 +58,9 @@ export default function RegisterList({
           <div className="tablebar section-tablebar">
             <span className="count">{query ? `${visible.length} of ${all.length} ${many}` : count}</span>
             <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder={`Search ${many}…`} />
+            <ListSearch value={query} onChange={setQuery} placeholder={placeholder || `Search ${many}…`} />
           </div>
-          <div className="lib maint-scroll">
+          {!(found && query.trim() && !visible.length) && <div className="lib maint-scroll">
             <table className="lib-table reg-table">
               <colgroup>
                 <col className="reg-col-name" />
@@ -95,8 +98,9 @@ export default function RegisterList({
                 {!query && after}
               </tbody>
             </table>
-            {!visible.length && query && <p className="section-nomatch">No {one} matches.</p>}
-          </div>
+            {!visible.length && query && !found && <p className="section-nomatch">No {one} matches.</p>}
+          </div>}
+          {query.trim() && found && found(query.trim(), visible.length)}
         </>
       )}
     </div>

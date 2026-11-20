@@ -12,6 +12,8 @@ import { formatDate } from "../dates.js";
 import { locationOptions } from "../maintenanceLocations.js";
 import { SHORT_TEXT, lengthNote } from "../maintenanceText.js";
 import Modal from "./Modal.jsx";
+import Select from "./Select.jsx";
+import { positionOptions } from "../positionPicker.js";
 
 // Shared pieces for the Reliafy Maintenance pages.
 
@@ -29,10 +31,11 @@ export function fmtDated(iso, precision) {
 export { workspaceToday as today } from "../workspaceDate.js";
 
 // Every position in a tree, depth-first, with its depth (for pickers).
-export function flatten(tree, depth = 0, out = []) {
+// path: the names above it, top first (the position picker's hint); tag: its tag, if any.
+export function flatten(tree, depth = 0, out = [], path = []) {
   for (const node of tree || []) {
-    out.push({ id: node.id, name: node.name, depth });
-    flatten(node.children, depth + 1, out);
+    out.push({ id: node.id, name: node.name, depth, tag: node.tag || "", path });
+    flatten(node.children, depth + 1, out, [...path, node.name]);
   }
   return out;
 }
@@ -246,15 +249,15 @@ export function DocumentsCard({ title = "Documents", documents, target, onChange
   );
 }
 
-// emptyLabel null: one must be chosen (no "None").
-export function PositionPicker({ positions, value, onChange, emptyLabel = "None (top level)", ...rest }) {
+// One position from a tree, by typing (the shared Select with its search box): each
+// by name and tag, with the way down to it under the name (positionPicker.js), so a
+// tree of hundreds is found by a tag, a name or the system it's in. `positions`: from
+// flatten(). emptyLabel null: one must be chosen (no "None").
+export function PositionPicker({ positions, value, onChange, emptyLabel = "None (top level)", "aria-label": ariaLabel }) {
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)} {...rest}>
-      {emptyLabel !== null && <option value="">{emptyLabel}</option>}
-      {positions.map((p) => (
-        <option key={p.id} value={p.id}>{"  ".repeat(p.depth)}{p.name}</option>
-      ))}
-    </select>
+    <Select value={value || ""} onChange={(v) => onChange(v || null)} searchable ariaLabel={ariaLabel}
+            options={positionOptions(positions, emptyLabel)} placeholder={emptyLabel ?? "Choose a position…"}
+            className="position-picker" />
   );
 }
 

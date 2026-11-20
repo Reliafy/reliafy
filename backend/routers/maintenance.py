@@ -2016,6 +2016,20 @@ def items_overview(product_id: str | None = None, item_class_id: str | None = No
     return _run(m.items_overview, product_id or None, item_class_id or None, q or None, limit, offset)
 
 
+@router.get("/search")
+def asset_search(q: str = "", limit: int = 50, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What's inside the assets, for the Assets list's search: positions by name or tag,
+    items by name, serial or part number, each with the asset it's at (site)."""
+    return _run(m.asset_search, q, limit)
+
+
+@router.get("/items/of-products")
+def product_items_list(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every item of a product (built from one, or of a product's part), with where it is
+    (before /items/{item_id})."""
+    return _run(m.product_items_list)
+
+
 @router.get("/items")
 def list_items(item_class_id: str | None = None, manufacturer_id: str | None = None,
                m: Maintenance = Depends(maintenance)) -> JSONResponse:
@@ -2866,6 +2880,21 @@ def restore_location(location_id: str, body: dict = Body(default={}),
 @router.post("/items/{item_id}/retire")
 def retire_item(item_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.retire_item, item_id, body.get("reason", ""))
+
+
+@router.post("/items/{item_id}/delete")
+def delete_item(item_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Delete an item (it's retired: its history stays, restore brings it back); a built
+    item at the top of its tree takes the tree with it. dry_run (the default) only says
+    what would go, or why it can't."""
+    body = body or {}
+    return _run(m.delete_item, item_id, body.get("dry_run", True) is not False, body.get("reason", ""))
+
+
+@router.post("/items/{item_id}/undelete")
+def undelete_item(item_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Undo an item's delete: the item back, with the tree that went with it."""
+    return _run(m.restore_deleted_item, item_id)
 
 
 @router.post("/items/{item_id}/restore")

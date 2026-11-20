@@ -12,7 +12,9 @@ import { filterOptions } from "../selectSearch.js";
 //           placeholder? disabled? className? title? ariaLabel? searchable? />
 //
 // `searchable` puts a "Find…" box at the top of the open list (a long list of
-// saved models): typing narrows it to the rows holding every word typed.
+// saved models, a tree of positions): typing narrows it to the rows holding every
+// word typed (in the label or the hint). Typing on the closed trigger opens it
+// with that letter already in the box.
 //
 // `options` entries may also be plain strings. `className` variants:
 //   sel-embedded — borderless, for selects fused inside a bordered parent
@@ -81,10 +83,11 @@ export default function Select({
     });
   }, []);
 
-  const openMenu = () => {
+  // seed: a letter typed on the closed trigger of a searchable list starts the search.
+  const openMenu = (seed = "") => {
     if (disabled) return;
     place();
-    setQuery("");
+    setQuery(seed);
     setActive(all.findIndex((o) => o.value === value));
     setOpen(true);
   };
@@ -134,6 +137,10 @@ export default function Select({
       if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) {
         e.preventDefault();
         openMenu();
+      } else if (searchable && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Type-ahead: typing on the closed list opens it with what was typed in its search box.
+        e.preventDefault();
+        openMenu(e.key);
       }
       return;
     }

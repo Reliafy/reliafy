@@ -62,6 +62,7 @@ from backend.maintenance.schedule import Cadence, Season
 from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
 from backend.maintenance.products import PROJECTORS as _PRODUCT_PROJECTORS
 from backend.maintenance.products import ProductOps
+from backend.maintenance.asset_search import AssetSearchOps
 from backend.maintenance.products import is_sample as _is_sample_product
 from backend.maintenance.progression import ProgressionOps
 from backend.maintenance.signals import SignalOps
@@ -2975,7 +2976,7 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
-                  CaptureOps, _restoration.RestorationOps, _shutdowns.ShutdownOps):
+                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -13267,6 +13268,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {
             **{k: item.get(k, "") for k in self.ITEM_FIELDS}, "id": id, "nameplate": item.get("nameplate") or {},
             "note_history": item.get("note_history") or [], "retired": bool(item.get("retired")),
+            "retired_on": item.get("retired_on") if item.get("retired") else None,
             "out_of_service": self._service_view(id),
             "created": item.get("created"), "coordinates": item.get("coordinates"),
             **{k: _dated_view(item.get(k)) for k in ("purchase_date", "in_service_date", "manufacture_date")},
