@@ -104,8 +104,12 @@ function PageViews() {
 
 export default function App() {
   useEffect(() => installTelemetry(), []);
+  // No transitions: a click on a page whose code hasn't loaded yet shows
+  // "Loading…" straight away. With them, the page you left stayed on screen
+  // under the new address until the code arrived, with no sign that anything
+  // was happening (seconds on a slow connection).
   return (
-    <BrowserRouter>
+    <BrowserRouter useTransitions={false}>
       <PageViews />
       <ScrollToTop />
       <ConfigProvider>

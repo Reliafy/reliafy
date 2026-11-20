@@ -1068,7 +1068,12 @@ def to_python(
         body = body.replace(_MAIN_CALL, production)
     parts.append(body)
     # PEP 8: two blank lines around top-level definitions.
-    text = (header + "\n\n" + imports + "\n\n\n"
+    from backend.services import python_export
+
+    # The installed versions are checked before anything is imported.
+    check = "\n".join(python_export.version_check(
+        needs_repyability=bool(script.imports), versions=versions)).strip("\n")
+    text = (header + "\n\n\n" + check + "\n\n\n" + imports + "\n\n\n"
             + "\n\n\n".join(p.strip("\n") for p in parts) + "\n")
     # Collapse runs of blank lines (PEP 8: at most two).
     return re.sub(r"\n{4,}", "\n\n\n", text)

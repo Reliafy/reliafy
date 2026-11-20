@@ -168,6 +168,9 @@ def test_download_as_python_refits_with_fit_from_df(fitted, tmp_path):
                               hazard_covariates=["load"], path_covariates=[], unit="Days", marker="vibration",
                               horizon=90)
     assert "fit_from_df(" in src and 'c_col="censored"' in src and 'markers_col="readings"' in src
+    from backend.tests.python_scripts import assert_checks_versions_first
+
+    assert_checks_versions_first(src)
     compile(src, "pumps.py", "exec")
     ns: dict = {"__name__": "exported"}
     exec(compile(src, "pumps.py", "exec"), ns)  # runs the refit (prints the model)

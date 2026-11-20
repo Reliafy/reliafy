@@ -1275,6 +1275,8 @@ def python_script(name: str, items: list[dict], covariates: list[str], *, path_m
     shown_unit = unit_in_text(unit) or "the model's time unit"
     versions = versions or {}
     pins = " ".join(f"{k}=={v}" for k, v in versions.items() if v) or "surpyval"
+    from backend.services.python_export import version_check
+
     title = " ".join(str(name or "Condition and life").split())
     lines = [
         f'"""{title}: condition and life (a joint model of readings and failures).',
@@ -1286,6 +1288,7 @@ def python_script(name: str, items: list[dict], covariates: list[str], *, path_m
         f"Ages are since new, in {shown_unit}. Censoring: 0 = failed, 1 = still running,",
         "-1 = failed by that age, 2 = failed between two ages.",
         '"""',
+        *version_check(versions=versions),
         "",
         "import io",
         "",
