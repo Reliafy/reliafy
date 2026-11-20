@@ -87,7 +87,9 @@ def fit_model(body: dict = Body(...), session=Depends(get_session), ctx: AccessC
     ``covariates``, ``hazard_covariates?``, ``path_covariates?`` (a list, or
     ``{path parameter: [...]}``), ``path_model``, ``link?`` (what of the
     reading the risk follows: ``value``, the default; ``slope``, its rate of
-    change; ``value_slope``, both), ``unit``, ``marker?``, ``marker_unit?``,
+    change; ``value_slope``, both; ``cumulative``, its total so far),
+    ``exposure_above?`` (cumulative only: count the exposure above this
+    reading level), ``unit``, ``marker?``, ``marker_unit?``,
     ``c_invert?``. Answers 200 ``{model_id, model}`` when
     it ran here, 202 ``{job}`` to poll, 402 for a plan without it."""
     denied = access_service.workspace_write_denial(ctx)

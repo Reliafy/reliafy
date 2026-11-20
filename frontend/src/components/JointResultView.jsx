@@ -236,11 +236,15 @@ function JointData({ results }) {
           <section className="gof-card mf-flex-none">
             <div className="gofh">How it was fitted</div>
             <div className="gofr"><span className="gk">What the risk follows</span><span className="gv">{r.link_label || "Level"}</span></div>
+            {r.exposure_above != null && (
+              <div className="gofr"><span className="gk">Exposure counted above</span><span className="gv">{formatNumber(r.exposure_above)}{r.marker_unit ? ` ${r.marker_unit}` : ""}</span></div>
+            )}
             <p className="mf-note">
               The reading follows a {r.path_label?.toLowerCase()} path ({r.path_formula}) for each unit, with the units'
               paths spread about the mean; the failure risk is Weibull, raised or lowered by {jointLinkWords(r.link)}
               and the covariates.
             </p>
+            {r.exposure_text && <p className="mf-note">{r.exposure_text}</p>}
             {(r.covariates || []).length > 0 && (
               <p className="mf-note">Covariates: {r.covariates.join(", ")}.</p>
             )}

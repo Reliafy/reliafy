@@ -12,8 +12,13 @@ import {
 } from "../api.js";
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { columnFacts } from "../lifeData.js";
-import { JOINT_LINKS, jointIssues, jointMappingsFromReading, jointRequest, linkIssue } from "../joint.js";
+import {
+  JOINT_LINKS, exposureLevel, exposureUnit, jointIssues, jointMappingsFromReading, jointRequest, linkIssue, timeWord,
+} from "../joint.js";
 import ChoiceChips from "../components/ui/ChoiceChips.jsx";
+import Field from "../components/ui/Field.jsx";
+import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
+import { TextInput } from "../components/ui/Controls.jsx";
 import { emptyReading } from "../datasetReading.js";
 import { useDatasetReading } from "../useDatasetReading.js";
 import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
@@ -62,6 +67,7 @@ export default function JointNewPage() {
   const [covs, setCovs] = useState([]); // [{name, risk, path}]
   const [path, setPath] = useState("linear");
   const [link, setLink] = useState("value"); // what of the reading the risk follows
+  const [above, setAbove] = useState(""); // accumulated exposure: count it above this reading level
   const [markerTyped, setMarkerTyped] = useState(null);
   const [measEditing, setMeasEditing] = useState(false);
   const [name, setName] = useState("");
@@ -178,7 +184,7 @@ export default function JointNewPage() {
     const token = runGuard.current.start();
     try {
       const out = await fitJointModel({
-        ...body, name: name.trim(), path_model: path, link, unit, marker: marker.trim(), marker_unit: markerUnit.trim(),
+        ...body, name: name.trim(), path_model: path, link, exposure_above: exposure.value, unit, marker: marker.trim(), marker_unit: markerUnit.trim(),
         run_token: token,
       });
       if (!runGuard.current.isCurrent(token)) return; // cancelled while it ran
@@ -231,6 +237,7 @@ export default function JointNewPage() {
     ? opts.links.map((l) => ({ value: l.id, label: l.name, title: l.description })) : JOINT_LINKS;
   const linkProblem = linkIssue(link, path, opts?.slope_paths);
   const linkOpt = linkOpts.find((l) => l.value === link);
+  const exposure = exposureLevel(above, link);
   const unitWord = unit ? unit.toLowerCase() : "the time unit";
 
   return (
@@ -403,8 +410,20 @@ export default function JointNewPage() {
             </div>
             {linkProblem
               ? <p className="xcn-issue" role="alert">{linkProblem}</p>
-              : <p className="hint">{linkOpt?.title} {link !== "value" && "Its effect is per unit of the reading per one of "
-                + `${unitWord}, and is learnt from how lives differ between units whose readings rise at different rates.`}</p>}
+              : <p className="hint">{linkOpt?.title} {link === "cumulative"
+                ? `Its effect is per 1 ${exposureUnit(markerUnit, unit)}: one ${timeWord(unit)} spent `
+                  + `1 ${markerUnit || "unit of the reading"} higher.`
+                : link !== "value" && "Its effect is per unit of the reading per one of "
+                  + `${unitWord}, and is learnt from how lives differ between units whose readings rise at different rates.`}</p>}
+            {link === "cumulative" && (
+              <Field label="Count exposure above" optional error={exposure.error}
+                help="Only the reading above this level adds to the total, e.g. a temperature limit. Blank counts from 0.">
+                <InputGroup label="Count exposure above">
+                  <TextInput inputMode="decimal" value={above} onChange={(e) => setAbove(e.target.value)} placeholder="0" />
+                  <Addon>{markerUnit || "reading units"}</Addon>
+                </InputGroup>
+              </Field>
+            )}
           </details>
           <div className="joint-fields">
             <label className="dist-field">
@@ -430,7 +449,7 @@ export default function JointNewPage() {
             <button type="button" className="secondary" disabled={!mapped || !!busy} onClick={onCheck}>
               {busy === "check" ? "Checking…" : "Check data"}
             </button>
-            <button type="button" disabled={!mapped || !name.trim() || !!busy || !!linkProblem} onClick={onFit}>
+            <button type="button" disabled={!mapped || !name.trim() || !!busy || !!linkProblem || !!exposure.error} onClick={onFit}>
               {busy === "fit" ? "Fitting…" : <>Fit model<ProTag /></>}
             </button>
             {busy === "fit" && (

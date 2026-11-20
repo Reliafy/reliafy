@@ -212,7 +212,8 @@ test("each chance of failing carries its 90% upper bound, or the table says why 
 
 test("a rate-of-change link needs a path whose rate is finite at age 0", async () => {
   const { linkIssue, JOINT_LINKS, jointLinkWords } = await import("./joint.js");
-  assert.deepEqual(JOINT_LINKS.map((l) => l.value), ["value", "slope", "value_slope"]);
+  assert.deepEqual(JOINT_LINKS.map((l) => l.value), ["value", "slope", "value_slope", "cumulative"]);
+  assert.equal(linkIssue("cumulative", "logarithmic"), null); // the area is finite from new on every path
   assert.equal(linkIssue("value", "logarithmic"), null);
   assert.equal(linkIssue("slope", "linear"), null);
   assert.equal(linkIssue("value_slope", "quadratic"), null);
@@ -220,4 +221,15 @@ test("a rate-of-change link needs a path whose rate is finite at age 0", async (
   assert.match(linkIssue("value_slope", "power", ["linear"]), /linear/);
   assert.equal(jointLinkWords(undefined), "the reading's current value");
   assert.match(jointLinkWords("slope"), /how fast/);
+});
+
+test("a level to count exposure above goes with the accumulated-exposure link only", async () => {
+  const { exposureLevel, exposureUnit, jointLinkWords } = await import("./joint.js");
+  assert.deepEqual(exposureLevel("3", "cumulative"), { value: 3, error: null });
+  assert.deepEqual(exposureLevel(" ", "cumulative"), { value: null, error: null });
+  assert.deepEqual(exposureLevel("3", "value"), { value: null, error: null }); // ignored for other links
+  assert.match(exposureLevel("hot", "cumulative").error, /Enter a number/);
+  assert.equal(exposureUnit("mm/s", "Days"), "mm/s·day");
+  assert.equal(exposureUnit("", ""), "unit·time unit");
+  assert.match(jointLinkWords("cumulative"), /accumulated total/);
 });

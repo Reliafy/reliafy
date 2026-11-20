@@ -41,6 +41,10 @@ def test_fit_joint_reports_and_models_fit_joint_saves(env):
     refused = _err(_call(a, "analyse", {"action": "fit_joint", **args, "path_model": "logarithmic", "link": "slope"}))
     assert "linear or exponential" in refused
     assert "link" in _err(_call(a, "analyse", {"action": "fit_joint", **args, "link": "area"}))
+    assert "accumulated-exposure" in _err(_call(a, "analyse", {"action": "fit_joint", **args, "exposure_above": 2}))
+    area = _ok(_call(a, "analyse", {"action": "fit_joint", **args, "link": "cumulative", "exposure_above": 2}))
+    assert area["link"] == "cumulative" and area["exposure_above"] == 2
+    assert {h["name"] for h in area["hazard_ratios"]} == {"load", "cumulative_effect"}
 
     saved = _ok(_call(a, "change", {"action": "model_fit_joint", "name": "Pumps", **args}))
     mid = saved["model_id"]
