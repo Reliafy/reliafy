@@ -5,6 +5,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
+import { blockConversion } from "../unitConvert.js";
 import { formatNumber } from "../format.js";
 import { latestOnly, savedModelRef, twoClockAt } from "../modelNext.js";
 import { clockWords, parseRate, rateHint, rateLabel, rateText } from "../twoClocks.js";
@@ -404,6 +405,10 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
             ]}
           />
         </label>
+      )}
+      {rbdBlock && source === "saved" && blockConversion(value, unit) && (
+        // A model fitted in another unit of the diagram's kind: converted by the analysis.
+        <p className="muted-line">{`${blockConversion(value, unit).text}: the analysis converts its life to the diagram's unit.`}</p>
       )}
       {source === "saved" && value?.kind === "two_clock" && (
         <label className="dist-field" style={{ maxWidth: 320 }}>

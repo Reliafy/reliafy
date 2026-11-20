@@ -159,3 +159,34 @@ def test_a_prior_around_a_value_between_two_bounds(m, db):
             fit_life.fit(m, db, OWNERS, set(), new, method="bayes", prior={"kind": "around", "params": bad})
     saved = fit_life.fit(m, db, OWNERS, set(), new, method="bayes", prior=prior, save=True)
     assert saved["role"] == "bayesian"
+
+
+# ---- The unit is the model's own (SurPyval's model.unit) -------------------------------
+
+
+def test_a_position_fit_carries_its_unit_into_surpyval_plain_and_with_a_prior(m, db):
+    from backend.services import bayes_life as bl
+    from backend.services import models as models_service
+
+    new = _plant(m)
+    plain = fit_life.fit(m, db, OWNERS, set(), new, data="class", method="mle", save=True)
+    saved = models_service.get_model(db, plain["model_id"], ORG)
+    assert saved.serialized["model"]["unit"] == "Days" and saved.results["unit"] == "Days"
+    bayes = fit_life.fit(m, db, OWNERS, set(), new, data="both", trust="guide", save=True)
+    doc = models_service.get_model(db, bayes["model_id"], ORG)
+    assert bl.rebuild(doc.spec).unit == "Days"  # the update's model, in the app's spelling
+
+
+def test_the_class_prior_centre_is_fitted_in_the_fit_unit(m, db, monkeypatch):
+    seen = []
+    real = sp.Weibull.fit
+
+    def spy(*args, **kwargs):
+        model = real(*args, **kwargs)
+        seen.append(model.unit)
+        return model
+
+    monkeypatch.setattr(sp.Weibull, "fit", spy)
+    new = _plant(m)
+    fit_life.fit(m, db, OWNERS, set(), new, data="both", trust="guide")
+    assert seen and set(seen) == {"Days"}

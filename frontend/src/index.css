@@ -1042,7 +1042,7 @@ h6 {
   padding: var(--space-1) var(--space-2);
 }
 /* Room above the chips that overhang the bottom edge, so no line sits under them. */
-.rbd-comp:has(> .rbd-chips) { padding-bottom: var(--space-4); }
+.rbd-comp:has(> .rbd-chips), .rbd-block:has(> .rbd-chips) { padding-bottom: var(--space-4); }
 
 .react-flow__node.selected .rbd-comp {
   border-color: var(--accent);
@@ -10185,3 +10185,15 @@ main.content:focus { outline: none; }
 @media (max-width: 720px) {
   .friendly-unit-switch .seg-btn { min-height: 40px; }
 }
+
+/* A greyed menu item's reason, under its label ("Save first"). */
+.ovm-item:has(> .ovm-why) { display: flex; flex-direction: column; align-items: flex-start; }
+.ovm-item .ovm-why { display: block; margin-top: 2px; font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); white-space: normal; line-height: var(--lh-12); }
+
+/* "Download CSV" on a card (CsvButton): the chart download buttons' look, at
+   the right of the card's heading. */
+.csv-btn { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px; margin-left: auto; flex: none; }
+.csv-btn > svg { width: 14px; height: 14px; }
+.life-head-actions { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.life-head-actions .csv-btn { margin-left: 0; }
+.calc-params-h { display: flex; align-items: center; gap: 8px; }

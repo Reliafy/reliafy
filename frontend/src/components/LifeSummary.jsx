@@ -12,6 +12,10 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 import { ciPct } from "../levels.js";
 import { useFriendlyUnit } from "./FriendlyUnit.jsx";
 import { friendlyText } from "../friendlyTime.js";
+import CsvButton from "./CsvButton.jsx";
+import { csvFileName } from "../csv.js";
+import { paramsCsvRows } from "../modelCsv.js";
+import { intervalLevel } from "../modelFrame.js";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
@@ -241,7 +245,7 @@ function CompareDistributions({ result, compare, onPick }) {
 // Fit statistics row instead of a dialog; ``showUse`` false leaves "Use this
 // model" to the page's header.
 export default function LifeAside({ result, split = null, bestFit = false, compare = null, onPick = null,
-                                   modelId = null, onUse = null, onStats = null, showUse = true }) {
+                                   modelId = null, onUse = null, onStats = null, showUse = true, name = "" }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const [readingOpen, setReadingOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
@@ -274,10 +278,24 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
         ) : (
           <div className="gofh life-card-head">
             <span>Parameters</span>
-            {/* #292: the guide to reading a fit, in the help drawer. */}
-            <button type="button" className="link life-help" onClick={() => openGuide("fit-your-first-model")}>
-              What do these mean?
-            </button>
+            <span className="life-head-actions">
+              {/* #292: the guide to reading a fit, in the help drawer. */}
+              <button type="button" className="link life-help" onClick={() => openGuide("fit-your-first-model")}>
+                What do these mean?
+              </button>
+              {params.length > 0 && (
+                <CsvButton what="the parameters" filename={csvFileName(name || result.distribution, "parameters")}
+                           rows={() => paramsCsvRows({
+                             params: [
+                               ...params.map((p) => ({ ...p, label: paramView(result, p).label })),
+                               ...(result.extra_params || []).map((p) => ({
+                                 ...p, label: extraParamView(p.name, p.value, result.unit, formatNumber).label,
+                               })),
+                             ],
+                             ciLabel: intervalLevel(result).label,
+                           })} />
+              )}
+            </span>
           </div>
         )}
         {result.method === "bayesian_update" && result.bayes?.label && (

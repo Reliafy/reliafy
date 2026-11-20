@@ -8,6 +8,9 @@ import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js
 import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
 import { calendarUnit } from "../friendlyTime.js";
+import { csvFileName } from "../csv.js";
+import { curveCsvRows, paramsCsvRows } from "../modelCsv.js";
+import CsvButton from "./CsvButton.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
 import { AUTO_BOUND, boundOptions, effectiveBound } from "../levels.js";
@@ -627,6 +630,19 @@ export default function Calculator({ functions, unit, params, state, setState, n
         ]
       : tNum != null ? [referenceShape({ x: tNum, line: { dash: "dot" } })] : [],
   };
+  // "CSV" beside the chart's PNG and SVG: the curve drawn, every function at
+  // full precision, with the bound on the function shown (modelCsv.js).
+  const csvBand = (s) => {
+    const b = bandOf(s);
+    return b && !b.spread ? { fn: active, level: ciLevel, credible, x: b.x, lower: b.lower, upper: b.upper } : null;
+  };
+  const curveCsv = {
+    filename: csvFileName(name || "Model", "curve"),
+    rows: () => curveCsvRows({
+      series: series.map((s, i) => ({ label: labelOf(s), curve: views[i], band: csvBand(s) })).filter((s) => s.curve),
+      unit, given: Number.isFinite(cond) ? cond : 0,
+    }),
+  };
   const unitWord = unit ? ` ${unitInText(unit)}` : "";
   const fmtTime = (v) => `${formatNumber(v)}${unitWord}`;
 
@@ -794,7 +810,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
           labelOf={labelOf}
         />
       )}
-      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} />
+      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} csv={curveCsv} />
         </div>
 
         <div className="calc-side-rail">
@@ -907,7 +923,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
             </div>
             {params && params.length > 0 && (
               <div className="calc-rail-card calc-rail-params">
-                <div className="gofh">Parameters</div>
+                <div className="gofh calc-params-h">
+                  Parameters
+                  <CsvButton what="the parameters" filename={csvFileName(name || "Model", "parameters")}
+                             rows={() => paramsCsvRows({
+                               params: params.map((p) => ({ ...p, label: paramLabel ? paramLabel(p) : p.name })),
+                               ciLabel: ciLabel || "90%",
+                             })} />
+                </div>
                 {params.map((p) => (
                   <div className="gofr" key={p.name}>
                     <span className="gk">{paramLabel ? paramLabel(p) : p.name}</span>
