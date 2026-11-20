@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api")
 
 
 def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=None, mode=None,
-                    z=None, ws=None, we=None, windows=None, baseline=None, m=None) -> dict:
+                    z=None, ws=None, we=None, windows=None, baseline=None, m=None, record_end=None) -> dict:
     mapping = {"i": i, "x": x}
     # Optional modifiers (c/n/tl/tr); ``t`` is the legacy alias for ``tr``.
     # ``mode`` is each failure's mode (or cause): a growth projection's modes
@@ -52,6 +52,10 @@ def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=No
             raise FitError("Windows must be JSON ({system: [[start, end], ...]}) or one 'system, start, end' "
                            "a line.")
         spec["windows"] = recurrent_models.parse_windows(parsed)
+    # One end of test for every system with no end of record of its own.
+    end = recurrent_fit.parse_record_end(record_end)
+    if end is not None:
+        spec["record_end"] = end
     return spec
 
 
@@ -116,6 +120,7 @@ def fit_preview(
     ws: str | None = Form(default=None),
     we: str | None = Form(default=None),
     windows: str | None = Form(default=None),
+    record_end: str | None = Form(default=None),
     baseline: str | None = Form(default=None),
     m: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
@@ -129,7 +134,7 @@ def fit_preview(
         contents = read_upload(file) if (file is not None and not dataset_id) else None
         df, preview_dataset_id = datasets_service.preview_frame(session, ctx.write_owner, dataset_id, contents)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
-                               windows=windows, baseline=baseline, m=m)
+                               windows=windows, baseline=baseline, m=m, record_end=record_end)
         payload, _ = recurrent_fit.fit_spec(df, spec)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -158,6 +163,7 @@ def save_model(
     ws: str | None = Form(default=None),
     we: str | None = Form(default=None),
     windows: str | None = Form(default=None),
+    record_end: str | None = Form(default=None),
     baseline: str | None = Form(default=None),
     m: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
@@ -180,7 +186,7 @@ def save_model(
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
-                               windows=windows, baseline=baseline, m=m)
+                               windows=windows, baseline=baseline, m=m, record_end=record_end)
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:

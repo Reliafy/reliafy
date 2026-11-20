@@ -11,6 +11,7 @@ import { formatNumber } from "../../format.js";
 import { dataWords, effectText, forestRows } from "../../modelFrame.js";
 import { fmtP } from "../RegressionChecks.jsx";
 import { LEVEL_TEXT, ciPct, levelPct } from "../../levels.js";
+import { unitInText } from "../unitText.js";
 
 const sentence = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
@@ -85,6 +86,37 @@ function EffectWords({ rows, ratioLabel, readings }) {
   );
 }
 
+// Whether the Data tab has a standard error to show for the coefficients.
+const hasStandardErrors = (result) =>
+  (result.coef_table || []).some((r) => r.se != null) || (result.coefficients || []).some((c) => c.se != null);
+
+// Where the only covariate splits the data into groups: are they really
+// different? The log-rank test on the data, and each group's median life.
+export function GroupTest({ test, unit }) {
+  if (!test) return null;
+  const u = unitInText(unit);
+  return (
+    <section className="gof-card mf-flex-none" aria-labelledby="mf-group-test">
+      <div className="gofh"><h3 className="mf-card-title" id="mf-group-test">Do the groups really differ?</h3></div>
+      <p className="mf-note">{test.text}</p>
+      <div className="gofr">
+        <span className="gk">Log-rank test</span>
+        <span className="gv">χ² {formatNumber(test.statistic, { sig: 3 })}, {test.dof} d.f., p {test.p_value < 0.001 ? "" : "= "}{fmtP(test.p_value)}</span>
+      </div>
+      {(test.groups || []).map((g) => (
+        <div className="gofr" key={g.group}>
+          <span className="gk">{test.column} {g.group}</span>
+          <span className="gv-col">
+            <span className="gv">median {g.median != null ? `${formatNumber(g.median)}${u ? ` ${u}` : ""}` : "not reached"}</span>
+            <span className="param-ci">{g.failures} of {g.units} failed</span>
+          </span>
+        </div>
+      ))}
+      <p className="mf-note">{test.method}</p>
+    </section>
+  );
+}
+
 const baseOf = (result) => ({
   ...result, distribution_id: String(result.distribution_id || "").replace(/_(ph|aft|po|ah|frailty)$/, ""),
 });
@@ -101,6 +133,7 @@ function EffectsPanel({ result, split }) {
   const f = result.frailty;
   return (
     <>
+      <GroupTest test={result.group_test} unit={result.unit} />
       <div className="gof-card">
         <div className="gofh">{params.length ? "Baseline (every covariate at 0)" : "Model"}</div>
         {params.map((p) => {
@@ -143,7 +176,9 @@ function EffectsPanel({ result, split }) {
           : result.ratio_label
           ? "A hazard ratio of 2 doubles the failure rate at any moment; 0.5 halves it."
           : "Additive effects: each coefficient adds to the failure rate."}
-        {" "}Every coefficient, with its standard error, is in the Data tab.
+        {" "}{hasStandardErrors(result)
+          ? "Every coefficient, with its standard error and p-value, is in the Data tab."
+          : "Every coefficient, with its interval, is in the Data tab."}
       </p>
       {params.length > 1 && !result.tvc && (
         <p className="life-method">

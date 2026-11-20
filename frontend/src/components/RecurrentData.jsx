@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { DatasetRows } from "./model/DataTab.jsx";
 import { formatNumber } from "../format.js";
-import { ciText, familyOf, orderedParams, ratioCiText, ratioText, scaledParam } from "../recurrentResults.js";
+import { ciText, familyOf, orderedParams, ratioCiText, ratioText, scaledParam, terminationText } from "../recurrentResults.js";
 import { ciPct } from "../levels.js";
 
 const sig = (v) => formatNumber(v, { sig: 4 });
@@ -47,6 +47,7 @@ function Counts({ r, datasetId }) {
     [r.from_params ? "Horizon" : "Observed to", r.end_of_observation ?? r.horizon, unit],
     r.windows && ["Observation windows", r.windows.windows],
   ].filter((row) => row && row[1] != null);
+  const ends = terminationText(r);
   return (
     <section className="gof-card mf-flex-none" aria-labelledby="rec-data-counts">
       <div className="gofh mf-card-head">
@@ -56,6 +57,7 @@ function Counts({ r, datasetId }) {
       {rows.map(([k, v, u]) => (
         <div className="gofr" key={k}><span className="gk">{k}</span><span className="gv">{formatNumber(v, { sig: 6 })}{u ? ` ${u}` : ""}</span></div>
       ))}
+      {ends && <div className="gofr"><span className="gk">Record ends</span><span className="gv">{ends.charAt(0).toUpperCase() + ends.slice(1)}</span></div>}
       {!rows.length && <p className="mf-note">No data: made from parameters.</p>}
       {unit && <div className="gofr"><span className="gk">Time unit</span><span className="gv">{unit}</span></div>}
     </section>

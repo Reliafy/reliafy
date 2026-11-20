@@ -673,7 +673,26 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
             int((pd.to_numeric(df[c], errors="coerce") <= 0).sum()) if pd.api.types.is_numeric_dtype(df[c]) else None
             for c in df.columns
         ]
+        # The rows below 0 and at 0, named (data rows from 1 under the header,
+        # as a fit names them), so the Data step can say which before a fit.
+        out["low_rows"] = [_low_rows(df[c]) for c in df.columns]
     return out
+
+
+def _low_rows(series: pd.Series, limit: int = 6) -> Optional[dict]:
+    """``{"negative": n, "negative_rows": [...], "negative_values": [...],
+    "zero": n, "zero_rows": [...]}`` for a numeric column (at most ``limit``
+    rows named each), None for text."""
+    if not pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
+        return None
+    v = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+    neg = np.flatnonzero(np.isfinite(v) & (v < 0))
+    zero = np.flatnonzero(v == 0)
+    return {
+        "negative": int(neg.size), "negative_rows": [int(i) + 1 for i in neg[:limit]],
+        "negative_values": [float(v[i]) for i in neg[:limit]],
+        "zero": int(zero.size), "zero_rows": [int(i) + 1 for i in zero[:limit]],
+    }
 
 
 def _few_values(series: pd.Series, limit: int = 12) -> Optional[dict]:
@@ -931,6 +950,81 @@ def outside_support_message(
     return (f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} out of range "
             f"for {which}: {why}. Correct or remove "
             f"{'that row' if one else 'those rows'} in the data and fit again.")
+
+
+def nonparametric_range_message(kwargs: dict, estimator_name: str, what: Optional[str] = None,
+                                ranges: bool = True) -> Optional[str]:
+    """A plain sentence naming the rows a non-parametric estimate can't use,
+    or ``None`` when every row is usable.
+
+    The estimators (Kaplan-Meier, Nelson-Aalen, Fleming-Harrington, Turnbull)
+    assume no distribution, so nothing in the library stops a time below 0:
+    it used to become the first step of the curve, and a B10 life of -50.
+    Life data starts at 0, so the rows are refused the way a Weibull refuses
+    them, named:
+
+    - any time below 0 (x, the range xl to xr, or late entry tl / tr);
+    - a failure recorded at exactly 0 (observed, found failed by 0, or a range
+      0 to 0). In an export a 0 is far more often a missing time than a unit
+      that failed the instant it started, and every distribution refuses it
+      too. A unit really dead on arrival has a way in that says so: a range
+      from 0 to its first check, read by Turnbull.
+
+    A unit still running at 0 (right-censored) adds nothing and is kept, and
+    a range starting at 0 (failed before the first check) is fine.
+
+    ``what`` names the analysis in place of "a <estimator> estimate" (e.g.
+    "a comparison of groups"); ``ranges=False`` for one that takes a single
+    time per unit, so it isn't offered the range from 0 to the first check.
+    Times that are NaN (rows the caller leaves out) are skipped.
+    """
+    what = what or f"a {estimator_name} estimate"
+
+    def arr(key):
+        v = kwargs.get(key)
+        return None if v is None else np.asarray(v, dtype=float).ravel()
+
+    x, xl, xr, c = arr("x"), arr("xl"), arr("xr"), arr("c")
+    size = next((a.size for a in (x, xl, xr) if a is not None), 0)
+    if size == 0:
+        return None
+    flags = c if c is not None and c.size == size else np.zeros(size)
+    neg = np.zeros(size, dtype=bool)
+    value = np.full(size, np.nan)
+    for a in (x, xl, xr, arr("tl"), arr("tr")):
+        if a is None or a.size != size:
+            continue
+        below = np.isfinite(a) & (a < 0)
+        value = np.where(below & ~neg, a, value)
+        neg |= below
+    out = []
+    if neg.any():
+        bad = np.flatnonzero(neg)
+        one = bad.size == 1
+        rows = _rows_phrase(bad, value[bad])
+        out.append(f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} out of range for {what}"
+                   ": a time can't be below 0, as no unit fails, or is removed, before it starts. "
+                   f"Correct or remove {'that row' if one else 'those rows'} in the data and fit again.")
+    if x is not None:
+        at_zero = (x == 0) & (flags != 1)
+    else:
+        lo = xl if xl is not None else xr
+        hi = xr if xr is not None else xl
+        # Found failed by 0, or failed between 0 and 0.
+        at_zero = (hi == 0) & (flags != 1) & ((flags == -1) | (lo == 0))
+    at_zero &= ~neg
+    if at_zero.any():
+        bad = np.flatnonzero(at_zero)
+        one = bad.size == 1
+        rows = _rows_phrase(bad, np.zeros(bad.size))
+        then = "" if estimator_name == "Turnbull" else " and use Turnbull"
+        doa = (f"If {'the unit was' if one else 'the units were'} dead on arrival, give "
+               f"{'it' if one else 'each'} a range from 0 to the first check (xl to xr){then}. ") if ranges else ""
+        out.append(f"{rows[0].upper()}{rows[1:]} {'is a failure' if one else 'are failures'} at 0, which "
+                   f"{what} can't use: a 0 in a time column is usually a missing value. "
+                   f"If 0 stands for a missing time, correct or remove {'that row' if one else 'those rows'}. "
+                   f"{doa}A unit still running at 0 is fine.")
+    return " ".join(out) or None
 
 
 # ---------------------------------------------------------------------------
@@ -3403,6 +3497,9 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict, *, un
         raise FitError(f"{entry['name']} needs exact failure times. Here some units were found failed between two "
                        "inspections (or at the first one), so use Turnbull, which reads failures between two "
                        "times, or fit a distribution such as Weibull.")
+    refused = nonparametric_range_message(kwargs, entry["name"])
+    if refused:
+        raise FitError(refused)
     try:
         model = note_fit(est.fit(**kwargs, unit=surpyval_unit(unit)))
         xs = np.asarray(model.x, dtype=float)
@@ -3669,8 +3766,11 @@ def _fit_regression(
         f"p{i}" for i in range(k_dist)
     ]
     base_bounds = param_intervals.bounds_of(base_dist)
+    def _se(i):
+        return float(ses[i]) if ses is not None and np.isfinite(ses[i]) else None
+
     baseline = [
-        {"name": name, "value": float(params_arr[i]),
+        {"name": name, "value": float(params_arr[i]), "se": _se(i),
          "ci": _ci(i, tuple(base_bounds.get(name) or (None, None)))}
         for i, name in enumerate(base_names)
     ]
@@ -3690,7 +3790,10 @@ def _fit_regression(
     coefficients = []
     for j, name in enumerate(feature_names):
         value = float(params_arr[k_dist + j])
-        coef = {"name": name, "value": value, "ci": _ci(k_dist + j)}
+        coef = {"name": name, "value": value, "se": _se(k_dist + j), "ci": _ci(k_dist + j)}
+        # The Wald test of "no effect" (β = 0), two-sided, from the same
+        # standard error the interval uses.
+        coef["p"] = wald_p(value, coef["se"])
         if ratio_label is not None:
             coef["ratio"], coef["ratio_ci"] = coefficient_ratio(effect, value, coef["ci"])
             coef["hazard_ratio"] = coef["ratio"]  # backward compat
@@ -3737,6 +3840,8 @@ def _fit_regression(
     diagnostics, diag_model = regression_diagnostics.diagnose(
         model, df, mapping, fit_kwargs, distribution, entry.get("effect", "hazard"), cox_opts)
     _MODEL_STORE[model_id]["diag"] = diag_model
+    group_test = None if interval or cox_opts.get("strata") or mapping.get("tl") or mapping.get("tr") \
+        else regression_group_test(df, mapping, fields, unit)
 
     functions = None
     if curves is not None:
@@ -3772,6 +3877,8 @@ def _fit_regression(
             extra["at_covariate_means"] = at_means
     if units:
         extra["covariate_units"] = units
+    if group_test:
+        extra["group_test"] = group_test
     bases = base_levels(feature_names, fields)
     if bases:
         extra["base_levels"] = bases
@@ -3797,6 +3904,82 @@ def _fit_regression(
         "validation": validate_regression(model, df, mapping, raw_vars),
         "diagnostics": diagnostics,
     }, mapping)
+
+
+def wald_p(value: Optional[float], se: Optional[float]) -> Optional[float]:
+    """Two-sided p-value of the Wald test that a coefficient is 0."""
+    if value is None or se is None or not (np.isfinite(value) and np.isfinite(se)) or se <= 0:
+        return None
+    return float(math.erfc(abs(value / se) / math.sqrt(2.0)))
+
+
+def regression_group_test(df: pd.DataFrame, mapping: dict, fields: list, unit: Optional[str]) -> Optional[dict]:
+    """Where a regression's only covariate splits the data into groups (a
+    text column, or a 0/1 flag), the log-rank test of whether the groups'
+    lives differ, with each group's median life from its own Kaplan-Meier
+    curve: the answer to "are these groups really different?" that the
+    hazard ratio alone doesn't give. Nothing is fitted; None where the test
+    doesn't apply (several covariates, a measurement, or data it can't read)."""
+    if len(fields) != 1:
+        return None
+    field = fields[0]
+    if not (field.get("type") == "category" or field.get("flag")):
+        return None
+    from backend.services import compare_groups as cg
+
+    column = field["name"]
+    try:
+        data = cg.prepare(df, time_column=mapping.get("x"), group_column=column,
+                          censor_column=mapping.get("c"), count_column=mapping.get("n"))
+        groups = cg._natural_order(set(data["group"].tolist()))
+        if not 2 <= len(groups) <= cg.MAX_GROUPS:
+            return None
+        out = cg.compare_groups(data, unit=unit, group_column=column)
+    except Exception:  # noqa: BLE001 - no test rather than a wrong one
+        return None
+    test = out["logrank"]
+    if not out.get("comparable", True):
+        return None
+    p = test["p_value"]
+    name = cg._named(column)
+    us = f" {unit_in_text(unit)}" if unit and unit.strip() else ""
+    p_text = "p < 0.001" if p < 0.001 else f"p = {p:.2g}"
+    rows = [{"group": g["group"], "units": g["units"], "failures": g["failures"], "median": g["median"]}
+            for g in out["groups"]]
+    significant = p < cg.ALPHA
+    if len(rows) == 2:
+        a, b = rows
+        if significant and a["median"] is not None and b["median"] is not None and a["median"] != b["median"]:
+            longer, shorter = (b, a) if b["median"] > a["median"] else (a, b)
+            text = (f"{name(longer['group'])} lasts longer than {name(shorter['group'])}, and the difference is "
+                    f"unlikely to be chance: log-rank test {p_text}.")
+        elif significant:
+            text = f"{name(a['group'])} and {name(b['group'])} differ, and that is unlikely to be chance: log-rank test {p_text}."
+        else:
+            text = (f"No clear difference between {name(a['group'])} and {name(b['group'])}: the difference "
+                    f"could be chance (log-rank test {p_text}).")
+    elif significant:
+        text = f"The {len(rows)} groups differ, and that is unlikely to be chance: log-rank test {p_text}."
+    else:
+        text = f"No clear difference between the {len(rows)} groups: it could be chance (log-rank test {p_text})."
+    text = text[0].upper() + text[1:]
+    medians = [f"{name(r['group'])} {fmt_median(r['median'])}{us if r['median'] is not None else ''}" for r in rows]
+    text += " Median life, from each group's own data: " + ", ".join(medians) + "."
+    return {
+        "column": column, "test": test["label"], "statistic": test["statistic"], "dof": test["dof"],
+        "p_value": p, "alpha": cg.ALPHA, "significant": significant, "groups": rows, "text": text,
+        "method": ("Log-rank test on the data (no model assumed); medians from each group's Kaplan-Meier "
+                   "curve. Below 0.05 the difference is unlikely to be chance."),
+    }
+
+
+def fmt_median(v: Optional[float]) -> str:
+    """A median life for a sentence; 'not reached' when fewer than half failed."""
+    if v is None:
+        return "not reached (fewer than half failed)"
+    from backend.services.strategy import fmt_num
+
+    return fmt_num(v)
 
 
 def _raw_covariates(model, covariates: Optional[list]) -> list:

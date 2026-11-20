@@ -118,6 +118,8 @@ test("one dataset saved: its page is told it was reused and which library it wen
   const library = { id: "L", name: "Pumps", added: ["L:1"], already: [] };
   assert.deepEqual(createdState({ id: "d1", library }), { state: { library } });
   assert.deepEqual(createdState({ id: "d1", reused: true }, "Bearings"), { state: { reused: true, name: "Bearings" } });
+  const twin = { id: "d0", name: "Bearings (old)" };
+  assert.deepEqual(createdState({ id: "d1", same_rows_as: twin }), { state: { sameRows: twin } });
 });
 
 test("an entry's preview line matches what the table shows", () => {

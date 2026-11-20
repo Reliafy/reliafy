@@ -8693,6 +8693,9 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-avail-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: var(--radius-md); }
 .rbd-avail-bar-pct { text-align: right; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .rbd-avail-imp { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* The calculator's table of functions at t for several combinations (Calculator.jsx). */
+.calc-multi-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.calc-multi-scroll .calc-table { margin-bottom: 0; }
 .rbd-avail-imp-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
 .rbd-avail-imp-scroll .calc-table { margin-bottom: 0; min-width: 560px; }
 .rbd-avail-imp-scroll .calc-table th { white-space: nowrap; cursor: help; }
@@ -10072,6 +10075,10 @@ main.content:focus { outline: none; }
 .rbd-compare-chosen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-13); }
 .rbd-compare-chosen li { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
 .rbd-importance-why { margin: 2px 0 6px; }
+/* The importance table is at another time than "Evaluate at t": a caveat, with the rerun beside it. */
+.rbd-importance-stale { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md); background: var(--warning-bg); color: var(--warning-text); font-size: var(--fs-13); line-height: var(--lh-13); }
 
 /* Bulk items on a fleet forecast (FleetItemsImport.jsx): a pane in the Items card. */
 .fleet-import { margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg);

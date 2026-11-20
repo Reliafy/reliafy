@@ -118,7 +118,14 @@ load runs from 0.5 to 0.9: going from 0.5 to 0.9 multiplies the failure rate by
 e^(5.32 × 0.4) ≈ 8.4.
 
 An interval for β that doesn't include 0 (a ratio that doesn't include 1) means
-the covariate clearly matters. Both do here.
+the covariate clearly matters. Both do here. The **Data** tab also gives each
+coefficient's standard error and its p-value (the Wald test that it is 0).
+
+When the only covariate is a grouping (a text column such as a design or a
+supplier, or a 0/1 flag), the **Effects** tab adds **Do the groups really
+differ?**: the log-rank test on the data, in words ("the difference is
+unlikely to be chance: p = 0.018"), and each group's median life from its own
+data. The line under the model's name gives the same p-value.
 
 A proportional-odds model reports an **odds ratio**: per +1 of the covariate,
 the odds that a unit has already failed are multiplied by this number, and the
@@ -138,7 +145,9 @@ raised to the shape β: 1.025^5.58 ≈ 1.148.
 The **Calculator** tab answers for the covariate values you type in the row
 above its chart: reliability at a time, or a time at a reliability, each with
 its bound. **+ Compare another** draws another set of values on the same chart,
-such as the same seal at 60 °C and at 100 °C. The **Model characteristics** tab
+such as the same seal at 60 °C and at 100 °C. With a text covariate, the new set
+starts at the next value not yet shown (design B beside design A), so comparing
+groups takes one click. The **Model characteristics** tab
 gives the B-lives and the MTTF at those values, with their bounds.
 
 ## Check the model holds

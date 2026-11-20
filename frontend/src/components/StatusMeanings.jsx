@@ -14,11 +14,12 @@ const MEANINGS = [
 ];
 const FIXED = { "-1": "Found failed (left-censored)", 2: "Failed between the two times (interval)" };
 
-// ``compact``: one short line, "Failed → 0 · Running → 1", each value's code
-// a two-way switch (the Data step's c row).
+// ``compact``: one short line, "F → 0 failed · S → 1 running", each value's
+// code a two-way switch (the Data step's c row). The code carries its meaning
+// in words: a bare 0 / 1 was read the wrong way round (1 taken as "failed").
 const CODES = [
-  { value: 0, label: "0", title: "0 = failed" },
-  { value: 1, label: "1", title: "1 = still running" },
+  { value: 0, label: "0 failed", title: "0 = failed" },
+  { value: 1, label: "1 running", title: "1 = still running" },
 ];
 
 export default function StatusMeanings({ column, values, blanks = 0, mapping, onChange, compact = false }) {

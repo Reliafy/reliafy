@@ -36,7 +36,7 @@ import { formatNumber, formatPercent } from "../format.js";
 import { formatDate } from "../dates.js";
 import { hoursPerUnit } from "./rbdModelText.js";
 import { RBD_EVALUATE_AT_EVENT } from "../rbdBuilderOps.js";
-import { answerAtTime, formatProbability, formatReliability, importanceHeading, lifeBoundText } from "../rbdCalcText.js";
+import { answerAtTime, formatProbability, formatReliability, importanceHeading, importanceOutOfDate, lifeBoundText, timeInWords } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import { importanceRows } from "../rbdImportance.js";
 import ProTag from "./ProTag.jsx";
@@ -226,7 +226,7 @@ function JointAgesNote({ result }) {
 // Reliability results (non-repairable RBD): headline MTTF / B-lives, the
 // system + per-node R(t)/F(t) curves, importance measures, and the structural
 // path/cut sets. Also used by the public read-only view.
-export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBandTargets = null }) {
+export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBandTargets = null, onRankAt = null, ranking = false }) {
   const x = result.time;
   const [active, setActive] = useState("sf");
   const unit = result.unit;
@@ -302,6 +302,10 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
   const impHead = importanceHeading(importance, unit);
   // The system's reliability at the time the importances are for.
   const impR = importance.time == null ? null : interp(x, result.system.sf, Number(importance.time));
+  // The table is at one time; the Evaluate box may say another (a time
+  // typed since, or the automatic half-window): say so, with the rerun.
+  const impOff = importanceOutOfDate(importance.time, t);
+  const tWords = impOff ? timeInWords(Number(Number(t).toPrecision(4)), unit) : null;
 
   return (
     <div className="calc">
@@ -389,6 +393,19 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
             {impR != null && <span className="muted"> (system reliability {formatReliability(impR)} there)</span>}
           </div>
           {impHead && <p className="hint rbd-importance-why">{impHead.why.charAt(0).toUpperCase() + impHead.why.slice(1)}. The ranking can change with time.</p>}
+          {impOff && (
+            <div className="rbd-importance-stale" role="status">
+              <span>
+                <span aria-hidden="true">! </span>
+                These are at {impHead ? impHead.at : fmt(importance.time)}, not at the {tWords} in Evaluate at t.
+              </span>
+              {onRankAt && (
+                <button type="button" className="secondary sm" disabled={ranking} onClick={() => onRankAt(Number(t))}>
+                  {ranking ? "Ranking…" : `Rank at ${tWords}`}
+                </button>
+              )}
+            </div>
+          )}
           {/* Scrolls sideways on a phone rather than widening the page,
               as the availability table already does. */}
           <ScrollCue className="rbd-avail-imp-scroll">
@@ -1625,7 +1642,9 @@ export default function RbdCalculator({
   // figures of a diagram above the automatic size cap. A plain Calculate of a
   // repairable diagram gets the exact figures (free) and any saved simulation.
   // ``quick`` asks for a free, time-capped simulation (users without Pro, #147).
-  const runCalculation = async (force = false, { simulate = false, exact = false, quick = false } = {}) => {
+  const runCalculation = async (force = false, { simulate = false, exact = false, quick = false, evaluateAt = undefined } = {}) => {
+    // The importance time: the one typed, or (from "Rank at") the one shown.
+    const atUsed = evaluateAt !== undefined ? evaluateAt : atSent;
     setPhase("calculating");
     setBusy(simulate || force || quick ? "simulate" : exact ? "exact" : null);
     setError(null);
@@ -1666,7 +1685,7 @@ export default function RbdCalculator({
                 exact: exact || result?.exact?.status === "ok",
                 runToken: token,
               }
-            : { currentState: now, targetReliability: target, evaluateAt: atSent }),
+            : { currentState: now, targetReliability: target, evaluateAt: atUsed }),
         }
       );
       if (superseded()) return; // cancelled while it ran
@@ -1690,12 +1709,13 @@ export default function RbdCalculator({
           setTMax(Number(limit.toPrecision(4)));
           setTMaxAuto(true);
         }
-        if (evalT === "" || evalTAuto) {
+        // A "Rank at" run made the box's time a typed one: it stays.
+        if (evaluateAt === undefined && (evalT === "" || evalTAuto)) {
           setEvalT(Number((limit / 2).toPrecision(4)));
           setEvalTAuto(true);
         }
       }
-      setCalcSig(JSON.stringify({ t: tSent, s: sInput, cov, band: bandSig, now, target, at: atSent }));
+      setCalcSig(JSON.stringify({ t: tSent, s: sInput, cov, band: bandSig, now, target, at: atUsed }));
       if (!res.job) {
         setPhase("idle");
         setBusy(null);
@@ -2165,6 +2185,9 @@ export default function RbdCalculator({
           conditionalAge={result.conditional_age || 0}
           name={name}
           onBandTargets={band.on ? (targets) => { setBand((b) => ({ ...b, ...targets })); setBandRerun((n) => n + 1); } : null}
+          // Rank at the time in the box: it becomes a typed time, then the run uses it.
+          onRankAt={(at) => { setEvalTAuto(false); calculate(false, { evaluateAt: at }); }}
+          ranking={phase === "calculating"}
         />
       )}
       {result && !stale && result.kind !== "repairable" && (

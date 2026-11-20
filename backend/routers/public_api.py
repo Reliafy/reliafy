@@ -184,7 +184,7 @@ async def api_create_dataset(
             csv_bytes = datasets_service.normalize_pasted(str(payload["csv"]))
         else:
             csv_bytes = pd.DataFrame(payload["data"]).to_csv(index=False).encode()
-        return datasets_service.create_dataset(session, name, csv_bytes, user["uid"])
+        return datasets_service.create_or_reuse(session, name, csv_bytes, user["uid"])[0]
 
     try:
         ds = await run_in_threadpool(create)

@@ -217,6 +217,14 @@ function strongestEffect(result) {
   return `${top.label || top.name}: ${result.ratio_label || "ratio"} ${formatNumber(top.ratio)}${per}${ci}`;
 }
 
+// A regression on one grouping column also carries the log-rank test of
+// whether the groups differ: "groups differ: log-rank p = 0.018".
+export function groupTestWords(g) {
+  if (!g || g.p_value == null) return null;
+  const p = g.p_value < 0.001 ? "p < 0.001" : `p = ${formatNumber(g.p_value, { sig: 2 })}`;
+  return `${g.significant ? "groups differ" : "no clear difference between groups"}: log-rank ${p}`;
+}
+
 // The three or four numbers that answer "what does this model say?", as
 // short phrases for the line under the model's name. ``saved`` (a phrase,
 // e.g. "saved 3 min ago") ends it.
@@ -279,6 +287,7 @@ export function answerParts(result, { split = null, saved = null } = {}) {
     case "regression": {
       add(r.tvc ? `${r.distribution}, covariates changing over time` : r.distribution);
       add(strongestEffect(r));
+      add(groupTestWords(r.group_test));
       const c = r.validation?.available ? r.validation.concordance : null;
       add(c && `ranking ${formatNumber(c.value, { sig: 2 })} (Harrell's C)`);
       add(r.tvc ? `${r.tvc.items ?? "?"} items, ${r.tvc.failures ?? "?"} failures` : dataWords(r, split));
@@ -408,7 +417,7 @@ export function forestRows(result) {
   const fields = Object.fromEntries((r.functions?.covariates || []).map((f) => [f.name, f]));
   return (r.coefficients || []).map((c) => {
     const ci = c.ci || table[c.name]?.ci || null;
-    const p = table[c.name]?.p ?? null;
+    const p = table[c.name]?.p ?? c.p ?? null;
     const unit = c.covariate_unit || r.covariate_units?.[c.name] || "";
     const term = termName(c.name);
     const base = term.categorical ? bases[term.variable] ?? null : null;

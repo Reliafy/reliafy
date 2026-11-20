@@ -1198,6 +1198,10 @@ def _recurrent_evidence(r: dict) -> dict:
         out["beta_ci"] = [_sig(v) for v in r["beta_ci"]]
     if r.get("end_of_observation") is not None:
         out["end_of_observation"] = _sig(r["end_of_observation"])
+    term = r.get("termination")
+    if term:
+        out["record_ends"] = ("time-terminated (an end of test or end of record was given)"
+                              if term["kind"] == "time" else "failure-terminated: each system ends at its last failure")
     out["rocof"] = _sig(r.get("rocof"))
     if r.get("rocof_ci"):
         out["rocof_ci"] = [_sig(v) for v in r["rocof_ci"]]
@@ -3599,7 +3603,8 @@ def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, 
                   reading: dict | None = None, lib: Optional[dict] = None) -> dict[str, Any]:
     """upload_dataset with dataset_col: one dataset per value of the column, all or nothing against the cap."""
     try:
-        wanted = datasets_service.count_new_parts(db, data, column, user["uid"])
+        wanted = datasets_service.count_new_parts(db, data, column, user["uid"], name, reading,
+                                                 keep_reading=bool((reading or {}).get("guessed")))
         if wanted:
             _cap(db, user, "datasets", "datasets", n=wanted)
         made, blank = datasets_service.create_split(db, data, column, user["uid"], name, reading=reading,
@@ -7540,8 +7545,9 @@ def fit_recurrent_model(
         "Inline: 0 = a failure at that time, 1 = the system's end of observation (still running then). Omit "
         "when every row is a failure; then give observed_to."))] = None,
     observed_to: Annotated[Optional[Union[float, list[float]]], Field(description=(
-        "Inline: each system's end of observation, one number for all or one per row. Without it (or c = 1 "
-        "rows) a system is taken as watched only to its last failure."))] = None,
+        "Each system's end of observation (the end of test): inline, one number for all or one per row; with "
+        "dataset_id, one number for every system with no end of record of its own. Without it (or c = 1 rows) "
+        "a system is taken as watched only to its last failure (failure-terminated)."))] = None,
     causes: Annotated[Optional[list[Optional[str]]], Field(max_length=20000, description=(
         "Inline: each failure's cause or failure mode (null on end-of-observation rows): adds the MCF and a "
         "Crow-AMSAA fit per cause."))] = None,
@@ -7598,6 +7604,9 @@ def fit_recurrent_model(
                 raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
         if covariate_columns:
             mapping["z"] = list(covariate_columns)
+        if isinstance(observed_to, list):
+            raise ToolError("With dataset_id, give observed_to as one number (the end of test for every system), "
+                            "or name the column with observed_to_column.")
         df = datasets_service.load_dataframe(dataset)
         if not (unit or "").strip():
             unit = _reading_unit(db, dataset, uid, time_column) or unit
@@ -7628,7 +7637,8 @@ def fit_recurrent_model(
         dataset = None
     options = {k: v for k, v in (("baseline", baseline), ("m", memory)) if v is not None}
     spec = {"mapping": mapping, "model_id": model, "unit": (unit or "").strip(), **({"options": options} if options else {}),
-            **({"windows": recurrent_models.parse_windows(windows)} if windows else {})}
+            **({"windows": recurrent_models.parse_windows(windows)} if windows else {}),
+            **({"record_end": float(observed_to)} if dataset is not None and observed_to is not None else {})}
     if not save:
         payload, _ = recurrent_fit.fit_spec(df, spec)
         out = {"saved": False, "model": payload.get("model"), "family": payload.get("family"),

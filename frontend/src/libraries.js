@@ -167,10 +167,12 @@ export function addedToLibraryWords(library) {
 }
 
 // Where Data's New dataset sends you after one dataset is saved: its page, told whether the data was
-// already yours (reused) and which library it went into.
+// already yours (reused), or the same rows were already yours under another name or reading
+// (sameRows), and which library it went into.
 export function createdState(ds, typedName = null) {
   const state = {
     ...(ds?.reused ? { reused: true, name: typedName || null } : {}),
+    ...(ds?.same_rows_as ? { sameRows: ds.same_rows_as } : {}),
     ...(ds?.library ? { library: ds.library } : {}),
   };
   return Object.keys(state).length ? { state } : undefined;

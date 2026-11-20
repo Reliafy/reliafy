@@ -4,6 +4,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
+import Field from "../components/ui/Field.jsx";
+import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
+import { TextInput } from "../components/ui/Controls.jsx";
 import RefLink from "../components/RefLink.jsx";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
@@ -14,7 +17,7 @@ import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
 import { recurrentAnswer } from "../recurrentResults.js";
 import {
-  readingWithRecurrentMapping, recurrentIssues, recurrentMappingFromReading, recurrentWithCovariates,
+  readingWithRecurrentMapping, recordEndIssue, recurrentIssues, recurrentMappingFromReading, recurrentWithCovariates,
   savedRecurrentMapping,
 } from "../recurrentMapping.js";
 import { codedStatusNote } from "../readingCodes.js";
@@ -84,6 +87,9 @@ export default function RecurrentNewPage() {
   // Observation gaps: window columns (ws, we) or windows typed in (#65).
   const [gaps, setGaps] = useState({ ws: "", we: "" });
   const [windows, setWindows] = useState("");
+  // When the test ended (one number for every system with no end of record
+  // of its own); blank: each system ends at its last failure.
+  const [recordEnd, setRecordEnd] = useState("");
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -169,6 +175,7 @@ export default function RecurrentNewPage() {
       setDetail(full);
       setGaps({ ws: "", we: "" });
       setWindows("");
+      setRecordEnd("");
       setStep(2);
     } catch (err) {
       setError(err);
@@ -199,12 +206,18 @@ export default function RecurrentNewPage() {
   // What the reading lacks for this model (no i), else the fit's own checks
   // on its columns; the missing end of record is said without stopping it.
   const missing = derived?.missing || null;
-  const mapIssues = missing ? [] : recurrentIssues(map, windows);
+  // A typed end of test stands in for an end-of-record column, so it's
+  // offered only when none is mapped.
+  const askEnd = !map.tr;
+  const endTyped = askEnd ? recordEnd : "";
+  const endIssue = recordEndIssue(endTyped);
+  const mapIssues = missing ? [] : recurrentIssues(map, windows, endTyped);
   const blocking = mapIssues.filter((i) => !i.note);
   const readingValid = !!derived && !missing && blocking.length === 0;
   const fitBlock = !readingValid
     ? "First fix how the columns are read: Change the reading."
     : rd.editing ? "First save or cancel the change to the reading."
+    : endIssue ? "First fix when the test ended, or leave it empty."
     : modelBlock;
 
   const onFit = async () => {
@@ -212,7 +225,7 @@ export default function RecurrentNewPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fitRecurrent(null, { datasetId, mapping: map, model, unit, options, windows });
+      const res = await fitRecurrent(null, { datasetId, mapping: map, model, unit, options, windows, recordEnd: endTyped });
       setResult(res);
       const src = (sourceName || "dataset").replace(/\.csv$/i, "");
       setName(`${res.results?.model?.name || modelName} — ${src}`);
@@ -230,7 +243,7 @@ export default function RecurrentNewPage() {
     setError(null);
     try {
       const saved = await saveRecurrentModel(name.trim(), null, {
-        datasetId: result.dataset_id || datasetId, mapping: map, model, unit, options, windows,
+        datasetId: result.dataset_id || datasetId, mapping: map, model, unit, options, windows, recordEnd: endTyped,
       });
       navigate(`/models/recurrent/${saved.id}`);
     } catch (err) {
@@ -418,6 +431,19 @@ export default function RecurrentNewPage() {
             )}
             {!missing && !rd.editing && (
               <>
+            {askEnd && (
+              <div style={{ width: 360, maxWidth: "100%" }}>
+              <Field label="When did the test end?" optional error={endIssue} as="fieldset"
+                     help="The time the test or record stopped, for every system without an end of record of its own. Leave it empty if it stopped at the last failure.">
+                <InputGroup label="When the test ended, and its unit">
+                  <TextInput type="number" inputMode="decimal" min="0" step="any" value={recordEnd}
+                             onChange={(e) => setRecordEnd(e.target.value)} aria-label="When the test ended"
+                             placeholder="e.g. 1000" />
+                  {unit && <Addon>{String(unit).toLowerCase()}</Addon>}
+                </InputGroup>
+              </Field>
+              </div>
+            )}
             <p className="muted-line">Choose how repairs work, then the model to fit to the fleet's event history.</p>
             <SegmentedControl options={FAMILIES} value={family} onChange={pickFamily} label="Kind of model"
                               style={{ alignSelf: "flex-start", maxWidth: "100%" }} />
