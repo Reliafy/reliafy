@@ -3669,8 +3669,11 @@ def _fit_regression(
         f"p{i}" for i in range(k_dist)
     ]
     base_bounds = param_intervals.bounds_of(base_dist)
+    def _se(i):
+        return float(ses[i]) if ses is not None and np.isfinite(ses[i]) else None
+
     baseline = [
-        {"name": name, "value": float(params_arr[i]),
+        {"name": name, "value": float(params_arr[i]), "se": _se(i),
          "ci": _ci(i, tuple(base_bounds.get(name) or (None, None)))}
         for i, name in enumerate(base_names)
     ]
@@ -3690,7 +3693,10 @@ def _fit_regression(
     coefficients = []
     for j, name in enumerate(feature_names):
         value = float(params_arr[k_dist + j])
-        coef = {"name": name, "value": value, "ci": _ci(k_dist + j)}
+        coef = {"name": name, "value": value, "se": _se(k_dist + j), "ci": _ci(k_dist + j)}
+        # The Wald test of "no effect" (β = 0), two-sided, from the same
+        # standard error the interval uses.
+        coef["p"] = wald_p(value, coef["se"])
         if ratio_label is not None:
             coef["ratio"], coef["ratio_ci"] = coefficient_ratio(effect, value, coef["ci"])
             coef["hazard_ratio"] = coef["ratio"]  # backward compat
@@ -3737,6 +3743,8 @@ def _fit_regression(
     diagnostics, diag_model = regression_diagnostics.diagnose(
         model, df, mapping, fit_kwargs, distribution, entry.get("effect", "hazard"), cox_opts)
     _MODEL_STORE[model_id]["diag"] = diag_model
+    group_test = None if interval or cox_opts.get("strata") or mapping.get("tl") or mapping.get("tr") \
+        else regression_group_test(df, mapping, fields, unit)
 
     functions = None
     if curves is not None:
@@ -3772,6 +3780,8 @@ def _fit_regression(
             extra["at_covariate_means"] = at_means
     if units:
         extra["covariate_units"] = units
+    if group_test:
+        extra["group_test"] = group_test
     bases = base_levels(feature_names, fields)
     if bases:
         extra["base_levels"] = bases
@@ -3797,6 +3807,82 @@ def _fit_regression(
         "validation": validate_regression(model, df, mapping, raw_vars),
         "diagnostics": diagnostics,
     }, mapping)
+
+
+def wald_p(value: Optional[float], se: Optional[float]) -> Optional[float]:
+    """Two-sided p-value of the Wald test that a coefficient is 0."""
+    if value is None or se is None or not (np.isfinite(value) and np.isfinite(se)) or se <= 0:
+        return None
+    return float(math.erfc(abs(value / se) / math.sqrt(2.0)))
+
+
+def regression_group_test(df: pd.DataFrame, mapping: dict, fields: list, unit: Optional[str]) -> Optional[dict]:
+    """Where a regression's only covariate splits the data into groups (a
+    text column, or a 0/1 flag), the log-rank test of whether the groups'
+    lives differ, with each group's median life from its own Kaplan-Meier
+    curve: the answer to "are these groups really different?" that the
+    hazard ratio alone doesn't give. Nothing is fitted; None where the test
+    doesn't apply (several covariates, a measurement, or data it can't read)."""
+    if len(fields) != 1:
+        return None
+    field = fields[0]
+    if not (field.get("type") == "category" or field.get("flag")):
+        return None
+    from backend.services import compare_groups as cg
+
+    column = field["name"]
+    try:
+        data = cg.prepare(df, time_column=mapping.get("x"), group_column=column,
+                          censor_column=mapping.get("c"), count_column=mapping.get("n"))
+        groups = cg._natural_order(set(data["group"].tolist()))
+        if not 2 <= len(groups) <= cg.MAX_GROUPS:
+            return None
+        out = cg.compare_groups(data, unit=unit, group_column=column)
+    except Exception:  # noqa: BLE001 - no test rather than a wrong one
+        return None
+    test = out["logrank"]
+    if not out.get("comparable", True):
+        return None
+    p = test["p_value"]
+    name = cg._named(column)
+    us = f" {unit_in_text(unit)}" if unit and unit.strip() else ""
+    p_text = "p < 0.001" if p < 0.001 else f"p = {p:.2g}"
+    rows = [{"group": g["group"], "units": g["units"], "failures": g["failures"], "median": g["median"]}
+            for g in out["groups"]]
+    significant = p < cg.ALPHA
+    if len(rows) == 2:
+        a, b = rows
+        if significant and a["median"] is not None and b["median"] is not None and a["median"] != b["median"]:
+            longer, shorter = (b, a) if b["median"] > a["median"] else (a, b)
+            text = (f"{name(longer['group'])} lasts longer than {name(shorter['group'])}, and the difference is "
+                    f"unlikely to be chance: log-rank test {p_text}.")
+        elif significant:
+            text = f"{name(a['group'])} and {name(b['group'])} differ, and that is unlikely to be chance: log-rank test {p_text}."
+        else:
+            text = (f"No clear difference between {name(a['group'])} and {name(b['group'])}: the difference "
+                    f"could be chance (log-rank test {p_text}).")
+    elif significant:
+        text = f"The {len(rows)} groups differ, and that is unlikely to be chance: log-rank test {p_text}."
+    else:
+        text = f"No clear difference between the {len(rows)} groups: it could be chance (log-rank test {p_text})."
+    text = text[0].upper() + text[1:]
+    medians = [f"{name(r['group'])} {fmt_median(r['median'])}{us if r['median'] is not None else ''}" for r in rows]
+    text += " Median life, from each group's own data: " + ", ".join(medians) + "."
+    return {
+        "column": column, "test": test["label"], "statistic": test["statistic"], "dof": test["dof"],
+        "p_value": p, "alpha": cg.ALPHA, "significant": significant, "groups": rows, "text": text,
+        "method": ("Log-rank test on the data (no model assumed); medians from each group's Kaplan-Meier "
+                   "curve. Below 0.05 the difference is unlikely to be chance."),
+    }
+
+
+def fmt_median(v: Optional[float]) -> str:
+    """A median life for a sentence; 'not reached' when fewer than half failed."""
+    if v is None:
+        return "not reached (fewer than half failed)"
+    from backend.services.strategy import fmt_num
+
+    return fmt_num(v)
 
 
 def _raw_covariates(model, covariates: Optional[list]) -> list:

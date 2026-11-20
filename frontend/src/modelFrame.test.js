@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   answerParts, baseLevels, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
-  intervalLevel, listN, nextTabIndex, oddUnits, plainAnswer, ppSummary, ratioSign, resolveTab, termName,
+  groupTestWords, intervalLevel, listN, nextTabIndex, oddUnits, plainAnswer, ppSummary, ratioSign, resolveTab, termName,
 } from "./modelFrame.js";
 
 const labels = (tabs) => tabs.map((t) => t.label);
@@ -326,4 +326,18 @@ test("a joint model's rate-of-change effect keeps its own label and unit", () =>
   assert.deepEqual(rows.map((r) => [r.name, r.unit]), [["Rate of change of vibration", "mm/s per day"], ["vibration", "mm/s"]]);
   assert.ok(answerParts({ kind: "joint", link: "slope", link_label: "Rate of change" }).includes("risk follows its rate of change"));
   assert.ok(!answerParts({ kind: "joint", link: "value", link_label: "Level" }).some((p) => String(p).includes("follows")));
+});
+
+test("a regression on one grouping column names the log-rank test in its answer line", () => {
+  const g = { p_value: 0.01808, significant: true };
+  assert.equal(groupTestWords(g), "groups differ: log-rank p = 0.018");
+  assert.equal(groupTestWords({ p_value: 0.31, significant: false }), "no clear difference between groups: log-rank p = 0.31");
+  assert.equal(groupTestWords(null), null);
+  const r = { kind: "regression", distribution: "Weibull PH", ratio_label: "hazard ratio", coefficients: [], group_test: g };
+  assert.ok(answerParts(r).includes("groups differ: log-rank p = 0.018"));
+});
+
+test("a parametric regression's coefficient p-value reaches the effects", () => {
+  const r = { kind: "regression", ratio_label: "hazard ratio", coefficients: [{ name: "design[T.B]", value: -0.818, ci: [-1.37, -0.27], se: 0.334, p: 0.0142 }] };
+  assert.equal(forestRows(r)[0].p, 0.0142);
 });
