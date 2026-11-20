@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
-import { filterOptions } from "../selectSearch.js";
+import { bestMatchIndex, filterOptions } from "../selectSearch.js";
 
 // Fully-styled dropdown replacing native <select> (whose popup list can't be
 // themed). A trigger button opens a portal-rendered listbox positioned under
@@ -146,7 +146,7 @@ export default function Select({
       e.preventDefault();
       // Typed into the search and pressed Enter: the first match.
       const pick = items[active] && !items[active]._header ? items[active]
-        : searchable && query ? items.find((o) => !o._header) : null;
+        : searchable && query ? items[bestMatchIndex(items, query)] : null;
       if (pick) choose(pick);
       else setOpen(false);
     }
@@ -192,7 +192,12 @@ export default function Select({
               value={query}
               placeholder="Find…"
               aria-label="Find in the list"
-              onChange={(e) => { setQuery(e.target.value); setActive(-1); }}
+              onChange={(e) => {
+                // Highlight the row Enter will take: the closest match.
+                const q = e.target.value;
+                setQuery(q);
+                setActive(q.trim() ? bestMatchIndex(filterOptions(all, q), q) : -1);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown" && active < 0) { e.preventDefault(); setActive(step(-1, 1)); return; }
                 onKeyDown(e);

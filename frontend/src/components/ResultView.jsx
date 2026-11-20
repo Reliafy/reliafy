@@ -191,7 +191,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   // The Calculator tab unmounts when you switch away, so its inputs live here
   // and survive tab switches. When the result itself changes in place (e.g.
   // fitting another model in the workspace) reset them for the new model.
-  const [calc, setCalc] = useState(() => initCalcState(result.functions));
+  const [calc, setCalc] = useState(() => initCalcState(result.functions, result.plot?.empirical?.x));
   const calcNextId = useRef(1);
   // One confidence for the calculator's bounds and the mean life's (#288).
   const level = Number(calc.ci.level);
@@ -202,7 +202,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   if (result !== prevResult) {
     setPrevResult(result);
     setTvcCalc(result.tvc ? initTvcState(result) : null);
-    setCalc(initCalcState(result.functions));
+    setCalc(initCalcState(result.functions, result.plot?.empirical?.x));
     calcNextId.current = 1;
     setOwn(resolveTab(modelTabs(result) || [], null));
   }

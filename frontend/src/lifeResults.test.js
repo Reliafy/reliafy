@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  bestFitSentence, boundSideFor, boundWords, checkTime, compareRows, perUnit, precisePercent, stretchTo,
+  bestFitSentence, boundSideFor, boundWords, checkTime, compareRows, perUnit, precisePercent, startingTime, stretchTo,
   timeAtValue, timeInWords,
 } from "./lifeResults.js";
 
@@ -165,4 +165,44 @@ test("precisePercent: a tiny chance in plain decimals, never e-notation", () => 
   assert.equal(precisePercent(9.64e-6), "0.000964%");
   assert.equal(precisePercent(1e-12), "under 0.0000001%");
   assert.equal(precisePercent(0.00177), "0.177%");
+});
+
+test("checkTime: a time with a unit, converted by the app's calendar convention", () => {
+  // A year is 365.25 days of 24 hours: 8,766 hours.
+  const y = checkTime("1 year", { unit: "hours" });
+  assert.equal(y.ok, true);
+  assert.equal(y.value, 8766);
+  assert.equal(y.note, "1 year = 8,766 hours, counting 365.25 days a year.");
+  assert.equal(checkTime("2 years", { unit: "Hours" }).value, 17532);
+  assert.equal(checkTime("36 hours", { unit: "days" }).value, 1.5);
+  assert.ok(Math.abs(checkTime("6 months", { unit: "days" }).value - 182.625) < 1e-9);
+  assert.equal(checkTime("1 wk", { unit: "days" }).value, 7);
+  // The model's own unit, in any spelling, is the number as typed (no note).
+  assert.deepEqual(checkTime("1,500 hours", { unit: "hours" }), { ok: true, value: 1500, message: null });
+  assert.deepEqual(checkTime("500 cycles", { unit: "cycles" }), { ok: true, value: 500, message: null });
+  assert.deepEqual(checkTime("1 cycle", { unit: "cycles" }), { ok: true, value: 1, message: null });
+  assert.deepEqual(checkTime("12 h", { unit: "hours" }), { ok: true, value: 12, message: null });
+  // A bare number stays in the model's unit.
+  assert.deepEqual(checkTime("1", { unit: "hours" }), { ok: true, value: 1, message: null });
+});
+
+test("checkTime: a unit that can't be converted is refused with what to type", () => {
+  assert.equal(checkTime("1 year", { unit: "cycles" }).message,
+               "This model's times are in cycles, which can't be converted from year. Enter a number of cycles.");
+  assert.equal(checkTime("1 year", { unit: "" }).message,
+               "This model has no time unit, so a time with a unit can't be converted. Enter a number.");
+  assert.equal(checkTime("3 fortnights", { unit: "hours" }).message,
+               "Enter a number of hours, or a time in hours, days, weeks, months or years.");
+  assert.equal(checkTime("-1 year", { unit: "hours" }).ok, false);
+  assert.equal(checkTime("year", { unit: "hours" }).ok, false);
+});
+
+test("startingTime: inside the data, and says where it came from", () => {
+  // The middle failure time, rounded to two figures.
+  assert.deepEqual(startingTime({ x: [0, 5000], sf: [1, 0] }, [120, 307.4, 980]), { t: 310, from: "median" });
+  assert.deepEqual(startingTime(null, [100, 200, 300, 400]), { t: 250, from: "median" });
+  // No failures carried: the B10 life off the reliability curve.
+  assert.deepEqual(startingTime({ x: [0, 100, 200], sf: [1, 0.95, 0.85] }, null), { t: 150, from: "b10" });
+  // Nothing better: the middle of the grid, as before.
+  assert.deepEqual(startingTime({ x: [0, 10, 20], sf: [1, 1, 1] }, []), { t: 10, from: "grid" });
 });

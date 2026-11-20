@@ -645,7 +645,7 @@ def plot_for(model, dist_id: str, x, c) -> dict | None:
             band = np.asarray(model.cri(grid, on="ff", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
             shaped["line"] = {"x": tx.tolist(), "y": ty(model.ff(grid)).tolist()}
             shaped["bounds"] = {"x": tx.tolist(), "lower": ty(band[:, 0]).tolist(), "upper": ty(band[:, 1]).tolist()}
-        keep = fitting.failure_positions_mask(plain, len(data["x_"]))
+        keep = fitting.failure_positions_mask(plain, len(data["x_"]), data)
         shaped["empirical"] = fitting._empirical_points(model, data, keep, "Nelson-Aalen")
         return shaped
     except Exception:  # noqa: BLE001 - a plot is a convenience, never a reason not to save
