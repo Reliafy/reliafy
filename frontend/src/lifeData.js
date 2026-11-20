@@ -45,7 +45,7 @@ export function mappingFields(mapping) {
 // when the server didn't say); ``decimal``: a value from the preview that
 // isn't one, for a message.
 export function columnFacts(csv) {
-  const { columns = [], dtypes, blanks, values, n_unique: nUnique, whole, nonpositive, preview = [] } = csv || {};
+  const { columns = [], dtypes, blanks, values, n_unique: nUnique, whole, nonpositive, low_rows: lowRows, preview = [] } = csv || {};
   return Object.fromEntries(
     columns.map((name, i) => {
       const sample = preview.map((r) => r[i]).filter((v) => v !== null && v !== "");
@@ -55,6 +55,7 @@ export function columnFacts(csv) {
         dtype, blanks: blanks?.[i] ?? 0, values: values?.[i] ?? null, nUnique: nUnique?.[i] ?? null, sample: sample[0],
         whole: whole?.[i] ?? (decimal !== undefined ? false : undefined), decimal,
         nonpositive: nonpositive?.[i] ?? null,
+        lowRows: lowRows?.[i] ?? null,
       }];
     })
   );
@@ -495,15 +496,60 @@ export function dataStepProblems(mapping, facts, nRows, unit = undefined) {
   return dataStepIssues(mapping, facts, nRows, unit).map((i) => i.text);
 }
 
-// What may stop some fits without stopping all, said on its column: a value
-// of 0 or less, which Kaplan-Meier takes but a Weibull refuses. [{ col, text }].
+// "row 3 (-50)" / "rows 3, 7 and 9 (-50, -2 and -1)" and "and 4 more":
+// data rows counted from 1 under the header, as a fit names them.
+function rowsPhrase(rows, count, values = null) {
+  const join = (xs) => (xs.length === 1 ? `${xs[0]}` : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+  const more = count - rows.length;
+  const vals = values ? ` (${join(values.map((v) => v.toLocaleString()))})` : "";
+  return `${rows.length === 1 && count === 1 ? "Row" : "Rows"} ${join(rows)}${vals}${more > 0 ? ` and ${more.toLocaleString()} more` : ""}`;
+}
+
+// Times below 0 in x, the range or late entry: no life model can use them
+// (no unit fails, or is removed, before it starts), so they stop the fit,
+// named, the way a blank does. [{ col, text }].
+function negativeTimeIssues(mapping, facts) {
+  const out = [];
+  for (const field of ["x", "xl", "xr", "tl", "tr"]) {
+    const col = mapping[field];
+    const low = col && facts[col]?.lowRows;
+    if (!low?.negative || out.some((o) => o.col === col)) continue;
+    const one = low.negative === 1;
+    out.push({
+      col,
+      text: `${rowsPhrase(low.negative_rows, low.negative, low.negative_values)} ${one ? "has a value" : "have values"} below 0 in “${col}”. `
+        + `No unit fails, or is removed, before it starts, so no model can use ${one ? "it" : "them"}: correct or remove ${one ? "that row" : "those rows"}.`,
+    });
+  }
+  return out;
+}
+
+// What may stop some fits without stopping all, said on its column: a 0 in
+// x. A unit still running at 0 is fine; a failure at 0 is refused by every
+// distribution and estimate, as a 0 in an export is usually a missing time.
+// [{ col, text }].
 export function dataStepNotes(mapping, facts) {
-  const n = facts[mapping.x]?.nonpositive;
-  if (!mapping.x || !n) return [];
+  const col = mapping.x;
+  const fact = col ? facts[col] : null;
+  if (!fact) return [];
+  const low = fact.lowRows;
+  if (low) {
+    if (!low.zero) return [];
+    const one = low.zero === 1;
+    return [{
+      col,
+      text: `${rowsPhrase(low.zero_rows, low.zero)} ${one ? "has" : "have"} 0 in “${col}”. A unit still running at 0 is fine, but no model `
+        + `can use a failure at 0. If 0 stands for a missing value, correct or remove ${one ? "that row" : "those rows"}; if a unit was `
+        + "dead on arrival, give it a range from 0 to its first check (xl to xr).",
+    }];
+  }
+  // An older response: only the count of values at or below 0.
+  const n = fact.nonpositive;
+  if (!n) return [];
   return [{
-    col: mapping.x,
-    text: `${plural(n, "row has", "rows have")} a value of 0 or less in “${mapping.x}”. A distribution such as Weibull can't fit `
-      + `${n === 1 ? "it" : "them"}: correct or remove ${n === 1 ? "that row" : "those rows"}, or use a non-parametric estimate.`,
+    col,
+    text: `${plural(n, "row has", "rows have")} a value of 0 or less in “${col}”. No model can use a failure at 0 or a value below 0: `
+      + `correct or remove ${n === 1 ? "that row" : "those rows"}.`,
   }];
 }
 
@@ -562,6 +608,7 @@ export function dataStepIssues(mapping, facts, nRows, unit = undefined) {
   }
   numericCol(mapping.tl, "numbers");
   numericCol(mapping.tr, "numbers");
+  for (const i of negativeTimeIssues(mapping, facts)) add(i.col, i.text);
   const s = statusSummary(mapping, facts, nRows);
   if (!out.length && s && s.failed + s.left + s.interval === 0 && s.running > 0) {
     add(mapping.c || null, "No row is marked failed, so there is nothing to fit. Check what each status means.");

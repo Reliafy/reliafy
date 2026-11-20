@@ -345,6 +345,7 @@ export function detailColumns(full) {
     values: full.values,
     whole: full.whole,
     nonpositive: full.nonpositive,
+    low_rows: full.low_rows,
   };
 }
 

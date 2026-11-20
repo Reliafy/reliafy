@@ -202,8 +202,36 @@ test("values of 0 or less are noted beside x, without stopping the fit", () => {
   assert.equal(notes.length, 1);
   assert.equal(issueRow(notes[0], s.mapping), "x");
   assert.match(notes[0].text, /^2 rows have a value of 0 or less in “Hours”/);
-  // A note, not a problem: Kaplan-Meier still fits them.
+  // An older response gives only the count: a note, not a problem.
   assert.equal(dataStepIssues(s.mapping, facts, 80, "Hours").length, 0);
+});
+
+const LOW = { negative: 1, negative_rows: [3], negative_values: [-50], zero: 1, zero_rows: [4] };
+
+test("a time below 0 stops the fit beside x, with its row named", () => {
+  const s = start("seals");
+  const facts = columnFacts({ ...SHEETS.seals, low_rows: [null, LOW, null, null] });
+  const issues = dataStepIssues(s.mapping, facts, 80, "Hours");
+  assert.equal(issues.length, 1);
+  assert.equal(issueRow(issues[0], s.mapping), "x");
+  assert.equal(issues[0].text, "Row 3 (-50) has a value below 0 in “Hours”. No unit fails, or is removed, before it starts, "
+    + "so no model can use it: correct or remove that row.");
+});
+
+test("several times below 0 are listed, the rest counted", () => {
+  const s = start("seals");
+  const low = { negative: 8, negative_rows: [1, 2, 3, 4, 5, 6], negative_values: [-1, -2, -3, -4, -5, -6], zero: 0, zero_rows: [] };
+  const facts = columnFacts({ ...SHEETS.seals, low_rows: [null, low, null, null] });
+  const [issue] = dataStepIssues(s.mapping, facts, 80, "Hours");
+  assert.match(issue.text, /^Rows 1, 2, 3, 4, 5 and 6 \(-1, -2, -3, -4, -5 and -6\) and 2 more have values below 0 in “Hours”/);
+});
+
+test("a 0 in x is noted with its row, without stopping the fit", () => {
+  const s = start("seals");
+  const facts = columnFacts({ ...SHEETS.seals, low_rows: [null, { ...LOW, negative: 0, negative_rows: [], negative_values: [] }, null, null] });
+  assert.equal(dataStepIssues(s.mapping, facts, 80, "Hours").length, 0);
+  const [note] = dataStepNotes(s.mapping, facts);
+  assert.match(note.text, /^Row 4 has 0 in “Hours”\. A unit still running at 0 is fine, but no model can use a failure at 0\./);
 });
 
 test("inspection data never offers every row is a failure", () => {
