@@ -3603,7 +3603,8 @@ def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, 
                   reading: dict | None = None, lib: Optional[dict] = None) -> dict[str, Any]:
     """upload_dataset with dataset_col: one dataset per value of the column, all or nothing against the cap."""
     try:
-        wanted = datasets_service.count_new_parts(db, data, column, user["uid"])
+        wanted = datasets_service.count_new_parts(db, data, column, user["uid"], name, reading,
+                                                 keep_reading=bool((reading or {}).get("guessed")))
         if wanted:
             _cap(db, user, "datasets", "datasets", n=wanted)
         made, blank = datasets_service.create_split(db, data, column, user["uid"], name, reading=reading,

@@ -531,7 +531,8 @@ export function compareGroups(datasetId, body) {
   });
 }
 
-// Upload a CSV as a standalone dataset (deduped by content on the server).
+// Upload a CSV as a standalone dataset. The same rows under the same name and reading come back as
+// the saved dataset (``reused``); otherwise a new one is made (``same_rows_as`` names a look-alike).
 // An Excel workbook works too: ``excel`` = { sheet, headerRow } picks the
 // sheet and header row (headerRow 0 = none), converted to CSV server-side.
 // ``noHeader``: true / false says whether the first row is data; null lets
