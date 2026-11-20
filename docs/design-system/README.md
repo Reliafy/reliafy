@@ -150,7 +150,7 @@ Write like an engineer briefing a manager: **the answer first, then the detail.*
 
 ## Components
 
-`components/` holds the shared primitives: `Button`, `Card`, `Chip`, `ChoiceChips`, `ContextMenu`, `Field`, `HelpLink`, `InputGroup`, `SegmentedControl`, `Select`, `Switch`, `Tabs`, `PageHeader`, `Section` and `ResultSummary`, and the one error state for a load, `LoadFailed`. Their guidelines are in `components/`; the design system artifact shows a preview of each.
+`components/` holds the shared primitives: `Button`, `Card`, `Chip`, `ChoiceChips`, `ContextMenu`, `Field`, `HelpLink`, `InputGroup`, `SegmentedControl`, `Select`, `Switch`, `Tabs`, `PageHeader`, `Section` and `ResultSummary`, the one error state for a load, `LoadFailed`, and the dialog, `Modal`. Their guidelines are in `components/`; the design system artifact shows a preview of each.
 
 - Use one primary button per view; everything else is secondary or ghost. Destructive actions are `danger` text and outline, never a red fill.
 - Don't nest grey panels in a card; divide it with `Section`s.

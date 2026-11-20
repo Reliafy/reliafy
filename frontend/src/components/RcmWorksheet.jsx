@@ -1293,7 +1293,7 @@ function EvidenceDialog({ r, at = null, options, workings, ops, onClose, onDone 
     }
   };
   return (
-    <Modal title="Link evidence" onClose={onClose} locked={busy} trapFocus className="rw-evidence-dialog"
+    <Modal title="Link evidence" onClose={onClose} locked={busy} className="rw-evidence-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>

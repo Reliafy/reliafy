@@ -156,5 +156,5 @@ at once and the SIL is marked optimistic.
 
 The **Design** tab's **Maintenance and proof-test intervals** chooses the
 proof-test intervals, staggered or together, that reach a target SIL at the
-least cost. **Download as Python** in the Save menu exports the diagram as a
+least cost. **Download as Python** in the toolbar's **⋯** menu exports the diagram as a
 script that prints the same PFDavg and SIL.

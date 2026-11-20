@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { searchAssets } from "../api.js";
+import LoadFailed from "./LoadFailed.jsx";
 import { itemPagePath } from "../products.js";
 import { itemHitText, matchesText, positionHitText } from "../maintenanceAssets.js";
 
@@ -12,20 +13,22 @@ const positionPath = (id) => `/asset-register/positions/${encodeURIComponent(id)
 // matches" is said only when nothing at all does.
 export default function AssetSearchResults({ query, shown }) {
   const [state, setState] = useState({ q: null, found: null, error: null });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const ctl = new AbortController();
     // A short wait so each keystroke doesn't ask the server.
     const t = setTimeout(() => {
       searchAssets(query, { signal: ctl.signal })
         .then((found) => setState({ q: query, found, error: null }))
-        .catch((e) => { if (e?.name !== "AbortError") setState({ q: query, found: null, error: e.message }); });
+        .catch((e) => { if (e?.name !== "AbortError") setState({ q: query, found: null, error: e }); });
     }, 250);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [query]);
+  }, [query, attempt]);
 
   const found = state.q === query ? state.found : null;
   if (state.error && state.q === query) {
-    return <p className="card error">Couldn't search inside your assets: {state.error}. Try again in a moment.</p>;
+    return <LoadFailed what="Couldn't search the positions and items inside your assets." error={state.error}
+                       onRetry={() => { setState({ q: null, found: null, error: null }); setAttempt((n) => n + 1); }} />;
   }
   if (!found) return <p className="section-nomatch" aria-live="polite">Searching positions and items…</p>;
   const count = matchesText(found);

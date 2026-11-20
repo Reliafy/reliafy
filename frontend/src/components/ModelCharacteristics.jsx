@@ -14,6 +14,9 @@ import { withUnit as covariateWithUnit } from "./stressName.js";
 import FriendlyUnitSwitch, { useFriendlyUnit } from "./FriendlyUnit.jsx";
 import { friendlyText } from "../friendlyTime.js";
 import { SPREAD_LABEL, rateSpread, spreadMean, spreadTime, spreadWords } from "../rateSpread.js";
+import CsvButton from "./CsvButton.jsx";
+import { csvFileName } from "../csv.js";
+import { bLivesCsvRows, paramsCsvRows } from "../modelCsv.js";
 
 // The Model characteristics tab's mean life: the MTTF with its one-sided
 // lower bound at the page's confidence (shared with the calculator), and for
@@ -103,7 +106,7 @@ const B_NAMES = { B50: "B50 (median)" };
 // The B-lives card: each with its one-sided lower bound at the page's
 // confidence, from the same life answer as the mean.
 // ``friendly``: a calendar unit to show each B-life in as well (friendlyTime.js).
-function BLivesCard({ life, level, pending, unit, noun = "time", credible = false, spread = null, friendly = null }) {
+function BLivesCard({ life, level, pending, unit, noun = "time", credible = false, spread = null, friendly = null, name = "" }) {
   const u = unit ? ` ${unit}` : "";
   const also = (v) => friendlyText(v, unit, friendly);
   const rows = (life?.b_lives || []).filter((b) => B_LABELS.some(([l]) => l === b.label));
@@ -118,6 +121,10 @@ function BLivesCard({ life, level, pending, unit, noun = "time", credible = fals
         <h3 id="model-chars-blives" className="model-chars-h">B-lives</h3>
         {spread ? <span className="gof-sub">{SPREAD_LABEL}</span>
           : rows.some((b) => b.lower != null) && <span className="gof-sub">≥ lower bound at {formatNumber(level)}%{credible ? " credible" : ""}</span>}
+        {rows.length > 0 && (
+          <CsvButton what="the B-lives" filename={csvFileName(name, "B-lives")}
+                     rows={() => bLivesCsvRows({ rows, unit, level, credible, spread: spread ? (b) => spreadTime(spread, 1 - b.p) : null })} />
+        )}
       </div>
       {!rows.length && <p className="mf-note">{pending ? "Working out the B-lives…" : "This model gives no B-lives."}</p>}
       {rows.map((b) => (
@@ -160,7 +167,7 @@ export default function ModelCharacteristics(props) {
   return <LifeCharacteristics {...props} />;
 }
 
-function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
+function LifeCharacteristics({ result, level, onLevel, onBLives = null, name = "" }) {
   const [tau, setTau] = useState(null);
   const lvl = Number(level) > 0 && Number(level) < 100 ? Number(level) : 90;
   const { life, level: shownLevel, pending, error } = useMeanLife(result, lvl, tau);
@@ -272,15 +279,15 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
         )}
       </section>
       <BLivesCard life={life} level={shownLevel} pending={pending} unit={unit} noun={noun} credible={lv.credible}
-                  spread={spread} friendly={friendly} />
-      {lv.credible && <CredibleParams result={result} label={lv.label} />}
+                  spread={spread} friendly={friendly} name={name} />
+      {lv.credible && <CredibleParams result={result} label={lv.label} name={name} />}
     </div>
   );
 }
 
 // A Bayesian update's parameters (posterior medians) with their credible
 // intervals, and why there's no probability plot when there isn't one.
-function CredibleParams({ result, label }) {
+function CredibleParams({ result, label, name = "" }) {
   const params = result.params || [];
   if (!params.length) return null;
   return (
@@ -288,6 +295,8 @@ function CredibleParams({ result, label }) {
       <div className="gofh life-card-head">
         <h3 id="model-chars-params" className="model-chars-h">Parameters</h3>
         <span className="gof-sub">median, {label} interval</span>
+        <CsvButton what="the parameters" filename={csvFileName(name, "parameters")}
+                   rows={() => paramsCsvRows({ params: params.map((p) => ({ ...p, label: paramView(result, p).label })), ciLabel: label })} />
       </div>
       {params.map((p) => {
         const v = paramView(result, p);

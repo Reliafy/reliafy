@@ -319,6 +319,10 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
       {(result.warnings || []).map((w) => (
         <p className="muted-line" key={w}>⚠ {w}</p>
       ))}
+      {/* Blocks fitted in another unit of the diagram's kind, converted before the analysis. */}
+      {(result.unit_conversions || []).map((c) => (
+        <p className="muted-line" key={`${c.id}-${c.repair}`}>{c.note}</p>
+      ))}
       {now && <AsOfNote result={result} idToLabel={idToLabel} />}
       <JointAgesNote result={result} />
       <AnswerAtTime result={result} t={t} now={now} survived={cond ? conditionalAge : 0} />
@@ -1104,9 +1108,11 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         {(kpis.length > 0 || windowKpis.length > 0) && <ResultDetailsRows rows={[...kpis, ...windowKpis]} />}
         {/* The method, said once (#313), with the figures it found. */}
         {!needsSim && <p className="rbd-details-p">{methodLine(result, exactOk, hasSim)}</p>}
-        {(result.warnings || []).length > 0 && (
+        {((result.warnings || []).length > 0 || (result.unit_conversions || []).length > 0) && (
           <ul className="rbd-details-notes">
-            {result.warnings.map((w) => <li key={w}>{w}</li>)}
+            {(result.warnings || []).map((w) => <li key={w}>{w}</li>)}
+            {/* Blocks fitted in another unit of the diagram's kind, converted before the analysis. */}
+            {(result.unit_conversions || []).map((c) => <li key={`${c.id}-${c.repair}`}>{c.note}</li>)}
           </ul>
         )}
         {/* Common-cause groups (#226): in every figure here, or left out of them all and why. */}
@@ -1571,7 +1577,7 @@ export default function RbdCalculator({
   // "Evaluate at t" (non-repairable); none typed, the backend's default (the
   // 90%-reliability time). An automatic value filled in by a calculation isn't sent.
   const atSent = !graph.repairable && !evalTAuto && evalT !== "" && Number(evalT) > 0 ? Number(evalT) : null;
-  // Download as Python (in the builder's Save menu) uses the same time.
+  // Download as Python (in the builder's ⋯ menu) uses the same time.
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(RBD_EVALUATE_AT_EVENT, { detail: atSent }));
   }, [atSent]);

@@ -43,10 +43,12 @@ export default function StrategyAnalyses() {
   const [analyses, setAnalyses] = useState(null);
   const [error, setError] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listStrategyAnalyses()
       .then((d) => setAnalyses(d.analyses))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -85,6 +87,8 @@ export default function StrategyAnalyses() {
       {error && <div className="card error">{error}</div>}
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         key={kind}
         rows={analyses}
         noun={["saved analysis", "saved analyses"]}

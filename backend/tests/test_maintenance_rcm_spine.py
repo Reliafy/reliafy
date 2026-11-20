@@ -203,7 +203,8 @@ def test_an_interval_with_no_unit_is_checked_in_the_tasks_unit(m, db):
     graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners)
     [got] = graph["positions"][0]["functions"][0]["failures"][0]["modes"]
     assert got["decision"]["interval_unit"] == "days"
-    assert got["decision"]["status"] == "inconclusive" and "Unit mismatch" in got["decision"]["reason"]
+    # Days and the analysis's hours are both time: checked after conversion, not a mismatch.
+    assert got["decision"]["status"] == "supported" and "converted at 1 day = 24 hours" in got["decision"]["summary"]
     # In the analysis's unit the decision is supported.
     m.decide_failure_mode(mode["id"], decision={**decision, "interval_unit": "hours"})
     graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners)

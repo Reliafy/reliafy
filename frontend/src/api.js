@@ -2145,6 +2145,13 @@ async function downloadFile(url, fallbackName, opts = {}, fetcher = authedFetch)
   return name;
 }
 
+// "Download CSV" on the dataset page: the rows as saved (every row, not the
+// preview). ``part`` "measurements" gives the readings part when there is one.
+export function downloadDatasetCsv(id, part = "life", name = "dataset") {
+  const q = part === "measurements" ? "?part=measurements" : "";
+  return downloadFile(`/api/datasets/${encodeURIComponent(id)}/csv${q}`, `${name || "dataset"}.csv`);
+}
+
 export const PYTHON_EXPORT_TIP =
   "A standalone script that rebuilds this diagram with SurPyval + RePyability and runs it locally.";
 

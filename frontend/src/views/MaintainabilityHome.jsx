@@ -19,10 +19,12 @@ export default function MaintainabilityHome() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listMaintainabilityPredictions()
       .then((d) => setRows(d.predictions || []))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -55,6 +57,8 @@ export default function MaintainabilityHome() {
         many="saved maintainability predictions" refreshKey={rows} />
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={rows}
         noun={["prediction", "predictions"]}
         placeholder="Search predictions…"

@@ -4,6 +4,7 @@ import {
   deleteLibrary, getLibrary, listLibraries, listLibraryEntries, setLibraryVisibility,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import LoadFailed from "../components/LoadFailed.jsx";
 import Field from "../components/ui/Field.jsx";
 import { Select, TextInput } from "../components/ui/Controls.jsx";
 import { SectionHeader, ShowMe } from "../components/SectionPage.jsx";
@@ -65,11 +66,13 @@ export default function LibrariesHome() {
   const [q, setQ] = useState("");
   const [making, setMaking] = useState(false);
   const navigate = useNavigate();
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
-    listLibraries().then((x) => live && setD(x), (e) => live && setError(e.message));
+    setError(null);
+    listLibraries().then((x) => live && setD(x), (e) => live && setError(e));
     return () => { live = false; };
-  }, []);
+  }, [attempt]);
   const groups = useMemo(() => groupLibraries((d?.libraries || []).filter((l) => libraryMatches(l, q))), [d, q]);
   // Making a library is Pro (public libraries are free to use): without it New library… carries the
   // Pro tag and opens the upgrade prompt.
@@ -81,7 +84,7 @@ export default function LibrariesHome() {
       <PageTitle name="All libraries" />
       <SectionHeader title="All libraries" help={HELP} primary={newButton}
                      purpose="Collections of data and models to keep, share with other workspaces or publish, and the built-in handbooks." />
-      {error && <div className="card error" role="alert">{error}</div>}
+      {error && <LoadFailed what="Couldn't load your libraries." error={error} onRetry={() => setAttempt((n) => n + 1)} />}
       {d === null && !error && <div className="card empty">Loading…</div>}
       {d && (
         <>
@@ -133,12 +136,14 @@ export default function LibrariesHome() {
 export function LibraryEntriesPage({ type }) {
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     setD(null);
-    listLibraryEntries(type).then((x) => live && setD(x), (e) => live && setError(e.message));
+    setError(null);
+    listLibraryEntries(type).then((x) => live && setD(x), (e) => live && setError(e));
     return () => { live = false; };
-  }, [type]);
+  }, [type, attempt]);
   const isModel = type === "model";
   const title = isModel ? "Models" : "Data";
   return (
@@ -148,7 +153,8 @@ export function LibraryEntriesPage({ type }) {
                      purpose={isModel
                        ? "Every model in the libraries you can see: yours, shared with you and public."
                        : "Every dataset in the libraries you can see: yours, shared with you and public."} />
-      {error && <div className="card error" role="alert">{error}</div>}
+      {error && <LoadFailed what={`Couldn't load the ${isModel ? "models" : "data"} in your libraries.`} error={error}
+                            onRetry={() => setAttempt((n) => n + 1)} />}
       <section className="card">
         {isModel && d?.builtin?.length > 0 && (
           <p className="lib-builtin-links">
@@ -315,6 +321,8 @@ export function LibraryPage() {
   const [added, setAdded] = useState(null);
   const clearAdded = () => setAdded(null);
   const [tick, setTick] = useState(0);
+  const [loadError, setLoadError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   const uploaded = (library) => {
     setUploading(false);
     if (library) setAdded(library);
@@ -328,13 +336,14 @@ export function LibraryPage() {
     }
     setLib(null);
     setError(null);
+    setLoadError(null);
     setMissing(false);
     getLibrary(id).then((x) => live && setLib(x), (e) => {
       if (!live) return;
-      if (e.status === 404) setMissing(true); else setError(e.message);
+      if (e.status === 404) setMissing(true); else setLoadError(e);
     });
     return () => { live = false; };
-  }, [id, tick]);
+  }, [id, tick, attempt]);
   useEffect(() => setAdded(null), [id]);
   useEffect(() => {
     if (!added) return undefined;
@@ -409,7 +418,9 @@ export function LibraryPage() {
                   menu={(canEdit || lib?.can_delete) && <button type="button" className="ovm-item danger" onClick={onDelete}>Delete…</button>}
                   id={lib?.id} />
       {error && <div className="card error" role="alert">{error}</div>}
-      {!lib && !error && <div className="card empty">Loading…</div>}
+      {!lib && loadError && <LoadFailed what="Couldn't open this library." error={loadError} to="/libraries" label="See all libraries"
+                                        onRetry={() => setAttempt((n) => n + 1)} />}
+      {!lib && !error && !loadError && <div className="card empty">Loading…</div>}
       {lib && (
         <>
           {sharing && canEdit && (
