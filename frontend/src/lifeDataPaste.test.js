@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parsePastedValues, addMissingFlags, lineRanges, isUnitless, UNITLESS,
+  columnFacts, guessMapping, unitIssue, unitSettled, UNIT_MISSING,
 } from "./lifeData.js";
 
 const MIXED = "100\n200\n300\n400\n500\n600\n700\n1200 1\n1300 1\n1400 1";
@@ -64,4 +65,20 @@ test("No unit is an explicit choice; a blank unit is just not chosen", () => {
   assert.equal(isUnitless(UNITLESS), true);
   assert.equal(isUnitless(""), false); // not chosen yet is not "no unit"
   assert.equal(isUnitless("Hours"), false);
+});
+
+test("a paste of plain times has no unit to guess, so the fit asks for one; no unit settles it", () => {
+  const parsed = parsePastedValues("100 0\n200 0\n300 1");
+  const cols = {
+    columns: ["time", "censored"], preview: [[100, 0]], n_rows: 3, n_unique: [3, 2],
+    dtypes: ["int64", "int64"], blanks: [0, 0], values: [null, { 0: 2, 1: 1 }],
+  };
+  assert.match(parsed.csv, /^time,censored\n/);
+  const { mapping, unit } = guessMapping(cols.columns, columnFacts(cols));
+  assert.equal(mapping.x, "time");
+  assert.equal(unit, "");
+  assert.deepEqual(unitIssue(unit), { col: null, row: "x", text: UNIT_MISSING });
+  assert.equal(unitSettled(UNITLESS), true);
+  assert.equal(unitIssue(UNITLESS), null);
+  assert.equal(unitIssue("Cycles"), null);
 });

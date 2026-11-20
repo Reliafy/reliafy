@@ -10160,6 +10160,12 @@ main.content:focus { outline: none; }
 }
 .tc-source { margin: 0; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 
+/* The unit of a model's times where it is typed (Units.jsx): the box and its
+   "No unit" tick on one line, wrapping on a phone. */
+.unit-field-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.unit-field-row .ctl { width: 15rem; max-width: 100%; }
+/* Compare two models: the saved models' unit, shown rather than asked. */
+.compare-unit-fixed { color: var(--text); font-size: var(--fs-14); line-height: var(--lh-14); padding: var(--space-2) 0; }
 /* A life answer in a friendlier calendar unit as well as the model's own
    (friendlyTime.js): a quiet second line under the value, and the switch that
    picks the unit with its convention. */

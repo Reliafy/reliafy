@@ -5,6 +5,7 @@ import {
   EMPTY_MAPPING, columnFacts, guessMapping, statusMeaning, setStatusMeaning, encodeStatus,
   statusSummary, summaryParts, dataStepProblems, isSimplePaste, dataSplit,
   countProblem, setMappingField, flagsLookSwapped, flagNameContradicts,
+  unitIssue, unitSettled, UNITLESS, UNIT_MISSING,
 } from "./lifeData.js";
 
 // A CMMS export: id, hours, a text status, a site.
@@ -256,4 +257,26 @@ test("flagNameContradicts: a column named failed, all 0, read as 0 = failed is s
   assert.equal(flagNameContradicts({ ...m, c: "status" }, { ...facts, status: { values: { 0: 3, 1: 5 } } }, 8), null);
   assert.equal(flagNameContradicts(m, { ...facts, failed: { values: { Yes: 3, No: 5 } } }, 8), null);
   assert.equal(flagNameContradicts({ ...m, c: "" }, facts, 900), null);
+});
+
+test("a fit's unit is one required choice: a unit, or no unit ticked; blank is neither", () => {
+  for (const u of ["", "  ", null, undefined]) {
+    assert.equal(unitSettled(u), false);
+    assert.deepEqual(unitIssue(u), { col: null, row: "x", text: UNIT_MISSING });
+  }
+  for (const u of ["Hours", "days", UNITLESS, "no unit"]) {
+    assert.equal(unitSettled(u), true);
+    assert.equal(unitIssue(u), null);
+  }
+  assert.equal(UNIT_MISSING, "Say the unit of the times, or tick no unit.");
+});
+
+test("a unit guessed from the column's name settles the unit, so nothing more is asked", () => {
+  const { unit } = guessMapping(PUMPS.columns, facts);
+  assert.equal(unit, "Hours");
+  assert.equal(unitIssue(unit), null);
+  const inService = { ...PUMPS, columns: ["Pump ID", "Hours in service", "Status", "Site"] };
+  const g = guessMapping(inService.columns, columnFacts(inService));
+  assert.equal(g.mapping.x, "Hours in service");
+  assert.equal(unitIssue(g.unit), null);
 });

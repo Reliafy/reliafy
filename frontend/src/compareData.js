@@ -48,3 +48,9 @@ export function statusReading(values, col) {
   if (other) parts.push(`${other} not read`);
   return parts.join(", ");
 }
+
+// The unit a side of Compare two models brings: a saved model's own; none for
+// typed parameters or data, where the unit is asked (required, no default).
+export function sideUnit(side) {
+  return (side?.mode === "model" && side.model?.source === "saved" && side.model.unit) || "";
+}
