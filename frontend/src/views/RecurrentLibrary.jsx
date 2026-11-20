@@ -13,10 +13,12 @@ const GROWTH = {
 
 // Saved recurrent-event models, laid out like the life-data model list.
 // ``models`` is null while loading.
-export default function RecurrentLibrary({ models, hrefFor, onDelete, help, empty }) {
+export default function RecurrentLibrary({ models, hrefFor, onDelete, help, empty, loadError = null, onRetry = null }) {
   const navigate = useNavigate();
   return (
     <SectionList
+      loadError={loadError}
+      onRetry={onRetry}
       rows={models}
       noun={["model", "models"]}
       fields={(m) => [m.name, m.model, m.growth]}

@@ -24,16 +24,18 @@ export default function MaintainabilityPage() {
   const confirm = useConfirm();
   const askText = useAskText();
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     setDoc(null);
+    setError(null);
     getMaintainabilityPrediction(id).then(setDoc).catch((e) => setError(e.message));
-  }, [id]);
+  }, [id, attempt]);
 
   if (error) {
     return (
       <div className="app">
         <PageHeader crumbs={[{ label: "Maintainability prediction", to: MAINTAINABILITY_PATH }]} title="Prediction" />
-        <LoadFailed error={error} to={MAINTAINABILITY_PATH} label="See all predictions" notFound="Prediction not found." />
+        <LoadFailed onRetry={() => setAttempt((n) => n + 1)} error={error} to={MAINTAINABILITY_PATH} label="See all predictions" notFound="Prediction not found." />
       </div>
     );
   }

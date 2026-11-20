@@ -25,10 +25,12 @@ export default function ReliabilityPredictionPage() {
   const [doc, setDoc] = useState(null);
   const [error, setError] = useState(null);
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     setDoc(null);
+    setError(null);
     getPrediction(id).then(setDoc).catch((e) => setError(e.message));
-  }, [id]);
+  }, [id, attempt]);
 
   const onDelete = async () => {
     if (!(await confirm(deleteOrRemoveConfirm(doc, "prediction", { name: itemName(doc) })))) return;
@@ -44,7 +46,7 @@ export default function ReliabilityPredictionPage() {
     return (
       <div className="app">
         <PageHeader crumbs={[{ label: PREDICTIONS_LABEL, to: PREDICTIONS_PATH }]} title="Prediction" />
-        <LoadFailed error={error} to={PREDICTIONS_PATH} label="See all predictions" notFound="Prediction not found." />
+        <LoadFailed onRetry={() => setAttempt((n) => n + 1)} error={error} to={PREDICTIONS_PATH} label="See all predictions" notFound="Prediction not found." />
       </div>
     );
   }

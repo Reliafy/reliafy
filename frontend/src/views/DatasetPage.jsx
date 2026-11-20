@@ -68,11 +68,12 @@ export default function DatasetPage() {
   const setComparing = (on) => setParam("compare", on ? "" : null);
   const setPart = (p) => setParam("part", p === "life" ? null : p);
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     setDs(null);
     setError(null);
     getDataset(id).then(setDs).catch((e) => setError(e.message));
-  }, [id]);
+  }, [id, attempt]);
 
   // The notice is for this visit only, not a reload.
   useEffect(() => {
@@ -215,7 +216,7 @@ export default function DatasetPage() {
       </PageHeader>
 
       {error && (ds ? <div className="card error" role="alert">{error}</div>
-        : <LoadFailed error={error} to="/data" label="See all your data" />)}
+        : <LoadFailed onRetry={() => setAttempt((n) => n + 1)} error={error} to="/data" label="See all your data" />)}
 
       {ds && (
         <>
