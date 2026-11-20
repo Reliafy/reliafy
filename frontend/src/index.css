@@ -10166,3 +10166,15 @@ main.content:focus { outline: none; }
 .unit-field-row .ctl { width: 15rem; max-width: 100%; }
 /* Compare two models: the saved models' unit, shown rather than asked. */
 .compare-unit-fixed { color: var(--text); font-size: var(--fs-14); line-height: var(--lh-14); padding: var(--space-2) 0; }
+/* A life answer in a friendlier calendar unit as well as the model's own
+   (friendlyTime.js): a quiet second line under the value, and the switch that
+   picks the unit with its convention. */
+.friendly-unit { display: block; font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 400; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.friendly-unit-switch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-4); max-width: 100%; }
+.friendly-unit-label { font-size: var(--fs-13); line-height: var(--lh-13); font-weight: 500; color: var(--text-secondary); }
+.friendly-unit-switch .seg { max-width: 100%; overflow-x: auto; }
+.friendly-unit-note { flex-basis: 100%; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-tertiary); }
+.detail-panel .model-chars-friendly { margin: 0; padding: 0 16px 12px; }
+@media (max-width: 720px) {
+  .friendly-unit-switch .seg-btn { min-height: 40px; }
+}
