@@ -16,7 +16,7 @@
 // position or an item (sensor snapshots and their spectra); Modelling for a position (the
 // life models attached to it and to the positions inside it, a design's too); Condition
 // monitoring for an item class (the tree by Classes: the class's positions with their risk now,
-// ClassFleet; a class's only tab, so the one it opens on) and for a position on an asset, in
+// ClassFleet; a class's first tab, so the one it opens on; Forecast and Spares beside it) and for a position on an asset, in
 // every arrangement (that position's own risk now, PositionRisk: the same summary and charts a
 // class shows for the member chosen). A tab a kind doesn't have isn't shown (never greyed out).
 //
@@ -110,6 +110,18 @@ export const TABS = [
     id: "condition", label: "Condition monitoring", title: "Each position of this class with its risk now, highest first",
     titleBy: { pos: "This position's risk now: its chance of failing soon and its life left, from its item's age and readings" },
     kinds: ["cls", "pos"], asset: true,
+  },
+  // An item class's forecast and spares (the persona review, Nov 2026: neither could be reached
+  // from a class). The forecast comes from each position class's fitted life model, counted at
+  // this class's positions in the tree (so an asset opened shows its own alone); spares are stock
+  // shared across the register, so their demand is the position class's. ClassForecastTab.jsx.
+  {
+    id: "forecast", label: "Forecast", title: "How many failures to expect at this class's positions, from their position classes' life models",
+    kinds: ["cls"], asset: true,
+  },
+  {
+    id: "spares", label: "Spares", title: "The spare parts this class's positions use: what's in stock and what the forecast says will be needed",
+    kinds: ["cls"], asset: true,
   },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
   {

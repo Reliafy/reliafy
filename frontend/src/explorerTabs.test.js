@@ -196,10 +196,18 @@ test("a product's design locations have the design's tabs: no Failure reports, S
   assert.deepEqual(tabsFor(designPos).map((t) => t.id), shown(["summary", "rcm", "fmea", "maintenance", "reports", "parts", "classes", "models", "missions", "lsa"]));
 });
 
-test("an item class has one tab, Condition monitoring, and opens on it", () => {
+test("an item class has Condition monitoring, Forecast and Spares, and opens on Condition monitoring", () => {
   const cls = { type: "cls", ref: { id: "c1", name: "Pumps" } };
   const tabs = tabsFor(cls);
-  assert.deepEqual(tabs.map((t) => t.id), ["condition"]);
+  assert.deepEqual(tabs.map((t) => t.id), ["condition", "forecast", "spares"]);
+  assert.deepEqual(tabs.slice(1).map((t) => t.label), ["Forecast", "Spares"]);
+  // Only a class has them: never a position, item, place or a design's row.
+  for (const r of [pos, item, loc, { type: "group" }, { type: "pos", ref: { in_design: true } }]) {
+    assert.ok(!tabsFor(r).some((t) => t.id === "forecast" || t.id === "spares"));
+  }
+  assert.equal(shownTab("forecast", cls), "forecast");
+  assert.equal(shownTab("spares", pos), "summary");
+  assert.equal(addressTab("spares", { arrange: "classes", sel: "cls:pump" }), "spares");
   assert.equal(tabs[0].label, "Condition monitoring");
   assert.equal(tabs[0].title, "Each position of this class with its risk now, highest first");
   // The address names it (?tab=condition).
@@ -252,7 +260,7 @@ test("a position on an asset has Condition monitoring too: the same tab as a cla
 });
 
 test("the tab bar: two tabs or more, or one that isn't Summary", () => {
-  assert.ok(hasTabBar({ type: "cls", ref: {} })); // one tab, Condition monitoring
+  assert.ok(hasTabBar({ type: "cls", ref: {} })); // Condition monitoring, Forecast, Spares
   assert.ok(hasTabBar(pos));
   assert.ok(hasTabBar(item));
   assert.ok(!hasTabBar({ type: "group" })); // Summary alone
@@ -265,8 +273,12 @@ test("Condition monitoring comes along when the tree's arrangement changes: posi
     assert.equal(tabForArrangement("reports", m), "reports");
     assert.equal(tabForArrangement("summary", m), "summary");
   }
-  // No tab is a class's alone now, so none is left behind off Classes.
-  assert.ok(!TABS.some((t) => t.kinds.every((k) => k === "cls")));
+  // A class's own tabs (Forecast, Spares) are left behind off Classes: no other row has them.
+  for (const m of ["positions", "locations"]) {
+    assert.equal(tabForArrangement("forecast", m), "summary");
+    assert.equal(tabForArrangement("spares", m), "summary");
+  }
+  assert.equal(tabForArrangement("forecast", "classes"), "forecast");
 });
 
 test("walking on from a class keeps its Condition monitoring on a position, when the address names no tab", () => {
@@ -350,9 +362,9 @@ test("locations, items, classes and headings have only the tabs their kind has, 
   assert.deepEqual(labels(panelTabsFor(loc)), ["Summary", "Maintenance", "Monitoring", "RCM", "FME(C)A", "History"]);
   assert.deepEqual(panelTabsFor(loc).find((t) => t.id === "monitoring").views.map((v) => v.id), ["readings"]);
   assert.deepEqual(labels(panelTabsFor(item)), ["Summary", "Monitoring", "History"]);
-  // A class: Monitoring alone, on the risk view.
+  // A class: Monitoring on the risk view, then its Forecast and Spares, each a tab of its own.
   const cls = { type: "cls" };
-  assert.deepEqual(shape(panelTabsFor(cls)), [["monitoring", ["risk"]]]);
+  assert.deepEqual(shape(panelTabsFor(cls)), [["monitoring", ["risk"]], ["forecast", ["forecast"]], ["spares", ["spares"]]]);
   assert.deepEqual(panelView("summary", cls), { tab: "monitoring", view: "risk" });
   assert.deepEqual(panelTabsFor({ type: "group" }).map((t) => t.id), ["summary"]);
 });

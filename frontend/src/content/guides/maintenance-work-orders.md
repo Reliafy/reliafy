@@ -66,15 +66,18 @@ work order came from:
 - a check (an on-condition task, a failure-finding test, or a task that asks
   for a reading) starts at **Checked, nothing done**;
 - a fixed-interval task starts at **Replaced it**;
-- work with no task starts at a replacement on a position, or a repair
+- a corrective (breakdown) work order starts at nothing: choose what was done,
+  and **Close work order** stays greyed out, saying what's missing, until you
+  do;
+- other work with no task starts at a replacement on a position, or a repair
   elsewhere.
 
 Change it to what really happened: **Replaced it**, **Repaired it**,
 **Inspected it** (with what you found: OK, degraded or found failed) or
 **Other work**. Only a replacement asks for the new item and whether the old
 one failed, and it ends the old item's time at the position. On a corrective
-(breakdown) work order **Did it fail?** starts at **Yes, it failed**; on planned
-work it starts at **No, a planned replacement**. A line under the action says
+(breakdown) work order **Did it fail?** waits for your answer; on planned work
+it starts at **No, a planned replacement**. A line under the action says
 what closing will record: a failure (counted as failed in life fits) or a
 planned replacement (counted as still running). Add another
 action when you did more than one thing.

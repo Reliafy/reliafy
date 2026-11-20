@@ -651,8 +651,11 @@ function EconomicsCard({ name, label = name, modelUnit = "days" }) {
 }
 
 // The class's failure forecast from the register (#407): the answer first, then
-// the periods, the positions most at risk, the spares and the budget.
-function ForecastCard({ name, label = name }) {
+// the periods, the positions most at risk, the spares and the budget. `show`
+// "spares": the spares and their stock levels alone (an item class's Spares tab
+// in the Explorer), with `note` (what the demand counts) under the heading.
+export function ForecastCard({ name, label = name, show = "all", note = null }) {
+  const sparesOnly = show === "spares";
   const [period, setPeriod] = useState("month");
   const [periods, setPeriods] = useState(12);
   const [data, setData] = useState(null);
@@ -675,7 +678,8 @@ function ForecastCard({ name, label = name }) {
   const budget = data?.budget;
   return (
     <section className="card" data-testid="class-forecast">
-      <div className="maint-head"><h2>{label}: failure forecast</h2></div>
+      <div className="maint-head"><h2>{label}: {sparesOnly ? "spares" : "failure forecast"}</h2></div>
+      {note && <p className="lib-date">{note}</p>}
       <div className="maint-row" style={{ marginTop: 0 }}>
         <span className="lib-date">Next</span>
         <input type="number" inputMode="numeric" min="1" max={most} value={periods} style={{ width: "4.5rem" }}
@@ -688,7 +692,7 @@ function ForecastCard({ name, label = name }) {
       </div>
       {error && <div className="card error">{error}</div>}
       {data === null && !error && <p className="lib-date">Working it out…</p>}
-      {data && (
+      {data && !sparesOnly && (
         <>
           <ResultSummary
             sentence={data.n_forecast ? (
@@ -758,8 +762,11 @@ function ForecastCard({ name, label = name }) {
             <p className="lib-date">Not forecast: {data.not_forecast.slice(0, 12).map((s) => `${s.position.name} (${s.reason})`).join("; ")}
               {data.n_not_forecast > 12 ? `; and ${data.n_not_forecast - 12} more` : ""}.</p>
           )}
-
-          <h3 className="maint-sub">Spares</h3>
+        </>
+      )}
+      {data && (
+        <>
+          {!sparesOnly && <h3 className="maint-sub">Spares</h3>}
           {data.spares.length === 0 ? (
             <p className="lib-date">No replacement part or critical spare on these positions’ parts lists.</p>
           ) : (
@@ -783,7 +790,10 @@ function ForecastCard({ name, label = name }) {
           )}
           <ClassStocking data={data} name={name} serviceLevel={stocking.serviceLevel} reviewDays={stocking.reviewDays}
                          onOptions={(o) => setStocking((s) => ({ ...s, ...o }))} onChanged={load} />
-
+        </>
+      )}
+      {data && !sparesOnly && (
+        <>
           <h3 className="maint-sub">Budget</h3>
           {!budget ? (
             <p className="lib-date">Set the class’s costs above (a failure, a planned replacement) to see what this costs.</p>
