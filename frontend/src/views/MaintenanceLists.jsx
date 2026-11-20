@@ -158,7 +158,7 @@ export function MaintenanceLocation() {
   // positions: adding one here is its main action, and the new position is at this place.
   const canHoldPositions = !!loc && !loc.design_of && !loc.carried_by;
   const addPosition = () => setModal("position");
-  if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={ASSETS_LIST_PATH} label="Go to Assets" /></div>;
+  if (error && !loc) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Location not found." to={ASSETS_LIST_PATH} label="Go to Assets" /></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
   // (positions, items there now and the place itself), not only the positions'.

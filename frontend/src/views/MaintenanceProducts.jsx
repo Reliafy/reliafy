@@ -10,9 +10,10 @@
 // tab lists the reports on the items built from it, and files one on a built
 // item picked by serial (FailureReportsPanel).
 import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getProduct, listProducts } from "../api.js";
 import RegisterList, { CountCell } from "../components/RegisterList.jsx";
+import LoadFailed from "../components/LoadFailed.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { NewProductModal } from "../components/ProductPanels.jsx";
@@ -30,7 +31,8 @@ export default function MaintenanceProducts() {
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(false);
   const reload = useCallback(() => {
-    listProducts().then((d) => setRows(d.products || [])).catch((e) => setError(e.message));
+    setError(null);
+    listProducts().then((d) => setRows(d.products || [])).catch((e) => setError(e));
   }, []);
   useEffect(() => reload(), [reload]);
   // Delete… on a row (or on a product's own tree, arriving here): its design
@@ -62,7 +64,7 @@ export default function MaintenanceProducts() {
       <RegisterList
         title="Products" purpose="What you design and build: each product's structure, and the items built from it."
         help={HELP} primary={newProduct}
-        error={error} rows={rows} noun={["product", "products"]}
+        loadError={error} onRetry={reload} rows={rows} noun={["product", "products"]}
         count={`${n} ${n === 1 ? "product" : "products"}`}
         search={(p) => [p.name, p.description, p.part?.part_number]}
         name={(p) => ({
@@ -97,11 +99,12 @@ export function ProductDetail() {
   const [params, setParams] = useSearchParams();
   const [product, setProduct] = useState(null);
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     setProduct(null);
     setError(null);
     getProduct(id).then(setProduct).catch((e) => setError(e));
-  }, [id]);
+  }, [id, attempt]);
   const legacy = params.get("tab");
   useEffect(() => {
     if (legacy == null) return;
@@ -117,10 +120,9 @@ export function ProductDetail() {
   if (error) {
     return (
       <div className="app">
-        <div className="card error">
-          {error.status === 404 || error.status === 422 ? "There's no such product (or it's been cleared)." : `The product didn't load: ${error.message}`}
-          {" "}<Link to={PRODUCTS_PATH}>Back to Products</Link>
-        </div>
+        <LoadFailed header what="Couldn't open this product." error={error.status === 422 ? "Not found." : error}
+          notFound="There's no such product (or it's been cleared)." to={PRODUCTS_PATH} label="Back to Products"
+          onRetry={() => setAttempt((n) => n + 1)} />
       </div>
     );
   }

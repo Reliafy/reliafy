@@ -37,6 +37,7 @@ export default function RbdRunsDetail() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     let timer = null;
@@ -56,7 +57,7 @@ export default function RbdRunsDetail() {
       live = false;
       clearTimeout(timer);
     };
-  }, [runId]);
+  }, [runId, attempt]);
 
   // The runner can cancel a run still queued or running (its result, if it
   // still finishes, is thrown away).
@@ -91,7 +92,7 @@ export default function RbdRunsDetail() {
     return (
       <div className="app rbd-runs">
         <PageHeader crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
-        {error ? <LoadFailed error={error} to={runsPath()} label="See all simulation runs" /> : <div className="card empty">Loading…</div>}
+        {error ? <LoadFailed onRetry={() => setAttempt((n) => n + 1)} error={error} to={runsPath()} label="See all simulation runs" /> : <div className="card empty">Loading…</div>}
       </div>
     );
   }

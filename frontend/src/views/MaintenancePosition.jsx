@@ -80,7 +80,7 @@ export default function MaintenancePosition() {
     setModal("child");
   };
 
-  if (error && !p) return <div className="app"><LoadFailed header error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
+  if (error && !p) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
   if (!p) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (

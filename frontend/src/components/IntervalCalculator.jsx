@@ -217,7 +217,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
   };
 
   return (
-    <Modal title={calc.title} onClose={onClose} locked={busy} trapFocus className="ivc-dialog"
+    <Modal title={calc.title} onClose={onClose} locked={busy} className="ivc-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>

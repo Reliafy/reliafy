@@ -17,7 +17,11 @@ export default function RecurrentHome() {
   const [models, setModels] = useState(null);
   const [error, setError] = useState(null);
 
-  const refresh = () => listRecurrentModels().then((r) => setModels(r.models)).catch(() => setModels([]));
+  const [loadError, setLoadError] = useState(null);
+  const refresh = () => {
+    setLoadError(null);
+    listRecurrentModels().then((r) => setModels(r.models)).catch(setLoadError);
+  };
   useEffect(() => { refresh(); }, []);
 
   const confirm = useConfirm();
@@ -46,6 +50,8 @@ export default function RecurrentHome() {
       <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={models} />
 
       <RecurrentLibrary
+        loadError={loadError}
+        onRetry={refresh}
         models={models}
         hrefFor={(id) => `/models/recurrent/${id}`}
         onDelete={onDelete}

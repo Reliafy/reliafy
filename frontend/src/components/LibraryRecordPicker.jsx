@@ -98,7 +98,7 @@ export default function LibraryRecordPicker({ use = "prior", selectedId = null, 
   const rowId = (i) => `${listId}-r${i}`;
 
   return (
-    <Modal title="Pick a library record" onClose={onClose} trapFocus className="lib-pick" overlayClassName="lib-pick-overlay"
+    <Modal title="Pick a library record" onClose={onClose} className="lib-pick" overlayClassName="lib-pick-overlay"
            footer={<button type="button" className="secondary" onClick={onClose}>Cancel</button>}>
       <div className="lib-pick-body" onKeyDown={onKeyDown}>
         <div className="lib-pick-filters">
