@@ -303,7 +303,8 @@ test("missions: a mission resting on placeholders says so, and can leave them ou
   await open(page, `/asset-register/explorer?arrange=positions&sel=${set.id}&tab=missions&mission=${made.rbd.id}:mission&on=${set.id}`);
   const pane = page.getByRole("region", { name: "Mission" });
   const answer = pane.locator(".mission-answer");
-  await expect(answer).toContainText("Not a real figure yet: 3 of 5 blocks have no model", { timeout: 30_000 });
+  // Most of the blocks are placeholders (3 of 5): the answer says most of it rests on invented lives.
+  await expect(answer).toContainText("Not a real figure: 3 of 5 blocks have no model, so most of this answer rests on invented lives", { timeout: 30_000 });
   await expect(answer).toContainText("With placeholders");
   await expect(answer).toContainText("Without them");
   const note = pane.getByRole("note", { name: "Blocks with no model" });

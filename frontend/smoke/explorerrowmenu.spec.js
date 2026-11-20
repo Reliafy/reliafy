@@ -81,7 +81,8 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   menu = await menuOf(page, `Menu heating ${tag}`);
   await menu.getByRole("menuitem", { name: "New position inside" }).click();
   let dialog = page.getByRole("dialog", { name: "New position" });
-  await expect(dialog.getByRole("combobox").first()).toHaveValue(p.heat.id);
+  // Inside is the shared searchable picker: its button names the position picked.
+  await expect(dialog.getByRole("combobox", { name: "Inside", exact: true })).toHaveText(new RegExp(`Menu heating ${tag}`));
   await dialog.getByRole("textbox").first().fill(`Menu heater ${tag}`);
   await dialog.getByRole("button", { name: "Create position" }).click();
   await expect(dialog).toHaveCount(0);

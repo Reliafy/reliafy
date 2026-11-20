@@ -248,7 +248,10 @@ test("Assets leaves the products' designs and items' trees out", async ({ page, 
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     // The Explorer is always one asset: each place's tree leaves them out too.
-    await open(page, `/asset-register/explorer?arrange=positions&root=${places.places[0].id}`);
+    // A place with positions in it (other tests add empty places, in any order).
+    const withTree = places.places.find((pl) => (pl.positions || 0) > 0);
+    expect(withTree, "a place with positions in it").toBeTruthy();
+    await open(page, `/asset-register/explorer?arrange=positions&root=${withTree.id}`);
     await expect(page.getByRole("treeitem").first()).toBeVisible();
     await expect(page.getByRole("treeitem", { name: NAME })).toHaveCount(0);
     await open(page, "/asset-register");
@@ -269,6 +272,8 @@ test("Assets offers no ready-made product", async ({ page, problems }) => {
   await expect(page.getByRole("button", { name: /Survey quadcopter|sample truck/ })).toHaveCount(0);
   await page.route("**/api/maintenance/places", (route) => route.fulfill({
     json: { places: [], not_placed: { positions: 0, items: 0, position_ids: [] }, horizon_days: 30 } }));
+  // Items built from products are listed on Assets too: none here, whatever other tests built.
+  await page.route("**/api/maintenance/items/of-products*", (route) => route.fulfill({ json: { items: [] } }));
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     await open(page, "/asset-register");
