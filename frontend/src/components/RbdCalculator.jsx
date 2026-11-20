@@ -417,7 +417,8 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
                   <td>{fmtImp(importance.fussell_vesely?.[id])}</td>
                   <td>{fmtImp(importance.risk_achievement_worth?.[id])}</td>
                   <td>{fmtImp(importance.risk_reduction_worth?.[id])}</td>
-                  <td>{fmtImp(importance.criticality?.[id])}</td>
+                  {/* A share of the system's failures: a percent, as in the fault tree's table. */}
+                  <td>{formatPercent(importance.criticality?.[id])}</td>
                   <td>{fmtImp(importance.improvement_potential?.[id])}</td>
                   {importance.structural && <td>{fmtImp(importance.structural[id])}</td>}
                 </tr>
@@ -1408,7 +1409,7 @@ const WINDOW_PRESETS = [
 
 export default function RbdCalculator({
   graph, validation, stale: checkStale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
-  onNodeData = null, onConditions = null, onCurrentState = null,
+  onNodeData = null, onConditions = null, onCurrentState = null, onTime = null,
 }) {
   const [result, setResult] = useState(null);
   // The diagram the shown result is for. A result is never shown as current
@@ -1436,6 +1437,11 @@ export default function RbdCalculator({
   // life rather than the from-new range. A typed value always wins.
   const [tMaxAuto, setTMaxAuto] = useState(true);
   const [evalTAuto, setEvalTAuto] = useState(true);
+  // The time the answer is read at, told to the editor so the fault tree opens at it too.
+  useEffect(() => {
+    const t = Number(evalT);
+    onTime?.(evalT !== "" && Number.isFinite(t) && t > 0 ? t : null);
+  }, [evalT]); // eslint-disable-line react-hooks/exhaustive-deps
   const [condAge, setCondAge] = useState(""); // conditional survival age s
   const [covValues, setCovValues] = useState({}); // {nodeId: {covName: value}}
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc

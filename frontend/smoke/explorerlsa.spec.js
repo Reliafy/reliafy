@@ -12,7 +12,7 @@
 // product's page.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -137,6 +137,7 @@ test("LSA at 400 px: the table scrolls in its card, the bar shows, nothing scrol
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=packages`); // the old address: opens the LSA tab
+  await phoneTree(page);
   // On a phone the panel is its own screen: tap the row to open it.
   await page.getByRole("treeitem", { name: new RegExp(`^Package pump ${tag}`) }).locator(".tp-nm").click();
   await expect(rows(page)).toHaveCount(3);

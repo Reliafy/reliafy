@@ -1775,6 +1775,11 @@ h6 {
   background: var(--accent-wash);
 }
 
+/* A row listed under another (Systems › RBDs: a part's diagram under the one it was built for),
+   indented a step per level, marked ↳. */
+.lib-row-under td:first-child { padding-left: calc(14px + var(--under, 1) * var(--space-6)); }
+.lib-row-under td:first-child .lib-name::before { content: "↳"; margin-right: var(--space-2); color: var(--text-tertiary); }
+
 .lib-row td {
   padding: 15px 14px;
   border-bottom: 1px solid var(--border-subtle);
@@ -3004,6 +3009,12 @@ h1 .chip,
 .detail-panel .life-help { font-size: var(--fs-12); font-weight: 400; }
 /* A card's heading with a control or a note at its right, and rows of a
    value with its bound (a recurrent model's MTBF, a failure mode's share). */
+/* "What do these mean?": the parameters in plain words, folded open under the heading. */
+.life-meanings { padding: var(--space-2) var(--space-3) var(--space-3); border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-13); line-height: var(--lh-13); }
+.life-meanings dl { margin: 0 0 var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.life-meanings dt { font-weight: 600; }
+.life-meanings dd { margin: 0; color: var(--text-secondary); }
 .detail-panel .life-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 8px; padding-bottom: 7px; }
 .detail-panel .life-card-head .gof-sub { margin-left: 6px; }
 .detail-panel .gofr.life-row { display: grid; grid-template-columns: 1fr auto minmax(4.4em, auto); gap: 10px; padding-top: 4px; padding-bottom: 4px; }

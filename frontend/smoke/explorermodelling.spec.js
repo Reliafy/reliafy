@@ -212,6 +212,10 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${st.id}&tab=models`);
   await headPick(page, "RBD", "Build from what's inside…");
+  // Named once first, in the table pane: nothing is saved until Build the RBD.
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue(`Station ${tag} RBD`);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Build the RBD" }).click();
   const pane = rbdPane(page);
   await expect(pane).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -246,7 +250,7 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await expect(pane).toHaveCount(0);
   await expect(row(page, st.id)).toHaveAttribute("aria-selected", "true");
   await expect(page).not.toHaveURL(/[?&](rbd|on)=/);
-  const rbd = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Station ${tag} (from the tree)` }) });
+  const rbd = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Station ${tag} RBD` }) });
   // The menu again: it opens the diagram already built (the same one) and never makes a second.
   await headMenu(page);
   await page.getByRole("menuitem", { name: "RBD", exact: true }).click();
@@ -1131,6 +1135,7 @@ test("a product's Modelling tab: Build from what's inside… opens the RBD build
       await page.getByRole("group", { name: "RBD" }).getByRole("menuitem", { name: "Open the RBD" }).click();
     } else {
       await headPick(page, "RBD", "Build from what's inside…");
+      await page.getByRole("button", { name: "Build the RBD" }).click();
     }
     const pane = rbdPane(page);
     await expect(pane.locator(".react-flow__node").filter({ hasText: `Drone battery ${tag}` })).toBeVisible();

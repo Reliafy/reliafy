@@ -14,6 +14,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
+import { phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -198,6 +199,7 @@ test("Locations: a location's menu has new inside, rename, move and delete; at 4
   // A phone: the ⋯ button opens the same menu; nothing scrolls sideways.
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
+  await phoneTree(page);
   const more = row(page, `Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / });
   await more.click();
   menu = rowMenu(page, `Menu circulation ${tag}`);
@@ -272,6 +274,7 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   // A phone: the ⋯ opens the same menu, and the drafts fill the screen without scrolling it sideways.
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&tab=lsa&sel=${p.pool.id}`);
+  await phoneTree(page);
   await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
   await expect(addRow).toHaveCount(0);
   await row(page, `Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / }).click();

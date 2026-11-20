@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listRbds, deleteRbd, duplicateRbd, renameRbd, importRbdFile, downloadRbdTemplate } from "../api.js";
 import ShareDialog from "../components/ShareDialog.jsx";
@@ -7,6 +7,7 @@ import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { missionRbdLine } from "../rbdMission.js";
+import { nestRbds, rbdNames } from "../rbdList.js";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
@@ -114,6 +115,9 @@ export default function RbdHome() {
   };
 
   const pathOf = (id) => `/systems/b/${id}`;
+  // A diagram built for another (a part's, or a mission's copy) is listed under that one.
+  const nested = useMemo(() => (rbds ? nestRbds(rbds) : rbds), [rbds]);
+  const parentName = (r) => rbds?.find((x) => x.id === r.parent_id)?.name || "";
   const newDiagram = <button onClick={() => navigate("/systems/b")}><PlusIcon /> New diagram</button>;
 
   return (
@@ -200,8 +204,9 @@ export default function RbdHome() {
       <SectionList
         loadError={loadError}
         onRetry={refresh}
-        rows={rbds}
+        rows={nested}
         noun={["diagram", "diagrams"]}
+        fields={rbdNames}
         // Missions add a diagram each: a filter keeps them apart (shown once both kinds are there).
         types={[{ value: "diagram", label: "Diagrams" }, { value: "mission", label: "Missions" }]}
         typeOf={(r) => (r.mission ? "mission" : "diagram")}
@@ -218,8 +223,11 @@ export default function RbdHome() {
           <th key="s" className="lib-opt">Saved</th>,
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
-        render={(r) => (
-          <tr key={r.id} className="lib-row" onClick={rowOpen(navigate, pathOf(r.id))}>
+        render={function renderRow(r) {
+          return (
+          <Fragment key={r.id}>
+          <tr className={"lib-row" + (r.depth ? " lib-row-under" : "")} onClick={rowOpen(navigate, pathOf(r.id))}
+              style={r.depth ? { "--under": Math.min(r.depth, 4) } : undefined}>
             <td>
               <div className="lib-name">
                 <RowLink to={pathOf(r.id)}>{itemName(r)}</RowLink>
@@ -227,6 +235,7 @@ export default function RbdHome() {
                 {r.mission && <Chip tone="accent" title="A mission's own RBD, built on its position (Assets › Explorer › Missions)">Mission</Chip>}
               </div>
               {r.mission && <div className="rim-tquiet lib-mission">{missionRbdLine(r)}</div>}
+              {r.depth > 0 && !r.mission && <div className="rim-tquiet lib-mission">Part of {parentName(r)}</div>}
             </td>
             <td className="lib-n lib-opt">{(r.n_nodes ?? 0).toLocaleString()}</td>
             <td className="lib-n lib-opt">{(r.n_edges ?? 0).toLocaleString()}</td>
@@ -237,7 +246,10 @@ export default function RbdHome() {
               !r.read_only && workspace === "personal" && { id: "share", label: "Share…", onSelect: () => setSharing(r) },
             ]} />
           </tr>
-        )}
+          {(r.children || []).map(renderRow)}
+          </Fragment>
+          );
+        }}
       />
 
       {sharing && (

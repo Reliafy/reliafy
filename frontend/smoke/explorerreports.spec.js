@@ -11,7 +11,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -167,6 +167,7 @@ test("Failure reports at 400 px: the ⋯ button offers Add failure report…, th
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.circ.id}`);
+  await phoneTree(page);
   const more = row(page, `Report circulation ${tag}`).getByRole("button", { name: /^Actions for / });
   await more.click();
   const menu = rowMenu(page, `Report circulation ${tag}`);

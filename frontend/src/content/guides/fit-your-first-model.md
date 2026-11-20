@@ -287,7 +287,13 @@ number worth understanding**:
 - **β > 1** — wear-out. Risk rises with age, and preventive replacement starts
   to make sense.
 
-That single parameter often changes the maintenance decision more than anything
+**α, the scale**, says how long lives are: it is the *characteristic life*, the
+age by which about 63% of units have failed, whatever β is. Double α and every
+life doubles; the shape stays the same. For the bearings, about 63% have failed
+by 1,440 hours. **What do these mean?** beside the parameters says the same for
+your own fit, in words, with your numbers.
+
+That single parameter, β, often changes the maintenance decision more than anything
 else on the page, which is why the panel spells it out. The bearings' whole
 interval sits above 1, so the **Failure pattern** row reads *Wear-out*, and
 clicking it says *β is above 1 at 90% confidence*.

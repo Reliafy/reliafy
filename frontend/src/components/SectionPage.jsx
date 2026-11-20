@@ -6,7 +6,7 @@ import LoadFailed from "./LoadFailed.jsx";
 import HelpLink from "./ui/HelpLink.jsx";
 import Select from "./Select.jsx";
 import { ShowMeHow } from "./Walkthrough.jsx";
-import { openGuide } from "./HelpButton.jsx";
+import { openGuide, usePageGuide } from "./HelpButton.jsx";
 import { getWalkthrough } from "../walkthroughs.js";
 import { SampleGroups } from "./LibRows.jsx";
 import { useNavCrumbs } from "../RolesProvider.jsx";
@@ -47,6 +47,7 @@ export function ShowMe({ help, children = "Show me how", asHelp = false }) {
 //   title, purpose, help ({ walkthrough?, guide? }), primary, actions, menu
 export function SectionHeader({ section, title, purpose, help, primary, actions, menu, children }) {
   const crumbs = useNavCrumbs(section);
+  usePageGuide(help?.guide || null); // the top bar's "?" opens this page's guide
   return (
     <PageHeader
       className="section-header"

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "react-router-dom";
 import { portalHost } from "../fullScreen.js";
-import { guidesByCategory, getGuide } from "../guides.js";
-import { filterGuideGroups } from "../guideFilter.js";
+import { guides, guidesByCategory, getGuide } from "../guides.js";
+import { filterGuideGroups, guideForPath } from "../guideFilter.js";
 import { getEntry } from "../reference.js";
 import { publicUrl } from "../firebase.js";
 import GuideBody from "./GuideBody.jsx";
@@ -23,6 +24,17 @@ export function openReference(entryId) {
   window.dispatchEvent(new CustomEvent("reliafy:help", { detail: { reference: entryId } }));
 }
 
+// The guide of the page on show (its header's "Read the guide": SectionHeader sets it while the
+// page is up), for the top bar's "?" to open at. A page without one is matched by its address.
+let pageGuide = null;
+export function usePageGuide(slug) {
+  useEffect(() => {
+    if (!slug) return undefined;
+    pageGuide = slug;
+    return () => { if (pageGuide === slug) pageGuide = null; };
+  }, [slug]);
+}
+
 const QIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -33,12 +45,14 @@ const QIcon = () => (
 );
 
 // A "?" in the top bar that opens a Help drawer of the product guides, viewable
-// in-app next to the UI. Optionally opened straight to a specific guide (used by
+// in-app next to the UI, at the guide for the page you're on when there is one
+// (guideFilter.js guideForPath). Optionally opened straight to a specific guide (used by
 // contextual "How do I…" links on complex features), or to a reference entry.
 // The list has a filter box (guideFilter.js): what's typed stays while a guide
 // is read, so "← All guides" comes back to the same short list; opening the
 // drawer afresh clears it.
 export default function HelpButton({ openSlug = null }) {
+  const { pathname, search } = useLocation();
   const [open, setOpen] = useState(false);
   const [slug, setSlug] = useState(openSlug);
   const [refId, setRefId] = useState(null);
@@ -82,7 +96,11 @@ export default function HelpButton({ openSlug = null }) {
   return (
     <>
       <button className="nav-help-btn" title="Guides & help" aria-label="Help"
-              onClick={() => { setSlug(openSlug); setRefId(null); setQuery(""); setOpen(true); }}>
+              onClick={() => {
+                // The guide for the page you're on ("← All guides" lists the rest); none: the list.
+                setSlug(openSlug || guideForPath(guides, pathname, search, pageGuide));
+                setRefId(null); setQuery(""); setOpen(true);
+              }}>
         <QIcon />
       </button>
       {open && createPortal(
