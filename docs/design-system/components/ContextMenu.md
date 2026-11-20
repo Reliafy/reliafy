@@ -15,7 +15,7 @@ Right-click, the row's ⋯ button (`MoreMenu`), or Shift+F10 / the Menu key on a
   - `items` — a submenu ("Focus ›"). It opens beside the menu on a wide screen, in place under its item on a phone.
   - `checked` (true | false) — a radio in a submenu, ticked with ✓.
   - `separator` — a `border` line between groups; the arrow keys pass over it.
-- `at` — `{x, y}`, the pointer or the corner of what opened it. The menu moves in to stay on screen.
+- `at` — `{x, y}`, the pointer or the corner of what opened it. The menu moves in to stay on screen, at least 8 px from every edge: it is measured at its full width (hidden, top left) before it is placed, so items that wrap near an edge never make it spill off.
 - `label` — the menu's name ("Actions for Feed pump").
 - `anchorId` — the row it belongs to: a scroll that moves the row away closes the menu.
 - `onChoose(id)` — runs after the menu has closed.

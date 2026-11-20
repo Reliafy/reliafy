@@ -61,7 +61,10 @@ for (const route of appRoutes()) {
 
 test("tab titles: a record's page leads with its name", async ({ page, request }) => {
   const { rbds } = await (await request.get("/api/rbds")).json();
-  const rbd = rbds.find((r) => r.name) || rbds[0];
+  // A sample: tests running alongside create and delete their own diagrams, so the newest one
+  // may be gone by the time it opens ("Diagram not found").
+  const rbd = rbds.find((r) => r.is_sample && r.name);
+  expect(rbd, "a sample diagram").toBeTruthy();
   await open(page, RBDS_PATH);
   await expect.poll(() => page.title()).toBe(`${RBDS_LABEL} · Reliafy`);
   await open(page, `/systems/b/${encodeURIComponent(rbd.id)}`);
@@ -100,8 +103,8 @@ const LIST_LINKS = [
   ["/systems/rbds", /^\/systems\/b\/[^/]+$/],
   ["/systems/runs", /^\/systems\/runs\/[^/]+$/],
   ["/strategy", /^\/strategy\/analyses\/[^/]+$/],
-  // Forecasts also lists the position classes (Reliafy Maintenance on).
-  ["/forecasts", /^\/forecasts\/[^/]+$|^\/asset-register\/classes\/[^/]+$/],
+  // Forecasts also lists the position classes (Reliafy Maintenance on): those open in place.
+  ["/forecasts", /^\/forecasts\/[^/]+$/],
   ["/risk", /^\/risk\/[^/]+$/],
 ];
 
@@ -113,6 +116,9 @@ test("list rows link to their pages", async ({ page }) => {
       const rows = page.locator("tr.lib-row");
       const n = await rows.count();
       for (let i = 0; i < n; i++) {
+        // A row that opens in place (Forecasts' position classes: the class's forecast under the
+        // list) has its disclosure button instead of a link.
+        if (await rows.nth(i).locator("button[aria-expanded]").count()) continue;
         const href = await rows.nth(i).locator("a.lib-link").first().getAttribute("href");
         expect(href, `${path}: row ${i + 1} has no link`).toBeTruthy();
         expect(href, `${path}: row ${i + 1} links to ${href}`).toMatch(pattern);

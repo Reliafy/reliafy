@@ -41,9 +41,14 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
   const close = useCallback(() => onClose(), [onClose]);
   useMenuDismiss(true, close, ref);
 
+  // Measured where it has the whole width (hidden at the top left until placed): measured at the
+  // pointer near the right edge, its items wrapped narrow, so placed by that width it then spilled
+  // off the right edge at its full width.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    el.style.left = "0px";
+    el.style.top = "0px";
     const r = el.getBoundingClientRect();
     setPos(placeMenu(at, { w: r.width, h: r.height }, { vw: window.innerWidth, vh: window.innerHeight }));
   }, [at, phone && sub?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -165,7 +170,7 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
 
   return createPortal(
     <div ref={ref} className="ovm-menu row-menu" role="menu" aria-label={label} tabIndex={-1}
-         style={pos ? { left: pos.left, top: pos.top } : { left: at.x, top: at.y, visibility: "hidden" }}
+         style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, visibility: "hidden" }}
          onKeyDown={onKeyDown} onContextMenu={(e) => e.preventDefault()}>
       {items.map((it, i) => {
         // A line between groups (not an item: the arrow keys pass over it).

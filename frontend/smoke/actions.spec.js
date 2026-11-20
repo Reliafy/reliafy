@@ -266,6 +266,9 @@ async function uploadAndFit(page) {
   await expect(dialog.getByRole("combobox", { name: "Unit of the values" })).toHaveValue("");
   await dialog.getByRole("button", { name: "Create dataset" }).click();
   await expect(page.locator('[data-wt="reading-summary"]')).toContainText("c = every row failed");
+  // The unit is one required choice on the Model step: these numbers have none.
+  await expect(page.getByRole("button", { name: "Fit Weibull" })).toBeDisabled();
+  await page.getByLabel("No unit (just numbers)").check();
   await page.getByRole("button", { name: "Fit Weibull" }).click();
   await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("This fit isn't saved yet.")).toBeVisible();
@@ -384,9 +387,13 @@ test("move a photo from a work order to its position", async ({ page, problems }
 // Cancel, and Escape or Cancel leaves everything as it was.
 test("removing a sample asks in the app's confirm dialog", async ({ page, problems }) => {
   await open(page, "/systems/rbds");
-  const remove = page.getByRole("button", { name: "Remove from my view" }).first();
-  const row = page.getByRole("row").filter({ has: remove }).first();
-  await remove.click();
+  // A sample's row: Remove from my view is in its ⋯ menu, last.
+  const row = page.getByRole("row").filter({ hasText: "Pump station — 1 controller, 2 pumps" }).first();
+  const remove = async () => {
+    await row.getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Remove from my view" }).click();
+  };
+  await remove();
   const dialog = page.getByRole("alertdialog", { name: "Remove this sample?" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Settings › Sample data");
@@ -394,7 +401,7 @@ test("removing a sample asks in the app's confirm dialog", async ({ page, proble
   await expect(dialog.getByRole("button", { name: "Remove sample" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await remove.click();
+  await remove();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(row).toBeVisible();
@@ -518,14 +525,14 @@ test("Model characteristics: the mean life and its bound", async ({ page, proble
   await open(page, "/models/m/sample-model-bearings-weibull");
   await page.getByRole("tab", { name: "Model characteristics" }).click();
   await expect(chars(page)).toContainText("Mean life (MTTF)");
-  await expect(chars(page)).toContainText(/1,270 hours\s*≥ 1,150 hours at 90%/);
+  await expect(chars(page)).toContainText(/1,270 hours\s*(≈ [\d.]+ months\s*)?≥ 1,150 hours( \(≈ [\d.]+ months\))? at 90%/);
   await expect(chars(page)).toContainText("Here the median is 1,240 hours");
   // A level chosen here is the Calculator's too, and the link opens Time at reliability.
   await page.getByRole("combobox", { name: "Confidence of the lower bound" }).click();
   await page.getByRole("option", { name: "95% lower bound" }).click();
   await expect(chars(page)).toContainText(/at 95%/);
   // The B-lives sit beside it, with their bounds at the same confidence.
-  await expect(page.getByRole("region", { name: "B-lives" })).toContainText(/B10\s*582 hours\s*≥ \d+/);
+  await expect(page.getByRole("region", { name: "B-lives" })).toContainText(/B10\s*582 hours\s*(≈ [\d.]+ months\s*)?≥ \d+/);
   await page.getByRole("button", { name: /Another reliability: use Time at reliability/ }).click();
   await expect(page.locator(".calc-answer")).toContainText("(the B10 life)");
   await expect(page.getByLabel("Confidence level", { exact: true })).toHaveValue("95");
@@ -535,12 +542,12 @@ test("Model characteristics: the mean life and its bound", async ({ page, proble
   const expo = await saveModel(page, { ...pumps, name: "Smoke mean exponential", distribution: "exponential" });
   await open(page, `/models/m/${expo}`);
   await page.getByRole("tab", { name: "Model characteristics" }).click();
-  await expect(chars(page)).toContainText(/Mean life \(MTTF\)\s*35\.1 months\s*≥ [\d.]+ months at 90%/);
+  await expect(chars(page)).toContainText(/Mean life \(MTTF\)\s*35\.1 months\s*(≈ [\d.]+ \w+\s*)?≥ [\d.]+ months( \(≈ [\d.]+ \w+\))? at 90%/);
   const km = await saveModel(page, { ...pumps, name: "Smoke mean Kaplan-Meier", distribution: "kaplan_meier" });
   await open(page, `/models/m/${km}`);
   await page.getByRole("tab", { name: "Model characteristics" }).click();
   await page.getByLabel(/Count up to/).fill("20");
-  await expect(chars(page)).toContainText(/Mean to 20 months\s*[\d.]+ months\s*≥ [\d.]+ months at 90%/);
+  await expect(chars(page)).toContainText(/Mean to 20 months\s*[\d.]+ months\s*(≈ [\d.]+ \w+\s*)?≥ [\d.]+ months( \(≈ [\d.]+ \w+\))? at 90%/);
   await expect(chars(page)).toContainText("counting only up to that time");
 
   // An infinite mean: none, and why; never Infinity.
@@ -568,11 +575,11 @@ test("Model characteristics on a page that can't ask for another level", async (
                                                  body: '{"detail":"Not authenticated"}' }));
   await open(page, "/models/m/sample-model-bearings-weibull");
   await page.getByRole("tab", { name: "Model characteristics" }).click();
-  await expect(chars(page)).toContainText(/1,270 hours\s*≥ 1,150 hours at 90%/);
+  await expect(chars(page)).toContainText(/1,270 hours\s*(≈ [\d.]+ months\s*)?≥ 1,150 hours( \(≈ [\d.]+ months\))? at 90%/);
   await page.getByRole("combobox", { name: "Confidence of the lower bound" }).click();
   await page.getByRole("option", { name: "99% lower bound" }).click();
   await expect(chars(page)).toContainText("needs you signed in to a copy of this model");
-  await expect(chars(page)).toContainText(/≥ 1,150 hours at 90%/);
+  await expect(chars(page)).toContainText(/≥ 1,150 hours( \(≈ [\d.]+ months\))? at 90%/);
   expect(problems.filter((p) => !/status of 401\b/.test(p))).toEqual([]);
 });
 
