@@ -73,9 +73,11 @@ def test_headlines_and_verdicts_read_lower_case():
     _clean(head)
     assert head.endswith("120 hours")
 
-    mismatch = rcm_decisions._unit_mismatch({"interval_unit": "Months"}, "Hours")
+    mismatch = rcm_decisions._unit_mismatch({"interval_unit": "Cycles"}, "Hours")
     _clean(mismatch["reason"])
-    assert "is in months but the linked analysis is in hours" in mismatch["reason"]
+    assert "is in cycles but the linked analysis is in hours" in mismatch["reason"]
+    # Months and hours are both time: converted, no mismatch.
+    assert rcm_decisions._unit_mismatch({"interval_unit": "Months"}, "Hours") is None
 
     assert rbd_sensitivity._per("Hours") == "per hour"
     msg = rbd_intervals._not_met("", False, None, 5.0, "Hours")

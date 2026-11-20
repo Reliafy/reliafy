@@ -112,7 +112,15 @@ def _scaled_param(p, rule, c: float):
         value = float(p.get("value"))
     except (TypeError, ValueError):
         return dict(p)  # left for the builder to refuse in its own words
-    return {**p, "value": _apply(rule, value, c)}
+    out = {**p, "value": _apply(rule, value, c)}
+    ci = p.get("ci")
+    if isinstance(ci, (list, tuple)) and len(ci) == 2:
+        try:
+            ends = sorted(_apply(rule, float(v), c) for v in ci)  # a rate's interval flips
+            out["ci"] = ends
+        except (TypeError, ValueError):
+            pass
+    return out
 
 
 def scale_extras(extras: Optional[dict], c: float) -> Optional[dict]:
@@ -330,6 +338,27 @@ def _slots(node: dict) -> list[tuple]:
     if isinstance(data.get("repair"), dict):
         paths.append(("repair",))
     return paths
+
+
+def used_note(conv: dict, what: str = "answer", source: str = "model") -> str:
+    """"model in days, answer in hours: converted at 1 day = 24 hours" — what a calculation
+    that converted a model says (``what`` names the other clock: interval, period, answer;
+    ``source`` what was converted: a model, the evidence)."""
+    return (f"{source} in {unit_in_text(conv['from'])}, {what} in {unit_in_text(conv['to'])}: converted at "
+            f"{conversion_note(conv['from'], conv['to'])}")
+
+
+def convert_spec(distribution_id, params, extras, from_unit, to_unit) -> tuple[list, Optional[dict], Optional[dict]]:
+    """A plain distribution given as ``distribution_id`` + ``params`` (+ ``extras``) in
+    ``from_unit``, in ``to_unit``: ``(params, extras, conversion)``; unchanged with None when the
+    units don't convert or the family has no parameter rule."""
+    model = {"distribution_id": distribution_id, "params": params, "extras": extras, "unit": from_unit}
+    if distribution_id == "mixture" or not scalable(distribution_id):
+        return params, extras, None
+    new, conv = convert_model(model, to_unit)
+    if conv is None:
+        return params, extras, None
+    return new["params"], new.get("extras"), conv
 
 
 def words(conv: dict) -> str:

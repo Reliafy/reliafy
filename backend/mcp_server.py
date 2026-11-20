@@ -157,6 +157,7 @@ from backend.services import tokens as tokens_service
 from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
 from backend.services import rbd_analysis
+from backend.services import model_units
 from backend.services import rbd_compare as rbd_compare_service
 from backend.services import rbd_costs
 from backend.services import rbd_export
@@ -6626,14 +6627,39 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
         # Each parameter's fitted interval rides along, so the answers carry their bounds and ranges.
         params = [{**p, **({"ci": q["ci"]} if isinstance(q.get("ci"), list) else {})}
                   for p, q in zip(_plain_params(r), r.get("params") or [])]
-        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": params,
-                "extras": r.get("extras") or None, "unit": unit or r.get("unit") or ""}
+        dist_id = r.get("distribution_id") or m.distribution_id
+        extras = r.get("extras") or None
+        # An answer asked in another unit of the model's kind (a model in days, unit=months): the
+        # model is converted to it, never relabelled. Other kinds and blank units: as given.
+        params, extras, conv = model_units.convert_spec(dist_id, params, extras, r.get("unit"), unit)
+        out = {"distribution_id": dist_id, "params": params, "extras": extras,
+               "unit": unit or r.get("unit") or ""}
+        if conv is not None:
+            out["unit_conversion"] = model_units.used_note(conv)
+        return out
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
     # Params are checked by SurPyval name in the strategy service (an
     # unrecognised name is refused, never read by position).
     return {"distribution_id": fitting.resolve_distribution_id(distribution_id),
             "params": [p.model_dump() for p in params], "unit": unit or ""}
+
+
+def _with_conversion(out: dict, note: Optional[str]) -> dict:
+    """A calculator's answer with the note on the model it converted to the asked unit."""
+    return {**out, "unit_conversion": note} if note else out
+
+
+def _calendar_conversion(db, uid: str, model_id: Optional[str], unit: Optional[str]) -> Optional[str]:
+    """The conversion note for a calendar answer on a saved model asked in another unit."""
+    if not model_id or not unit:
+        return None
+    m = models_service.get_model(db, model_id, _owners(uid))
+    r = (m.results or {}) if m is not None else {}
+    conv = model_units.conversion({"unit": r.get("unit")}, unit)
+    if conv is None or not model_units.scalable(r.get("distribution_id") or getattr(m, "distribution_id", None)):
+        return None
+    return model_units.used_note(conv)
 
 
 _MODEL_ID = Annotated[Optional[str], Field(description="A saved non-repairable model id (list kind models). Give this OR "
@@ -6733,11 +6759,12 @@ def optimal_replacement(
     present."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
+    converted = inputs.pop("unit_conversion", None)
     costs = {"planned_cost": planned_cost, "unplanned_cost": unplanned_cost}
     out = strategy_store.compute("optimal_replacement", {**inputs, **costs, "use_per_year": use_per_year,
                                                          "units": units})
     out.update(_shape_uncertainty(db, user["uid"], model_id, inputs, costs, out))
-    return _maybe_curve(out, include_curve)
+    return _with_conversion(_maybe_curve(out, include_curve), converted)
 
 
 class CalendarShut(BaseModel):
@@ -6761,6 +6788,7 @@ _TODAY = Annotated[Optional[str], Field(description="Today's date (YYYY-MM-DD), 
 def _calendar_inputs(db, uid: str, model_id, distribution_id, params, unit, shuts, failure_cost, anytime_cost,
                      today, max_age) -> dict:
     inputs = _dist_inputs(db, uid, model_id, distribution_id, params, unit)
+    inputs.pop("unit_conversion", None)  # the callers add it back (_calendar_conversion)
     return {**inputs, "opportunities": [sh.model_dump(exclude_none=True) for sh in shuts or []],
             "failure_cost": failure_cost, "anytime_cost": anytime_cost, "today": today, "max_age": max_age}
 
@@ -6818,7 +6846,8 @@ def calendar_replacement(
         out = job.get("result") or {}
     elif code != 200:
         raise ToolError(out.get("detail") or "The calculation couldn't run.")
-    out = _calendar_summary(out, include_schedule)
+    out = _with_conversion(_calendar_summary(out, include_schedule),
+                           _calendar_conversion(db, user["uid"], model_id, unit))
     return {**out, "pro_note": note} if note else out
 
 
@@ -6843,10 +6872,11 @@ def calendar_next_replacement(
     inputs = _calendar_inputs(db, user["uid"], model_id, distribution_id, params, unit, shuts, failure_cost,
                               anytime_cost, today, max_age)
     try:
-        return strategy_calendar.calendar_next(inputs.pop("distribution_id"), inputs.pop("params"), age=age,
-                                               now_cost=now_cost, **inputs)
+        out = strategy_calendar.calendar_next(inputs.pop("distribution_id"), inputs.pop("params"), age=age,
+                                              now_cost=now_cost, **inputs)
     except StrategyError as exc:
         raise ToolError(str(exc)) from None
+    return _with_conversion(out, _calendar_conversion(db, user["uid"], model_id, unit))
 
 
 def failure_finding_interval(
@@ -6868,11 +6898,12 @@ def failure_finding_interval(
     each end of β's interval: relay uncertainty_note (the shorter interval is the safe side)."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
+    converted = inputs.pop("unit_conversion", None)
     target = {"target_availability": target_availability, "test_duration": test_duration, "test_cost": test_cost,
               "renewed_at_test": renewed_at_test}
     out = strategy_store.compute("failure_finding", {**inputs, **target})
     out.update(_ffi_shape_uncertainty(db, user["uid"], model_id, inputs, target, out))
-    return out
+    return _with_conversion(out, converted)
 
 
 #: The failure-finding note: an end of the shape's interval asks for an
