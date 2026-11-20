@@ -80,11 +80,10 @@ test("Classes on one asset's tree covers only that asset; a class opens on Condi
   await expect(classRow.locator(".tp-cnt")).toHaveText("2 positions");
   await expect(page.locator(".cf-answer")).toContainText("2 positions");
 
-  // A class has a tab bar with one tab, picked without being asked for.
+  // A class has Monitoring (picked without being asked for), then its Forecast and Spares.
   const tabs = panel.getByRole("tab");
-  await expect(tabs).toHaveCount(1);
-  await expect(tabs).toHaveText("Monitoring");
-  await expect(tabs).toHaveAttribute("aria-selected", "true");
+  await expect(tabs).toHaveText(["Monitoring", "Forecast", "Spares"]);
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("region", { name: "Risk now" })).toBeVisible();
 
   // One asset opened: Classes is offered, and covers only what's inside it.
@@ -207,8 +206,8 @@ test("a class on a phone: its heading, its one tab and the way back fit 400 px",
   await expect(panel.getByRole("heading", { name: `Transfer pump ${tag}` })).toBeVisible();
   await expect(panel.getByRole("button", { name: /Explorer/ })).toBeVisible();
   const tabs = panel.getByRole("tab");
-  await expect(tabs).toHaveCount(1);
-  await expect(tabs).toHaveText("Monitoring");
+  await expect(tabs).toHaveText(["Monitoring", "Forecast", "Spares"]);
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
   await expect(panel.locator(".cf-answer")).toContainText("2 positions");
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "class-condition-tab-400");

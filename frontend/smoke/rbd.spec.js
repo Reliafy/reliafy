@@ -132,7 +132,8 @@ test("full screen: edit, open dialogs and save without leaving it", async ({ pag
   await page.getByRole("option", { name: "Non-repairable" }).click();
 
   // Save: the name dialog shows, and the first save keeps full screen and the canvas.
-  await page.locator(".rbd-save-main").click(); // the first save asks for a name
+  // Not saved yet: one Save… button (the split Save with Save as new comes once it's saved).
+  await page.getByRole("button", { name: "Save…", exact: true }).click(); // the first save asks for a name
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   expect(await inFull(page, ".overlay")).toBe(true);
