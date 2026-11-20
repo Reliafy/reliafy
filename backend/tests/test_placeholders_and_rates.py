@@ -223,3 +223,40 @@ def test_a_built_items_copy_of_a_parts_count_reads_as_one():
     assert pm.source_text(copy) == "From the product's design: its parts count"
     none_left = pm.prediction_covers({"excluded": [], "unassigned": []})
     assert none_left is None
+
+
+def test_the_criticality_column_against_a_hand_calculation(m, db):
+    """Cm = β × α × λ × t with the position's one rate, in the mode's time unit; no number where a
+    figure is missing, and a reason where the rate can't be put in the mode's time unit."""
+    ids = _quad(m)
+    _parts_count(m, db, ids)
+    # Hand calculation: the motor's parts count is 30 per million hours = 3e-5 per hour.
+    # In days that is 3e-5 × 24 = 7.2e-4 per day; over t = 10 days with α = 0.4 and β = 0.5:
+    # Cm = 0.5 × 0.4 × 7.2e-4 × 10 = 1.44e-3.
+    days = m.add_failure_mode(ids["Motor 1"], "Shaft bearing wears")["id"]
+    m.score_failure_mode(days, {"mode_ratio": 0.4, "loss_probability": 0.5, "operating_time": 10, "time_unit": "days"})
+    # In hours: β 1 × α 0.25 × 3e-5 × 200 h = 1.5e-3.
+    hours = m.add_failure_mode(ids["Motor 1"], "Magnet loosens")["id"]
+    m.score_failure_mode(hours, {"mode_ratio": 0.25, "loss_probability": 1, "operating_time": 200})
+    # No operating time: no Cm, nothing made up.
+    no_t = m.add_failure_mode(ids["Motor 1"], "Connector corrodes")["id"]
+    m.score_failure_mode(no_t, {"mode_ratio": 0.2, "loss_probability": 1})
+    # A unit the hourly rate can't be put in: no Cm, and why.
+    flights = m.add_failure_mode(ids["Motor 1"], "Prop nut backs off")["id"]
+    m.score_failure_mode(flights, {"mode_ratio": 0.1, "loss_probability": 1, "operating_time": 50, "time_unit": "flights"})
+    # A propeller has no rate (left out of the parts count): no Cm.
+    prop = m.add_failure_mode(ids["Propeller 1"], "Blade chips")["id"]
+    m.score_failure_mode(prop, {"mode_ratio": 1, "loss_probability": 1, "operating_time": 100})
+
+    sheet = rcm_graph.resolve(db, m.rcm_worksheet(ids["Propulsion"], "below"), OWNERS, m=m)
+    modes = {md["text"]: md for p in sheet["positions"] for md in p["unassigned"]}
+    assert modes["Shaft bearing wears"]["rate_from"]["value"] == pytest.approx(7.2e-4)
+    assert modes["Shaft bearing wears"]["cm"] == pytest.approx(1.44e-3)
+    assert modes["Magnet loosens"]["cm"] == pytest.approx(1.5e-3)
+    assert modes["Connector corrodes"]["cm"] is None
+    assert modes["Prop nut backs off"]["cm"] is None
+    assert '"flights"' in modes["Prop nut backs off"]["cm_note"]
+    assert modes["Blade chips"]["cm"] is None and "rate_from" not in modes["Blade chips"]
+    [motor] = [p for p in sheet["positions"] if p["id"] == ids["Motor 1"]]
+    assert motor["fmea"]["cr"] == pytest.approx(1.44e-3 + 1.5e-3)
+    _same_after_rebuild(m)

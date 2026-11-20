@@ -70,7 +70,9 @@ export default function FmeaPrint() {
                 <tr key={i} className={at(r, "Failure mode") ? undefined : "fm-fn"}>
                   {SHOWN.map((h) => {
                     const v = at(r, h);
-                    const text = v == null || v === "" ? "" : ROUNDED.has(h) ? fmt3(v) : String(v);
+                    // A failure mode with no criticality (a figure missing): a dash, as on the tab, never a number.
+                    const none = h === "Mode criticality" && at(r, "Failure mode") ? "–" : "";
+                    const text = v == null || v === "" ? none : ROUNDED.has(h) ? fmt3(v) : String(v);
                     return <td key={h} className={NUMERIC.has(h) ? "num" : undefined}>{text}</td>;
                   })}
                 </tr>

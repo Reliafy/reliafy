@@ -159,6 +159,25 @@ export function dataText(r) {
   return `${s}, ${f}`;
 }
 
+// How the record ends, said on every fit to data: "time-terminated at 1,000
+// hours" (an end of test or end of record was given) or "failure-terminated:
+// ended at the last failure (940 hours)". A fit saved before this was said
+// shows it only when its warning tells (null otherwise).
+export function terminationText(r) {
+  if (!r || r.from_params) return null;
+  const term = r.termination
+    || ((r.warnings || []).some((w) => w.id === "no_record_end") ? { kind: "failure", end: r.end_of_observation } : null);
+  if (!term) return null;
+  const at = term.end != null && Number.isFinite(term.end) ? withUnitR(term.end, r) : null;
+  const one = r.n_systems === 1;
+  if (term.kind === "time") {
+    if (!at) return "time-terminated";
+    return one ? `time-terminated at ${at}` : `time-terminated: each system to its end of record (the latest ${at})`;
+  }
+  if (one) return `failure-terminated: ended at the last failure${at ? ` (${at})` : ""}`;
+  return "failure-terminated: each system ends at its last failure";
+}
+
 // ---- The model frame (components/model/) ------------------------------------
 //
 // A repairable model's page has the shared frame's tabs, those that apply:
@@ -298,6 +317,7 @@ export function recurrentAnswer(r, { saved = null } = {}) {
     add(mtbfWords(r));
   }
   add(r?.from_params ? "made from parameters" : dataText(r));
+  if (!r?.from_params) add(terminationText(r));
   add(saved);
   return parts.filter(Boolean);
 }
