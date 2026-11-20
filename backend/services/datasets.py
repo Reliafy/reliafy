@@ -413,6 +413,13 @@ def preview_rows(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dic
     return _preview(bytes(dataset.data), rows, distinct=distinct)
 
 
+def csv_filename(name: str | None, part: str | None = None) -> str:
+    """A download name for a dataset's table: its name with characters a file
+    name can't hold removed, plus the part ("measurements") when there is one."""
+    stem = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "", name or "").strip().rstrip(".") or "dataset"
+    return f"{stem} {part}.csv" if part else f"{stem}.csv"
+
+
 def preview_measurements(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dict | None:
     """``preview_rows`` of the measurements part, or None without one."""
     if dataset.measurements is None:

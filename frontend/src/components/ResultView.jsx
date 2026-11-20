@@ -222,7 +222,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
         <PlotPanel
           plot={<PlotCard><ProbabilityPlot fill plot={result.plot} unit={result.unit} download={`${label} — probability plot`}
                                                   {...(intervalLevel(result).credible ? { bandName: `${intervalLevel(result).label} band`, lineName: "Updated model" } : {})} /></PlotCard>}
-          side={<LifeAside result={result} split={split} bestFit={bestFit} compare={compare} onPick={onPick}
+          side={<LifeAside result={result} split={split} bestFit={bestFit} compare={compare} onPick={onPick} name={label}
                            modelId={modelId} onStats={onStats} showUse={false} />}
         />
       );
@@ -233,7 +233,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
       ) : (
         <PlotPanel
           plot={<PlotCard><SurvivalPlot fill estimate={result.estimate} unit={result.unit} download={`${label} — survival curve`} /></PlotCard>}
-          side={<LifeAside result={result} split={split} modelId={modelId} showUse={false} />}
+          side={<LifeAside result={result} split={split} modelId={modelId} showUse={false} name={label} />}
         />
       );
       break;
@@ -266,7 +266,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
       break;
     case "chars":
       body = (
-        <ModelCharacteristics result={result} level={level} onLevel={setLevel} onBLives={showBLives}
+        <ModelCharacteristics result={result} level={level} onLevel={setLevel} onBLives={showBLives} name={label}
                               calc={calc} tvc={tvcCalc} onCalc={toCalc} />
       );
       break;

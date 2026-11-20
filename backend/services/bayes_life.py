@@ -359,7 +359,10 @@ def given_rows(x, c) -> list[dict]:
 # ---- the update -------------------------------------------------------------------------
 
 def _fit(dist_id: str, x, c, priors, unit):
-    model = DISTS[dist_id].fit_bayes(x, c, priors=priors, unit=unit or None)
+    from backend.fitting import surpyval_unit
+
+    # The app's one spelling ("days" -> "Days"), as every other fit and the downloaded script give it.
+    model = DISTS[dist_id].fit_bayes(x, c, priors=priors, unit=surpyval_unit(unit))
     ex = getattr(getattr(model, "posterior", None), "exact", None) or {}
     return _StableLomax(model, ex) if ex.get("family") == "gamma" else model
 

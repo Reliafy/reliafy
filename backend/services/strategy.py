@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
+from backend.services import model_units
 from backend.units import unit_in_text, with_unit
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
@@ -599,19 +600,42 @@ def compare_two(spec_a: dict, spec_b: dict, unit: Optional[str] = None) -> dict:
     more reliable. Each side is a parametric model (distribution + params) or a
     non-parametric Kaplan-Meier fit of raw data (``x`` with optional ``c``).
     """
+    # A side's model in another unit of the same kind as the comparison's (B in months, the
+    # comparison in days) is converted to it, never compared as if its months were days. The
+    # comparison's unit is the one asked for, else side A's, else side B's.
+    target = (unit or "").strip() or str(spec_a.get("unit") or "").strip() or str(spec_b.get("unit") or "").strip()
+    spec_a, conv_a = _side_in_unit(spec_a, target)
+    spec_b, conv_b = _side_in_unit(spec_b, target)
     his = [h for h in (_side_hi(spec_a), _side_hi(spec_b)) if h]
     hi = max(his) if his else 1.0
     grid = np.linspace(0.0, hi, _GRID_POINTS)
     a = _eval_side(spec_a, grid)
     b = _eval_side(spec_b, grid)
-    return {
-        "unit": (unit or "").strip(),
+    out = {
+        "unit": target,
         "time": grid.tolist(),
         "a": a,
         "b": b,
-        "verdict": _reliability_verdict(grid, a, b, unit),
+        "verdict": _reliability_verdict(grid, a, b, target),
         "tests": _difference_tests(spec_a, spec_b, a["label"], b["label"]),
     }
+    notes = [f"{side['label']}: {model_units.used_note(conv, 'comparison')}."
+             for side, conv in ((a, conv_a), (b, conv_b)) if conv is not None]
+    if notes:
+        out["unit_conversions"] = notes
+        out["factors"] = {k: conv["factor"] for k, conv in (("a", conv_a), ("b", conv_b)) if conv is not None}
+    return out
+
+
+def _side_in_unit(spec: dict, unit: str) -> tuple[dict, Optional[dict]]:
+    """A comparison side's parametric model in ``unit`` when its own ``unit`` converts to it."""
+    if spec.get("kind") == "nonparametric" or not spec.get("unit") or not unit:
+        return spec, None
+    params, extras, conv = model_units.convert_spec(spec.get("distribution_id"), spec.get("params") or [],
+                                                    spec.get("extras"), spec.get("unit"), unit)
+    if conv is None:
+        return spec, None
+    return {**spec, "params": params, "extras": extras, "unit": conv["to"]}, conv
 
 
 def with_life_bounds(result: dict, bounds: dict) -> dict:

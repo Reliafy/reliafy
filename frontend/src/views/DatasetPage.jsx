@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AddedToLibrary } from "../components/DatasetSplit.jsx";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import LoadFailed from "../components/LoadFailed.jsx";
-import { getDataset, deleteDataset, removeMeasurements, renameDataset, splitDataset } from "../api.js";
+import { getDataset, deleteDataset, downloadDatasetCsv, removeMeasurements, renameDataset, splitDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import CompareGroups from "../components/CompareGroups.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -44,7 +44,7 @@ export default function DatasetPage() {
   const location = useLocation();
   const [ds, setDs] = useState(null);
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(null); // "split" | "remove"
+  const [busy, setBusy] = useState(null); // "split" | "remove" | "csv"
   const [partModal, setPartModal] = useState(null); // { part, replacing }
   const [keepOne, setKeepOne] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -122,6 +122,11 @@ export default function DatasetPage() {
     catch (e) { setError(e.message); } finally { setBusy(null); }
   };
 
+  const onDownloadCsv = async () => {
+    setBusy("csv"); setError(null);
+    try { await downloadDatasetCsv(id, part, itemName(ds)); }
+    catch (e) { setError(e.message); } finally { setBusy(null); }
+  };
   const parts = datasetParts(ds);
   const { primary: fit, secondary: alsoFit } = ds ? datasetActions(ds, parts) : {};
   // Compare treats each row as a unit, so it's not offered for unit histories
@@ -189,6 +194,11 @@ export default function DatasetPage() {
             {writable && parts.readingsOnly && (
               <button className="ovm-item" onClick={() => setPartModal({ part: "life", replacing: false })}>Add life data</button>
             )}
+            <button className="ovm-item" onClick={onDownloadCsv} disabled={busy === "csv"}
+                    title="Every row of the table on show, as saved">
+              {busy === "csv" ? "Preparing…" : parts.life && parts.measurements && part === "measurements"
+                ? "Download measurements CSV" : "Download CSV"}
+            </button>
             <button className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>
             <ShareButton
               collection="datasets"
