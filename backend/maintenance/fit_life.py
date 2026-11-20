@@ -290,7 +290,9 @@ def _class_prior(sp, distribution: str, class_rows: list[dict], trust: str, cls:
     params, extra = {}, ""
     priors: list = [power]
     try:
-        mle = dist.fit(x=cx, c=cc)
+        from backend.fitting import surpyval_unit
+
+        mle = dist.fit(x=cx, c=cc, unit=surpyval_unit(unit))  # the class's lives, in the fit's unit
         params = dict(zip(dist.parameter_names, [float(v) for v in mle.params]))
     except Exception:  # noqa: BLE001 - without the class's own fit there's no centre for the wide priors
         mle = None
