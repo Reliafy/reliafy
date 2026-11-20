@@ -273,7 +273,9 @@ def _matches(model: dict, live) -> bool:
     dist = entry["dist"]
     if live.dist is not dist and getattr(live.dist, "name", None) != getattr(dist, "name", ""):
         return False
-    by_name = {p.get("name"): p.get("value") for p in (model.get("params") or [])}
+    # A block converted to the diagram's unit is compared on the parameters it had in the fit's.
+    own = (model.get("converted") or {}).get("params") if model.get("converted") else model.get("params")
+    by_name = {p.get("name"): p.get("value") for p in (own or [])}
     names = list(getattr(dist, "parameter_names", []) or [])
     try:
         values = [float(by_name[n]) for n in names]
@@ -285,15 +287,26 @@ def _matches(model: dict, live) -> bool:
 
 def _drawn_model(model: dict, params: list, extras: Optional[dict] = None) -> dict:
     """The block's non-repairable model with draw ``params`` in place of its
-    own, and the draw's own offset / shares (``extras``) where it has them."""
+    own, and the draw's own offset / shares (``extras``) where it has them. A
+    draw is in the saved fit's unit: for a block converted to the diagram's
+    unit it is converted the same way (``model_units``)."""
+    from backend.services import model_units
+
     dist = DISTRIBUTIONS[model["distribution_id"]]["dist"]
     names = list(getattr(dist, "parameter_names", []) or [])
-    return {
+    conv = model.get("converted")
+    wrap = bool(conv) and not model_units.scalable(model["distribution_id"])
+    if conv and not wrap:
+        params, extras = model_units.draw_in_unit(model, model["distribution_id"], params, extras)
+    drawn = {
         "source": "params",
         "distribution_id": model["distribution_id"],
         "params": [{"name": n, "value": float(v)} for n, v in zip(names, params)],
         "extras": {**(model.get("extras") or {}), **extras} if extras else model.get("extras"),
     }
+    if wrap:  # no parameter rule (the 0-to-1 beta): the draw is read on the diagram's clock
+        drawn["converted"] = {**conv, "wrap": True}
+    return drawn
 
 
 def _model_slots(node: dict) -> list[tuple]:

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef } from "react
 import { Handle, Position, useStore } from "reactflow";
 import { maintenanceChips } from "./RbdBlockCosts.jsx";
 import { unitInText } from "./unitText.js";
+import { blockConversion, normalizeUnit } from "../unitConvert.js";
 import { formatPercent } from "../format.js";
 import { lifeLine, repairLine } from "./rbdModelText.js";
 import { jointBlockLine } from "../joint.js";
@@ -83,13 +84,22 @@ function NodeTitle({ nodeId, label, className, children }) {
   );
 }
 
-// Warn only when a model has an explicit unit that differs from the RBD unit.
-// A unitless model (e.g. entered as parameters) assumes the RBD unit — good.
+// Warn only when a model has an explicit unit that differs from the RBD unit
+// and can't be converted to it (cycles in an hours diagram). A unitless model
+// (e.g. entered as parameters) assumes the RBD unit — good. A unit of the same
+// kind (days in hours) is converted by the analysis: the block says so instead.
 export function unitWarning(model, rbdUnit) {
   if (!rbdUnit || !model) return null;
   const u = (model.unit || "").trim();
-  if (!u || u === rbdUnit) return null;
+  if (!u || u === rbdUnit || normalizeUnit(u) === normalizeUnit(rbdUnit)) return null;
+  if (blockConversion(model, rbdUnit)) return null;
   return `Unit mismatch — model is ${unitInText(u)}, RBD is ${unitInText(rbdUnit)}`;
+}
+
+// The unit a block's life line is written in: the model's own when the analysis
+// converts it (its parameters are still in days), else the diagram's.
+function lineUnit(model, rbdUnit) {
+  return blockConversion(model, rbdUnit) ? model.unit : rbdUnit;
 }
 
 function UnitWarn({ title }) {
@@ -169,13 +179,14 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
   const ccf = useContext(RbdCcfContext);
   const beta = ccf[id];
   const warn = unitWarning(data.model, rbdUnit);
+  const converted = blockConversion(data.model, rbdUnit);
   const placeholder = !!data.model?.placeholder;
   const repeatTitle = `Repeated block — the same component as “${data.label}”, drawn again. ` +
     "It works or fails wherever it is drawn; edit the original to change it.";
   // The block shows its name and its life (and, repairable, its repair) in
   // plain words, each on a line of its own that reads at fit-to-view (#314);
   // the full models are on its tooltip.
-  const life = data.model ? lifeLine(data.model, rbdUnit, { short: repairable, repairable }) : "";
+  const life = data.model ? lifeLine(data.model, lineUnit(data.model, rbdUnit), { short: repairable, repairable }) : "";
   const rep = !repairable ? "" : data.instant_repair ? "instant repair" : repairLine(data.repair, rbdUnit);
   const detail = [
     data.model ? `Life: ${modelSummary(data.model)}` : null,
@@ -214,7 +225,7 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
         {data.label}
       </NodeTitle>
       {body}
-      <BlockChips data={data} unit={rbdUnit} beta={beta} maintenance={repairable} />
+      <BlockChips data={data} unit={rbdUnit} beta={beta} maintenance={repairable} converted={converted} />
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -222,9 +233,11 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
 
 // The block's chips (#314): one neutral style, an icon each — a proof test
 // (⏱ 8,760 h), scheduled replacement (↻), condition-based (◎), a maintenance
-// group (⧉) and a common-cause group (⚭ β 5%).
-function BlockChips({ data, unit, beta, maintenance }) {
+// group (⧉) and a common-cause group (⚭ β 5%); and a model converted to the
+// diagram's unit ("Fitted in days, shown in hours").
+function BlockChips({ data, unit, beta, maintenance, converted = null }) {
   const chips = maintenance ? maintenanceChips(data, unit) : [];
+  if (converted) chips.unshift(conversionChip(converted));
   if (beta != null) {
     chips.push({ key: "ccf", text: `⚭ β ${formatPercent(beta)}`, title: `Common-cause group — β = ${formatPercent(beta)}` });
   }
@@ -236,6 +249,10 @@ function BlockChips({ data, unit, beta, maintenance }) {
       ))}
     </div>
   );
+}
+
+function conversionChip(c) {
+  return { key: "unit", text: c.text, title: `${c.text}: the analysis converts its life to ${c.to} before working anything out.` };
 }
 
 // n-out-of-k voting block: the system through this node works if at least n of
@@ -295,11 +312,12 @@ export function StructureNode({ id, data: nodeData, type }) {
   const repairable = useContext(RbdRepairableContext) && data.kind === "standby";
   // Series/parallel/standby carry a non-repairable model whose unit can be checked.
   const warn = unitWarning(data.model, rbdUnit);
+  const converted = BLOCK_HAS_MODEL(data.kind) || data.kind === "standby" ? blockConversion(data.model, rbdUnit) : null;
 
   let body;
   if (BLOCK_HAS_MODEL(data.kind)) {
     body = data.model ? (
-      <div className="rbd-block-model">{lifeLine(data.model, rbdUnit)}</div>
+      <div className="rbd-block-model">{lifeLine(data.model, lineUnit(data.model, rbdUnit))}</div>
     ) : (
       <div className="rbd-block-sub">No failure data — double-click</div>
     );
@@ -324,7 +342,7 @@ export function StructureNode({ id, data: nodeData, type }) {
               .filter(Boolean).join(" · ")}
           </div>
         )}
-        {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true, repairable })}</div>}
+        {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, lineUnit(data.model, rbdUnit), { short: true, repairable })}</div>}
         {repairable && data.repair && <div className="rbd-block-model one-line">{repairLine(data.repair, rbdUnit)}</div>}
         {repairable && !data.repair && (
           <div className="rbd-comp-empty warn">No repair time — double-click</div>
@@ -377,6 +395,11 @@ export function StructureNode({ id, data: nodeData, type }) {
         {count ? <span className="rbd-block-count">×{count}</span> : null}
       </NodeTitle>
       {body}
+      {converted && (
+        <div className="rbd-chips">
+          <span className="rbd-chip" title={conversionChip(converted).title}>{converted.text}</span>
+        </div>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   );

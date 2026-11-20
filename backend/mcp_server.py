@@ -5096,6 +5096,10 @@ def analyze_rbd(
     design = rbd_analysis.design_warnings(graph)
     if design:
         head["warnings"] = design
+    # Blocks fitted in another unit of the same kind, converted to the diagram's before the analysis.
+    converted = rbd_analysis.unit_conversions(graph)
+    if converted:
+        head["unit_conversions"] = [c["note"] for c in converted]
 
     if rbd_network.is_network(graph):  # #160: two-terminal reliability of an undirected network
         if (conditional_age is not None or current_state or target_reliability is not None or confidence is not None
