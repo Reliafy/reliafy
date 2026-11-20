@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseColumn, statusReading } from "./compareData.js";
+import { parseColumn, sideUnit, statusReading } from "./compareData.js";
 
 test("a text status column is read as the Data step reads it, never as all failures", () => {
   const csv = "Hours,Result\n100,Failed\n200,Running\n300,F\n400,S\n500,suspended\n";
@@ -17,4 +17,12 @@ test("statusReading says how a status column reads", () => {
   assert.equal(statusReading({ Failed: 26, Running: 19 }, "Status"), "26 failed, 19 still running");
   assert.equal(statusReading({ F: 2, "??": 1 }, "Status"), "2 failed, 0 still running, 1 not read");
   assert.equal(statusReading(null, "Status"), null);
+});
+
+test("a saved model brings its unit to Compare two models; typed parameters and data bring none", () => {
+  assert.equal(sideUnit({ mode: "model", model: { source: "saved", unit: "Hours" } }), "Hours");
+  assert.equal(sideUnit({ mode: "model", model: { source: "saved", unit: "" } }), "");
+  assert.equal(sideUnit({ mode: "model", model: { source: "params", unit: "Hours" } }), "");
+  assert.equal(sideUnit({ mode: "data", model: { source: "saved", unit: "Hours" } }), "");
+  assert.equal(sideUnit({ mode: "model", model: null }), "");
 });

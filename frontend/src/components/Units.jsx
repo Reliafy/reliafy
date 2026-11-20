@@ -1,8 +1,9 @@
-import { UNITLESS, isUnitless } from "../lifeData.js";
+import Field, { useField } from "./ui/Field.jsx";
+import { TextInput } from "./ui/Controls.jsx";
+import { UNITLESS, UNIT_MISSING, isUnitless, unitSettled } from "../lifeData.js";
 
-// Unit selector for the value column: a combobox of common units that also
-// accepts a custom value (free text via the datalist).
-// Not only time: x may be cycles, km, volts or a load. Any other unit can be typed.
+// Common units for a model's values, offered by every unit box (a datalist, so
+// any other unit can be typed). Not only time: x may be cycles, km, volts or a load.
 export const COMMON_UNITS = [
   "Hours",
   "Days",
@@ -21,61 +22,48 @@ export const COMMON_UNITS = [
   "MPa",
 ];
 
-export default function Units({ value, onChange }) {
-  return (
-    <label className="units-field">
-      <span className="units-label">Unit of the values (optional)</span>
-      <input
-        className="units-input"
-        list="x-units"
-        value={value}
-        placeholder="e.g. Hours, Cycles, or type your own"
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <datalist id="x-units">
-        {COMMON_UNITS.map((u) => (
-          <option value={u} key={u} />
-        ))}
-      </datalist>
-    </label>
-  );
-}
-
-// The fit flow's unit: optional. Pick or type one so results say what the
-// numbers mean; tick "No unit" to say there is none (stored as "units", so
-// results still say "257 units"). Left blank it just fits without one.
-export function RequiredUnit({ value, onChange, label = "Unit", listId = "x-units", autoFocus = false }) {
+function UnitControls({ value, onChange, label, listId, autoFocus }) {
+  const field = useField();
   const none = isUnitless(value);
   return (
-    <div className="ds-field ds-unit">
-      <label className="ds-unit-pick">
-        <span className="ds-label">{label}</span>
-        <input
-          className="units-input"
-          type="text"
-          list={listId}
-          value={none ? "" : value || ""}
-          disabled={none}
-          autoFocus={autoFocus}
-          placeholder={none ? "No unit" : "e.g. Hours"}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      </label>
+    <span className="unit-field-row">
+      <TextInput
+        list={listId}
+        aria-label={label}
+        aria-describedby={field?.describedBy}
+        aria-required={!none}
+        value={none ? "" : value || ""}
+        disabled={none}
+        autoFocus={autoFocus}
+        placeholder={none ? "No unit" : "e.g. hours, cycles, km"}
+        onChange={(e) => onChange(e.target.value)}
+      />
       <datalist id={listId}>
         {COMMON_UNITS.map((u) => (
           <option value={u} key={u} />
         ))}
       </datalist>
-      {!none && !String(value ?? "").trim() && (
-        <span className="ds-hint">
-          Add a unit (hours, cycles, km, volts…) so results say what the numbers mean. Without one,
-          results have no unit: values are in whatever unit your data uses.
-        </span>
-      )}
       <label className="ds-unitless">
         <input type="checkbox" checked={none} onChange={(e) => onChange(e.target.checked ? UNITLESS : "")} />
         No unit (just numbers)
       </label>
-    </div>
+    </span>
+  );
+}
+
+// The unit of a model's times, where it is typed: one required choice before
+// a model is fitted or created (a unit, or "No unit" ticked, stored as
+// UNITLESS so results read "257 units"). It starts empty, with no default:
+// a model fitted in days read as hours is 24 times out. While it is empty,
+// the line under it says what to do (``why``); the caller keeps its own
+// action unavailable until unitSettled(value).
+export default function Units({
+  value, onChange, label = "Unit of the times", listId = "x-units", autoFocus = false, why = UNIT_MISSING, className = "",
+}) {
+  return (
+    <Field as="fieldset" label={label} help={unitSettled(value) ? null : why}
+           className={"unit-field" + (className ? ` ${className}` : "")}>
+      <UnitControls value={value} onChange={onChange} label={label} listId={listId} autoFocus={autoFocus} />
+    </Field>
   );
 }

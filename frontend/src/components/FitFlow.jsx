@@ -25,8 +25,9 @@ import { tvcProblems } from "../tvcData.js";
 import Covariates from "./Covariates.jsx";
 import {
   EMPTY_MAPPING, columnFacts, statusSummary, summaryParts, flagNameContradicts,
-  dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, mappingColumns,
+  dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, mappingColumns, unitSettled, UNIT_MISSING,
 } from "../lifeData.js";
+import Units from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { Select } from "./ui/Controls.jsx";
 import LibraryRecordPicker from "./LibraryRecordPicker.jsx";
@@ -322,7 +323,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
           const facts = columnFacts(cols);
           const { mapping: map, unit: guessedUnit } = fitFromReading(
             datasetReading(full, { ...cols, facts }).reading, facts, cols.n_rows);
-          if (map.x) {
+          // Only with its unit known: otherwise the Model step asks for it first.
+          if (map.x && unitSettled(guessedUnit)) {
             const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId, unit: guessedUnit });
             setDetail(full);
             setSplit(null);
@@ -404,7 +406,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // A reading the app guessed (a dataset saved before readings) is checked once before it's fitted.
   // (A sample or a view-only share can't keep one: its guess is shown, not asked about.)
   const unconfirmed = !!detail && rd.source !== "saved" && !autoFit && !rd.readOnly;
-  const mappingValid = readingProblems.length === 0 && !unconfirmed;
+  // Every fit settles its unit (a unit, or "No unit" ticked): asked beside the
+  // reading when the dataset's reading has none, with no default.
+  const askUnit = !!fromReading && !unitSettled(fromReading.unit);
+  const unitWanted = !!csv && !unitSettled(unit);
+  const mappingValid = readingProblems.length === 0 && !unconfirmed && !unitWanted;
   const summary = !csv || tvc || itemLives ? null
     : inspection ? (reading && !reading.error ? reading : null)
     : statusSummary(mapping, facts, csv.n_rows);
@@ -414,6 +420,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     ? flagNameContradicts(mapping, facts, csv.n_rows) : null;
   const waitingFor = unconfirmed ? "First check how the columns are read: Looks right, or Change."
     : readingProblems.length ? "First change the reading: see the note under it."
+    : unitWanted ? UNIT_MISSING
     : null;
 
   // Cox PH's own options travel with a Cox fit only.
@@ -825,6 +832,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             readOnly={rd.readOnly}
           />
           <ReadingChange name={sourceName} rd={rd} />
+          {!rd.editing && askUnit && (
+            <Units value={unit} onChange={setUnit} listId="fit-units" className="fit-unit" />
+          )}
           {!rd.editing && readingProblems.length > 0 && (
             <ul className="ds-problems" role="status">{readingProblems.map((p) => <li key={p}>{p}</li>)}</ul>
           )}
