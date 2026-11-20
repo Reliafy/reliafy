@@ -25,6 +25,8 @@ import {
 import usePhone from "../usePhone.js";
 import { ORDERS_LABEL } from "../navigation.js";
 import "./Maintenance.css";
+import LoadFailed from "../components/LoadFailed.jsx";
+import { plainLoadError } from "../components/loadFailed.js";
 
 const HELP = { guide: "maintenance-work-orders" };
 
@@ -55,8 +57,10 @@ export default function MaintenanceOrders() {
   const [inArea, setInArea] = useState(null);
   const [digest, setDigest] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
-    getMaintenanceOverview().then(setData).catch((e) => setError(e.message));
+    setLoadError(null);
+    getMaintenanceOverview().then(setData).catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
   useEffect(() => {
@@ -99,10 +103,11 @@ export default function MaintenanceOrders() {
         primary={data?.tree?.length > 0 ? <button onClick={() => setModal("wo")}><PlusIcon /> New work order</button> : null}
         actions={<button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>}
       />
-      {error && <div className="card error">{error}</div>}
+      {error && !loadError && <div className="card error">{plainLoadError(error)}</div>}
       {data && <TimeZoneNudge zone={data.time_zone} onSet={refresh} />}
       {data === null ? (
-        <div className="card empty">Loading…</div>
+        loadError ? <LoadFailed what="Couldn't load your work orders." error={loadError} onRetry={refresh} />
+          : <div className="card empty">Loading…</div>
       ) : data.tree.length === 0 ? (
         <div className="card empty">
           <h2>Nothing here yet</h2>
@@ -415,28 +420,30 @@ function ClosedTab({ navigate }) {
   const [query, setQuery] = useState("");
   const [found, setFound] = useState(null);
   const [failed, setFailed] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
+    setFailed(null);
     const wait = setTimeout(() => {
       listMaintenanceWorkOrders({ status: "done", query, limit: CLOSED_LIMIT })
         .then((d) => { if (live) { setFound(d); setFailed(null); } })
-        .catch((e) => live && setFailed(e.message));
+        .catch((e) => live && setFailed(e));
     }, query ? 250 : 0);
     return () => { live = false; clearTimeout(wait); };
-  }, [query]);
+  }, [query, attempt]);
   const rows = found?.work_orders;
   const phone = usePhone();
   return (
     <section className="card">
       <div className="tablebar section-tablebar maint-filters">
         <span className="count">
-          {rows == null ? "Loading…" : found.total > rows.length
+          {rows == null ? (failed ? "" : "Loading…") : found.total > rows.length
             ? `The newest ${rows.length} of ${found.total}` : `${found.total} ${found.total === 1 ? "work order" : "work orders"}`}
         </span>
         <span className="grow" />
         <ListSearch value={query} onChange={setQuery} placeholder="Search closed work orders…" />
       </div>
-      {failed && <div className="card error">{failed}</div>}
+      {failed && <LoadFailed what="Couldn't load the closed work orders." error={failed} onRetry={() => setAttempt((n) => n + 1)} />}
       {rows == null ? null : rows.length === 0 ? (
         <p className="lib-date">{query ? "Nothing closed matches." : "None closed yet."}</p>
       ) : phone ? <ClosedCards rows={rows} /> : (

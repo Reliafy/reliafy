@@ -27,7 +27,8 @@ export default function MaintenanceAssets() {
   const [modal, setModal] = useState(false);
   const [error, setError] = useState(null);
   const reload = useCallback(() => {
-    listMaintenancePlaces().then(setView).catch((e) => setError(e.message));
+    setError(null);
+    listMaintenancePlaces().then(setView).catch((e) => setError(e));
   }, []);
   useEffect(() => reload(), [reload]);
   // Delete… on a row: the asset with everything at it ({id, name}), then the toast with Undo.
@@ -100,7 +101,7 @@ export default function MaintenanceAssets() {
         purpose={fromExplorer != null ? "Pick an asset to open it in the Explorer. Each asset opens on its own."
           : "The places you look after, and everything at each one."}
         help={HELP} primary={newAsset} menu={menu} pane={sheetPane}
-        error={error} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
+        loadError={error} onRetry={reload} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
         count={assetsSummary(view)} search={(p) => [p.name, p.description]}
         name={(p) => ({ to: assetOpenPath(p.id, fromExplorer || ""), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
         columns={columns} after={notPlaced || null}

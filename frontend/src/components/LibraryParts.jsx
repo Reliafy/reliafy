@@ -79,7 +79,7 @@ export function UseAsModelDialog({ record, onClose }) {
   };
   const blocked = !isLife(record) && (!cov.ready || cov.missing.length > 0);
   return (
-    <Modal title="Use as a model" onClose={onClose} locked={busy} trapFocus className="cov-modal"
+    <Modal title="Use as a model" onClose={onClose} locked={busy} className="cov-modal"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -168,7 +168,7 @@ export function UseAsPriorDialog({ record, onClose }) {
     }
   };
   return (
-    <Modal title="Use as a prior" onClose={onClose} locked={busy} trapFocus className="cov-modal"
+    <Modal title="Use as a prior" onClose={onClose} locked={busy} className="cov-modal"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -257,7 +257,7 @@ function LibraryForm({ library, onClose, onDone }) {
     }
   };
   return (
-    <Modal title={library ? "Edit library" : "New library"} onClose={onClose} locked={busy} trapFocus
+    <Modal title={library ? "Edit library" : "New library"} onClose={onClose} locked={busy}
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -340,7 +340,7 @@ function AddToLibrary({ modelId = null, modelName = "", collection = "models", d
   };
   const ready = making ? newName.trim() : libraryId;
   return (
-    <Modal title="Add to library" onClose={onClose} locked={busy} trapFocus
+    <Modal title="Add to library" onClose={onClose} locked={busy}
            footer={done ? <button type="button" onClick={onClose}>Done</button> : (
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>

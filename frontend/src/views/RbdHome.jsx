@@ -80,10 +80,12 @@ export default function RbdHome() {
     else setImported({ file: file.name, diagrams });
   };
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listRbds()
       .then((d) => setRbds(d.rbds))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
 
   useEffect(() => refresh(), [refresh]);
@@ -201,6 +203,8 @@ export default function RbdHome() {
       )}
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={rbds}
         noun={["diagram", "diagrams"]}
         // Missions add a diagram each: a filter keeps them apart (shown once both kinds are there).

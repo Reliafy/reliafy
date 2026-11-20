@@ -8,10 +8,12 @@ import { listN } from "../modelFrame.js";
 
 // The saved life-data models: the section list (search, your own models,
 // then the shared samples). ``models`` is null while loading.
-export default function ModelLibrary({ models, hrefFor, onDelete, help, empty }) {
+export default function ModelLibrary({ models, hrefFor, onDelete, help, empty, loadError = null, onRetry = null }) {
   const navigate = useNavigate();
   return (
     <SectionList
+      loadError={loadError}
+      onRetry={onRetry}
       rows={models}
       noun={["model", "models"]}
       fields={(m) => [m.name, m.distribution]}

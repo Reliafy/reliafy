@@ -42,6 +42,7 @@ export default function MaintenancePackage() {
   const [said, setSaid] = useState(null);
   const today = workspaceToday();
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     setPkg(null);
@@ -49,10 +50,10 @@ export default function MaintenancePackage() {
     setEditing(false);
     getPackage(id).then((p) => live && setPkg(p)).catch((e) => live && setError(e.message));
     return () => { live = false; };
-  }, [id]);
+  }, [id, attempt]);
 
   if (error && !pkg) {
-    return <div className="app"><LoadFailed header error={error} notFound="Package not found." to={PACKAGES_PATH} label="Back to Packages" /></div>;
+    return <div className="app"><LoadFailed onRetry={() => setAttempt((n) => n + 1)} header error={error} notFound="Package not found." to={PACKAGES_PATH} label="Back to Packages" /></div>;
   }
   if (!pkg) return <div className="app"><div className="card empty">Loading…</div></div>;
 

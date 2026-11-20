@@ -53,7 +53,7 @@ export default function MaintenanceItem() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !item) return <div className="app"><LoadFailed header error={error} notFound="Item not found." to={EXPLORER_PATH} label="Open the Explorer" /></div>;
+  if (error && !item) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Item not found." to={EXPLORER_PATH} label="Open the Explorer" /></div>;
   if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const plate = Object.entries(item.nameplate || {});

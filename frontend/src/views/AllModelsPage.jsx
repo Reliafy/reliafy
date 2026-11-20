@@ -23,8 +23,10 @@ export default function AllModelsPage() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const load = useCallback(() => {
-    loadAllModels().then(setRows).catch((e) => setError(e.message));
+    setLoadError(null);
+    loadAllModels().then(setRows).catch(setLoadError);
   }, []);
   useEffect(() => load(), [load]);
   useActivation(rows);
@@ -57,6 +59,8 @@ export default function AllModelsPage() {
       <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={rows} />
 
       <SectionList
+        loadError={loadError}
+        onRetry={load}
         rows={rows}
         noun={["model", "models"]}
         placeholder="Search models…"

@@ -112,3 +112,46 @@ def clean_label_unit(unit) -> str:
     """A stress or covariate unit ("K", "V", "°C", "kN"): trimmed and capped,
     case kept (K and k are different units); blank when not given."""
     return str(unit or "").strip()[:24]
+
+
+# The app's one calendar convention (strategy_calendar.CONVENTION, rcm_intervals.DAYS_IN):
+# 24 hours a day, 7 days a week, 365.25 / 12 days a month, 365.25 days a year.
+DAYS_PER = {"second": 1 / 86400, "minute": 1 / 1440, "hour": 1 / 24, "day": 1.0, "week": 7.0,
+            "month": 365.25 / 12, "year": 365.25}
+# Distance, in kilometres.
+KM_PER = {"km": 1.0, "mile": 1.609344}
+_KINDS = (DAYS_PER, KM_PER)
+
+
+def unit_factor(from_unit, to_unit) -> Optional[float]:
+    """How many ``to_unit`` make one ``from_unit`` (days → hours: 24) when both are known units
+    of the same kind (calendar time, or distance) and differ; None when they are the same, of
+    different kinds (cycles and hours), or either is blank or unknown — never a guess."""
+    a, b = normalize_unit(from_unit), normalize_unit(to_unit)
+    if a is None or b is None or a == b:
+        return None
+    for table in _KINDS:
+        if a in table and b in table:
+            return table[a] / table[b]
+    return None
+
+
+def _number_words(x: float) -> str:
+    return f"{x:,.6g}" if x < 1e6 else f"{x:,.0f}"
+
+
+def conversion_note(from_unit, to_unit) -> str:
+    """The rule a conversion used, in words: "1 day = 24 hours", "1 month = 730.5 hours,
+    at 365.25 / 12 days a month"; blank when the units don't convert."""
+    c = unit_factor(from_unit, to_unit)
+    if c is None:
+        return ""
+    big, small, n = (from_unit, to_unit, c) if c >= 1 else (to_unit, from_unit, 1 / c)
+    keys = {normalize_unit(from_unit), normalize_unit(to_unit)}
+    text = with_unit("1", unit_in_text(canonical_unit(big))) + " = " + \
+        with_unit(_number_words(n), unit_in_text(canonical_unit(small)))
+    if "month" in keys:
+        text += ", at 365.25 / 12 days a month"
+    elif "year" in keys:
+        text += ", at 365.25 days a year"
+    return text

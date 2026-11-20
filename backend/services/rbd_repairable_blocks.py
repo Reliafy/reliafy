@@ -216,6 +216,10 @@ def build(model: dict, where: str, resolve_model=None):
     if not is_repairable(model):
         raise AnalysisError(f"{where} has no repairable model.")
     model_id = model.get("modelId") or model.get("model_id")
+    if model.get("converted"):
+        # Fitted in another unit of the same kind: its parameters were converted to the diagram's
+        # (model_units), so it is built from them, not from the saved fit in its own unit.
+        return build_from_params(model, where)
     if model.get("source") == "saved" and model_id:
         if resolve_model is None:
             return build_from_params(model, where)

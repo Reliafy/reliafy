@@ -49,6 +49,7 @@ import numpy as np
 
 from backend.fitting import DISTRIBUTIONS
 from backend.services import rbd_analysis, rbd_ccf, rbd_next_failure, rbd_repeats, rbd_sensitivity
+from backend import units
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -462,6 +463,7 @@ class _Script:
         self.uses_stand_in = False
         self.uses_rec = False  # a block on a fitted repairable model (surpyval.recurrent)
         self.uses_simulated = False  # a standby block simulated (no exact reliability)
+        self.uses_time_scaled = False  # a life in another unit, read on the diagram's clock
         self.lines: list[str] = []  # block definitions, in order
         self.subsystems: dict[str, str] = {}  # rbd id -> variable
         self.placeholders: list[str] = []  # labels of raising blocks
@@ -523,12 +525,28 @@ class _Script:
         """Emit ``var = surv.X.from_params(...)`` (or a placeholder)."""
         from backend.services import rbd_repairable_blocks as rrb
 
+        from backend.services import model_units
+
         if rrb.is_repairable(spec):
             return self.repairable_model(spec, label, var)
         recipe = bayes_recipe(spec, self.resolve_model)
+        conv = model_units.conversion(spec, self.unit) if model_units.convertible_kind(spec) else None
         if recipe is not None:
-            return self.bayesian(recipe, spec, label, var, prefix_comment)
+            if conv is None:
+                return self.bayesian(recipe, spec, label, var, prefix_comment)
+            # Its posterior is in the saved model's unit: read on the diagram's clock, as the app does.
+            inner = self.bayesian(recipe, spec, label, self.names.make(f"{var}_own_unit"), prefix_comment)
+            return self.time_scaled(var, inner, conv, label)
         spec = _effective_spec(spec, self.resolve_model)
+        converted, conv = model_units.convert_model(spec, self.unit)
+        if conv is not None and model_units.needs_wrap(converted):
+            # No parameter rule for this family (the 0-to-1 beta): its own life, read on this clock.
+            inner = self.dist({**spec, "unit": ""}, label, self.names.make(f"{var}_own_unit"), prefix_comment)
+            return self.time_scaled(var, inner, conv, label)
+        if conv is not None:
+            spec = converted
+            self.comment(f"{prefix_comment or label}: {model_units.words(conv)} - its parameters are "
+                         f"converted ({units.conversion_note(conv['from'], conv['to'])}).")
         try:
             expr, desc = _dist_expr(spec, label, self.unit)
         except _Missing as exc:
@@ -562,6 +580,12 @@ class _Script:
         repair."""
         from backend.services import rbd_repairable_blocks as rrb
 
+        from backend.services import model_units
+
+        spec, conv = model_units.convert_model(spec, self.unit)
+        if conv is not None:
+            self.comment(f"{label}: {model_units.words(conv)} - its parameters are converted "
+                         f"({units.conversion_note(conv['from'], conv['to'])}).")
         try:
             process = rrb.build(spec, label, self.resolve_model)
             expr = rrb.script_model(spec, process)
@@ -580,6 +604,16 @@ class _Script:
         if len(line) > 79:
             line = f"{var} = (\n    {expr}\n)"
         self.lines.append(line)
+        return var
+
+    def time_scaled(self, var: str, inner: str, conv: dict, label: str) -> str:
+        """Emit ``var = TimeScaled(inner, c)``: a life in another unit read on the diagram's clock."""
+        from backend.services import model_units
+
+        self.uses_time_scaled = True
+        self.comment(f"{label}: {model_units.words(conv)} - read on this diagram's clock "
+                     f"({units.conversion_note(conv['from'], conv['to'])}).")
+        self.lines.append(f"{var} = TimeScaled({inner}, {conv['factor']!r})")
         return var
 
     # -- non-repairable blocks -------------------------------------------
@@ -907,10 +941,15 @@ class _Script:
 # App defaults (time axis, simulation horizon)
 # ---------------------------------------------------------------------------
 def _default_t_max(graph: dict, resolve_model, resolve_subsystem,
-                   visited: frozenset = frozenset()) -> Optional[float]:
+                   visited: frozenset = frozenset(), unit=None) -> Optional[float]:
     """The app's default time-axis end: the largest per-block time scale
-    (``rbd_analysis._model_hi``). A nested sub-system contributes the
-    largest scale of its own blocks (the app estimates it by simulation)."""
+    (``rbd_analysis._model_hi``), each block in the top diagram's ``unit``
+    (a model fitted in another unit of its kind converted, as the app does).
+    A nested sub-system contributes the largest scale of its own blocks (the
+    app estimates it by simulation)."""
+    from backend.services import model_units
+
+    unit = graph.get("unit") if unit is None else unit
     his = []
     for node in graph.get("nodes") or []:
         ntype = node.get("type")
@@ -927,7 +966,7 @@ def _default_t_max(graph: dict, resolve_model, resolve_subsystem,
                 sub = None
             if sub:
                 hi = _default_t_max(sub, resolve_model, resolve_subsystem,
-                                    visited | {sub_id})
+                                    visited | {sub_id}, unit)
                 if hi:
                     his.append(hi)
             continue
@@ -942,7 +981,7 @@ def _default_t_max(graph: dict, resolve_model, resolve_subsystem,
                 except Exception:  # noqa: BLE001 - the block's own parameters below
                     pass
             if data.get(key):
-                data[key] = _effective_spec(data[key], resolve_model)
+                data[key] = model_units.convert_model(_effective_spec(data[key], resolve_model), unit)[0]
         from backend.services import rbd_standby
 
         try:
@@ -1193,6 +1232,38 @@ def _helpers(script: _Script) -> str:
 
                 def mean(self):
                     return float(self.draws.mean())
+        '''))
+    if script.uses_time_scaled:
+        out.append(textwrap.dedent('''
+            class TimeScaled:
+                """A life in another unit (days, say) on this diagram's clock (hours): ``c`` of the
+                diagram's units make one of the model's, so it is read at ``t / c``."""
+
+                def __init__(self, model, c):
+                    self.model = model
+                    self.c = float(c)
+                    self.dist = getattr(model, "dist", None)
+
+                def sf(self, x):
+                    return self.model.sf(np.asarray(x, dtype=float) / self.c)
+
+                def ff(self, x):
+                    return self.model.ff(np.asarray(x, dtype=float) / self.c)
+
+                def df(self, x):
+                    return np.asarray(self.model.df(np.asarray(x, dtype=float) / self.c)) / self.c
+
+                def hf(self, x):
+                    return np.asarray(self.model.hf(np.asarray(x, dtype=float) / self.c)) / self.c
+
+                def Hf(self, x):
+                    return self.model.Hf(np.asarray(x, dtype=float) / self.c)
+
+                def random(self, size, *args, **kwargs):
+                    return np.asarray(self.model.random(size, *args, **kwargs), dtype=float) * self.c
+
+                def mean(self, *args, **kwargs):
+                    return float(self.model.mean(*args, **kwargs)) * self.c
         '''))
     if script.uses_stand_in:
         out.append(textwrap.dedent('''

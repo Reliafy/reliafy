@@ -58,7 +58,7 @@ export default function MaintenanceWorkOrder() {
   // what was typed (a functional update, so it can't race a keystroke after a Record or a checklist tick).
   useEffect(() => { if (wo) setValues((prev) => mergeValues(readingRows(wo), prev)); }, [wo]);
 
-  if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to={ORDERS_PATH} label="Back to Orders" /></div>;
+  if (error && !wo) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Work order not found." to={ORDERS_PATH} label="Back to Orders" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (

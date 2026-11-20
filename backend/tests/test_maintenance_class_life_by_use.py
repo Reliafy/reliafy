@@ -241,3 +241,23 @@ def test_the_rest_routes_take_the_unit(monkeypatch):
         assert econ["unit"] == "hours" and econ["options"][-1]["interval"] == "100 hours"
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+# ---- The unit is the model's own (SurPyval's model.unit) -------------------------------
+
+
+@pytest.mark.parametrize("unit, label", [("hours", "Hours"), ("days", "Days")])
+def test_the_class_model_carries_its_unit_into_surpyval_and_its_script(uas, tmp_path, unit, label):
+    from backend.services import model_export
+    from backend.services import models as models_service
+    from backend.tests.python_scripts import run
+
+    m, _fleet_map, db = uas
+    out = loop.fit_class_model(m, db, "Generator belt", "weibull", unit=unit)
+    assert out["model"]["unit"] == unit  # the class's own record reads as before
+    saved = models_service.get_model(db, out["model"]["model_id"], ORG)
+    assert saved.serialized["model"]["unit"] == label  # SurPyval's model.unit, saved with the fit
+    assert saved.results["unit"] == label
+    source = model_export.source_for(db, saved)
+    assert f"unit='{label}')" in source  # the script's fit call carries it
+    run(source, tmp_path)

@@ -199,12 +199,14 @@ def _saved_block_graph(model_id):
             "edges": [{"source": "input", "target": "p"}, {"source": "p", "target": "output"}]}
 
 
-def test_unit_mismatch_warns_on_create_and_analyze(samples):
+def test_a_same_kind_unit_is_converted_on_create_and_analyze(samples):
     created = _ok(_call(samples.token[A], "change", {"action": "rbd_create",
         "name": "Mixed units", "unit": "Hours", **_saved_block_graph(PUMPS)}))
-    assert any("fitted in months" in w and "unit is hours" in w and "Pump" in w for w in created["warnings"])
+    # Months and hours are the same kind of unit: converted (and said so), not warned about.
+    assert not any("fitted in months" in w for w in created.get("warnings") or [])
     out = _ok(_call(samples.token[A], "analyse", {"action": "rbd", "rbd_id": created["id"]}))
-    assert any("months" in w for w in out["warnings"])
+    assert any("fitted in months, shown in hours" in n and "Pump" in n for n in out["unit_conversions"])
+    assert not any("not converted" in w for w in out.get("warnings") or [])
 
     same = _ok(_call(samples.token[A], "change", {"action": "rbd_create",
         "name": "Same units", "unit": "Months", **_saved_block_graph(PUMPS)}))
