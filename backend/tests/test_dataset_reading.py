@@ -247,6 +247,47 @@ def test_mcp_fit_without_columns_uses_the_reading(env):
     assert named["censoring"]["n_failed"] == 7 if "censoring" in named else True
 
 
+def test_the_same_rows_read_two_ways_are_two_datasets_with_two_fits(env):
+    """Uploading rows the user already has, read the other way round, makes a
+    dataset of its own: the user's name and reading win, the older dataset
+    keeps its own, and each fits by its reading (never the other's)."""
+    first = _ok(_call(env.token[A], "change", {
+        "action": "dataset_upload", "name": "plant read one way", "csv": SHEET, "x_col": "Age (h)",
+        "c_col": "Status", "c_meanings": {"Failed": 0, "Running": 1}}))
+    second = _ok(_call(env.token[A], "change", {
+        "action": "dataset_upload", "name": "plant read the other way", "csv": SHEET, "x_col": "Age (h)",
+        "c_col": "Status", "c_meanings": {"Failed": 1, "Running": 0}}))
+    assert second["id"] != first["id"] and second["name"] == "plant read the other way"
+    fits = [_ok(_call(env.token[A], "analyse", {"action": "fit", "dataset_id": d["id"], "distribution": "weibull",
+                                                "unit": "hours"}))["censoring"] for d in (first, second)]
+    assert (fits[0]["n_failed"], fits[0]["n_right_censored"]) == (4, 3)
+    assert (fits[1]["n_failed"], fits[1]["n_right_censored"]) == (3, 4)
+    # The same name and reading again: that dataset comes back, nothing new.
+    again = _ok(_call(env.token[A], "change", {
+        "action": "dataset_upload", "name": "plant read one way", "csv": SHEET, "x_col": "Age (h)",
+        "c_col": "Status", "c_meanings": {"Failed": 0, "Running": 1}}))
+    assert again["id"] == first["id"]
+
+
+def test_web_upload_never_rereads_an_older_dataset(web):
+    """The fit flow's upload: the same rows with the opposite status reading
+    and a new name are saved as typed; the dataset already saved keeps its
+    name, its reading and its count, and the new one says which it matches."""
+    client, db = web
+    one = _upload(client, {"name": "Plant", "reading": json.dumps(READING)}).json()
+    flipped = {**READING, "c_map": {"Failed": 1, "Running": 0}, "e": ""}
+    two = _upload(client, {"name": "Plant flipped", "reading": json.dumps(flipped)}).json()
+    assert two["id"] != one["id"] and two["name"] == "Plant flipped" and "reused" not in two
+    assert two["same_rows_as"] == {"id": one["id"], "name": "Plant"}
+    assert db.datasets.find_one({"_id": one["id"]})["reading"]["c_map"] == {"Failed": 0, "Running": 1}
+    assert db.datasets.find_one({"_id": two["id"]})["reading"]["c_map"] == {"Failed": 1, "Running": 0}
+    assert one["summary"].endswith("· 4 failed") and two["summary"].endswith("· 3 failed")
+    # The same name with another reading is a new dataset too: an old reading never stands in.
+    three = _upload(client, {"name": "Plant", "reading": json.dumps(flipped)}).json()
+    assert three["id"] not in (one["id"], two["id"])
+    assert db.datasets.find_one({"_id": one["id"]})["reading"]["c_map"] == {"Failed": 0, "Running": 1}
+
+
 def test_summary_adds_the_unit_only_when_the_column_name_lacks_one():
     from backend.services import dataset_reading as dr
 

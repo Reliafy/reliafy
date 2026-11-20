@@ -299,3 +299,35 @@ def test_summary_and_fit_step_count_first_inspection_failures_alike():
     df = pd.DataFrame(rows, columns=cols)
     fit = fitting.data_reading(df, {"xl": "last_ok_hours", "xr": "found_failed_hours"})
     assert (fit["interval"], fit["left"], fit["running"]) == (23, 2, 15)
+
+
+def test_a_failure_mode_columns_blanks_count_as_running_on_the_card_as_in_the_fit():
+    """A dataset read with a failure-mode column and no status column: a
+    blank mode is a unit still running. The Data card's count follows the
+    fit by failure mode (and the fit step's "50 failed, 22 running"), never
+    "every row failed"."""
+    import io
+
+    import numpy as np
+
+    from backend import competing_risks
+    from backend.services import samples
+    from backend.services.datasets import count_reading_of
+
+    csv = samples._PUMP_MODES_CSV
+    df = pd.read_csv(io.StringIO(csv.decode() if isinstance(csv, bytes) else csv))
+    mapping = {"x": "hours", "e": "failure_mode", "g": "site"}
+    prep = competing_risks.prepare(df, mapping)
+    failed, running = int(np.sum(prep["c"] == 0)), int(np.sum(prep["c"] == 1))
+    assert (failed, running) == (50, 22)
+    blanks = int(df["failure_mode"].isna().sum())
+    assert blanks == running  # the hand check: one running pump per blank mode
+    # The newest model's mapping (no saved reading) and a saved reading alike.
+    card = detect_tags(df, None, count_reading_of({"mapping": mapping}))["summary"]
+    assert card == f"72 pumps · {failed} failed"
+    saved = detect_tags(df, {"x": "hours", "e": "failure_mode", "i": "pump", "unit": "Hours"})["summary"]
+    assert saved == f"72 pumps · {failed} failed"
+    # A status column, where there is one, still decides.
+    df2 = df.assign(status=0)
+    assert detect_tags(df2, {"x": "hours", "c": "status", "e": "failure_mode", "i": "pump"})["summary"] \
+        == "72 pumps · 72 failed"

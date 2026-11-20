@@ -50,8 +50,10 @@ def test_paste_validation(client):
     assert r.status_code == 422 and "column" in r.json()["detail"].lower()
 
 
-def test_paste_dedupes_by_content(client):
+def test_paste_dedupes_by_content_and_name(client):
     payload = {"name": "One", "content": "a,b\n1,2\n3,4"}
     first = client.post("/api/datasets/paste", json=payload).json()
-    again = client.post("/api/datasets/paste", json={"name": "Two", "content": "a,b\n1,2\n3,4"}).json()
-    assert first["id"] == again["id"]  # identical data reuses the dataset
+    again = client.post("/api/datasets/paste", json=payload).json()
+    assert first["id"] == again["id"]  # identical data under the same name reuses the dataset
+    other = client.post("/api/datasets/paste", json={"name": "Two", "content": "a,b\n1,2\n3,4"}).json()
+    assert other["id"] != first["id"] and other["name"] == "Two"  # a new name is never dropped

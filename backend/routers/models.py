@@ -366,17 +366,14 @@ def upload_dataset(
     if (dataset_col or "").strip():
         return _split_upload(session, ctx, contents, dataset_col, (name or "").strip()
                              or datasets_service.default_name(file.filename), chosen, lib)
-    # Free-plan cap (new datasets only — re-uploading an existing file is fine).
+    # Free-plan cap (new datasets only — re-uploading the same file, name and reading is fine).
+    name = (name or "").strip() or datasets_service.default_name(file.filename)
     denied = _creation_denied(session, ctx, "datasets")
-    if denied is not None:
-        digest = storage.checksum(contents)
-        if session.datasets.find_one({"checksum": digest, "owner_id": ctx.write_owner}) is None:
-            return denied
+    if denied is not None and datasets_service.find_reusable(
+            session, ctx.write_owner, storage.checksum(contents), name, chosen) is None:
+        return denied
     try:
-        dataset, reused = datasets_service.create_or_reuse(
-            session, (name or "").strip() or datasets_service.default_name(file.filename), contents,
-            ctx.write_owner, reading=chosen,
-        )
+        dataset, reused = datasets_service.create_or_reuse(session, name, contents, ctx.write_owner, reading=chosen)
     except (FitError, dataset_reading.ReadingError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
@@ -455,16 +452,14 @@ def paste_dataset(
     if isinstance(lib, JSONResponse):
         return lib
     csv_bytes, guess, hint = read
-    # Free-plan cap (skipped when the identical data already exists).
+    # Free-plan cap (skipped when the same data, name and reading already exist).
+    name = (name or "").strip() or "Pasted data"
     denied = _creation_denied(session, ctx, "datasets")
-    if denied is not None:
-        digest = storage.checksum(csv_bytes)
-        if session.datasets.find_one({"checksum": digest, "owner_id": ctx.write_owner}) is None:
-            return denied
+    if denied is not None and datasets_service.find_reusable(
+            session, ctx.write_owner, storage.checksum(csv_bytes), name, reading) is None:
+        return denied
     try:
-        dataset, reused = datasets_service.create_or_reuse(
-            session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner, reading=reading,
-        )
+        dataset, reused = datasets_service.create_or_reuse(session, name, csv_bytes, ctx.write_owner, reading=reading)
     except (FitError, dataset_reading.ReadingError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
@@ -504,7 +499,7 @@ def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
     try:
-        wanted = datasets_service.count_new_parts(session, contents, column, ctx.write_owner)
+        wanted = datasets_service.count_new_parts(session, contents, column, ctx.write_owner, source, reading)
         room = (None if not ctx.is_personal or billing_service.is_admin_user(ctx.user)
                 else billing_service.room_left(session, ctx.uid, "datasets"))
         if room is not None and room < wanted:
@@ -527,13 +522,17 @@ def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source:
 
 
 def _created(dataset, reused: bool, session, ctx: AccessCtx, guess: int = 1, hint: str | None = None) -> dict:
-    """A create's response: the dataset, plus ``reused`` when identical data
-    was already saved (the existing dataset came back, under its own name),
-    the guessed header row and, when a first row of numbers was kept as data
-    because ``no_header`` was left blank, a one-line ``hint`` saying so."""
+    """A create's response: the dataset, plus ``reused`` when the same data
+    was already saved under this name and reading (that dataset came back),
+    or ``same_rows_as`` ({id, name}) when a new dataset was made although the
+    owner has these exact rows under another name or reading; the guessed
+    header row and, when a first row of numbers was kept as data because
+    ``no_header`` was left blank, a one-line ``hint`` saying so."""
+    twin = None if reused else datasets_service.same_rows_as(session, dataset)
     return {
         **_dataset_detail(dataset, session, ctx),
         **({"reused": True} if reused else {}),
+        **({"same_rows_as": twin} if twin else {}),
         "header_guess": guess,
         **({"hint": hint} if hint else {}),
     }

@@ -53,6 +53,8 @@ export default function DatasetPage() {
   const [reused, setReused] = useState(() => (location.state?.reused ? location.state : null));
   // New dataset's "Also add to library": which library it went into (this visit only).
   const [addedTo] = useState(() => location.state?.library || null);
+  // A new dataset whose exact rows you already had under another name or reading: say which.
+  const [sameRows] = useState(() => location.state?.sameRows || null);
   // ?compare=<column> opens "Compare groups" split by that column (the MCP
   // analyse compare_groups action links here); ?part= picks the tab.
   const [params, setParams] = useSearchParams();
@@ -77,7 +79,7 @@ export default function DatasetPage() {
 
   // The notice is for this visit only, not a reload.
   useEffect(() => {
-    if (location.state?.reused || location.state?.library) window.history.replaceState({}, "");
+    if (location.state?.reused || location.state?.library || location.state?.sameRows) window.history.replaceState({}, "");
   }, [location.state]);
 
   const confirm = useConfirm();
@@ -217,10 +219,16 @@ export default function DatasetPage() {
         {addedTo && <AddedToLibrary library={addedTo} />}
         {reused && ds && (
           <p className="ds-reused" role="status">
-            You already had this data, so it opened here.
+            You already had this data with this name and reading, so it opened here.
             {offerName && (
               <button className="link" onClick={() => rename(offerName)}>Rename it “{offerName}”</button>
             )}
+          </p>
+        )}
+        {sameRows && ds && sameRows.id !== ds.id && (
+          <p className="ds-reused" role="status">
+            You already have these rows as <Link to={`/data/${sameRows.id}`}>“{sameRows.name}”</Link>. This is a new
+            dataset, saved with the name and reading you just chose.
           </p>
         )}
       </PageHeader>
