@@ -163,7 +163,10 @@ would actually move the system, which is the question you're usually trying to
 answer. The ranking can change with time — wear-out blocks overtake
 constant-rate ones later on — so it's worked out at the time you type in
 **Evaluate at t** (a one-year mission, say), or, with none typed, where the
-system reliability falls to 90%. The table's heading says which.
+system reliability falls to 90%. The table's heading says which. When the
+time in **Evaluate at t** isn't the one the table is at (you changed it, or
+the box holds the automatic time), a note above the table says so, with a
+**Rank at** button that ranks the components at the time in the box.
 
 With **Confidence band** on, the MTTF, B-lives and design life each get a
 one-sided lower bound ("≥ 1,240 at 90%": at least that long, 90% sure), as on a

@@ -17,8 +17,9 @@ import { AUTO_BOUND, boundOptions, effectiveBound } from "../levels.js";
 import { STARTING_WORDS, boundWords, checkTime, perUnit, precisePercent, startingTime, timeAtValue, timeInWords } from "../lifeResults.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 import { unitInText } from "./unitText.js";
-import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, requestKey } from "../calcSeries.js";
+import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, nextCombinationValues, requestKey } from "../calcSeries.js";
 import { answerFor, exactBound, exactKey, exactTimes, exactValues } from "../calcExact.js";
 import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } from "../rateSpread.js";
 
@@ -150,6 +151,7 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
                 <span>{c.stratum ? `${c.name} (stratum)` : withUnit(c.name, c.unit)}</span>
                 {c.type === "category" ? (
                   <Select
+                    ariaLabel={`${c.name}, combination ${i + 1}`}
                     value={s.values[c.name]}
                     onChange={(v) => onUpdate(s.id, c.name, v)}
                     options={c.options}
@@ -209,7 +211,7 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
         <label className="calc-cov" key={c.name}>
           <span>{c.stratum ? `${c.name} (stratum)` : withUnit(c.name, c.unit)}</span>
           {c.type === "category" ? (
-            <Select value={first.values[c.name]} onChange={(v) => onUpdate(first.id, c.name, v)} options={c.options} />
+            <Select ariaLabel={c.name} value={first.values[c.name]} onChange={(v) => onUpdate(first.id, c.name, v)} options={c.options} />
           ) : (
             <input type="number" step="any" aria-label={withUnit(c.name, c.unit)} value={first.values[c.name]}
                    onChange={(e) => onUpdate(first.id, c.name, e.target.value)} />
@@ -493,7 +495,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const addSeries = () => {
     if (series.length >= MAX_SERIES) return;
     const id = nextIdRef.current++;
-    const values = { ...(series[series.length - 1]?.values || defaults()) };
+    const values = nextCombinationValues(series, covariates, defaults());
     setSeries((prev) => [...prev, { id, values, curves: null, error: null }]);
     runEval(id, values);  // pending until its curve arrives
   };
@@ -760,6 +762,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
           </tbody>
         </table>
       ) : multi ? (
+        // Several functions side by side: scrolls inside itself on a phone.
+        <ScrollCue className="calc-multi-scroll">
         <table className="calc-table">
           <thead>
             <tr>
@@ -797,6 +801,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
             ))}
           </tbody>
         </table>
+        </ScrollCue>
       ) : null}
 
       {hasCov && (

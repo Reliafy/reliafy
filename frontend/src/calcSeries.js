@@ -51,3 +51,22 @@ export function autoRangeEnd(functions, asked) {
   const step = 10 ** (Math.floor(Math.log10(want)) - 1);
   return Math.ceil(want / step) * step;
 }
+
+// The values for a new covariate combination ("Compare another"): the last
+// combination's, with its first category covariate moved to a value no
+// combination uses yet, so one click compares design B with design A rather
+// than adding a second design A to edit.
+export function nextCombinationValues(series, covariates, fallback = {}) {
+  const values = { ...(series[series.length - 1]?.values || fallback) };
+  for (const c of covariates || []) {
+    if (c.type !== "category" || !(c.options || []).length) continue;
+    const used = new Set(series.map((s) => String(s.values?.[c.name])));
+    const valueOf = (o) => (o && typeof o === "object" ? o.value : o);
+    const free = c.options.map(valueOf).find((o) => o != null && !used.has(String(o)));
+    if (free != null) {
+      values[c.name] = free;
+      break;
+    }
+  }
+  return values;
+}
