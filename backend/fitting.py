@@ -952,7 +952,8 @@ def outside_support_message(
             f"{'that row' if one else 'those rows'} in the data and fit again.")
 
 
-def nonparametric_range_message(kwargs: dict, estimator_name: str) -> Optional[str]:
+def nonparametric_range_message(kwargs: dict, estimator_name: str, what: Optional[str] = None,
+                                ranges: bool = True) -> Optional[str]:
     """A plain sentence naming the rows a non-parametric estimate can't use,
     or ``None`` when every row is usable.
 
@@ -971,7 +972,14 @@ def nonparametric_range_message(kwargs: dict, estimator_name: str) -> Optional[s
 
     A unit still running at 0 (right-censored) adds nothing and is kept, and
     a range starting at 0 (failed before the first check) is fine.
+
+    ``what`` names the analysis in place of "a <estimator> estimate" (e.g.
+    "a comparison of groups"); ``ranges=False`` for one that takes a single
+    time per unit, so it isn't offered the range from 0 to the first check.
+    Times that are NaN (rows the caller leaves out) are skipped.
     """
+    what = what or f"a {estimator_name} estimate"
+
     def arr(key):
         v = kwargs.get(key)
         return None if v is None else np.asarray(v, dtype=float).ravel()
@@ -994,8 +1002,8 @@ def nonparametric_range_message(kwargs: dict, estimator_name: str) -> Optional[s
         bad = np.flatnonzero(neg)
         one = bad.size == 1
         rows = _rows_phrase(bad, value[bad])
-        out.append(f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} out of range for a {estimator_name} "
-                   "estimate: a time can't be below 0, as no unit fails, or is removed, before it starts. "
+        out.append(f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} out of range for {what}"
+                   ": a time can't be below 0, as no unit fails, or is removed, before it starts. "
                    f"Correct or remove {'that row' if one else 'those rows'} in the data and fit again.")
     if x is not None:
         at_zero = (x == 0) & (flags != 1)
@@ -1010,12 +1018,12 @@ def nonparametric_range_message(kwargs: dict, estimator_name: str) -> Optional[s
         one = bad.size == 1
         rows = _rows_phrase(bad, np.zeros(bad.size))
         then = "" if estimator_name == "Turnbull" else " and use Turnbull"
-        out.append(f"{rows[0].upper()}{rows[1:]} {'is a failure' if one else 'are failures'} at 0, which a "
-                   f"{estimator_name} estimate can't use: a 0 in a time column is usually a missing value. "
+        doa = (f"If {'the unit was' if one else 'the units were'} dead on arrival, give "
+               f"{'it' if one else 'each'} a range from 0 to the first check (xl to xr){then}. ") if ranges else ""
+        out.append(f"{rows[0].upper()}{rows[1:]} {'is a failure' if one else 'are failures'} at 0, which "
+                   f"{what} can't use: a 0 in a time column is usually a missing value. "
                    f"If 0 stands for a missing time, correct or remove {'that row' if one else 'those rows'}. "
-                   f"If {'the unit was' if one else 'the units were'} dead on arrival, give "
-                   f"{'it' if one else 'each'} a range from 0 to the first check (xl to xr){then}. "
-                   "A unit still running at 0 is fine.")
+                   f"{doa}A unit still running at 0 is fine.")
     return " ".join(out) or None
 
 

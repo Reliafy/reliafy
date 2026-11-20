@@ -109,3 +109,72 @@ def test_preview_names_the_rows_below_0_and_at_0():
     assert out["low_rows"][1]["negative"] == 0
     text = fitting.preview(b"name,hours\na,1\nb,2\n", distinct=True)
     assert text["low_rows"][0] is None
+
+
+# ---- every other Kaplan-Meier path: the same refusal, rows named -----------------------
+
+def test_compare_groups_names_a_time_below_0_by_its_row_in_the_data():
+    from backend.services import compare_groups as cg
+
+    # Row 2 has no group, so it's left out; row numbers still count it.
+    df = pd.DataFrame({"t": [10.0, 20, -5, 30, 40, 50, 60], "c": [0, 0, 0, 1, 0, 0, 1],
+                       "g": ["A", None, "A", "A", "B", "B", "B"]})
+    with pytest.raises(cg.CompareGroupsError,
+                       match=r"^Row 3 \(time -5\) is out of range for a comparison of groups: a time can't be below 0"):
+        cg.prepare(df, time_column="t", group_column="g", censor_column="c")
+
+
+def test_compare_groups_refuses_a_failure_at_0_but_takes_a_unit_running_at_0():
+    from backend.services import compare_groups as cg
+
+    df = pd.DataFrame({"t": [0.0, 20, 25, 30, 40, 50, 60], "c": [0, 0, 0, 1, 0, 0, 1],
+                       "g": ["A", "A", "A", "A", "B", "B", "B"]})
+    with pytest.raises(cg.CompareGroupsError) as exc:
+        cg.prepare(df, time_column="t", group_column="g", censor_column="c")
+    msg = str(exc.value)
+    assert msg.startswith("Row 1 (time 0) is a failure at 0, which a comparison of groups can't use")
+    assert "xl to xr" not in msg  # one time per unit here: no range to offer
+    df.loc[0, "c"] = 1
+    data = cg.prepare(df, time_column="t", group_column="g", censor_column="c")
+    result = cg.compare_groups(data, group_column="g")
+    for g in result.get("groups", []):
+        assert g.get("median") is None or g["median"] >= 0
+
+
+def test_failure_modes_name_a_time_below_0_by_its_row():
+    from backend import competing_risks as cr
+
+    df = pd.DataFrame({"hours": [100.0, -50, 300, 400, 500, 600],
+                       "mode": ["seal", "bearing", "seal", None, "bearing", "seal"]})
+    with pytest.raises(cr.CompetingRisksError,
+                       match=r"^Row 2 \(time -50\) is out of range for failure modes: a time can't be below 0"):
+        cr.prepare(df, {"x": "hours", "e": "mode"})
+
+
+def test_failure_modes_refuse_a_failure_at_0_and_take_a_unit_running_at_0():
+    from backend import competing_risks as cr
+
+    df = pd.DataFrame({"hours": [0.0, 200, 300, 400, 500, 600],
+                       "mode": ["seal", "bearing", "seal", None, "bearing", "seal"]})
+    with pytest.raises(cr.CompetingRisksError, match=r"^Row 1 \(time 0\) is a failure at 0"):
+        cr.prepare(df, {"x": "hours", "e": "mode"})
+    df.loc[0, "mode"] = None  # no mode, no status column: still running at 0
+    assert cr.prepare(df, {"x": "hours", "e": "mode"})["x"][0] == 0
+
+
+def test_comparing_against_field_data_refuses_a_time_below_0():
+    from backend.services import strategy as st
+
+    a = {"label": "Spec sheet", "kind": "parametric", "distribution_id": "weibull",
+         "params": [{"name": "alpha", "value": 100}, {"name": "beta", "value": 2.0}]}
+    b = {"label": "Field data", "kind": "nonparametric", "x": [80.0, -50, 120, 150, 200], "c": [0, 0, 0, 1, 0]}
+    with pytest.raises(st.StrategyError,
+                       match=r"^Field data: Row 2 \(time -50\) is out of range for a Kaplan-Meier estimate"):
+        st.compare_two(a, b)
+    b["x"][1] = 0.0
+    with pytest.raises(st.StrategyError, match=r"^Field data: Row 2 \(time 0\) is a failure at 0"):
+        st.compare_two(a, b)
+    b["c"][1] = 1  # still running at 0: fits, and the field life is above 0
+    m = st.compare_two(a, b)["b"]["metrics"]
+    assert m["b10"] is None or m["b10"] > 0
+    assert m["median"] is None or m["median"] > 0

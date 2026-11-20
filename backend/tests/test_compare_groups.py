@@ -219,7 +219,7 @@ def test_mcp_inline_blank_causes_are_still_running(mcp_env):
     (_aml(), {"group_column": "nope"}, "Column 'nope'"),
     (_aml(), {"group_column": "weeks"}, "other than the time column"),
     (_aml(arm="X"), {}, "only one group"),
-    (pd.DataFrame({"weeks": range(30), "arm": range(30)}), {}, "at most 12"),
+    (pd.DataFrame({"weeks": range(1, 31), "arm": range(30)}), {}, "at most 12"),
     (_aml(censored=[-1] + AML_C[1:]), {"censor_column": "censored"}, "right-censored data only"),
 ])
 def test_bad_inputs_are_refused_in_words(df, kw, expect):
