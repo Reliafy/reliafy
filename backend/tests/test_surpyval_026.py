@@ -194,6 +194,46 @@ def test_ensure_covariance_backfills_through_the_new_attribute(strict):
     assert "covariance" in model.to_dict() and "cov_matrix" not in model.to_dict()
 
 
+def test_the_backfill_leaves_hess_inv_as_surpyvals_inverse_hessian(strict):
+    model = sp.Weibull.fit([120, 340, 510, 700, 980, 1200, 1500, 1800])
+    hess_inv = np.array(model.hess_inv, copy=True)
+    model._covariance = None
+    fitting._ensure_covariance(model)
+    assert model.covariance() is not None
+    assert np.array_equal(model.hess_inv, hess_inv)
+
+
+def _weighted_fit():
+    x = [120, 340, 510, 700, 980, 1200, 1500, 1800]
+    w = [1.0, 2.0, 1.0, 3.0, 1.0, 2.0, 1.0, 1.0]
+    with warnings.catch_warnings():
+        # Few effective units: SurPyval says so; not what these tests are about.
+        warnings.filterwarnings("ignore", message="The weights leave an effective sample size")
+        return sp.Weibull.fit(x, w=w)
+
+
+def test_a_weighted_fit_keeps_its_robust_covariance(strict):
+    model = _weighted_fit()
+    assert model.weighted
+    robust = np.array(model.covariance(), copy=True)
+    hess_inv = np.array(model.hess_inv, copy=True)
+    assert not np.allclose(robust, hess_inv)  # the sandwich differs from the Hessian
+    fitting._ensure_covariance(model)
+    assert np.array_equal(model.covariance(), robust)
+    assert np.array_equal(model.hess_inv, hess_inv)
+
+
+def test_a_weighted_fit_without_a_covariance_is_not_backfilled(strict):
+    """No band is better than a wrong one: the unweighted Hessian would not
+    be the robust covariance a weighted fit needs."""
+    model = _weighted_fit()
+    hess_inv = np.array(model.hess_inv, copy=True)
+    model._covariance = None
+    fitting._ensure_covariance(model)
+    assert model._covariance is None
+    assert np.array_equal(model.hess_inv, hess_inv)
+
+
 def test_a_model_saved_by_0_22_still_loads_with_its_covariance_and_lfp(strict):
     """Saved models carry 0.22's keys ("cov_matrix", "p"); SurPyval 0.23 reads
     them. (The other way -- a 0.23 dict read by 0.22 -- loses the covariance:

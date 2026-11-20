@@ -48,6 +48,23 @@ def _unit_words(model: Model) -> str:
     return unit_in_text(unit) or ""
 
 
+def model_unit(model: Model) -> Optional[str]:
+    """The saved model's unit as SurPyval keeps it (``model.unit``): from its
+    saved ``to_dict`` where it has one, else (a model saved before the unit
+    went into SurPyval) the saved unit in the app's spelling; None when blank."""
+    saved = ((model.serialized or {}).get("model") or {}).get("unit")
+    if isinstance(saved, str) and saved.strip():
+        return saved.strip()
+    return fitting.surpyval_unit((model.results or {}).get("unit") or (model.spec or {}).get("unit"))
+
+
+def unit_arg(model: Model) -> str:
+    """``, unit='Hours'`` for the script's fit or ``from_params`` call (nothing
+    without a unit), so the script's model carries the page's unit."""
+    unit = model_unit(model)
+    return f", unit={unit!r}" if unit else ""
+
+
 def prepare(df: pd.DataFrame, spec: dict, unit: Optional[str]) -> tuple[pd.DataFrame, dict, dict, list[str]]:
     """The data and mapping as ``fitting.fit`` hands them to the fitter:
     the unit column converted, a status column of words read, a 1 = failed
@@ -140,7 +157,11 @@ def interval(value, se, lower=None, upper=None):
 def fill_covariance(model):
     """When SurPyval's own covariance comes out missing or not finite (a fit by
     probability plotting, say, or a large scale), the app works it out from a
-    finite-difference Hessian of the log-likelihood at the fitted values. Same here."""
+    finite-difference Hessian of the log-likelihood at the fitted values. Same here.
+    A fit with weights keeps SurPyval's robust covariance (or none), and only the
+    covariance is filled in, never hess_inv."""
+    if getattr(model, "weighted", False):
+        return
     try:
         cov = np.asarray(model.covariance(), dtype=float)
         if np.all(np.isfinite(cov)):
@@ -169,7 +190,6 @@ def fill_covariance(model):
         recomputed = np.linalg.inv(hess)
         if np.all(np.isfinite(recomputed)) and np.all(np.diag(recomputed) > 0):
             model._covariance = recomputed
-            model.hess_inv = recomputed
     except Exception:
         pass
 
@@ -353,7 +373,7 @@ def _distribution_script(model: Model, df: pd.DataFrame) -> str:
         "",
         *px.comment(f"Fit the {entry['name']} exactly as the app did"
                     + (f" (options: {', '.join(call)})" if call else "") + "."),
-        f"model = {name}.fit(**fit_inputs{''.join(', ' + c for c in call)})",
+        f"model = {name}.fit(**fit_inputs{''.join(', ' + c for c in call)}{unit_arg(model)})",
         "fill_covariance(model)",
         "print(model)",
         "print()",
@@ -384,7 +404,7 @@ def _mixture_script(model: Model, df: pd.DataFrame, mapping: dict, options: dict
         f"# A mixture of {m} {entry['name']} distributions (failure modes muddled in one data set),",
         "# fitted by expectation-maximisation as the app did.",
         f"model = MixtureModel(dist={name}, m={m})",
-        "model.fit(**fit_inputs)",
+        f"model.fit(**fit_inputs{unit_arg(model)})",
         "",
         "",
         "def mixture_quantile(p):",
@@ -437,7 +457,7 @@ def _discrete_script(model: Model, df: pd.DataFrame) -> str:
         "",
         *_READ_DATA,
         "",
-        f"model = {name}.fit(**fit_inputs)",
+        f"model = {name}.fit(**fit_inputs{unit_arg(model)})",
         "print(model)",
         "print()",
         *_print_params_lines(name, with_intervals=True),
@@ -499,7 +519,7 @@ def _nonparametric_script(model: Model, df: pd.DataFrame) -> str:
         *_READ_DATA,
         "",
         f"# The {entry['name']} estimate: the data's own reliability curve, no distribution assumed.",
-        f"model = {name}.fit(**fit_inputs)",
+        f"model = {name}.fit(**fit_inputs{unit_arg(model)})",
     ]
     if interval:
         body += ["", B_LIVES, "", *_INTERVAL_POINTS, "", "", "interval_b_lives(model)",
@@ -526,7 +546,7 @@ def _params_only_script(model: Model) -> str:
     call = "".join(f", {k}={px.num(v)}" for k, v in extras.items())
     body = [
         "# The parameters as they were entered (no data, so no intervals or bounds).",
-        f"model = {name}.from_params([{', '.join(px.num(v) for v in values)}]{call})",
+        f"model = {name}.from_params([{', '.join(px.num(v) for v in values)}]{call}{unit_arg(model)})",
         "print(model)",
         "print()",
         f"for name, value in zip({name}.parameter_names, model.params):",
@@ -604,7 +624,7 @@ def _bayes_script(model: Model) -> str:
         'c = data["c"].to_numpy(dtype=int)',
         "",
         "# The Bayesian update: the baseline moved by this history.",
-        f"model = {name}.fit_bayes(x, c, priors=PriorSpec.from_dict(PRIORS), unit={spec.get('unit') or None!r})",
+        f"model = {name}.fit_bayes(x, c, priors=PriorSpec.from_dict(PRIORS), unit={model_unit(model)!r})",
         "",
         "# The parameters: posterior medians with 90% two-sided credible intervals.",
         f"for name, median in zip({name}.parameter_names, model.params):",
@@ -634,6 +654,9 @@ def _two_clock_script(model: Model, df: pd.DataFrame) -> str:
     rate = results.get("default_rate")
     second = two_clocks.unit_of(None, results)
     body = two_clocks.python_script(model.name, df, mapping, dist_id, unit, rate, second)
+    # The script's model carries the first clock's unit, as the app's does.
+    body = [line[:-1] + unit_arg(model) + ")" if line.startswith("model = ") and ".fit_from_df(" in line
+            and line.endswith(")") else line for line in body]
     entry = two_clocks.MODELS[dist_id]
     words = two_clocks.clock_words(None, unit, second)
     what = (f"a {entry['dist']} life on two clocks ({words['first_word']} + k x {words['second_word']}), fitted "

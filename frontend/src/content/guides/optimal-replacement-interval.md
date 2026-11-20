@@ -58,12 +58,16 @@ line to beat.
 
 ![The answer for the bearing model: replace at about 563 hours, saving 52%](/guides/img/replacement-01-result.png)
 
-Three more things sit with the answer:
+Four more things sit with the answer:
 
 - **How sure the age is.** For a model fitted to data, the **Replace at** tile
   shows how far the best age moves when each fitted parameter is set to the ends
   of its 90% bounds. A wide span means the data only loosely pin the age down;
   a cost curve with a flat bottom means it matters little.
+- **A friendlier unit.** When the model's unit is calendar time (hours to
+  years), the best age, its range and the block interval also show in another
+  unit ("580 hours, ≈ 3.45 weeks"). Pick it under **Also in**; the app
+  remembers your choice in this browser.
 - **The saving a year.** Fill in **Use a year, per unit** (the hours, cycles or
   days one unit runs in a year, in the model's unit) and, if you like, **Units
   in the fleet**: the answer adds what the planned changes save a year, per unit

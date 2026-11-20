@@ -21,7 +21,7 @@ import pandas as pd
 
 from backend import recurrent as rec
 from backend import recurrent_models as extra
-from backend.fitting import FitError
+from backend.fitting import FitError, surpyval_unit
 from backend.services import datasets as datasets_service
 from backend.services import python_export as px
 from backend.units import unit_in_text
@@ -119,6 +119,8 @@ def _common_head(doc, what: str, notes: list[str], imports: list[str]) -> list[s
         "",
         "LEVEL = 0.90  # every interval is 90% two-sided; the demonstrated MTBF's bound is 90% one-sided",
         f"UNIT = {unit!r}",
+        f"MODEL_UNIT = {surpyval_unit((doc.results or {}).get('unit') or (doc.spec or {}).get('unit'))!r}"
+        "  # the unit the model carries, as the app's does",
         "",
     ]
     return lines
@@ -166,7 +168,7 @@ def _nhpp_script(doc, df: pd.DataFrame) -> str:
         lines += ["# Fit the model by maximum likelihood.",
                   "with warnings.catch_warnings():",
                   '    warnings.simplefilter("ignore")',
-                  f"    model = {cls}.fit(**data)"]
+                  f"    model = {cls}.fit(**data, unit=MODEL_UNIT)"]
     if twin:
         lines += _DUANE_TWIN
     else:
@@ -182,7 +184,7 @@ _CROW_FIT = '''
 # to 0..1, and keeps whichever fits the data better. This does the same.
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", UserWarning)
-    model = CrowAMSAA.fit(**data)
+    model = CrowAMSAA.fit(**data, unit=MODEL_UNIT)
 if getattr(model, "maximum", "verified") != "verified":
     scale = float(np.max(data["x"])) if np.size(data["x"]) else 0.0
     if np.isfinite(scale) and scale > 0:
@@ -197,7 +199,7 @@ if getattr(model, "maximum", "verified") != "verified":
                 unit_fit = CrowAMSAA.fit(**scaled)
             a0, b0 = (float(v) for v in np.asarray(unit_fit.params, dtype=float))
             if np.isfinite(a0) and np.isfinite(b0):
-                retry = CrowAMSAA.fit(**data, init=[a0 * scale, b0])
+                retry = CrowAMSAA.fit(**data, init=[a0 * scale, b0], unit=MODEL_UNIT)
                 if -retry.neg_ll() >= -model.neg_ll() or not np.all(np.isfinite(model.params)):
                     model = retry
         except Exception:
@@ -215,7 +217,7 @@ if tuple(int(p) for p in surpyval.__version__.split(".")[:2]) < (0, 27):
     try:
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore")
-            twin = CrowAMSAA.fit(**data)
+            twin = CrowAMSAA.fit(**data, unit=MODEL_UNIT)
         if not np.all(np.isfinite(np.asarray(twin.params, dtype=float))):
             twin = None
     except Exception:
@@ -368,7 +370,7 @@ def _regression_script(doc, df: pd.DataFrame) -> str:
         "with warnings.catch_warnings(), np.errstate(all='ignore'):",
         "    warnings.simplefilter('ignore')",
         "    kw = {k: data[k] for k in ('i', 'c', 'n', 'tl') if data.get(k) is not None}",
-        f"    model = ProportionalIntensityNHPP.fit(data['x'], Z, baseline={cls}, **kw)",
+        f"    model = ProportionalIntensityNHPP.fit(data['x'], Z, baseline={cls}, **kw, unit=MODEL_UNIT)",
         *_SUMMARY,
         *_REGRESSION_REPORT,
     ]
@@ -450,11 +452,11 @@ if GROUPS:
 # ---- Imperfect repair: Kijima I/II, ARA, ARI, G1 --------------------------------------
 
 _RENEWAL_CALL = {
-    "grp_i": ("GeneralizedRenewal", "GeneralizedRenewal.fit(data['x'], kijima='i', **kw)"),
-    "grp_ii": ("GeneralizedRenewal", "GeneralizedRenewal.fit(data['x'], kijima='ii', **kw)"),
-    "g1": ("GeneralizedOneRenewal", "GeneralizedOneRenewal.fit(data['x'], **kw)"),
-    "ara": ("ARA", "ARA.fit(data['x'], m=MEMORY, **kw)"),
-    "ari": ("ARI", "ARI.fit(data['x'], m=MEMORY, baseline=BASELINE, **kw)"),
+    "grp_i": ("GeneralizedRenewal", "GeneralizedRenewal.fit(data['x'], kijima='i', **kw, unit=MODEL_UNIT)"),
+    "grp_ii": ("GeneralizedRenewal", "GeneralizedRenewal.fit(data['x'], kijima='ii', **kw, unit=MODEL_UNIT)"),
+    "g1": ("GeneralizedOneRenewal", "GeneralizedOneRenewal.fit(data['x'], **kw, unit=MODEL_UNIT)"),
+    "ara": ("ARA", "ARA.fit(data['x'], m=MEMORY, **kw, unit=MODEL_UNIT)"),
+    "ari": ("ARI", "ARI.fit(data['x'], m=MEMORY, baseline=BASELINE, **kw, unit=MODEL_UNIT)"),
 }
 _RESTORE_WORDS = {
     "grp_i": "q: 0 = as good as new, 1 = as bad as old; each repair takes off part of the age gained since "
@@ -561,7 +563,7 @@ def _params_script(doc) -> str:
     else:
         lines += ["params = [ALPHA, BETA]"]
     lines += [
-        f"model = {cls}.from_params(params)",
+        f"model = {cls}.from_params(params, unit=MODEL_UNIT)",
         "for name, value in zip(model.parameter_names, params):",
         '    print_value(f"Parameter {name}", value)',
         "with np.errstate(all='ignore'):",

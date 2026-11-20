@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ErrorNotice } from "./StorageCap.jsx";
 import Select from "./Select.jsx";
 import Units from "./Units.jsx";
+import { unitSettled } from "../lifeData.js";
 import { getDistributions, createModelFromParams } from "../api.js";
 
 // Build a model from known parameters — no data. For handbook values, a figure
@@ -33,7 +34,8 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
 
   const num = (v) => v !== "" && v !== undefined && !Number.isNaN(Number(v));
   const paramsReady = paramNames.length > 0 && paramNames.every((p) => num(values[p]));
-  const canSave = name.trim() && paramsReady && !busy;
+  // The unit is one required choice: a unit, or "No unit" ticked.
+  const canSave = name.trim() && paramsReady && unitSettled(unit) && !busy;
 
   const onSave = async () => {
     setBusy(true);
@@ -90,7 +92,7 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
       </div>
 
       <div style={{ marginTop: "0.8rem" }}>
-        <Units value={unit} onChange={setUnit} />
+        <Units value={unit} onChange={setUnit} listId="params-units" />
       </div>
 
       <div className="fitopts" style={{ marginTop: "0.8rem" }}>

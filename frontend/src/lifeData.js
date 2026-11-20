@@ -741,6 +741,22 @@ export function isUnitless(unit) {
   return ["units", "unitless", "no unit"].includes(String(unit ?? "").trim().toLowerCase());
 }
 
+// Fitting or creating a model always settles its unit: a unit, or "no unit"
+// ticked (UNITLESS). A model fitted in days and read as hours is 24 times out,
+// so there is no default. What to say while it isn't settled:
+export const UNIT_MISSING = "Say the unit of the times, or tick no unit.";
+
+// Whether a unit has been settled (typed, picked, or "no unit" ticked).
+export function unitSettled(unit) {
+  return isUnitless(unit) || String(unit ?? "").trim() !== "";
+}
+
+// The unit as one of the Data step's issues ({ col: null, row: "x", text }, by
+// the x row where the unit box is), or null once it is settled.
+export function unitIssue(unit) {
+  return unitSettled(unit) ? null : { col: null, row: "x", text: UNIT_MISSING };
+}
+
 const MEANING_WORDS = { 0: "failed", 1: "still running", "-1": "found failed", 2: "interval" };
 
 // How a mapping reads a table, in words, for the saved-data picker's pane:

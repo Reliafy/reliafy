@@ -26,7 +26,7 @@ from collections import OrderedDict
 import numpy as np
 import pandas as pd
 
-from backend.fitting import FitError, _json_safe
+from backend.fitting import FitError, _json_safe, surpyval_unit
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval.recurrent import CoxLewis, CrowAMSAA, Duane, HPP, NonParametricCounting
@@ -232,8 +232,8 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
 
     try:
         with np.errstate(all="ignore"):
-            np_model = note_fit(NonParametricCounting.fit(**np_inputs))
-            para = note_fit(_fit_nhpp(model_id, inputs))
+            np_model = note_fit(NonParametricCounting.fit(**np_inputs, unit=surpyval_unit(unit)))
+            para = note_fit(_fit_nhpp(model_id, inputs, unit))
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
@@ -266,7 +266,7 @@ def _record_end_note(payload: dict, df: pd.DataFrame, mapping: dict, windows=Non
     payload.setdefault("warnings", []).append({"id": "no_record_end", "text": RECORD_END_NOTE})
 
 
-def _fit_nhpp(model_id: str, inputs: dict):
+def _fit_nhpp(model_id: str, inputs: dict, unit: str | None = None):
     """Fit a Poisson-process model. A Crow-AMSAA search that doesn't reach a
     verified maximum (it can wander off from its default start when systems
     are watched for different lengths) is started again from the same fit to
@@ -278,16 +278,17 @@ def _fit_nhpp(model_id: str, inputs: dict):
 
     fitter = MODELS[model_id]["fitter"]
     inputs = observed(inputs)[0]
+    u = surpyval_unit(unit)  # the model's unit; the rescaled search below has none
     if model_id == "duane":
-        para = fitter.fit(**inputs)
+        para = fitter.fit(**inputs, unit=u)
         if duane_needs_twin():
             _attach_crow_twin(para, inputs)
         return para
     if model_id != "crow_amsaa":
-        return fitter.fit(**inputs)
+        return fitter.fit(**inputs, unit=u)
     with ignore_warnings(UserWarning):
         # an unverified maximum is retried below
-        para = fitter.fit(**inputs)
+        para = fitter.fit(**inputs, unit=u)
     if getattr(para, "maximum", "verified") == "verified":
         return para
     scale = float(np.max(inputs["x"])) if np.size(inputs["x"]) else 0.0
@@ -304,7 +305,7 @@ def _fit_nhpp(model_id: str, inputs: dict):
         alpha, beta = (float(v) for v in np.asarray(unit_fit.params, dtype=float))
         if not (np.isfinite(alpha) and np.isfinite(beta)):
             return para
-        retry = fitter.fit(**inputs, init=[alpha * scale, beta])
+        retry = fitter.fit(**inputs, init=[alpha * scale, beta], unit=u)
     except Exception:  # noqa: BLE001 - keep the first fit
         return para
     return retry if -retry.neg_ll() >= -para.neg_ll() or not np.all(np.isfinite(para.params)) else para
@@ -763,7 +764,7 @@ def fit_from_params(model_id: str, params: list, horizon: float, unit: str = "")
             raise FitError("Both parameters must be positive.")
         native = [shape, scale ** (-shape)]
     try:
-        para = fitter.from_params(native)
+        para = fitter.from_params(native, unit=surpyval_unit(unit))
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
         raise FitError(str(exc)) from exc
     return _params_payload(para, model_id, native, horizon, unit), store_live(para)

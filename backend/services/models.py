@@ -556,6 +556,10 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
                 live = (fitting._MODEL_STORE.get(cache_id) or {}).get("model")
                 if live is not None:
                     live.second_unit = two_clocks.unit_of(None, model.results)
+            # The unit is the model's own (SurPyval's ``model.unit``); one saved before it went into
+            # SurPyval, or rebuilt from its parameters, takes the saved unit. In memory only.
+            fitting.stamp_unit((fitting._MODEL_STORE.get(cache_id) or {}).get("model"),
+                               (model.results or {}).get("unit") or _spec(model).get("unit"))
             _LIVE[model_id] = cache_id
             while len(_LIVE) > _LIVE_MAX:
                 _LIVE.popitem(last=False)
