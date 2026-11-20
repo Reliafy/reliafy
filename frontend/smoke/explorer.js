@@ -242,3 +242,14 @@ export async function pickTab(page, name) {
   await page.getByRole("menu", { name: "More tabs" }).getByRole("menuitem", { name, exact: true }).click();
   return expect(tab).toHaveAttribute("aria-selected", "true");
 }
+
+// On a phone, a link that names a row (?sel=) opens that row's details, its own screen; a test
+// about the tree goes back to it (‹ Back), where the row is still picked.
+export async function phoneTree(page) {
+  const back = page.locator(".td-back");
+  await back.first().waitFor({ state: "visible", timeout: 4_000 }).catch(() => {});
+  if (await back.count()) {
+    await back.first().click();
+    await expect(back).toHaveCount(0);
+  }
+}

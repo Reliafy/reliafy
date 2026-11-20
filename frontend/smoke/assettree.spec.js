@@ -4,7 +4,7 @@
 // Items and Locations addresses, and the phone's slide to the panel and back.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
-import { details, headMenu } from "./explorer.js";
+import { details, headMenu, phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 
@@ -254,6 +254,7 @@ test("on a phone: the tree, then the panel, and back", async ({ page, request, p
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
+  await phoneTree(page);  // a link that names a row opens its details: back to the tree
   const panel = details(page);
   await expect(page.getByRole("tree", { name: "Positions" })).toBeVisible();
   await expect(panel.getByRole("heading", { name: `Tree plant ${tag}` })).toHaveCount(0);

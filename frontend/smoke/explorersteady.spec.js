@@ -11,7 +11,7 @@
 // position with RCM rows and one with none; opened on either tab.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { flashes, frameOf, movedBetween, watchFrames, pickTab } from "./explorer.js";
+import { flashes, frameOf, movedBetween, watchFrames, pickTab, phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 
@@ -190,6 +190,7 @@ test("on a phone with a branch pinned, switching tabs leaves the frame where it 
   const tag = `q${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.top.id}`);
+  await phoneTree(page);
   await expect(page.getByRole("treeitem", { name: new RegExp(`^Pinned: Steady plant ${tag}`) })).toBeVisible();
   const scrolls = { Summary: await frameOf(page) };
   await check(page, "phone, pinned: to RCM", () => pickTab(page, "RCM"), { wantTab: "RCM", rows: false, scrolls });
@@ -203,6 +204,7 @@ test("on a phone, switching tabs leaves the title, the tabs, the search box and 
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
+  await phoneTree(page);
   // The row picked brought into view first (late in a full run the tree is long and it's far
   // down), so the Summary's scroll is read once it's where it stays, as the tests above do.
   await expect(page.getByRole("treeitem", { name: new RegExp(`^Steady unit 4 ${tag}`) })).toHaveAttribute("aria-selected", "true");
