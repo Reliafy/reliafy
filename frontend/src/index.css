@@ -1042,7 +1042,7 @@ h6 {
   padding: var(--space-1) var(--space-2);
 }
 /* Room above the chips that overhang the bottom edge, so no line sits under them. */
-.rbd-comp:has(> .rbd-chips) { padding-bottom: var(--space-4); }
+.rbd-comp:has(> .rbd-chips), .rbd-block:has(> .rbd-chips) { padding-bottom: var(--space-4); }
 
 .react-flow__node.selected .rbd-comp {
   border-color: var(--accent);
