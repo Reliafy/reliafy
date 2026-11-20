@@ -34,7 +34,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
-from backend.services import rbd_repeats, rbd_unavailability
+from backend.services import model_units, rbd_repeats, rbd_unavailability
 from backend.services.method_labels import generic_engine_fields, hide_engine_names, route_reason
 from backend.units import normalize_unit, unit_in_text
 from repyability.rbd.helper_classes import PerfectReliability
@@ -466,7 +466,8 @@ def _build_distribution(
     # A node can reference a saved proportional-hazards / regression model,
     # whose reliability depends on covariate values supplied at calc time.
     if model.get("kind") == "regression":
-        return _ph_reliability(model, where, resolve_model, cov_values)
+        # A model in another unit of the same kind is read on the diagram's clock (model_units).
+        return model_units.wrap(_ph_reliability(model, where, resolve_model, cov_values), model)
     # Non-parametric models (KM/NA/Turnbull) have no parameters — resolve the
     # re-fitted empirical estimator (sf/ff) via the same refit-on-demand path.
     if model.get("kind") == "nonparametric":
@@ -509,7 +510,8 @@ def _build_distribution(
             raise AnalysisError(str(exc)) from None
     bayesian = bayesian_life(model, resolve_model)
     if bayesian is not None:
-        return bayesian
+        # Its posterior is in the saved model's unit: read it on the diagram's clock when converted.
+        return model_units.wrap(bayesian, model)
     dist_id = model.get("distribution_id")
     entry = DISTRIBUTIONS.get(dist_id)
     if entry is None:
@@ -530,9 +532,11 @@ def _build_distribution(
     # exactly as fitted; sf/ff are well-defined for all of them. LFP p is
     # SurPyval's lfp_p (0.23, #608).
     try:
-        return dist.from_params(values, **surpyval_extras(model.get("extras")))
+        built = dist.from_params(values, **surpyval_extras(model.get("extras")))
     except Exception as exc:  # surpyval validates the parameters
         raise AnalysisError(f"{where}: {exc}") from exc
+    # A family with no parameter rule for a change of unit (the 0-to-1 beta) is wrapped instead.
+    return model_units.wrap(built, model) if model_units.needs_wrap(model) else built
 
 
 def _loadshare_model(data: dict, label: str, resolve_model=None):
@@ -818,6 +822,10 @@ def _build_rbd(
     passed on for the production analysis (#122).
     """
     visited = visited or set()
+    # Blocks fitted in another unit of the same kind, converted to the diagram's (and a
+    # sub-system's blocks to this diagram's, the clock they're evaluated on).
+    graph, _ = model_units.convert_graph(graph)
+    resolve_subsystem = model_units.subsystem_resolver(resolve_subsystem, graph.get("unit"))
     if isinstance(graph.get("network"), dict):  # #160: an undirected network has its own analysis
         from backend.services.rbd_network import NETWORK_ONLY
 
@@ -1336,10 +1344,11 @@ def _runs_part_time(data: dict) -> bool:
 
 def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
     """Warn when a block's saved non-repairable model was fitted in a different time unit
-    from the diagram's. Parameters are read in the diagram's unit, so e.g. a
-    model fitted in months dropped into an hours diagram is off by ~730x.
-    Nothing is converted; blank units on either side are unknown, not a
-    mismatch.
+    of another kind from the diagram's (cycles in an hours diagram): its
+    parameters are read in the diagram's unit. A unit of the same kind
+    (months in an hours diagram) is converted before the analysis
+    (:mod:`backend.services.model_units`), so it isn't warned about. Blank
+    units on either side are unknown, not a mismatch.
 
     A model in running time ("flight hours") on a repairable diagram in the
     same clock unit ("hours") is no mismatch when the block's Runs share
@@ -1359,6 +1368,8 @@ def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
         model_unit = normalize_unit(model.get("unit"))
         if model_unit is None or model_unit == diagram:
             continue
+        if model_units.convert_model(model, graph.get("unit"))[1] is not None:
+            continue  # converted to the diagram's unit before the analysis (model_units)
         running = _operating_base(model.get("unit")) == diagram
         if running and repairable and _runs_part_time(data):
             continue  # the duty turns the diagram's clock into running time
@@ -1379,6 +1390,14 @@ def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
             f"{in_diagram}, not converted. Use a model in the diagram's unit, or "
             "change the diagram's unit.")
     return out
+
+
+def unit_conversions(graph: dict, resolve_subsystem=None) -> list:
+    """Each block model the analysis converts to the diagram's unit (a model fitted in days on a
+    diagram in hours), in its sub-systems too when they can be resolved: ``[{"id", "label",
+    "from", "to", "factor", "repair", "note"}]`` (:mod:`backend.services.model_units`)."""
+    _, out = model_units.convert_graph(graph)
+    return out + model_units.subsystem_conversions(graph, resolve_subsystem)
 
 
 _REDUNDANCY_WORDS = re.compile(r"\b(duty|stand-?by|spare|back-?up|redundant)\b", re.I)
@@ -2273,6 +2292,10 @@ def analyze(
     """
     from backend.services import rbd_standby
 
+    # Blocks fitted in another unit of the same kind: converted to the diagram's unit, and listed.
+    graph, conversions = model_units.convert_graph(graph)
+    conversions += model_units.subsystem_conversions(graph, resolve_subsystem)
+    resolve_subsystem = model_units.subsystem_resolver(resolve_subsystem, graph.get("unit"))
     args = (graph, resolve_subsystem, t_max, covariates, resolve_model, conditional_age, at_times, band,
             current_state, target_reliability, evaluate_at)
     with collect_warnings(UserWarning, message=_CCF_WARNING.pattern) as caught:
@@ -2292,6 +2315,8 @@ def analyze(
     out = list(dict.fromkeys(relayed + notes))
     if out:
         result["warnings"] = out
+    if conversions:
+        result["unit_conversions"] = conversions
     return result
 
 
@@ -2701,6 +2726,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     from backend.services import rbd_maintenance, rbd_policies
 
     current_state = state  # the blocks' states now (the loop below reads each block's pin as ``state``)
+    graph, _ = model_units.convert_graph(graph)  # blocks fitted in another unit of the same kind
     if isinstance(graph.get("network"), dict):  # #160: a network is never an availability diagram
         from backend.services.rbd_network import NETWORK_ONLY
 
@@ -3533,6 +3559,8 @@ def analyze_availability(
     :data:`_AVAIL_SEED`."""
     from backend.services import rbd_costs, rbd_maintenance, rbd_policies
 
+    # Blocks fitted in another unit of the same kind: converted to the diagram's unit, and listed.
+    graph, conversions = model_units.convert_graph(graph)
     fixed_n = bool(n_simulations)
     n_sims = int(n_simulations) + int(n_simulations) % 2 if n_simulations else _AVAIL_SIMS
     seed = _AVAIL_SEED if seed is None else int(seed)
@@ -3759,6 +3787,7 @@ def analyze_availability(
         "has_simulation": res is not None,
         "current_state": state or None,
         "repyability_version": _repyability_version(),
+        **({"unit_conversions": conversions} if conversions else {}),
     }
 
 
@@ -4181,6 +4210,7 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
     This is the one function the compute service (#149) will run: it takes
     the graph and returns plain JSON."""
     started = time.perf_counter()
+    graph, _ = model_units.convert_graph(graph)  # blocks fitted in another unit of the same kind
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(graph, resolve_model, state=state)
     overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
     node_states = _node_states(state, labels)

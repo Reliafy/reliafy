@@ -42,10 +42,13 @@ def test_unit_in_text():
 
 def test_rbd_unit_warning_reads_lower_case():
     graph = {"unit": "Hours", "nodes": [
-        {"id": "a", "data": {"label": "Pump", "model": {"name": "Pump life", "unit": "Months"}}}]}
+        {"id": "a", "data": {"label": "Pump", "model": {"name": "Pump life", "unit": "Cycles"}}}]}
     (warning,) = rbd_analysis.unit_warnings(graph)
     _clean(warning)
-    assert "fitted in months" in warning and "diagram's unit is hours" in warning
+    assert "fitted in cycles" in warning and "diagram's unit is hours" in warning
+    # A unit of the same kind (months in hours) is converted, not warned about.
+    graph["nodes"][0]["data"]["model"]["unit"] = "Months"
+    assert rbd_analysis.unit_warnings(graph) == []
 
 
 def test_strategy_sentences_read_lower_case():
@@ -70,9 +73,11 @@ def test_headlines_and_verdicts_read_lower_case():
     _clean(head)
     assert head.endswith("120 hours")
 
-    mismatch = rcm_decisions._unit_mismatch({"interval_unit": "Months"}, "Hours")
+    mismatch = rcm_decisions._unit_mismatch({"interval_unit": "Cycles"}, "Hours")
     _clean(mismatch["reason"])
-    assert "is in months but the linked analysis is in hours" in mismatch["reason"]
+    assert "is in cycles but the linked analysis is in hours" in mismatch["reason"]
+    # Months and hours are both time: converted, no mismatch.
+    assert rcm_decisions._unit_mismatch({"interval_unit": "Months"}, "Hours") is None
 
     assert rbd_sensitivity._per("Hours") == "per hour"
     msg = rbd_intervals._not_met("", False, None, 5.0, "Hours")
@@ -121,7 +126,7 @@ def test_a_duty_turns_the_diagram_clock_into_flight_hours():
     """A repairable diagram in hours whose blocks run 3% of the time, with
     models fitted in flight hours: the duty counts their life in running time,
     so no block is warned about. A block with no Runs share is, in one
-    accurate line; a model in days is still unconverted."""
+    accurate line; a model in days is converted to hours, so not warned about."""
     graph = {"unit": "Hours", "repairable": True,
              "nodes": [_fh_block("engine", 0.03), _fh_block("belt", 0.03), _fh_block("radio"),
                        _fh_block("seal", 0.03, unit="Days")]}
@@ -129,8 +134,7 @@ def test_a_duty_turns_the_diagram_clock_into_flight_hours():
     assert not any("Engine" in w or "Belt" in w for w in warnings)
     (radio,) = [w for w in warnings if "Radio" in w]
     assert "running all the time" in radio and "Runs" in radio and "not converted" not in radio
-    (seal,) = [w for w in warnings if "Seal" in w]
-    assert "not converted" in seal
+    assert not any("Seal" in w for w in warnings)
 
 
 def test_a_non_repairable_diagram_still_warns_about_flight_hours():
