@@ -7,10 +7,13 @@
 // Every chart wears the shared theme (src/plotTheme.js): its layout and config
 // are merged over the theme's, so a call site sets only what is particular to
 // its chart. `download="Bearings — probability plot"` adds small PNG and SVG
-// buttons that save the chart named after it (the Plotly toolbar is off).
+// buttons that save the chart named after it (the Plotly toolbar is off);
+// `csv={{ rows: () => [[…]], filename }}` adds a CSV button beside them that
+// saves the numbers drawn (csv.js downloadCsv).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-basic-dist-min";
+import { downloadCsv } from "../csv.js";
 import {
   DATE_LOCALE, DOWNLOAD_ROW, INK, SURFACE, chartFileName, downloadCorner, minPlotSize, ownHeight, reachesCorner, shorterBy,
   themedConfig, themedLayout,
@@ -86,6 +89,7 @@ export default function Plot({
   layout,
   config,
   download = null,
+  csv = null,
   style,
   useResizeHandler = true,
   onInitialized,
@@ -172,7 +176,7 @@ export default function Plot({
   if (fill) {
     return (
       <div className={"plot-fill plot-frame" + own + (className ? " " + className : "")} ref={frame}>
-        {download && <DownloadButtons title={download} gd={gd} height={height} />}
+        {download && <DownloadButtons title={download} gd={gd} height={height} csv={csv} />}
         <div className="plot-fill-inner" ref={box}>{plot}</div>
       </div>
     );
@@ -180,13 +184,13 @@ export default function Plot({
   if (!download) return plot;
   return (
     <div className={"plot-frame" + own} ref={frame}>
-      <DownloadButtons title={download} gd={gd} height={height} />
+      <DownloadButtons title={download} gd={gd} height={height} csv={csv} />
       {plot}
     </div>
   );
 }
 
-function DownloadButtons({ title, gd, height }) {
+function DownloadButtons({ title, gd, height, csv = null }) {
   return (
     <div className="plot-dl" role="group" aria-label={`Download ${title}`}>
       <DownloadIcon />
@@ -202,6 +206,12 @@ function DownloadButtons({ title, gd, height }) {
           {format.toUpperCase()}
         </button>
       ))}
+      {csv && (
+        <button type="button" className="plot-dl-btn" title="Download CSV: the numbers drawn"
+                aria-label={`Download ${title} as CSV`} onClick={() => downloadCsv(csv.rows(), csv.filename)}>
+          CSV
+        </button>
+      )}
     </div>
   );
 }

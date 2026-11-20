@@ -345,6 +345,17 @@ share a library with other workspaces or publish it: the
 [Build and share a library](/guides/build-and-share-a-library) guide covers
 it all.
 
+## Take the numbers to a spreadsheet
+
+Every table and curve on the model page downloads as a CSV file, at full precision rather than the
+rounded figures on screen, with the units and the bounds' confidence in the column names:
+
+- **CSV** beside the Calculator chart's PNG and SVG buttons: the curve it draws, with time, reliability,
+  probability of failure, hazard rate, cumulative hazard and density, plus the bound you chose.
+- **CSV** in the heading of the **Parameters** card and the **B-lives** card (on **Model characteristics**).
+
+A dataset's own rows download from **⋯ → Download CSV** on its page, exactly as saved.
+
 ## Run it yourself in Python
 
 **Download as Python**, first in the model page's **⋯** menu, gives a script that refits the model with
