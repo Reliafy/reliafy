@@ -61,7 +61,10 @@ for (const route of appRoutes()) {
 
 test("tab titles: a record's page leads with its name", async ({ page, request }) => {
   const { rbds } = await (await request.get("/api/rbds")).json();
-  const rbd = rbds.find((r) => r.name) || rbds[0];
+  // A sample: tests running alongside create and delete their own diagrams, so the newest one
+  // may be gone by the time it opens ("Diagram not found").
+  const rbd = rbds.find((r) => r.is_sample && r.name);
+  expect(rbd, "a sample diagram").toBeTruthy();
   await open(page, RBDS_PATH);
   await expect.poll(() => page.title()).toBe(`${RBDS_LABEL} · Reliafy`);
   await open(page, `/systems/b/${encodeURIComponent(rbd.id)}`);
