@@ -1571,7 +1571,7 @@ export default function RbdCalculator({
   // "Evaluate at t" (non-repairable); none typed, the backend's default (the
   // 90%-reliability time). An automatic value filled in by a calculation isn't sent.
   const atSent = !graph.repairable && !evalTAuto && evalT !== "" && Number(evalT) > 0 ? Number(evalT) : null;
-  // Download as Python (in the builder's Save menu) uses the same time.
+  // Download as Python (in the builder's ⋯ menu) uses the same time.
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(RBD_EVALUATE_AT_EVENT, { detail: atSent }));
   }, [atSent]);

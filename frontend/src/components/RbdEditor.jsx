@@ -1735,34 +1735,20 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           validating={validating}
           onValidate={runValidate}
         />
-        {/* Save saves in one click; the arrow beside it holds Save as new and the downloads. */}
-        <div className="rbd-save-split">
-          <button type="button" className="secondary sm rbd-save-main" onClick={quickSave}>
-            {savedRbdId && !savedRbdReadOnly && savedRbdName.trim() ? "Save" : "Save…"}
-          </button>
-        <ToolbarMenu label="" title="Save as new, or download the saved diagram" aria="More ways to save"
-                     className="rbd-save-more">
-          {savedRbdId && (
-            <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
-          )}
-          <button
-            className="ovm-item"
-            onClick={exportPython}
-            disabled={!savedRbdId || !!exporting}
-            title={savedRbdId ? PYTHON_EXPORT_TIP : "Save the diagram first"}
-          >
-            {exporting === "python" ? "Preparing…" : "Download as Python"}
-          </button>
-          <button
-            className="ovm-item"
-            onClick={() => exportAs("json")}
-            disabled={!savedRbdId || !!exporting}
-            title={savedRbdId ? JSON_EXPORT_TIP : "Save the diagram first"}
-          >
-            {exporting === "json" ? "Preparing…" : "Download as RePyability JSON"}
-          </button>
-        </ToolbarMenu>
-        </div>
+        {/* Save saves in one click; once saved, the arrow beside it holds Save as new.
+            The downloads are in the ⋯ menu. */}
+        {savedRbdId ? (
+          <div className="rbd-save-split">
+            <button type="button" className="secondary sm rbd-save-main" onClick={quickSave}>
+              {!savedRbdReadOnly && savedRbdName.trim() ? "Save" : "Save…"}
+            </button>
+            <ToolbarMenu label="" title="Save as new" aria="More ways to save" className="rbd-save-more">
+              <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
+            </ToolbarMenu>
+          </div>
+        ) : (
+          <button type="button" className="secondary sm" onClick={quickSave}>Save…</button>
+        )}
         <ToolbarMenu label={<MoreIcon />} title="More" aria="More diagram settings" caret={false}>
           {/* On a phone the toolbar's settings live here (#301). */}
           <div className="rbd-ovm-settings">
@@ -1845,6 +1831,24 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           >
             Safety function…{repairable && policies.safety_function ? " ✓" : ""}
           </button>
+          {/* The saved diagram as a script or a RePyability file. Shown before
+              it's saved too, greyed, with the reason under it. */}
+          {[
+            ["python", "Download as Python", PYTHON_EXPORT_TIP],
+            ["json", "Download as RePyability JSON", JSON_EXPORT_TIP],
+          ].map(([kind, label, tip]) => (
+            <button
+              key={kind}
+              className="ovm-item"
+              onClick={() => exportAs(kind)}
+              disabled={!savedRbdId || !!exporting}
+              aria-describedby={savedRbdId ? undefined : `rbd-dl-why-${kind}`}
+              title={savedRbdId ? tip : undefined}
+            >
+              {exporting === kind ? "Preparing…" : label}
+              {!savedRbdId && <span id={`rbd-dl-why-${kind}`} className="ovm-why">Save first</span>}
+            </button>
+          ))}
           {pane?.fullPath && (
             <Link className="ovm-item" to={pane.fullPath} onClick={(e) => pane.onOpenFull?.(e, pane.fullPath)}>Open full page</Link>
           )}
