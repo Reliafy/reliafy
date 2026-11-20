@@ -1138,6 +1138,7 @@ def reading_codes(df: pd.DataFrame, reading: dict, roles: dict | None = None) ->
             got = read.get("c")
             codes = pd.Series(list(got) if got is not None else [0 if a == b else 2 for a, b in zip(lo, hi)],
                               index=frame.index)
+            codes = _first_look(codes, lo)
     except FitError:
         return None
     return codes
@@ -1180,11 +1181,8 @@ def _reading_summary(df: pd.DataFrame, reading: dict, roles: dict, tags: list[st
         parts = [f"{lives:,} {_plural(noun, lives)}"]
     if codes is None:
         return " · ".join(parts)
-    failed, ranged = count(codes == 0), count(codes.isin((-1, 2)))
-    if failed or not ranged:
-        parts.append(f"{failed:,} failed")
-    if ranged:
-        parts.append(f"{ranged:,} failed between inspections")
+    failed, interval, left = count(codes == 0), count(codes == 2), count(codes == -1)
+    parts += _failed_parts(failed, interval, left)
     return " · ".join(parts)
 
 
@@ -1440,6 +1438,7 @@ def life_counts(df: pd.DataFrame, censor: str | None = None, times: list[str] | 
             return None
         lo, hi = read["xl"], read["xr"]
         codes = pd.Series(read["c"] if "c" in read else [0 if a == b else 2 for a, b in zip(lo, hi)], index=df.index)
+        codes = _first_look(codes, lo)
     if codes is None:
         modes = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])
                  and _MODE_NAME_RE.search(_name_words(c)) and 0 < df[c].isna().sum() < n_rows]
@@ -1460,7 +1459,31 @@ def life_counts(df: pd.DataFrame, censor: str | None = None, times: list[str] | 
         return int(round(float(weights[mask].sum())))
 
     return {"units": count(codes.notna()), "failed": count(codes == 0), "ranged": count(codes.isin((-1, 2))),
-            "running": count(codes == 1)}
+            "interval": count(codes == 2), "left": count(codes == -1), "running": count(codes == 1)}
+
+
+def _first_look(codes: pd.Series, lo) -> pd.Series:
+    """A window that opens at zero is a failure found at the first look (left
+    censored), as the fit step counts it (``fitting``'s summary): so the
+    dataset's count and the fit's agree."""
+    lo = np.asarray(lo, dtype=float)
+    if len(lo) != len(codes):
+        return codes
+    return codes.where(~((codes == 2) & (lo <= 0)), -1)
+
+
+def _failed_parts(failed: int, interval: int, left: int) -> list[str]:
+    """The failure counts of a summary, worded as the fit step words them: a
+    unit found failed at its first inspection didn't fail *between* two
+    inspections, so it is counted on its own."""
+    parts = []
+    if failed or not (interval or left):
+        parts.append(f"{failed:,} failed")
+    if interval:
+        parts.append(f"{interval:,} failed between inspections")
+    if left:
+        parts.append(f"{left:,} found failed at the first inspection")
+    return parts
 
 
 def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[str],
@@ -1492,10 +1515,7 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
         return f"{units} · all failed" if "Non-repairable" in tags and not unsure else units
     units = f"{counts['units']:,} {_plural(noun, counts['units'])}"
     parts = [units]
-    if counts["failed"] or not counts["ranged"]:
-        parts.append(f"{counts['failed']:,} failed")
-    if counts["ranged"]:
-        parts.append(f"{counts['ranged']:,} failed between inspections")
+    parts += _failed_parts(counts["failed"], counts["interval"], counts["left"])
     return " · ".join(parts)
 
 

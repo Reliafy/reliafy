@@ -170,7 +170,7 @@ export default function ColumnMapper({
     if (!cCol || codesOnly || !showMeanings || !facts[cCol]) return null;
     return (
       <div className="xcn-sub">
-        <span className="xcn-words">0 = failed, 1 = running. Read as:</span>
+        <span className="xcn-words">How each value is read:</span>
         <StatusMeanings compact column={cCol} values={facts[cCol]?.values} blanks={facts[cCol]?.blanks || 0}
                         mapping={mapping} onChange={(m) => onChange(m, { meanings: true })} />
       </div>

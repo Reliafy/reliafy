@@ -119,7 +119,7 @@ def test_summary_counts_failures_when_the_flag_means_1_failed():
     # Left- and interval-censored flags are kept as they are: those units were
     # found failed, with the time known only as a range.
     rows = [["M-0", 10, 1], ["M-1", 20, 0], ["M-2", 30, -1], ["M-3", 40, 2]]
-    assert tags(rows, ["unit", "hours", "failed"])["summary"] == "4 units · 1 failed · 2 failed between inspections"
+    assert tags(rows, ["unit", "hours", "failed"])["summary"] == "4 units · 1 failed · 1 failed between inspections · 1 found failed at the first inspection"
 
 
 def test_summary_reads_a_status_column_of_words():
@@ -141,13 +141,13 @@ def test_summary_counts_inspection_data_with_survivors():
     windows = [(0, 200)] * 2 + [(200, 400)] * 8 + [(400, 600)] * 15
     cols = ["valve", "last_ok_hours", "found_failed_hours"]
     blank = [[f"V{i}", lo, hi] for i, (lo, hi) in enumerate(windows)] + [[f"S{i}", 1000, None] for i in range(15)]
-    assert tags(blank, cols)["summary"] == "40 valves · 25 failed between inspections"
+    assert tags(blank, cols)["summary"] == "40 valves · 23 failed between inspections · 2 found failed at the first inspection"
     coded = ([[f"V{i}", lo, hi, 2] for i, (lo, hi) in enumerate(windows)]
              + [[f"S{i}", 1000, 1000, 1] for i in range(15)])
-    assert tags(coded, cols + ["censor_code"])["summary"] == "40 valves · 25 failed between inspections"
+    assert tags(coded, cols + ["censor_code"])["summary"] == "40 valves · 23 failed between inspections · 2 found failed at the first inspection"
     words = ([[f"V{i}", lo, hi, "F"] for i, (lo, hi) in enumerate(windows)]
              + [[f"S{i}", 1000, 1000, "S"] for i in range(15)])
-    assert tags(words, cols + ["status"])["summary"] == "40 valves · 25 failed between inspections"
+    assert tags(words, cols + ["status"])["summary"] == "40 valves · 23 failed between inspections · 2 found failed at the first inspection"
 
 
 def test_summary_weighs_rows_by_a_count_column():
@@ -285,3 +285,17 @@ def test_one_numbered_system_history_is_repairable():
     out = _saved(rows, ["system", "time", "observed_to", "cause"], reading, "reading-one-system")
     assert out["tags"] == ["Repairable"]
     assert out["summary"] == "1 system · 5 failures"
+
+
+def test_summary_and_fit_step_count_first_inspection_failures_alike():
+    # A window that opens at zero was found failed at the first look: the
+    # dataset's summary words it as the fit step does (REL-02 counted 25 here, 23 + 2 there).
+    from backend import fitting
+    windows = [(0, 200)] * 2 + [(200, 400)] * 8 + [(400, 600)] * 15
+    rows = [[f"V{i}", lo, hi] for i, (lo, hi) in enumerate(windows)] + [[f"S{i}", 1000, None] for i in range(15)]
+    cols = ["valve", "last_ok_hours", "found_failed_hours"]
+    assert tags(rows, cols)["summary"].endswith("23 failed between inspections · 2 found failed at the first inspection")
+    import pandas as pd
+    df = pd.DataFrame(rows, columns=cols)
+    fit = fitting.data_reading(df, {"xl": "last_ok_hours", "xr": "found_failed_hours"})
+    assert (fit["interval"], fit["left"], fit["running"]) == (23, 2, 15)
