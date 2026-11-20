@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from backend.fitting import DISTRIBUTIONS, FitError, _json_safe
+from backend.fitting import DISTRIBUTIONS, FitError, _json_safe, surpyval_unit
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval.degradation import PATH_MODELS as _SURPYVAL_PATHS
@@ -141,6 +141,7 @@ def fit(
             path=path,
             distribution=DISTRIBUTIONS[distribution_id]["dist"],
             population_method=population_method,
+            unit=surpyval_unit(unit),  # the time unit; the measurement's is the payload's own
         ))
     except FitError:
         raise

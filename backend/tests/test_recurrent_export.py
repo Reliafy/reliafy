@@ -150,3 +150,70 @@ def test_another_users_model_is_not_found(api):
     detail = _save(api, {**FLEET_FORM, "model": "crow_amsaa"}, _events_csv())
     api.who["uid"] = B
     assert api.get(f"/api/recurrent/models/{detail['id']}/export.py").status_code == 404
+
+
+# ---- The unit is the model's own (SurPyval's model.unit) -------------------------------
+
+
+def _doc_key(test_db, model_id):
+    for name in test_db.list_collection_names():
+        for key in ({"id": model_id}, {"_id": model_id}):
+            if test_db[name].find_one(key):
+                return test_db[name], key
+    raise AssertionError(model_id)
+
+
+def _fresh_live(mid):
+    from backend import db
+    from backend.services import recurrent as recurrent_service
+
+    recurrent_service._LIVE.clear()
+    return recurrent_service.get_live_model(db.get_db(), mid, A)
+
+
+@pytest.mark.parametrize("model,extra", [("crow_amsaa", {}), ("duane", {}), ("hpp", {}), ("grp_i", {}),
+                                         ("ara", {"m": "2"})])
+def test_every_repairable_fit_carries_the_unit_and_its_script_passes_it(api, tmp_path, model, extra):
+    detail = _save(api, {**FLEET_FORM, "model": model, **extra}, _events_csv())
+    assert _fresh_live(detail["id"]).unit == "Hours"
+    assert detail["results"]["unit"] == "Hours"
+    source = _script(api, detail["id"])
+    assert "MODEL_UNIT = 'Hours'" in source and "unit=MODEL_UNIT" in source
+    python_scripts.run(source, tmp_path)
+
+
+def test_proportional_intensity_carries_the_unit():
+    import numpy as np
+    import pandas as pd
+
+    from backend import recurrent_models as extra
+    from backend.services.samples import _PUMP_REPAIRS_CSV
+
+    df = pd.read_csv(__import__("io").BytesIO(_PUMP_REPAIRS_CSV))
+    _, live = extra.fit(df, {"i": "pump", "x": "hours", "tr": "observed_to", "z": ["duty_pct"]}, "pi_nhpp",
+                        "days", gof_test=False, options={"baseline": "crow_amsaa"})
+    assert live.unit == "Days"
+    assert np.all(np.isfinite(np.asarray(live.params, dtype=float)))
+
+
+def test_a_repairable_model_from_parameters_carries_the_unit(api, tmp_path):
+    r = api.post("/api/recurrent/from-params",
+                 data={"name": "Typed", "model": "crow_amsaa", "alpha": 500, "beta": 1.4, "horizon": 2000,
+                       "unit": "cycles"})
+    assert r.status_code == 200, r.text
+    assert _fresh_live(r.json()["id"]).unit == "Cycles"
+    source = _script(api, r.json()["id"])
+    assert "MODEL_UNIT = 'Cycles'" in source and "from_params(params, unit=MODEL_UNIT)" in source
+    python_scripts.run(source, tmp_path)
+
+
+def test_a_repairable_model_saved_before_the_unit_loads_with_its_saved_unit(api):
+    from backend import db
+
+    detail = _save(api, {**FLEET_FORM, "model": "crow_amsaa"}, _events_csv())
+    coll, key = _doc_key(db.get_db(), detail["id"])
+    coll.update_one(key, {"$unset": {"serialized.model.unit": ""}})
+    before = coll.find_one(key)
+    assert "unit" not in (before["serialized"].get("model") or {})
+    assert _fresh_live(detail["id"]).unit == "Hours"
+    assert coll.find_one(key)["serialized"] == before["serialized"]
