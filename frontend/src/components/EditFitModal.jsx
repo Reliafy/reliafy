@@ -50,7 +50,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
         const cols = d.preview_columns || [];
         const f = columnFacts({
           columns: cols, preview: d.preview || [], n_unique: d.n_unique,
-          dtypes: d.dtypes, blanks: d.blanks, values: d.values, whole: d.whole, nonpositive: d.nonpositive,
+          dtypes: d.dtypes, blanks: d.blanks, values: d.values, whole: d.whole, nonpositive: d.nonpositive, low_rows: d.low_rows,
         });
         setColumns(cols);
         setRows((d.preview || []).slice(0, 5));

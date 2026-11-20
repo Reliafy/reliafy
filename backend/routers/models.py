@@ -195,6 +195,7 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "values": preview.get("values"),
         "whole": preview.get("whole"),
         "nonpositive": preview.get("nonpositive"),
+        "low_rows": preview.get("low_rows"),
         # Wholly blank rows, skipped by every fit (n_rows still counts them).
         "blank_rows": preview.get("blank_rows", 0),
         "models": [_model_summary(m, ctx) for m in models],
