@@ -185,8 +185,6 @@ def prepare(
         cause = np.array([_label(v) for v in df[cause_column]], dtype=object)
 
     x, c, n, labels = x[keep], c[keep].astype(int), n[keep], labels[keep]
-    if (x < 0).any():
-        raise CompareGroupsError("Times must not be negative.")
     if cause is not None:
         # The failure-mode column sets the status as the competing-risks fit
         # reads it: with no status column a blank mode is a unit still
@@ -197,6 +195,14 @@ def prepare(
         except FailureModeError as exc:
             raise CompareGroupsError(str(exc)) from exc
         cause = np.array(modes, dtype=object)
+    # A time below 0, or a failure at 0, named by its row in the data (rows
+    # left out above are skipped), as every life fit names them.
+    full_x, full_c = np.full(keep.size, np.nan), np.ones(keep.size)
+    full_x[keep], full_c[keep] = x, c
+    refused = fitting.nonparametric_range_message({"x": full_x, "c": full_c}, "Kaplan-Meier",
+                                                  what="a comparison of groups", ranges=False)
+    if refused:
+        raise CompareGroupsError(refused)
     out = {"x": x, "c": c, "n": n, "group": labels, "dropped": dropped}
     if cause is not None:
         out["cause"] = cause
