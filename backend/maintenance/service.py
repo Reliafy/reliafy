@@ -124,7 +124,13 @@ class NotFound(KeyError):
 
 
 class Invalid(ValueError):
-    """The request can't be done as asked (HTTP 422)."""
+    """The request can't be done as asked (HTTP 422). The message is for people (the app
+    shows it as it is); ``agent`` is an optional line for an agent or script, naming the
+    tool call that does it, added only on the MCP and CLI side."""
+
+    def __init__(self, *args, agent: str = ""):
+        super().__init__(*args)
+        self.agent = agent
 
 
 class NeedsChoice(Invalid):

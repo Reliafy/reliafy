@@ -1125,7 +1125,8 @@ def register() -> None:
             failed.choice = err.choice
             raise failed from None
         except Invalid as err:
-            raise ToolError(str(err)) from None
+            # The people's message, then the tool call that does it, when there is one.
+            raise ToolError(" ".join(filter(None, [str(err), getattr(err, "agent", "")]))) from None
 
     def tool(name, annotations, title, table: Table | None = None, selector: str = "action"):
         """Record one area of the maintenance tool: with a table, its actions

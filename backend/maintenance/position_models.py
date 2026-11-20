@@ -1176,8 +1176,9 @@ def link_from_class(m, db, owners, hidden, position_id: str, failure_mode_ids=No
     if cm is None:
         if not m._class_key(p):
             raise sv.Invalid(f"{p['name']} has no position class: set one, or assign a saved model.")
-        raise sv.Invalid(f"The class {cm_label(m, p)} has no fitted model yet: fit one from its pooled history "
-                         "(Fit from history…, or maintenance reliability.fit_class_model).")
+        raise sv.Invalid(f"The class {cm_label(m, p)} has no fitted life model yet. Fit one from its pooled history: "
+                         "on the Modelling tab, choose Fit a life model.",
+                         agent="Fit it with maintenance reliability.fit_class_model.")
     doc = fetcher(db, owners, hidden)("model", cm["model_id"])
     return m.link_position_model(position_id, "model", cm["model_id"], "class", failure_mode_ids,
                                  doc.name if doc is not None else f"{cm['position_class']} (class model)", note,
