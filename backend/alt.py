@@ -39,6 +39,7 @@ from backend.fitting import (
     no_maximum_notice,
     outside_support_message,
     reissue_deprecations,
+    surpyval_unit,
     without_intervals,
 )
 from backend.services.method_labels import hides_solver_names, note_fit
@@ -338,7 +339,7 @@ def fit(
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
         with collect_warnings() as caught:
-            model = note_fit(AcceleratedLife(dist, entry["model"]).fit(**inputs))
+            model = note_fit(AcceleratedLife(dist, entry["model"]).fit(**inputs, unit=surpyval_unit(unit)))
         reissue_deprecations(caught)
     except FitError:
         raise

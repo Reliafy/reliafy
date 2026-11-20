@@ -15,7 +15,7 @@ from __future__ import annotations
 import pandas as pd
 
 from backend import degradation as degradation_fit
-from backend.fitting import DISTRIBUTIONS, FitError
+from backend.fitting import DISTRIBUTIONS, FitError, surpyval_unit
 from backend.services import datasets as datasets_service
 from backend.services import python_export as px
 from backend.units import unit_in_text
@@ -92,6 +92,8 @@ def python_script(name: str, spec: dict, frame: pd.DataFrame) -> str:
         f"    path={path!r},  # the shape of each item's path" + ("; 'best' picks it by AICc" if path == "best" else ""),
         f"    distribution=surpyval.{dist},  # the life distribution fitted to the crossing times",
         f"    population_method={population!r},",
+        *([f"    unit={surpyval_unit(spec.get('unit'))!r},  # the time unit, as the app's model has"]
+          if surpyval_unit(spec.get("unit")) else []),
         ")",
         "",
         f'UNIT = {unit!r}',

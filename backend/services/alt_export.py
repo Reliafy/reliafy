@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from backend import alt as alt_fit
-from backend.fitting import DISTRIBUTIONS, FitError
+from backend.fitting import DISTRIBUTIONS, FitError, surpyval_unit
 from backend.services import datasets as datasets_service
 from backend.services import python_export as px
 from backend.units import unit_in_text
@@ -119,6 +119,8 @@ def python_script(name: str, df: pd.DataFrame, spec: dict) -> str:
         fit_args.append('    n=data["count"].to_numpy()')
     if "entered_at" in table:
         fit_args.append('    t=data[["entered_at", "left_by"]].to_numpy()')
+    if surpyval_unit(spec.get("unit")):
+        fit_args.append(f"    unit={surpyval_unit(spec.get('unit'))!r}")  # the model's time unit, as the app's
 
     stress_words = ", ".join(f"{labels[j]}{(' (' + units[j] + ')') if units[j] else ''}" for j in range(n_stress))
     use_example = ", ".join("..." for _ in range(n_stress))

@@ -457,10 +457,12 @@ def _check_parts(covariates: list[str], hazard: Optional[list], path: Any) -> tu
 
 def fit_model(items: list[dict], covariates: list[str], path_model: str = DEFAULT_PATH,
               hazard_covariates: Optional[list] = None, path_covariates: Any = None,
-              link: str = DEFAULT_LINK, exposure: Optional[float] = None):
+              link: str = DEFAULT_LINK, exposure: Optional[float] = None, unit: Optional[str] = None):
     """Fit the joint model to the records. Returns ``(model, warnings)``.
     ``exposure``: the level the accumulated exposure is counted above; the
-    readings go in less it (the model carries it for its predictions)."""
+    readings go in less it (the model carries it for its predictions).
+    ``unit``: the ages' unit, kept on the model as SurPyval's ``model.unit``
+    (as typed, the way the results show it; blank is unknown)."""
     hazard, path = _check_parts(covariates, hazard_covariates, path_covariates)
     exposure = exposure_above(exposure)
     check_exposure(link_id(link), exposure)
@@ -475,6 +477,8 @@ def fit_model(items: list[dict], covariates: list[str], path_model: str = DEFAUL
     }
     if (df["entry_age"] > 0).any():
         kwargs["tl_col"] = "entry_age"
+    if str(unit or "").strip():
+        kwargs["unit"] = str(unit).strip()
     if covariates:
         kwargs["Z_cols"] = list(covariates)
         if hazard is not None:
@@ -1206,7 +1210,8 @@ def run_fit(request: dict) -> dict:
     opts = request.get("options") or {}
     path_model = opts.get("path_model") or DEFAULT_PATH
     model, notes = fit_model(items, covariates, path_model, opts.get("hazard_covariates"),
-                             opts.get("path_covariates"), link_id(opts.get("link")), opts.get("exposure_above"))
+                             opts.get("path_covariates"), link_id(opts.get("link")), opts.get("exposure_above"),
+                             unit=opts.get("unit"))
     results = results_payload(model, items, covariates, path_model=path_model, unit=opts.get("unit") or "",
                               marker=opts.get("marker") or "", marker_unit=opts.get("marker_unit") or "",
                               notes=notes, summary=request.get("summary"))
@@ -1265,6 +1270,8 @@ def python_script(name: str, items: list[dict], covariates: list[str], *, path_m
         if hazard is not None:
             args.append(f"    hazard_covariates={hazard!r},")
             args.append(f"    path_covariates={path!r},")
+    if str(unit or "").strip():
+        args.append(f"    unit={str(unit).strip()!r},  # the ages' unit, as the app's model has")
     shown_unit = unit_in_text(unit) or "the model's time unit"
     versions = versions or {}
     pins = " ".join(f"{k}=={v}" for k, v in versions.items() if v) or "surpyval"

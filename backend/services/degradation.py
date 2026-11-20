@@ -22,7 +22,7 @@ import surpyval
 from backend import degradation as degradation_fit
 from backend.services import access
 from backend.db import from_doc, to_doc
-from backend.fitting import FitError
+from backend.fitting import FitError, stamp_unit
 from backend.schema import DegradationModelDoc, TrackedItem
 from backend.services import datasets as datasets_service
 from backend.errors import client_message
@@ -146,10 +146,13 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]):
             try:
                 cid = degradation_fit.restore_live(doc.serialized)
                 _remember_live(doc.id, cid)
-                return degradation_fit.get_live(cid)
+                live = degradation_fit.get_live(cid)
             except Exception:  # noqa: BLE001 - fall back to a fresh fit
-                pass
-        live = _refit(db, doc)
+                live = None
+        if live is None:
+            live = _refit(db, doc)
+        # The unit is the model's own; one saved before it went into SurPyval takes the saved unit (in memory).
+        stamp_unit(live, (doc.results or {}).get("unit") or (doc.spec or {}).get("unit"))
     return live
 
 

@@ -26,7 +26,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from backend.fitting import FitError, _json_safe
+from backend.fitting import FitError, _json_safe, surpyval_unit
 from backend.services.method_labels import note_fit
 from backend.units import canonical_unit
 from surpyval.recurrent import (
@@ -490,8 +490,8 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
         return {"causes": [], "reason": "Only one cause in the data: the MCF by cause is the MCF."}
     try:
         with ignore_warnings(), np.errstate(all="ignore"):
-            mcf = CauseSpecificMCF.fit(x, i=i, c=c, e=e, **kw)
-            para = CauseSpecificNHPP.fit(x, i=i, c=c, e=e, dist=CrowAMSAA, **kw)
+            mcf = CauseSpecificMCF.fit(x, i=i, c=c, e=e, **kw, unit=surpyval_unit(unit))
+            para = CauseSpecificNHPP.fit(x, i=i, c=c, e=e, dist=CrowAMSAA, **kw, unit=surpyval_unit(unit))
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's reason, keep the rest of the fit
         return {"causes": [], "reason": f"Couldn't fit by cause: {client_message(exc)}"}
     total = int(counts.sum())
@@ -557,12 +557,12 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str, unit: str = "", gof_test
     try:
         # An unverified maximum (UserWarning) is reported in the payload.
         with ignore_warnings(RuntimeWarning, UserWarning), np.errstate(all="ignore"):
-            np_model = note_fit(NonParametricCounting.fit(**np_inputs))
+            np_model = note_fit(NonParametricCounting.fit(**np_inputs, unit=surpyval_unit(unit)))
             if family(model_id) == "regression":
                 Z, names, meta = covariates(df, mapping, keep)
-                live = note_fit(_fit_regression(inputs, Z, names, opts))
+                live = note_fit(_fit_regression(inputs, Z, names, opts, unit=unit))
             else:
-                live = note_fit(_fit_renewal(model_id, inputs, opts))
+                live = note_fit(_fit_renewal(model_id, inputs, opts, unit=unit))
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
@@ -577,16 +577,18 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str, unit: str = "", gof_test
     return payload, live
 
 
-def _fit_regression(inputs: dict, Z: np.ndarray, names: list, opts: dict):
+def _fit_regression(inputs: dict, Z: np.ndarray, names: list, opts: dict, unit: str | None = None):
     ins, src = observed(inputs)
     frame = pd.DataFrame(np.asarray(Z)[src], columns=names)
     kw = {k: ins[k] for k in ("i", "c", "n", "tl") if ins.get(k) is not None}
+    kw["unit"] = surpyval_unit(unit)
     return ProportionalIntensityNHPP.fit(ins["x"], frame, baseline=BASELINES[opts["baseline"]], **kw)
 
 
-def _fit_renewal(model_id: str, inputs: dict, opts: dict):
+def _fit_renewal(model_id: str, inputs: dict, opts: dict, unit: str | None = None):
     ins = with_end_rows(inputs)
     kw = {k: ins[k] for k in ("i", "c", "n", "tl") if ins.get(k) is not None}
+    kw["unit"] = surpyval_unit(unit)
     if model_id == "grp_i":
         return GeneralizedRenewal.fit(ins["x"], kijima="i", **kw)
     if model_id == "grp_ii":
