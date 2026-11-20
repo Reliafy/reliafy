@@ -102,12 +102,13 @@ export function ClassForecastTab({ row, display, onSelect }) {
           ))}
         </div>
       )}
-      <p className="lib-date">
+      {/* Forecasts lists the position classes with a fitted model: link those alone. */}
+      {groups.some((g) => reads[g.key]?.n_forecast) && <p className="lib-date">
         On Forecasts:{" "}
-        {groups.map((g, i) => (
+        {groups.filter((g) => reads[g.key]?.n_forecast).map((g, i) => (
           <span key={g.key}>{i > 0 && " · "}<Link to={forecastsPath(g.key)}>{g.label}</Link></span>
         ))}
-      </p>
+      </p>}
     </div>
   );
 }
