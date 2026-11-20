@@ -132,12 +132,26 @@ Open **Advanced** under **3. Model** to choose **What the risk follows**:
   settle at different levels because of how they were mounted, where only a
   climbing reading is a sign of trouble.
 - **Level and rate of change**: both, each with its own effect.
+- **Accumulated exposure**: the risk follows the reading's total so far, the
+  area under its path since new. Every day at a high reading adds to it, and
+  it stays when the reading falls. Of two pumps both at 4 mm/s today, the one
+  that has sat at 4 all year has had more exposure than one that climbed from
+  2, so it is at higher risk. It suits wear that builds with the dose: hours
+  hot for insulation, particle counts for a hydraulic pump.
 
 Rate of change needs a **Linear**, **Exponential** or **Quadratic** path, and
 units whose rates differ: its effect is learnt from how lives differ between
 units that rise at different rates. The **Effects** tab then says, for example,
 *each 1 mm/s per day faster rise in vibration multiplies the failure rate by …*,
 in the model's time unit; for days, weeks or months it adds the same per year.
+
+With **Accumulated exposure**, the effect is per 1 reading unit × time unit:
+*each extra 1 mm/s·day of accumulated vibration (one day at 1 mm/s higher)
+multiplies the failure rate by …*. To count only the reading above a limit
+(hours above a rated temperature, say), fill in **Count exposure above**: that
+level is taken off every reading, at the fit and in every prediction, and the
+result says so. The charts still show the readings as entered.
+
 To see which choice suits your data, fit it each way and compare their AIC on
 the **Diagnostics** tab: lower is better.
 

@@ -9,6 +9,10 @@ Needs a server on the same release.
   fast it is moving, whatever its level) or `value_slope` (both). A rate-of-change link needs a
   linear, exponential or quadratic path. The answer gives `link`, and a `slope_effect` hazard ratio
   per 1 reading unit per time unit. The REST twins and the CLI take it too.
+- **Accumulated exposure**: `link` also takes `cumulative`: the risk follows the reading's total so
+  far (the area under its path since new), with a `cumulative_effect` hazard ratio per 1 reading
+  unit × time unit. `exposure_above` (with `cumulative` only) counts the exposure above a level
+  instead of from 0; the answer gives it back.
 - **Overhaul and replace**: `analyse optimal_overhaul_replace` finds "overhaul every X, replace
   after N overhauls" for a repairable unit, from a saved minimal-repair recurrent model
   (`model_id`) or `form` + `params`, with `cost_repair`, `cost_overhaul`, `cost_replace` and

@@ -77,9 +77,11 @@ once per unit, a reading on every row) works as it is, or change dataset_split m
 new, in one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates \
 change how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
 link: what of the reading the risk follows: value (its level, the default), slope (how fast it is moving: \
-"at the same reading, is a climbing unit worse than a steady one?"; linear, exponential or quadratic path) or \
-value_slope (both); compare links on the same data by aic (lower is better). A slope effect is per 1 reading unit \
-per time unit: say both units. \
+"at the same reading, is a climbing unit worse than a steady one?"; linear, exponential or quadratic path), \
+value_slope (both) or cumulative (its total so far, the area under its path since new: "does the dose so far \
+matter?"; exposure_above counts only the reading above a level, e.g. above a temperature limit); compare links on \
+the same data by aic (lower is better). A slope effect is per 1 reading unit per time unit, a cumulative effect per \
+1 reading unit x time unit (a day at 1 mm/s higher): say both units. \
 analyse fit_joint reports; change model_fit_joint saves. The fit runs on the calculation service (8-40 s): \
 it may come back as a job (get kind job). Quote each hazard ratio with its 90% CI, as its text says.
 - A running unit's risk: analyse predict_joint (unit_id, or age_now + readings + unit_covariates): \

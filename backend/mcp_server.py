@@ -3045,14 +3045,17 @@ _JointPath = Annotated[Literal[tuple(joint_fit.PATHS)], Field(description=(
     "The reading's path with age: " + "; ".join(f"{k} ({v[2]})" for k, v in joint_fit.PATHS.items())))]
 _JointLink = Annotated[Literal[tuple(joint_fit.LINKS)], Field(description=(
     "What of the reading the risk follows: value (its level), slope (its rate of change; linear, exponential or "
-    "quadratic path) or value_slope (both)."))]
+    "quadratic path), value_slope (both) or cumulative (its total so far: the area under its path since new)."))]
+_JointExposure = Annotated[Optional[float], Field(description=(
+    "link cumulative only: count the exposure above this reading level (it is taken off every reading, at the "
+    "fit and in predictions), e.g. hours above a temperature limit. Leave out to count from 0."))]
 _JOINT_WAIT_S = 25.0
 
 
 def _joint_body(name, dataset_id, unit_id_column, age_column, censor_column,
                 reading_unit_column, reading_age_column, reading_value_column, age_right_column,
                 entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker, marker_unit,
-                c_invert, link="value") -> dict:
+                c_invert, link="value", exposure_above=None) -> dict:
     hazard = list(hazard_covariates or [])
     path = list(path_covariates or [])
     covariates = list(dict.fromkeys(hazard + path))
@@ -3069,7 +3072,8 @@ def _joint_body(name, dataset_id, unit_id_column, age_column, censor_column,
         "covariates": covariates,
         "hazard_covariates": hazard if covariates else None,
         "path_covariates": path if covariates else None,
-        "path_model": path_model, "link": link or "value", "unit": unit or "", "marker": marker or reading_value_column,
+        "path_model": path_model, "link": link or "value", "exposure_above": exposure_above,
+        "unit": unit or "", "marker": marker or reading_value_column,
         "marker_unit": marker_unit or "", "c_invert": c_invert,
     }
 
@@ -3093,6 +3097,7 @@ def _joint_report(r: dict, top: int = 10) -> dict:
         "fit_ok": r.get("fit_ok"), "maximum": r.get("maximum"), "unit": r.get("unit"),
         "marker": r.get("marker"), "path_model": r.get("path_label"), "path_formula": r.get("path_formula"),
         "link": r.get("link") or "value",
+        **({"exposure_above": r["exposure_above"]} if r.get("exposure_above") is not None else {}),
         "counts": {k: r.get(k) for k in ("n_items", "n_events", "n_readings", "n_running")},
         "parameters": [{k: p.get(k) for k in ("part", "name", "value", "lower", "upper")} for p in r.get("params") or []],
         "hazard_ratios": [{k: h_.get(k) for k in ("name", "hr", "lower", "upper", "text")}
@@ -3153,6 +3158,7 @@ def fit_joint(
     path_covariates: _JointCovs = None,
     path_model: _JointPath = "linear",
     link: _JointLink = "value",
+    exposure_above: _JointExposure = None,
     unit: _FitUnit = None,
     marker: Annotated[Optional[str], Field(description="What the readings are, e.g. 'vibration'.")] = None,
     marker_unit: Annotated[Optional[str], Field(description="The readings' unit, e.g. 'mm/s'.")] = None,
@@ -3165,7 +3171,7 @@ def fit_joint(
     body = _joint_body(None, dataset_id, unit_id_column, age_column, censor_column,
                        reading_unit_column, reading_age_column, reading_value_column, age_right_column,
                        entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker,
-                       marker_unit, c_invert, link)
+                       marker_unit, c_invert, link, exposure_above)
     return _joint_fit(ctx, body, save=False)
 
 
@@ -3193,6 +3199,7 @@ def fit_joint_model(
     path_covariates: _JointCovs = None,
     path_model: _JointPath = "linear",
     link: _JointLink = "value",
+    exposure_above: _JointExposure = None,
     unit: _FitUnit = None,
     marker: Annotated[Optional[str], Field(description="What the readings are, e.g. 'vibration'.")] = None,
     marker_unit: Annotated[Optional[str], Field(description="The readings' unit, e.g. 'mm/s'.")] = None,
@@ -3204,7 +3211,7 @@ def fit_joint_model(
     body = _joint_body(name, dataset_id, unit_id_column, age_column, censor_column,
                        reading_unit_column, reading_age_column, reading_value_column, age_right_column,
                        entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker,
-                       marker_unit, c_invert, link)
+                       marker_unit, c_invert, link, exposure_above)
     return _joint_fit(ctx, body, save=True)
 
 
