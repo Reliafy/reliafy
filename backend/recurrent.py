@@ -188,16 +188,74 @@ def all_models() -> list[dict]:
 
 
 def fit_spec(df: pd.DataFrame, spec: dict, gof_test: bool = True) -> tuple[dict, str]:
-    """:func:`fit` from a saved model's spec (mapping, model, unit, options
-    and observation windows)."""
+    """:func:`fit` from a saved model's spec (mapping, model, unit, options,
+    observation windows and the end of test, ``record_end``)."""
     return fit(df, spec.get("mapping", {}), model_id=spec.get("model_id", "crow_amsaa"),
                unit=spec.get("unit", ""), gof_test=gof_test, options=spec.get("options"),
-               windows=spec.get("windows"))
+               windows=spec.get("windows"), record_end=spec.get("record_end"))
+
+
+RECORD_END_COLUMN = "__record_end__"  # the column a typed end of test becomes
+
+
+def parse_record_end(value) -> float | None:
+    """A typed end of test as a number (``None`` when blank), or a
+    :class:`FitError` saying what to enter."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise FitError("The end of test must be a number: the time the test stopped, in the same unit as the "
+                       "failure times.") from None
+    if not np.isfinite(v) or v <= 0:
+        raise FitError("The end of test must be a positive number: the time the test stopped.")
+    return v
+
+
+def with_record_end(df: pd.DataFrame, mapping: dict, record_end) -> tuple[pd.DataFrame, dict]:
+    """``(df, mapping)`` with one typed end of test (``record_end``) as each
+    system's end of record: it fills an end-of-record column (``tr``) where
+    that is blank, or becomes that column when none is mapped. A system whose
+    own ``c = 1`` row or end-of-record value says where it ends keeps it.
+    A test can't end before a failure it saw, so an end before a system's
+    last failure is refused."""
+    end = parse_record_end(record_end)
+    if end is None:
+        return df, mapping
+    for key in ("i", "x"):
+        if not mapping.get(key) or mapping[key] not in df.columns:
+            return df, mapping  # build_inputs says what's missing
+    x = pd.to_numeric(df[mapping["x"]], errors="coerce")
+    i = df[mapping["i"]].astype(str)
+    own = pd.Series(np.nan, index=df.index)
+    tr_col = mapping.get("tr") or mapping.get("t")
+    if tr_col and tr_col in df.columns:
+        own = pd.to_numeric(df[tr_col], errors="coerce")
+    closed = pd.Series(False, index=df.index)
+    if mapping.get("c") and mapping["c"] in df.columns:
+        flags = pd.to_numeric(df[mapping["c"]], errors="coerce")
+        closed = i.isin(set(i[flags == 1]))
+    open_rows = closed.eq(False) & own.isna() & x.notna()
+    if open_rows.any():
+        last = x[open_rows].groupby(i[open_rows]).max()
+        late = last[last > end]
+        if len(late):
+            sys_id, t = str(late.index[0]), float(late.iloc[0])
+            raise FitError(f"The test is said to end at {end:g}, but {sys_id} has a failure later, at {t:g}. "
+                           "Enter the time the test stopped (at or after its last failure), or leave it empty "
+                           "if the test stopped at the last failure.")
+    out = df.copy()
+    out[RECORD_END_COLUMN] = own.where(own.notna(), end)
+    m = {k: v for k, v in mapping.items() if k != "t"}
+    m["tr"] = RECORD_END_COLUMN
+    return out, m
 
 
 @hides_solver_names
 def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str = "",
-        gof_test: bool = True, options: dict | None = None, windows=None) -> tuple[dict, str]:
+        gof_test: bool = True, options: dict | None = None, windows=None,
+        record_end=None) -> tuple[dict, str]:
     """Fit the recurrent model and build the JSON-safe results payload.
 
     Returns ``(payload, cache_id)`` addressing the live parametric model.
@@ -206,9 +264,13 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     settings (a baseline, a memory) and ``windows`` each system's observation
     windows, entered by hand ({system: [[start, end], ...]} or text); window
     columns come in the mapping (``ws`` / ``we``). A cause column (``mode``)
-    adds the MCF of each cause (#65).
+    adds the MCF of each cause (#65). ``record_end`` is one end of test for
+    every system with no end of record of its own (:func:`with_record_end`).
     """
     from backend import recurrent_models as extra
+
+    given = mapping
+    df, mapping = with_record_end(df, mapping, record_end)
 
     if model_id in extra.EXTRA_MODELS:
         windows = extra.windows_from(df, mapping, windows) if (windows or mapping.get("ws")) else None
@@ -216,6 +278,7 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
                                   windows=windows)
         _add_marks(payload, df, mapping)
         _record_end_note(payload, df, mapping, windows)
+        _termination(payload, given, record_end)
         return payload, store_live(live)
     if model_id not in MODELS:
         choices = MODEL_CHOICES + list(extra.EXTRA_MODELS)
@@ -244,12 +307,29 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
         payload["windows"] = gaps
     _add_marks(payload, df, mapping, inputs=None if gaps else inputs)
     _record_end_note(payload, df, mapping, windows)
+    _termination(payload, given, record_end)
     return payload, store_live(para)
 
 
-RECORD_END_NOTE = ("No end of record is mapped, so each system's record is taken to end at its last failure. That "
-                   "makes failures look closer together at the end than they were: map the column that says how "
-                   "far each system's records go (End of record) for a fair trend and MTBF.")
+RECORD_END_NOTE = ("No end of record is given, so each system's record is taken to end at its last failure "
+                   "(failure-terminated). That makes failures look closer together at the end than they were if "
+                   "the test ran on: enter when the test ended, or map the column that says how far each "
+                   "system's records go (End of record), for a fair trend and MTBF.")
+
+
+def _termination(payload: dict, mapping: dict, record_end) -> None:
+    """How the record ends, said on every result: ``time`` (an end of test
+    or end of record was given; ``end`` is the latest) or ``failure`` (each
+    system ends at its last failure). ``source`` is what gave it: ``value``
+    (a typed end of test), else ``data`` (a column, ``c = 1`` rows or
+    observation windows)."""
+    failure = any(w.get("id") == "no_record_end" for w in payload.get("warnings") or [])
+    end = payload.get("end_of_observation")
+    out = {"kind": "failure" if failure else "time", "end": end}
+    if not failure:
+        typed = record_end is not None and not (mapping.get("tr") or mapping.get("t"))
+        out["source"] = "value" if typed else "data"
+    payload["termination"] = _json_safe(out)
 
 
 def _record_end_note(payload: dict, df: pd.DataFrame, mapping: dict, windows=None) -> None:
@@ -463,7 +543,9 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
 
     # Parametric fit + fitted MCF over a smooth grid to the last observation.
     params_arr = np.asarray(para.params, dtype=float)
-    t_hi = float(np.max(x)) if x.size else 1.0
+    # To the end of observation (a test that ran on past its last failure:
+    # the curve reaches "now").
+    t_hi = max(float(np.max(x)) if x.size else 1.0, end_of_observation(inputs))
     grid = np.linspace(0.0, t_hi, 200)
     with np.errstate(all="ignore"):
         fitted = np.asarray(para.mcf(grid), dtype=float)

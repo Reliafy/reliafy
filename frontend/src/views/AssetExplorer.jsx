@@ -74,7 +74,7 @@ import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs, tasksOf } from "../
 import { failuresOn as fmeaFailuresOn, graftFmea, positionSummary, rowActions as fmeaRowActions } from "../explorerFmea.js";
 import {
   CHIP_IDS as FMEA_CHIP_IDS, COLUMN as FMEA_COLUMN, COLUMNS as FMEA_COLUMNS, TREE_HEAD as FMEA_TREE_HEAD, WIDE_TABLE, checkValue as checkFmeaValue,
-  loadPrefs as loadFmeaPrefs, nextSort, phoneLine as fmeaPhoneLine, savePrefs as saveFmeaPrefs, scoredWords, siblingOrder as fmeaOrder,
+  RPN_MAX, chipCounts as fmeaChipCounts, loadPrefs as loadFmeaPrefs, nextSort, phoneLine as fmeaPhoneLine, rpnAtLeast, rpnCount, rpnLabel, rpnMinOf, savePrefs as saveFmeaPrefs, scoredWords, siblingOrder as fmeaOrder,
   tableCols as fmeaTableCols, usualCols as fmeaUsualCols, withTableCols as withFmeaCols,
 } from "../fmeaWorksheet.js";
 import { readFmeaOptions } from "../fmea.js";
@@ -301,6 +301,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [collapsed, setCollapsed] = useState(saved.collapsed);
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState([]);
+  // The FME(C)A tab's "RPN at least" (as typed; a whole number 1 to 1,000 filters, blank doesn't).
+  const [rpnRaw, setRpnRaw] = useState("");
   // The level each arrangement was last opened to from the ⋯ menu (null once
   // rows are opened or closed one by one; the usual level before any).
   const [levelBy, setLevelBy] = useState({});
@@ -587,9 +589,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const t = setTimeout(() => setPinNote(null), 8000);
     return () => clearTimeout(t);
   }, [pinNote]);
-  const filter = useMemo(() => (data ? computeFilter(display, {
-    query, chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
-  }) : null), [data, display, query, chips, notPlaced]);
+  // How many failure modes each FME(C)A filter keeps (beside it in the ⋯ menu).
+  const fmeaChipCount = useMemo(() => (fmeaOn ? fmeaChipCounts(display) : null), [fmeaOn, display]);
+  // The FME(C)A's RPN floor: only failure modes at or above it, the tree's order kept.
+  const rpnMin = fmeaOn ? rpnMinOf(rpnRaw) : null;
+  const filter = useMemo(() => {
+    if (!data) return null;
+    const placed = notPlaced ? (r) => r.type === "pos" && !r.ref.location : null;
+    const floor = rpnAtLeast(rpnMin);
+    const extra = placed && floor ? (r) => placed(r) && floor(r) : placed || floor;
+    return computeFilter(display, { query, chips, extra });
+  }, [data, display, query, chips, notPlaced, rpnMin]);
   useEffect(() => setFopen(filter ? filterOpen(filter) : null), [filter]);
   const defaultOpen = useMemo(() => levelSet(whole, 2), [whole]);
   const baseOpen = openBy[mode] || defaultOpen;
@@ -826,6 +836,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (t !== "rcm") setChips((c) => c.filter((x) => !["undecided", "hidden", "check"].includes(x)));
     if (t !== "fmea") setChips((c) => c.filter((x) => !FMEA_CHIP_IDS.includes(x)));
     if (t !== "fmea") setFsort(null);
+    if (t !== "fmea") setRpnRaw("");
     if (t !== "models") setChips((c) => c.filter((x) => x !== "stale"));
     if (toTable && tab !== "summary" && focusRow?.type === "pos") setPanel(false);
     let keep = null;
@@ -2098,11 +2109,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const level = levelShown(levelBy, mode);
   const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.rcmOnly || tableOn));
   // A pin on the whole tree's one top row shows everything: not a change.
+  // The RPN floor counts as one more filter on (the ⋯ badge, Reset, the status line).
+  const floorOn = rpnMin != null ? [{ id: "rpn", label: rpnLabel(rpnMin) }] : [];
   const changed = changedFromUsual({
-    level, chips: chipsOn, pinned: !!pinKey && !pinCoversAll(whole, pinKey),
+    level, chips: [...chipsOn, ...floorOn], pinned: !!pinKey && !pinCoversAll(whole, pinKey),
   });
   const resetView = () => {
     setChips([]);
+    setRpnRaw("");
     if (pinKey || (level !== DEFAULT_LEVEL && typeof level === "number")) {
       setLevelBy((l) => ({ ...l, [mode]: DEFAULT_LEVEL }));
       setOpenBy((o) => ({ ...o, [mode]: levelSet(whole, DEFAULT_LEVEL) }));
@@ -2267,7 +2281,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const paneEmpty = !data ? (error?.gone ? "That asset isn't here." : error?.notAllowed ? "Not on for this account." : error ? "Couldn't load the tree." : "Loading the tree…")
     : filter && notPlaced && !query.trim() && !chips.length ? "Every position is at a location."
     : filter ? (
-      <>Nothing matches{query.trim() ? ` “${query.trim()}”` : ""}. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); }}>Clear the filter</button></>
+      <>Nothing matches{query.trim() ? ` “${query.trim()}”` : ""}. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); setRpnRaw(""); }}>Clear the filter</button></>
     ) : nothing ? `${EMPTY[mode]?.[0] || "No positions yet"}.` : "Nothing here.";
 
   const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
@@ -2280,7 +2294,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     : rcmOn && !filter
     ? (rcmError ? `The ${what} didn't load: ${rcmError}` : "")
     : filter
-    ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
+    ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly([...chipsOn, ...floorOn].map((c) => c.label))].filter(Boolean).join(" · ")
     : "";
 
   // The Explorer is always one asset (?root=), so there's nothing to say about that; only the
@@ -2867,6 +2881,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onQuery={setQuery}
         chips={chips}
         onChips={setChips}
+        chipCounts={fmeaOn ? fmeaChipCount : null}
+        floor={fmeaOn ? {
+          label: "RPN at least", value: rpnRaw, max: RPN_MAX, count: rpnMin != null ? rpnCount(display, rpnMin) : null,
+          onChange: setRpnRaw,
+        } : null}
         design={designScope}
         mode={mode}
         onMode={onMode}

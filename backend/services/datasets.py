@@ -130,39 +130,98 @@ def resolve_no_header(file_bytes: bytes, no_header: bool | None) -> tuple[bool, 
 def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: bool = False) -> Dataset:
     """Persist a CSV (content-addressed) and return the Dataset.
 
-    Datasets are de-duplicated by checksum *per owner* so saving several models
-    from the same upload reuses one dataset, while different users keep their
-    own isolated copies. ``no_header`` treats the file as having no header row:
-    generic ``col N`` names are added so the first data row isn't lost.
+    For data the app saves alongside a model (the model keeps its own
+    mapping): identical data the owner already has comes back as it is,
+    whatever its name, so saving several models from the same rows keeps one
+    dataset. A dataset the user names (an upload, a paste, the API) goes
+    through :func:`create_or_reuse`, which never drops their name or reading.
+    ``no_header`` treats the file as having no header row: generic ``col N``
+    names are added so the first data row isn't lost.
     """
-    return create_or_reuse(db, name, file_bytes, owner_id, no_header=no_header)[0]
+    check_size(file_bytes)
+    if no_header:
+        file_bytes = apply_generic_header(file_bytes)
+    existing = db.datasets.find_one({"checksum": storage.checksum(file_bytes), "owner_id": owner_id})
+    if existing is not None:
+        return from_doc(Dataset, existing)
+    return _insert(db, name, file_bytes, owner_id, None)
+
+
+def _same_name(a: str | None, b: str | None) -> bool:
+    return (a or "").strip().lower() == (b or "").strip().lower()
+
+
+def _without_guess(reading: dict | None) -> dict:
+    return {k: v for k, v in (reading or {}).items() if k != "guessed"}
+
+
+def find_reusable(db, owner_id: str, digest: str, name: str, reading: dict | None = None,
+                  keep_reading: bool = False) -> dict | None:
+    """The owner's saved dataset an upload of these exact rows may reuse, or
+    None (a new dataset is made). Reused only when nothing the user chose
+    would be dropped: the same name (case aside), and either no reading
+    given, a guess while the saved one has its own (``keep_reading``), no
+    saved reading yet, or the very same reading. The same rows under another
+    name or read another way are a dataset of their own: an old dataset's
+    name or reading never stands in for the user's."""
+    docs = [d for d in db.datasets.find({"checksum": digest, "owner_id": owner_id}) if _same_name(d.get("name"), name)]
+    if not docs:
+        return None
+    want = None
+    if reading is not None:
+        try:
+            want = _without_guess(_checked_reading(reading, docs[0].get("columns") or []))
+        except Exception:  # noqa: BLE001 - a reading that doesn't fit is refused when the dataset is made
+            return None
+    for doc in docs:
+        saved = doc.get("reading")
+        if want is None or not saved or (keep_reading and saved) or _without_guess(saved) == want:
+            return doc
+    return None
 
 
 def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
                     no_header: bool = False, reading: dict | None = None,
                     keep_reading: bool = False) -> tuple[Dataset, bool]:
-    """``create_dataset``, also saying whether identical data already existed
-    (``True``: the existing dataset, under its own name, came back) — so the
-    app can tell the user rather than silently dropping the new name.
+    """Save a dataset the user named, also saying whether it was reused
+    (``True``: the user already had these rows under this name and reading,
+    so that dataset came back; see :func:`find_reusable`). Otherwise a new
+    dataset is made with the user's name and reading, even when the same rows
+    are saved under another name (:func:`same_rows_as` finds that one, so
+    the app can say so). A reused dataset is never re-read another way.
 
     ``reading``: how the columns are read (dataset_reading.normalize checks
-    it against the columns first; ReadingError when it doesn't fit). Identical
-    data already saved takes it too, unless ``keep_reading`` and it has one of
-    its own (a guess never replaces a reading someone chose)."""
-    from backend.services import dataset_reading
-
+    it against the columns first; ReadingError when it doesn't fit). A reused
+    dataset with no reading of its own takes it; ``keep_reading``: the
+    reading is a guess, which never replaces a reading someone chose."""
     check_size(file_bytes)
     if no_header:
         file_bytes = apply_generic_header(file_bytes)
 
     digest = storage.checksum(file_bytes)
-    existing = db.datasets.find_one({"checksum": digest, "owner_id": owner_id})
+    existing = find_reusable(db, owner_id, digest, name, reading, keep_reading)
     if existing is not None:
         ds = from_doc(Dataset, existing)
-        if reading is not None and not (keep_reading and ds.reading):
+        if reading is not None and not ds.reading:
             ds = set_reading(db, ds, reading, owner_id)
         return ds, True
+    return _insert(db, name, file_bytes, owner_id, reading, digest), False
 
+
+def same_rows_as(db, dataset: Dataset) -> dict | None:
+    """Another dataset of the owner's with exactly these rows (the newest), as
+    ``{id, name}``, or None: a new dataset says "you already have these rows
+    as …" rather than leaving two look-alikes unexplained."""
+    if not dataset.checksum:
+        return None
+    doc = next(iter(db.datasets.find(
+        {"checksum": dataset.checksum, "owner_id": dataset.owner_id, "_id": {"$ne": dataset.id}},
+        {"name": 1}).sort("created_at", -1).limit(1)), None)
+    return {"id": doc["_id"], "name": doc.get("name") or ""} if doc else None
+
+
+def _insert(db, name: str, file_bytes: bytes, owner_id: str, reading: dict | None,
+            digest: str | None = None) -> Dataset:
     df = read_dataframe(file_bytes)
     columns = [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns]
     if reading is not None:
@@ -172,14 +231,14 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
         id=uuid.uuid4().hex,
         name=name,
         owner_id=owner_id,
-        checksum=digest,
+        checksum=digest or storage.checksum(file_bytes),
         n_rows=int(df.shape[0]),
         columns=columns,
         data=file_bytes,
         reading=reading,
     )
     db.datasets.insert_one(to_doc(dataset))
-    return dataset, False
+    return dataset
 
 
 def _checked_reading(reading: dict, columns, measurement_columns=None) -> dict:
@@ -273,34 +332,60 @@ def split_names(values: list[str], taken: set[str], source: str) -> list[str]:
     return out
 
 
+def _split_reusable(db, owner_id: str, value: str, data: bytes, source: str,
+                    reading: dict | None, keep_reading: bool) -> dict | None:
+    """A split part the owner already has: the same rows under the part's
+    name (the value, or "<value> – <source>" when the value was taken) and
+    the same reading (``find_reusable``), so splitting a sheet again adds
+    nothing."""
+    digest = storage.checksum(data)
+    for name in dict.fromkeys([value[:200], f"{value} – {source}"[:200] if source else value[:200]]):
+        doc = find_reusable(db, owner_id, digest, name, reading, keep_reading)
+        if doc is not None:
+            return doc
+    return None
+
+
 def create_split(db, file_bytes: bytes, column: str, owner_id: str,
                  source: str, reading: dict | None = None,
                  keep_reading: bool = False) -> tuple[list[tuple[Dataset, bool]], int]:
     """Save one dataset per value of ``column`` (``split_by_column``), named by
     ``split_names`` against the owner's datasets: ``([(dataset, reused), ...],
     blank_rows)``. ``reading``: the one reading every part is kept with (the
-    split column, left out of each part, left out of it too). Identical data
-    already saved comes back as it is (``reused``), with the reading."""
+    split column, left out of each part, left out of it too). A part already
+    saved under its name with this reading comes back as it is (``reused``)."""
     from backend.services import dataset_reading
 
     parts, blank = split_by_column(file_bytes, column)
     if reading is not None:
         reading = dataset_reading.drop_column(reading, str(column).strip())
+    found = [_split_reusable(db, owner_id, v, data, source, reading, keep_reading) for v, data in parts]
     taken = {d.get("name") or "" for d in db.datasets.find({"owner_id": owner_id}, {"name": 1})}
-    names = split_names([v for v, _ in parts], taken, source)
+    names = iter(split_names([v for (v, _), doc in zip(parts, found) if doc is None], taken, source))
     out = []
-    for (_, data), name in zip(parts, names):
-        ds, reused = create_or_reuse(db, name, data, owner_id, reading=reading, keep_reading=keep_reading)
-        out.append((ds, reused))
+    for (_, data), doc in zip(parts, found):
+        if doc is not None:
+            ds = from_doc(Dataset, doc)
+            if reading is not None and not ds.reading:
+                ds = set_reading(db, ds, reading, owner_id)
+            out.append((ds, True))
+        else:
+            out.append((_insert(db, next(names), data, owner_id, reading), False))
     return out, blank
 
 
-def count_new_parts(db, file_bytes: bytes, column: str, owner_id: str) -> int:
-    """How many of a split's parts would be new datasets (identical data the
-    owner already has is reused and doesn't count against a cap)."""
+def count_new_parts(db, file_bytes: bytes, column: str, owner_id: str, source: str = "",
+                    reading: dict | None = None, keep_reading: bool = False) -> int:
+    """How many of a split's parts would be new datasets (a part the owner
+    already has under its name and reading is reused and doesn't count
+    against a cap)."""
+    from backend.services import dataset_reading
+
     parts, _ = split_by_column(file_bytes, column)
-    return sum(1 for _, data in parts
-               if db.datasets.find_one({"checksum": storage.checksum(data), "owner_id": owner_id}) is None)
+    if reading is not None:
+        reading = dataset_reading.drop_column(reading, str(column).strip())
+    return sum(1 for v, data in parts
+               if _split_reusable(db, owner_id, v, data, source, reading, keep_reading) is None)
 
 
 def preview_frame(db, owner_id, dataset_id: str | None, file_bytes: bytes | None) -> tuple[pd.DataFrame, str | None]:
@@ -1099,7 +1184,8 @@ def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
 def reading_codes(df: pd.DataFrame, reading: dict, roles: dict | None = None) -> pd.Series | None:
     """Each row's censor code (0 failed, 1 still running, -1, 2) as a fit from
     the dataset's reading reads it: its status column with c_map or c_invert,
-    "every row failed", and an xl/xr range read as inspection data. None when
+    a failure-mode column's blanks as still running when there is no status
+    column, "every row failed", and an xl/xr range read as inspection data. None when
     the reading doesn't say which rows failed, or a row can't be read."""
     from backend import fitting  # local: only the summary needs it
 
@@ -1122,6 +1208,13 @@ def reading_codes(df: pd.DataFrame, reading: dict, roles: dict | None = None) ->
                 codes = pd.to_numeric(df[c], errors="coerce")
             if codes.isna().any():
                 return None
+        elif roles["e"] and not roles["xl"]:
+            # No status column beside a failure-mode one: a blank mode is a
+            # unit still running, as the fit by failure mode and the fit
+            # step's count read it (compare_groups.statuses_from_modes).
+            from backend.services.compare_groups import _label
+
+            codes = pd.Series([1 if _label(v) is None else 0 for v in df[roles["e"]].tolist()], index=df.index)
         elif reading.get("all_failed"):
             codes = pd.Series(0, index=df.index)
         if roles["xl"]:

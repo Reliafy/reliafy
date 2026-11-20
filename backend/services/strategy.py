@@ -17,7 +17,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
+from backend.fitting import DISTRIBUTIONS, FitError, nonparametric_range_message, param_values, surpyval_extras
 from backend.services import model_units
 from backend.units import unit_in_text, with_unit
 from repyability.non_repairable import NonRepairable
@@ -551,16 +551,23 @@ def _eval_side(spec: dict, grid: np.ndarray) -> dict:
     """Evaluate one side of a comparison (parametric model or KM of raw data)."""
     label = spec.get("label") or "Model"
     if spec.get("kind") == "nonparametric":
-        x = np.asarray(spec.get("x") or [], dtype=float)
-        x = x[np.isfinite(x)]
+        raw = np.asarray(spec.get("x") or [], dtype=float)
+        c = spec.get("c")
+        c = None if c is None else np.asarray(c, dtype=float)
+        # A time below 0, or a failure at 0, named by its place in the data:
+        # the Kaplan-Meier curve would otherwise give a life below 0.
+        same = c is not None and c.size == raw.size
+        refused = nonparametric_range_message({"x": raw, "c": c if same else None}, "Kaplan-Meier", ranges=False)
+        if refused:
+            raise StrategyError(f"{label}: {refused}")
+        x = raw[np.isfinite(raw)]
         if x.size == 0:
             raise StrategyError(f"{label}: no usable data values.")
         fit_kwargs: dict = {"x": x}
-        c = spec.get("c")
-        if c is not None:
-            c = np.asarray(c, dtype=float)
-            if c.size == x.size:
-                fit_kwargs["c"] = c.astype(int)
+        if same:
+            fit_kwargs["c"] = c[np.isfinite(raw)].astype(int)
+        elif c is not None and c.size == x.size:
+            fit_kwargs["c"] = c.astype(int)
         try:
             km = KaplanMeier.fit(**fit_kwargs)
         except Exception as exc:

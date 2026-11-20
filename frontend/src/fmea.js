@@ -165,6 +165,44 @@ export function cmWords(m) {
   return `${fmt3(m.loss_probability)} × ${fmt3(m.mode_ratio)} × ${fmt3(rateOf(m))} /${u} × ${fmt3(m.operating_time)} ${u} = ${fmt3(cm)}`;
 }
 
+// ---- the worksheet's Criticality column -------------------------------------------
+// A mode's Cm as the worksheet shows it: the number and the operating time it's
+// for, or why there isn't one (never a made-up number). {cm, t, unit} or {why}.
+const blank = (x) => x === "" || x == null || !Number.isFinite(Number(x));
+
+export function criticalityOf(m) {
+  if (!m) return { why: "" };
+  const rate = rateOf(m);
+  const cm = m.cm ?? cmOf({ ...m, failure_rate: rate });
+  const unit = m.time_unit || "hours";
+  if (cm != null) return { cm, t: Number(m.operating_time), unit };
+  const missing = [
+    blank(rate) ? "a failure rate (λ)" : null,
+    blank(m.mode_ratio) ? "the mode ratio (α)" : null,
+    blank(m.loss_probability) ? "the loss probability (β)" : null,
+    blank(m.operating_time) ? "the operating time (t)" : null,
+  ].filter(Boolean);
+  const list = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}` : missing[0];
+  // The server says when the position has a rate it can't put in this mode's time unit.
+  const note = m.cm_note ? ` ${m.cm_note}` : blank(rate)
+    ? " Type a rate on the mode, or give the position a parts count or a constant-rate model in use." : "";
+  return { why: `No criticality: needs ${list || "every figure"}.${note}` };
+}
+
+// The cell's words: "0.0012 in 100 hours", or "–" when there's no Cm.
+export function criticalityText(m) {
+  const c = criticalityOf(m);
+  return c.cm == null ? "–" : `${fmt3(c.cm)} in ${fmt3(c.t)} ${c.unit}`;
+}
+
+// The cell's tooltip: the working, in words, or why there's no number.
+export function criticalityTip(m) {
+  const c = criticalityOf(m);
+  if (c.cm == null) return c.why;
+  return `Cm = β × α × λ × t = ${cmWords(m)}: the expected number of this failure mode's failures in ${fmt3(c.t)} ${c.unit} `
+    + "of operation that end in the loss its severity class names.";
+}
+
 // ---- where the failure rate comes from (W3) ---------------------------------------
 // The server says which rate a mode's Cm uses (`rate_from`: {source, value, time_unit,
 // text, position_rate?}): one typed on the mode is the analyst's override; with none

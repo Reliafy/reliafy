@@ -531,7 +531,8 @@ export function compareGroups(datasetId, body) {
   });
 }
 
-// Upload a CSV as a standalone dataset (deduped by content on the server).
+// Upload a CSV as a standalone dataset. The same rows under the same name and reading come back as
+// the saved dataset (``reused``); otherwise a new one is made (``same_rows_as`` names a look-alike).
 // An Excel workbook works too: ``excel`` = { sheet, headerRow } picks the
 // sheet and header row (headerRow 0 = none), converted to CSV server-side.
 // ``noHeader``: true / false says whether the first row is data; null lets
@@ -1422,7 +1423,7 @@ export function getRecurrentOptions() {
   return request("/api/recurrent/options");
 }
 
-function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows } = {}) {
+function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows, recordEnd } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -1434,6 +1435,8 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name, options, w
   if (options?.baseline) form.append("baseline", options.baseline);
   if (options?.m != null && options.m !== "") form.append("m", String(options.m));
   if (windows && String(windows).trim()) form.append("windows", windows);
+  // One end of test for every system with no end of record of its own.
+  if (recordEnd != null && String(recordEnd).trim()) form.append("record_end", String(recordEnd).trim());
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;

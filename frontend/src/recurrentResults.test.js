@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   cvmCheck, duanePoints, fittedToData, growingCheck, logSlope, mtbfWords, planViews, recurrentAnswer, recurrentTabs,
   resolveRecurrentTab, systemsCheck, trendCheck, poissonUpperTail, scaledParam,
-  dataText, effectTone, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle,
+  dataText, effectTone, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle, terminationText,
 } from "./recurrentResults.js";
 
 test("paramLabel: plain names with the unit, per model", () => {
@@ -203,4 +203,23 @@ test("scaledParam: a small rate reads per 1,000 units, never in scientific notat
   // A rate that isn't small, and a parameter that isn't a rate, stay as they are.
   assert.equal(scaledParam(hpp, { name: "lambda", value: 0.5 }).scale, 1);
   assert.equal(scaledParam({ model: { id: "crow_amsaa" } }, { name: "beta", value: 1e-5 }).scale, 1);
+});
+
+test("terminationText: says how the record ends", () => {
+  const one = { unit: "hours", n_systems: 1, n_events: 12 };
+  assert.equal(terminationText({ ...one, termination: { kind: "time", end: 1000 } }), "time-terminated at 1,000 hours");
+  assert.equal(terminationText({ ...one, termination: { kind: "failure", end: 940 } }),
+    "failure-terminated: ended at the last failure (940 hours)");
+  assert.equal(terminationText({ ...one, n_systems: 4, termination: { kind: "failure", end: 940 } }),
+    "failure-terminated: each system ends at its last failure");
+  assert.equal(terminationText({ ...one, n_systems: 4, termination: { kind: "time", end: 1000 } }),
+    "time-terminated: each system to its end of record (the latest 1,000 hours)");
+  // A fit saved before: from its warning, else nothing.
+  assert.equal(terminationText({ ...one, end_of_observation: 940, warnings: [{ id: "no_record_end" }] }),
+    "failure-terminated: ended at the last failure (940 hours)");
+  assert.equal(terminationText(one), null);
+  assert.equal(terminationText({ from_params: true, termination: { kind: "time", end: 1 } }), null);
+  // On the answer line, after the data.
+  const words = recurrentAnswer({ ...one, model: { id: "crow_amsaa" }, termination: { kind: "time", end: 1000 } });
+  assert.deepEqual(words.slice(-2), ["1 system, 12 failures", "time-terminated at 1,000 hours"]);
 });

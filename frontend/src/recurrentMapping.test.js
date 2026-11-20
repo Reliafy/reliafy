@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { guessRecurrentMapping, numericColumns } from "./recurrentMapping.js";
+import { guessRecurrentMapping, numericColumns, recordEndIssue, recurrentIssues } from "./recurrentMapping.js";
 
 test("the end of record is guessed, not offered as a covariate", () => {
   const g = guessRecurrentMapping(["truck", "pump_failure_hours", "observed_to_hours"],
@@ -44,4 +44,14 @@ test("savedRecurrentMapping: a dataset's last repairable reading, only while its
   assert.equal(got.from, "Trucks");
   assert.equal(savedRecurrentMapping(saved, ["truck", "hours"]), null);
   assert.equal(savedRecurrentMapping(null, ["truck"]), null);
+});
+
+test("a typed end of test stands in for the end of record", () => {
+  const map = { i: "unit", x: "hours" };
+  assert.equal(recurrentIssues(map)[0].row, "tr");
+  assert.deepEqual(recurrentIssues(map, "", "1000"), []);
+  assert.equal(recordEndIssue(""), null);
+  assert.equal(recordEndIssue("1000"), null);
+  assert.equal(recordEndIssue("-5"), "Enter the time the test stopped, above 0.");
+  assert.equal(recordEndIssue("abc"), "Enter the time the test stopped, above 0.");
 });

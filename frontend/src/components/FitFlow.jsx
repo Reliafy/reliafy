@@ -88,6 +88,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [datasetId, setDatasetId] = useState(null);
   // The saved dataset being fitted (its detail): its reading says which column is which.
   const [detail, setDetail] = useState(null);
+  // A file just saved as a new dataset whose exact rows the user already has
+  // under another name or reading ({ id, name }): said once on the Model step.
+  const [sameRows, setSameRows] = useState(null);
   const rd = useDatasetReading(detail);
   // A file or pasted values: saved as a dataset first, through New dataset's reading screen.
   const [toSave, setToSave] = useState(null); // { file, name }
@@ -262,6 +265,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setDatasetId(ds.id);
     setSourceName(ds.name);
     setDetail(ds);
+    setSameRows(ds.same_rows_as || null);
     listDatasets().then((d) => setDatasets(d.datasets || []), () => {});
   };
 
@@ -298,6 +302,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setFile(null);
     setDatasetId(full.id);
     setSourceName(full.name);
+    setSameRows(null);
     setError(null);
     setDetail(full);
   };
@@ -844,6 +849,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             readOnly={rd.readOnly}
           />
           <ReadingChange name={sourceName} rd={rd} />
+          {!rd.editing && sameRows && (
+            <p className="hint fit-same-rows" role="status">
+              You already have these rows as <a href={`/data/${sameRows.id}`} target="_blank" rel="noreferrer">“{sameRows.name}”</a>.
+              This is a new dataset, saved with the name and reading you just chose.
+            </p>
+          )}
           {!rd.editing && askUnit && (
             <Units value={unit} onChange={setUnit} listId="fit-units" className="fit-unit" />
           )}
