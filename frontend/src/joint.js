@@ -349,3 +349,25 @@ export function jointRequest(map, rmap, invert, covs) {
     ...covariateParts(covs),
   };
 }
+
+// What of the reading the risk follows, as the fit's "How it was fitted" words
+// (``link``: "value", the default, for models saved before the choice).
+export const JOINT_LINKS = [
+  { value: "value", label: "Level", title: "The risk follows where the reading is now." },
+  { value: "slope", label: "Rate of change", title: "The risk follows how fast the reading is moving, whatever its level." },
+  { value: "value_slope", label: "Level and rate of change", title: "The risk follows both where the reading is and how fast it is moving." },
+];
+// The paths a rate-of-change link can start from new on (a finite slope at age 0).
+export const SLOPE_PATHS = ["linear", "exponential", "quadratic"];
+
+export function jointLinkWords(link) {
+  if (link === "slope") return "how fast the reading is changing";
+  if (link === "value_slope") return "the reading's current value and how fast it is changing";
+  return "the reading's current value";
+}
+
+// Whether a link can go with a path; the reason when it can't.
+export function linkIssue(link, path, paths = SLOPE_PATHS) {
+  if (!link || link === "value" || paths.includes(path)) return null;
+  return "Rate of change needs a linear, exponential or quadratic path: this path's rate is infinite at age 0.";
+}

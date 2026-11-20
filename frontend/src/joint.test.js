@@ -209,3 +209,15 @@ test("each chance of failing carries its 90% upper bound, or the table says why 
   assert.match(riskBoundNote([{ risk: [0.2, 0.6] }]), /^No 90% bounds.*saved before.*Fit a new model/);
   assert.equal(riskBoundNote([]), "");
 });
+
+test("a rate-of-change link needs a path whose rate is finite at age 0", async () => {
+  const { linkIssue, JOINT_LINKS, jointLinkWords } = await import("./joint.js");
+  assert.deepEqual(JOINT_LINKS.map((l) => l.value), ["value", "slope", "value_slope"]);
+  assert.equal(linkIssue("value", "logarithmic"), null);
+  assert.equal(linkIssue("slope", "linear"), null);
+  assert.equal(linkIssue("value_slope", "quadratic"), null);
+  assert.match(linkIssue("slope", "logarithmic"), /linear, exponential or quadratic/);
+  assert.match(linkIssue("value_slope", "power", ["linear"]), /linear/);
+  assert.equal(jointLinkWords(undefined), "the reading's current value");
+  assert.match(jointLinkWords("slope"), /how fast/);
+});

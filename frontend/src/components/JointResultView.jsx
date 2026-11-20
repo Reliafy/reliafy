@@ -4,7 +4,7 @@ import Plot from "./Plot.jsx";
 import { getJointUnit, predictJointUnit } from "../api.js";
 import { formatNumber } from "../format.js";
 import { bandPair, fitLine } from "../plotTheme.js";
-import { medianText, paramGroups, parseReadings, readingsText, riskBoundNote, sortRiskRows } from "../joint.js";
+import { jointLinkWords, medianText, paramGroups, parseReadings, readingsText, riskBoundNote, sortRiskRows } from "../joint.js";
 import { ModelTabs } from "./model/ModelFrame.jsx";
 import { PlotCard, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { RiskTable, SurvivalChart, UnitCharts, UnitSummary, sortColumn } from "./model/RiskTable.jsx";
@@ -235,9 +235,10 @@ function JointData({ results }) {
           </section>
           <section className="gof-card mf-flex-none">
             <div className="gofh">How it was fitted</div>
+            <div className="gofr"><span className="gk">What the risk follows</span><span className="gv">{r.link_label || "Level"}</span></div>
             <p className="mf-note">
               The reading follows a {r.path_label?.toLowerCase()} path ({r.path_formula}) for each unit, with the units'
-              paths spread about the mean; the failure risk is Weibull, raised or lowered by the reading's current value
+              paths spread about the mean; the failure risk is Weibull, raised or lowered by {jointLinkWords(r.link)}
               and the covariates.
             </p>
             {(r.covariates || []).length > 0 && (

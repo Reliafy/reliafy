@@ -246,6 +246,107 @@ def test_no_mean_life_for_a_unit_whose_reading_falls_away(fitted):
     assert out["system"]["sf"][-1] > 0.01
 
 
+# ---- What the risk follows: the reading's level, its rate of change, or both -----------
+
+SLOPE = 1.0  # per mm/s a year of the unit's rise
+
+
+def slope_fleet(n=200, seed=11, follow=2.0, every=1 / 12):
+    """``(lifetimes, readings)`` in years: each unit's reading a line from 3.0
+    (sd 0.6) rising 1.0 a year (sd 0.5), read monthly with noise 0.3; the
+    hazard Weibull (alpha 3, beta 2) times ``exp(SLOPE * rate)``, whatever
+    the level. Followed for ``follow`` years."""
+    rng = np.random.default_rng(seed)
+    t = np.linspace(0.0, 30.0, 60001)
+    life, reads = [], []
+    for k in range(n):
+        a, b = rng.normal(3.0, 0.6), rng.normal(1.0, 0.5)
+        h = 2.0 / 3.0 * (t / 3.0) * np.exp(SLOPE * b)
+        H = np.concatenate([[0], np.cumsum((h[1:] + h[:-1]) / 2 * np.diff(t))])
+        T = float(np.interp(rng.exponential(), H, t))
+        end = min(T, follow)
+        ages = np.arange(0.0, end, every)
+        y = a + b * ages + rng.normal(0, 0.3, ages.size)
+        uid = f"B{k:03d}"
+        life.append({"unit": uid, "age": round(end, 5), "running": int(T >= follow)})
+        reads += [{"unit": uid, "age": round(float(s), 5), "value": round(float(v), 5)} for s, v in zip(ages, y)]
+    return pd.DataFrame(life), pd.DataFrame(reads)
+
+
+@pytest.fixture(scope="module")
+def slope_fits():
+    L, R = slope_fleet()
+    items, summary = joint.build_items(L, R, LIFE_MAP, READ_MAP)
+    out = {}
+    for link in ("slope", "value"):
+        request = joint.fit_request(items, [], path_model="linear", unit="Years", marker="vibration",
+                                    marker_unit="mm/s", summary=summary, link=link)
+        out[link] = joint.run_fit(request)
+    return {"items": items, **out}
+
+
+def test_a_fleet_whose_risk_follows_the_rate_gives_its_slope_effect_back(slope_fits):
+    r = slope_fits["slope"]["results"]
+    assert r["link"] == "slope" and r["link_label"] == "Rate of change" and r["fit_ok"]
+    rows = {p["name"]: p for p in r["params"]}
+    assert "marker_effect" not in rows
+    slope = rows["slope_effect"]
+    assert slope["part"] == "link" and slope["lower"] < SLOPE < slope["upper"]  # its 90% interval
+    assert "per 1 mm/s per year faster rise in vibration" in slope["meaning"]
+    assert "holds steady" in rows["alpha"]["meaning"]
+    (hr,) = r["hazard_ratios"]
+    assert hr["name"] == "slope_effect" and hr["label"] == "Rate of change of vibration"
+    assert hr["unit"] == "mm/s per year" and hr["hr"] == pytest.approx(np.exp(slope["value"]))
+    assert hr["text"].startswith("Each 1 mm/s per year faster rise in vibration multiplies the failure rate by")
+    assert "per_year" not in hr  # already per year
+    # The same data with the risk on the level fits worse.
+    v = slope_fits["value"]["results"]
+    assert v["link"] == "value" and v["aic"] > r["aic"]
+    json.dumps(slope_fits["slope"], allow_nan=False)
+    # Saved and read back, it still follows the rate.
+    assert tuple(joint.restore(slope_fits["slope"]["model"]).link) == ("slope",)
+
+
+def test_a_slope_effect_in_days_also_says_it_per_year():
+    rows = [{"part": "link", "name": "slope_effect", "value": 365.25, "lower": 0.0, "upper": 730.5,
+             "hr": float("inf"), "hr_lower": 1.0, "hr_upper": float("inf")}]
+    (hr,) = joint.hazard_ratios(rows, "vibration", unit="Days", marker_unit="mm/s", link="slope")
+    assert hr["unit"] == "mm/s per day"
+    # A coefficient per (mm/s a day) is 365.25 times the one per (mm/s a year).
+    assert hr["per_year"]["hr"] == pytest.approx(np.e) and hr["per_year"]["lower"] == pytest.approx(1.0)
+    assert "Per year: Each 1 mm/s per year faster rise multiplies the failure rate by 2.72" in hr["text"]
+
+
+def test_level_and_rate_together_and_the_scripts_link(slope_fits):
+    src = joint.python_script("Bearings", slope_fits["items"], [], path_model="linear", unit="Years",
+                              marker="vibration", link="slope")
+    assert "JointPH(Weibull, LinearPath, link='slope')" in src
+    ns: dict = {"__name__": "exported"}
+    exec(compile(src, "bearings.py", "exec"), ns)  # refits it as the app did
+    assert list(ns["model"].params) == pytest.approx(slope_fits["slope"]["model"]["params"], rel=1e-6)
+    both = joint.python_script("Bearings", slope_fits["items"], [], path_model="linear", link=["value", "slope"])
+    assert "link=['value', 'slope']" in both
+    plain = joint.python_script("Bearings", slope_fits["items"], [], path_model="linear")
+    assert "link=" not in plain
+
+
+def test_the_link_is_checked_and_a_rate_needs_a_path_with_a_finite_slope_at_new():
+    assert joint.link_id(None) == joint.link_id("") == "value"  # models saved before the choice
+    assert joint.link_id(["slope", "value"]) == joint.link_id("value_slope") == "value_slope"
+    with pytest.raises(joint.FitError, match="Unknown link"):
+        joint.link_id("cumulative")
+    L, R = fleet(n=20)
+    items, _ = joint.build_items(L, R, LIFE_MAP, READ_MAP)
+    for path in ("logarithmic", "power"):
+        for link in ("slope", "value_slope"):
+            with pytest.raises(joint.FitError, match="use a linear or exponential path"):
+                joint.fit_request(items, [], path_model=path, link=link)
+    joint.fit_request(items, [], path_model="power", link="value")
+    opts = joint.options()
+    assert [o["id"] for o in opts["links"]] == ["value", "slope", "value_slope"] and opts["default_link"] == "value"
+    assert set(opts["slope_paths"]) == {"linear", "exponential", "quadratic"}
+
+
 # ---- The API: Pro gating, the job, the saved model ------------------------------------
 
 FREE, PRO = "user-free", "user-pro"
@@ -325,6 +426,15 @@ def test_fitting_is_pro_and_the_saved_model_reads_back(client):
     assert bad.status_code == 422 and "load" in bad.json()["detail"]
     py = client.get(f"/api/joint/models/{mid}/export.py")
     assert py.status_code == 200 and "fit_from_df(" in py.text
+    # The level is the default link; a model saved before the choice (no link) still opens and exports.
+    assert detail["spec"]["link"] == "value" and detail["results"]["link"] == "value"
+    client.db.models.update_one({"_id": mid}, {"$unset": {"spec.link": "", "results.link": "", "results.link_label": ""}})
+    assert client.get(f"/api/joint/models/{mid}").status_code == 200
+    py = client.get(f"/api/joint/models/{mid}/export.py")
+    assert py.status_code == 200 and "link=" not in py.text
+    # A rate-of-change link on a path whose rate is infinite at new is refused, saying what to use.
+    bad = client.post("/api/joint/models", json={**body, "path_model": "logarithmic", "link": "slope"})
+    assert bad.status_code == 422 and "linear or exponential" in bad.json()["detail"]
     # The dataset is the model's: neither it nor its measurements go while it stands.
     assert detail["spec"]["dataset_id"] == body["dataset_id"] and "lifetimes_dataset_id" not in detail["spec"]
     assert client.delete(f"/api/datasets/{body['dataset_id']}").status_code == 409
