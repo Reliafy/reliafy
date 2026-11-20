@@ -76,14 +76,14 @@ test("FME(C)A: the worksheet on the tree; a score edited in place changes the RP
   await expect(table(page)).toBeVisible();
   await expect(page).toHaveURL(/tab=fmea/);
   // The worksheet's columns, in order (at 1440 px the usual set leaves the local and next
-  // higher effects and the owner to the Columns menu); the function's modes right under it
+  // higher effects, the detection method and the owner to the Columns menu); the function's modes right under it
   // (no functional failure level).
   const heads = (await table(page).getByRole("columnheader").allInnerTexts()).map((t) => t.trim());
-  expect(heads.slice(0, 13)).toEqual(["Function or failure mode", "Functional failure", "Cause", "End effect", "Detection method", "S", "O", "D", "RPN", "AP",
-    "Recommended action", "Due", "Status"]);
+  expect(heads.slice(0, 13)).toEqual(["Function or failure mode", "Functional failure", "Cause", "End effect", "S", "O", "D", "RPN", "AP",
+    "Criticality (Cm)", "Recommended action", "Due", "Status"]);
   await openColumns(page);
   await expect(page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Local effect" })).not.toBeChecked();
-  await expect(page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Mode criticality (Cm)" })).not.toBeChecked();
+  await expect(page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Criticality (Cm)" })).toBeChecked();
   await page.keyboard.press("Escape");
   const fn = trow(page, `^Function: Pump water ${tag}`);
   await expect(fn).toBeVisible();
@@ -95,6 +95,12 @@ test("FME(C)A: the worksheet on the tree; a score edited in place changes the RP
   // The scored mode: S 9, RPN 216, AP High; the function rolls up.
   await expect(await cellOf(page, `^Failure mode: Bearing seizes ${tag}`, "RPN")).toHaveText("216");
   await expect(await cellOf(page, `^Failure mode: Bearing seizes ${tag}`, "AP")).toHaveText("High");
+  // Its criticality, by hand: β 1 × α 0.5 × λ 8e-5 /h × t 100 h = 0.004, with the time it's for;
+  // a mode without the figures shows a dash and says why.
+  await expect(await cellOf(page, `^Failure mode: Bearing seizes ${tag}`, "Criticality (Cm)")).toHaveText("0.004 in 100 hours");
+  const noCm = await cellOf(page, `^Failure mode: Seal leaks ${tag}`, "Criticality (Cm)");
+  await expect(noCm).toHaveText("–");
+  await expect(noCm.locator("span").first()).toHaveAttribute("title", /^No criticality: needs a failure rate/);
   // The roll-up runs across the text columns from the first (not under Cause).
   await expect(await cellOf(page, `^Function: Pump water ${tag}`, "Functional failure")).toHaveText("2 of 3 scored");
   await expect(await cellOf(page, `^Function: Pump water ${tag}`, "Cause")).toHaveText("");
@@ -136,6 +142,16 @@ test("FME(C)A: the worksheet on the tree; a score edited in place changes the RP
   await expect(page.locator(".tt-top .tp-status")).toContainText("Medium priority");
   const menu2 = await openTreeMenu(page);
   await menu2.getByRole("menuitemcheckbox", { name: "Medium priority" }).click();
+  // "RPN at least": only the modes at or above it, in the tree's order (not sorted); its count beside it.
+  await expect(menu2.getByRole("menuitemcheckbox", { name: "Medium priority" })).toContainText("1");
+  await menu2.getByLabel("RPN at least").fill("50");
+  await expect(menu2.locator(".tm-floor")).toContainText("1 row");
+  await page.keyboard.press("Escape");
+  await expect(trow(page, `^Failure mode: Seal leaks ${tag}`)).toBeVisible(); // 60
+  await expect(trow(page, `^Failure mode: Bearing seizes ${tag}`)).toHaveCount(0); // 24
+  await expect(page.locator(".tt-top .tp-status")).toContainText("RPN 50 or more");
+  const menu3 = await openTreeMenu(page);
+  await menu3.getByLabel("RPN at least").fill("");
   await page.keyboard.press("Escape");
   await expect(trow(page, `^Failure mode: Bearing seizes ${tag}`)).toBeVisible();
   // A column header sorts the modes under the function: RPN highest first.
@@ -236,7 +252,7 @@ test("at 400 px the FME(C)A tab is two-line rows, nothing scrolls sideways; a mo
   await expect(table(page)).toBeVisible();
   expect((await overflow(page)).side).toBe(0);
   const mode = trow(page, `^Failure mode: Bearing seizes ${tag}`);
-  await expect(mode.locator(".tt-l2")).toHaveText("S 9 · O 4 · D 6 · RPN 216 · High · Open");
+  await expect(mode.locator(".tt-l2")).toHaveText("S 9 · O 4 · D 6 · RPN 216 · High · Cm 0.004 · Open");
   await expect(mode.locator(".tt-st")).toContainText("High");
   await expect(trow(page, `^Function: Pump water ${tag}`).locator(".tt-l2")).toContainText("2 of 3 scored");
   await shot(page, "fmea-phone-400");

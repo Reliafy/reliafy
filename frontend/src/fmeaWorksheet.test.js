@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CHIPS, COLUMN, COLUMNS, DEFAULT_COLUMNS, FIELDS, SCORE_ERROR, addSums, apSummary, blankSums, checkValue, fmeaCounts, loadPrefs, modeSums,
-  nextSort, phoneLine, rateSourceText, savePrefs, scoredWords, siblingOrder, tableCols, usualCols, withTableCols,
+  CHIPS, COLUMN, COLUMNS, DEFAULT_COLUMNS, FIELDS, SCORE_ERROR, addSums, apSummary, blankSums, checkValue, chipCounts, fmeaCounts, loadPrefs, modeSums,
+  nextSort, phoneLine, rpnAtLeast, rpnCount, rpnLabel, rpnMinOf, rateSourceText, savePrefs, scoredWords, siblingOrder, tableCols, usualCols, withTableCols,
 } from "./fmeaWorksheet.js";
 import { buildDisplay, flatten } from "./assetTree.js";
 import { graftFmea } from "./explorerFmea.js";
@@ -11,9 +11,9 @@ const mode = (id, extra = {}) => ({ type: "mode", key: id, ref: { id, text: id, 
 const SCORED = { severity: 9, occurrence: 4, detection: 6, rpn: 216, ap: "H", action: "Seal it", action_status: "open",
   failure_rate: 8e-5, mode_ratio: 0.5, loss_probability: 1, operating_time: 100, cm: 0.004, severity_class: "I" };
 
-test("the FMEA preset: the worksheet's columns in order, the criticality and RCM ones off; every column id is a field the API takes", () => {
+test("the FMEA preset: the worksheet's columns in order, with the criticality; the figures behind it and the RCM ones off; every column id is a field the API takes", () => {
   assert.deepEqual(DEFAULT_COLUMNS, ["failure", "cause", "effect_local", "effect_next", "effects", "detection_method", "severity", "occurrence", "detection",
-    "rpn", "ap", "action", "action_owner", "action_due", "action_status"]);
+    "rpn", "ap", "cm", "action", "action_owner", "action_due", "action_status"]);
   for (const c of COLUMNS) {
     if (c.edit && !c.rcm && c.id !== "name") assert.ok(FIELDS.has(c.field), `${c.id} writes a field the API takes`);
     assert.ok(c.label && c.width >= c.min, c.id);
@@ -22,11 +22,11 @@ test("the FMEA preset: the worksheet's columns in order, the criticality and RCM
   assert.equal(COLUMN.failure.edit, undefined); // read-only: from the RCM tab
   assert.ok(COLUMN.failure.title.includes("RCM tab"));
   // The usual set follows the width: a wide window the whole preset; a medium
-  // one without the two middle effects and the owner; a laptop keeps the
+  // one without the two middle effects, the detection method and the owner; a laptop keeps the
   // cause, end effect, scores, RPN, AP and the action.
   assert.deepEqual(usualCols({ wide: true }), DEFAULT_COLUMNS);
-  assert.deepEqual(usualCols(), DEFAULT_COLUMNS.filter((id) => !["effect_local", "effect_next", "action_owner"].includes(id)));
-  assert.deepEqual(usualCols({ narrow: true }), ["failure", "cause", "effects", "severity", "occurrence", "detection", "rpn", "ap", "action"]);
+  assert.deepEqual(usualCols(), DEFAULT_COLUMNS.filter((id) => !["effect_local", "effect_next", "detection_method", "action_owner"].includes(id)));
+  assert.deepEqual(usualCols({ narrow: true }), ["failure", "cause", "effects", "severity", "occurrence", "detection", "rpn", "ap", "cm", "action"]);
 });
 
 test("the cells, as text: scores, RPN, AP, the action's status, criticality to three figures; a parent row's roll-ups", () => {
@@ -36,7 +36,7 @@ test("the cells, as text: scores, RPN, AP, the action's status, criticality to t
   assert.equal(t("rpn"), "216");
   assert.equal(t("ap"), "High");
   assert.equal(t("action_status"), "Open");
-  assert.equal(t("cm"), "0.004");
+  assert.equal(t("cm"), "0.004 in 100 hours");
   assert.equal(t("failure_rate"), "0.00008");
   assert.equal(t("severity_class"), "I Catastrophic");
   // A mode the server didn't score: RPN from its scores; AP only from the server.
@@ -112,7 +112,7 @@ test("the chips: High priority, Medium priority, Not scored, Has an action open;
 });
 
 test("the phone's second line: the scores, RPN, AP and status; a parent's roll-up", () => {
-  assert.equal(phoneLine(mode("m", SCORED)), "S 9 · O 4 · D 6 · RPN 216 · High · Open");
+  assert.equal(phoneLine(mode("m", SCORED)), "S 9 · O 4 · D 6 · RPN 216 · High · Cm 0.004 · Open");
   assert.equal(phoneLine(mode("p", { severity: 9 })), "S 9 · not fully scored");
   assert.equal(phoneLine(mode("n", {})), "Not scored");
   const fn = { type: "fn", ref: {}, sum: addSums(addSums(blankSums(), modeSums(SCORED)), modeSums({})) };
@@ -171,10 +171,65 @@ test("the rate cells: the position's rate where none is typed, said as such; a t
   const parts = { rate_from: { source: "parts count", value: 3e-5, time_unit: "hours" }, mode_ratio: 0.5, loss_probability: 1, operating_time: 150 };
   assert.equal(COLUMN.failure_rate.text(mode("a", parts)), "0.00003");
   assert.equal(rateSourceText(parts), "Parts count");
-  assert.equal(COLUMN.cm.text(mode("a", parts)), "0.00225");
+  assert.equal(COLUMN.cm.text(mode("a", parts)), "0.00225 in 150 hours");
   const typed = { failure_rate: 8e-5, rate_source: "entered", rate_from: { source: "typed", value: 8e-5, position_rate: 3e-5 } };
   assert.equal(COLUMN.failure_rate.text(mode("b", typed)), "0.00008");
   assert.equal(rateSourceText(typed), "Entered (override)");
   assert.equal(rateSourceText({ failure_rate: 8e-5, rate_source: "entered" }), "Entered");
   assert.equal(fmeaCounts(parts).with_cm, 1);
+});
+
+test("the Criticality column: Cm by hand with the operating time it's for; the position's rate; '–' and why when a figure is missing", () => {
+  const t = (ref) => COLUMN.cm.text(mode("m", ref));
+  const tip = (ref) => COLUMN.cm.tip(mode("m", ref));
+  // By hand: β 0.5 × α 0.4 × λ 7.2e-4 /day × t 10 days = 0.00144 (the server's number, or worked out here).
+  const days = { mode_ratio: 0.4, loss_probability: 0.5, operating_time: 10, time_unit: "days",
+    rate_from: { source: "parts count", value: 7.2e-4, time_unit: "days", text: "From the parts count" } };
+  assert.equal(t(days), "0.00144 in 10 days");
+  assert.equal(t({ ...days, cm: 0.00144 }), "0.00144 in 10 days");
+  assert.ok(tip(days).startsWith("Cm = β × α × λ × t = 0.5 × 0.4 × 0.00072 /days × 10 days = 0.00144"));
+  assert.equal(COLUMN.cm.sort(mode("m", days)), 0.5 * 0.4 * 7.2e-4 * 10);
+  // A typed rate (the override): 1 × 0.25 × 3e-5 × 200 hours = 0.0015.
+  assert.equal(t({ failure_rate: 3e-5, mode_ratio: 0.25, loss_probability: 1, operating_time: 200 }), "0.0015 in 200 hours");
+  // Missing figures: a dash, never a number; the tooltip says which and how to get them.
+  const noT = { mode_ratio: 0.2, loss_probability: 1, rate_from: days.rate_from };
+  assert.equal(t(noT), "–");
+  assert.equal(tip(noT), "No criticality: needs the operating time (t).");
+  assert.equal(COLUMN.cm.sort(mode("m", noT)), null);
+  const bare = {};
+  assert.equal(t(bare), "–");
+  assert.equal(tip(bare), "No criticality: needs a failure rate (λ), the mode ratio (α), the loss probability (β) and the operating time (t). "
+    + "Type a rate on the mode, or give the position a parts count or a constant-rate model in use.");
+  // The server's note when the position's hourly rate can't go into the mode's unit.
+  const flights = { mode_ratio: 0.1, loss_probability: 1, operating_time: 50, time_unit: "flights", cm_note: "Per hour, not per flight." };
+  assert.equal(tip(flights), "No criticality: needs a failure rate (λ). Per hour, not per flight.");
+  // A parent row: Cr, the sum, with how many modes it covers.
+  const fn = { type: "fn", key: "f", ref: { id: "f" }, sum: addSums(addSums(blankSums(), modeSums(SCORED)), modeSums({ ...noT })) };
+  assert.equal(COLUMN.cm.text(fn), "0.004");
+  assert.equal(COLUMN.cm.tip(fn), "Cr: the sum of Cm over the 1 failure mode inside with one");
+});
+
+test("the RPN filter: modes at or above the value, in the tree's order; blank or nonsense is no filter; the chips' counts", () => {
+  assert.equal(rpnMinOf(""), null);
+  assert.equal(rpnMinOf("abc"), null);
+  assert.equal(rpnMinOf("0"), null);
+  assert.equal(rpnMinOf("1001"), null);
+  assert.equal(rpnMinOf("12.5"), null);
+  assert.equal(rpnMinOf("150"), 150);
+  assert.equal(rpnAtLeast(""), null);
+  const keep = rpnAtLeast(150);
+  assert.equal(keep(mode("a", { severity: 10, occurrence: 3, detection: 5 })), true); // 150: at the value
+  assert.equal(keep(mode("b", { rpn: 149 })), false);
+  assert.equal(keep(mode("c", { severity: 10 })), false); // not fully scored: no RPN
+  assert.equal(keep({ type: "fn", key: "f", ref: {}, sum: { ...blankSums(), max_rpn: 500 } }), false); // only modes match
+  assert.equal(rpnLabel(150), "RPN 150 or more");
+  const rows = new Map([
+    ["a", mode("a", { severity: 8, occurrence: 3, detection: 8, ap: "M" })], ["b", mode("b", { severity: 10, occurrence: 2, detection: 9, ap: "H" })],
+    ["c", mode("c", { severity: 10, occurrence: 2, detection: 2, ap: "L" })],
+    ["f", { type: "fn", key: "f", ref: {}, sum: blankSums() }],
+  ]);
+  const display = { rows };
+  assert.equal(rpnCount(display, 150), 2);
+  assert.equal(rpnCount(display, ""), null);
+  assert.deepEqual(chipCounts(display), { "ap-high": 1, "ap-medium": 1, unscored: 0, "action-open": 0 });
 });

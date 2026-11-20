@@ -233,7 +233,8 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorkin
       if (!text) return null;
       // A parent row's cell is a roll-up of what's inside it, in quieter type.
       const sum = !mode;
-      const title = sum && col.id === "consequence" ? consequenceWords(r) : text;
+      // A column with its own tooltip (the FME(C)A's Criticality: the working, or why there's none).
+      const title = col.tip ? col.tip(r) ?? text : sum && col.id === "consequence" ? consequenceWords(r) : text;
       return <span className={sum ? "rw-sum" : "rw-txt"} title={title}>
         {col.edit === "text" ? <Highlight text={text} query={query} /> : text}
       </span>;

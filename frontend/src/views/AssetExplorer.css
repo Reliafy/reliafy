@@ -1416,6 +1416,11 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
 /* The markers' key: each Show only filter in the tree's ⋯ menu with the
    marker it matches, at its end. */
 .tm-menu .tm-item .tm-mark { margin-left: auto; }
+/* A Show only filter's count, and the "RPN at least" number under the filters. */
+.tm-menu .tm-item .tm-n { margin-left: auto; padding-left: 8px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tm-menu .tm-floor { padding: 0 6px 0 30px; cursor: default; }
+.tm-menu .tm-floor-l { white-space: nowrap; }
+.tm-menu .tm-floor input { width: 72px; height: var(--control-sm); font-variant-numeric: tabular-nums; }
 
 /* A phone: the tabs over the tree name the row they're for. */
 .tp-tabs-wrap { min-width: 0; }

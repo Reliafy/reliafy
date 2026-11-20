@@ -574,6 +574,7 @@ export default function TreePane({
   addRow = null, canArrange = true, arrangements = null, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
   rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, design = false, titleLevel = 2,
+  chipCounts = null, floor = null,
 }) {
   const TitleTag = titleLevel === 1 ? "h1" : "h2";
   const H = phone ? (tableIn ? 54 : 44) : 30;
@@ -831,7 +832,9 @@ export default function TreePane({
         levels={{ value: level, onLevel, onCloseAll }}
         // Each Show only filter with the marker it matches in the tree: the
         // markers' key (the "not analysed" one only where it shows).
-        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id), mark: TREE_ROW_MARKERS && (c.id !== "unanalysed" || rcmMarks) ? CHIP_MARK[c.id] : null }))}
+        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id), mark: TREE_ROW_MARKERS && (c.id !== "unanalysed" || rcmMarks) ? CHIP_MARK[c.id] : null,
+          count: chipCounts?.[c.id] ?? null }))}
+        floor={floor}
         markNote="A row's markers count what's on it; dashed ones count everything inside it too."
         onChip={(id) => onChips(chips.includes(id) ? chips.filter((x) => x !== id) : [...chips, id])}
         changed={changed} onReset={onReset} actions={menuActions} />

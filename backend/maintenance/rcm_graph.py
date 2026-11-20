@@ -121,6 +121,12 @@ def with_rate(mode: dict, rate: dict | None) -> dict:
             out.update({"position_rate": theirs, "position_source": rate["source"], "text": rate["text"]})
         return {**mode, "rate_from": out}
     if theirs is None:
+        if rate is not None and per is None:
+            # The position has a rate, per hour, but the mode's time unit isn't one it can be put in
+            # ("flights"): no Cm rather than a wrong one, and the way to get one.
+            return {**mode, "cm_note": f"The position's rate is per hour and this mode's time unit, "
+                                       f"\"{unit_text}\", isn't a unit of time it can be turned into: "
+                                       f"type a rate per {unit_text} on the mode, or set its time unit to hours."}
         return mode
     cm = fmea.mode_criticality(mode.get("loss_probability"), mode.get("mode_ratio"), theirs, mode.get("operating_time"))
     return {**mode, "cm": cm, "rate_from": {"source": rate["source"], "value": theirs, "time_unit": unit_text,
