@@ -4027,3 +4027,38 @@ export function setPositionModelUsageRate(linkId, usageRate) {
   return request(`/api/maintenance/position-models/${linkId}/usage-rate`, { method: "PUT",
     body: JSON.stringify({ usage_rate: usageRate }), headers: { "Content-Type": "application/json" } });
 }
+
+// Spares for the year (Nov 2026): every part a failure or a task uses in a scope (id: a position
+// and what's inside it, within root; a location; a class; a product: its items, or fleetSize new
+// ones when none is built), one row each. Also over MCP: maintenance get.spares_year.
+function sparesYearQuery({ id, root, months, serviceLevel, fleetSize, hoursPerDay, leaveOut } = {}) {
+  const q = new URLSearchParams();
+  if (id) q.set("id", id);
+  if (root) q.set("root", root);
+  if (months) q.set("months", String(months));
+  if (serviceLevel) q.set("service_level", serviceLevel);
+  if (fleetSize) q.set("fleet_size", String(fleetSize));
+  if (hoursPerDay) q.set("hours_per_day", String(hoursPerDay));
+  if (leaveOut?.length) q.set("leave_out", leaveOut.join(","));
+  return q;
+}
+export function getSparesYear(opts = {}) {
+  return request(`/api/maintenance/spares-year?${sparesYearQuery(opts)}`);
+}
+export async function getSparesYearCsv(opts = {}) {
+  const q = sparesYearQuery(opts);
+  q.set("format", "csv");
+  const res = await authedFetch(`/api/maintenance/spares-year?${q}`);
+  if (!res.ok) throw new Error(`The export failed (${res.status}). Try again.`);
+  return res.blob();
+}
+// A package's next visit: its parts against usable stock and lead time; leaveOut: task ids off the visit.
+export function getPackageParts(packageId, { leaveOut } = {}) {
+  const q = new URLSearchParams();
+  if (leaveOut?.length) q.set("leave_out", leaveOut.join(","));
+  return request(`/api/maintenance/packages/${packageId}/parts?${q}`);
+}
+// A stock count: {location_id, counted, on, by?, reason?}: what was on the shelf on the day counted.
+export function countMaintenanceStock(partId, body) {
+  return postJson(`/api/maintenance/parts/${partId}/count`, body);
+}

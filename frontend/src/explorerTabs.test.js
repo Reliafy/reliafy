@@ -329,7 +329,7 @@ test("an asset's position: seven tabs by use, Maintenance, Monitoring and Models
   assert.deepEqual(labels(panelTabsFor(asset)), ["Summary", "Maintenance", "Monitoring", "RCM", "FME(C)A", "Models", "History"]);
   assert.deepEqual(shape(panelTabsFor(asset)), [
     ["summary", ["summary"]],
-    ["maintenance", ["tasks", "needs", "packages", "forecast"]],
+    ["maintenance", ["tasks", "needs", "packages", "forecast", "spares"]],
     ["monitoring", ["readings", "risk"]],
     ["rcm", ["rcm"]], ["fmea", ["fmea"]],
     ["models", ["life", "missions"]],
@@ -350,7 +350,7 @@ test("an asset's position: seven tabs by use, Maintenance, Monitoring and Models
 test("a product's design position: six tabs, no Monitoring, no Packages; its History is Field reports", () => {
   const tabs = panelTabsFor(product);
   assert.deepEqual(labels(tabs), ["Summary", "Maintenance", "RCM", "FME(C)A", "Models", "Field reports"]);
-  assert.deepEqual(tabs.find((t) => t.id === "maintenance").views.map((v) => v.id), ["tasks", "needs"]);
+  assert.deepEqual(tabs.find((t) => t.id === "maintenance").views.map((v) => v.id), ["tasks", "needs", "spares"]); // Spares: the items built from it, or a planned fleet
   assert.match(tabs.find((t) => t.id === "history").title, /items built from this product/);
   // A position inside the design too.
   assert.deepEqual(labels(panelTabsFor({ type: "pos", ref: { in_design: true } })), labels(tabs));

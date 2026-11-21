@@ -143,3 +143,7 @@ A task's own **⋯** has **Remove from package…**.
   it to open the package.
 - A position's **Summary** shows **Next visit** under Work when its tasks are
   in a package.
+- A package's own page and its view here list **Parts for the visit**: each part
+  against the stock usable now, and when an order placed today lands. The
+  spares each task uses also count in **Maintenance › Spares**: spares for the
+  year, against stock and lead time.

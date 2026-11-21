@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { countIsOld, countedText } from "../sparesYear.js";
+import { workspaceToday } from "../workspaceDate.js";
 import { Link, useParams } from "react-router-dom";
 import LoadFailed from "../components/LoadFailed.jsx";
-import { getMaintenancePart, getPartStructure, getPartWhereUsed } from "../api.js";
+import { getMaintenancePart, getPartStructure, getPartWhereUsed, listMaintenanceLocations } from "../api.js";
+import { StockModal } from "./MaintenanceLists.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import {
   ComponentModal, LevelModal, PositionsFromStructureModal, RollupCard, StructureTree, WhereUsedCard, removeLine,
@@ -47,7 +50,10 @@ export default function MaintenancePart() {
         meta={[part.level, part.manufacturer_entry?.name || part.manufacturer, `${qtyNumber(part.on_hand)} on hand`]
           .filter(Boolean).join(" · ")}
         id={part.id}
-        actions={<button className="secondary" onClick={() => setModal("level")}>Indenture level</button>}
+        actions={<>
+          <button className="secondary" onClick={() => setModal("stock")}>Stock…</button>
+          <button className="secondary" onClick={() => setModal("level")}>Indenture level</button>
+        </>}
         primary={<button onClick={() => setModal({ line: null })}>Add a part to it</button>}
       />
       {error && <div className="card error">{error}</div>}
@@ -60,7 +66,10 @@ export default function MaintenancePart() {
           {part.item_class && <><dt>Item class</dt><dd>{part.item_class.name}</dd></>}
           <dt>Unit</dt><dd>{part.unit}{part.unit_cost != null && <span className="lib-date"> · {part.unit_cost} each</span>}</dd>
           <dt>On hand</dt><dd>{qtyNumber(part.on_hand)}{part.stock.length > 0 && (
-            <span className="lib-date"> · {part.stock.map((s) => `${s.location.name}: ${qtyNumber(s.quantity)}`).join(", ")}</span>)}</dd>
+            <span className="lib-date"> · {part.stock.map((s) => `${s.location.name}: ${qtyNumber(s.quantity)}`).join(", ")}</span>)}
+            {(part.on_hand > 0 || part.counted_on) && (
+              <span className={countIsOld(part, workspaceToday()) ? "maint-overdue" : "lib-date"}>
+                {" "}· {countedText(part, workspaceToday())}{part.counted_on ? ` (${part.counted_on})` : ""}</span>)}</dd>
           <dt>Items of it</dt><dd>{part.items}</dd>
           {part.superseded_by && <><dt>Superseded by</dt><dd><Link to={`/asset-register/parts/${part.superseded_by.id}`}>{part.superseded_by.part_number}</Link></dd></>}
           {part.notes && <><dt>Notes</dt><dd>{part.notes}</dd></>}
@@ -95,6 +104,7 @@ export default function MaintenancePart() {
       {modal?.line !== undefined && (
         <ComponentModal part={part} line={modal.line} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />
       )}
+      {modal === "stock" && <StockForm part={part} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
       {modal === "level" && <LevelModal part={part} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
       {modal === "positions" && (
         <PositionsFromStructureModal structure={structure} onClose={() => setModal(null)}
@@ -102,4 +112,15 @@ export default function MaintenancePart() {
       )}
     </div>
   );
+}
+
+// The part's stock form (receive, issue or count at a store), as on the parts list.
+function StockForm({ part, onClose, onDone }) {
+  const [locations, setLocations] = useState(null);
+  useEffect(() => {
+    listMaintenanceLocations().then((d) => setLocations((d.locations || []).filter((l) => !l.retired)))
+      .catch(() => setLocations([]));
+  }, []);
+  if (!locations) return null;
+  return <StockModal part={part} locations={locations} onClose={onClose} onDone={onDone} />;
 }
