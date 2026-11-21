@@ -4992,6 +4992,23 @@ def _job_pending(db, job: dict) -> dict:
     }
 
 
+def _repair_availability(db, user: dict, rbd, owners: list, repair_times, period) -> dict[str, Any]:
+    """analyse rbd with_repairs: the availability of any diagram with every block repaired
+    (backend/routers/rbd_repair_availability.py, the same answer as the app's)."""
+    from backend.routers.rbd_repair_availability import availability_payload as repair_payload
+    from backend.services import rbd_repair_availability as rra
+    from backend.services.access import PERSONAL, AccessCtx
+
+    uid = user["uid"]
+    actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid, read_owners=_owners(uid),
+                     list_owners=uid, share_fallback=False)
+    try:
+        out = repair_payload(db, actx, rbd.graph or {}, rbd, owners, repairs=repair_times, period=period)
+    except (AnalysisError, rra.RepairTimeError) as exc:
+        raise ToolError(str(exc)) from None
+    return {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}"), **out}
+
+
 def analyze_rbd(
     ctx: Context,
     rbd_id: Annotated[str, Field(description="An RBD id from list kind rbds or change rbd_create.")],
@@ -5049,6 +5066,18 @@ def analyze_rbd(
         "Only the headline figures: availability (or reliability_at), MTTF or mean up/down time, PFDavg and SIL, "
         "B-lives, the top blocks by importance, costs' totals and the warnings — no curves, full importance "
         "tables or how each figure was computed. For a quick answer, or a big repairable diagram."))] = False,
+    with_repairs: Annotated[bool, Field(description=(
+        "Any diagram, non-repairable included (a mission's, one built from the tree): instead, its availability "
+        "with every block repaired after it fails, in the long run and over `period`, with the blocks that "
+        "drive the downtime. Each block's mean time to repair comes from repair_times, else its own repair "
+        "model, the diagram's outage history or its position's maintainability prediction (repairs[].source "
+        "says which); a block with none is listed in needs and nothing is worked out. Exact, free."))] = False,
+    repair_times: Annotated[Optional[dict[str, float]], Field(description=(
+        "With with_repairs: {node id: mean time to repair}, in hours where the diagram's clock is a time "
+        "(else its unit), e.g. {\"cv-02\": 12}. Overrides the other sources."))] = None,
+    period: Annotated[Optional[float], Field(gt=0, description=(
+        "With with_repairs: the period (diagram unit) for the availability and downtime over it. Default: the "
+        "mission's length where the diagram has phases, else a year."))] = None,
 ) -> dict[str, Any]:
     """Analyse a saved diagram. Non-repairable: the reliability curve (~21 points; `times` for
     exact values), MTTF, B-lives, importance and cut sets; current_state for the remaining life from now,
@@ -5061,7 +5090,8 @@ def analyze_rbd(
     simulate=true; without it, relay simulation's message and offer export_python. With simulate=false a
     simulation-only diagram returns available=false, needs_simulation=true, code 'needs_simulation' and the
     reason: call again with simulate=true (Pro) or offer export_python. A long run returns a job_id (get kind
-    job). summary_only: headline figures only. guide topic rbd_analysis has more."""
+    job). summary_only: headline figures only. with_repairs: any diagram's availability with each block repaired
+    (repairs, needs, drivers, answer). guide topic rbd_analysis has more."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -5092,6 +5122,10 @@ def analyze_rbd(
     if current_state and conditional_age and not graph.get("repairable"):
         raise ToolError("Give either conditional_age (the whole system's age) or current_state (each block's "
                         "state now), not both.")
+    if with_repairs:
+        return _repair_availability(db, user, rbd, owners, repair_times, period)
+    if repair_times or period is not None:
+        raise ToolError("repair_times and period go with with_repairs=true (the availability with repairs).")
     placeholders = rbd_graph.placeholder_labels(graph)
     head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}")}
     if placeholders:

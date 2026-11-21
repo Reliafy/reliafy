@@ -62,6 +62,7 @@ import {
 // Phased missions and undirected networks (#160).
 import RbdPhasesModal from "./RbdPhasesModal.jsx";
 import RbdPhasesResult from "./RbdPhasesResult.jsx";
+import RbdRepairAvailability from "./RbdRepairAvailability.jsx";
 import RbdNetworkPanel, { NetworkOnlyNote } from "./RbdNetworkPanel.jsx";
 import { MISSION_KEYS, missionFields, undirectedEdges } from "../rbdMission.js";
 import { graphWithModel, plainName } from "../modelNext.js";
@@ -2380,6 +2381,13 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         name={savedRbdName}
         onEdit={savedRbdReadOnly ? null : () => setModal("phases")}
         currentState={repairable ? null : asOfState}
+      />
+      <RbdRepairAvailability
+        graph={{ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        rbdId={savedRbdId}
+        active={tab === "calc"}
+        onNodeData={savedRbdReadOnly ? null : (updates) =>
+          setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: applyBlockExtras(n.data, updates[n.id]) } : n)))}
       />
     </div>
     <div
