@@ -15,7 +15,7 @@
 //     not_used: [col],                      // columns read as nothing
 //   }
 import {
-  EMPTY_MAPPING, dataStepIssues, guessMapping, savedMapping, startingMapping,
+  EMPTY_MAPPING, dataStepIssues, guessMapping, issueRow, savedMapping, startingMapping,
 } from "./lifeData.js";
 import { isNumeric } from "./datasetGuess.js";
 import { guessTvc, tvcUnit } from "./tvcData.js";
@@ -207,8 +207,8 @@ export function readingIssues(r, facts, nRows) {
   if (!r.x && !range) {
     out.push({ col: null, row: "x", text: "Pick x: the column with the value when each unit failed or was removed (hours, cycles, km…). Every model is built on it, so the dataset can't be saved without it." });
   }
-  if (!r.c && !r.all_failed && !range && !r.m && (r.x || range)) {
-    out.push({ col: null, row: "c", text: "Pick c: the column that says failed or still running, or tick “every row failed”. Without it a model can't tell failures from units still running." });
+  if (!r.c && !r.all_failed && !range && !r.m && !r.e && (r.x || range)) {
+    out.push({ col: null, row: "c", text: "Pick c: the column that says failed or still running, or tick “No status column: every row failed”. Without it a model can't tell failures from units still running." });
   }
   const used = {};
   for (const k of ROLES) {
@@ -218,12 +218,43 @@ export function readingIssues(r, facts, nRows) {
     else used[col] = k;
   }
   if (r.x || range) {
-    for (const i of dataStepIssues(lifeMapping(r), facts, nRows, r.unit)) {
+    const mapping = lifeMapping(r);
+    for (const i of dataStepIssues(mapping, facts, nRows, r.unit)) {
       if (/^Pick x:/.test(i.text)) continue;
-      out.push(i);
+      // A dataset keeps its failure modes beside ranges and an end of record:
+      // only a fit by failure mode needs exact values, and its own step says so.
+      if (i.kind === "mode-exact") continue;
+      out.push({ ...i, row: i.row || issueRow(i, mapping) });
     }
   }
   return out;
+}
+
+// Why Save waits, in one line, or null when the reading is complete: the
+// first note itself (so nobody hunts for it), with where it sits and how many
+// more there are: "Say whether “Removed” means failed or still running
+// (beside c)." / "… (beside c; 1 more note above)".
+const ROW_NAMES = { e: "failure mode", x2: "second clock", xl: "x", xr: "x", u: "x" };
+export function readingWaiting(reading, facts, nRows) {
+  const issues = readingIssues(reading, facts, nRows);
+  if (!issues.length) return null;
+  const first = issues[0];
+  const row = ROW_NAMES[first.row] || first.row || "x";
+  const more = issues.length - 1;
+  const text = String(first.text).replace(/\.\s*$/, "");
+  return `${text} (beside ${row}${more ? `; ${more} more note${more === 1 ? "" : "s"} above` : ""}).`;
+}
+
+// What the reading notes without stopping the save: [{ col, row, text }].
+// A failure mode beside inspection ranges or late entry: kept with the
+// dataset, but a fit by failure mode needs one exact value per unit.
+export function readingNotes(r) {
+  if (!r?.e || !(r.xl || r.xr || r.tl)) return [];
+  return [{
+    col: r.e, row: "e",
+    text: "Kept with the dataset as it is. A fit by failure mode needs one exact value per unit, so to fit by mode, "
+      + "or to fit every failure as one, its fit asks which to leave out (for that fit only).",
+  }];
 }
 
 // The one-line summary: [{ key, label, value }] —
@@ -234,6 +265,7 @@ export function readingParts(r) {
   if (r.x) out.push({ key: "x", label: "x", value: r.x + (r.unit && r.unit !== "units" && !/\([^()]*\)\s*$/.test(r.x) ? ` (${r.unit.toLowerCase()})` : "") });
   if (r.xl) out.push({ key: "range", label: "range", value: `${r.xl} to ${r.xr}` });
   if (r.c) out.push({ key: "c", label: "c", value: r.c });
+  else if (r.e && !r.xl && !r.m) out.push({ key: "c", label: "c", value: `none: a blank ${LABEL.e} is still running` });
   else if (r.all_failed) out.push({ key: "c", label: "c", value: "every row failed" });
   for (const k of ["n", "tl", "tr", "i", "m", "e", "s"]) {
     if (r[k]) out.push({ key: k, label: LABEL[k] || k, value: r[k] + (k === "m" && r.m_unit ? ` (${r.m_unit})` : "") });

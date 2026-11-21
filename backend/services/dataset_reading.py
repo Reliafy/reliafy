@@ -717,6 +717,9 @@ def summary(reading: dict) -> str:
         parts.append(f"range = {reading['xl']} to {reading['xr']}")
     if reading.get("c"):
         parts.append(f"c = {reading['c']}")
+    elif reading.get("e") and not reading.get("xl") and not reading.get("m"):
+        # A failure-mode column with no status column: its blanks are the units still running.
+        parts.append("c: none, a blank failure mode is still running")
     elif reading.get("all_failed"):
         parts.append("c: every row failed")
     for role in ("n", "tl", "tr", "i", "m", "e", "s", "x2"):
