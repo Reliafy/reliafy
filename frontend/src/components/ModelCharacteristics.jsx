@@ -9,7 +9,7 @@ import { boundWords, timeAtValue } from "../lifeResults.js";
 import { boundUnavailable, meanLevels, meanLifeAnswer, medianOf } from "../meanLife.js";
 import { unitInText } from "./unitText.js";
 import { paramView } from "./LifeSummary.jsx";
-import { intervalLevel } from "../modelFrame.js";
+import { SHARED_SHAPE_NOTE, intervalLevel, sharesShape } from "../modelFrame.js";
 import { withUnit as covariateWithUnit } from "./stressName.js";
 import FriendlyUnitSwitch, { useFriendlyUnit } from "./FriendlyUnit.jsx";
 import { friendlyText } from "../friendlyTime.js";
@@ -361,6 +361,7 @@ function RegressionCharacteristics({ result, level, onLevel, calc, onCalc }) {
           {calc?.series?.length > 1 ? " (the Calculator's first combination)" : ""}.
           {onCalc && <> <button type="button" className="link" onClick={onCalc}>Change them in the Calculator ›</button></>}
         </p>
+        {sharesShape(result) && <p className="mf-note">{SHARED_SHAPE_NOTE}</p>}
       </section>
       {fns.life_path ? (
         <div className="model-chars-card rl-wrap">

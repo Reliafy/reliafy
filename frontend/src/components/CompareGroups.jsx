@@ -67,8 +67,8 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
   const distinct = dataset.profile?.distinct;
   const repeated = dataset.profile?.repeated_units;
   const first = useMemo(
-    () => guessCompareColumns(columns, { distinct: distinct || {}, splitBy }),
-    [columns, distinct, splitBy]
+    () => guessCompareColumns(columns, { distinct: distinct || {}, splitBy, x: dataset.reading?.x || dataset.last_mapping?.x || "" }),
+    [columns, distinct, splitBy, dataset.reading, dataset.last_mapping]
   );
   // Each column's few values (the dataset's profile), so a status column of
   // words ("Failed", "Removed, OK") is read as the fit reads it.

@@ -20,7 +20,7 @@ import Effects from "./model/Effects.jsx";
 import Diagnostics from "./model/Diagnostics.jsx";
 import DataTab from "./model/DataTab.jsx";
 import { COLORWAY } from "../plotTheme.js";
-import { intervalLevel, modelTabs, pmfFromCurves, resolveTab } from "../modelFrame.js";
+import { baseLevels, intervalLevel, modelTabs, pmfFromCurves, resolveTab } from "../modelFrame.js";
 import { unitInText } from "./unitText.js";
 
 const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
@@ -191,7 +191,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   // The Calculator tab unmounts when you switch away, so its inputs live here
   // and survive tab switches. When the result itself changes in place (e.g.
   // fitting another model in the workspace) reset them for the new model.
-  const [calc, setCalc] = useState(() => initCalcState(result.functions, result.plot?.empirical?.x));
+  const [calc, setCalc] = useState(() => initCalcState(result.functions, result.plot?.empirical?.x, baseLevels(result)));
   const calcNextId = useRef(1);
   // One confidence for the calculator's bounds and the mean life's (#288).
   const level = Number(calc.ci.level);
@@ -202,7 +202,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   if (result !== prevResult) {
     setPrevResult(result);
     setTvcCalc(result.tvc ? initTvcState(result) : null);
-    setCalc(initCalcState(result.functions, result.plot?.empirical?.x));
+    setCalc(initCalcState(result.functions, result.plot?.empirical?.x, baseLevels(result)));
     calcNextId.current = 1;
     setOwn(resolveTab(modelTabs(result) || [], null));
   }
@@ -261,6 +261,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
           ciNote={result.method === "library" || intervalLevel(result).credible ? result.ci_note : null}
           credible={intervalLevel(result).credible}
           spread={rateSpread(result)}
+          bases={baseLevels(result)}
         />
       );
       break;

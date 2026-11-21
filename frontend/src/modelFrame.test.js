@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  answerParts, baseLevels, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
+  SHARED_SHAPE_NOTE, answerParts, baseLevels, chartRow, countsSummary, sharesShape, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
   groupTestWords, intervalLevel, listN, nextTabIndex, oddUnits, plainAnswer, ppSummary, ratioSign, resolveTab, termName,
 } from "./modelFrame.js";
 
@@ -340,4 +340,25 @@ test("a regression on one grouping column names the log-rank test in its answer 
 test("a parametric regression's coefficient p-value reaches the effects", () => {
   const r = { kind: "regression", ratio_label: "hazard ratio", coefficients: [{ name: "design[T.B]", value: -0.818, ci: [-1.37, -0.27], se: 0.334, p: 0.0142 }] };
   assert.equal(forestRows(r)[0].p, 0.0142);
+});
+
+test("the forest chart draws a number across its data's range, so a small per-unit effect shows", () => {
+  const temp = { name: "temp_C", label: "temp_C", ratio: 1.148, lo: 1.106, hi: 1.191, unit: "°C", range: [60, 100] };
+  const c = chartRow(temp);
+  assert.equal(c.across, true);
+  assert.ok(Math.abs(c.ratio - 1.148 ** 40) < 1e-6 * c.ratio);
+  assert.ok(c.lo < c.ratio && c.ratio < c.hi);
+  assert.equal(c.label, "temp_C (60 to 100 °C)");
+  // A category, or a number with no range, is drawn as it is.
+  assert.equal(chartRow({ name: "site[T.B]", ratio: 0.7 }).across, false);
+  assert.equal(chartRow({ name: "x", ratio: 2 }).ratio, 2);
+});
+
+test("a regression with a shape says the shape is shared, beside its life figures", () => {
+  const ph = { kind: "regression", params: [{ name: "alpha" }, { name: "beta" }] };
+  assert.equal(sharesShape(ph), true);
+  assert.equal(sharesShape({ ...ph, params: [{ name: "lambda" }] }), false);
+  assert.equal(sharesShape({ ...ph, tvc: {} }), false);
+  assert.equal(sharesShape({ kind: "distribution", params: ph.params }), false);
+  assert.match(SHARED_SHAPE_NOTE, /can differ from a fit to one group/);
 });
