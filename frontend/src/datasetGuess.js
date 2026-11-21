@@ -83,12 +83,15 @@ export function guessSplit(columns, { distinct = {}, exclude = [], splitBy = nul
 
 // First guesses for Compare groups: time, split, censor (and whether to
 // invert it) and unit.
-export function guessCompareColumns(columns, { distinct = {}, splitBy = null } = {}) {
+// ``exclude``: columns never guessed as the split (the status column and the
+// failure mode, which say what happened to a unit, not which group it is in).
+export function guessCompareColumns(columns, { distinct = {}, splitBy = null, exclude = [] } = {}) {
   const names = columns.map((c) => c.name);
   const censor = columns.find((c) => CENSOR_RE.test(c.name) && isNumeric(c.dtype))?.name || "";
   const time =
-    columns.find((c) => isNumeric(c.dtype) && c.name !== censor && c.name !== splitBy)?.name || names[0] || "";
-  const group = guessSplit(columns, { distinct, splitBy, exclude: [time, censor] });
+    columns.find((c) => isNumeric(c.dtype) && c.name !== censor && c.name !== splitBy && !exclude.includes(c.name))?.name
+    || names[0] || "";
+  const group = guessSplit(columns, { distinct, splitBy, exclude: [time, censor, ...exclude] });
   return {
     time,
     group,

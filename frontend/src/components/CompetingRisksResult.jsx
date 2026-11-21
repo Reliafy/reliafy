@@ -19,10 +19,11 @@ import { formatNumber } from "../format.js";
 import { DATA_INK, referenceShape } from "../plotTheme.js";
 import { modelTabs, resolveTab } from "../modelFrame.js";
 import {
-  ANY_MODE, anyAt, causesAt, effectsByMode, incidenceRows, leadSentence, modeSupport, pct, readingAt,
-  timeToChance, widestBand,
+  ANY_MODE, anyAt, bLives, causesAt, effectsByMode, incidenceCsv, incidenceRows, leadSentence, modeSupport, pct,
+  readingAt, timeToChance, widestBand,
 } from "../competingRisks.js";
 import { ciPct, levelPct } from "../levels.js";
+import { csvFileName } from "../csv.js";
 import "./NonParametric.css";
 import "./CompetingRisks.css";
 
@@ -43,6 +44,20 @@ function ModeName({ name, i }) {
 
 // ---- Failure modes ----------------------------------------------------------
 
+// "B10 2,790 hours (≥ 2,600, 90% one-sided)", or why there is none: the
+// time 10% of units have failed from a mode, read off its curve.
+function b10Text(life, unit, twoSided = "90%") {
+  if (!life) return "";
+  if (life.time == null) {
+    return life.top != null && life.last != null
+      ? `B10 not reached within the data (${pct(life.top)} by ${at(life.last, unit)})` : "B10 not reached within the data";
+  }
+  const bound = life.lower == null ? ""
+    : life.bound === "lower" ? ` (≥ ${formatNumber(life.lower)}, ${levelPct(life.level)} one-sided)`
+    : life.upper != null ? ` (${formatNumber(life.lower)}–${formatNumber(life.upper)}, ${twoSided} two-sided)` : "";
+  return `B10 ${at(life.time, unit)}${bound}`;
+}
+
 // The panel beside the chart: each mode's share of the failures by the
 // horizon, its count and the chance of failing from it by then, the data,
 // the group comparison (in Diagnostics) and the reading.
@@ -54,6 +69,8 @@ function ModesAside({ result, onGroups }) {
   const running = result.running || 0;
   const lead = leadSentence(result.leads, unit);
   const top = causes.reduce((a, b) => ((b.at?.cif || 0) > (a?.at?.cif || 0) ? b : a), null);
+  const lives = bLives(result);
+  const any = anyAt(result, result.horizon);
   return (
     <>
       <section className="gof-card" aria-labelledby="cr-modes-title">
@@ -78,10 +95,23 @@ function ModesAside({ result, onGroups }) {
                 {formatNumber(k.failures_by ?? k.failures)} failure{(k.failures_by ?? k.failures) === 1 ? "" : "s"} by then
                 {k.failures_by != null && k.failures_by !== k.failures ? ` (${formatNumber(k.failures)} in all)` : ""}
               </span>
+              <span className="cr-mode-sub">{b10Text(lives.find((b) => b.mode === k.name), unit, ciPct(result))}</span>
             </span>
             <span className="gv"><span className="sr-only">Share of failures: </span>{pct(k.share)}</span>
           </div>
         ))}
+        {causes.length > 1 && any && (
+          <div className="gofr cr-mode-row">
+            <span className="gk">
+              Any mode
+              <span className="cr-mode-sub">
+                {pct(any.cif)} of units{any.lower != null && any.upper != null ? ` (${band(any.lower, any.upper)})` : ""}
+              </span>
+              <span className="cr-mode-sub">{b10Text(lives[0], unit, ciPct(result))}</span>
+            </span>
+            <span className="gv"><span className="sr-only">Share of failures: </span>100%</span>
+          </div>
+        )}
         <div className="gofr">
           <span className="gk">Data</span>
           <span className="gv">
@@ -114,6 +144,8 @@ function EliminatedCard({ result }) {
   if (!rows.length) return null;
   const unit = unitOf(result);
   const level = levelPct(rows.find((r) => r.confidence)?.confidence ?? 0.9);
+  // The B10 as it is now, every mode, beside the ones with a mode taken out.
+  const now = timeToChance(result, ANY_MODE, 0.1);
   return (
     <section className="gof-card cr-eliminated" aria-labelledby="cr-elim-title">
       <div className="gofh mf-card-head">
@@ -122,6 +154,19 @@ function EliminatedCard({ result }) {
           <span className="gof-sub">B10, at least at {level} one-sided</span>
         </span>
       </div>
+      {now && (
+        <div className="gofr">
+          <span className="gk">
+            As now, every mode
+            <span className="cr-mode-sub">from the curves, no distribution assumed</span>
+          </span>
+          <span className="gv">
+            {now.time != null ? at(now.time, unit) : "—"}
+            {now.time != null && now.lower != null && now.bound === "lower" && <span className="life-lo"> ≥ {at(now.lower, unit)}</span>}
+            {now.time == null && <span className="cr-mode-sub">not reached within the data</span>}
+          </span>
+        </div>
+      )}
       {rows.map((r) => (
         <div className="gofr" key={r.cause}>
           <span className="gk">
@@ -134,14 +179,17 @@ function EliminatedCard({ result }) {
           <span className="gv">
             {r.b_life != null ? at(r.b_life, unit) : "—"}
             {r.lower != null && <span className="life-lo"> ≥ {at(r.lower, unit)}</span>}
+            {r.b_life != null && now?.time != null && (
+              <span className="cr-mode-sub">{r.b_life >= now.time ? "+" : "−"}{at(Math.abs(r.b_life - now.time), unit)} on now</span>
+            )}
             {r.reason && <span className="cr-mode-sub">{r.reason}</span>}
           </span>
         </div>
       ))}
       <p className="mf-note">
-        Each is a Weibull fitted to the other modes&apos; failures, with the eliminated mode&apos;s failures counted
-        as still running at the time they failed. It assumes the modes act independently: fixing one doesn&apos;t
-        change how the others wear.
+        &ldquo;As now&rdquo; is read off the curves with no distribution assumed. Each &ldquo;No …&rdquo; is a Weibull
+        fitted to the other modes&apos; failures, with the eliminated mode&apos;s failures counted as still running at
+        the time they failed. They assume the modes act independently: fixing one doesn&apos;t change how the others wear.
       </p>
     </section>
   );
@@ -171,7 +219,8 @@ function ModesTab({ result, name, onGroups }) {
           )}
         >
           <CompetingRisksPlot fill result={result} unit={result.unit} stacked={stacked}
-                              download={`${name || "Failure modes"} — chance of failing by mode`} />
+                              download={`${name || "Failure modes"} — chance of failing by mode`}
+                              csv={{ rows: () => incidenceCsv(result), filename: csvFileName(name || "Failure modes", "chance of failing by mode") }} />
         </PlotCard>
       )}
       side={<ModesAside result={result} onGroups={onGroups} />}
