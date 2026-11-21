@@ -14,6 +14,7 @@ import { dayText } from "../measuringPoint.js";
 import { ACCENT } from "../plotTheme.js";
 import "../views/Maintenance.css";
 import "./MeasurementViews.css";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
 
 // Consumables (salt added to the pool; acid; a stabiliser): the Measurements
 // tab's monthly bars, the dialogs to record a use (Record use…: another date,
@@ -135,6 +136,7 @@ const Back = ({ onBack }) => (
 // A consumable in full: its key is "<position id>:part:<id>" or "<position id>:name:<name>".
 export function ConsumablePane({ id, today = workspaceToday(), onBack, onMenu = null }) {
   const confirm = useConfirm();
+  const workOrders = useWorkOrdersOn();
   const positionId = String(id).split(":")[0];
   const [state, setState] = useState({ row: null, error: null, loaded: false });
   const [modal, setModal] = useState(null);
@@ -209,7 +211,8 @@ export function ConsumablePane({ id, today = workspaceToday(), onBack, onMenu = 
             {c.uses.map((u) => (
               <li key={u.id}>
                 <span className="mv-change-text">{qtyText(u.qty, c.unit)} on {dayText(u.on)}</span>
-                {u.work_order ? <> · <Link to={`/maintenance/work-orders/${u.work_order.id}`}>WO {u.work_order.number}</Link></> : <span className="lib-date"> · by hand</span>}
+                {u.work_order && !workOrders ? <span className="lib-date"> · with work done</span>
+                  : u.work_order ? <> · <Link to={`/maintenance/work-orders/${u.work_order.id}`}>WO {u.work_order.number}</Link></> : <span className="lib-date"> · by hand</span>}
                 {u.cost != null && <span className="lib-date"> · cost {Number(u.cost).toFixed(2)}</span>}
                 {u.from_location && <span className="lib-date"> · from {u.from_location.name}</span>}
                 {u.note && <span className="lib-date"> · {u.note}</span>}

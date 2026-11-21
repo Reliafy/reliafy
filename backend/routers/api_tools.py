@@ -399,6 +399,13 @@ async def call_action(tool: str, action: str, request: Request) -> JSONResponse:
     if selector is None:
         raise HTTPException(status_code=404, detail=f"'{tool}' has no actions: POST /api/v1/{tool}.")
     acts = actions_of(t)
+    if action not in acts and tool == "maintenance" and action.startswith("work_orders."):
+        from backend.maintenance.service import WorkOrdersOff, work_orders_on
+
+        if not work_orders_on():
+            # Not listed while work orders are turned off: say so, and what to do instead.
+            err = WorkOrdersOff()
+            raise HTTPException(status_code=409, detail=f"{err} {err.agent}")
     if action not in acts:
         raise HTTPException(status_code=404, detail=(
             f"'{tool}' has no {selector} '{action}'. It has: {', '.join(acts)}."))

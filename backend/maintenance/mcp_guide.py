@@ -10,6 +10,29 @@ Reliafy Maintenance (the CMMS) is on for this account: the maintenance tool. Sta
 then maintenance guide topic start.
 """
 
+# Added to the instructions, and the run topic's place, while work orders are turned off
+# (MAINTENANCE_WORK_ORDERS): nothing about raising or closing them is offered then.
+WORK_ORDERS_OFF_INSTRUCTIONS = """\
+Work orders are turned off for this account: record work done with maintenance fitments.record_work_done.
+"""
+
+RUN_WITHOUT_WORK_ORDERS = ("Record work done (work orders are turned off): a task done, a replacement, a repair.", """\
+Work orders are turned off here: nothing raises them (by hand, the daily run, a task trigger or an alarm), and \
+the work_orders actions refuse. Everything else works: tasks still fall due, packages and shutdowns are plans, \
+forecasts, spares, readings and failure reports are as before.
+- A task done: maintenance fitments.record_work_done with task_id and on (default today): the task renews from \
+then, as closing its work order would (a task by use records its reading). Before it was tracked here: \
+maintenance tasks.set_last_done.
+- Work on a position or item: record_work_done with position_id (or item_id, location_id) and actions, each \
+{kind: replace|repair|inspect|other, failure_mode_id or failure_mode_text, finding (inspect: ok, degraded, \
+found_failed), new_item {name, serial?} or item_id (replace: what went in), part_id, quantity, \
+from_location_id, reason (replace: failure, planned, other), notes}. A replacement ends the fitted item's \
+fitment and starts the new one's (a renewal); a repair is a recurrent event; an inspection that found it \
+failed leaves its life interval censored. Name the failure mode whenever it failed. readings: [{point_id, \
+value}] taken at the work.
+- Earlier history: maintenance fitments.add_past, or an import (topic data).
+""")
+
 TOPICS: dict[str, tuple[str, str]] = {
     "start": ("Start here: the four structures, the tool, the data rules.", """\
 Reliafy Maintenance (a CMMS): the maintenance tool. It keeps four structures. \

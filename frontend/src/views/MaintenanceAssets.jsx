@@ -13,6 +13,7 @@ import usePhone from "../usePhone.js";
 import {
   NOT_PLACED_PATH, assetOpenPath, assetsSummary, dueText, insideText, itemHitText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
 import "./Maintenance.css";
 
 const HELP = { guide: "build-your-asset-tree" };
@@ -78,19 +79,21 @@ export default function MaintenanceAssets() {
     </div>
   );
 
+  const workOrders = useWorkOrdersOn();
   const rest = view?.not_placed;
   const horizon = view?.horizon_days ?? 30;
   const newAsset = <button onClick={() => setModal(true)}><PlusIcon /> New asset</button>;
   const columns = [
     { key: "positions", label: "Positions", num: true, cell: (p) => p.positions },
     { key: "items", label: "Items", num: true, cell: (p) => p.items },
-    {
+    // Work orders turned off (workOrdersFlag.js): no open-work column.
+    workOrders && {
       key: "work", label: "Open work", num: true,
       cell: (p) => <CountCell n={p.open_work_orders} to={p.id ? openWorkPath(p.id) : null}
                               label={`${p.open_work_orders} open work order${p.open_work_orders === 1 ? "" : "s"} at ${p.name}`} />,
     },
     { key: "due", label: `Due in ${horizon} days`, cell: (p) => <Due row={p} /> },
-  ];
+  ].filter(Boolean);
   const notPlaced = rest?.positions > 0 && (
     <tr className="lib-row maint-not-placed" onClick={() => navigate(NOT_PLACED_PATH)}>
       <td>

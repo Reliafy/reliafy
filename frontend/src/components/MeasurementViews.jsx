@@ -17,6 +17,7 @@ import {
 } from "../measuringPoint.js";
 import { ACCENT, DANGER, MUTED } from "../plotTheme.js";
 import { PointReadingModal } from "../views/MaintenancePosition.jsx";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
 import "../views/Maintenance.css";
 import "./MeasurementViews.css";
 
@@ -141,6 +142,8 @@ export function pointViewMenu(point, { onRead, onLimits, onMove }) {
 }
 
 export function PointView({ id, onBack, onMenu = null, onChanged }) {
+  // Work orders turned off (workOrdersFlag.js): no alarm work order, no links to one.
+  const workOrders = useWorkOrdersOn();
   const [point, setPoint] = useState(null);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null); // "read" | "limits" | "move"
@@ -244,7 +247,7 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
             <span className="lib-date">by its usual round</span>
           </div>
         )}
-        {point.alarm_work_order && (
+        {workOrders && point.alarm_work_order && (
           <div className="mp-fact">
             <span className="mp-fact-label">Alarm work order</span>
             <span className="mp-fact-value">
@@ -269,7 +272,8 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
               {settingChangeRows(point, today).map((c) => (
                 <li key={c.key}>
                   <span className="mv-change-text">{c.text}</span>
-                  {c.workOrder
+                  {c.workOrder && !workOrders ? <span className="lib-date"> · with work done</span>
+                    : c.workOrder
                     ? <> · <Link to={`/maintenance/work-orders/${c.workOrder.id}`}>WO {c.workOrder.number}</Link>{c.task && <span className="lib-date"> · {c.task.name}</span>}</>
                     : <span className="lib-date"> · by hand</span>}
                   {c.held && <span className="lib-date mv-held"> · {c.held}</span>}
@@ -278,7 +282,7 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
             </ul>
           ) : (
             <p className="lib-date">
-              Not set yet. {readable ? <button type="button" className="crumb-link" onClick={() => setModal("read")}>Record the value it&apos;s set to</button> : "Record the value it's set to"}, or record it from the work order that sets it.
+              Not set yet. {readable ? <button type="button" className="crumb-link" onClick={() => setModal("read")}>Record the value it&apos;s set to</button> : "Record the value it's set to"}{workOrders ? ", or record it from the work order that sets it." : "."}
             </p>
           )}
         </section>

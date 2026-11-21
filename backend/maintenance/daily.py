@@ -16,7 +16,7 @@ from datetime import date
 from backend import config
 from backend.maintenance import forecast, loop
 from backend.maintenance.access import allowed
-from backend.maintenance.service import Maintenance
+from backend.maintenance.service import Maintenance, work_orders_on
 from backend.services import time_zones
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,8 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
         due = [t for t in m.due_tasks(HORIZON_DAYS)
                if not t["open_work_order"] and not (t.get("package") or {}).get("active")]
         result["orgs"] += 1
-        result["work_orders"] += len(due) + m.packages_due(HORIZON_DAYS)
+        # Work orders off: the run would raise none (generate raises nothing either).
+        result["work_orders"] += len(due) + m.packages_due(HORIZON_DAYS) if work_orders_on() else 0
         return
     # Each task stands alone: one that can't have its work order is reported in
     # the result and the digest, and the rest still get theirs.

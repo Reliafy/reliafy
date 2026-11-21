@@ -14,11 +14,11 @@ import {
 import { SAMPLE_MODEL, useFirstRun } from "../firstRun.js";
 import { TYPE_LABEL, loadAllModels } from "../allModels.js";
 import {
-  ATTENTION_ROWS, RECENT_ROWS, attentionFailed, attentionReady, attentionRest, attentionRows, dueRows, fleetRows,
+  ATTENTION_ROWS, RECENT_ROWS, attentionFailed, homeOverview, attentionReady, attentionRest, attentionRows, dueRows, fleetRows,
   lateFigures, lateSummary, otherRecent, recentFor, recentRows, sparesRows, startersPlace, waitingFigures, workTodayRows,
 } from "../home.js";
 import { RBDS_LABEL, RBDS_PATH, homeCards } from "../navigation.js";
-import { useAppConfig } from "../ConfigProvider.jsx";
+import { useAppConfig, useWorkOrdersOn } from "../ConfigProvider.jsx";
 import { useRoles } from "../RolesProvider.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { RolesCard } from "../components/RolePicker.jsx";
@@ -157,7 +157,8 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has, onRetry }) {
       return (
         <HomeList id={id} title="Due and at risk" all={{ to: ordersPath("due"), label: "Maintenance" }}
                   rows={first(due)} loading={maintenance === undefined} failed={overviewFailed}
-                  empty={maintenance ? "No open work orders and nothing due in the next 30 days." : NO_OVERVIEW}>
+                  empty={!maintenance ? NO_OVERVIEW : maintenance.work_orders_off ? "Nothing due in the next 30 days."
+                    : "No open work orders and nothing due in the next 30 days."}>
           {maintenance && (
             <Figures items={[
               ...lateFigures(maintenance),
@@ -172,6 +173,13 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has, onRetry }) {
     case "work-today": {
       if (!has.maintenance) return null;
       const open = maintenance?.open_work_orders || [];
+      if (maintenance?.work_orders_off) {
+        return (
+          <HomeList id={id} title="Today's work" all={{ to: ordersPath("due"), label: "Due soon" }}
+                    rows={first(workTodayRows(maintenance))} loading={false} failed={overviewFailed}
+                    empty="Nothing due today." />
+        );
+      }
       return (
         <HomeList id={id} title="Today's work orders"
                   all={{ to: ORDERS_PATH, label: maintenance ? `All ${open.length} open` : "Maintenance" }}
@@ -226,6 +234,8 @@ export default function HomePage() {
   // every decision's evidence check): undefined while loading, null when they
   // couldn't be read.
   const [maintenance, setMaintenance] = useState(undefined);
+  // Work orders turned off (workOrdersFlag.js): Home leaves them out (homeOverview).
+  const workOrders = useWorkOrdersOn();
   const [rcm, setRcm] = useState(undefined);
   // Try again: each press reads everything again.
   const [attempt, setAttempt] = useState(0);
@@ -281,12 +291,12 @@ export default function HomePage() {
   useEffect(() => {
     if (!access) return undefined;
     let live = true;
-    getMaintenanceOverview().then((o) => live && setMaintenance(o)).catch(() => live && setMaintenance(null));
+    getMaintenanceOverview().then((o) => live && setMaintenance(homeOverview(o, workOrders))).catch(() => live && setMaintenance(null));
     getWorkspaceRcm().then((d) => live && setRcm(d?.rollup || null)).catch(() => live && setRcm(null));
     return () => {
       live = false;
     };
-  }, [access, attempt]);
+  }, [access, attempt, workOrders]);
 
   useActivation(lists?.models);
 

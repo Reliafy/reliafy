@@ -17,12 +17,14 @@ import HowOften from "../components/HowOften.jsx";
 import { packageDates } from "../howOften.js";
 import { PACKAGES_PATH, linesText, packagePath, workOrderPath } from "../maintenanceOrders.js";
 import {
-  PACKAGE_UNITS, editBody, formProblem, initialForm, outcomeText, packageSentence, taskLabel, visitDay,
-  visitTasksText,
+  PACKAGE_UNITS, editBody, formProblem, initialForm, outcomeText, packageSentence, packageWithoutWorkOrders,
+  taskLabel, visitDay, visitTasksText,
 } from "../packagePage.js";
 import { ORDERS_PATH, PACKAGES_LABEL } from "../navigation.js";
 import { subjectPath } from "../maintenanceSubjects.js";
 import { tabPlace } from "../explorerTabs.js";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { RecordDone } from "../components/RecordDone.jsx";
 import "./Maintenance.css";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -36,7 +38,10 @@ export default function MaintenancePackage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const phone = usePhone();
-  const [pkg, setPkg] = useState(null);
+  const [rawPkg, setPkg] = useState(null);
+  // Work orders turned off (workOrdersFlag.js): a plan of visits, each task recorded done on its row.
+  const workOrders = useWorkOrdersOn();
+  const pkg = packageWithoutWorkOrders(rawPkg, workOrders);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [modal, setModal] = useState(null); // "pause" | "retire"
@@ -53,10 +58,10 @@ export default function MaintenancePackage() {
     return () => { live = false; };
   }, [id, attempt]);
 
-  if (error && !pkg) {
+  if (error && !rawPkg) {
     return <div className="app"><LoadFailed onRetry={() => setAttempt((n) => n + 1)} header error={error} notFound="Package not found." to={PACKAGES_PATH} label="Back to Packages" /></div>;
   }
-  if (!pkg) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!rawPkg) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const changed = (fresh, text) => {
     setModal(null);
@@ -90,7 +95,7 @@ export default function MaintenancePackage() {
     <div className="app">
       <PageTitle name={pkg.name} />
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: ORDERS_PATH }, { label: PACKAGES_LABEL, to: PACKAGES_PATH }]}
+        crumbs={[{ label: "Maintenance", to: workOrders ? ORDERS_PATH : PACKAGES_PATH }, { label: PACKAGES_LABEL, to: PACKAGES_PATH }]}
         title={pkg.name}
         badges={<StatusChips pkg={pkg} today={today} />}
         meta={[pkg.subject && `on ${pkg.subject.name}`, pkg.trade && `needs: ${pkg.trade}`, `${plural(pkg.tasks?.length || 0, "task")}`]
@@ -106,7 +111,7 @@ export default function MaintenancePackage() {
         <div className="pkg-main">
           <Details pkg={pkg} />
           {pkg.status !== "retired" && pkg.tasks?.length > 0 && <PackageParts packageId={pkg.id} className="card" />}
-          <NextVisits pkg={pkg} today={today} onRaise={async () => {
+          <NextVisits pkg={pkg} today={today} canRaiseAny={workOrders} onRaise={async () => {
             try {
               const out = await raisePackageVisit(pkg.id);
               setPkg(await getPackage(pkg.id));
@@ -115,8 +120,8 @@ export default function MaintenancePackage() {
               setSaid(e.message);
             }
           }} />
-          <Tasks pkg={pkg} />
-          <WorkOrders pkg={pkg} navigate={navigate} />
+          <Tasks pkg={pkg} recordDone={!workOrders} onRecorded={() => setAttempt((n) => n + 1)} />
+          {workOrders && <WorkOrders pkg={pkg} navigate={navigate} />}
         </div>
         {editing && (
           <EditPane pkg={pkg} phone={phone} onClose={() => setEditing(false)}
@@ -178,11 +183,11 @@ function Details({ pkg }) {
   );
 }
 
-function NextVisits({ pkg, today, onRaise }) {
+function NextVisits({ pkg, today, onRaise, canRaiseAny = true }) {
   const visits = pkg.next_visits || [];
   const [busy, setBusy] = useState(false);
   // Raise the next visit's work order now, on its own (nothing else that's due).
-  const canRaise = pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order;
+  const canRaise = canRaiseAny && pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order;
   return (
     <section className="card">
       <div className="maint-head maint-wrap"><h2>{visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2>
@@ -226,14 +231,14 @@ function NextVisits({ pkg, today, onRaise }) {
   );
 }
 
-function Tasks({ pkg }) {
+function Tasks({ pkg, recordDone = false, onRecorded }) {
   const tasks = pkg.tasks || [];
   return (
     <section className="card">
       <div className="maint-head"><h2>Tasks ({tasks.length})</h2></div>
       {tasks.length === 0 ? <p className="lib-date">No tasks in it yet. Add them from the Explorer&apos;s {tabPlace("lsa")}.</p> : (
         <div className="maint-scroll"><table className="lib-table">
-          <thead><tr><th>Task</th><th>On</th><th>On which visits</th><th>Interval</th><th>Next due</th><th>Last done</th></tr></thead>
+          <thead><tr><th>Task</th><th>On</th><th>On which visits</th><th>Interval</th><th>Next due</th><th>Last done</th>{recordDone && <th>Done</th>}</tr></thead>
           <tbody>
             {tasks.map((t) => (
               <tr key={t.task_id} className="maint-plain-row">
@@ -248,6 +253,7 @@ function Tasks({ pkg }) {
                 <td className="lib-date maint-nowrap">{t.rule_text || `every ${t.interval} ${unitWord(t.interval, t.unit)}`}</td>
                 <td className="maint-nowrap"><DueChip task={t} /></td>
                 <td className="lib-date maint-nowrap">{fmtDate(t.last_done)}</td>
+                {recordDone && <td>{!t.retired && <RecordDone task={{ id: t.task_id, name: t.name }} onDone={onRecorded} />}</td>}
               </tr>
             ))}
           </tbody>

@@ -17,6 +17,8 @@ const SIGNED_IN = [
   // The asset tree in a spreadsheet, both ways (the Explorer's Import from Excel and Export).
   ["GET", "/api/maintenance/hierarchy/export"],
   ["POST", "/api/maintenance/hierarchy/import"],
+  // Work done recorded with no work order (how work is recorded when work orders are off).
+  ["POST", "/api/maintenance/work-done"],
   // RCM studies (the standalone worksheets under Maintenance).
   ["GET", "/api/rcm/studies"],
   // The interval calculators on an RCM task card.

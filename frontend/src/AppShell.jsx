@@ -96,7 +96,11 @@ import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
 import { ExtensionsProvider, useExtensions } from "./ExtensionsProvider.jsx";
 import { RolesProvider } from "./RolesProvider.jsx";
-import { MOVED, fillMoved, movedHref } from "./redirects.js";
+import { MOVED, fillMoved, movedHref, movedTarget } from "./redirects.js";
+import { workOrdersOn } from "./workOrdersFlag.js";
+import { ordersPath } from "./maintenanceOrders.js";
+
+const ORDERS_DUE_PATH = ordersPath("due");
 
 // The authenticated app shell. This module is code-split: App.jsx
 // lazy-imports it, so the public/marketing pages ship without the app bundle.
@@ -182,6 +186,7 @@ function Shell() {
   // deployment can't offer them (e.g. an open-source self-hosted instance).
   const config = useAppConfig();
   const { ai, billing, reliability_agent: agentEnabled, maintenance: maintenanceEnabled } = config;
+  const workOrders = workOrdersOn(config);
   // Keying the routed content on the workspace remounts every view on switch,
   // so all lists refetch under the new X-Workspace-Id without any per-view code.
   const { workspace } = useWorkspace();
@@ -256,7 +261,12 @@ function Shell() {
             {maintenanceEnabled && <Route path="/maintenance/packages" element={<MaintenancePackages />} />}
             {maintenanceEnabled && <Route path="/maintenance/field-reports" element={<MaintenanceFieldReports />} />}
             {maintenanceEnabled && <Route path="/maintenance/packages/:id" element={<MaintenancePackage />} />}
-            {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
+            {/* Work orders turned off (workOrdersFlag.js): a work order's address lands on what's
+                due, which says so; the work order itself is kept, only hidden. */}
+            {maintenanceEnabled && (
+              <Route path="/maintenance/work-orders/:id"
+                     element={workOrders ? <MaintenanceWorkOrder /> : <Navigate to={ORDERS_DUE_PATH} replace />} />
+            )}
             {/* RCM studies: standalone worksheets, for every account (with or
                 without Reliafy Maintenance). They share no data with the RCM
                 on the asset tree (the Explorer's RCM tab). */}
@@ -342,7 +352,11 @@ function Shell() {
             {billing && <Route path="/billing" element={<BillingPage />} />}
 
             {/* Earlier addresses, each to its page's new place (redirects.js). */}
-            {MOVED.map((m) => <Route key={m.path} path={m.path} element={<Moved to={m.to} />} />)}
+            {/* Where an address lands can hang on the config (work orders off: Maintenance opens on
+                Packages), so those rows wait for it. */}
+            {MOVED.map((m) => <Route key={m.path} path={m.path} element={
+              !config.loaded && movedTarget(m, { workOrders: false }) !== m.to ? null : <Moved to={movedTarget(m, { workOrders })} />
+            } />)}
             {/* API tokens moved into Settings; keep old links working. */}
             <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             {/* Pages added by optional extensions (extensions.js). */}

@@ -20,10 +20,14 @@ import { DueChip, LocationPicker, Proposals, flatten, fmtDate } from "../compone
 import { ImportModal, NewPositionModal, SubjectCell, TimeZoneNudge } from "./MaintenanceHome.jsx";
 import {
   DUE_WINDOWS, ORDER_TABS, createDetail, createLabel, createPlan, daysLate, doneText, dueSearchText, dueWindow, groupDue,
-  inArea, lateText, linesText, orderCardMeta, orderKind, orderTab, ordersSummary, packagePath, splitOpen, workOrderPath,
+  dueSummary, inArea, lateText, linesText, orderCardMeta, orderKind, orderTab, ordersSummary, packagePath, splitOpen,
+  workOrderPath,
 } from "../maintenanceOrders.js";
 import usePhone from "../usePhone.js";
 import { ORDERS_LABEL } from "../navigation.js";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { RecordDone } from "../components/RecordDone.jsx";
+import { WORK_ORDERS_OFF_NOTE } from "../workOrdersFlag.js";
 import "./Maintenance.css";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { plainLoadError } from "../components/loadFailed.js";
@@ -45,7 +49,10 @@ const CLOSED_LIMIT = 200;
 export default function MaintenanceOrders() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const tab = orderTab(params.get("tab"));
+  // Work orders turned off (workOrdersFlag.js): only what's due, each task recorded
+  // as done on its row; the Open and Closed tabs and work-order links land here.
+  const workOrders = useWorkOrdersOn();
+  const tab = workOrders ? orderTab(params.get("tab")) : "due";
   const horizon = dueWindow(params.get("days"));
   const locationId = params.get("location") || "";
 
@@ -73,10 +80,10 @@ export default function MaintenanceOrders() {
   }, []);
   useEffect(() => {
     setInArea(null);
-    if (!locationId) return;
+    if (!locationId || !workOrders) return;
     listMaintenanceWorkOrders({ status: "open", locationId })
       .then((d) => setInArea(d.work_orders)).catch((e) => setError(e.message));
-  }, [locationId, data]);
+  }, [locationId, data, workOrders]);
 
   // One query key changed, the others kept (the tab, the window, the area).
   const setParam = (key, value) => {
@@ -97,12 +104,14 @@ export default function MaintenanceOrders() {
     <div className="app">
       <SectionHeader
         section="maintenance"
-        title={ORDERS_LABEL}
-        purpose="Work orders raised by your tasks and packages, and the ones added by hand."
+        title={workOrders ? ORDERS_LABEL : "Due soon"}
+        purpose={workOrders ? "Work orders raised by your tasks and packages, and the ones added by hand."
+          : "The tasks falling due. Record each one as done when it is."}
         help={HELP}
-        primary={data?.tree?.length > 0 ? <button onClick={() => setModal("wo")}><PlusIcon /> New work order</button> : null}
+        primary={workOrders && data?.tree?.length > 0 ? <button onClick={() => setModal("wo")}><PlusIcon /> New work order</button> : null}
         actions={<button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>}
       />
+      {!workOrders && <p className="lib-date" role="note">{WORK_ORDERS_OFF_NOTE}</p>}
       {error && !loadError && <div className="card error">{plainLoadError(error)}</div>}
       {data && <TimeZoneNudge zone={data.time_zone} onSet={refresh} />}
       {data === null ? (
@@ -123,10 +132,13 @@ export default function MaintenanceOrders() {
         <>
           <Proposals proposals={data.proposals} onDecided={refresh} />
           <p className="maint-answer">
-            {ordersSummary({ open: data.open_work_orders || [], due, horizon, today: data.today, late: data.late })}
+            {workOrders ? ordersSummary({ open: data.open_work_orders || [], due, horizon, today: data.today, late: data.late })
+              : dueSummary(due, horizon)}
           </p>
-          <Tabs tabs={ORDER_TABS} value={tab} onChange={(id) => setParam("tab", id === "open" ? "" : id)}
-                label="Work orders" idPrefix="orders" />
+          {workOrders && (
+            <Tabs tabs={ORDER_TABS} value={tab} onChange={(id) => setParam("tab", id === "open" ? "" : id)}
+                  label="Work orders" idPrefix="orders" />
+          )}
           <div role="tabpanel" id={panelId("orders")} aria-labelledby={tabId("orders", tab)}>
             {tab === "open" && (
               <OpenTab rows={openWork} today={data.today} locations={locations} locationId={locationId}
@@ -135,12 +147,12 @@ export default function MaintenanceOrders() {
             {tab === "due" && (
               <DueTab rows={due} horizon={horizon} onHorizon={(d) => setParam("days", d === 30 ? "" : String(d))}
                       locations={locations} locationId={locationId} onLocation={(v) => setParam("location", v)}
-                      onCreated={refresh} onError={setError} />
+                      onCreated={refresh} onError={setError} workOrders={workOrders} />
             )}
             {tab === "closed" && <ClosedTab navigate={navigate} />}
           </div>
 
-          {digest !== null && (
+          {workOrders && digest !== null && (
             <label className="maint-row lib-date" style={{ gap: "0.5rem" }}>
               <input type="checkbox" checked={digest} onChange={(e) => toggleDigest(e.target.checked)} />
               Email me when new work orders are raised for tasks coming due
@@ -294,7 +306,7 @@ function ClosedCards({ rows }) {
 }
 
 // Due soon: the tasks coming due in the window, grouped by package, then those in none.
-function DueTab({ rows, horizon, onHorizon, locations, locationId, onLocation, onCreated, onError }) {
+function DueTab({ rows, horizon, onHorizon, locations, locationId, onLocation, onCreated, onError, workOrders = true }) {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [made, setMade] = useState(null);
@@ -336,7 +348,7 @@ function DueTab({ rows, horizon, onHorizon, locations, locationId, onLocation, o
     <section className="card">
       <div className="maint-head maint-wrap">
         <h2>Due in the next {horizon} days{where ? ` in ${where}` : ""}</h2>
-        {plan.total > 0 && (
+        {workOrders && plan.total > 0 && (
           <div className="maint-create">
             <button onClick={create} disabled={creating}>{creating ? "Creating…" : createLabel(plan)}</button>
             <span className="lib-date">{createDetail(plan)}</span>
@@ -377,7 +389,7 @@ function DueTab({ rows, horizon, onHorizon, locations, locationId, onLocation, o
         <p className="lib-date">{here.length === 0 ? "Nothing due there." : "Nothing due matches."}</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
-          <thead><tr><th>Task</th><th>On</th><th>Due</th><th>Work order</th></tr></thead>
+          <thead><tr><th>Task</th><th>On</th><th>Due</th><th>{workOrders ? "Work order" : "Done"}</th></tr></thead>
           <tbody>
           {groupDue(shown).map((g) => (
             <Fragment key={g.key}>
@@ -388,7 +400,7 @@ function DueTab({ rows, horizon, onHorizon, locations, locationId, onLocation, o
                       {g.package.active === false && <span className="lib-date"> · paused</span>}</>
                     : "Not in a package"}
                   <span className="lib-date"> · {g.tasks.length} {g.tasks.length === 1 ? "task" : "tasks"}</span>
-                  {g.package && g.package.active !== false && !g.tasks.every((t) => t.open_work_order) && (
+                  {workOrders && g.package && g.package.active !== false && !g.tasks.every((t) => t.open_work_order) && (
                     <button type="button" className="secondary sm maint-group-btn" disabled={raising === g.package.id}
                             onClick={() => raise(g.package)}>
                       {raising === g.package.id ? "Raising…" : "Raise this visit"}
@@ -401,7 +413,8 @@ function DueTab({ rows, horizon, onHorizon, locations, locationId, onLocation, o
                   <td>{t.name}</td>
                   <td><SubjectCell subject={t.subject} at={t.at} /></td>
                   <td className="maint-nowrap"><DueChip task={t} /></td>
-                  <td>{t.open_work_order
+                  <td>{!workOrders ? <RecordDone task={t} onDone={onCreated} />
+                    : t.open_work_order
                     ? <Link to={workOrderPath(t.open_work_order.id)}>#{t.open_work_order.number}</Link>
                     : <span className="lib-date">none yet</span>}</td>
                 </tr>

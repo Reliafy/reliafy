@@ -2647,6 +2647,12 @@ export function getWorkOrder(id) {
 export function closeWorkOrder(id, body) {
   return postJson(`/api/maintenance/work-orders/${id}/close`, body);
 }
+// Work done, recorded with no work order (work orders turned off, workOrdersFlag.js):
+// {position_id | item_id | location_id | task_id, task_id?, actions?, on?, notes?, readings?}.
+// A task done renews like closing its work order; actions are a close's. Returns {on, task, …}.
+export function recordWorkDone(body) {
+  return postJson("/api/maintenance/work-done", body);
+}
 // Readings and settings taken at a work order, recorded now ([{point_id, value, task_id?}]): returns the work order.
 export function recordWorkOrderReadings(id, readings) {
   return postJson(`/api/maintenance/work-orders/${id}/readings`, { readings });

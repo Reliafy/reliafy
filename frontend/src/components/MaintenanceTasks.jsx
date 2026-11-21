@@ -9,6 +9,7 @@ import { subjectPath, taskUnits, whileStoredText } from "../maintenanceSubjects.
 import { AGE_NOTE, TASK_HINT, tooLong } from "../maintenanceText.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import HowOften from "./HowOften.jsx";
+import { workDoneRows } from "../workDone.js";
 import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
 
 // What a task's "how often" shows under it: the next dates, from when it was last done (else today).
@@ -17,6 +18,9 @@ function preview(how, task) {
   const p = howOftenPreview(how, { from: task?.last_done || day, after: !!task?.last_done, anchor: taskAnchor(task, day) });
   return { dates: p.dates, datesLead: p.lead, datesAfter: p.after, datesNote: p.note };
 }
+
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { RecordDone } from "./RecordDone.jsx";
 
 // What a task on each kind of subject is for, under the Add task form.
 const SUBJECT_NOTES = {
@@ -31,6 +35,8 @@ const SUBJECT_NOTES = {
 // the fitted item's own tasks show too (they fall due on their own, and leave with it).
 export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters = [], onChanged, emptyText }) {
   const navigate = useNavigate();
+  // Work orders turned off (workOrdersFlag.js): each task is recorded as done on its row.
+  const workOrders = useWorkOrdersOn();
   const [modal, setModal] = useState(null);
   const [error, setError] = useState(null);
   const done = () => { setModal(null); onChanged(); };
@@ -60,7 +66,8 @@ export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters
         </button>
       </td>
       <td><DueChip task={t} />{t.proposal && <div><span className="maint-badge">change proposed</span></div>}</td>
-      <td>{t.open_work_order
+      <td>{!workOrders ? <RecordDone task={t} onDone={onChanged} />
+        : t.open_work_order
         ? <Link to={`/maintenance/work-orders/${t.open_work_order.id}`}>#{t.open_work_order.number}</Link>
         : <button className="secondary" onClick={() => workOrderFor(t)}>Create</button>}</td>
       <td><button className="crumb-link" onClick={() => setModal({ task: t })}>Edit</button></td>
@@ -78,9 +85,12 @@ export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters
         <p className="lib-date">{emptyText || "No scheduled tasks yet."}</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
-          <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>Work order</th><th><span className="sr-only">Edit</span></th></tr></thead>
+          <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>{workOrders ? "Work order" : "Done"}</th><th><span className="sr-only">Edit</span></th></tr></thead>
           <tbody>{rows(tasks, false)}{rows(itemTasks, true)}</tbody>
         </table></div>
+      )}
+      {!workOrders && (tasks.length > 0 || itemTasks.length > 0) && (
+        <p className="lib-date">Record a task done on its row, or set when it was last done: its next due date counts from then.</p>
       )}
       {modal === "add" && <AddTaskModal subject={subject} modes={modes} counters={counters} onClose={() => setModal(null)} onDone={done} />}
       {modal?.task && <TaskModal task={modal.task} modes={modes} onClose={() => setModal(null)} onDone={done} />}
@@ -267,6 +277,10 @@ function LastDoneModal({ task, onClose, onDone }) {
 // The work orders on an item or a location, newest first.
 export function WorkOrdersCard({ workOrders, emptyText = "None yet." }) {
   const navigate = useNavigate();
+  // Turned off (workOrdersFlag.js): the work orders are kept, only not shown.
+  // Turned off (workOrdersFlag.js): the work done, as a plain history (no work-order pages).
+  const shown = useWorkOrdersOn();
+  if (!shown) return <WorkDoneHistory workOrders={workOrders} />;
   return (
     <section className="card">
       <div className="maint-head"><h2>Work orders</h2></div>
@@ -280,6 +294,34 @@ export function WorkOrdersCard({ workOrders, emptyText = "None yet." }) {
                 <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                 <td>{w.type}</td><td>{w.status}</td>
                 <td className="lib-date">{fmtDate(w.opened)}</td><td className="lib-date">{fmtDate(w.closed)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
+    </section>
+  );
+}
+
+// With work orders turned off (workOrdersFlag.js): the work done on a position, an
+// item or a location, newest first, from the closed work orders the server still
+// lists (Record what was done records one too). Plain rows: there's no work-order
+// page to open while they're off.
+export function WorkDoneHistory({ workOrders = [], action = null, children = null }) {
+  const rows = workDoneRows(workOrders);
+  return (
+    <section className="card">
+      <div className="maint-head maint-wrap"><h2>Work done</h2>{action}</div>
+      {children}
+      {rows.length === 0 ? <p className="lib-date">Nothing recorded yet.</p> : (
+        <div className="maint-scroll"><table className="lib-table">
+          <thead><tr><th>Done on</th><th>What</th><th>Kind</th></tr></thead>
+          <tbody>
+            {rows.map((w) => (
+              <tr key={w.id} className="maint-plain-row">
+                <td className="lib-date maint-nowrap">{fmtDate(w.on)}</td>
+                <td>{w.title}{w.what && <div className="lib-date">{w.what}</div>}</td>
+                <td className="lib-date">{w.kind}</td>
               </tr>
             ))}
           </tbody>

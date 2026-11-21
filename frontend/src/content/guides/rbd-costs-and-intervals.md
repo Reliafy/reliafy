@@ -42,7 +42,7 @@ Each row has:
   came from calendar dates.
 - **Task**: **Run to failure**, **Replace at age** (replaced when it reaches
   this age since it was last replaced; a failure restarts the clock, as the
-  work orders count it), **Replace at fixed times** (at every multiple of the
+  work orders, or the tasks recorded done, count it), **Replace at fixed times** (at every multiple of the
   interval, whatever its age: a package on fixed dates), **Inspect on condition** (inspected, and replaced when the
   chance of failing before the next inspection is too high) or **Proof test**
   (its failures stay hidden until a test finds them).

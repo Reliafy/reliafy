@@ -2,6 +2,7 @@ import { useState } from "react";
 import { logPositionEvent } from "../api.js";
 import { SHORT_TEXT, tooLong } from "../maintenanceText.js";
 import { Field, FormModal } from "./MaintenanceParts.jsx";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
 
 // Log an event at a position (the tree's row menu "Log an event…", or the
 // Summary tab's Work area): something that happened there, in your words (a
@@ -10,6 +11,7 @@ import { Field, FormModal } from "./MaintenanceParts.jsx";
 // order (one per event: none while one is open). `today` is the workspace's
 // day; onDone gets the server's answer ({event, work_orders_raised}).
 export default function LogEventModal({ positionId, positionName, today, onClose, onDone }) {
+  const workOrders = useWorkOrdersOn();
   const [eventType, setEventType] = useState("");
   const [note, setNote] = useState("");
   const [when, setWhen] = useState(today || "");
@@ -21,7 +23,8 @@ export default function LogEventModal({ positionId, positionName, today, onClose
     <FormModal title="Log an event" submitLabel="Log it" pendingLabel="Logging…" canSubmit={canSubmit}
                onClose={onClose} onSubmit={submit}>
       <p className="lib-date fr-modal-where">At <strong>{positionName || "this position"}</strong></p>
-      <p className="lib-date">Tasks here, or inside it, set to run on this event raise their work orders.</p>
+      <p className="lib-date">{workOrders ? "Tasks here, or inside it, set to run on this event raise their work orders."
+        : "It's kept in the position's history. Record the work it led to on the tasks it sets off."}</p>
       <Field label="What happened" text={eventType} max={SHORT_TEXT}>
         <input autoFocus value={eventType} placeholder="e.g. Lightning strike" onChange={(e) => setEventType(e.target.value)} />
       </Field>
