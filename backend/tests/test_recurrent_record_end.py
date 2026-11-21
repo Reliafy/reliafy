@@ -48,7 +48,8 @@ def test_typed_end_of_test_gives_the_time_terminated_answer():
     assert payload["beta"] == pytest.approx(beta, rel=1e-4)
     assert payload["mtbf"] == pytest.approx(mtbf, rel=1e-4)
     assert payload["end_of_observation"] == END
-    assert payload["termination"] == {"kind": "time", "end": END, "source": "value"}
+    assert payload["termination"] == {"kind": "time", "end": END, "source": "value",
+                                     "ends": [{"end": END, "systems": ["P1"]}]}
     assert not any(w["id"] == "no_record_end" for w in payload.get("warnings") or [])
 
 
@@ -56,7 +57,8 @@ def test_end_of_record_column_gives_the_same_answer():
     df = pd.read_csv(CSV).assign(test_end=END)
     payload, _ = rec.fit(df, {**MAPPING, "tr": "test_end"}, "crow_amsaa", "hours", gof_test=False)
     assert payload["beta"] == pytest.approx(_closed_form(END)[0], rel=1e-4)
-    assert payload["termination"] == {"kind": "time", "end": END, "source": "data"}
+    assert payload["termination"] == {"kind": "time", "end": END, "source": "data",
+                                     "ends": [{"end": END, "systems": ["P1"]}]}
 
 
 def test_nothing_given_is_failure_terminated_and_says_so():

@@ -1202,6 +1202,13 @@ def _recurrent_evidence(r: dict) -> dict:
     if term:
         out["record_ends"] = ("time-terminated (an end of test or end of record was given)"
                               if term["kind"] == "time" else "failure-terminated: each system ends at its last failure")
+        ends = term.get("ends") or []
+        if 1 < len(ends) <= 3:  # each system's own end, so a record cut short is seen
+            out["record_ends"] += "; " + "; ".join(
+                f"{', '.join(g['systems']) if len(g['systems']) <= 2 else str(len(g['systems'])) + ' systems'} "
+                f"to {_sig(g['end'])}" for g in ends)
+    if r.get("subset"):
+        out["fitted_systems"] = r["subset"]
     out["rocof"] = _sig(r.get("rocof"))
     if r.get("rocof_ci"):
         out["rocof_ci"] = [_sig(v) for v in r["rocof_ci"]]
