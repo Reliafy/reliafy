@@ -178,7 +178,14 @@
 .section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: 12px; }
 .section-tags .chip { font-size: 12px; padding: 1px 8px; }
 .section-tags .linkish { font-size: 12px; }
-.ds-units { font-size: 13px; white-space: nowrap; color: var(--text-secondary); }
+.ds-units { font-size: 13px; color: var(--text-secondary); }
+/* The breakdown after a dataset's first two facts wraps beneath them, so one
+   long summary (interval data) can't stretch the column and push the page
+   sideways. */
+.ds-units-more { font-size: var(--fs-12); margin-top: 1px; }
+/* The name is what people scan: it keeps room, and a long unbroken one wraps. */
+.ds-lib .lib-table td:first-child, .ds-lib .lib-table th:first-child { min-width: 220px; }
+.ds-lib .ds-row-link { overflow-wrap: anywhere; }
 .ds-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px;
   display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; text-align: left; }
@@ -192,7 +199,7 @@
 @media (max-width: 640px) {
   .ds-units-h { width: 34%; }
   .section-tags { margin-left: 0; }
-  .ds-units { white-space: normal; font-size: 12px; }
+  .ds-units { font-size: 12px; }
 }
 .ds-tu { font-size: 13px; color: var(--text-secondary); }
 .ds-tu-none { color: var(--text-disabled); }

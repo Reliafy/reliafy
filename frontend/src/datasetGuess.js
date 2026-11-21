@@ -282,6 +282,15 @@ export function likelyStatusColumns(columns) {
   };
 }
 
+// A dataset's size line in two: the first two facts ("40 valves · 15 failed")
+// stay on one short line, the breakdown after them ("23 failed between
+// inspections · 2 found failed at the first inspection") goes on a second line
+// the column can wrap, so one long summary never stretches the list.
+export function sizeLines(summary) {
+  const parts = String(summary || "").split(" · ").filter(Boolean);
+  return { head: parts.slice(0, 2).join(" · "), rest: parts.slice(2).join(" · ") };
+}
+
 // A pandas dtype in plain words, for a preview's column heads.
 export function dtypeLabel(dtype) {
   const d = String(dtype || "");
@@ -303,9 +312,33 @@ export function nameSaysDistribution(name, distribution) {
 // authoritative parse. ``noHeader``: the first row is data (col 1, col 2, …).
 function sniff(text) {
   const first = text.split(/\r?\n/).find((l) => l.trim()) || "";
-  const counts = { "\t": (first.match(/\t/g) || []).length, ",": (first.match(/,/g) || []).length, ";": (first.match(/;/g) || []).length };
+  // A delimiter inside quotes ("14,010") isn't one: count only the ones outside.
+  const outside = first.replace(/"(?:[^"]|"")*"/g, "");
+  const counts = { "\t": (outside.match(/\t/g) || []).length, ",": (outside.match(/,/g) || []).length, ";": (outside.match(/;/g) || []).length };
   const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
   return best[1] > 0 ? best[0] : ",";
+}
+
+// One line split on the delimiter the way a CSV reader does: a cell in double
+// quotes keeps its delimiters ("14,010" is one cell) and "" inside it is a
+// quote. The preview shows what the server will read, so it must not tear
+// quoted cells apart.
+export function splitCells(line, delim = ",") {
+  const cells = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
+      } else cell += ch;
+    } else if (ch === '"' && cell === "") quoted = true;
+    else if (ch === delim) { cells.push(cell); cell = ""; }
+    else cell += ch;
+  }
+  cells.push(cell);
+  return cells.map((c) => c.trim());
 }
 // Does the first row look like data rather than column names (#434)? True
 // when every cell is a number ("300,544966.3125"): the file was saved without
@@ -334,7 +367,7 @@ export function parsePreview(text, { rows = 5, noHeader = false } = {}) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < (noHeader ? 1 : 2)) return null;
   const d = sniff(text);
-  const split = (l) => l.split(d).map((c) => c.trim());
+  const split = (l) => splitCells(l, d);
   const nCols = split(lines[0]).length;
   const columns = noHeader ? Array.from({ length: nCols }, (_, i) => `col ${i + 1}`) : split(lines[0]);
   const data = noHeader ? lines : lines.slice(1);
