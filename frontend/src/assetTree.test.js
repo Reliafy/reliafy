@@ -712,10 +712,12 @@ test("a place by positions: its positions under the way up to them, the way up m
   assert.deepEqual(names(d, d.rows.get(viaKey("vehicles")).kids), ["Bicycle", "Family Car"]);
   assert.deepEqual(names(d, d.rows.get("pool").kids), ["Pool pump", "Lights"]);
   assert.deepEqual(d.rows.get(viaKey("lights")).kids, ["light"]);
-  // Every position once, keyed by its own id; the ancestors are never position rows.
+  // Every position once, keyed by its own id; the ancestors are never position rows in the tree,
+  // and are keyed by their own ids too (a link to one, ?sel=house, finds it).
   assert.equal([...d.rows.values()].filter((r) => r.type === "pos").length, PLACE.positions.length);
   assert.equal(d.positions, PLACE.positions.length);
-  assert.equal(d.rows.has("house"), false);
+  assert.equal(viaKey("house"), "house");
+  assert.equal(house.ref.id, "house");
   assert.equal(d.rows.get(viaKey("house")).depth, 0);
   assert.equal(d.rows.get("ac").depth, 2);
   // Roll-ups count the positions inside it, nothing of its own.
@@ -727,10 +729,10 @@ test("a place by positions: its positions under the way up to them, the way up m
 
 test("a place by locations or classes leaves the way up out", () => {
   const byLoc = buildDisplay(PLACE, "locations");
-  assert.equal([...byLoc.rows.keys()].some((k) => k.startsWith("via:")), false);
+  assert.equal([...byLoc.rows.values()].some((r) => r.ref?.via === true), false);
   assert.deepEqual(byLoc.rows.get("garage").kids, ["bike", "car"]);
   const byCls = buildDisplay({ ...PLACE, classes: [] }, "classes");
-  assert.equal([...byCls.rows.keys()].some((k) => k.startsWith("via:")), false);
+  assert.equal([...byCls.rows.values()].some((r) => r.ref?.via === true), false);
 });
 
 test("a via with no ancestor sent (another asset's parent): the position stays a top", () => {

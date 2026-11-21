@@ -430,3 +430,59 @@ test("positions built from a product's design count under their design position,
     { position_class: "UAV › Motor 1", class_key: "design:m1", here: 2 },
   ]);
 });
+
+// ---- Tabs at every level of the tree (Derryn, 21 Nov 2026) ------------------------------------
+// A place opened by Positions shows the positions above its own (House > Outdoor & grounds) as
+// via rows. Picking one took the tab bar away (a group: Summary alone). It's a position: the
+// panel shows it with every tab a position has, each reading what's there and below it.
+import { buildDisplay, panelRow, isViaRow } from "./assetTree.js";
+
+const PLACE_TREE = {
+  positions: [
+    { id: "pool", name: "Swimming Pool", parent_id: null, via: "outdoor", location_id: "yard" },
+    { id: "pump", name: "Pool pump", parent_id: "pool", location_id: "yard" },
+    { id: "stray", name: "Stray", parent_id: null, carried_by: { id: "it1", name: "Loose item" } },
+  ],
+  ancestors: [
+    { id: "house", name: "House", parent_id: null },
+    { id: "outdoor", name: "Outdoor & grounds", parent_id: "house" },
+  ],
+};
+
+test("a position above a place's positions (a via row) has a position's whole tab bar", () => {
+  const d = buildDisplay(PLACE_TREE, "positions");
+  for (const id of ["house", "outdoor"]) {
+    const tree = d.rows.get(id);
+    assert.ok(isViaRow(tree), id);
+    assert.equal(hasTabBar(tree), false); // as the tree has it: a muted group
+    const row = panelRow(tree);
+    assert.equal(row.type, "pos");
+    assert.equal(row.key, id); // its own id: the tabs read the position's own records
+    assert.equal(rowKind(row), "Position");
+    assert.equal(hasTabBar(row), true);
+    assert.deepEqual(labels(panelTabsFor(row)), labels(panelTabsFor(asset)));
+    assert.deepEqual(tabsFor(row).map((t) => t.id), tabsFor({ type: "pos", ref: {} }).map((t) => t.id));
+    // On the RCM tab (or any tree-table tab), picking it keeps that tab.
+    for (const t of ["rcm", "fmea", "maintenance", "lsa", "measurements", "models", "missions", "reports", "condition"]) {
+      assert.equal(shownTab(t, row), t, `${id} ${t}`);
+    }
+    // The same object each time, so a body reading on the row doesn't read again.
+    assert.equal(panelRow(tree), row);
+  }
+});
+
+test("every other row is itself in the panel; a group made for the arrangement keeps Summary alone", () => {
+  const d = buildDisplay(PLACE_TREE, "positions");
+  const pool = d.rows.get("pool");
+  assert.equal(panelRow(pool), pool);
+  assert.equal(hasTabBar(pool), true);
+  const loose = d.rows.get("G:loose");
+  assert.equal(loose.type, "group");
+  assert.equal(isViaRow(loose), false);
+  assert.equal(panelRow(loose), loose);
+  assert.equal(hasTabBar(loose), false);
+  assert.equal(shownTab("rcm", loose), "summary");
+  assert.equal(panelRow(null), null);
+  // An item: Summary, Monitoring › Readings and History.
+  assert.equal(hasTabBar(d.rows.get("it1")), true);
+});

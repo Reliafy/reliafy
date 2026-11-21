@@ -183,7 +183,10 @@ export function shownTab(wanted, row) {
 }
 
 // Does the row's panel have a tab bar? With two tabs or more, and with one that isn't Summary
-// (an item class's Condition monitoring): a row with Summary alone (a group) has none.
+// (an item class's Condition monitoring): a row with Summary alone has none. That's only a group
+// made for the arrangement ("No home yet", "No class", "Elsewhere"): a position above a place's
+// positions is a group in the tree but a position in the panel (assetTree.js panelRow), with
+// every tab a position has.
 export function hasTabBar(row) {
   const tabs = tabsFor(row);
   return tabs.length > 1 || (tabs.length === 1 && tabs[0].id !== DEFAULT_TAB);

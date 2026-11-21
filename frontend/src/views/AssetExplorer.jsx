@@ -94,7 +94,7 @@ import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
   ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, arrivalNamed, arrivalRoot, assetOf, assetOfId, opensAsset, rcmPositionOf, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth, treeColumnWidth,
-  filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
+  filterOpen, flatten, levelSet, loadTreeState, panelRow, saveTreeState,
 } from "../assetTree.js";
 import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
@@ -2307,8 +2307,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   );
 
   // The panel shows the row from the whole tree, so its way up is the whole path.
-  const row = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
-  const posRow = selPos != null ? display.rows.get(selPos) : null;
+  // A via row (a position above a place's positions, assetTree.js VIA) is shown as the position it
+  // is (panelRow): its heading, its tab bar and every tab a position has. `treeRow`: the row as
+  // the tree has it, for the row's own actions (none on a via row, as in its row menu).
+  const treeRow = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
+  const row = panelRow(treeRow);
+  const posRow = selPos != null ? panelRow(display.rows.get(selPos)) : null;
   // ?fit_prior=<library record> (the Library page's Use as a prior…): the fit opens in the table
   // area on the position picked with that record as the prior; with none picked, the tab says to pick one.
   const fitPrior = params.get("fit_prior");
@@ -2536,7 +2540,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null}
                 message={message?.fade ? msg : null} />
   );
-  const tabsRow = tableOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
+  // On a tree-table tab the tabs are for the position picked; any other row that has the tab on
+  // show (an item on the Measurements tab) keeps them too, so picking a row never takes them away.
+  const tabsRow = tableOn ? (posRow && (posRow.type === "pos" || tabsFor(posRow).some((t) => t.id === tab)) ? posRow : null) : summaryRow;
   const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "cause" && focusRow.type !== "nofail" ? cellRow(focusRow) : null;
   // The FME(C)A tab with a position picked: its criticality matrix beside the table.
@@ -2668,7 +2674,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
                     tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={root} structure={structure}
                     menu={tabMenu || []} onMenu={setTabMenu}
-                    actions={summaryActionsOf(data && !nothing ? row : null)} />
+                    actions={summaryActionsOf(data && !nothing ? treeRow : null)} />
       )}
     </section>
   );
