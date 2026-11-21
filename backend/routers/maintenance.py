@@ -567,7 +567,7 @@ def _rcm_read(session, ctx: AccessCtx, fn, *args, m: Maintenance | None = None) 
         out = fn(*args)
         if "positions" in out:
             return rcm_graph.resolve(session, out, ctx.read_owners, ctx.hidden, m=m)
-        return rcm_graph.mode_status(session, out, ctx.read_owners, ctx.hidden)
+        return rcm_graph.mode_status(session, out, ctx.read_owners, ctx.hidden, m=m)
     return _run(go)
 
 
@@ -770,7 +770,7 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
                                      body["decision"] if "decision" in body else ..., task_id=body.get("task_id"),
                                      hidden=body["hidden"] if "hidden" in body else ...)
     try:
-        return _rcm_read(session, ctx, go)
+        return _rcm_read(session, ctx, go, m=m)
     except access_service.UnreadableReference as exc:
         return JSONResponse(status_code=exc.status, content={"detail": client_message(exc), "code": "unreadable_reference"})
 
@@ -977,18 +977,46 @@ def _interval(fn, body: dict, names: tuple) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
+def _interval_clock(ctx: AccessCtx, body: dict, unit_key: str) -> dict:
+    """The task card's calculator on a task that belongs to a position: ``body`` without its
+    ``failure_mode_id`` / ``position_id``, plus that position's ``hours_per_day`` and ``clock``
+    (running_clock: its duty, else 24 h a day) when ``body[unit_key]`` is in running hours. A
+    position the reader can't open, or none given: the calculation as it stands alone."""
+    from backend.maintenance.rbd_tree_plan import maintenance_for
+    from backend.services import running_clock
+
+    body = dict(body)
+    mode_id, position_id = body.pop("failure_mode_id", None), body.pop("position_id", None)
+    unit = body.get(unit_key)
+    if not (mode_id or position_id) or not (running_clock.is_running_hours(unit) or running_clock.is_use(unit)):
+        return body
+    m = maintenance_for(ctx)
+    if m is None:
+        return body
+    try:
+        if not position_id:
+            position_id = m._live_mode(str(mode_id))[1]["id"]
+        m._any(str(position_id))
+    except Exception:  # noqa: BLE001 - not one the reader has: stand-alone
+        return body
+    clock = running_clock.for_position(m, str(position_id))
+    return {**body, "hours_per_day": clock.hours_per_day, "clock": clock.to_dict()}
+
+
 @router.post("/rcm/interval/on-condition")
-def rcm_interval_on_condition(body: dict = Body(...), user: dict = Depends(get_current_user)) -> JSONResponse:
+def rcm_interval_on_condition(body: dict = Body(...), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """How often to check for a warning that comes a P-F interval (pf_interval in pf_unit) before the
     failure: from the P-F interval alone, half of it, or the net P-F interval (less act_time, the time needed
     to act) when tighter. Costs are optional: with the cost of a check, of fixing a warning found (found_cost)
     and of a failure, and the onset rate (failures a year), cost_optimal adds the cheapest interval and whether
     the check pays. detection_probability: the chance a check finds the warning (default 1). With
-    current_interval and current_unit, the task's numbers now too; unit: the unit to answer in."""
+    current_interval and current_unit, the task's numbers now too; unit: the unit to answer in. With
+    failure_mode_id (or position_id), a P-F interval in running hours meets the calendar at the position's
+    duty, else 24 h a day (unit_conversion says which)."""
     from backend.services import rcm_intervals
     from backend.services.strategy_store import ON_CONDITION_INPUTS
 
-    return _interval(rcm_intervals.on_condition_interval, body, ON_CONDITION_INPUTS)
+    return _interval(rcm_intervals.on_condition_interval, _interval_clock(ctx, body, "pf_unit"), ON_CONDITION_INPUTS)
 
 
 @router.post("/rcm/interval/failure-finding")
@@ -998,13 +1026,15 @@ def rcm_interval_failure_finding(body: dict = Body(...), session=Depends(get_ses
     mean unavailability within target_unavailability, or without one the cheapest (test_cost, repair_cost,
     demand_rate a year, consequence_cost). The device: failure_rate (a year), a saved model (model_id) or
     distribution_id + params with model_unit. With current_interval and current_unit, the numbers at the
-    task's interval now too."""
+    task's interval now too. With failure_mode_id (or position_id), a model in running hours meets the
+    calendar at the position's duty, else 24 h a day (unit_conversion says which)."""
     from backend.services import models as models_service
     from backend.services import rcm_intervals
     from backend.services.strategy_store import FAILURE_FINDING_INPUTS
 
     body = dict(body)
     model_id = body.pop("model_id", None)
+    where = {k: body.pop(k) for k in ("failure_mode_id", "position_id") if k in body}
     if model_id:
         model = models_service.get_model(session, model_id, ctx.read_owners)
         if model is None or model.id in ctx.hidden:
@@ -1015,6 +1045,7 @@ def rcm_interval_failure_finding(body: dict = Body(...), session=Depends(get_ses
             return JSONResponse(status_code=422, content={"detail": client_message(exc)})
         body.update({"distribution_id": given["distribution_id"], "params": given["params"],
                      "extras": given["extras"], "model_unit": body.get("model_unit") or given["unit"]})
+    body = _interval_clock(ctx, {**body, **where}, "model_unit")
     return _interval(rcm_intervals.failure_finding_interval, body, FAILURE_FINDING_INPUTS)
 
 

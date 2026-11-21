@@ -69,3 +69,15 @@ test("a plan keeps its utilisation through the form and says it", () => {
   assert.equal(planWords(plan), "About 3 hours a day, 82% utilisation");
   assert.equal(planFromForm({ ...form, utilisation: null }).plan.utilisation, undefined);
 });
+
+test("other use at a rate (400 km a day) goes with the plan and back", () => {
+  const form = { ...formFromPlan(null, "2026-11-23"), use: { amount: "400", meter: "km", per: "day" } };
+  const { plan, problem } = planFromForm(form);
+  assert.equal(problem, undefined);
+  assert.deepEqual(plan.meters, [{ meter: "km", amount: 400, per: "day" }]);
+  assert.equal(planWords(plan), "Monday to Friday, 06:00 to 22:00; about 400 km a day");
+  assert.deepEqual(formFromPlan({ plan }, "2026-11-23").use, { amount: "400", meter: "km", per: "day" });
+  assert.match(planFromForm({ ...form, use: { amount: "400", meter: "", per: "day" } }).problem, /what the other use counts/);
+  assert.match(planFromForm({ ...form, use: { amount: "5", meter: "starts", per: "day" } }).problem, /come from how it runs/);
+  assert.equal(planFromForm(formFromPlan(null, "2026-11-23")).plan.meters, undefined);
+});

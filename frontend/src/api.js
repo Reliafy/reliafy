@@ -288,6 +288,8 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
       extras: extras || null,
       use_per_year: more.use_per_year ?? null,
       units: more.units ?? null,
+      // From a position (the Explorer's Strategy pane): running hours on the calendar at its duty.
+      ...(more.position_id ? { position_id: more.position_id } : {}),
     }),
   });
 }
@@ -1755,6 +1757,7 @@ export function failureFinding(distributionId, params, targetAvailability, unit,
       test_duration: more.test_duration ?? null,
       test_cost: more.test_cost ?? null,
       renewed_at_test: more.renewed_at_test ?? true,
+      ...(more.position_id ? { position_id: more.position_id } : {}),
     }),
   });
 }

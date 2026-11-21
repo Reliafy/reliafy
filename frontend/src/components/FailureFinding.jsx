@@ -74,7 +74,8 @@ export default function FailureFinding({ modelId = null, target = null, extraInp
       const body = { ...current, ...savedInputs(model) };
       const res = await failureFinding(
         body.distribution_id, body.params, body.target_availability, body.unit, body.extras,
-        { test_duration: body.test_duration, test_cost: body.test_cost, renewed_at_test: body.renewed_at_test },
+        { test_duration: body.test_duration, test_cost: body.test_cost, renewed_at_test: body.renewed_at_test,
+          position_id: extraInputs?.position_id },
       );
       setResult(res);
       setInputs(body);
@@ -124,6 +125,9 @@ export default function FailureFinding({ modelId = null, target = null, extraInp
 
       {error && <div className="error">{error}</div>}
 
+      {result?.calendar && (
+        <p className="hint" data-testid="ffi-calendar">On the calendar: {result.calendar.note.replace(/\.$/, "")}.</p>
+      )}
       {result && (
         <FfiResult
           result={result}

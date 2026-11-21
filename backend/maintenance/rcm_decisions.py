@@ -358,10 +358,18 @@ def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
     analysis in hours, a task in days) are no mismatch: the evidence is read
     in the task's unit (:func:`_unit_conversion`).
     """
+    from backend.services import running_clock
+
     task_unit = _norm_unit(decision.get("interval_unit"))
     ev_unit = _norm_unit(evidence_unit)
     if _unit_conversion(decision, evidence_unit) is not None:
         return None
+    clock = _clock(decision)
+    if clock is not None and running_clock.same_clock(decision.get("interval_unit"), evidence_unit):
+        return None  # flight hours and hours at a position: both its running hours
+    why = running_clock.refusal(evidence_unit, decision.get("interval_unit"), clock, "evidence")
+    if why:
+        return {"status": "inconclusive", "reason": why}
     if task_unit and ev_unit and task_unit != ev_unit:
         return {
             "status": "inconclusive",
@@ -374,23 +382,37 @@ def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
     return None
 
 
+def _clock(decision: dict):
+    """The position's clock a decision is checked at (running_clock.Clock), or None off a
+    position (an RCM study): set by :func:`resolve_decision`."""
+    return decision.get("_clock")
+
+
 def _unit_conversion(decision: dict, evidence_unit) -> dict | None:
     """``{"from", "to", "factor"}`` when the evidence's unit converts to the task interval's
-    (hours, days, weeks, months, years to each other; km and miles); None otherwise."""
-    from backend.services import model_units
+    (hours, days, weeks, months, years to each other; km and miles); None otherwise. On a
+    position, running hours (hours, operating or flight hours) meet the calendar at its duty,
+    else all the time (running_clock)."""
+    from backend.services import running_clock
 
-    return model_units.conversion({"unit": evidence_unit}, decision.get("interval_unit"))
+    return running_clock.conversion(evidence_unit, decision.get("interval_unit"), _clock(decision))
 
 
-def _with_conversion(result: dict, decision: dict, evidence_unit) -> dict:
+def _with_conversion(result: dict, decision: dict, evidence_unit, amount=None) -> dict:
     """An evidence check's result with what it converted said: "evidence in hours, task
-    interval in days: converted at 1 day = 24 hours" (on the summary too)."""
+    interval in days: converted at 1 day = 24 hours" off a position; on one, "1,000 h ≈ 125
+    days at this position's duty (8 h a day)" (``amount``: the evidence's interval, in its
+    unit) (on the summary too)."""
     conv = _unit_conversion(decision, evidence_unit)
     if conv is None or result.get("status") == "inconclusive":
         return result
-    from backend.services import model_units
+    from backend.services import running_clock
 
-    note = model_units.used_note(conv, "task interval", "evidence")
+    try:
+        amount = float(amount) if amount is not None else None
+    except (TypeError, ValueError):
+        amount = None
+    note = running_clock.note(conv, amount if conv.get("clock") is not None else None, "task interval", "evidence")
     out = {**result, "unit_conversion": note}
     if out.get("summary"):
         out["summary"] = f"{out['summary']} ({note[:1].upper()}{note[1:]}.)"
@@ -722,11 +744,14 @@ def finish_rollup(rollup: dict) -> dict:
     return {**rollup, "undecided": max(0, rollup["modes"] - rollup["decided"]), "state": rollup_state(rollup)}
 
 
-def resolve_decision(decision: dict, fetch) -> dict:
+def resolve_decision(decision: dict, fetch, clock=None) -> dict:
     """A decision's evidence status ({status, reason or summary, artifact_name,
     artifact_link_path, expected_evidence, evidence_kind}) against what
     ``fetch`` finds. A combination of tasks is checked member by member
-    (_resolve_combination)."""
+    (_resolve_combination). ``clock``: the position's (running_clock.for_position),
+    so running hours meet a calendar interval at its duty; None off a position."""
+    if clock is not None:
+        decision = {**decision, "_clock": clock}
     if len(decision.get("outcomes") or []) > 1:
         return _resolve_combination(decision, fetch)
     out = _resolve_decision(decision, fetch)
@@ -801,7 +826,7 @@ def _resolve_member(member: dict, decision: dict, fetch) -> dict:
     if outcome == "redesign" and not (evidence and evidence["type"] in LINKED_TYPES):
         return {"status": None}
     as_one = {"outcome": outcome, "interval": member.get("interval"), "interval_unit": member.get("interval_unit"),
-              "evidence": evidence, "working": working}
+              "evidence": evidence, "working": working, "_clock": _clock(decision)}
     out = _resolve_decision(as_one, fetch)
     if evidence:
         out |= {"evidence_kind": evidence_kind(evidence["type"]), "evidence_from": source}
@@ -934,7 +959,8 @@ def _resolve_decision(decision: dict, fetch) -> dict:
             return {**base, **mismatch}
         conv = _unit_conversion(decision, (artifact.results or {}).get("unit"))
         return {**base, **_with_conversion(_check_replacement(artifact, want_beneficial=True, conv=conv), decision,
-                                           (artifact.results or {}).get("unit"))}
+                                           (artifact.results or {}).get("unit"),
+                                           (artifact.results or {}).get("optimal_time"))}
     if outcome == "on_condition":
         mismatch = _unit_mismatch(decision, (artifact.results or {}).get("unit"))
         if mismatch:
@@ -954,12 +980,12 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         if mismatch:
             return {**base, **mismatch}
         if artifact.kind == "failure_finding_interval":
-            from backend.services.rcm_intervals import DAYS_IN
-            from backend.units import normalize_unit
+            from backend.services import running_clock
 
             longest = None
-            if r.get("basis") == "target" and r.get("interval") and DAYS_IN.get(normalize_unit(r.get("unit"))):
-                longest = float(r["interval"]) * DAYS_IN[normalize_unit(r["unit"])]
+            per = running_clock.days_in(r.get("unit"), _clock(decision))
+            if r.get("basis") == "target" and r.get("interval") and per:
+                longest = float(r["interval"]) * per
             return {**base, **_interval_summary(r, decision, longest, "the longest that meets the target")}
         interval = r.get("interval")
         if interval is not None:
@@ -967,21 +993,21 @@ def _resolve_decision(decision: dict, fetch) -> dict:
             return {**base, **_with_conversion({
                 "status": "supported",
                 "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."},
-                decision, r.get("unit"))}
+                decision, r.get("unit"), interval)}
         return {**base, "status": "inconclusive", "reason": "The analysis has no computed interval."}
     return {**base, "status": "inconclusive", "reason": "Unrecognised decision."}
 
 
 def _task_days(decision: dict):
-    """The task's interval in days, or None when it has none or its unit isn't a time."""
-    from backend.services.rcm_intervals import DAYS_IN
-    from backend.units import normalize_unit
+    """The task's interval in days, or None when it has none or its unit isn't a time (on a
+    position, running hours are days at its duty: running_clock)."""
+    from backend.services import running_clock
 
     try:
         interval = float(decision.get("interval"))
     except (TypeError, ValueError):
         return None
-    factor = DAYS_IN.get(normalize_unit(decision.get("interval_unit")))
+    factor = running_clock.days_in(decision.get("interval_unit"), _clock(decision))
     return interval * factor if factor else None
 
 
@@ -1006,11 +1032,10 @@ def _check_on_condition_interval(decision: dict, analysis) -> dict:
     mismatch = _unit_mismatch(decision, r.get("unit"))
     if mismatch:
         return mismatch
-    from backend.services.rcm_intervals import DAYS_IN
-    from backend.units import normalize_unit
+    from backend.services import running_clock
 
     pf_days = None
-    factor = DAYS_IN.get(normalize_unit(r.get("pf_unit")))
+    factor = running_clock.days_in(r.get("pf_unit"), _clock(decision))
     if factor and r.get("pf_interval"):
         # The net P-F interval: the warning less the time needed to act on it.
         pf_days = (float(r["pf_interval"]) - float(r.get("act_time") or 0)) * factor

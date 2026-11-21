@@ -177,6 +177,7 @@ are all the running there is, and the background resumes after them with no gap.
 are the site's clock, to the minute.
 - plan.utilisation? (0.01 to 1): the share of the planned running that happens; every planned hour counts that \
 much. Leave it out for all of it.
+- plan.meters? [{meter: 'km', amount: 400, per: 'day'}]: use that isn't time, at a rate (km, cycles, landings; not hours or starts, which come from how it runs). A model in that unit meets the calendar at it.
 - maintenance get.operating_plan (id: a position or an item; root: the asset opened) gives its plan or the \
 nearest above it inside root (inherited_from), its own plans past and planned, hours_per_week (the background's \
 ordinary week), days: the next 14 days' runs and hours (real hours in the plan's time zone; where set runs hand \

@@ -27,6 +27,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/strategy")
 
 
+def _position_clock(ctx: AccessCtx, position_id, unit) -> dict:
+    """Run from a position (the Explorer's Strategy pane, or MCP analyse with position_id) with a
+    model in running hours or in use (km, cycles): the position's clock, ``{"clock"}``, and
+    ``"hours_per_day"`` (the model's units a day there: its duty's hours, else 24; its km a day)
+    when the duty gives a rate in that unit (running_clock). Without one, the clock alone: the
+    calculators then say plainly why the model can't meet the calendar. Empty otherwise (no
+    position, a calendar or blank unit, or a position the reader can't read)."""
+    from backend.maintenance.rbd_tree_plan import maintenance_for
+    from backend.services import running_clock
+
+    if not position_id or not (running_clock.is_running_hours(unit) or running_clock.is_use(unit)):
+        return {}
+    m = maintenance_for(ctx)
+    if m is None:
+        return {}
+    try:
+        m._any(str(position_id))
+    except Exception:  # noqa: BLE001 - not a position the reader has: stand-alone
+        return {}
+    clock = running_clock.for_position(m, str(position_id))
+    rate = clock.per_day(unit)
+    return {"clock": clock.to_dict(), **({"hours_per_day": rate[0]} if rate else {})}
+
+
 @router.post("/optimal-replacement")
 def optimal_replacement_endpoint(
     distribution_id: str = Body(...),
@@ -37,16 +61,19 @@ def optimal_replacement_endpoint(
     extras: dict | None = Body(default=None),
     use_per_year: float | None = Body(default=None),
     units: float | None = Body(default=None),
-    user: dict = Depends(get_current_user),
+    position_id: str | None = Body(default=None, max_length=200),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Compute the cost-optimal preventive-replacement interval (and the
-    block-replacement alternative; the saving a year with ``use_per_year``)."""
+    block-replacement alternative; the saving a year with ``use_per_year``). With
+    ``position_id`` and a model in running hours, ``calendar`` gives the interval in days at
+    the position's duty (else running all the time)."""
     try:
         return JSONResponse(
-            content=strategy_service.optimal_replacement(
-                distribution_id, params, planned_cost, unplanned_cost, unit=unit,
-                extras=extras, use_per_year=use_per_year, units=units,
-            )
+            content=strategy_store.compute("optimal_replacement", {
+                "distribution_id": distribution_id, "params": params, "planned_cost": planned_cost,
+                "unplanned_cost": unplanned_cost, "unit": unit, "extras": extras, "use_per_year": use_per_year,
+                "units": units, **_position_clock(ctx, position_id, unit)})
         )
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -111,8 +138,9 @@ def calendar_replacement_endpoint(
     mc_samples: int | None = Body(default=None),
     seed: int | None = Body(default=None),
     horizon_months: int | None = Body(default=None),
+    position_id: str | None = Body(default=None, max_length=200),
     session=Depends(get_session),
-    user: dict = Depends(get_current_user),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """The long-run best replacement rule over a calendar of shuts (today is
     time 0). The exact methods (``dp``, ``integration``) answer here and are
@@ -124,7 +152,10 @@ def calendar_replacement_endpoint(
         "max_age": max_age, "method": method, "mc_samples": mc_samples, "seed": seed,
         "horizon_months": horizon_months,
     }
+    user = ctx.user
     try:
+        # Run from a position: its running hours meet the shut dates at its duty (running_clock).
+        inputs.update(_position_clock(ctx, position_id, unit))
         code, payload = strategy_calendar_api.run(
             session, user, inputs, entitled=billing_service.premium_compute_allowed(session, user))
         return JSONResponse(status_code=code, content=payload)
@@ -150,17 +181,19 @@ def calendar_next_endpoint(
     max_age: float | None = Body(default=None),
     age: float | None = Body(default=None),
     now_cost: float | None = Body(default=None),
-    user: dict = Depends(get_current_user),
+    position_id: str | None = Body(default=None, max_length=200),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """One unit in service on the calendar: replace it now, at the next shut,
-    between shuts, or run it to failure, with break-even ages (exact, free)."""
+    between shuts, or run it to failure, with break-even ages (exact, free). With
+    ``position_id``, a model in running hours meets the dates at its duty."""
     if age is None:
         return JSONResponse(status_code=422, content={"detail": "Enter the unit's age."})
     try:
         return JSONResponse(content=strategy_calendar.calendar_next(
             distribution_id, params, age=age, now_cost=now_cost, extras=extras, unit=unit, today=today,
             opportunities=opportunities, failure_cost=failure_cost, anytime_cost=anytime_cost,
-            max_age=max_age,
+            max_age=max_age, **_position_clock(ctx, position_id, unit),
         ))
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -230,17 +263,18 @@ def failure_finding_endpoint(
     test_duration: float | None = Body(default=None),
     test_cost: float | None = Body(default=None),
     renewed_at_test: bool = Body(default=True),
-    user: dict = Depends(get_current_user),
+    position_id: str | None = Body(default=None, max_length=200),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Failure-finding interval for a hidden failure (protective device),
-    from the model's curve, with its 90% one-sided bound."""
+    from the model's curve, with its 90% one-sided bound. With ``position_id`` and a model
+    in running hours, ``calendar`` gives the interval in days at the position's duty."""
     try:
         return JSONResponse(
-            content=strategy_service.failure_finding(
-                distribution_id, params, target_availability, unit=unit,
-                extras=extras, test_duration=test_duration, test_cost=test_cost,
-                renewed_at_test=renewed_at_test,
-            )
+            content=strategy_store.compute("failure_finding", {
+                "distribution_id": distribution_id, "params": params, "target_availability": target_availability,
+                "unit": unit, "extras": extras, "test_duration": test_duration, "test_cost": test_cost,
+                "renewed_at_test": renewed_at_test, **_position_clock(ctx, position_id, unit)})
         )
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -331,6 +365,10 @@ def save_analysis(
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
     try:
+        if kind in ("optimal_replacement", "failure_finding", "calendar_replacement") and \
+                (inputs or {}).get("position_id") and "clock" not in (inputs or {}):
+            # Saved from a position: the duty it was run at is kept with it, so it recomputes the same.
+            inputs = {**inputs, **_position_clock(ctx, inputs["position_id"], inputs.get("unit"))}
         doc = strategy_store.save_analysis(session, name, kind, inputs, ctx.write_owner)
         access_service.stamp_editor(session, "strategy_analyses", doc.id, ctx)
     except StrategyError as exc:

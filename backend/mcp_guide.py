@@ -104,6 +104,14 @@ hours diagram) and blank units aren't converted; analyses warn about those.
 kind (a model in days, unit=months) converts the model and answers in that unit (unit_conversion says so); \
 RCM evidence in another time unit is read in the task interval's unit; a class model by use in km proposes for \
 a task in miles.
+- At a position, running hours (hours, operating, running or flight hours) meet a calendar interval at its \
+duty: its operating plan's hours a day over the year ahead (its own or the one above it), else all the time, \
+24 h a day. That covers RCM evidence, class proposals, forecasts, the spares for the year and a Strategy \
+calculation run from a position (calendar on the answer; position_id on analyse optimal_replacement, \
+failure_finding_interval, calendar_replacement and calendar_next_replacement), and the task card's P-F and \
+failure-finding calculators. Each says which way it went ("1,000 h ≈ 125 days at this position's duty (8 h a \
+day)"). A model in km or cycles meets the calendar only at a duty with a rate in it (plan.meters: 400 km a \
+day); otherwise it's refused, saying so. Off a position, plain hours are calendar hours; cycles and km don't convert.
 - Rates: an exponential failure_rate is per unit time (1/MTBF). An MTBF or MTTR can be given as a block's mean \
 (with its shape, e.g. weibull {beta}) instead of params.
 - Imported diagram files that state no unit come back with unit_warning: ask, then pass time_unit (or change \

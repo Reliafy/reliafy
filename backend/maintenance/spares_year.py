@@ -37,7 +37,7 @@ from datetime import date, timedelta
 
 from backend.maintenance import service as svc
 from backend.maintenance.service import Invalid, Maintenance
-from backend.services import spares
+from backend.services import running_clock, spares
 from backend.services import spares_year as engine
 
 MAX_POSITIONS = 2000
@@ -233,8 +233,10 @@ def _renewed_age(m: Maintenance, pos: dict, fitment: dict, unit: str, per_day: f
             continue
         if svc._is_calendar(task["unit"]):
             done = task.get("last_done")
-            if done and done >= fitment["from"] and unit in svc.CALENDAR_UNITS:
-                since = (today - date.fromisoformat(done)).days / svc._DAYS_PER[unit]
+            if done and done >= fitment["from"] and (unit in svc.CALENDAR_UNITS or (per_day and unit == "hours")):
+                days = (today - date.fromisoformat(done)).days
+                # A life in running hours: the days since, at the rate it runs (its duty, else 24 h a day).
+                since = days / svc._DAYS_PER[unit] if unit in svc.CALENDAR_UNITS else days * per_day
                 if since < best:
                     best, why = since, f"from {task['name']}, last done {done}"
             continue
@@ -298,6 +300,8 @@ def _units(m: Maintenance, positions: list[dict], *, root, horizon_days: float, 
                         why = use["reason"]
                     else:
                         age, per_day, basis = use["age"], use["per_day"], use["basis"]
+                        if use.get("clock"):
+                            unit["clock"] = use["clock"]  # no counter: its duty, else all the time
             if why is None:
                 age, renewed = _renewed_age(m, pos, fitment, life_unit, per_day, age, tasks)
                 unit.update(dist=dist, age=age, per_day=per_day, model=label, unit=life_unit, rate_basis=basis,
@@ -355,13 +359,20 @@ def _fleet_units(m: Maintenance, top: dict, size: int, hours_per_day, horizon_da
             continue
         dist, life_unit, label, why = _life(m, pos, fetch, False)
         per_day = 0.0
+        # Hours a day each unit runs: as asked, else the design position's duty, else all the time
+        # (running_clock; Derryn, 21 Nov 2026).
+        clock = None if hours_per_day else running_clock.for_position(m, pos["id"])
+        run_hours = float(hours_per_day) if hours_per_day else (clock.hours_per_day if clock.converts else 0.0)
         if why is None:
             if life_unit in svc.CALENDAR_UNITS:
                 per_day = 1.0 / svc._DAYS_PER[life_unit]
-            elif life_unit == "hours" and hours_per_day:
-                per_day = float(hours_per_day)
+            elif life_unit == "hours" and run_hours:
+                per_day = run_hours
+            elif life_unit != "hours" and clock is not None and clock.per_day(life_unit):
+                per_day = clock.per_day(life_unit)[0]  # use at the design position's duty: 400 km a day
             else:
-                why = f"this life is in {life_unit}: say how many {life_unit} a day each unit runs"
+                why = (running_clock.refusal(life_unit, "days", clock or running_clock.CONTINUOUS)
+                       or f"this life is in {life_unit}: say how many {life_unit} a day each unit runs")
         if why and fail_parts:
             not_forecast.append({"position": brief, "reason": why})
             dist = None
@@ -372,8 +383,10 @@ def _fleet_units(m: Maintenance, top: dict, size: int, hours_per_day, horizon_da
             unit_t = svc._norm_unit(task["unit"]) or "days"
             if unit_t in svc.CALENDAR_UNITS:
                 every = float(task["interval"]) * svc._DAYS_PER[unit_t]
-            elif unit_t == "hours" and hours_per_day:
-                every = float(task["interval"]) / float(hours_per_day)
+            elif unit_t == "hours" and run_hours:
+                every = float(task["interval"]) / run_hours
+            elif clock is not None and clock.per_day(unit_t):
+                every = float(task["interval"]) / clock.per_day(unit_t)[0]
             else:
                 continue
             k = 1
@@ -386,7 +399,8 @@ def _fleet_units(m: Maintenance, top: dict, size: int, hours_per_day, horizon_da
             units.append({"id": f"{pos['id']}#{n + 1}", "label": f"{pos.get('name', '')} (unit {n + 1})",
                           "position": brief, "seed": _seed(f"{pos['id']}#{n + 1}"), "dist": dist, "age": 0.0,
                           "per_day": per_day, "fail_parts": fail_parts,
-                          "planned": [dict(p) for p in planned], "model": label, "unit": life_unit})
+                          "planned": [dict(p) for p in planned], "model": label, "unit": life_unit,
+                          **({"clock": clock.to_dict()} if clock is not None and life_unit not in svc.CALENDAR_UNITS else {})})
     return units, not_forecast
 
 
@@ -563,6 +577,14 @@ def spares_year(m: Maintenance, scope: dict | None = None, *, months=12, service
         notes.append(f"No items are built from it yet: a planned fleet of {ctx['fleet_size']}, each new today.")
     if any(u.get("age_from") for u in ctx["units"]):
         notes.append("An item renewed by a fixed-interval task counts its age from its last replacement.")
+    clocked = [u for u in ctx["units"] if u.get("clock")]
+    if clocked:
+        cont = sum(1 for u in clocked if u["clock"]["basis"] == "continuous")
+        notes.append(f"{len(clocked)} position{'s' if len(clocked) != 1 else ''} with a life in running hours and no "
+                     "hours counter: "
+                     + ("hours from their duty." if not cont else
+                        "hours assuming it runs all the time (24 h a day; no duty set)." if cont == len(clocked) else
+                        "hours from their duty where one is set, else running all the time (24 h a day)."))
     return {"scope": ctx["kind"], "of": ctx["what"], "today": today, "end": end, "months": opts["months"],
             "horizon_days": horizon, "sims": ctx["events"]["sims"], "rule": engine.RULE,
             "service_level": opts["service_level"], "lead_time_days": opts["lead_time_days"],
@@ -577,6 +599,7 @@ def _unit_brief(u: dict) -> dict:
             "age": round(float(u["age"]), 3) if u.get("dist") is not None else None,
             "per_day": round(float(u["per_day"]), 4) if u.get("dist") is not None else None,
             "age_from": u.get("age_from"),
+            **({"clock": u["clock"]} if u.get("clock") else {}),
             "planned": [{"day": p["day"], "task": p.get("label"), "min_age": p.get("min_age")}
                         for p in u["planned"][:20]]}
 

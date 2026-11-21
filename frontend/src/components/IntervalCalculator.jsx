@@ -180,8 +180,10 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     try {
       const b = body();
       let out;
-      if (calc.key === "pf") out = await rcmOnConditionInterval(b);
-      else if (calc.key === "ff") out = await rcmFailureFindingInterval(b);
+      // The failure mode's position: running hours meet the calendar at its duty (else 24 h a day).
+      const where = r?.ref?.id ? { failure_mode_id: r.ref.id } : {};
+      if (calc.key === "pf") out = await rcmOnConditionInterval({ ...b, ...where });
+      else if (calc.key === "ff") out = await rcmFailureFindingInterval({ ...b, ...where });
       else {
         const m = b.model;
         out = await optimalReplacement(m.distribution_id, m.params, b.planned_cost, b.unplanned_cost, m.unit, m.extras);
@@ -206,7 +208,9 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     const inputs = calc.key === "fixed"
       ? { distribution_id: sent.model.distribution_id, params: sent.model.params, planned_cost: sent.planned_cost,
           unplanned_cost: sent.unplanned_cost, unit: sent.model.unit || null, extras: sent.model.extras || null }
-      : { ...Object.fromEntries(Object.entries(sent).filter(([, v]) => v !== null)), unit: use.unit };
+      : { ...Object.fromEntries(Object.entries(sent).filter(([, v]) => v !== null)), unit: use.unit,
+          // The duty it was worked out at, so the saved analysis gives the same answer.
+          ...(result.out.clock ? { hours_per_day: result.out.clock.hours_per_day, clock: result.out.clock } : {}) };
     const line = rationale(calc.key, { ...sent, target_assumed: form.targetAssumed && Number(form.target) === 1,
       model_name: sent.model?.name }, result.out, use);
     try {

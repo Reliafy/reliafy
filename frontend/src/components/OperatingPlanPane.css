@@ -9,6 +9,7 @@
 .op-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
 .op-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .op-num { width: 5rem; }
+.op-unit { width: 6rem; }
 .op-grow { flex: 1 1 14rem; }
 .op-grow input { flex: 1 1 10rem; min-width: 0; }
 .op-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }

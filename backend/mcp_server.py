@@ -6673,8 +6673,23 @@ _DIST_ID = Annotated[Optional[str], Field(description="Inline distribution id, e
 _PARAMS = Annotated[Optional[list[Param]], Field(description="Inline params, e.g. [{name: alpha, value: 1200}, "
                                                              "{name: beta, value: 2.1}].")]
 _UNIT = Annotated[Optional[str], Field(description="Time unit for the answer, e.g. hours.")]
+_POSITION_ID = Annotated[Optional[str], Field(description="Run for a maintenance position: a model in running hours "
+                                                            "meets dates at its duty (else 24 h a day).")]
 _INCLUDE_CURVE = Annotated[bool, Field(description="Also return the ~200-point cost-rate curve (for plotting). "
                                                    "Off by default to keep the answer small.")]
+
+
+def _position_clock(user: dict, position_id: Optional[str], unit) -> dict:
+    """{hours_per_day, clock} for a calculator run for ``position_id`` with a model in running hours (the
+    REST twin's routers.strategy._position_clock): its duty, else 24 h a day; {} otherwise."""
+    if not position_id:
+        return {}
+    from backend.routers.strategy import _position_clock as clock_for
+
+    try:
+        return clock_for(_reader(user), position_id, unit)
+    except StrategyError as exc:
+        raise ToolError(str(exc)) from None
 
 
 def _maybe_curve(result: dict, include: bool) -> dict:
@@ -6757,6 +6772,7 @@ def optimal_replacement(
     use_per_year: Annotated[Optional[float], Field(gt=0, description="Use a unit runs a year (model units): adds "
                                                                      "yearly, the saving a year.")] = None,
     units: Annotated[Optional[float], Field(gt=0, description="Units in the fleet: the saving a year for all.")] = None,
+    position_id: _POSITION_ID = None,
 ) -> dict[str, Any]:
     """The cost-optimal age-replacement interval for a component with a known life
     model; beneficial=false means run to failure is cheaper; block is the block-replacement alternative. For a saved
@@ -6767,7 +6783,8 @@ def optimal_replacement(
     converted = inputs.pop("unit_conversion", None)
     costs = {"planned_cost": planned_cost, "unplanned_cost": unplanned_cost}
     out = strategy_store.compute("optimal_replacement", {**inputs, **costs, "use_per_year": use_per_year,
-                                                         "units": units})
+                                                         "units": units,
+                                                         **_position_clock(user, position_id, inputs["unit"])})
     out.update(_shape_uncertainty(db, user["uid"], model_id, inputs, costs, out))
     return _with_conversion(_maybe_curve(out, include_curve), converted)
 
@@ -6826,12 +6843,14 @@ def calendar_replacement(
         description="dp (default) or integration: exact, free; sampling: Pro, long cycles.")] = "dp",
     include_schedule: Annotated[bool, Field(description="List every shut in the next 12 months.")] = False,
     wait_seconds: Annotated[float, Field(ge=0, le=60, description="sampling: wait this long for the job.")] = 20,
+    position_id: _POSITION_ID = None,
 ) -> dict[str, Any]:
     """The long-run best replacement rule over a calendar of shuts (today = time 0): the threshold age at each shut,
     the cost against running to failure and plain age replacement, and the next 12 months by date."""
     user, db = _caller(ctx), _db()
     inputs = {**_calendar_inputs(db, user["uid"], model_id, distribution_id, params, unit, shuts, failure_cost,
                                  anytime_cost, today, max_age), "method": method}
+    inputs.update(_position_clock(user, position_id, inputs["unit"]))
     entitled = billing_service.premium_compute_allowed(db, user)
     note = None
     if method == "sampling" and not entitled:
@@ -6870,12 +6889,14 @@ def calendar_next_replacement(
                                                                  "any-day cost, or a shut's falling today).")] = None,
     today: _TODAY = None,
     max_age: Annotated[Optional[float], Field(gt=0, description="Oldest age considered (model units).")] = None,
+    position_id: _POSITION_ID = None,
 ) -> dict[str, Any]:
     """For one unit in service on a shut calendar: replace it now, at the next shut, between shuts or run it to failure,
     each choice's cost and the age from which replacing now pays."""
     user, db = _caller(ctx), _db()
     inputs = _calendar_inputs(db, user["uid"], model_id, distribution_id, params, unit, shuts, failure_cost,
                               anytime_cost, today, max_age)
+    inputs.update(_position_clock(user, position_id, inputs["unit"]))
     try:
         out = strategy_calendar.calendar_next(inputs.pop("distribution_id"), inputs.pop("params"), age=age,
                                               now_cost=now_cost, **inputs)
@@ -6896,6 +6917,7 @@ def failure_finding_interval(
     test_cost: Annotated[Optional[float], Field(ge=0, description="Cost per test.")] = None,
     renewed_at_test: Annotated[bool, Field(description="Each test renews the device (overhauled or replaced); "
                                                        "false: a working one is left as it was.")] = True,
+    position_id: _POSITION_ID = None,
 ) -> dict[str, Any]:
     """The proof-test interval keeping a hidden protective function (relief valve,
     trip, standby unit) at a target availability, from the model's curve; interval_bound is the cautious 90%
@@ -6906,7 +6928,8 @@ def failure_finding_interval(
     converted = inputs.pop("unit_conversion", None)
     target = {"target_availability": target_availability, "test_duration": test_duration, "test_cost": test_cost,
               "renewed_at_test": renewed_at_test}
-    out = strategy_store.compute("failure_finding", {**inputs, **target})
+    out = strategy_store.compute("failure_finding", {**inputs, **target,
+                                                     **_position_clock(user, position_id, inputs["unit"])})
     out.update(_ffi_shape_uncertainty(db, user["uid"], model_id, inputs, target, out))
     return _with_conversion(out, converted)
 
