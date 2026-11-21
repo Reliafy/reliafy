@@ -459,10 +459,11 @@ FAILURE_REPORTS: Table = {
         item_id (default: the item fitted there that day; kept as a snapshot). by: who files it (default: you)."""),
     "update": ("report_id", "title description occurred_on found_by consequence failure_mode_id failure_mode_text "
                "item_id", "Change a report's own fields while it's open ('' clears the failure mode or item)."),
-    "set_status": ("report_id status", "note duplicate_of", """Move it along: reported, investigating,
+    "set_status": ("report_id status", "note duplicate_of tested_with", """Move it along: reported, investigating,
         corrective_action, verifying (any direction), closed (needs a verification that worked or was unclear;
-        note = the sign-off) or rejected (note = the reason; duplicate_of = the other report's id). From closed
-        or rejected the only move is back to an open status."""),
+        note = the sign-off), rejected (note = the reason; duplicate_of = the other report's id) or
+        no_fault_found (tested, nothing wrong: note = the finding, tested_with = how; kept as a removal, never a
+        failure). From closed, rejected or no_fault_found the only move is back to an open status."""),
     "investigate": ("report_id", "notes root_cause_category root_cause whys", """The investigation, saved whole (a
         field left out keeps its value): notes, root_cause_category (design, material, installation, operation,
         maintenance, wear, environment, unknown, other), root_cause in words, whys (up to 7 lines)."""),
@@ -1452,7 +1453,7 @@ def register() -> None:
                     "proposals": ("pending", "accepted", "rejected", "superseded", "all"),
                     "packages": ("active", "paused", "retired", "all"),
                     "failure_reports": ("open", "reported", "investigating", "corrective_action", "verifying",
-                                        "closed", "rejected", "all")}
+                                        "closed", "rejected", "no_fault_found", "all")}
         if status is not None and status not in statuses[kind]:
             raise ToolError(f"kind '{kind}' takes status {', '.join(statuses[kind])}.")
         if kind == "events":
@@ -2135,10 +2136,12 @@ def register() -> None:
             failure_mode_id: str | None = None, failure_mode_text: str | None = None, item_id: str | None = None,
             by: Annotated[str | None, Field(description="Who did it (default: the signed-in user).")] = None,
             status: Annotated[Literal["reported", "investigating", "corrective_action", "verifying", "closed",
-                                      "rejected", "open", "done", "dropped"] | None, Field(description=(
+                                      "rejected", "no_fault_found", "open", "done", "dropped"] | None,
+                              Field(description=(
                 "set_status: the report's (reported, investigating, corrective_action, verifying, closed, "
-                "rejected). update_action: the action's (open, done, dropped)."))] = None,
-            note: str | None = None, duplicate_of: str | None = None, notes: str | None = None,
+                "rejected, no_fault_found). update_action: the action's (open, done, dropped)."))] = None,
+            note: str | None = None, duplicate_of: str | None = None, tested_with: str | None = None,
+            notes: str | None = None,
             root_cause_category: Literal["design", "material", "installation", "operation", "maintenance", "wear",
                                          "environment", "unknown", "other"] | str | None = None,
             root_cause: str | None = None, whys: list[str] | None = None, what: str | None = None,
@@ -2167,7 +2170,8 @@ def register() -> None:
                     "failure_mode_text", "item_id")
             return run(m.update_failure_report, report_id, by=who, **{k: v for k, v in edits.items() if k in keep})
         if action == "set_status":
-            return run(m.set_failure_report_status, report_id, status, note or "", duplicate_of, by=who)
+            return run(m.set_failure_report_status, report_id, status, note or "", duplicate_of, tested_with or "",
+                       by=who)
         if action == "investigate":
             return run(m.investigate_failure_report, report_id, notes, root_cause_category, root_cause, whys, by=who)
         if action == "add_action":

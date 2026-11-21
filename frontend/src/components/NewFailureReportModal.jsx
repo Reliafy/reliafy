@@ -37,8 +37,10 @@ export default function NewFailureReportModal({ positionId, positionName, today,
 
   const modes = position?.failure_modes || [];
   const classModes = position?.class_failure_modes || [];
+  const aboveModes = position?.failure_modes_above || [];
+  const listed = (id) => modes.some((m) => m.id === id) || aboveModes.some((g) => g.modes.some((m) => m.id === id));
   // A mode the report names that the position no longer lists (an ad-hoc one): kept as a choice.
-  const extraMode = editing && report.failure_mode && !modes.some((m) => m.id === report.failure_mode.id)
+  const extraMode = editing && report.failure_mode && !listed(report.failure_mode.id)
     ? [{ id: report.failure_mode.id, text: report.failure_mode.text }] : [];
   const fitted = position?.fitted?.item || null;
   const itemLine = editing ? itemText(report.item) : fitted ? itemText({ ...fitted, exists: true }) : "";
@@ -94,7 +96,7 @@ export default function NewFailureReportModal({ positionId, positionName, today,
         <p className="fr-modal-item">
           {positionError ? <span className="lib-date">Couldn't read what's fitted: {positionError}</span>
             : !position && !editing ? <span className="lib-date">Loading…</span>
-            : itemLine || <span className="lib-date">Nothing fitted at this position</span>}
+            : itemLine || <span className="lib-date">Nothing fitted at this position. The report is kept at the position, with no item.</span>}
         </p>
       </Field>
       <fieldset className="fr-radios">
@@ -109,7 +111,7 @@ export default function NewFailureReportModal({ positionId, positionName, today,
       </fieldset>
       <Field label="Failure mode">
         {positionError && !editing ? <span className="lib-date">Couldn't read the position's failure modes.</span>
-          : <FailureModePicker modes={[...extraMode, ...modes]} classModes={classModes} value={mode} onChange={setMode} />}
+          : <FailureModePicker modes={[...extraMode, ...modes]} aboveModes={aboveModes} classModes={classModes} value={mode} onChange={setMode} />}
       </Field>
     </FormModal>
   );

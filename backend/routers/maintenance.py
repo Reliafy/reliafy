@@ -512,9 +512,10 @@ def update_failure_report(report_id: str, body: dict = Body(...), ctx: AccessCtx
 @router.post("/failure-reports/{report_id}/status")
 def set_failure_report_status(report_id: str, body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
                               m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Move it along: {status, note?, duplicate_of?}. closed needs a verification; rejected needs a note."""
+    """Move it along: {status, note?, duplicate_of?, tested_with?}. closed needs a verification;
+    rejected and no_fault_found need a note (the reason; the finding)."""
     return _run(m.set_failure_report_status, report_id, body.get("status"), body.get("note", ""),
-                body.get("duplicate_of"), by=_who(ctx, body))
+                body.get("duplicate_of"), body.get("tested_with", ""), by=_who(ctx, body))
 
 
 @router.put("/failure-reports/{report_id}/investigation")

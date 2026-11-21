@@ -19,11 +19,11 @@ import NewFailureReportModal from "./NewFailureReportModal.jsx";
 
 // One failure report, in the Failure reports tab in place of the list: its
 // stage on the loop (Reported › Investigating › Corrective action › Verifying
-// › Closed, with Rejected aside), the facts, then the loop's cards in order,
+// › Closed, with Rejected and No fault found aside), the facts, then the loop's cards in order,
 // the one for the stage it's at open: Investigation (notes, root cause, the
 // whys), Corrective actions (what, who, by when, done or dropped), Verification
-// (did it work? with the repeat check beside it), Close (the sign-off) and
-// Reject (the reason, a duplicate). Photos, then every change at the bottom.
+// (did it work? with the repeat check beside it), Close (the sign-off), No fault
+// found (tested, nothing wrong: kept as a removal) and Reject (the reason, a duplicate). Photos, then every change at the bottom.
 // Every save shows a short message and the report as the server now has it;
 // a refusal shows the server's words. `onStatusChanged`: the tree's roll-up
 // counts open reports, so it's read again when a report opens or closes.
@@ -371,6 +371,28 @@ function Reject({ report, onReject, busy }) {
   );
 }
 
+// No fault found: the removal was tested and nothing was wrong. The report ends
+// here but is kept as a removal (it used a spare and labour), never a failure.
+function NoFaultFound({ onSave, busy }) {
+  const [finding, setFinding] = useState("");
+  const [tested, setTested] = useState("");
+  return (
+    <div className="rcm-form fr-form">
+      <p className="lib-date">Kept as a removal: it doesn't count as a failure in the life data, so a life it ended is counted as still working when it came off.</p>
+      <Field label="What the test found">
+        <input value={finding} placeholder="e.g. Passed every test, no fault found" onChange={(e) => setFinding(e.target.value)} />
+      </Field>
+      <Field label="How it was tested (optional)" text={tested} max={SHORT_TEXT}>
+        <input value={tested} placeholder="e.g. Depot test set TS-2, with thermal soak" onChange={(e) => setTested(e.target.value)} />
+      </Field>
+      <div className="fr-form-foot">
+        <button type="button" className="secondary" disabled={busy || !finding.trim() || tooLong(tested)}
+                onClick={() => onSave(finding.trim(), tested.trim())}>{busy ? "Saving…" : "Record no fault found"}</button>
+      </div>
+    </div>
+  );
+}
+
 export default function FailureReportDetail({ id, today, viewOnly, onBack, onStatusChanged }) {
   const confirm = useConfirm();
   const { user } = useAuth();
@@ -487,6 +509,13 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
         </p>
       )}
       {report.status === "closed" && report.closed && <p className="fr-signoff td-ok">{signOffText("Closed", report.closed, fmtDate)}</p>}
+      {report.status === "no_fault_found" && report.no_fault_found && (
+        <p className="fr-signoff">
+          {signOffText("No fault found", report.no_fault_found, fmtDate)}
+          {report.no_fault_found.tested_with && <span className="lib-date"> · tested with {report.no_fault_found.tested_with}</span>}
+          <span className="lib-date"> · kept as a removal, not a failure</span>
+        </p>
+      )}
       {viewOnly && <p className="lib-date">{viewOnly}</p>}
 
       <section className="card td-card fr-card">
@@ -498,8 +527,8 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
           <div><dt>When</dt><dd>{fmtDate(report.occurred_on)}<span className="lib-date"> · reported {fmtDate(report.filed_on)}</span></dd></div>
           <div><dt>Who found it</dt><dd>{report.found_by || <span className="lib-date">Not said</span>}</dd></div>
           <div><dt>Position</dt><dd>{path || p.name || "—"}</dd></div>
-          <div><dt>Item</dt><dd>{itemText(report.item) || <span className="lib-date">Nothing fitted at the time</span>}</dd></div>
-          <div><dt>Failure mode</dt><dd>{report.failure_mode ? <>{report.failure_mode.text}{report.failure_mode.ad_hoc && <span className="lib-date"> (not in the RCM)</span>}</> : <span className="lib-date">Not known</span>}</dd></div>
+          <div><dt>Item</dt><dd>{itemText(report.item) || <span className="lib-date">None: nothing was fitted at this position at the time</span>}</dd></div>
+          <div><dt>Failure mode</dt><dd>{report.failure_mode ? <>{report.failure_mode.text}{report.failure_mode.on && <span className="lib-date"> (analysed on {report.failure_mode.on.name})</span>}{report.failure_mode.ad_hoc && <span className="lib-date"> (not in the RCM)</span>}</> : <span className="lib-date">Not known</span>}</dd></div>
           <div><dt>Consequence</dt><dd>{consequenceLabel(report.consequence)}</dd></div>
         </dl>
         {lifeDataText(report.life_data, fmtDate) && <p className="lib-date">{lifeDataText(report.life_data, fmtDate)}</p>}
@@ -529,7 +558,15 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
         </Fold>
       )}
       {open && (
-        <Fold id="reject" title="Reject" summary="Not a failure, or a duplicate" open={!isFolded("reject")} onToggle={toggle} className="fr-reject">
+        <Fold id="nff" title="No fault found" summary="Tested and nothing wrong: kept as a removal" open={!isFolded("nff")} onToggle={toggle}>
+          {editable ? (
+            <NoFaultFound busy={busy}
+                          onSave={(note, testedWith) => run(() => setFailureReportStatus(report.id, { status: "no_fault_found", note, tested_with: testedWith || undefined }), `${report.label}: no fault found.`)} />
+          ) : <p className="lib-date">{viewOnly}</p>}
+        </Fold>
+      )}
+      {open && (
+        <Fold id="reject" title="Reject" summary="Not a failure (no removal), or a duplicate" open={!isFolded("reject")} onToggle={toggle} className="fr-reject">
           {editable ? (
             <Reject report={report} busy={busy}
                     onReject={(note, duplicateOf) => run(() => setFailureReportStatus(report.id, { status: "rejected", note, duplicate_of: duplicateOf }), `Rejected ${report.label}.`)} />

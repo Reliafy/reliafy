@@ -20,7 +20,10 @@ export const STATUS_LABELS = {
   verifying: "Verifying",
   closed: "Closed",
   rejected: "Rejected",
+  no_fault_found: "No fault found",
 };
+// The ends outside the loop: a report that doesn't count as a failure.
+export const ASIDE_STATUSES = ["rejected", "no_fault_found"];
 export const statusLabel = (s) => STATUS_LABELS[s] || s || "";
 export const isOpen = (s) => OPEN_STATUSES.includes(s);
 
@@ -33,12 +36,12 @@ export function nextStatus(status) {
 
 // Whether the screen offers a move from one status to another: among the
 // four open ones any direction; closing needs a verification (the Close
-// card, not the stepper); rejecting from any open one; from closed or
-// rejected only back into the loop (a reopen).
+// card, not the stepper); rejecting or no fault found from any open one; from
+// closed, rejected or no fault found only back into the loop (a reopen).
 export function canMoveTo(from, to, { verified = false } = {}) {
   if (from === to || !STATUS_LABELS[to]) return false;
   if (isOpen(from)) {
-    if (isOpen(to) || to === "rejected") return true;
+    if (isOpen(to) || ASIDE_STATUSES.includes(to)) return true;
     return to === "closed" && verified;
   }
   return isOpen(to);
@@ -48,6 +51,7 @@ export function canMoveTo(from, to, { verified = false } = {}) {
 export const STATUS_CHIPS = [
   { id: "open", label: "Open" },
   ...STATUSES.map((s) => ({ id: s, label: STATUS_LABELS[s] })),
+  { id: "no_fault_found", label: "No fault found" },
   { id: "rejected", label: "Rejected" },
   { id: "all", label: "All" },
 ];
@@ -99,8 +103,7 @@ export const stageOf = (report) => report?.status || "reported";
 // filter left. A location or item: "at this location" / "on this item".
 export function countsSentence(counts, scope, { kind = "pos" } = {}) {
   const c = counts || {};
-  const all = ["reported", "investigating", "corrective_action", "verifying", "closed", "rejected"]
-    .reduce((t, k) => t + (c[k] || 0), 0);
+  const all = ALL_STATUSES.reduce((t, k) => t + (c[k] || 0), 0);
   const n = (x, one, many = `${one}s`) => `${(x || 0).toLocaleString("en-AU")} ${x === 1 ? one : many}`;
   const head = `${(c.open || 0).toLocaleString("en-AU")} open · ${all.toLocaleString("en-AU")} in all`;
   const positions = Math.max(0, (scope?.positions ?? 1) - (kind === "pos" ? 1 : 0));
@@ -298,6 +301,34 @@ export function reportLink(r) {
 }
 
 // What a report does to the life data, in words ("" when the server doesn't say).
+// Every status, for totals.
+export const ALL_STATUSES = [...STATUSES, ...ASIDE_STATUSES];
+
+// The positions a report filed on a built item can be at: the item's top
+// position and every position inside it, top first, depth first, each with
+// the way down to it (path, names above it below the top). `rows` is the
+// tree's flat list ({id, name, parent_id}) for that item alone.
+export function positionsWithin(rows, topId) {
+  const kids = new Map();
+  for (const r of rows || []) {
+    if (!kids.has(r.parent_id)) kids.set(r.parent_id, []);
+    kids.get(r.parent_id).push(r);
+  }
+  const top = (rows || []).find((r) => r.id === topId);
+  if (!top) return [];
+  const out = [];
+  const seen = new Set();
+  const walk = (r, path) => {
+    if (seen.has(r.id)) return;
+    seen.add(r.id);
+    out.push({ id: r.id, name: r.name || "(no name)", path });
+    const below = [...(kids.get(r.id) || [])].sort((a, b) => (a.name || "").localeCompare(b.name || "", "en", { numeric: true }));
+    for (const c of below) walk(c, r.id === topId ? [] : [...path, r.name]);
+  };
+  walk(top, []);
+  return out;
+}
+
 export function lifeDataText(life, fmt = (d) => d) {
   if (!life) return "";
   if (!life.counts) return life.why ? `Not in the life data: ${life.why}.` : "";

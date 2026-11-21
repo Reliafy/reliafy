@@ -67,7 +67,7 @@
 .td-pill.st-corrective_action,
 .td-pill.st-verifying { color: var(--accent-text); background: var(--accent-subtle); border-color: var(--accent-border); }
 .td-pill.st-closed { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
-.td-pill.st-rejected { color: var(--text-secondary); background: var(--bg-subtle); }
+.td-pill.st-rejected, .td-pill.st-no_fault_found { color: var(--text-secondary); background: var(--bg-subtle); }
 .td-pill.cons-safety,
 .td-pill.cons-environmental { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); }
 .td-pill.cons-operational { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }

@@ -104,13 +104,17 @@ TASK_SOURCES = ("manual", "oem", "statutory", "other")
 DATE_PRECISIONS = ("exact", "month", "year", "estimated")
 # Failure reports (Nov 2026): a report moves reported → investigating →
 # corrective_action → verifying → closed, or is rejected (not a failure, or a
-# duplicate). The first four are open. Its consequence uses the RCM vocabulary,
+# duplicate), or ends as no fault found (a removal the test found nothing wrong
+# with: kept as a removal, never counted as a failure). The first four are open. Its consequence uses the RCM vocabulary,
 # so a report compares with its failure mode's decision.
-REPORT_STATUSES = ("reported", "investigating", "corrective_action", "verifying", "closed", "rejected")
+REPORT_STATUSES = ("reported", "investigating", "corrective_action", "verifying", "closed", "rejected",
+                   "no_fault_found")
 OPEN_REPORT_STATUSES = REPORT_STATUSES[:4]
 REPORT_STATUS_WORDS = {"reported": "Reported", "investigating": "Investigating",
                        "corrective_action": "Corrective action", "verifying": "Verifying", "closed": "Closed",
-                       "rejected": "Rejected"}
+                       "rejected": "Rejected", "no_fault_found": "No fault found"}
+# The statuses whose report never counts as a failure (life data, repeat checks).
+NOT_FAILURE_STATUSES = ("rejected", "no_fault_found")
 REPORT_CONSEQUENCES = rcm_decisions.CONSEQUENCES + (rcm_decisions.HIDDEN_ALIAS,)
 ROOT_CAUSE_CATEGORIES = ("design", "material", "installation", "operation", "maintenance", "wear", "environment",
                          "unknown", "other")
@@ -152,14 +156,14 @@ class LimitReached(Invalid):
 
 
 WORK_MANAGEMENT_OFF = ("Work management is turned off: Reliafy is set up as reliability software here, so "
-                       "work orders, visits, to-do lists and corrective actions aren't available. Plans, "
-                       "forecasts, history and failure reports work as before.")
+                       "work orders, visits and to-do lists aren't available. Plans, forecasts, history and "
+                       "failure reports (with their corrective actions) work as before.")
 
 
 class WorkManagementOff(Invalid):
     """Work management is turned off (config.WORK_MANAGEMENT): anything about executing
-    work (work orders, package visits, corrective actions, the to-do list) is refused
-    (HTTP 409); the reliability side works as before."""
+    work (work orders, package visits, the to-do list) is refused (HTTP 409); the
+    reliability side works as before, failure reports and their corrective actions included."""
 
     status = 409
 
@@ -2723,14 +2727,27 @@ def _failure_report_status(s: GraphStore, org: str, p: dict) -> None:
     r = s.node(org, p["id"])
     status, note = p["status"], p.get("note", "")
     word = REPORT_STATUS_WORDS.get(status, status)
-    if r.get("status") in ("closed", "rejected") and status in OPEN_REPORT_STATUSES:
+    if r.get("status") in ("closed", "rejected", "no_fault_found") and status in OPEN_REPORT_STATUSES:
         word = f"Reopened as {word.lower()}"
     changes = {"status": status, "closed": None, "rejected": None}
+    if r.get("no_fault_found") is not None:  # only on reports that had one, so older replays are unchanged
+        changes["no_fault_found"] = None
     if status == "closed":
         changes["closed"] = {"on": p["on"], "by": p["by"], "note": note}
     elif status == "rejected":
         changes["rejected"] = {"on": p["on"], "by": p["by"], "note": note, "duplicate_of": p.get("duplicate_of")}
     s.patch_node(org, p["id"], changes | {"history": _report_history(r, p, _report_line(word, note))})
+
+
+def _failure_report_no_fault_found(s: GraphStore, org: str, p: dict) -> None:
+    """failure_report.no_fault_found (Nov 2026): the removal was tested and nothing was
+    wrong. The report ends there (like a rejection) but stays as a removal: the
+    finding (note) and how it was tested are kept; it never counts as a failure."""
+    r = s.node(org, p["id"])
+    finding = {"on": p["on"], "by": p["by"], "note": p.get("note", ""), "tested_with": p.get("tested_with", "")}
+    s.patch_node(org, p["id"], {"status": "no_fault_found", "closed": None, "rejected": None,
+                                "no_fault_found": finding,
+                                "history": _report_history(r, p, _report_line("No fault found", p.get("note")))})
 
 
 def _failure_report_investigated(s: GraphStore, org: str, p: dict) -> None:
@@ -2994,6 +3011,7 @@ PROJECTORS = {
     "failure_report.filed": _failure_report_filed,
     "failure_report.updated": _failure_report_updated,
     "failure_report.status": _failure_report_status,
+    "failure_report.no_fault_found": _failure_report_no_fault_found,
     "failure_report.investigated": _failure_report_investigated,
     "failure_report.action_added": _failure_report_action_added,
     "failure_report.action_updated": _failure_report_action_updated,
@@ -3798,14 +3816,37 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return [fm for fm in self.s.out(self.org, position_id, "CAN_FAIL_AS")
                 if not fm.get("merged_into") and not fm.get("retired")]
 
-    def _mode_ref(self, position_id: str, failure_mode_id=None, failure_mode_text=None) -> tuple | None:
+    def failure_modes_above(self, position_id: str) -> list[dict]:
+        """The failure modes analysed on the positions above this one (its FME(C)A or
+        RCM is often done a level up: a pump set's modes cover its coupling), nearest
+        first: [{position: {id, name}, modes: [{id, text}]}], each position once, those
+        with no modes left out. What a failure report at this position can name."""
+        out, n = [], 0
+        for a in reversed(self._position_path(position_id)):
+            if a.get("kind") != "Position" or n >= MAX_LIST:
+                continue
+            modes = sorted(self._modes_on(a["id"]), key=lambda m: m["text"].lower())[:MAX_LIST - n]
+            if modes:
+                n += len(modes)
+                out.append({"position": {"id": a["id"], "name": a["name"]},
+                            "modes": [{"id": m["id"], "text": m["text"]} for m in modes]})
+        return out
+
+    def _mode_ref(self, position_id: str, failure_mode_id=None, failure_mode_text=None, above=False) -> tuple | None:
         """Check the failure mode a failure names (nothing is written): ("id", id)
-        for one of the position's modes, ("text", text) for one in words, or None."""
+        for one of the position's modes, ("text", text) for one in words, or None.
+        above: a mode on a position above this one may be named too (a failure
+        report: the FME(C)A done a level up)."""
         text = _text(failure_mode_text, "failure mode")
         if failure_mode_id and text:
             raise Invalid("Name the failure mode by its id or in words, not both.")
         if failure_mode_id:
             fm = next((m for m in self.s.out(self.org, position_id, "CAN_FAIL_AS") if m["id"] == failure_mode_id), None)
+            if fm is None and above:
+                ids = {a["id"] for a in self._position_path(position_id) if a.get("kind") == "Position"}
+                holder = self.s.inn(self.org, failure_mode_id, "CAN_FAIL_AS")
+                if holder and holder[0]["id"] in ids:
+                    fm = self.s.node(self.org, failure_mode_id, "FailureMode")
             if fm is None:
                 # A mode moved away is on its new position: say where, so the failure goes there.
                 elsewhere = self.s.inn(self.org, failure_mode_id, "CAN_FAIL_AS")
@@ -15089,6 +15130,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "fitments": [self._fitment_view(f) for f in fitments],
             "failure_modes": [self._mode_view(m) for m in sorted(modes, key=lambda m: m["text"].lower())],
             "class_failure_modes": self.class_failure_modes(id),
+            # The modes analysed above it (a failure report here can name them).
+            "failure_modes_above": self.failure_modes_above(id),
             "tasks": sorted(tasks, key=lambda t: t["next_due"] or "9999"),
             # The fitted item's own tasks: they fall due on their own (and leave with it).
             "item_tasks": self._task_views_on(fitted["item"]["id"]) if fitted and fitted["item"] else [],
@@ -15506,7 +15549,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         found_by = _text(found_by, "name of who found it")
         day = self._not_future(occurred_on, "date it occurred")
         consequence = self._report_consequence(consequence)
-        ref = self._mode_ref(position_id, failure_mode_id or None, failure_mode_text)
+        ref = self._mode_ref(position_id, failure_mode_id or None, failure_mode_text, above=True)
         snapshot = self._report_item_snapshot(str(item_id) if item_id else self._item_fitted_on(position_id, day))
         self._quota("FailureReport", MAX_REPORTS, what="failure reports")
         rid = new_id()
@@ -15541,7 +15584,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             out |= self._report_item_snapshot(changes["item_id"] or None)
         naming_mode = "failure_mode_id" in changes or "failure_mode_text" in changes
         ref = naming_mode and self._mode_ref(r["position_id"], changes.get("failure_mode_id") or None,
-                                             changes.get("failure_mode_text"))
+                                             changes.get("failure_mode_text"), above=True)
         out = {k: v for k, v in out.items() if r.get(k) != v}
         if naming_mode:
             mode_id = self._mode_id(r["position_id"], ref or None)  # a mode in new words is added here
@@ -15554,11 +15597,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                               **self._report_stamp(by)})
         return self.failure_report(report_id)
 
-    def set_failure_report_status(self, report_id: str, status, note="", duplicate_of=None, by=None) -> dict:
+    def set_failure_report_status(self, report_id: str, status, note="", duplicate_of=None, tested_with="",
+                                  by=None) -> dict:
         """Move a report along. Among the open statuses: any direction. closed needs a
         verification that worked or was unclear (the note is the sign-off). rejected
-        needs a note, the reason; duplicate_of names the other report. From closed or
-        rejected the only move is back to an open status (a reopen)."""
+        needs a note, the reason; duplicate_of names the other report. no_fault_found
+        (the removal was tested and nothing was wrong) needs a note, the finding;
+        tested_with says how (a test set, a bench test): kept as a removal, never
+        counted as a failure. From closed, rejected or no_fault_found the only move is
+        back to an open status (a reopen)."""
         r = self._get(report_id, "FailureReport")
         if status not in REPORT_STATUSES:
             raise Invalid(f"The status is one of {', '.join(REPORT_STATUSES)}.")
@@ -15571,6 +15618,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                           "reopen it: set it to reported, investigating, corrective_action or verifying first.")
         if duplicate_of and status != "rejected":
             raise Invalid("duplicate_of goes with status rejected: a report rejected as a duplicate of another.")
+        tested_with = _text(tested_with, "how it was tested")
+        if tested_with and status != "no_fault_found":
+            raise Invalid("tested_with goes with status no_fault_found: how the removal was tested.")
+        if status == "no_fault_found":
+            if not note:
+                raise Invalid("Say what the test found (e.g. 'Bench tested, no fault found'): the note is the "
+                              "finding.")
+            self._emit("failure_report.no_fault_found", {"id": report_id, "note": note, "tested_with": tested_with,
+                                                         **self._report_stamp(by)})
+            return self.failure_report(report_id)
         payload = {"id": report_id, "status": status, "note": note, **self._report_stamp(by)}
         if status == "closed":
             verification = r.get("verification")
@@ -15749,7 +15806,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         verified = (r.get("verification") or {}).get("verified_on")
         since = max(done) if done else verified or r["occurred_on"]
         later = [x for x in reports if x["id"] != r["id"] and x.get("position_id") == r["position_id"]
-                 and x["status"] != "rejected" and x["occurred_on"] > since]
+                 and x["status"] not in NOT_FAILURE_STATUSES and x["occurred_on"] > since]
         same = r.get("failure_mode_id")
         return {"since": since, "repeats": len(later),
                 "same_mode_repeats": sum(1 for x in later if same and x.get("failure_mode_id") == same),
@@ -15795,6 +15852,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         day it occurred), the fitment and its item; or why it doesn't count."""
         if r.get("status") == "rejected":
             return {"counts": False, "why": "rejected: not counted as a failure"}
+        if r.get("status") == "no_fault_found":
+            return {"counts": False, "removal": True,
+                    "why": "no fault found: kept as a removal, not counted as a failure (if the item came off for "
+                           "it, its life there ends as still working, censored)"}
         if not self.s.node(self.org, r["position_id"], "Position"):
             return {"counts": False, "why": "its position is gone"}
         fitments = self._fitments_at(r["position_id"])
@@ -15806,10 +15867,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         "item": self._item_brief(item[0]) if item else None,
                         "replaced": bool(f.get("to")), "found_failed": bool(f.get("found_failed"))}
         others = [x for x in self.s.inn(self.org, r["position_id"], "REPORTED_AT")
-                  if x["label"] == "FailureReport" and x["id"] != r["id"] and x.get("status") != "rejected"]
+                  if x["label"] == "FailureReport" and x["id"] != r["id"] and x.get("status") not in NOT_FAILURE_STATUSES]
         if others and r.get("item_id"):
             return {"counts": False, "why": "an earlier report already counts this item's failure here: a repeat "
                                             "failure of the same fitted item"}
+        if not r.get("item_id"):
+            # Filed at a position with nothing fitted: kept at the position, not in any item's life.
+            return {"counts": False, "no_item": True,
+                    "why": "nothing was fitted at this position that day, so there's no item's life for it to end. "
+                           "It stays on record at the position; to count it, edit the report to name the item, or "
+                           "record what was fitted there in the position's history"}
         return {"counts": False, "why": "no item was fitted there on that day"}
 
     def failure_report(self, report_id: str) -> dict:
@@ -15827,14 +15894,23 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "position": {"id": r["position_id"], "name": position.get("name"),
                          "path": [{"id": a["id"], "name": a["name"]} for a in self._position_path(r["position_id"])]},
             "item": self._report_item_view(r),
-            "failure_mode": {"id": fm["id"], "text": fm["text"], "ad_hoc": bool(fm.get("ad_hoc"))} if fm else None,
+            "failure_mode": self._report_mode_view(fm, r["position_id"]) if fm else None,
             "investigation": r.get("investigation"), "actions": [self._action_view(a) for a in r.get("actions") or []],
             "life_data": self._report_in_life_data(r),
             "verification": r.get("verification"),
             "repeat_check": self._repeat_check(r, self.s.nodes(self.org, "FailureReport")),
-            "closed": r.get("closed"), "rejected": r.get("rejected"), "history": r.get("history") or [],
+            "closed": r.get("closed"), "rejected": r.get("rejected"), "no_fault_found": r.get("no_fault_found"),
+            "history": r.get("history") or [],
             "photos": self.photos_of(r["id"]), "open_actions": self._open_actions(r), "can": self._report_can(r),
         }
+
+    def _report_mode_view(self, fm: dict, position_id: str) -> dict:
+        """A report's failure mode; on, when it's analysed on another position (one above)."""
+        view = {"id": fm["id"], "text": fm["text"], "ad_hoc": bool(fm.get("ad_hoc"))}
+        holder = self.s.inn(self.org, fm["id"], "CAN_FAIL_AS")
+        if holder and holder[0]["id"] != position_id:
+            view["on"] = {"id": holder[0]["id"], "name": holder[0].get("name")}
+        return view
 
     def _report_brief(self, r: dict, root_id: str | None, cache: dict) -> dict:
         """A report in a list. level: the names from the scope's root down to its
@@ -16034,7 +16110,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         the item fitted then, the one that went in first when two meet on that day). One
         report counts for at most one fitment."""
         reports = sorted((r for r in self.s.inn(self.org, position_id, "REPORTED_AT")
-                          if r["label"] == "FailureReport" and r.get("status") != "rejected" and r.get("occurred_on")),
+                          if r["label"] == "FailureReport" and r.get("status") not in NOT_FAILURE_STATUSES
+                          and r.get("occurred_on")),
                          key=lambda r: (r["occurred_on"], r["number"]))
         if not reports:
             return {}
