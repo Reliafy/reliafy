@@ -112,6 +112,16 @@ times over. So read a parts count as it's meant to be read:
   handbook's models date from 1995 and are known to be pessimistic for modern
   parts; a prediction is often several times the failure rate seen in service.
 
+## Size spares from a prediction
+
+Before there are failures, a prediction's rate can size the spares. On a saved
+prediction, **Forecast spares from this rate** makes a constant-rate model from
+it (named with the rate, so you can see where it came from) and opens a new
+[fleet forecast](/guides/forecast-fleet-failures-and-spares) on it. Add the
+fleet (10 units, say), set the usage (150 hours a year) and the lead time, and
+the forecast gives the failures a year (60.4 per million hours × 150 hours × 10
+units ≈ 0.09) and how many to hold.
+
 The moment you have failures of your own, fit a model to them instead
 ([fit a non-repairable model](/guides/fit-your-first-model)): data from your
 equipment beats a handbook every time. Saved predictions keep the result they

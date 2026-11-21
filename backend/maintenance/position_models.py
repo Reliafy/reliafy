@@ -409,8 +409,9 @@ def fetcher(db, owners, hidden=frozenset()):
     from backend.services import rbds as rbds_service
 
     from backend.maintenance import covariate_positions
+    from backend.services import reliability_prediction as prediction_service
 
-    getters = {"model": models_service.get_model, "recurrent_model": recurrent_service.get_model,
+    getters = {"prediction": prediction_service.get_prediction, "model": models_service.get_model, "recurrent_model": recurrent_service.get_model,
                "degradation_model": degradation_service.get_model, "alt_model": alt_service.get_model,
                "rbd": rbds_service.get_rbd, "covariate_record": covariate_positions.record_doc}
     memo: dict = {}

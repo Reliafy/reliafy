@@ -40,7 +40,9 @@ it.
   plan. Each job uses the spares its task names in **What it needs**. A
   fixed-interval replacement that names none uses what a failure there uses.
 - **Failures** come from the life model in use on each position (else its
-  class's), from each item's age. A failed item is replaced and can fail again.
+  class's), from each item's age. A position with neither but a rate in a saved
+  parts count (its parts at their rates there) fails at that constant rate, and
+  the position's line says the rate is from the prediction. A failed item is replaced and can fail again.
   A planned replacement renews the item, so failures after it count from new. An
   item renewed on a schedule counts its age from its last replacement.
 - **Hold** is the smallest stock with at least the service level's chance of
