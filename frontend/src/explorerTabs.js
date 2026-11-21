@@ -295,6 +295,9 @@ export const PANEL_TABS = [
       // The forecast for a position and everything inside it (PositionForecast.jsx): a position's
       // only (kinds), and not a design's (no due dates or fitted items there to forecast from).
       { id: "forecast", label: "Forecast", tab: "maintenance", mview: "forecast", kinds: ["pos"], asset: true, title: "The work, failures and costs to come here and inside it, by month" },
+      // Spares for the year (SparesYear.jsx): the parts failures and tasks use here and inside it, against
+      // stock and lead time; on a design, the parts the items built from it (or a planned fleet) will use.
+      { id: "spares", label: "Spares", tab: "lsa", mview: "spares", kinds: ["pos", "loc"], title: "Spares for the year: what failures and tasks here will use, what to hold, order and buy" },
     ],
   },
   {

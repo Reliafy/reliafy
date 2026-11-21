@@ -7,6 +7,8 @@ import {
 import { Field, FormModal, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import HowOften from "./HowOften.jsx";
 import PositionForecast from "./PositionForecast.jsx";
+import SparesYear from "./SparesYear.jsx";
+import PackageParts from "./PackageParts.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { CALENDAR, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
 import Chip from "./ui/Chip.jsx";
@@ -562,6 +564,7 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
       )}
       <Rollup rollup={pkg.rollup} title="Each visit needs"
               empty={pkg.tasks.length ? <p className="lib-date">No labour, tools or spares set on its tasks yet: open a task on the table to add them.</p> : null} />
+      {live && pkg.tasks.length > 0 && <PackageParts packageId={pkg.id} />}
       {pkg.next_visits?.length > 0 && (
         <p className="lib-date">Next visits: {pkg.next_visits.map((v) => `${fmtDate(v.on)} (${plural(v.tasks, "task")})`).join(", ")}</p>
       )}
@@ -782,8 +785,17 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       </div>
     );
   }
+  // Spares for the year (?mview=spares): every part a failure or a task uses here and inside it
+  // (SparesYear.jsx), inside the asset opened (?root=); on a design, the items built from it.
+  if (!maint && EXPLORER_PANEL_TABS && viewParam.open === "spares") {
+    return (
+      <div className="td-tab-page pk-panel rw">
+        <SparesYear id={row.key} root={design ? null : search.get("root") || null} name={row.ref?.name || ""} design={design} />
+      </div>
+    );
+  }
   // With the panel tabs the panel's header switches the views (Tasks · What it needs · Packages ·
-  // Forecast), so the body draws no switch of its own.
+  // Forecast · Spares), so the body draws no switch of its own.
   if (!maint && !design && EXPLORER_PANEL_TABS && viewParam.open === "packages") {
     return <PackagesHere scope={scope} where={where} onOpen={open.setOpen} version={version} />;
   }

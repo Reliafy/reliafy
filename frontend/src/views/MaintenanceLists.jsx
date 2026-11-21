@@ -14,6 +14,7 @@ import {
   getMaintenanceOverview,
   getPositionClasses,
   adjustMaintenanceStock,
+  countMaintenanceStock,
   getSparesCover,
   listMaintenanceParts,
   setMaintenanceReorder,
@@ -26,7 +27,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, Field, FormModal, LifeTable, Proposals, flatten, fmtDate,
+  DocumentsCard, Field, FormModal, LifeTable, Proposals, flatten, fmtDate, today as workspaceToday,
 } from "../components/MaintenanceParts.jsx";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
@@ -58,6 +59,7 @@ import { isNotFound } from "../components/loadFailed.js";
 import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { NewPartModal } from "../components/PartForms.jsx";
 import { partsInBranch } from "../explorerTabs.js";
+import { countIsOld, countedText } from "../sparesYear.js";
 import { itemTreePath, productPath } from "../products.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
@@ -894,7 +896,9 @@ export function PartsPanel({ branch, scopeName = "", all = false, onAll, design 
                   {!design && (
                     <>
                       <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}
-                        {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}</td>
+                        {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}
+                        {(pt.on_hand > 0 || pt.counted_on) && (
+                          <div className={countIsOld(pt, workspaceToday()) ? "maint-overdue" : "lib-date"}>{countedText(pt, workspaceToday())}</div>)}</td>
                       <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
                     </>
                   )}
@@ -1003,15 +1007,27 @@ function SparesCoverCard({ parts }) {
   );
 }
 
-function StockModal({ part, locations, onClose, onDone }) {
+// A part's stock at a location: receive or issue, or record a count (what was on the shelf on the
+// day it was counted: anything booked after that day still stands), and its reorder point.
+export function StockModal({ part, locations, onClose, onDone }) {
   const [loc, setLoc] = useState(part.stock[0]?.location.id || "");
+  const [mode, setMode] = useState("move");
   const [qty, setQty] = useState("");
+  const [on, setOn] = useState("");
+  const [by, setBy] = useState("");
   const [reorder, setReorder] = useState("");
+  const counting = mode === "count";
+  const here = part.stock.find((st) => st.location.id === loc);
   return (
     <FormModal title={`Stock: ${part.part_number}`} submitLabel="Save" canSubmit={!!loc && (qty !== "" || reorder !== "")}
                onClose={onClose}
                onSubmit={async () => {
-                 if (qty !== "") await adjustMaintenanceStock(part.id, { location_id: loc, delta: Number(qty), reason: Number(qty) > 0 ? "received" : "issued" });
+                 if (qty !== "" && counting) {
+                   await countMaintenanceStock(part.id, { location_id: loc, counted: Number(qty), on: on || null, by });
+                 } else if (qty !== "") {
+                   await adjustMaintenanceStock(part.id, { location_id: loc, delta: Number(qty), on: on || null,
+                     reason: Number(qty) > 0 ? "received" : "issued" });
+                 }
                  if (reorder !== "") await setMaintenanceReorder(part.id, { location_id: loc, reorder_point: Number(reorder) });
                  onDone();
                }}>
@@ -1021,7 +1037,28 @@ function StockModal({ part, locations, onClose, onDone }) {
           {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
         </select>
       </Field>
-      <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
+      <SegmentedControl label="What happened" value={mode} onChange={(v) => { setMode(v); setQty(""); }}
+                        options={[{ value: "move", label: "Received or issued" }, { value: "count", label: "Counted" }]} />
+      {counting ? (
+        <>
+          <Field label="On the shelf when counted">
+            <input type="number" inputMode="decimal" min="0" step="any" value={qty} placeholder="e.g. 2" onChange={(e) => setQty(e.target.value)} />
+          </Field>
+          <Field label="Counted on">
+            <input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} />
+          </Field>
+          <Field label="Counted by (optional)"><input value={by} maxLength={120} onChange={(e) => setBy(e.target.value)} /></Field>
+          <p className="lib-date">
+            {here?.counted ? `Last counted ${here.counted.quantity} on ${here.counted.on}. ` : "Not counted here before. "}
+            Anything received or issued after the count date still stands.
+          </p>
+        </>
+      ) : (
+        <>
+          <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
+          <Field label="On (default today)"><input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
+        </>
+      )}
       <Field label="Reorder at (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={reorder} onChange={(e) => setReorder(e.target.value)} /></Field>
     </FormModal>
   );

@@ -4,6 +4,7 @@ import { changePackage, getPackage, raisePackageVisit, updatePackage } from "../
 import PageHeader from "../components/ui/PageHeader.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
 import TablePane from "../components/TablePane.jsx";
+import PackageParts from "../components/PackageParts.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
@@ -104,6 +105,7 @@ export default function MaintenancePackage() {
       <div className={"pkg-page" + (editing && !phone ? " is-editing" : "")}>
         <div className="pkg-main">
           <Details pkg={pkg} />
+          {pkg.status !== "retired" && pkg.tasks?.length > 0 && <PackageParts packageId={pkg.id} className="card" />}
           <NextVisits pkg={pkg} today={today} onRaise={async () => {
             try {
               const out = await raisePackageVisit(pkg.id);

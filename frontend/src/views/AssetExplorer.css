@@ -1451,5 +1451,8 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
 @media (max-width: 560px) {
   /* A phone: the inner views share the width in equal parts, one line each. */
   .ptabs-views { align-self: stretch; display: flex; }
-  .ptabs-views .seg-btn { flex: 1 1 0; min-width: 0; text-align: center; justify-content: center; white-space: nowrap; padding-left: var(--space-2); padding-right: var(--space-2); }
+  /* Five views (Maintenance: Tasks · What it needs · Packages · Forecast · Spares) don't fit 400 px: each
+     takes its label's width and the row scrolls inside itself, never the page, rather than clipping one. */
+  .ptabs-views { overflow-x: auto; }
+  .ptabs-views .seg-btn { flex: 1 0 auto; text-align: center; justify-content: center; white-space: nowrap; padding-left: var(--space-2); padding-right: var(--space-2); }
 }
