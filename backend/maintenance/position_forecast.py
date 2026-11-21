@@ -286,8 +286,11 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         age_text = f"{_num(age, 3):g} {unit} since it was fitted on {_short(fitment['from'])}"
     elif unit == "hours":
         if hours_map is None:
-            return None, {**brief, "reason": "this life is in operating hours: give the position an operating plan "
-                                             "or record its hours counter"}
+            # No plan and no counter rate: it runs all the time, 24 h a day (running_clock; Derryn, 21 Nov 2026).
+            hours_map = {"usage": schedule.DutyPlan(schedule.Continuous()).forecast(start, end_excl), "counter": None,
+                         "readings": [],
+                         "basis": {"kind": "continuous", "reading": None,
+                                   "text": "Hours assuming it runs all the time (no duty set for this position)"}}
         use = class_fc._use_age(m, pos["id"], fitment, "hours")
         age = use.get("age")
         if age is None:

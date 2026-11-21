@@ -87,6 +87,10 @@ has **Add a strategy…**: the strategy tools for that kind of model open beside
 the tree, the position's class costs filled in where they're set. Once you save
 one there, the model has a **Strategy** row under it.
 
+Run from a position, a model in running hours is put on the calendar at that
+position's operating plan: 1,000 h is about 125 days at 8 hours a day. With no
+plan set, it's taken to run all the time, 24 hours a day. The answer says which.
+
 ## What it assumes
 
 - Each failure is repaired back to how it was just before it failed (minimal

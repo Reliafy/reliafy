@@ -156,34 +156,43 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
     life_unit = model_unit(model)
     by_use = life_unit != "days"
 
-    from backend.services import model_units
+    from backend.services import running_clock
     from backend.units import KM_PER, normalize_unit, unit_factor
 
-    def use_factor(unit: str):
-        """Task units per model unit for a task by use: 1 in the model's unit, the factor for
-        another distance (miles for a model in km), else None. A counter's hours are running
-        time, not the calendar's, so they never convert to a task in days."""
-        if svc._norm_unit(unit) == life_unit:
+    def use_factor(unit: str, clock):
+        """Task units per model unit for a task by use: 1 in the model's unit (or hours of
+        running both: flight hours and hours), the factor for another distance (miles for a
+        model in km). A model in running hours meets a task on the calendar at the position's
+        duty, else all the time (running_clock, Derryn 21 Nov 2026). Else None (cycles to days)."""
+        if svc._norm_unit(unit) == life_unit or running_clock.same_clock(life_unit, unit):
             return 1.0
         if normalize_unit(life_unit) in KM_PER and normalize_unit(unit) in KM_PER:
             return unit_factor(life_unit, unit)
-        return None
+        conv = running_clock.conversion(life_unit, unit, clock) if running_clock.is_running_hours(life_unit) \
+            else None
+        return conv["factor"] if conv else None
 
-    def in_task_unit(t: float, unit: str) -> float:
-        return _rounded(t * use_factor(unit)) if by_use else _in_unit(t, unit)
+    def in_task_unit(t: float, unit: str, clock) -> float:
+        return _rounded(t * use_factor(unit, clock)) if by_use else _in_unit(t, unit)
 
-    def converted(unit: str) -> str:
-        """The proposal's note on a model by use converted to the task's unit; blank otherwise."""
-        conv = model_units.conversion({"unit": life_unit}, unit) if by_use and use_factor(unit) != 1.0 else None
-        return f" ({model_units.used_note(conv, 'task')[:1].upper()}{model_units.used_note(conv, 'task')[1:]}.)" \
-            if conv else ""
+    def converted(unit: str, clock, t: float) -> str:
+        """The proposal's note on a model by use converted to the task's unit (``t``: the
+        answer in the model's unit); blank otherwise."""
+        if not by_use or use_factor(unit, clock) == 1.0:
+            return ""
+        conv = running_clock.conversion(life_unit, unit, clock)
+        if conv is None:
+            return ""
+        text = running_clock.note(conv, t if conv.get("clock") is not None else None, "task")
+        return f" ({text[:1].upper()}{text[1:]}.)"
 
     made = []
     for position in m._class_members(position_class):
+        clock = running_clock.for_position(m, position["id"]) if by_use else None
         for task in m._tasks_on(position["id"]):
             unit = task["unit"]
             if by_use:
-                if use_factor(unit) is None:
+                if use_factor(unit, clock) is None:
                     continue  # a model by use proposes for tasks by that use (or one of its kind) only
             elif unit not in DAYS_PER:
                 continue  # by use: needs a model in that unit (fit the class's model in it)
@@ -199,11 +208,11 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
                 if res.get("beneficial") and res.get("optimal_time"):
                     best = float(res["optimal_time"])
                     saving = res.get("savings") or 0
-                    proposal = ("interval", in_task_unit(best, unit), unit,
+                    proposal = ("interval", in_task_unit(best, unit, clock), unit,
                                 f"{_describe(model)}. With a planned replacement at {node['planned_cost']:,.0f} "
                                 f"and a failure at {node['failure_cost']:,.0f}, replacing every "
-                                f"{in_task_unit(best, unit):g} {unit} has the lowest long-run cost, "
-                                f"{saving:.0%} below running to failure.{converted(unit)}")
+                                f"{in_task_unit(best, unit, clock):g} {unit} has the lowest long-run cost, "
+                                f"{saving:.0%} below running to failure.{converted(unit, clock, best)}")
                 else:
                     proposal = ("retire", None, unit,
                                 f"{_describe(model)}. With these costs no replacement age beats replacing "
@@ -217,10 +226,10 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
                     continue
                 every = float(res.get("interval") or 0)
                 if every > 0:
-                    proposal = ("interval", in_task_unit(every, unit), unit,
+                    proposal = ("interval", in_task_unit(every, unit, clock), unit,
                                 f"{_describe(model)}. To keep the protective function available "
                                 f"{node['availability_target']:.1%} of the time, check it every "
-                                f"{in_task_unit(every, unit):g} {unit} (2 × (1 − A) × MTTF).{converted(unit)}")
+                                f"{in_task_unit(every, unit, clock):g} {unit} (2 × (1 − A) × MTTF).{converted(unit, clock, every)}")
             if proposal is None:
                 continue
             kind, interval, unit, reason = proposal
