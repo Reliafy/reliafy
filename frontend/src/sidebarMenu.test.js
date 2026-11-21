@@ -5,7 +5,7 @@ import {
   menuKey, parseStored, startOpen, subItemLit, subItems, toggleKey, toggles, withOpen,
 } from "./sidebarMenu.js";
 
-const ALL = { maintenance: true, agent: true, risk: true };
+const ALL = { maintenance: true, work_orders: true, agent: true, risk: true };
 const PREVIEW = { ...ALL, preview: true };
 const find = (live, id) => flatEntries(live).find((e) => e.id === id) || live.find((e) => e.id === id);
 const labels = (items) => items.map((i) => i.label);

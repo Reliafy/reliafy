@@ -77,7 +77,9 @@ under the facts, and the card for the current stage is open.
   to open a corrective work order on the position, linked both ways (the work
   order names the report). A number kept in another system goes in the
   reference box. Mark an action **Done** when it is, or **Drop** it if it isn't
-  needed after all.
+  needed after all. Where work orders are turned off, an action keeps only the
+  reference; record the repair or replacement itself with **Record what was
+  done…** on the position's page.
 - **Verification** — say whether the action worked. Beside it Reliafy shows
   the repeat check: whether the same position has failed again since the
   action was done, and whether it was the same failure mode.

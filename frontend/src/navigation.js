@@ -61,7 +61,9 @@ export const STRUCTURE_PATH = "/systems/structure";
 // is on), "risk" (the workspace uses it: it tracks items or has a degradation
 // or condition-and-life model; or the menu preview is on), "preview" (the
 // deployment shows the menu's not-yet-built entries as blank pages,
-// plannedPages.js; nothing else has them, so they stay hidden).
+// plannedPages.js; nothing else has them, so they stay hidden), "work_orders"
+// (Reliafy Maintenance with its work orders on: off, MAINTENANCE_WORK_ORDERS,
+// Maintenance opens on Packages and there's no Orders, workOrdersFlag.js).
 //
 // `landingNeeds`: the entry's own landing page needs that; without it the
 // entry opens on its first live child instead, and that child isn't repeated
@@ -100,10 +102,10 @@ export const ENTRIES = [
     // Maintenance opens on Orders (/maintenance itself redirects there,
     // redirects.js): the work orders, by tab (Open, Due soon, Closed), then
     // the work packages. Both are Reliafy Maintenance's.
-    id: "maintenance", label: "Maintenance", to: ORDERS_PATH, match: ["/maintenance"], landingNeeds: "maintenance",
+    id: "maintenance", label: "Maintenance", to: ORDERS_PATH, match: ["/maintenance"], landingNeeds: "work_orders",
     opensOnFirstChild: true,
     children: [
-      { to: ORDERS_PATH, label: ORDERS_LABEL, needs: "maintenance" },
+      { to: ORDERS_PATH, label: ORDERS_LABEL, needs: "work_orders" },
       { to: PACKAGES_PATH, label: PACKAGES_LABEL, needs: "maintenance" },
       // Standalone RCM worksheets, for every account: without Reliafy
       // Maintenance, "Maintenance" opens on them.

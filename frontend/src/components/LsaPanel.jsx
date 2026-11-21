@@ -34,6 +34,7 @@ import "./RcmWorksheet.css";
 import "./Outline.css";
 import "../views/Maintenance.css";
 import "./LsaPanel.css";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
 
 // The LSA tab of the Explorer's panel (Assets › Explorer, ?tab=lsa; it was the
 // Packages tab, and ?tab=packages still opens it. Derryn, 8–9 Nov 2026: the
@@ -117,7 +118,9 @@ export function StatusChips({ pkg, today }) {
 }
 
 function WhenCell({ pkg }) {
-  const wo = pkg.open_work_order;
+  // Work orders turned off (workOrdersFlag.js): the next visit only.
+  const workOrders = useWorkOrdersOn();
+  const wo = workOrders ? pkg.open_work_order : null;
   return (
     <span className="pk-when">
       {wo ? (
@@ -430,6 +433,7 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
 // trade, how many tasks and whether it's paused. A name opens the package in the tab (?package=),
 // its back link coming here again. Packages are made from the What it needs view (tick tasks).
 function PackagesHere({ scope, where, onOpen, version }) {
+  const workOrders = useWorkOrdersOn();
   const [state, setState] = useState({ data: null, error: null });
   useEffect(() => {
     let live = true;
@@ -440,7 +444,7 @@ function PackagesHere({ scope, where, onOpen, version }) {
   const list = state.data;
   return (
     <div className="td-tab-page pk-panel rw">
-      <p className="lib-date pk-purpose">The work packages {where} and below: tasks done together on one visit, each visit one work order. To make one, tick tasks in What it needs and package them.</p>
+      <p className="lib-date pk-purpose">The work packages {where} and below: tasks done together on one visit{workOrders ? ", each visit one work order" : ""}. To make one, tick tasks in What it needs and package them.</p>
       {state.error && <div className="card error">Couldn&apos;t load the packages: {state.error}</div>}
       {!list && !state.error && <div className="card empty">Loading…</div>}
       {list && list.length === 0 && <div className="card empty pk-empty"><p>No packages here yet. Tick the tasks done on the same visit in What it needs, then Package selected….</p></div>}

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   ATTENTION_ROWS, LITTLE_WORK, NEAR_EMPTY, RECENT_ROWS, attentionFailed, attentionReady, attentionRest, attentionRows, dayText,
   recentRows, dueRows, fleetRows, lateFigures, lateSummary, maintenanceRows, otherRecent, recentFor, sparesRows, startersPlace,
-  waitingFigures, workTodayRows,
+  waitingFigures, workTodayRows, homeOverview,
 } from "./home.js";
 import { lateWorkText, ordersSummary } from "./maintenanceOrders.js";
 import { dueText } from "./maintenanceAssets.js";
@@ -240,4 +240,25 @@ test("needs attention says it failed, not that there's nothing, when what it rea
   assert.equal(attentionFailed({ ...ok, maintenance: null }), false);
   // A failed source is still an answer: the card stops loading and shows the error.
   assert.equal(attentionReady({ ...ok, changes: null }), true);
+});
+
+test("work orders turned off: Home shows what's due and no work order at all", () => {
+  // On (or not said), the overview is as it came.
+  assert.equal(homeOverview(HOUSE), HOUSE);
+  assert.equal(homeOverview(null, false), null);
+  const off = homeOverview(HOUSE, false);
+  assert.deepEqual(off.open_work_orders, []);
+  // Every due task, the one with a (hidden) work order too; none says "no work order yet".
+  const rows = dueRows(off);
+  assert.deepEqual(rows.map((r) => r.name), ["Test the RCD", "Filter swap", "Flush the tank"]);
+  assert.ok(rows.every((r) => r.key.startsWith("due-") && r.url === "/maintenance/work-orders?tab=due"));
+  assert.ok(rows.every((r) => !/work order/.test(r.detail)));
+  // The figures and the summary count overdue tasks, never work orders.
+  assert.deepEqual(lateFigures(off).map((f) => [f.label, f.n]), [["tasks overdue", 2]]);
+  assert.equal(lateSummary(off), "2 tasks overdue");
+  assert.ok(waitingFigures(null, off).every((f) => !/work order/.test(f.label)));
+  // A technician's work today: the tasks due by today.
+  assert.deepEqual(workTodayRows(off).map((r) => [r.kind, r.name]), [["Overdue", "Test the RCD"], ["Overdue", "Filter swap"]]);
+  // Hidden, not lost: the overview itself is untouched.
+  assert.equal(HOUSE.open_work_orders.length, 5);
 });

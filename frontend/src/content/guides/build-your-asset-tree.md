@@ -66,8 +66,9 @@ they're there to show where things belong, not things at that place.
 Open a position's own page (**Open the full page** in the details' **…**
 menu); **Fit an item** there records what's fitted and when. **Open
 in the Explorer** takes you back to the tree.
-Replacing it later is done by closing a work order, so the old item's life (and
-whether it failed) goes into the position's history.
+Replacing it later is done by closing a work order (or, where work orders are
+turned off, with **Record what was done…** on the position's page), so the old
+item's life (and whether it failed) goes into the position's history.
 
 ## Import or export your tree
 

@@ -14,6 +14,8 @@ import { explorerHere } from "../products.js";
 import { tabPlace } from "../explorerTabs.js";
 import { getMaintenanceLocation, getOperatingPlan, getPositionCondition } from "../api.js";
 import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../positionClass.js";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { RecordDone } from "./RecordDone.jsx";
 import { hoursWords, planWords } from "../operatingPlan.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
@@ -233,6 +235,8 @@ const SHOWN_TASKS = 8;
 // "Log an event…" (the row's action, when it has one) sits at the foot of Work:
 // tasks waiting for an event are raised from here.
 function Work({ r, state, today, fullPage, logEvent = null }) {
+  // Work orders turned off (workOrdersFlag.js): no open work orders; each task is recorded done on its row.
+  const workOrders = useWorkOrdersOn();
   // The LSA links stay in the tree on show (one asset open on its own stays so).
   const { pathname, search } = useLocation();
   const { data, error } = state;
@@ -243,7 +247,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
   else {
     const tasks = [...(data.tasks || []), ...(data.item_tasks || []).map((t) => ({ ...t, onItem: true }))]
       .sort((a, b) => (b.overdue - a.overdue) || (a.next_due || "9999").localeCompare(b.next_due || "9999"));
-    const wos = (data.work_orders || []).filter((w) => OPEN.has(w.status))
+    const wos = (workOrders ? data.work_orders || [] : []).filter((w) => OPEN.has(w.status))
       .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
     count = tasks.length + wos.length;
     // In a work package: the next visit that does any of its tasks.
@@ -293,10 +297,11 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
                   return (
                     <Row key={`${t.onItem ? "i" : "p"}${t.id}`} title={t.name}
                          meta={taskDueText(t, fmtDate, note)}
-                         chips={(t.overdue || t.onItem || t.on_event) ? <>
+                         chips={(t.overdue || t.onItem || t.on_event || !workOrders) ? <>
                            {t.overdue && <Chip tone="danger">Overdue</Chip>}
                            {t.on_event && <Chip>On event</Chip>}
                            {t.onItem && <Chip>On the item</Chip>}
+                           {!workOrders && <RecordDone task={t} />}
                          </> : null} />
                   );
                 })}

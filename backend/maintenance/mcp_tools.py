@@ -336,6 +336,12 @@ FITMENTS: Table = {
         item out with no work order (a correction). If it failed, name how: failure_mode_id, or
         failure_mode_text in words (a new ad-hoc mode if the position has none of that name); a mode with no
         reason is a failure, no mode a planned removal. reason: planned, failure or other."""),
+    "record_work_done": ("", "position_id item_id location_id task_id actions on notes readings title", """Work
+        that was done, recorded with no work order (how work is recorded when work orders are turned off):
+        on exactly one of position_id, item_id, location_id (or task_id alone: the task's subject). task_id:
+        the task done, renewed on `on`. actions, readings, notes as a work order's close takes them (replace
+        ends the fitted item's fitment and fits the new one; repair, inspect with finding, other). guide
+        topic run."""),
     "move": ("item_id position_id", "on", """Move an item from wherever it's fitted to an empty position,
         keeping its one history: a rotable going round, a pump swapped to standby."""),
     "add_past": ("position_id start end", "reason item_id item_name serial part_number manufacturer model "
@@ -1126,7 +1132,8 @@ def register() -> None:
     from backend.maintenance import conditions as register_io
     from backend.maintenance import graph_cypher
     from backend.maintenance.access import allowed, graph_query_allowed
-    from backend.maintenance.service import Invalid, Maintenance, NeedsChoice, NotFound, summary
+    from backend.maintenance.service import Invalid, Maintenance, NeedsChoice, NotFound, WorkOrdersOff, summary
+    from backend.maintenance.service import work_orders_on
     from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool, mcp
     from backend.routers.maintenance import (document_link, get_store, ingest_document, link_payload, photo_links,
                                              remove_document, remove_photo, served_photo)
@@ -1158,6 +1165,13 @@ def register() -> None:
         except Invalid as err:
             # The people's message, then the tool call that does it, when there is one.
             raise ToolError(" ".join(filter(None, [str(err), getattr(err, "agent", "")]))) from None
+
+    def work_orders_gate() -> None:
+        """Work orders turned off (MAINTENANCE_WORK_ORDERS): their actions and reads refuse,
+        saying what to do instead."""
+        if not work_orders_on():
+            err = WorkOrdersOff()
+            raise ToolError(f"{err} {err.agent}")
 
     def tool(name, annotations, title, table: Table | None = None, selector: str = "action"):
         """Record one area of the maintenance tool: with a table, its actions
@@ -1238,7 +1252,7 @@ def register() -> None:
         rules) read maintenance guide."""
         m = m_for(ctx)
         def read():
-            due, wos = m.due_tasks(30), m.work_orders("open")
+            due, wos = m.due_tasks(30), m.work_orders("open") if work_orders_on() else []
             return {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
                     "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
                     "critical_spares": m.critical_spares_short()}
@@ -1266,6 +1280,8 @@ def register() -> None:
         edit, delete with confirm, undo). Read the one you need before a task you haven't done here yet."""
         m_for(ctx)  # Maintenance is on for this account
         pages = dict(mcp_guide.TOPICS)
+        if not work_orders_on():
+            pages["run"] = mcp_guide.RUN_WITHOUT_WORK_ORDERS
         if graph_query_allowed(_caller(ctx)):
             pages["graph"] = mcp_guide.GRAPH_TOPIC
         topics = {name: summary_ for name, (summary_, _) in pages.items()}
@@ -1454,6 +1470,7 @@ def register() -> None:
             sheet = run(m.rcm_worksheet, target_id, "below") if target_id else run(m.rcm_all)
             return rcm_graph.gaps(rcm_graph.resolve(_db(), sheet, _reader(_caller(ctx)).read_owners))
         if kind == "work_orders":
+            work_orders_gate()
             return {"work_orders": run(m.work_orders, status, location_id)}
         if kind == "packages":
             return run(m.packages, status)
@@ -1648,7 +1665,19 @@ def register() -> None:
                              failure_mode_text: Annotated[str | None, Field(description=(
                                  "How it failed, in words: the position's mode of that name, else a new "
                                  "ad-hoc one."))] = None,
-                             fitment_id: str | None = None, note: str | None = None) -> dict[str, Any]:
+                             fitment_id: str | None = None, note: str | None = None,
+                             location_id: str | None = None, task_id: str | None = None,
+                             actions: Annotated[list[dict] | None, Field(description=(
+                                 "record_work_done: what was done, in order, as a work order's close takes them: "
+                                 "{kind: 'replace'|'repair'|'inspect'|'other', failure_mode_id? or "
+                                 "failure_mode_text?, finding? (inspect: ok|degraded|found_failed), new_item? "
+                                 "{name, serial?, part_number?, manufacturer?} or item_id? (replace: what went "
+                                 "in), part_id?, quantity?, from_location_id?, reason?, notes?}."))] = None,
+                             notes: str | None = None,
+                             readings: Annotated[list[dict] | None, Field(description=(
+                                 "record_work_done: readings taken at the work: [{point_id, value, unit?, on?, "
+                                 "task_id?, note?}]."))] = None,
+                             title: str | None = None) -> dict[str, Any]:
         """Fitments: an item in a position from one date to another, and how it ended. They are the
         history every non-repairable model is fitted to, so name a failure mode whenever an item failed:
         recording a failure as planned corrupts the life data. Replacing an item as part of work goes
@@ -1656,6 +1685,9 @@ def register() -> None:
         sometime in 2022: {action: 'fit', position_id: '<id>', item_name: 'Pool pump', manufacturer:
         'Astral', serial: 'AX-1', on: '2022'}."""
         m = m_for(ctx)
+        if action == "record_work_done":
+            return run(m.record_work_done, position_id, item_id, location_id, task_id, actions or [], on,
+                       notes or "", readings or [], title)
         if action == "fit":
             new_item = {"name": item_name, "serial": serial or "", "part_number": part_number or "",
                         "manufacturer": manufacturer or "", "model": model or "",
@@ -2070,6 +2102,7 @@ def register() -> None:
         {action: 'close', work_order_id: '<id>', actions: [{kind: 'replace', failure_mode_id: '<the
         position's 'Bearing worn' mode>', new_item: {name: 'Pump', serial: 'N2'}}]}."""
         m = m_for(ctx)
+        work_orders_gate()
         if action == "open":
             return run(m.open_work_order, position_id, title, _d(type, "corrective"), task_id, due, notes or "",
                        trade, item_id, location_id, include_positions)
@@ -3191,9 +3224,17 @@ def register() -> None:
     args_tool("maintenance", _WRITE, "Reliafy Maintenance", "action", intro, table, run_action,
               call_key=lambda kwargs: keys.get(kwargs.get("action"), "maintenance"),
               scope_of=scope_of, tables=TOOL_TABLES)
-    full_listing = (LISTED_SCHEMAS["maintenance"], _listed_description("maintenance", "action", intro, table))
-    no_graph = (_listed_schema("action", [a for a in table if a not in graph_actions]),
-                _listed_description("maintenance", "action", intro, table, hide=graph_actions))
+    # With work orders turned off, their actions aren't listed either (they'd only refuse).
+    wo_actions = frozenset(a for a in table if a.startswith("work_orders."))
+    intro_no_wo = intro.replace(" work orders,", "")
+
+    def listing(graph: bool, work_orders: bool) -> tuple[dict, str]:
+        hide = (frozenset() if graph else graph_actions) | (frozenset() if work_orders else wo_actions)
+        return (_listed_schema("action", [a for a in table if a not in hide]),
+                _listed_description("maintenance", "action", intro if work_orders else intro_no_wo, table, hide=hide))
+
+    listings = {(g, w): listing(g, w) for g in (True, False) for w in (True, False)}
+    listings[(True, True)] = (LISTED_SCHEMAS["maintenance"], listings[(True, True)][1])
 
     # The tool is listed only to people who may use it, and its graph actions
     # only to those who may run graph queries: wrap the server's tools/list.
@@ -3210,7 +3251,7 @@ def register() -> None:
         user = user_of(ctx)
         if not allowed(user):
             return result.model_copy(update={"tools": [t for t in result.tools if t.name not in TOOL_NAMES]})
-        schema, text = full_listing if graph_query_allowed(user) else no_graph
+        schema, text = listings[(graph_query_allowed(user), work_orders_on())]
         tools = [t.model_copy(update={"input_schema": schema, "description": text}) if t.name == "maintenance" else t
                  for t in result.tools]
         return result.model_copy(update={"tools": tools})
@@ -3226,6 +3267,8 @@ def register() -> None:
         if ctx.method in ("initialize", "server/discover") and isinstance(result, dict) \
                 and allowed(user_of(ctx)):
             section = mcp_guide.INSTRUCTIONS
+            if not work_orders_on():
+                section = f"{section}{mcp_guide.WORK_ORDERS_OFF_INSTRUCTIONS}"
             if graph_query_allowed(user_of(ctx)):
                 section = f"{section}{mcp_guide.GRAPH_INSTRUCTIONS}"
             base = result.get("instructions") or ""

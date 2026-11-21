@@ -110,6 +110,12 @@ export function ordersSummary({ open = [], due = null, horizon = 30, today = nul
   return text;
 }
 
+// With work orders turned off (workOrdersFlag.js): what's due, with no work-order counts.
+export function dueSummary(due = null, horizon = 30) {
+  if (!due) return "";
+  return `${due.length ? plural(due.length, "task", "tasks") : "Nothing"} due in the next ${horizon} days.`;
+}
+
 // Due soon, grouped: each package's tasks under it (by name), then the tasks in
 // none. Each group keeps the server's order (soonest first).
 export function groupDue(rows = []) {

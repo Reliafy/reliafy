@@ -11,7 +11,7 @@ import { PLANNED } from "./plannedPages.js";
 import { DEFAULT_CONFIG, settledConfig } from "./appConfig.js";
 import { appRoutes, hasParam } from "../smoke/routes.js";
 
-const ALL = { maintenance: true, agent: true, risk: true };
+const ALL = { maintenance: true, work_orders: true, agent: true, risk: true };
 const PREVIEW = { ...ALL, preview: true };
 const ids = (entries) => entries.map((e) => e.id);
 // Every page the menu links to, at every level (a group has no page of its own).
@@ -161,6 +161,20 @@ test("without Reliafy Maintenance: no Assets, and Maintenance opens on RCM studi
   assert.equal(liveEntries(ALL).find((e) => e.id === "maintenance").to, "/maintenance/work-orders");
   // With only the preview, Requests is its one child.
   assert.deepEqual(kids(liveEntries({ preview: true }), "maintenance"), ["Requests"]);
+});
+
+test("work orders turned off: no Orders, and Maintenance opens on Packages", () => {
+  const off = { ...ALL, work_orders: false };
+  const live = liveEntries(off);
+  const m = live.find((e) => e.id === "maintenance");
+  assert.equal(m.to, "/maintenance/packages");
+  // Packages is the landing page itself, not repeated as a child; no Orders anywhere.
+  assert.deepEqual(kids(live, "maintenance"), ["RCM studies"]);
+  assert.ok(!everyLink(live).includes("/maintenance/work-orders"));
+  // A technician's menu opens Maintenance on Packages too.
+  assert.equal(buildMenu({ roles: ["technician"], has: off }).main[2].to, "/maintenance/packages");
+  // Turned back on, Orders is back.
+  assert.deepEqual(kids(liveEntries(ALL), "maintenance"), ["Orders", "Packages", "RCM studies"]);
 });
 
 test("Risk shows where the workspace uses it", () => {

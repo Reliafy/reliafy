@@ -5,6 +5,7 @@ import {
   saveFailureReportInvestigation, setFailureReportStatus, updateCorrectiveAction, verifyFailureReport,
 } from "../api.js";
 import { workOrderPath } from "../maintenanceOrders.js";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
 import {
   ACTION_STATUSES, MAX_WHYS, RESULTS, ROOT_CAUSES, STATUSES, canMoveTo, closeBlock, consequenceLabel, fmtWhen, historyRows,
   isOpen, itemText, lifeDataText, repeatSentence, resultLabel, rootCauseLabel, signOffText, stageOf, statusLabel,
@@ -181,7 +182,10 @@ function Actions({ report, editable, today, onAdd, onUpdate, onRaise, busy }) {
   const [ref, setRef] = useState("");
   const [woId, setWoId] = useState("");
   const actions = report.actions || [];
-  const wos = useReportWorkOrders(report, editable);
+  // Work orders turned off (workOrdersFlag.js): an action keeps a reference kept elsewhere
+  // and is marked done here; no work order is raised, linked or shown.
+  const workOrders = useWorkOrdersOn();
+  const wos = useReportWorkOrders(report, editable && workOrders);
   const add = async () => {
     const ok = await onAdd({ what: what.trim(), owner: owner.trim(), due: due || null, work_order_ref: ref.trim(),
       work_order_id: woId || null });
@@ -194,7 +198,7 @@ function Actions({ report, editable, today, onAdd, onUpdate, onRaise, busy }) {
         <div className="maint-scroll">
           <table className="lib-table td-table fr-actions">
             <thead>
-              <tr><th>What</th><th>Owner</th><th>Due</th><th>Work order</th><th>Status</th>{editable && <th><span className="sr-only">Change</span></th>}</tr>
+              <tr><th>What</th><th>Owner</th><th>Due</th><th>{workOrders ? "Work order" : "Reference"}</th><th>Status</th>{editable && <th><span className="sr-only">Change</span></th>}</tr>
             </thead>
             <tbody>
               {actions.map((a) => (
@@ -205,12 +209,13 @@ function Actions({ report, editable, today, onAdd, onUpdate, onRaise, busy }) {
                     {a.due ? `${fmtDate(a.due)}${a.status === "open" && a.due < today ? " (overdue)" : ""}` : "—"}
                   </td>
                   <td>
-                    {a.work_order ? <Link to={workOrderPath(a.work_order.id)}>{woText(a.work_order)}</Link>
+                    {!workOrders ? (a.work_order_ref || <span className="lib-date">—</span>)
+                      : a.work_order ? <Link to={workOrderPath(a.work_order.id)}>{woText(a.work_order)}</Link>
                       : a.work_order_ref || (editable && a.status === "open" ? (
                         <button type="button" className="secondary sm" disabled={busy} onClick={() => onRaise(a.id)}
                                 title="A corrective work order on this position, linked to this action">Raise work order</button>
                       ) : <span className="lib-date">—</span>)}
-                    {a.work_order && a.work_order_ref && <div className="lib-date">{a.work_order_ref}</div>}
+                    {workOrders && a.work_order && a.work_order_ref && <div className="lib-date">{a.work_order_ref}</div>}
                   </td>
                   <td>
                     <span className={`td-pill act-${a.status}`}>{ACTION_STATUSES[a.status] || a.status}</span>
@@ -246,14 +251,16 @@ function Actions({ report, editable, today, onAdd, onUpdate, onRaise, busy }) {
             <Field label="Due (optional)">
               <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
             </Field>
-            <Field label="Work order (optional)">
-              <select value={woId} onChange={(e) => setWoId(e.target.value)}>
-                <option value="">None yet (raise one from the action once added)</option>
-                {wos.map((w) => <option key={w.id} value={w.id}>{woText(w)}</option>)}
-              </select>
-            </Field>
+            {workOrders && (
+              <Field label="Work order (optional)">
+                <select value={woId} onChange={(e) => setWoId(e.target.value)}>
+                  <option value="">None yet (raise one from the action once added)</option>
+                  {wos.map((w) => <option key={w.id} value={w.id}>{woText(w)}</option>)}
+                </select>
+              </Field>
+            )}
           </div>
-          <Field label="Or a reference kept elsewhere (optional)" text={ref} max={SHORT_TEXT}>
+          <Field label={workOrders ? "Or a reference kept elsewhere (optional)" : "A reference kept elsewhere (optional)"} text={ref} max={SHORT_TEXT}>
             <input value={ref} placeholder="A number or link in another system" onChange={(e) => setRef(e.target.value)} />
           </Field>
           <div className="fr-form-foot">

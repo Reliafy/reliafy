@@ -110,6 +110,31 @@ tasks, its next visits and its recent work orders. Packages are made from the
 tasks in the Explorer's **Maintenance › What it needs**: tick the tasks, then
 package them.
 
+## When work orders are turned off
+
+A workspace can have work orders turned off while the rest of Maintenance keeps
+working: the tree, tasks and when they fall due, packages as plans, forecasts,
+spares, readings and failure reports. There's no **Orders** then: Maintenance
+opens on **Packages**, and the tasks falling due are listed on **Due soon**
+(linked from Home). Nothing raises a work order, by date, by reading or by
+event.
+
+Record the work instead where it was done:
+
+- **Record done** on a task's row (on Due soon, on a position's, item's or
+  place's page, on a package's page, or in the Explorer's **Work**): the day it
+  was done. Its next due date counts from then, as closing its work order
+  would, and so do the forecasts and spares.
+- **Record what was done…** on a position's page: a replacement, a repair or
+  an inspection, with the failure mode, what went in and the day. It records
+  the same history a work order's close does, so the position's life data
+  stays right. The position's **Work done** lists what's been recorded.
+- A task's **Last done** date can still be set by hand, for work done before it
+  was tracked here.
+
+Work orders recorded before they were turned off are kept, only hidden. Turned
+back on, they show again.
+
 ## Dates follow your time zone
 
 "Today", due dates and overdue are worked out in the workspace's time zone.

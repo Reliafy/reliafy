@@ -8,6 +8,7 @@
 // says it's off (it's on for every self-hosted install by default).
 export const DEFAULT_CONFIG = {
   auth: true, ai: false, billing: false, reliability_agent: false, mcp: true, menu_preview: false, menu_roles: false,
+  maintenance_work_orders: true,
   loaded: false,
 };
 

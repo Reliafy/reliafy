@@ -22,7 +22,8 @@ from backend.db import get_db, get_session, is_simulated
 from backend.maintenance.access import allowed
 from backend.maintenance import documents as documents_mod
 from backend.maintenance import photos as photos_mod
-from backend.maintenance.service import PROJECTORS, Invalid, LimitReached, Maintenance, NeedsChoice, NotFound, summary
+from backend.maintenance.service import (PROJECTORS, Invalid, LimitReached, Maintenance, NeedsChoice, NotFound,
+                                         WorkOrdersOff, summary, work_orders_on)
 from backend.maintenance.store import new_id
 from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.services import access as access_service
@@ -297,12 +298,22 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
     except NeedsChoice as err:
         # Not a refusal: the move goes ahead once the caller says what its tasks count there.
         return JSONResponse(status_code=409, content={"detail": client_message(err), "needs_choice": err.choice})
-    except LimitReached as err:
+    except (LimitReached, WorkOrdersOff) as err:
         return JSONResponse(status_code=err.status, content={"detail": client_message(err)})
     except photos_mod.Busy as err:
         return JSONResponse(status_code=503, content={"detail": client_message(err)}, headers={"Retry-After": "30"})
     except (Invalid, photos_mod.BadPhoto) as err:
         return JSONResponse(status_code=422, content={"detail": client_message(err)})
+
+
+def _work_orders_on() -> None:
+    """The work-order routes' gate: with work orders turned off (MAINTENANCE_WORK_ORDERS),
+    each answers 409 with what to do instead; the work orders stay in the log, hidden."""
+    if not work_orders_on():
+        raise HTTPException(status_code=409, detail=str(WorkOrdersOff()))
+
+
+WORK_ORDERS = [Depends(_work_orders_on)]
 
 
 # ---- overview ----------------------------------------------------------------------
@@ -311,7 +322,7 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
 def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts)."""
     def read():
-        due, wos = m.due_tasks(30), m.work_orders("open")
+        due, wos = m.due_tasks(30), m.work_orders("open") if work_orders_on() else []
         return {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
                 "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
                 "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short()}
@@ -529,7 +540,7 @@ def update_corrective_action(report_id: str, action_id: str, body: dict = Body(.
                 **{k: v for k, v in body.items() if k != "by"})
 
 
-@router.post("/failure-reports/{report_id}/actions/{action_id}/work-order")
+@router.post("/failure-reports/{report_id}/actions/{action_id}/work-order", dependencies=WORK_ORDERS)
 def raise_action_work_order(report_id: str, action_id: str, body: dict | None = Body(None),
                             ctx: AccessCtx = Depends(get_access),
                             m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
@@ -2152,7 +2163,7 @@ def create_location(body: dict = Body(...), m: Maintenance = Depends(maintenance
 
 # ---- work orders -------------------------------------------------------------------------
 
-@router.get("/work-orders")
+@router.get("/work-orders", dependencies=WORK_ORDERS)
 def list_work_orders(status: str | None = None, location_id: str | None = None, q: str | None = None,
                      limit: int | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """Work orders, newest first; status 'open' for every one not yet done (by due date,
@@ -2167,6 +2178,17 @@ def list_work_orders(status: str | None = None, location_id: str | None = None, 
     return _run(read)
 
 
+@router.post("/work-done")
+def record_work_done(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Work that was done, recorded with no work order (how work is recorded when work orders
+    are turned off; it works with them on too): exactly one of position_id, item_id,
+    location_id, or task_id alone (the task's subject); task_id: the task done (its last
+    done renews); actions, readings, on, notes: as a work order's close takes them."""
+    return _run(m.record_work_done, body.get("position_id"), body.get("item_id"), body.get("location_id"),
+                body.get("task_id"), body.get("actions") or [], body.get("on"), body.get("notes", ""),
+                body.get("readings") or [], body.get("title"))
+
+
 @router.get("/due")
 def due_tasks(horizon_days: int = 30, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The tasks falling due within the horizon (overdue ones too), soonest first: each with
@@ -2176,7 +2198,7 @@ def due_tasks(horizon_days: int = 30, m: Maintenance = Depends(maintenance)) -> 
                          "time_zone": m.time_zone})
 
 
-@router.post("/work-orders")
+@router.post("/work-orders", dependencies=WORK_ORDERS)
 def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """On a position, an item or a location (exactly one of position_id, item_id, location_id;
     from a task, the task's when none is given). include_positions: a location's work order
@@ -2186,14 +2208,14 @@ def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance
                 body.get("item_id"), body.get("location_id"), body.get("include_positions"))
 
 
-@router.post("/work-orders/generate")
+@router.post("/work-orders/generate", dependencies=WORK_ORDERS)
 def generate_work_orders(horizon_days: int = Body(30, embed=True), location_id: str | None = Body(None, embed=True),
                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Work orders for what's due in the window; location_id: only the work in that area."""
     return _run(m.generate, max(0, min(horizon_days, 366)), location_id)
 
 
-@router.patch("/work-orders/{work_order_id}")
+@router.patch("/work-orders/{work_order_id}", dependencies=WORK_ORDERS)
 def update_work_order(work_order_id: str, body: dict = Body(...),
                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.update_work_order, work_order_id, body.get("title"), body.get("due") if "due" in body else None,
@@ -2202,7 +2224,7 @@ def update_work_order(work_order_id: str, body: dict = Body(...),
                 body.get("trade"), body.get("readings"))
 
 
-@router.post("/work-orders/{work_order_id}/readings")
+@router.post("/work-orders/{work_order_id}/readings", dependencies=WORK_ORDERS)
 def record_work_order_readings(work_order_id: str, body: dict = Body(...),
                                m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Readings and settings taken at the work order, recorded now (the page's Record):
@@ -2210,18 +2232,18 @@ def record_work_order_readings(work_order_id: str, body: dict = Body(...),
     return _run(m.record_work_order_readings, work_order_id, body.get("readings") or [])
 
 
-@router.post("/work-orders/{work_order_id}/status")
+@router.post("/work-orders/{work_order_id}/status", dependencies=WORK_ORDERS)
 def set_work_status(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.set_work_status, work_order_id, body.get("status"), body.get("note", ""))
 
 
-@router.post("/work-orders/{work_order_id}/labour")
+@router.post("/work-orders/{work_order_id}/labour", dependencies=WORK_ORDERS)
 def log_labour(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.log_labour, work_order_id, body.get("hours"), body.get("who", ""), body.get("rate"),
                 body.get("on"), body.get("note", ""))
 
 
-@router.post("/work-orders/{work_order_id}/parts")
+@router.post("/work-orders/{work_order_id}/parts", dependencies=WORK_ORDERS)
 def add_part_used(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.add_part_used, work_order_id, body.get("part"), body.get("quantity", 1), body.get("unit_cost"),
                 body.get("part_number", ""), body.get("note", ""), body.get("part_id"), body.get("from_location_id"))
@@ -2690,41 +2712,41 @@ def spares_cover(include_unlisted: bool = False, m: Maintenance = Depends(mainte
     return _run(m.spares_cover, include_unlisted)
 
 
-@router.post("/work-orders/{work_order_id}/costs")
+@router.post("/work-orders/{work_order_id}/costs", dependencies=WORK_ORDERS)
 def add_cost(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.add_cost, work_order_id, body.get("description"), body.get("amount"))
 
 
-@router.post("/work-orders/{work_order_id}/checklist/{index}")
+@router.post("/work-orders/{work_order_id}/checklist/{index}", dependencies=WORK_ORDERS)
 def check_item(work_order_id: str, index: int, body: dict = Body(default={}),
                m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.check_item, work_order_id, index, bool(body.get("done", True)))
 
 
-@router.post("/work-entries/{entry_id}/remove")
+@router.post("/work-entries/{entry_id}/remove", dependencies=WORK_ORDERS)
 def remove_entry(entry_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.remove_entry, entry_id)
 
 
-@router.post("/work-orders/{work_order_id}/cancel")
+@router.post("/work-orders/{work_order_id}/cancel", dependencies=WORK_ORDERS)
 def cancel_work_order(work_order_id: str, body: dict = Body(default={}),
                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.cancel_work_order, work_order_id, body.get("reason", ""))
 
 
-@router.get("/work-orders/{work_order_id}")
+@router.get("/work-orders/{work_order_id}", dependencies=WORK_ORDERS)
 def get_work_order(work_order_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.work_order, work_order_id)
 
 
-@router.post("/work-orders/{work_order_id}/close")
+@router.post("/work-orders/{work_order_id}/close", dependencies=WORK_ORDERS)
 def close_work_order(work_order_id: str, body: dict = Body(...),
                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.close_work_order, work_order_id, body.get("actions") or [], body.get("on"), body.get("notes", ""),
                 body.get("readings") or [], body.get("not_done") or [])
 
 
-@router.put("/work-orders/{work_order_id}/lines/{task_id}")
+@router.put("/work-orders/{work_order_id}/lines/{task_id}", dependencies=WORK_ORDERS)
 def mark_line(work_order_id: str, task_id: str, body: dict = Body(...),
               m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """A work package's line marked during the visit, saved at once: state todo, done, not_done

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { WORK_ORDERS_OFF_NOTE } from "../workOrdersFlag.js";
 import { Link, useNavigate } from "react-router-dom";
 import { getMaintenanceOverview, listPackages } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
@@ -49,13 +51,18 @@ export default function MaintenancePackages() {
     return () => { live = false; };
   }, [status]);
   const rows = data?.packages;
+  // Work orders turned off (workOrdersFlag.js): packages are plans of visits; each
+  // task is recorded done on the package's page. A plain note says so when someone
+  // lands here from Maintenance's own address or an old work-order link.
+  const workOrders = useWorkOrdersOn();
   const shown = (rows || []).filter((p) => packageMatches(p, query));
   return (
     <div className="app">
       <SectionHeader
         section="maintenance"
         title={PACKAGES_LABEL}
-        purpose="Tasks done together on one visit, with one work order for each visit."
+        purpose={workOrders ? "Tasks done together on one visit, with one work order for each visit."
+          : "Tasks done together on one visit: the plan of visits, each task recorded done on the package's page."}
         help={HELP}
         primary={roots && roots.length > 1 ? (
           <Select ariaLabel="Package tasks on" value="" onChange={(id) => id && navigate(lsaOn(id))}
@@ -64,12 +71,13 @@ export default function MaintenancePackages() {
           <button onClick={() => navigate(roots?.length === 1 ? lsaOn(roots[0].id) : LSA_PATH)}>Package tasks</button>
         )}
       />
+      {!workOrders && <p className="lib-date" role="note">{WORK_ORDERS_OFF_NOTE}</p>}
       {error && <div className="card error">{error}</div>}
       {data && (
         <p className="maint-answer">
           {rows.length === 0 ? "No packages here."
             : `${rows.length} ${rows.length === 1 ? "package" : "packages"}.`
-              + (data.open_work_orders ? ` ${data.open_work_orders} with a visit open${data.late ? `, ${data.late} late` : ""}.` : " No visit open.")}
+              + (!workOrders ? "" : data.open_work_orders ? ` ${data.open_work_orders} with a visit open${data.late ? `, ${data.late} late` : ""}.` : " No visit open.")}
         </p>
       )}
       <section className="card">

@@ -19,6 +19,16 @@ export function visitDay(iso, today = null) {
 }
 
 // The page's first line, the answer first: "Every Saturday, next visit Sat 14 Nov; 1 visit late".
+// A package as its page shows it with work orders turned off (workOrdersFlag.js): a
+// plan of visits, with no open or recent work orders (kept, only hidden). On: as it came.
+export function packageWithoutWorkOrders(pkg, workOrders = true) {
+  if (workOrders || !pkg) return pkg;
+  return {
+    ...pkg, open_work_order: null, work_orders: [],
+    next_visits: (pkg.next_visits || []).map((v) => ({ ...v, open_work_order: null })),
+  };
+}
+
 export function packageSentence(pkg, today = null) {
   if (!pkg) return "";
   const cadence = cadenceWords(pkg) || "No timing set";

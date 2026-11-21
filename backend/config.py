@@ -335,6 +335,16 @@ MAINTENANCE_ENABLED = _truthy(os.environ.get("MAINTENANCE_ENABLED"))
 MAINTENANCE_EMAILS = {
     e.strip().lower() for e in (os.environ.get("MAINTENANCE_EMAILS") or "").split(",") if e.strip()
 }
+# Work orders (MAINTENANCE_WORK_ORDERS): on by default. Off ("0", "false",
+# "no", "off") turns work orders off while the rest of Maintenance keeps working
+# (the tree, RCM, tasks and when they fall due, packages and shutdowns as plans,
+# forecasts, spares, readings, failure reports, LSA): no work order is raised,
+# by hand or by the daily run, a task trigger or an alarm; the work-order routes
+# and tool actions refuse; the ones already in the log are hidden, not deleted,
+# and show again when it's turned back on. Work done is recorded without one
+# (Maintenance.record_work_done) and "last done" is set on the task.
+MAINTENANCE_WORK_ORDERS = (os.environ.get("MAINTENANCE_WORK_ORDERS") or "on").strip().lower() not in (
+    "0", "false", "no", "off")
 # Where the event log lives: "mongo" (a collection in the app's database; the
 # graph is rebuilt in memory from it), "sqlite" (one local file holding the
 # log and the graph), or "auto": mongo when a real MongoDB is configured,

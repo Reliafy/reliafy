@@ -12,6 +12,7 @@ import {
   STATUS_CHIP, STATUS_LABEL, arrivingText, clockLength, contentsText, keepText, matches, takenText,
 } from "../fieldReports.js";
 import { workOrderPath } from "../maintenanceOrders.js";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
 import "./Maintenance.css";
 
 const STATUSES = [
@@ -124,6 +125,7 @@ function ReportRows({ report, day, open, onToggle }) {
 
 function ReportDetail({ id, day, onChanged }) {
   const confirm = useConfirm();
+  const workOrders = useWorkOrdersOn();
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -180,7 +182,9 @@ function ReportDetail({ id, day, onChanged }) {
               {report.about.map((a, i) => (
                 <span key={a.id}>
                   {i > 0 && ", "}
-                  {a.kind === "WorkOrder"
+                  {a.kind === "WorkOrder" && !workOrders
+                    ? <>{a.number != null ? `#${a.number} ` : ""}{a.name} (work order)</>
+                    : a.kind === "WorkOrder"
                     ? <Link to={workOrderPath(a.id)}>{a.number != null ? `#${a.number} ` : ""}{a.name}</Link>
                     : <>{a.name} ({KIND[a.kind].toLowerCase()})</>}
                 </span>

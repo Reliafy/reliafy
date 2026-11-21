@@ -133,7 +133,14 @@ export default async function seed(config) {
     const item = await post(`${m}/items`, { name: "Smoke test brake set", serial: "SMOKE-1" });
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });
     await post(`${m}/positions/${position_id}/fit`, { item_id: item.id });
-    await post(`${m}/work-orders`, { position_id, title: "Smoke test inspection" });
+    // With work orders turned off (SMOKE_WORK_ORDERS=off), the inspection is recorded as done instead.
+    const served = await (await api.fetch("/api/config")).json();
+    if (served.maintenance_work_orders === false) {
+      await post(`${m}/work-done`, { position_id, title: "Smoke test inspection",
+                                     actions: [{ kind: "inspect", finding: "ok" }] });
+    } else {
+      await post(`${m}/work-orders`, { position_id, title: "Smoke test inspection" });
+    }
     // A weekly check in a work package (Maintenance › Packages, and a package's own page).
     const check = await post(`${m}/positions/${position_id}/tasks`, { name: "Smoke test belt check", interval: 1, unit: "weeks" });
     await post(`${m}/packages`, { name: "Smoke test weekly round", position_id, every: 1, unit: "weeks", tasks: [check.id] });

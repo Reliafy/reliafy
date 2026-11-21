@@ -117,6 +117,7 @@ import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import LoadFailed from "../components/LoadFailed.jsx";
 import "./AssetExplorer.css";
+import { useWorkOrdersOn } from "../ConfigProvider.jsx";
 import { classFields, classKey } from "../positionClass.js";
 
 // The new-position (or new-location) dialog opened from the tree's last row:
@@ -218,6 +219,8 @@ const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_ne
 // the address's name for its tabs (?view= on a product's page). `heading`: the
 // picked row's heading level (1 where the tree is the page, as a product's is).
 export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null }) {
+  // Work orders turned off (workOrdersFlag.js): an event logged raises none.
+  const workOrders = useWorkOrdersOn();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -2215,7 +2218,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const raised = out.work_orders_raised || [];
     say(raised.length
       ? `Logged ${out.event.event_type}: raised ${raised.map((w) => `#${w.number}`).join(", ")}.`
-      : `Logged ${out.event.event_type}. No task here is waiting for it, or its work order is open already.`, "ok", { fade: !raised.length });
+      : workOrders ? `Logged ${out.event.event_type}. No task here is waiting for it, or its work order is open already.`
+        : `Logged ${out.event.event_type}. Record what was done on the tasks it sets off.`, "ok", { fade: !raised.length });
   };
   const reportFiled = (view) => {
     const select = reportFor?.select || view.position?.id;
