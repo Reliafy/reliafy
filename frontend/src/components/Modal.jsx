@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
 import { trapTab, useDialogFocus } from "./focusTrap.js";
+import { useBackdropClose } from "./backdropClose.js";
 
 // Open modals, oldest first: Escape closes only the topmost one (a sheet
 // picker opened from inside another dialog, say).
@@ -23,6 +24,9 @@ export default function Modal({ title, onClose, locked, children, footer, classN
   const box = useRef(null);
   const titleId = useId();
   useDialogFocus(box);
+  // The overlay closes it only when the press and the release are both on the
+  // overlay: selecting text in a field and letting go outside must not.
+  const backdrop = useBackdropClose(onClose, !locked);
   useEffect(() => {
     const me = token.current;
     openModals.push(me);
@@ -43,10 +47,7 @@ export default function Modal({ title, onClose, locked, children, footer, classN
   return createPortal(
     <div
       className={"overlay" + (overlayClassName ? " " + overlayClassName : "")}
-      onClick={(e) => {
-        // Not the second click of a double-click on the button that opened it.
-        if (!locked && e.detail < 2) onClose();
-      }}
+      {...backdrop}
     >
       <div
         ref={box}
