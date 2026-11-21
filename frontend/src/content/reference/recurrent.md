@@ -1,7 +1,7 @@
 ---
 family: recurrent
 title: "Recurrent-event models"
-description: "Repairable systems — how often a fleet fails over time, whether it's improving or deteriorating, and how to read the reliability-growth parameter."
+description: "Repairable systems — how often a fleet fails over time, whether it's changing over time, and how to read the reliability-growth parameter."
 ---
 
 These describe **repairable systems**, which is a genuinely different problem
@@ -20,19 +20,16 @@ number of failures by time `t`. Its slope is the **rate of occurrence of
 failures**, `λ(t)`. Whether that slope rises, falls or holds flat is usually the
 whole answer:
 
-* **falling** — reliability growth. Fixes are working; the system is maturing.
-* **flat** — a stable system at a steady failure rate.
-* **rising** — deterioration. Repairs are not restoring the system, and you're
-  heading toward overhaul or replacement.
+* **falling** — failures are coming slower as time goes on.
+* **flat** — a steady failure rate.
+* **rising** — failures are coming faster as time goes on.
 
 Reliafy fits any of the models below to the same event history, so the
 comparison between them is direct.
 
 **How Reliafy reads the trend.** A fit to data reports the growth parameter with
-its 90% confidence interval, and the verdict comes from that interval, not from
-the point estimate alone: *deteriorating* when the whole interval is above the
-no-trend value (β = 1), *improving* when it is all below, and *stable* when it
-includes it — the data don't show a trend either way. Two trend tests run
+its 90% confidence interval, and shows it beside the no-trend value (β = 1)
+without a verdict: the analyst decides what it means. Two trend tests run
 alongside, each testing every system over its own observation window: the
 **Laplace** test and the **MIL-HDBK-189C** test (the chi-squared test of the
 power-law shape). A **Cramér-von Mises** test, with a bootstrap p-value, checks
@@ -65,9 +62,9 @@ M(t) = λ · t^β
 something different, because it describes a *rate of events* rather than a
 time to one failure:
 
-* `β < 1` — failures are getting **less** frequent. Reliability growth.
+* `β < 1` — failures are getting **less** frequent.
 * `β = 1` — constant rate; this reduces exactly to the HPP.
-* `β > 1` — failures are getting **more** frequent. Deterioration.
+* `β > 1` — failures are getting **more** frequent.
 
 **Use it as** the default for repairable-system event data, for tracking a
 development programme, and for projecting how many failures a fleet will see
@@ -111,7 +108,7 @@ in steady state, and the assumption behind most spares and availability
 calculations.
 
 **Watch out:** assuming an HPP when the rate is genuinely rising is how
-deterioration gets missed until it's expensive. Always look at the trend before
+a rising rate gets missed until it's expensive. Always look at the trend before
 settling on a constant rate.
 
 ## cox_lewis
@@ -125,13 +122,13 @@ rather than following a power of time.
 M(t) = exp(α) · (exp(β·t) − 1) / β
 ```
 
-Here `β` is a slope, not a shape: `β > 0` is deteriorating, `β < 0` improving,
-and `β = 0` is the HPP. The verdict uses its 90% interval against 0.
+Here `β` is a slope, not a shape: `β > 0` means failures come faster over time, `β < 0` slower,
+and `β = 0` is the HPP. Its 90% interval is shown beside 0.
 
 **Use it as** the alternative to Crow-AMSAA when the trend doesn't look like a
 power law — a rate that was already well above zero at the start and grows
 steadily, as wear-out in an old system often does. Compare the two by AIC and
 the goodness-of-fit test. **Watch out:** with `β < 0` the expected total number
-of failures levels off at `exp(α) / −β`, so long-range predictions from an
-improving fit can be optimistic; and growth projection and the demonstrated-MTBF
+of failures levels off at `exp(α) / −β`, so long-range predictions from a
+fit with falling rate can be optimistic; and growth projection and the demonstrated-MTBF
 exact bounds are Crow-AMSAA methods only.

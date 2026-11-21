@@ -186,6 +186,28 @@ whole exercise.
 
 ![System reliability results with importance measures and cut sets](/guides/img/rbd-02-results.png)
 
+### How much of the time is it up?
+
+Reliability answers "will it last the mission?". If you repair what fails, the
+question is usually how much of the time the system is running. **Availability
+with repairs**, under the results, answers that for the diagram as drawn (a
+mission's diagram, or one built from the asset tree, too): click **Work out
+availability** and it says, for example, "Available 98.7% of the time over a
+year: about 114 hours down, mostly CV-02", with the long-run figure beside it
+and the blocks that drive the downtime.
+
+Each block needs a **mean time to repair**. The **Repair times** table shows
+where each one came from: the block's own repair time, the outages in the
+diagram's outage history, or the maintainability prediction of the position the
+block stands for. A block with none says **None yet**, and nothing is worked
+out until you type one (in hours) — a repair time is never guessed. Type over
+any of them to try another figure; **Keep them on the blocks** saves what you
+typed with the diagram. Redundancy stays as drawn: parallel paths, k-of-n
+votes and standby groups each keep their spare running while one is repaired.
+Where the positions have planned work on their tasks, the answer is the
+achieved availability, with repairs alone (the inherent figure) beside it.
+**Over** sets the period (a mission's length, or a year, by default).
+
 The other tabs ask other questions of the same diagram: **Fault tree** draws it
 as a fault tree, **Design** works out how many copies of each block give the most
 reliability within a budget (the total cost of the whole design; it shows what

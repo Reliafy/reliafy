@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from backend import recurrent as recurrent_fit
 from backend import recurrent_models
+from backend import recurrent_systems
 from backend.db import get_session
 from backend.http_limits import read_upload
 from backend.fitting import FitError
@@ -29,13 +30,15 @@ router = APIRouter(prefix="/api")
 
 
 def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=None, mode=None,
-                    z=None, ws=None, we=None, windows=None, baseline=None, m=None, record_end=None) -> dict:
+                    z=None, ws=None, we=None, windows=None, baseline=None, m=None, record_end=None,
+                    systems=None, downtime=None, cost=None) -> dict:
     mapping = {"i": i, "x": x}
     # Optional modifiers (c/n/tl/tr); ``t`` is the legacy alias for ``tr``.
     # ``mode`` is each failure's mode (or cause): a growth projection's modes
     # (#232) and the MCF by cause (#65). ``ws``/``we`` are observation-window
     # columns and ``z`` the covariate columns (#65).
-    for key, val in (("c", c), ("n", n), ("tl", tl), ("tr", tr or t), ("mode", mode), ("ws", ws), ("we", we)):
+    for key, val in (("c", c), ("n", n), ("tl", tl), ("tr", tr or t), ("mode", mode), ("ws", ws), ("we", we),
+                     ("downtime", downtime), ("cost", cost)):
         if val:
             mapping[key] = val
     cols = [col for item in (z or []) for col in str(item).split(",") if col.strip()]
@@ -56,6 +59,10 @@ def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=No
     end = recurrent_fit.parse_record_end(record_end)
     if end is not None:
         spec["record_end"] = end
+    # Fit only these systems (one, or a chosen set); none: every system.
+    chosen = recurrent_systems.parse_systems(systems)
+    if chosen:
+        spec["systems"] = chosen
     return spec
 
 
@@ -70,7 +77,6 @@ def _model_summary(doc, ctx: AccessCtx) -> dict:
         "n_systems": r.get("n_systems"),
         "n_events": r.get("n_events"),
         "beta": r.get("beta"),
-        "growth": r.get("growth"),
         "unit": r.get("unit", ""),
         "dataset_id": doc.dataset_id,
         "is_sample": samples_service.is_sample(doc.owner_id),
@@ -121,6 +127,9 @@ def fit_preview(
     we: str | None = Form(default=None),
     windows: str | None = Form(default=None),
     record_end: str | None = Form(default=None),
+    systems: list[str] | None = Form(default=None),
+    downtime: str | None = Form(default=None),
+    cost: str | None = Form(default=None),
     baseline: str | None = Form(default=None),
     m: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
@@ -134,7 +143,8 @@ def fit_preview(
         contents = read_upload(file) if (file is not None and not dataset_id) else None
         df, preview_dataset_id = datasets_service.preview_frame(session, ctx.write_owner, dataset_id, contents)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
-                               windows=windows, baseline=baseline, m=m, record_end=record_end)
+                               windows=windows, baseline=baseline, m=m, record_end=record_end,
+                               systems=systems, downtime=downtime, cost=cost)
         payload, _ = recurrent_fit.fit_spec(df, spec)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -164,6 +174,9 @@ def save_model(
     we: str | None = Form(default=None),
     windows: str | None = Form(default=None),
     record_end: str | None = Form(default=None),
+    systems: list[str] | None = Form(default=None),
+    downtime: str | None = Form(default=None),
+    cost: str | None = Form(default=None),
     baseline: str | None = Form(default=None),
     m: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
@@ -186,7 +199,8 @@ def save_model(
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
-                               windows=windows, baseline=baseline, m=m, record_end=record_end)
+                               windows=windows, baseline=baseline, m=m, record_end=record_end,
+                               systems=systems, downtime=downtime, cost=cost)
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:

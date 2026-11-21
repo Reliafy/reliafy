@@ -50,7 +50,7 @@ nothing about the *pattern* of failures — a system failing like clockwork
 every 1,000 hours and a system alternating 100-hour and 1,900-hour intervals
 both report MTBF = 1,000 hours. One of them is telling you something is
 wrong with your overhauls; the average can't hear it. (Trend analysis of
-repairable systems — is it degrading or improving? — is a Crow-AMSAA
+repairable systems — is the failure rate changing? — is a Crow-AMSAA
 question, not an MTBF question.)
 
 ## The three standard deceptions

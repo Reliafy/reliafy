@@ -1364,6 +1364,16 @@ export function rbdPhases(graph, currentState = null) {
   });
 }
 
+// Availability with repairs for any diagram (non-repairable included): {graph, rbdId, repairs
+// ({block id: mean time to repair}, hours where the clock is a time), period (diagram unit)}.
+export function rbdRepairAvailability({ graph, rbdId = null, repairs = null, period = null }) {
+  return request("/api/rbds/repair-availability", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, rbd_id: rbdId, repairs: repairs || null, period: period ?? null }),
+  });
+}
+
 // A network's two-terminal reliability (#160) at ``t`` (null = where it's
 // about 90%), with ``tMax`` the curve's end (null = automatic).
 export function rbdNetwork(graph, t = null, tMax = null) {
@@ -1433,7 +1443,7 @@ export function getRecurrentOptions() {
   return request("/api/recurrent/options");
 }
 
-function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows, recordEnd } = {}) {
+function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows, recordEnd, systems } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -1447,6 +1457,8 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name, options, w
   if (windows && String(windows).trim()) form.append("windows", windows);
   // One end of test for every system with no end of record of its own.
   if (recordEnd != null && String(recordEnd).trim()) form.append("record_end", String(recordEnd).trim());
+  // Only these systems, fitted by themselves (none: every system).
+  (systems || []).forEach((sid) => form.append("systems", sid));
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;
@@ -1889,6 +1901,15 @@ export function searchLibrary({ q, source, equipmentType, failureMode, kind, pag
 // the decision dialog offers, with the evidence each outcome expects.
 export function getRcmOptions() {
   return request("/api/maintenance/rcm/options");
+}
+// What a decision on a position (for a failure mode) could link as its evidence, best first
+// (backend/maintenance/rcm_evidence.py): {position, mode, class, kinds, candidates, total}.
+export function listEvidenceCandidates(positionId, modeId = null, { q = "", kind = "" } = {}) {
+  const p = new URLSearchParams({ position_id: positionId });
+  if (modeId) p.set("mode_id", modeId);
+  if (q) p.set("q", q);
+  if (kind) p.set("kind", kind);
+  return request(`/api/maintenance/rcm/evidence-candidates?${p.toString()}`);
 }
 
 // ---- RCM studies: stand-alone worksheets (/maintenance/rcm). They share no

@@ -247,7 +247,11 @@ and rtf uneconomic, model (a non-repairable model) for rtf random; the result's 
 the decision (supported, contradicted, inconclusive, unevidenced, stale; partly for a combination) and why. Any decision can instead link \
 a report (type report: a saved report's id) or a function's notes and rationale, where the working behind its \
 performance standard is written (type working: the function's id; it needs notes written): linked, not checked, so its status is linked \
-(evidence_kind report or working), or stale once it has gone. decide replaces the whole \
+(evidence_kind report or working), or stale once it has gone. So can a record on the tree, linked the same way: \
+type history (a position's id, or class:<class> for its pooled history), point (a measuring point's id: its \
+readings) or failure_report (a report's id). maintenance list kind rcm_evidence lists what's relevant to a mode, \
+best first. A model or a history can carry window {since?, until?} (fitment start dates): the lives it rests on; \
+fit one on those lives with models.link fit true and window. Nothing is linked until you link it. decide replaces the whole \
 decision: to add evidence, send the current one with it. A decision saved before the rules (or imported) that \
 they'd refuse is kept, and its read carries advice to relay, as does a hidden mode with no category yet; one \
 that breaks the rules (no consequence answered, refused by the rules, or rtf / accept / a lone redesign with tasks \

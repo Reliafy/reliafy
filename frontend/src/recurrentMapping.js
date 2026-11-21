@@ -119,7 +119,7 @@ export function recordEndIssue(value) {
 // [[field, value]], in order: i, x, the optional modifiers, the covariates.
 export function recurrentFields(mapping) {
   const out = [["i", mapping.i], ["x", mapping.x]];
-  ["c", "n", "tl", "tr", "t", "mode", "ws", "we"].forEach((k) => { if (mapping[k]) out.push([k, mapping[k]]); });
+  ["c", "n", "tl", "tr", "t", "mode", "ws", "we", "downtime", "cost"].forEach((k) => { if (mapping[k]) out.push([k, mapping[k]]); });
   (mapping.z || []).forEach((col) => out.push(["z", col]));
   return out;
 }

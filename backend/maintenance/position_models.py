@@ -1037,6 +1037,10 @@ def source_text(link: dict, position_name: str = "") -> str:
     if role == "fitted":
         f, s = src.get("failures") or 0, src.get("suspensions") or 0
         counts = f"{f} failure{'' if f == 1 else 's'}, {s} suspension{'' if s == 1 else 's'}"
+        if src.get("window"):
+            from backend.maintenance.rcm_decisions import window_words
+
+            counts += f", only {window_words(src['window'])}"
         if src.get("scope") == "class":
             return f"Fitted from the class {src.get('class_name') or ''}'s pooled history: {counts}".replace("  ", " ")
         if src.get("scope") == "design":
@@ -1208,11 +1212,14 @@ def _rows_for(m, rows: list[dict], texts: set[str]) -> list[dict]:
 
 
 def fit_position_model(m, db, position_id: str, distribution: str = "weibull", failure_mode_ids=None,
-                       scope: str = "auto", note: str = "", replace_link_id: str | None = None) -> dict:
+                       scope: str = "auto", note: str = "", replace_link_id: str | None = None,
+                       window: dict | None = None) -> dict:
     """Fit a non-repairable model to a position's own failure history (a design position:
     the history of the units built from it), or to its class's pooled history when its own
     is thin (scope auto), save it to Models and attach it (role fitted). failure_mode_ids:
-    the failure modes it's for (failures by other modes count as suspensions)."""
+    the failure modes it's for (failures by other modes count as suspensions). window
+    ({since?, until?}, ISO days): only the lives whose fitment started then ("since 2022"),
+    recorded on the link (source.window, with the lives and failures it used) and in the name."""
     import pandas as pd
 
     from backend.maintenance import loop
@@ -1235,7 +1242,17 @@ def fit_position_model(m, db, position_id: str, distribution: str = "weibull", f
     else:
         own, own_scope = m.life_data(position_id), "position"
 
+    from backend.maintenance import rcm_decisions, rcm_evidence
+
+    try:
+        window = rcm_decisions.clean_window(window)
+    except rcm_decisions.RcmValidationError as err:
+        raise sv.Invalid(str(err)) from None
+    if window:
+        window = {k: window[k] for k in ("since", "until") if k in window}
+
     def usable(rows):
+        rows = rcm_evidence.in_window(rows, window)
         rows = [r for r in _rows_for(m, rows, texts) if (r["xr"] if r["c"] == 2 else r["x"]) > 0]
         return rows, sum(1 for r in rows if r["c"] != 1)
 
@@ -1260,7 +1277,8 @@ def fit_position_model(m, db, position_id: str, distribution: str = "weibull", f
             "the units built from it" if used == "design" else "this position's history")
         also = (f" (its class {class_name} has {class_failures})" if class_failures is not None and used != "class"
                 else "")
-        for_modes = " for those failure modes" if modes else ""
+        for_modes = (" for those failure modes" if modes else "") + (
+            f" among {rcm_decisions.window_words(window)}" if window else "")
         hint = " With one failure, fit exponential (a constant failure rate) until more are on record." \
             if failures == 1 and distribution != "exponential" else ""
         raise sv.Invalid(f"{whose[0].upper()}{whose[1:]} has {failures} failure{'s' if failures != 1 else ''}"
@@ -1277,13 +1295,15 @@ def fit_position_model(m, db, position_id: str, distribution: str = "weibull", f
     if modes:
         words = ", ".join(sorted((m.s.node(m.org, mid) or {}).get("text", "") for mid in modes))
         what = f"{what}: {words}"
-    name = f"{what[:150]} (from maintenance records)"
+    spans = f", {rcm_decisions.window_words(window).split(' fitted ', 1)[-1].split(' (')[0]}" if window else ""
+    name = f"{what[:150]} (from maintenance records{spans})"
     dataset = datasets_service.create_dataset(db, f"{what[:150]}: maintenance life data.csv",
                                               buf.getvalue().encode(), m.org)
     model = models_service.save_model(db, name, dataset, distribution, mapping, [], None, "days", owner_id=m.org)
     source = {"scope": used, "failures": failures, "suspensions": len(rows) - failures,
               "distribution": model.distribution_id} | (
-                  {"class_name": class_name, "class_key": class_key} if used == "class" else {})
+                  {"class_name": class_name, "class_key": class_key} if used == "class" else {}) | (
+                  {"window": {**window, "lives": len(rows), "failures": failures}} if window else {})
     return m.link_position_model(position_id, "model", model.id, "fitted", modes, model.name, note, source,
                                  replace_link_id)
 

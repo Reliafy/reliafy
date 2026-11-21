@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   cvmCheck, duanePoints, fittedToData, growingCheck, logSlope, mtbfWords, planViews, recurrentAnswer, recurrentTabs,
   resolveRecurrentTab, systemsCheck, trendCheck, poissonUpperTail, scaledParam,
-  dataText, effectTone, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle, terminationText,
+  dataText, effectTone, fitSystemsHref, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle, terminationText,
 } from "./recurrentResults.js";
 
 test("paramLabel: plain names with the unit, per model", () => {
@@ -29,21 +29,22 @@ test("orderedParams: shape before scale, restoration first", () => {
   assert.deepEqual(orderedParams(grp).map((p) => p.name), ["q", "beta", "alpha"]);
 });
 
-test("growthReading: the verdict and the interval that decides it", () => {
+test("growthReading: the evidence and what it means, no verdict", () => {
   const r = {
     growth: "deteriorating",
     growth_basis: { symbol: "β", no_trend: 1, ci: [1.44, 2.95], estimate: 2.06 },
   };
   assert.deepEqual(growthReading(r), {
-    title: "Deteriorating",
-    text: "β's 95% interval, 1.44–2.95, is wholly above 1: failures are accelerating.",
+    title: "Shape of the failure rate",
+    text: "β 2.06 (95% range 1.44–2.95). β above 1 means failures come faster as time goes on; below 1, slower.",
   });
   const flat = { growth: "stable", growth_basis: { symbol: "β", no_trend: 1, ci: [0.8, 1.3] } };
-  assert.match(growthReading(flat).text, /includes 1/);
+  assert.doesNotMatch(growthReading({ ...flat, growth_basis: { ...flat.growth_basis, estimate: 1.0 } }).text, /improv|deteriorat|no clear trend/i);
   const params = { from_params: true, growth: "improving", growth_basis: { symbol: "β", no_trend: 1, ci: null, estimate: 0.7 } };
   assert.match(growthReading(params).text, /built from parameters/);
+  assert.match(growthReading(params).text, /^β 0\.7 /);
   // A fit that gives no interval (Duane) says so, not "built from parameters".
-  assert.match(growthReading({ ...params, from_params: false }).text, /this fit gives no interval/);
+  assert.match(growthReading({ ...params, from_params: false }).text, /this fit gives no range/);
   assert.equal(growthReading({ growth: null }), null);
 });
 
@@ -53,14 +54,18 @@ test("small words", () => {
   assert.equal(ratioText(2.164), "×2.2");
   assert.equal(ratioText(1.0334), "×1.03");
   assert.equal(ratioCiText([1.012, 1.056]), "1.01–1.06");
-  assert.equal(effectTone("lower"), "success");
-  assert.equal(effectTone("higher"), "warning");
+  // No good/bad colour on a covariate's effect.
+  assert.equal(effectTone("lower"), "neutral");
+  assert.equal(effectTone("higher"), "neutral");
   assert.equal(effectTone("unclear"), "neutral");
   assert.equal(repairTitle("partial"), "Partial repair");
   assert.equal(pct(0.793), "79%");
   assert.equal(pct(null), "—");
   assert.equal(dataText({ n_systems: 4, n_events: 30 }), "4 systems, 30 failures");
   assert.equal(dataText({ n_systems: null }), null);
+  assert.equal(dataText({ n_systems: 1, n_events: 8, subset: { systems: ["CV-03"], of: 7 } }), "CV-03 alone (1 of 7 systems), 8 failures");
+  assert.equal(dataText({ n_systems: 2, n_events: 9, subset: { systems: ["A", "B"], of: 7 } }), "2 of 7 systems, 9 failures");
+  assert.equal(fitSystemsHref("m1", ["CV-03 GB"]), "/models/recurrent/new?from=m1&system=CV-03+GB");
   assert.equal(familyOf({}), "nhpp");
 });
 
@@ -74,7 +79,7 @@ const crow = {
   params: [{ name: "alpha", value: 1881 }, { name: "beta", value: 2.06, ci: [1.44, 2.95] }],
   mtbf: 323.4, demonstrated_mtbf: { lower: 229.9, confidence: 0.9 },
   mcf: { observed, fitted: { x: [0, 50, 100, 400], mcf: [0, 0.2, 1, 2.25] } },
-  trend_tests: [{ test: "Laplace", p_value: 0.0009, significant: true, trend: "increasing" }],
+  trend_tests: [{ id: "laplace", test: "Laplace", statistic: 3.31, p_value: 0.0009, significant: true, trend: "increasing" }],
 };
 const names = (tabs) => tabs.map((t) => t.label);
 
@@ -117,7 +122,7 @@ test("resolveRecurrentTab: ids, names and the old tab ids", () => {
 
 test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
   assert.deepEqual(recurrentAnswer(crow, { saved: "saved now" }), [
-    "Deteriorating", "β 2.06 (95% 1.44–2.95)", "MTBF now 323 hours (≥ 230 at 90%)", "4 systems, 30 failures", "saved now",
+    "Crow-AMSAA (NHPP)", "β 2.06 (95% 1.44–2.95)", "MTBF now 323 hours (≥ 230 at 90%)", "4 systems, 30 failures", "saved now",
   ]);
   assert.equal(mtbfWords({ ...crow, demonstrated_mtbf: null, mtbf_ci: [195, 577], rates_at: "x" }),
     "MTBF now 323 hours (95% 195–577), at the fleet's average covariates");
@@ -147,13 +152,14 @@ test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
   assert.deepEqual(recurrentAnswer(hpp), ["Constant failure rate", "MTBF at the horizon 500 hours", "made from parameters"]);
 });
 
-test("trendCheck: a trend is a finding for a growth model, a fault for a constant rate", () => {
-  assert.equal(trendCheck(crow).tone, "good");
-  assert.match(trendCheck(crow).words, /^Yes, it's rising/);
-  assert.equal(trendCheck({ ...crow, model: { id: "hpp" } }).tone, "bad");
-  const flat = { ...crow, trend_tests: [{ test: "Laplace", p_value: 0.4, significant: false, trend: "no trend" }] };
-  assert.equal(trendCheck(flat).tone, "caveat");
-  assert.equal(trendCheck({ ...flat, model: { id: "hpp" } }).tone, "good");
+test("trendCheck: each test's statistic and p-value, no verdict or tone", () => {
+  const c = trendCheck(crow);
+  assert.equal(c.tone, undefined);
+  assert.match(c.words, /^Laplace trend test: U = 3\.31, p < 0\.001/);
+  assert.match(c.words, /how often a pattern this strong arises by chance/);
+  assert.doesNotMatch(c.words, /accelerat|slowing|rising|No clear change|constant-rate model/);
+  const hpp = trendCheck({ ...crow, model: { id: "hpp" } });
+  assert.equal(hpp.tone, undefined);
   assert.equal(trendCheck({ trend_tests: [] }), null);
 });
 
@@ -165,8 +171,9 @@ test("the Duane plot: cumulative MTBF over the data's span, and its slope", () =
   assert.deepEqual(d.fitted.x, [100, 400]);
   assert.ok(logSlope(d.observed) > 0);
   assert.equal(logSlope({ x: [1, 2], y: [1, 2] }), null);
-  assert.match(growingCheck(crow).words, /^No, it's getting worse: failures are accelerating \(β's 95% interval, 1.44–2.95, is wholly above 1\)\. The cumulative MTBF rises/);
-  assert.match(growingCheck({ mcf: crow.mcf }).words, /^Yes: the time between failures is getting longer/);
+  assert.match(growingCheck(crow).words, /^β 2\.06 \(95% range 1\.44–2\.95\)\. β above 1 means .* The cumulative MTBF rises as time goes on \(Duane slope/);
+  assert.doesNotMatch(growingCheck(crow).words, /getting worse|Yes|No,/);
+  assert.match(growingCheck({ mcf: crow.mcf }).words, /^The cumulative MTBF rises as time goes on/);
 });
 
 test("cvmCheck and systemsCheck", () => {
@@ -175,14 +182,13 @@ test("cvmCheck and systemsCheck", () => {
   assert.equal(cvmCheck({ gof_test: { p_value: null, reason: "Skipped" } }).words, "Skipped");
   assert.equal(cvmCheck({}), null);
   const rows = [{ system: "P-06", failures: 13, expected: 8.84, excess: 4.16 }, { system: "P-01", failures: 4, expected: 3.5, excess: 0.5 }];
-  // 13 against 8.8 is within chance across two systems; 30 against 12 isn't.
-  assert.match(systemsCheck({ system_residuals: rows }).words, /^P-06 has the most failures beyond the model \(13 failures where it expects 8\.8\), but no more than chance/);
+  // The counts against expectation and the p-value; never whether anything stands out.
+  assert.match(systemsCheck({ system_residuals: rows }).words, /^Largest excess: P-06, 13 failures where the model expects 8\.8 \(p = 0\.11: /);
   const bad = [{ system: "HT-11", failures: 30, expected: 12, excess: 18 }, rows[1]];
-  assert.match(systemsCheck({ system_residuals: bad, n_systems: 12 }).words, /^HT-11 fails most beyond the model: 30 failures where it expects 12\. Worth a look as a bad actor\./);
-  // 27 against 24.4 is never a bad actor.
-  const w16 = [{ system: "C-3", failures: 27, expected: 24.4, excess: 2.6 }, rows[1]];
-  assert.doesNotMatch(systemsCheck({ system_residuals: w16, n_systems: 8 }).words, /bad actor/);
-  assert.match(systemsCheck({ system_residuals: [{ ...rows[1] }, rows[1]] }).words, /^No system stands out/);
+  assert.match(systemsCheck({ system_residuals: bad, n_systems: 12 }).words, /^Largest excess: HT-11, 30 failures where the model expects 12 \(p < 0\.001: .*compare it with 0\.0042\)/);
+  for (const t of [rows, bad, [{ ...rows[1] }, rows[1]]]) {
+    assert.doesNotMatch(systemsCheck({ system_residuals: t }).words, /bad actor|stands? out|Worth a look/);
+  }
   assert.equal(systemsCheck({ system_residuals: [rows[0]] }), null);
 });
 
@@ -218,6 +224,17 @@ test("terminationText: says how the record ends", () => {
   assert.equal(terminationText({ ...one, end_of_observation: 940, warnings: [{ id: "no_record_end" }] }),
     "failure-terminated: ended at the last failure (940 hours)");
   assert.equal(terminationText(one), null);
+  // Each system's own end of record, so a record cut short is seen.
+  const ends = [{ end: 1096, systems: ["CV-01", "CV-02", "CV-04", "CV-05", "CV-06", "CV-08"] }, { end: 995, systems: ["CV-03"] }];
+  assert.equal(terminationText({ ...one, unit: "days", n_systems: 7, termination: { kind: "time", end: 1096, ends } }),
+    "time-terminated: 6 systems to 1,096 days; CV-03 to 995 days");
+  assert.equal(terminationText({ ...one, unit: "days", n_systems: 7, termination: { kind: "time", end: 1096, ends: [ends[0]] } }),
+    "time-terminated: every system to 1,096 days");
+  assert.equal(terminationText({ ...one, unit: "days", termination: { kind: "time", end: 995, ends: [ends[1]] } }),
+    "time-terminated: CV-03 to 995 days");
+  const many = [1, 2, 3, 4].map((k) => ({ end: k * 100, systems: [`S${k}`] }));
+  assert.equal(terminationText({ ...one, n_systems: 4, termination: { kind: "time", end: 400, ends: many } }),
+    "time-terminated: each system to its own end of record, from 100 hours to 400 hours");
   assert.equal(terminationText({ from_params: true, termination: { kind: "time", end: 1 } }), null);
   // On the answer line, after the data.
   const words = recurrentAnswer({ ...one, model: { id: "crow_amsaa" }, termination: { kind: "time", end: 1000 } });

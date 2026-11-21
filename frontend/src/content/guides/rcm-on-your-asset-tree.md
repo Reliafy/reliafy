@@ -489,6 +489,23 @@ when you're ready. Redesign and accept-risk
 decisions need no evidence, so they show no status unless you link a report
 or a function's notes.
 
+The picker opens on **Found here**: what's on record for the failure mode,
+its position and the position's class, nearest first. That's the life models
+attached there and the class's model, saved analyses run on them, the failure
+history (the position's and the class's pooled one), condition readings and
+failure reports. Search by name, date or failure mode, or pick one kind. A
+model or a saved analysis is checked against the decision. A history,
+readings or a failure report is linked, not checked. Nothing is linked until
+you pick one and save.
+
+To rest the decision on recent lives only, pick a failure history and fill in
+**Only the lives fitted** (from and to). You can also open **Fit a life model
+on part of the history…**: it fits a Weibull to the items that went in between
+those dates and links it. Either way the rationale names the window it rests
+on, such as *only 8 lives fitted since 1 Jan 2022 (2 failed)*. A fit on a
+handful of failures has wide bounds, so read them before you change an
+interval.
+
 The chips beside the position's name, at the top of its panel, count the linked
 statuses for that position (*3 supported, 1 contradicted*), and a function's row counts them for
 everything inside it. A position with no red and no amber is one whose every
