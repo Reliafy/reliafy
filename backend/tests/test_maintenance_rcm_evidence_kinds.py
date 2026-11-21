@@ -120,7 +120,7 @@ def test_the_rules_link_the_new_kinds_and_name_what_to_check():
     # A working is on the graph: the tree checks it, not the collections.
     assert access.refs_of_decision({"evidence": {"type": "working", "id": "f1"}}) == []
     assert [rcm_decisions.evidence_kind(t) for t in rcm_decisions.EVIDENCE_TYPES] == [
-        "model", "model", "model", "report", "working"]
+        "model", "model", "model", "report", "working", "history", "point", "failure_report"]
     # Nothing linked: no kind.
     out = rcm_decisions.resolve_decision({"outcome": "rtf", "rtf_basis": "random"}, lambda *_: None)
     assert out["status"] == "unevidenced" and "evidence_kind" not in out

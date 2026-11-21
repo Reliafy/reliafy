@@ -5021,6 +5021,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # The decision's evidence and each member's own (a combination's).
             had = [fm.get("evidence")] + [o.get("evidence") for o in fm.get("outcomes") or []]
             for linked in [cleaned.get("evidence")] + [mm.get("evidence") for mm in members or []]:
+                if linked and linked["type"] in rcm_decisions.GRAPH_TYPES and linked not in had:
+                    # A failure history, a measuring point or a failure report: one on this tree.
+                    from backend.maintenance import rcm_evidence
+
+                    if rcm_evidence.graph_ref(self, linked) is None:
+                        raise Invalid(rcm_evidence.missing_words(linked["type"]))
+                    continue
                 if not linked or linked["type"] != "working" or linked in had:
                     continue
                 # A newly linked working is a function on this tree with notes and rationale written.
@@ -6164,6 +6171,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for member in (decision or {}).get("outcomes") or []:
             if (member.get("evidence") or {}).get("type") == "working":
                 member["working"] = self._working_ref(member["evidence"].get("id"))
+        for holder in [decision or {}, *((decision or {}).get("outcomes") or [])]:
+            if (holder.get("evidence") or {}).get("type") in rcm_decisions.GRAPH_TYPES:
+                # A failure history, readings or a failure report: on the graph too, handed over the same way.
+                from backend.maintenance import rcm_evidence
+
+                holder["linked"] = rcm_evidence.graph_ref(self, holder["evidence"])
         brief = self._tasks_brief(tasks, shares)
         # What each task costs each time (Nov 2026): the RCM reads the task's own figure, and
         # says where it came from, rather than asking for it again.

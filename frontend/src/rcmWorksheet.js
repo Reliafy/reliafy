@@ -99,17 +99,23 @@ export const STATUS_LABEL = {
 // hold the working behind its performance standard): linked, not checked
 // (nothing is computed from them), so the check names what's linked and never
 // says it's supported.
-export const LINKED_LABEL = { report: "Report linked", working: "Notes linked", model: "Model linked" };
+export const LINKED_LABEL = { report: "Report linked", working: "Notes linked", model: "Model linked",
+  history: "History linked", point: "Readings linked", failure_report: "Failure report linked" };
 export const isLinkedOnly = (d) => d?.status === "linked";
 // The kinds of evidence a decision can link, as the decision dialog offers
 // them: models (a model or saved analysis, checked) when the decision expects
 // one, then a report and a function's notes and rationale (linked, not checked).
-export const EVIDENCE_KIND_LABEL = { model: "Models", report: "Reports", working: "Function notes" };
+export const EVIDENCE_KIND_LABEL = { found: "Found here", model: "Models", report: "Reports", working: "Function notes" };
+// The records on the tree a decision can link (linked, not checked): offered under Found here only.
+export const GRAPH_EVIDENCE = ["history", "point", "failure_report"];
 export const evidenceKinds = (expectedType) => [...(expectedType ? ["model"] : []), "report", "working"];
 // The kind the dialog opens on: what's linked now, else models when expected, else reports.
-export function startKind(evidence, expectedType) {
+// With a position (`found`: the picker can list what's on record there), Found here, unless
+// what's linked is a report or a function's notes.
+export function startKind(evidence, expectedType, found = false) {
   const t = evidence?.type;
   if (t === "report" || t === "working") return t;
+  if (found) return "found";
   return expectedType ? "model" : "report";
 }
 // The words for a decision's evidence check ("Supported", "Report linked"...);

@@ -116,7 +116,11 @@ def combination_ok(outcomes) -> bool:
 # then evidence that's only linked: a report, or a function's working, now its notes and rationale (its id is
 # the function's whose performance standard the working sits behind).
 CHECKED_TYPES = ("model", "strategy_analysis", "degradation_model")
-LINKED_TYPES = ("report", "working")
+#: Linked records on the maintenance graph (Nov 2026): a position's (or its class's) failure history,
+#: a measuring point's readings and a failure report. The read hands each over (the decision's
+#: ``linked``: {name, path, summary} or None once it has gone), as it does a working.
+GRAPH_TYPES = ("history", "point", "failure_report")
+LINKED_TYPES = ("report", "working") + GRAPH_TYPES
 EVIDENCE_TYPES = CHECKED_TYPES + LINKED_TYPES
 
 
@@ -460,7 +464,62 @@ def _clean_evidence(evidence) -> dict | None:
         raise RcmValidationError("Evidence needs the linked artifact's id.")
     # A type that doesn't match the outcome is allowed at write time and
     # resolves to 'inconclusive' at read — users can link first, fix later.
-    return {"type": etype, "id": eid.strip()}
+    out = {"type": etype, "id": eid.strip()}
+    window = clean_window(evidence.get("window"))
+    if window:
+        if etype not in ("model", "history"):
+            raise RcmValidationError("A date window goes with a life model or a failure history, the lives it rests on.")
+        out["window"] = window
+    return out
+
+
+def clean_window(value) -> dict | None:
+    """The lives a fit or a failure history rests on ({since?, until?}: fitment start dates, ISO days,
+    with lives? and failures?: the counts it was fitted from), or None for all of them."""
+    from datetime import date
+
+    if not value:
+        return None
+    if not isinstance(value, dict):
+        raise RcmValidationError("window is {since?, until?}: the first and last fitment start dates it uses.")
+    out: dict = {}
+    for key in ("since", "until"):
+        v = value.get(key)
+        if v in (None, ""):
+            continue
+        try:
+            out[key] = date.fromisoformat(str(v)[:10]).isoformat()
+        except ValueError:
+            raise RcmValidationError(f"window {key} is a date, e.g. 2022-01-01.") from None
+    if out.get("since") and out.get("until") and out["until"] < out["since"]:
+        raise RcmValidationError("The window's until date is before its since date.")
+    if not out:
+        return None
+    for key in ("lives", "failures"):
+        v = value.get(key)
+        if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10_000_000:
+            out[key] = v
+    return out
+
+
+def _day_words(iso: str) -> str:
+    from datetime import date
+
+    d = date.fromisoformat(iso)
+    return f"{d.day} {d.strftime('%b')} {d.year}"
+
+
+def window_words(window: dict | None) -> str:
+    """"52 lives fitted since 1 Jan 2022 (2 failed)": what a windowed fit or history rests on."""
+    if not window:
+        return ""
+    since, until = window.get("since"), window.get("until")
+    span = (f"between {_day_words(since)} and {_day_words(until)}" if since and until
+            else f"since {_day_words(since)}" if since else f"up to {_day_words(until)}")
+    lives = window.get("lives")
+    head = f"{lives:,} li{'fe' if lives == 1 else 'ves'} fitted {span}" if lives is not None else f"lives fitted {span}"
+    failed = window.get("failures")
+    return head + (f" ({failed:,} failed)" if failed is not None else "")
 
 
 def _clean_on_found(value, outcome) -> str:
@@ -755,7 +814,11 @@ def resolve_decision(decision: dict, fetch, clock=None) -> dict:
     if len(decision.get("outcomes") or []) > 1:
         return _resolve_combination(decision, fetch)
     out = _resolve_decision(decision, fetch)
-    kind = evidence_kind((decision.get("evidence") or {}).get("type"))
+    evidence = decision.get("evidence") or {}
+    kind = evidence_kind(evidence.get("type"))
+    if evidence.get("window"):
+        # What the evidence rests on, said where the rationale shows it.
+        out = out | {"window": evidence["window"], "window_words": window_words(evidence["window"])}
     return out | {"evidence_kind": kind} if kind else out
 
 
@@ -818,18 +881,20 @@ def _resolve_member(member: dict, decision: dict, fetch) -> dict:
     shared = decision.get("evidence")
     outcome = member["outcome"]
     if own:
-        evidence, working, source = own, member.get("working"), "own"
+        evidence, working, linked, source = own, member.get("working"), member.get("linked"), "own"
     elif shared and outcome != "redesign" and _fits(outcome, shared, fetch):
-        evidence, working, source = shared, decision.get("working"), "decision"
+        evidence, working, linked, source = shared, decision.get("working"), decision.get("linked"), "decision"
     else:
-        evidence = working = source = None
+        evidence = working = linked = source = None
     if outcome == "redesign" and not (evidence and evidence["type"] in LINKED_TYPES):
         return {"status": None}
     as_one = {"outcome": outcome, "interval": member.get("interval"), "interval_unit": member.get("interval_unit"),
-              "evidence": evidence, "working": working, "_clock": _clock(decision)}
+              "evidence": evidence, "working": working, "linked": linked, "_clock": _clock(decision)}
     out = _resolve_decision(as_one, fetch)
     if evidence:
         out |= {"evidence_kind": evidence_kind(evidence["type"]), "evidence_from": source}
+        if evidence.get("window"):
+            out |= {"window": evidence["window"], "window_words": window_words(evidence["window"])}
     elif shared:
         out["reason"] = (f"No evidence for this task: the decision's {_type_label(shared['type'])} is for another "
                          "of its tasks. Link one for this task.")
@@ -883,13 +948,26 @@ def _resolve_combination(decision: dict, fetch) -> dict:
     return out
 
 
-_LINKED_LABEL = {"report": "Report", "working": "Function's notes and rationale"}
+_LINKED_LABEL = {"report": "Report", "working": "Function's notes and rationale", "history": "Failure history",
+                 "point": "Condition readings", "failure_report": "Failure report"}
+_LINKED_WHAT = {"report": "report", "working": "function's notes", "history": "failure history",
+                "point": "set of readings", "failure_report": "failure report"}
 
 
 def _resolve_linked(decision: dict, evidence: dict, fetch) -> dict:
     """A report or a working: linked, not checked. "linked" while it's there to
     open, "stale" once it has gone; never supported or contradicted."""
     kind = evidence["type"]
+    if kind in GRAPH_TYPES:
+        ref = decision.get("linked")
+        if not ref:
+            return {"status": "stale", "reason": f"The linked {_LINKED_WHAT[kind]} has gone: it was deleted or "
+                                                 "retired."}
+        return {"status": "linked", "artifact_name": ref.get("name") or _LINKED_LABEL[kind],
+                "artifact_link_path": ref.get("path"),
+                "summary": f"{_LINKED_LABEL[kind]} linked{': ' + ref['summary'] if ref.get('summary') else ''}. "
+                           f"Open it to read the case; Reliafy doesn't check a {_LINKED_WHAT[kind]} against the "
+                           "decision."}
     if kind == "report":
         report = fetch("report", evidence["id"])
         if report is None:
@@ -1121,6 +1199,9 @@ def _type_label(etype: str) -> str:
         "degradation_model": "degradation model",
         "report": "report",
         "working": "function's notes and rationale",
+        "history": "failure history",
+        "point": "set of condition readings",
+        "failure_report": "failure report",
     }.get(etype, etype)
 
 

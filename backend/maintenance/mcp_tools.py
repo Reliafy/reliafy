@@ -282,6 +282,9 @@ LIST_KINDS: Table = {
         since / until bound when it occurred; q searches title, description, finder, failure mode and position.
         sort newest (default), oldest, status, consequence or position; limit up to 500 and offset page it.
         counts is by status over the scope and the other filters."""),
+    "rcm_evidence": ("position_id", "failure_mode_id q type", """What an RCM decision there could link as evidence,
+        best first (this mode, the position, its class, the library): life models, saved analyses, failure
+        history, condition readings, failure reports; q searches; type keeps one kind. Links nothing."""),
     "products": ("", "", "Products (design trees): part, rev, items_built, open_reports."),
     "product_items": ("product_id", "", "The items built from a product: serial, rev, built_on, hours, location, open "
                                         "reports, top_position_id."),
@@ -392,7 +395,8 @@ FAILURE_MODES: Table = {
     "decide": ("failure_mode_id", "hidden consequence decision task_id", """hidden (evident or not), consequence
         and the whole decision
         {outcome, rtf_basis, task, interval, interval_unit, on_found, evidence: {type, id}: a model or analysis,
-        checked; or report / working (a function's id: its notes and rationale): linked, not checked} ({} clears it; values:
+        checked; or report / working (a function's id: its notes and rationale) / history / point / failure_report:
+        linked, not checked; list kind rcm_evidence finds them} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
         A combination of tasks (an inspection plus a fixed-time replacement): decision.outcomes [{outcome, task,
         interval, interval_unit, task_id?, evidence?, on_found?}, ...], each scheduled one with a task of its own and
@@ -739,11 +743,11 @@ RELIABILITY: Table = {
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
 POSITION_MODELS: Table = {
     "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
-                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id covariates bind", """Attach a life model to a position (a link: the model isn't
+                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id covariates bind window", """Attach a life model to a position (a link: the model isn't
         copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
         alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
         default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
-        position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
+        position or class; saved to Models; window {since?, until?}: only lives fitted then). failure_mode_ids: the modes it's for (none: every failure there);
         replace_link_id: the model on it this replaces. library_record_id: a data library record (list kind library)
         as an exponential model, cited, with every one of its covariates given (pipe length, clock, demands a year...). fit true with data (position, class, both: the class's history
         as the prior) and method (mle: plain, 90% confidence; bayes: with a prior {kind: class | model | params | b10,
@@ -1432,7 +1436,9 @@ def register() -> None:
                          since: Annotated[int | str | None, Field(description=(
                              "events: a seq to read on from. failure_reports: a date, reports that occurred on or "
                              "after it."))] = None,
-                         type: Annotated[str | None, Field(description="events: one event type.")] = None,
+                         type: Annotated[str | None, Field(description=(
+                             "events: one event type. rcm_evidence: model, analysis, history, readings, "
+                             "failure_report or degradation_model."))] = None,
                          position_id: Annotated[str | None, Field(description=(
                              "failure_reports: the position (with below, everything inside it). tree: a branch."))] = None,
                          below: Annotated[bool | None, Field(description=(
@@ -1465,6 +1471,12 @@ def register() -> None:
         if kind == "failure_reports":
             return run(m.failure_reports, position_id, _d(below, True), location_id, item_id, status, consequence,
                        failure_mode_id, part_id, since, until, q, _d(sort, "newest"), _d(limit, 100), _d(offset, 0))
+        if kind == "rcm_evidence":
+            from backend.maintenance import rcm_evidence
+
+            reader = _reader(_caller(ctx))
+            return run(rcm_evidence.candidates, m, _db(), reader.read_owners, reader.hidden, position_id,
+                       failure_mode_id, q or "", type or None, _d(limit, 100))
         if kind == "products":
             return run(m.products)
         if kind == "product_items":
@@ -2633,6 +2645,8 @@ def register() -> None:
                                "or {kind: b10, b10: {value, low, high}, shape: {low, high}, unit}, or {kind: library, "
                                "record_id, covariates?, shape?: [low, high]} (a data library record and its covariates)."))] = None,
                            library_record_id: str | None = None,
+                           window: Annotated[dict[str, Any] | None, Field(description=(
+                               "With fit (no data/method): {since?, until?} ISO dates, the fitment starts kept."))] = None,
                            covariates: Annotated[dict[str, Any] | None, Field(description=(
                                "With library_record_id: its covariates by key (get kind library_record lists them), "
                                "every one it needs; to fix some and set the rest in an RBD, use bind."))] = None,
@@ -2696,7 +2710,7 @@ def register() -> None:
                            _d(trust, "guide"), exclude or [], None, True, None, note or "", replace_link_id)
             try:
                 return run(pm.fit_position_model, m, _db(), position_id, _d(distribution, "weibull"),
-                           failure_mode_ids, _d(scope, "auto"), note or "", replace_link_id)
+                           failure_mode_ids, _d(scope, "auto"), note or "", replace_link_id, window)
             except fitting.FitError as err:
                 raise ToolError(f"The fit didn't work: {err}") from None
         if from_class:
