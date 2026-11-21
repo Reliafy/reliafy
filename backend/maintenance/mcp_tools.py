@@ -67,6 +67,7 @@ HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_models.li
                "maintenance_list.tree",
                "maintenance_parts.import_bom", "maintenance_parts.build_positions",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
+               "maintenance_get.spares_year", "maintenance_get.package_parts",
                "maintenance_get.forecast",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
                "maintenance_apply")
@@ -199,6 +200,17 @@ GET_KINDS: Table = {
         decide)."""),
     "spares_plan": ("id", "period periods service_level lead_time_days review_days", """id = a position class's
         name. Each spare's stock levels per period, and the risk at any stock."""),
+    "spares_year": ("", "id root months service_level lead_time_days review_days fleet_size hours_per_day "
+                    "leave_out", """Spares for the year: every part a failure or a task uses, one row each:
+        demand over months (default 12) as mean, P10-P90, failures + planned; hold for its lead time at its
+        service level; usable now and when counted; order now, order_by dates, buy_for_year. id = a position
+        (it and everything inside it; root = the asset opened), a location, a position class's name or a
+        product (its built items; none built: fleet_size new units, hours_per_day for lives by use); no id:
+        the whole workspace. leave_out: task ids off their next visit (a what-if). rule says how."""),
+    "package_parts": ("id", "leave_out service_level", """id = a work package. Its next visit's parts against
+        usable stock: each part's jobs, how many are needed, when an order placed today arrives and whether
+        that's before the visit, and the chance what's wanted before it lands (the visit and failures wherever
+        the part is used) is more than the stock usable now. leave_out: task ids taken off the visit."""),
     "impact": ("id", "", """id = a position. If it fails, what loses its supply downstream (through
         connections), and whether redundancy covers it."""),
     "photo_link": ("id", "", """id = a link_id from maintenance attachments.photo_link. The photos added
@@ -667,6 +679,10 @@ PARTS: Table = {
         the register (manufacturer_match first). unit default 'each'."""),
     "stock": ("part_id location_id quantity", "reason on",
               "Receive (positive quantity) or issue / write off (negative) at a location."),
+    "count": ("", "part_id location_id counted on by reason counts dry_run", """A stock count: counted on the shelf
+        at location_id on the day on (default today). Stock becomes the count plus what was booked after that
+        day; the part says when it was last counted. counts: a count sheet, rows {part_number or part_id,
+        location (name) or location_id, counted, on, by}, all checked first (dry_run true previews)."""),
     "reorder": ("part_id location_id", "reorder_point clear_reorder_point",
                 "Stock at or below reorder_point at the location counts as low (clear_reorder_point true: none)."),
     "link": ("part_id other_part_id", "relation", """part_id is superseded_by other_part_id, or the two are
@@ -1275,7 +1291,12 @@ def register() -> None:
                             "item_class: true for the class's fleet (its positions, with risk now) in place of "
                             "the class record."))] = None,
                         root: Annotated[str | None, Field(description=(
-                            "operating_plan, forecast: the asset opened; nothing above it is used."))] = None
+                            "operating_plan, forecast, spares_year: the asset opened; nothing above it is used."))]
+                        = None,
+                        months: int | None = None, fleet_size: int | None = None,
+                        hours_per_day: float | None = None,
+                        leave_out: Annotated[list[str] | None, Field(description=(
+                            "spares_year, package_parts: task ids taken off their next visit."))] = None
                         ) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance overview, maintenance list.… and the records themselves."""
@@ -1315,6 +1336,19 @@ def register() -> None:
             return run(m.task_measurement, rid, position_id)
         if kind == "operating_plan":
             return run(m.operating_plan, rid, root)
+        if kind in ("spares_year", "package_parts"):
+            from backend.maintenance import position_models as pm
+            from backend.maintenance import spares_year
+
+            reader = _reader(_caller(ctx))
+            fetch = pm.fetcher(_db(), reader.read_owners, reader.hidden)
+            if kind == "package_parts":
+                return run(spares_year.package_parts, m, rid, fetch=fetch, leave_out=leave_out or (),
+                           service_level=service_level)
+            return run(spares_year.spares_year, m, run(spares_year.scope_of, m, rid, root, fleet_size,
+                                                       hours_per_day), months=_d(months, 12),
+                       service_level=service_level, lead_time_days=lead_time_days, review_days=review_days,
+                       fetch=fetch, leave_out=leave_out or ())
         if kind == "forecast":
             from backend.maintenance import position_forecast
             from backend.maintenance import position_models as pm
@@ -2441,7 +2475,11 @@ def register() -> None:
                           clear: Annotated[list[Literal["unit_cost", "lead_time_days", "service_level",
                                                         "turnaround_days"]] | None,
                                            Field(description="update: numbers to take off the part.")] = None,
-                          clear_reorder_point: bool | None = None) -> dict[str, Any]:
+                          clear_reorder_point: bool | None = None,
+                          counted: float | None = None, by: str | None = None,
+                          counts: Annotated[list[dict[str, Any]] | None, Field(description=(
+                              "count: a count sheet, rows {part_number or part_id, location or location_id, "
+                              "counted, on, by}."))] = None) -> dict[str, Any]:
         """The parts catalogue (spares, and makes and models of equipment), stock at locations, and each
         position's parts list (its bill of materials, with critical spares). Supersession and
         interchangeable parts belong to the catalogue (link), not the parts list. Parts made of parts
@@ -2461,6 +2499,12 @@ def register() -> None:
             return run(m.update_part, part_id, **changes)
         if action == "stock":
             return run(m.adjust_stock, part_id, location_id, quantity, reason or "", on)
+        if action == "count":
+            if counts:
+                return run(m.count_stock_sheet, counts, dry_run is not False)
+            if not (part_id and location_id) or counted is None:
+                raise ToolError("action 'count' needs part_id, location_id and counted (or counts: a sheet).")
+            return run(m.count_stock, part_id, location_id, counted, on, by or "", reason or "")
         if action == "reorder":
             if reorder_point is None and not clear_reorder_point:
                 raise ToolError("action 'reorder' needs reorder_point (or clear_reorder_point true).")
