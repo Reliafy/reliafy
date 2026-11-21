@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { daysText, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskAt, riskText, risingText, stockingCsv, useText, windowText } from "./sparesPlan.js";
+import { daysText, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskAt, riskText, risingText, stockingCsv, useText, windowText, yearText } from "./sparesPlan.js";
 
 test("service levels and chances read plainly", () => {
   assert.equal(levelText(0.95), "95%");
@@ -60,8 +60,9 @@ test("a fleet's spares plan exports one row per period", () => {
   };
   const lines = fleetSparesCsv(sp, { fleet: "Trucks", periodLabel: "months" }).split("\n");
   assert.equal(lines[0], "fleet,period,hold,reorder_at,expected_demand,service_level,lead_time_months,review_months,"
-    + "per_failure,repairable,turnaround_months,unit_cost,hold_cost");
-  assert.equal(lines[1], "Trucks,1,5,5,2.4,0.9,2,0,1,no,,100,500");
+    + "per_failure,repairable,turnaround_months,unit_cost,hold_cost,horizon_demand_mean,horizon_demand_p90,"
+    + "horizon_planned,order_now,buy_for_horizon,buy_high_case");
+  assert.equal(lines[1], "Trucks,1,5,5,2.4,0.9,2,0,1,no,,100,500,,,,,,");
   assert.equal(fleetSparesCsv({ status: "needs_lead_time" }), "");
 });
 
@@ -104,5 +105,20 @@ test("the fleet spares CSV rounds expected use", () => {
   const sp = { status: "ok", service_level: 0.95, per_failure: 1, lead_time: 1,
                per_period: [{ period: 1, hold: 2, reorder_at: 2, expected_demand: 0.7749999999999999 }] };
   const row = fleetSparesCsv(sp, { fleet: "Belts", periodLabel: "quarters" }).split("\n")[1];
-  assert.equal(row, "Belts,1,2,2,0.775,0.95,1,,1,no,,,");
+  assert.equal(row, "Belts,1,2,2,0.775,0.95,1,,1,no,,,,,,,,,"); // no answer for the whole forecast: blank
+});
+
+test("the answer for the whole forecast reads plainly and goes in the CSV", () => {
+  const year = { periods: 12, period_label: "months", mean: 2.402, p10: 1, p90: 4, planned: 1, failures: 1.402,
+    order_now: 0, buy: 1, buy_high_case: 2 };
+  assert.equal(yearText(year), "about 2.4 over 12 months (likely 1–4): 1.4 failures + 1 planned");
+  assert.equal(yearText({ ...year, planned: undefined, periods: 1, period_label: "years" }),
+    "about 2.4 over 1 year (likely 1–4)");
+  assert.equal(yearText(null), "");
+  const sp = { status: "ok", service_level: 0.95, lead_time: 0.164, review: 0, per_failure: 1, year,
+    per_period: [{ period: 1, hold: 0, reorder_at: 0, expected_demand: 0.02 }, { period: 2, hold: 0, reorder_at: 0, expected_demand: 0.02 }] };
+  const [head, first, second] = fleetSparesCsv(sp, { fleet: "DE bearings", periodLabel: "months" }).trim().split(/\r?\n/);
+  assert.ok(head.endsWith("horizon_demand_mean,horizon_demand_p90,horizon_planned,order_now,buy_for_horizon,buy_high_case"));
+  assert.ok(first.endsWith(",2.402,4,1,0,1,2"), first);
+  assert.ok(second.endsWith(",,,,,,"), second);
 });

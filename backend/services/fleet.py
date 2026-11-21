@@ -1096,14 +1096,20 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     rates = np.asarray(rates, dtype=float)
     starts = np.arange(periods, dtype=float)
     bounds = [(s, s + protect) for s in starts] + ([(s, s + lead_len) for s in starts] if lead_len is not None else [])
+    bounds.append((0.0, float(periods)))  # the whole horizon: the year's demand (spares_year's rule)
+    horizon = max(float(periods), (periods - 1) + protect)
+    split = None
 
     if method == "renewals" and opts.get("_replace_at"):
-        events = fleet_strategy.simulate(model, ages, rates, (periods - 1) + protect, float(opts["_replace_at"]))
+        events = fleet_strategy.simulate(model, ages, rates, horizon, float(opts["_replace_at"]))
         demand = [spares.Demand.from_samples(spares.window_demand(events, a, b) * per) for a, b in bounds]
+        hi = int(np.searchsorted(events["t"], float(periods), side="left"))
+        planned = np.asarray(events["planned"][:hi], dtype=float)
+        split = float(planned.sum()) * per / max(events["sims"], 1)
         basis = (f"From {events['sims']:,} simulated runs, counting planned replacements at age "
                  f"{opts['_replace_at']:g} as well as failures.")
     elif method == "renewals":
-        events = _renewal_events(model, ages, rates, (periods - 1) + protect)
+        events = _renewal_events(model, ages, rates, horizon)
         demand = [spares.Demand.from_samples(spares.window_demand(events, a, b) * per) for a, b in bounds]
         basis = f"From {events['sims']:,} simulated runs, counting replacements that fail again."
     elif method == "single":
@@ -1137,9 +1143,11 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
             means.append(max(0.0, cache[b] - cache[a]))
         demand = [spares.Demand.from_pmf(spares.poisson_pmf(mu), per) for mu in means]
         basis = "Poisson, given the model: every repeat failure is counted."
+    year = demand.pop()
     protects = demand[:periods]
     leads = demand[periods:] if lead_len is not None else [None] * periods
     now = spares.answer(protects[0], leads[0], opts.get("stock"), level, opts.get("unit_cost"))
+    year_out = _year_answer(year, now, opts.get("stock"), periods, label, split, repairable)
     plan = [{"period": k + 1, "hold": protects[k].quantile(level),
              "reorder_at": leads[k].quantile(level) if leads[k] is not None else None,
              "expected_demand": protects[k].mean} for k in range(periods)]
@@ -1156,10 +1164,29 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
         # One step up: "from quarter 2"; more than one: "by quarter 4" (the table has each).
         one_step = rising["peak_period"] == rising["from_period"]
         words = (peak, f"{'from' if one_step else 'by'} {_period_word(label)} {rising['peak_period']}")
-    return {**base, "status": "ok", "window": protect, **now, "per_period": plan, "basis": basis,
+    return {**base, "status": "ok", "window": protect, **now, "per_period": plan, "basis": basis, "year": year_out,
             **({"hold_rising": rising} if rising else {}),
             "summary": spares.sentence(now, level, window, repairable=repairable, review=review > 0,
                                        rising=words)}
+
+
+def _year_answer(year, now: dict, stock, periods: int, label: str, planned, repairable: bool) -> dict:
+    """The demand over the whole forecast and what to buy for it (``services.spares_year``'s rule):
+    order now = hold - in stock; buy = expected demand rounded up + hold - in stock, and a high case
+    with the 90th percentile in place of the expected. A repairable pool isn't bought by the year."""
+    from backend.services import spares_year
+
+    mean = year.mean
+    out = {"periods": periods, "period_label": label, "mean": mean, "p10": year.quantile(0.1),
+           "p90": year.quantile(0.9), "rule": spares_year.RULE}
+    if planned is not None:
+        out.update(planned=planned, failures=max(0.0, mean - planned))
+    if stock is not None and not repairable:
+        have = float(stock)
+        out.update(order_now=max(0.0, now["hold"] - have),
+                   buy=max(0.0, math.ceil(mean - 1e-9) + now["hold"] - have),
+                   buy_high_case=max(0.0, out["p90"] + now["hold"] - have))
+    return out
 
 
 def _period_word(label: str) -> str:

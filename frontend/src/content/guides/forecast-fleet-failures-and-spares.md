@@ -95,6 +95,26 @@ When items wearing out need more stock in a later period, the answer says so
 ("Hold 2 now, rising to 3 from quarter 2"), and **Stock to hold by month** (or
 quarter) lists each period. **Export spares plan (CSV)** downloads the plan.
 
+### Spares for the year: what to order and buy
+
+With **In stock now** filled in, the card also answers for the whole forecast,
+which is what a budget needs:
+
+- **Needed over the forecast**: about how many parts the items will use, with
+  the likely range (10th to 90th percentile). With a replacement age set (see
+  *Run to failure, or replace at an age?* below), it splits them into failures
+  and planned replacements.
+- **Order now**: the stock to hold less what's in stock now.
+- **Buy over the forecast**: the expected use rounded up, plus the stock to
+  hold, less what's in stock now. The high case puts the 90th percentile in
+  place of the expected use.
+
+For example, four bearings 844 days old (Weibull 1,173 days, shape 1.96), a
+5-day lead time and 2 in stock: about 1.7 needed over 12 months (likely 0–3),
+hold 0, order none now and buy none over the year (high case 1). Reliafy gives
+the quantities. Turn them into money with your own prices: the CSV columns are
+plain numbers, ready for a spreadsheet.
+
 **Export CSV** downloads the forecast for a purchasing system or a budget sheet:
 each item's expected failures and chance of failing, the fleet's expectation and
 its range, and each month's expectation and range.
