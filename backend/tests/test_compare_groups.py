@@ -261,6 +261,18 @@ def test_tau_past_the_data_is_capped_and_bounds_stay_in_range():
         assert 0.0 <= s["rmst_lower"] <= s["rmst"] <= s["rmst_upper"] <= far["tau"]
 
 
+def test_the_window_says_why_it_is_what_it_is():
+    """An automatic window is the last time in the group followed for the
+    shortest time, and the result says so (not a bare number)."""
+    auto = _run(_aml(), time_column="weeks", group_column="arm", censor_column="censored", unit="weeks")
+    assert auto["tau_auto"] is True and auto["tau_group"] == "Nonmaintained"
+    assert "last time in group 'Nonmaintained' (45 weeks)" in auto["tau_reason"]
+    typed = _run(_aml(), time_column="weeks", group_column="arm", censor_column="censored", unit="weeks", tau=30)
+    assert typed["tau_auto"] is False and typed["tau_reason"] == "The window is the 30 weeks you typed."
+    capped = _run(_aml(), time_column="weeks", group_column="arm", censor_column="censored", unit="weeks", tau=100)
+    assert "capped at the last time in group 'Nonmaintained'" in capped["tau_reason"]
+
+
 def test_rmst_bounds_are_clipped_to_the_window():
     # Few units, wide intervals: the normal bounds would leave [0, tau].
     res = _run(_inline([5, 900, 1000, 10, 20, 1000], [0, 0, 0, 0, 0, 1], ["A"] * 3 + ["B"] * 3),

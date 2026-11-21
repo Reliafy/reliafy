@@ -66,6 +66,25 @@ export function inputRows(kind, inputs, currency = "$") {
     add("Hours down per replacement", blank(i.downtime_replace) ? null : formatNumber(i.downtime_replace, { sig: 4 }));
     add("Cost of an hour down", blank(i.downtime_cost) ? null : formatCost(i.downtime_cost, currency));
     add("Most overhauls searched", blank(i.max_overhauls) ? null : formatNumber(i.max_overhauls, { sig: 4 }));
+  } else if (kind === "sequential_test") {
+    // Inputs as typed: an agreed rule reads back the figures it was agreed on.
+    const typed = (v) => (blank(v) ? null : `${formatNumber(v, { sig: 8 })}${unit ? ` ${unit}` : ""}`);
+    const pctText = (v) => (blank(v) ? null : `${formatNumber(Number(v) * 100, { sig: 4 })}%`);
+    if (i.method === "attribute") {
+      add("Test type", "Pass/fail (failures against units)");
+      add("Reliability to demonstrate", pctText(i.reliability));
+      add("A good design's reliability", pctText(i.good_reliability));
+    } else {
+      add("Test type", "MTBF (failures against test time)");
+      add("MTBF to demonstrate", typed(i.mtbf));
+      add("A good design's MTBF", typed(i.good_mtbf));
+    }
+    add("Confidence", pctText(i.confidence));
+    add("Producer's risk", pctText(i.producer_risk));
+    add("Failures so far", blank(i.failures_seen) ? null : formatNumber(i.failures_seen, { sig: 6 }));
+    add(i.method === "attribute" ? "Units tested so far" : "Total test time so far",
+      i.method === "attribute" ? (blank(i.units_seen) ? null : formatNumber(i.units_seen, { sig: 6 }))
+        : typed(i.time_seen));
   } else if (kind === "calendar_replacement") {
     add("Model", modelText(i));
     add("Time unit", i.unit);

@@ -106,8 +106,9 @@ export function TestPlanPythonButton({ kind, inputs }) {
 }
 
 // The answer first: the plan in plain words, then up to four figures; with
-// ``kind`` and the ``inputs`` it was worked out from, the Python download.
-export function PlanAnswer({ result, stats, tone = "neutral", note = null, kind = null, inputs = null }) {
+// ``kind`` and the ``inputs`` it was worked out from, the Python download
+// (``actions``: more buttons beside it, such as Save analysis).
+export function PlanAnswer({ result, stats, tone = "neutral", note = null, kind = null, inputs = null, actions = null }) {
   return (
     <>
       <ResultSummary tone={tone} sentence={result.summary} stats={stats}>
@@ -115,6 +116,7 @@ export function PlanAnswer({ result, stats, tone = "neutral", note = null, kind 
       </ResultSummary>
       {kind && inputs && (
         <div className="row tp-actions">
+          {actions}
           <TestPlanPythonButton kind={kind} inputs={inputs} />
         </div>
       )}

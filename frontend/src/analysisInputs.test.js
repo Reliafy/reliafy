@@ -48,3 +48,13 @@ test("a target reads as typed: 99.5% is never 100%", () => {
   assert.equal(formatTarget(0.9999), "99.99%");
   assert.equal(formatTarget(0.99), "99%");
 });
+
+test("a saved sequential test lists the rule it was agreed on", () => {
+  const rows = inputRows("sequential_test", { method: "mtbf", mtbf: 60000, good_mtbf: 120000, confidence: 0.9,
+    producer_risk: 0.1, unit: "hours", failures_seen: 2, time_seen: 471168 });
+  const by = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+  assert.equal(by["MTBF to demonstrate"], "60,000 hours");
+  assert.equal(by["Confidence"], "90%");
+  assert.equal(by["Failures so far"], "2");
+  assert.equal(by["Total test time so far"], "471,168 hours");
+});

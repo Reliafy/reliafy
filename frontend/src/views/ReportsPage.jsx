@@ -22,6 +22,7 @@ const ANALYSIS_KIND = {
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
   demonstration_test: "Demonstration test",
+  sequential_test: "Sequential test",
   on_condition_interval: "Check interval (P-F)",
   failure_finding_interval: "Test interval",
 };

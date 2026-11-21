@@ -307,6 +307,7 @@ function CompareGroupsResult({ result, reference, onReference }) {
       <Plot data={traces} layout={layout} />
 
       <div className="ds-section-h cg-h">Groups · average life over the first {fmt(result.tau)}{u}</div>
+      {result.tau_reason && <p className="muted-line cg-window">{result.tau_reason}</p>}
       <div className="demo-table-wrap">
         <table className="calc-table cg-table cg-wide">
           <thead>

@@ -42,16 +42,17 @@ Press **Create model**.
 
 For a relief valve with three batches, 2 failures in 246 demands in all:
 
-| | Value | 90% interval |
+| | Value | 90% interval (two-sided) |
 |---|---|---|
 | Failure probability / demand | 0.81% | 0.14% to 2.54% |
 | Reliability / demand | 99.2% | 97.5% to 99.9% |
-| Reliability at 90% confidence (one-sided) | ≥ 97.9% | |
+| Reliability, 90% one-sided lower bound | ≥ 97.9% | |
 
 ![A per-demand model: the failure probability, the reliability and each batch](/guides/img/demand-02-result.png)
 
-The **one-sided** figure is the one to quote against a requirement: "we're 90%
-sure the valve opens on at least 97.9% of demands". The table lists each
+The **one-sided** figure is the one to quote against a requirement, and the
+result says it in a sentence above the cards: "we're 90% sure the valve opens
+on at least 97.9% of demands". The table lists each
 batch's own rate, so a batch far from the pooled figure stands out. Here the
 2025 proof tests (1 in 46) run worse than site B (0 in 80), but with so few
 failures that isn't yet evidence of a real difference.

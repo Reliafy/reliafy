@@ -71,7 +71,9 @@ runs 865 hours. The difference is 306 hours, with a 90% interval of 94 to 517
 hours. An interval that doesn't cross zero agrees with the test.
 
 The window is needed because a curve that never reaches zero has no finite
-area. By default it is the latest time every group was still being watched.
+area. By default it is the latest time every group was still being watched:
+the last time in the group followed for the shortest time, and the line under
+the table names that group and time.
 Type a **Window** to ask about a period that matters to you, such as a warranty
 or an overhaul interval.
 

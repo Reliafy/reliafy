@@ -5,6 +5,7 @@ import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
 import DemoTestResult from "../components/DemoTestResult.jsx";
+import { SequentialResult } from "../components/SequentialTestPlan.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getStrategyAnalysis } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -23,6 +24,7 @@ const KIND_LABEL = {
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
   demonstration_test: "Demonstration test",
+  sequential_test: "Sequential test",
   on_condition_interval: "Check interval (P-F)",
   failure_finding_interval: "Test interval",
   calendar_replacement: "Shutdown calendar",
@@ -86,6 +88,7 @@ export default function StrategyAnalysisPage() {
         {doc.kind === "compare_two" && <CompareResult result={doc.results} name={doc.name} />}
         {doc.kind === "failure_finding" && <FfiResult result={doc.results} />}
         {doc.kind === "demonstration_test" && <DemoTestResult result={doc.results} />}
+        {doc.kind === "sequential_test" && <SequentialResult result={doc.results} inputs={doc.inputs} />}
         {(doc.kind === "on_condition_interval" || doc.kind === "failure_finding_interval") && (
           <IntervalAnalysisResult kind={doc.kind} result={doc.results} />
         )}

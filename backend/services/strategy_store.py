@@ -23,7 +23,12 @@ from backend.services.strategy import StrategyError
 from backend.units import unit_in_text, with_unit
 
 KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test",
-         "on_condition_interval", "failure_finding_interval", "calendar_replacement", "overhaul_replace")
+         "on_condition_interval", "failure_finding_interval", "calendar_replacement", "overhaul_replace",
+         "sequential_test")
+
+# The sequential-test planner's inputs (the /api/test-planning/sequential body).
+SEQUENTIAL_INPUTS = ("method", "mtbf", "good_mtbf", "reliability", "good_reliability", "confidence",
+                     "producer_risk", "unit", "failures_seen", "time_seen", "units_seen")
 
 # The shutdown-calendar calculator's inputs (the endpoint body shape), as saved.
 CALENDAR_INPUTS = (
@@ -135,6 +140,10 @@ def compute(kind: str, inputs: dict) -> dict:
         return strategy_service.demonstration_test(
             **{k: inputs[k] for k in DEMO_INPUTS if k in inputs}
         )
+    if kind == "sequential_test":
+        from backend.services import test_planning
+
+        return test_planning.sequential_test(**{k: inputs[k] for k in SEQUENTIAL_INPUTS if k in inputs})
     raise StrategyError(f"Unknown analysis kind '{kind}'.")
 
 
@@ -216,6 +225,8 @@ def headline(doc: StrategyAnalysis) -> str:
         return f"Check every ~{_about(i)}{unit}" if i is not None else "Failure finding"
     if doc.kind == "demonstration_test":
         return demonstration_headline(r)
+    if doc.kind == "sequential_test":
+        return sequential_headline(r)
     if doc.kind == "calendar_replacement":
         text = str(r.get("recommendation") or "Shutdown calendar")
         return text.split(". ")[0].rstrip(".") + "."
@@ -230,6 +241,22 @@ def headline(doc: StrategyAnalysis) -> str:
         verb = "Check" if doc.kind == "on_condition_interval" else "Test"
         return f"{verb} every {strategy_service.fmt_num(rec['value'])} {unit_in_text(rec['unit'])}"
     return doc.kind
+
+
+def sequential_headline(r: dict) -> str:
+    """'Stops by 1,400,000 hours or 17 failures' — the plan's limits, and
+    the verdict when counts so far were given."""
+    fmt = strategy_service.fmt_num
+    verdict = (r.get("decision") or {}).get("verdict")
+    so_far = {"accept": "accept so far", "reject": "reject so far", "continue": "keep testing so far"}.get(verdict)
+    if r.get("method") == "mtbf" and r.get("max_time") is not None:
+        unit = unit_in_text(r["unit"]) if r.get("unit") else ""
+        text = f"Stops by {with_unit(fmt(r['max_time']), unit)} or {r.get('max_failures')} failures"
+    elif r.get("max_units") is not None:
+        text = f"Stops by {fmt(r['max_units'])} units or {r.get('max_failures')} failures"
+    else:
+        text = "Sequential test"
+    return f"{text}; {so_far}" if so_far else text
 
 
 def demonstration_headline(r: dict) -> str:

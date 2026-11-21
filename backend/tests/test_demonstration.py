@@ -203,6 +203,30 @@ def test_saved_analysis_round_trip(monkeypatch):
         strategy_store.save_analysis(session, "Bad", "demonstration_test", {"reliability": 2}, A)
 
 
+def test_a_sequential_test_is_saved_with_its_rule(monkeypatch):
+    """A sequential plan goes on record like a demonstration plan: inputs kept,
+    results recomputed by the server, a headline for the lists."""
+    from backend import db as db_module
+    from backend.services import test_planning
+
+    session = mongomock.MongoClient()["reliafy_test"]
+    monkeypatch.setattr(db_module, "_db", session)
+    monkeypatch.setattr(db_module, "_simulated", True)
+    inputs = {"method": "mtbf", "mtbf": 60000, "good_mtbf": 120000, "confidence": 0.9, "producer_risk": 0.1,
+              "unit": "hours", "results": {"max_time": 1}}
+    doc = strategy_store.save_analysis(session, "Controller acceptance", "sequential_test", inputs, A)
+    direct = test_planning.sequential_test(**{k: v for k, v in inputs.items() if k != "results"})
+    assert doc.results["max_time"] == pytest.approx(direct["max_time"])
+    assert doc.results["max_failures"] == direct["max_failures"]
+    assert strategy_store.headline(doc).startswith("Stops by ")
+    assert f"or {direct['max_failures']} failures" in strategy_store.headline(doc)
+    seen = strategy_store.save_analysis(session, "Feb check", "sequential_test",
+                                        {**inputs, "failures_seen": 2, "time_seen": 471168}, A)
+    assert strategy_store.headline(seen).endswith("; accept so far")
+    with pytest.raises(StrategyError):
+        strategy_store.save_analysis(session, "Bad", "sequential_test", {"mtbf": 100, "good_mtbf": 50}, A)
+
+
 # ---- REST ---------------------------------------------------------------------------
 
 

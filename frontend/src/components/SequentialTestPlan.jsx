@@ -9,6 +9,7 @@ import { formatNumber, formatWithUnit } from "../format.js";
 import { DANGER, INK, SUCCESS, SURFACE, fitLine } from "../plotTheme.js";
 import { given, num } from "../testPlanning.js";
 import PercentField from "./PercentField.jsx";
+import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { readPercents } from "../percentForms.js";
 import { unitInText } from "./unitText.js";
 
@@ -105,6 +106,42 @@ function OcCharts({ result }) {
   );
 }
 
+// The answer, the accept/reject lines, the operating characteristic and the
+// assumptions: on the tab, and on a saved sequential test's page.
+export function SequentialResult({ result, inputs = null, actions = null }) {
+  const u = result?.unit ? unitInText(result.unit) : "";
+  const stats = result.method === "mtbf"
+    ? [
+        { label: "Good design, on average", value: formatWithUnit(result.expected.at_good, u) },
+        { label: "Fixed-length test", value: formatWithUnit(result.expected.fixed_length, u) },
+        { label: "Longest it runs", value: formatWithUnit(result.max_time, u) },
+        { label: "Most failures", value: String(result.max_failures) },
+      ]
+    : [
+        { label: "Good design, on average", value: `${formatNumber(result.expected.at_good)} units` },
+        { label: "Fixed-length test", value: `${formatNumber(result.expected.fixed_length, { sig: 7 })} units` },
+        { label: "Most units", value: formatNumber(result.max_units, { sig: 7 }) },
+        { label: "Most failures", value: String(result.max_failures) },
+      ];
+  const verdict = result.decision;
+  const tone = verdict ? { accept: "good", reject: "bad", continue: "caveat" }[verdict.verdict] : "neutral";
+  return (
+    <>
+      <PlanAnswer kind={inputs ? "sequential" : null} inputs={inputs}
+        result={result}
+        stats={stats}
+        tone={tone}
+        actions={actions}
+        note={verdict ? <b>{verdict.text}</b> : `Risks as run: a design at the target passes ${pct(
+          result.consumer_risk)} of the time; a good design fails ${pct(result.producer_risk)}.`}
+      />
+      <BoundaryChart result={result} />
+      <OcCharts result={result} />
+      <Assumptions items={result.assumptions} />
+    </>
+  );
+}
+
 export default function SequentialTestPlan() {
   const [method, setMethod] = useState("mtbf");
   const [target, setTarget] = useState("1000");
@@ -134,22 +171,9 @@ export default function SequentialTestPlan() {
     run(body);
   };
 
-  const u = result?.unit ? unitInText(result.unit) : "";
-  const stats = result && (result.method === "mtbf"
-    ? [
-        { label: "Good design, on average", value: formatWithUnit(result.expected.at_good, u) },
-        { label: "Fixed-length test", value: formatWithUnit(result.expected.fixed_length, u) },
-        { label: "Longest it runs", value: formatWithUnit(result.max_time, u) },
-        { label: "Most failures", value: String(result.max_failures) },
-      ]
-    : [
-        { label: "Good design, on average", value: `${formatNumber(result.expected.at_good)} units` },
-        { label: "Fixed-length test", value: `${formatNumber(result.expected.fixed_length, { sig: 7 })} units` },
-        { label: "Most units", value: formatNumber(result.max_units, { sig: 7 }) },
-        { label: "Most failures", value: String(result.max_failures) },
-      ]);
-  const verdict = result?.decision;
-  const tone = verdict ? { accept: "good", reject: "bad", continue: "caveat" }[verdict.verdict] : "neutral";
+  const defaultName = mtbf
+    ? `Sequential test: MTBF ${target} against ${good}${unit.trim() ? ` ${unit.trim()}` : ""}`
+    : `Sequential test: reliability ${rTarget}% against ${rGood}%`;
 
   return (
     <div className="strategy-tool">
@@ -209,16 +233,12 @@ export default function SequentialTestPlan() {
       {error && <div className="error">{error}</div>}
       {result && (
         <>
-          <PlanAnswer kind="sequential" inputs={inputs}
-            result={result}
-            stats={stats}
-            tone={tone}
-            note={verdict ? <b>{verdict.text}</b> : `Risks as run: a design at the target passes ${pct(
-              result.consumer_risk)} of the time; a good design fails ${pct(result.producer_risk)}.`}
-          />
-          <BoundaryChart result={result} />
-          <OcCharts result={result} />
-          <Assumptions items={result.assumptions} />
+          {/* The agreed rule on record before data comes in: saved like a
+              demonstration plan, recomputed by the server from these inputs. */}
+          <SequentialResult result={result} inputs={inputs} actions={
+            <SaveAnalysisButton key={JSON.stringify(inputs)} kind="sequential_test" inputs={inputs}
+                                defaultName={defaultName} />
+          } />
         </>
       )}
     </div>

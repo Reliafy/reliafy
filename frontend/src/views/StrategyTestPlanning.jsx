@@ -76,6 +76,9 @@ export default function StrategyTestPlanning() {
         {show("comparison") && <div hidden={tab !== "comparison"}><ComparisonPlan /></div>}
       </Card>
       {tab === "demonstration" && <SavedOfKind kind={tool.kind} noun={tool.noun} />}
+      {tab === "sequential" && (
+        <SavedOfKind kind={STRATEGY_TOOLS.sequential.kind} noun={STRATEGY_TOOLS.sequential.noun} />
+      )}
     </div>
   );
 }

@@ -379,6 +379,9 @@ def compare_groups(
     longest = {g: float(np.max(x[lab == g])) for g in order}
     horizon = min(longest.values())
     notes: list[str] = []
+    shortest = min(longest, key=longest.get)
+    tau_auto = tau is None
+    capped = False
     if tau is None:
         tau = horizon
     else:
@@ -392,6 +395,7 @@ def compare_groups(
                 f"({fmt_num(horizon)}), so it was capped there: beyond it that group's curve has no data, "
                 "and its average life would be extrapolated.")
             tau = horizon
+            capped = True
     if tau <= 0:
         raise CompareGroupsError("Every time in one group is 0: there is no window to average life over.")
 
@@ -448,6 +452,18 @@ def compare_groups(
         "groups": summaries,
         "reference": reference,
         "tau": float(tau),
+        # Why the window is what it is: chosen as the last time in the group
+        # followed for the shortest time (past it that group has no data),
+        # or typed. The page says so beside the averages.
+        "tau_auto": bool(tau_auto),
+        "tau_group": shortest,
+        "tau_reason": (
+            f"The window is the last time in group '{shortest}' ({fmt_num(horizon)}{us}), the group followed "
+            "for the shortest time: past it that group's curve has no data, so its average life can't be "
+            "measured further. Type a shorter window to compare over less."
+            if tau_auto else
+            f"The window is capped at the last time in group '{shortest}' ({fmt_num(horizon)}{us})." if capped
+            else f"The window is the {fmt_num(float(tau))}{us} you typed."),
         "alpha": ALPHA,
         "ci_level": round(1.0 - CI_ALPHA, 6),
         "logrank": primary,

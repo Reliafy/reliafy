@@ -131,6 +131,7 @@
 .cg-aside .calc-t input,
 .cg-aside .sel-trigger { width: 100%; box-sizing: border-box; }
 .cg-read-as { margin: 0; font-size: var(--fs-13); }
+.cg-window { margin: var(--space-1) 0 var(--space-2); font-size: var(--fs-13); }
 .cg-aside .ds-status { margin-top: calc(-1 * var(--space-1)); }
 .cg-aside .cg-invert { margin-top: calc(-1 * var(--space-1)); font-weight: 500; font-size: var(--fs-13); }
 .cg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
