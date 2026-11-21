@@ -63,6 +63,8 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
 
   const run = async () => {
     const built = buildRequest({ model, unit, today, shuts, failureCost, anytimeCost, maxAge, method });
+    // From a position: its running hours meet the shut dates at its duty (else all the time).
+    if (built.body && extraInputs?.position_id) built.body = { ...built.body, position_id: extraInputs.position_id };
     setNeedsPro(false);
     setJob(null);
     setCancelNote(null);
@@ -232,8 +234,13 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
           </div>
         </details>
         <p className="muted-line">
-          Today ({formatDate(today)}) is time 0. Dates become model time at 24 hours, 7 days, an average month
-          (365.25/12 days) or 365.25 days per unit.
+          {result?.clock ? result.convention : (
+            <>
+              Today ({formatDate(today)}) is time 0. Dates become model time at 24 hours, 7 days, an average month
+              (365.25/12 days) or 365.25 days per unit.
+              {extraInputs?.position_id ? " A model in hours runs at this position's duty (all the time where it has none)." : ""}
+            </>
+          )}
         </p>
         <div className="strategy-costs">
           <button onClick={run} disabled={loading}>{loading ? "Computing…" : "Compute"}</button>

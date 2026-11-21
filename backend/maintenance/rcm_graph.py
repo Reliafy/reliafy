@@ -9,6 +9,7 @@ read, never stored.
 from __future__ import annotations
 
 from backend.maintenance import rcm_decisions
+from backend.services import running_clock
 
 
 def resolve(db, worksheet: dict, owner_id, hidden=frozenset(), m=None) -> dict:
@@ -44,7 +45,10 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset(), m=None) -> dict:
             rollup["decided"] += 1
             if mode.get("needs_review"):
                 rollup["needs_review"] += 1
-            resolved = rcm_decisions.resolve_decision(decision, fetch)
+            # On the reader's graph, running hours meet the task's calendar interval at the
+            # position's duty (else all the time): running_clock.
+            clock = running_clock.for_position(m, p["id"]) if m is not None else None
+            resolved = rcm_decisions.resolve_decision(decision, fetch, clock)
             changes = cost_changes(mode, decision, fetch)
             if changes:
                 resolved = {**resolved, "cost_changed": changes}
@@ -158,13 +162,20 @@ def _listed_above(positions: list[dict], i: int, parents, at: dict) -> list[int]
     return out
 
 
-def mode_status(db, mode: dict, owner_id, hidden=frozenset()) -> dict:
-    """One failure mode (Maintenance.rcm_mode) with its evidence status."""
+def mode_status(db, mode: dict, owner_id, hidden=frozenset(), m=None, position_id=None) -> dict:
+    """One failure mode (Maintenance.rcm_mode) with its evidence status; with ``m`` and its
+    ``position_id``, checked at that position's duty (running_clock)."""
     decision = mode.get("decision")
     if not decision:
         return mode
     fetch = rcm_decisions.evidence_fetcher(db, owner_id, hidden)
-    resolved = rcm_decisions.resolve_decision(decision, fetch)
+    if m is not None and not position_id and mode.get("id"):
+        try:
+            position_id = m._live_mode(mode["id"])[1]["id"]
+        except Exception:  # noqa: BLE001 - a mode off any position: checked as off one
+            position_id = None
+    clock = running_clock.for_position(m, position_id) if m is not None and position_id else None
+    resolved = rcm_decisions.resolve_decision(decision, fetch, clock)
     changes = cost_changes(mode, decision, fetch)
     return {**mode, "decision": {**decision, **resolved, **({"cost_changed": changes} if changes else {})}}
 

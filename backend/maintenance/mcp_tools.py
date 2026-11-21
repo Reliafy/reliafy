@@ -1311,7 +1311,7 @@ def register() -> None:
             from backend.maintenance import rcm_graph
 
             mode = run(m.failure_mode_rcm, rid)
-            return _lean_rcm(rcm_graph.mode_status(_db(), mode, _reader(_caller(ctx)).read_owners))
+            return _lean_rcm(rcm_graph.mode_status(_db(), mode, _reader(_caller(ctx)).read_owners, m=m))
         if kind == "photo_link":
             doc = photo_links().get(rid, org=m.org)
             if doc is None:
@@ -1848,7 +1848,7 @@ def register() -> None:
             from backend.maintenance import rcm_graph
 
             # The mode's read carries any advice to relay (rcm_decisions.advice).
-            return rcm_graph.mode_status(_db(), mode, reader.read_owners)
+            return rcm_graph.mode_status(_db(), mode, reader.read_owners, m=m)
         if action == "add_task":
             return run(m.add_mode_task, failure_mode_id, name, interval, _d(unit, "months"), outcome,
                        instructions or "", start=start)

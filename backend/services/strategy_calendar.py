@@ -342,7 +342,7 @@ class _Inputs:
 
     def __init__(self, distribution_id, params, *, unit, opportunities=None, failure_cost=None, anytime_cost=None,
                  max_age=None, method="dp", mc_samples=None, seed=None, today=None, extras=None,
-                 horizon_months=None):
+                 horizon_months=None, hours_per_day=None, clock=None):
         if failure_cost is None or failure_cost == "":
             raise StrategyError("Enter what a failure (an unplanned replacement) costs.")
         self.failure_cost = _number(failure_cost, "The failure cost", strict=True)
@@ -353,7 +353,19 @@ class _Inputs:
         if self.method not in METHODS:
             raise StrategyError(f"method must be one of {', '.join(METHODS)}.")
         self.unit = canonical_unit(unit)
-        self.per_day = units_per_day(unit)
+        # Run from a position: a model in running hours meets the dates at the position's duty (its
+        # hours a day, else 24: running_clock), not as calendar hours. ``clock``: its words.
+        from backend.services import running_clock
+
+        self.clock, self.hours_given = None, False
+        if hours_per_day not in (None, "") and running_clock.is_running_hours(unit):
+            self.per_day = _number(hours_per_day, "hours_per_day", strict=True)
+            if self.per_day > 24:
+                raise StrategyError("hours_per_day is at most 24.")
+            self.clock = clock if isinstance(clock, dict) else None
+            self.hours_given = True
+        else:
+            self.per_day = units_per_day(unit)
         self.today = _parse_date(today, "today") if today else date.today()
         self.specs = parse_opportunities(opportunities, self.today, self.per_day)
         if not self.specs and self.anytime_cost is None:
@@ -613,6 +625,16 @@ def _headline(inp: _Inputs, policy, comparisons: list[dict], lines: list[dict]) 
     return f"{how} {', '.join(bits)}."
 
 
+def _convention(inp: "_Inputs") -> str:
+    """How dates became model time: the app's convention, or, run from a position with a model in
+    running hours, its duty ("… at this position's duty (8 h a day)")."""
+    if inp.clock:
+        return f"Today is time 0. Dates become running hours{inp.clock.get('where') or ''}."
+    if inp.hours_given:
+        return f"Today is time 0. Dates become running hours at {inp.per_day:g} h a day."
+    return CONVENTION
+
+
 def check_inputs(distribution_id: str, params: list, **kwargs) -> None:
     """Check a request's inputs without solving it (StrategyError if bad):
     a sampled request is checked before it is queued."""
@@ -652,8 +674,9 @@ def calendar_replacement(distribution_id: str, params: list, **kwargs) -> dict:
         "distribution": inp.distribution,
         "unit": inp.unit,
         "today": inp.today.isoformat(),
-        "convention": CONVENTION,
+        "convention": _convention(inp),
         "units_per_day": inp.per_day,
+        **({"clock": inp.clock} if inp.clock else {}),
         "failure_cost": inp.failure_cost,
         "anytime_cost": inp.anytime_cost,
         "max_age": inp.max_age,

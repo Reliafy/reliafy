@@ -344,8 +344,11 @@ def used_note(conv: dict, what: str = "answer", source: str = "model") -> str:
     """"model in days, answer in hours: converted at 1 day = 24 hours" — what a calculation
     that converted a model says (``what`` names the other clock: interval, period, answer;
     ``source`` what was converted: a model, the evidence)."""
+    keys = {normalize_unit(conv["from"]), normalize_unit(conv["to"])}
+    # No position, so no duty: an hour is a calendar hour (running_clock has the rule at a position).
+    running = " (running all the time)" if "hour" in keys and keys & {"day", "week", "month", "year"} else ""
     return (f"{source} in {unit_in_text(conv['from'])}, {what} in {unit_in_text(conv['to'])}: converted at "
-            f"{conversion_note(conv['from'], conv['to'])}")
+            f"{conversion_note(conv['from'], conv['to'])}{running}")
 
 
 def convert_spec(distribution_id, params, extras, from_unit, to_unit) -> tuple[list, Optional[dict], Optional[dict]]:

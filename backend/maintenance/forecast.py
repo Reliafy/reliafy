@@ -46,7 +46,7 @@ import numpy as np
 
 from backend.maintenance import service as svc
 from backend.maintenance.service import Invalid, Maintenance, class_id
-from backend.services import spares
+from backend.services import running_clock, spares
 
 PERIODS = ("month", "quarter", "year")
 MAX_PERIODS = 120
@@ -122,6 +122,22 @@ def _plan_rate(m: Maintenance, position_id: str, counter: dict, readings: list[d
     return max(0.0, added / horizon_days), mapped["basis"]
 
 
+def _clock_age(m: Maintenance, position_id: str, fitment: dict) -> dict:
+    """Age and rate in running hours with no hours counter: the days since it was fitted at
+    the position's duty (its operating plan's hours a day over the year ahead), else all the
+    time, 24 h a day (running_clock; Derryn, 21 Nov 2026). {age, per_day, basis (duty or
+    continuous), counter None, clock, note} or {reason} when its plan gives no running."""
+    clock = running_clock.for_position(m, position_id)
+    if not clock.converts:
+        return {"reason": "no hours counter here, and its operating plan gives no running in the year ahead"}
+    days = _calendar_age(m, position_id, fitment)
+    age = days * clock.hours_per_day
+    conv = running_clock.conversion("hours", "days", clock)
+    return {"age": age, "per_day": clock.hours_per_day, "basis": clock.basis, "counter": None,
+            "clock": clock.to_dict(),
+            "note": f"No hours counter: age {running_clock.note(conv, age)} since it was fitted."}
+
+
 def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str, horizon_days: float = 0.0) -> dict:
     """Age and rate in a unit of use, from the position's counter in that unit: {age,
     per_day, counter, basis} or {reason} when they can't be had. The rate is the operating
@@ -130,6 +146,8 @@ def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str, horizon
     # Its own counter, else the one above it (a propeller's flight hours are its air vehicle's).
     counter = m._use_counter(position_id, unit)
     if counter is None:
+        if running_clock.is_running_hours(unit):
+            return _clock_age(m, position_id, fitment)
         return {"reason": f"no {unit} counter on this position"}
     readings = svc._readings(m.s, m.org, counter, m.tz)
     per_day, _n = _counter_rate(readings)
@@ -279,7 +297,10 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
                 skipped.append({"position": brief, "item": row["item"], "reason": use["reason"]})
                 continue
             # rate_basis: "plan" (its operating plan's average over the horizon) or "counter" (recent rate).
-            row.update(age=use["age"], rate=use["per_day"] * days, rate_basis=use["basis"], counter=use["counter"])
+            # "duty" / "continuous": no counter, hours from the position's duty or all the time (running_clock).
+            row.update(age=use["age"], rate=use["per_day"] * days, rate_basis=use["basis"],
+                       **({"counter": use["counter"]} if use.get("counter") else {}),
+                       **({"clock": use["clock"]} if use.get("clock") else {}))
         units.append(row)
 
     word = f"{period}{'s' if periods != 1 else ''}"
@@ -297,6 +318,14 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
     if any(s["reason"] != "nothing fitted" for s in skipped):
         notes.append("Positions without a usage rate aren't forecast (not counted as no failures): record "
                      f"readings on their {unit} counter.")
+    clocked = [u for u in units if u.get("clock")]
+    if clocked:
+        on_duty = sum(1 for u in clocked if u["clock"]["basis"] == "duty")
+        source = ("their duty" if on_duty == len(clocked) else
+                  "running all the time (24 h a day; no duty set)" if not on_duty else
+                  "their duty where one is set, else running all the time (24 h a day)")
+        notes.append(f"{len(clocked)} position{'s' if len(clocked) != 1 else ''} with no {unit} counter: "
+                     f"hours from {source}.")
 
     weights = np.ones((len(units), 1))
     if units:
@@ -332,6 +361,7 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
     for u, p_next, row in zip(units, nxt, sim["per_item"]):
         row = renewals["per_unit"].get(u["id"], row)  # the same runs as the headline and the spares
         ranked.append({**{k: u[k] for k in ("position", "item", "fitted_on", "rate_basis")},
+                       **({"clock": u["clock"]} if "clock" in u else {}),
                        "age": round(u["age"], 2), "rate_per_period": round(u["rate"], 3),
                        **({"counter": u["counter"]} if "counter" in u else {}),
                        "prob_next_period": float(p_next), "prob_in_horizon": row["prob_any"],

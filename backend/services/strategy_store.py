@@ -28,7 +28,7 @@ KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration
 # The shutdown-calendar calculator's inputs (the endpoint body shape), as saved.
 CALENDAR_INPUTS = (
     "unit", "today", "opportunities", "failure_cost", "anytime_cost", "max_age", "method", "horizon_months",
-    "extras",
+    "extras", "hours_per_day", "clock",
 )
 
 # The RCM interval calculators' inputs (backend/services/rcm_intervals.py), as saved.
@@ -68,6 +68,13 @@ def compute(kind: str, inputs: dict) -> dict:
     """Run the calculator for ``kind`` on ``inputs`` (the endpoint body shape,
     including a fitted model's ``extras`` — offset, LFP fraction, zero
     inflation — so a saved analysis matches what the calculator showed)."""
+    if kind in ("optimal_replacement", "failure_finding") and inputs.get("clock"):
+        # Run from a position: its answer on the calendar too, at the position's duty (running_clock).
+        from backend.services import running_clock
+
+        plain = compute(kind, {k: v for k, v in inputs.items() if k not in ("clock", "hours_per_day")})
+        key = "optimal_time" if kind == "optimal_replacement" else "interval"
+        return running_clock.with_calendar(plain, key, inputs.get("unit"), inputs["clock"])
     if kind == "optimal_replacement":
         return strategy_service.optimal_replacement(
             inputs.get("distribution_id"),

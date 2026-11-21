@@ -72,7 +72,7 @@ export default function OptimalReplacement({ modelId = null, planned = null, unp
       };
       const res = await optimalReplacement(
         body.distribution_id, body.params, body.planned_cost, body.unplanned_cost, body.unit, body.extras,
-        { use_per_year: body.use_per_year, units: body.units },
+        { use_per_year: body.use_per_year, units: body.units, position_id: extraInputs?.position_id },
       );
       setResult(res);
       setInputs(body);
@@ -131,6 +131,9 @@ export default function OptimalReplacement({ modelId = null, planned = null, unp
 
       {result && stale && (
         <p className="hint" role="status">The inputs changed: Compute to update the answer below.</p>
+      )}
+      {result?.calendar && (
+        <p className="hint" data-testid="repl-calendar">On the calendar: {result.calendar.note}.</p>
       )}
       {result && (
         <ReplacementResult

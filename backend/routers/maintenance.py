@@ -556,7 +556,7 @@ def _rcm_read(session, ctx: AccessCtx, fn, *args, m: Maintenance | None = None) 
         out = fn(*args)
         if "positions" in out:
             return rcm_graph.resolve(session, out, ctx.read_owners, ctx.hidden, m=m)
-        return rcm_graph.mode_status(session, out, ctx.read_owners, ctx.hidden)
+        return rcm_graph.mode_status(session, out, ctx.read_owners, ctx.hidden, m=m)
     return _run(go)
 
 
@@ -759,7 +759,7 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
                                      body["decision"] if "decision" in body else ..., task_id=body.get("task_id"),
                                      hidden=body["hidden"] if "hidden" in body else ...)
     try:
-        return _rcm_read(session, ctx, go)
+        return _rcm_read(session, ctx, go, m=m)
     except access_service.UnreadableReference as exc:
         return JSONResponse(status_code=exc.status, content={"detail": client_message(exc), "code": "unreadable_reference"})
 

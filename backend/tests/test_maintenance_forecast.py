@@ -100,14 +100,20 @@ def test_a_model_by_use_goes_by_the_counter_and_says_when_it_has_no_rate(m):
     _model(m, "Engine", "weibull", [{"name": "alpha", "value": 5000.0}, {"name": "beta", "value": 2.0}],
            unit="hours")
     out = forecast.class_forecast(m, "Engine")
-    assert out["n_positions"] == 4 and out["n_forecast"] == 1
-    row = out["at_risk"][0]
+    # Engine B has no hours counter and no operating plan: it runs all the time (Derryn, 21 Nov 2026),
+    # 100 days × 24 h old, 24 h a day.
+    assert out["n_positions"] == 4 and out["n_forecast"] == 2
+    rows = {r["position"]["id"]: r for r in out["at_risk"]}
+    assert rows[b]["rate_basis"] == "continuous" and rows[b]["age"] == pytest.approx(2400)
+    assert rows[b]["clock"]["basis"] == "continuous" and "counter" not in rows[b]
+    assert any("hours from running all the time" in n for n in out["notes"])
+    row = rows[a]
     # 900 hours read since it went in, and 10 days at 10 hours a day since the last reading.
     assert row["position"]["id"] == a and row["rate_basis"] == "counter"
     assert row["age"] == pytest.approx(1000) and row["rate_per_period"] == pytest.approx(304.375)
     assert row["counter"]["reading"] == 1900
     why = {s["position"]["name"]: s["reason"] for s in out["not_forecast"]}
-    assert why["Engine B"] == "no hours counter on this position"
+    assert "Engine B" not in why
     assert "two readings" in why["Engine C"]
     assert why["Engine D"] == "nothing fitted"
     assert any("usage rate" in n for n in out["notes"])
