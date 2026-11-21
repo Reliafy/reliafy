@@ -57,10 +57,10 @@ const MEMORY = [
 
 // Short blurbs under the model dropdown (keyed by recurrent model id).
 const MODEL_DESC = {
-  crow_amsaa: "NHPP power-law (Crow-AMSAA) — the standard reliability-growth model. β < 1 improving, β > 1 worsening.",
+  crow_amsaa: "NHPP power-law (Crow-AMSAA) — the standard reliability-growth model. β below 1: failures come slower over time; above 1, faster.",
   duane: "Duane growth model — a log–log fit of cumulative MTBF against cumulative time.",
   hpp: "Homogeneous Poisson — a constant failure rate with no trend; the null model.",
-  cox_lewis: "Cox-Lewis log-linear NHPP — the rate changes by a fixed proportion per unit time. β > 0 worsening, β < 0 improving.",
+  cox_lewis: "Cox-Lewis log-linear NHPP — the rate changes by a fixed proportion per unit time. β above 0: failures come faster over time; below 0, slower.",
 };
 
 const STEPS = ["Source", "Model", "Result"];

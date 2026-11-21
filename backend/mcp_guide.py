@@ -158,13 +158,13 @@ Repairable systems: many failures per system.
 inline times + systems (censored: 0 failure, 1 end of observation; or observed_to) or a dataset. Minimal \
 repair: crow_amsaa (default), duane, hpp, cox_lewis; covariates on the repair rate: pi_nhpp; imperfect repair: \
 grp_i / grp_ii, ara, ari, g1. windows give observation gaps; causes add each cause's growth. Fitting is Pro.
-- get kind model on one: the growth verdict with β's 90% interval, ROCOF and MTBF with bounds, the \
+- get kind model on one: the growth shape β with its 90% interval and what it means (no verdict), ROCOF and MTBF with bounds, the \
 demonstrated MTBF's lower bound, trend and goodness-of-fit tests, and (imperfect repair) the repair \
 effectiveness and each system's next failure.
 - analyse next_failure: at a system's age, the chance of a failure within given times and the \
 time to the next one. analyse growth_projection: the MTBF a growth test reaches once its fixes \
 are in (BD modes with fix-effectiveness factors).
-- analyse optimal_overhaul: the overhaul interval for a deteriorating system (minimal-repair model, β > 1).
+- analyse optimal_overhaul: the overhaul interval for a system whose failure rate rises (minimal-repair model, β > 1).
 - analyse optimal_overhaul_replace: overhaul every X, replace after N overhauls (guide strategy)."""),
 
     "rbds": ("Building and editing reliability block diagrams: the structure rules.", """\

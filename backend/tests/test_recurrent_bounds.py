@@ -350,14 +350,17 @@ def test_mcp_get_model_reports_the_evidence(env):
     out = _ok(_call(env.token[A], "get", {"kind": "model", "id": doc.id}))
     ref = _ref()
     lo, hi = ref.param_cb("beta", alpha_ci=0.10)
-    assert out["growth"] == "deteriorating"
+    assert "growth" not in out  # no verdict: the evidence and what it means
     assert out["beta_ci"] == [float(f"{lo:.4g}"), float(f"{hi:.4g}")] and out["ci_level"] == 0.90
-    assert "excludes 1" in out["growth_basis"]
+    assert f"[{lo:.4g}, {hi:.4g}]" in out["growth_basis"]
+    assert "Above 1 failures come faster as time goes on; below 1, slower" in out["growth_basis"]
+    assert not any(w in out["growth_basis"] for w in ("excludes", "deteriorat", "improving"))
     dm = out["demonstrated_mtbf"]
     assert dm["lower_bound"] == float(f"{float(ref.mtbf_cb(END, alpha_ci=0.1, bound='lower', method='crow')):.4g}")
     assert dm["confidence"] == 0.9 and "Crow" in dm["method"]
     assert out["mtbf_ci"] == [float(f"{v:.4g}") for v in ref.mtbf_cb(END, alpha_ci=0.10, method="crow")]
     assert [t["test"] for t in out["trend_tests"]] == ["Laplace", "MIL-HDBK-189C"]
+    assert all(set(t) <= {"test", "statistic", "p_value", "dof"} for t in out["trend_tests"])
     assert out["gof"]["bic"] == float(f"{ref.bic():.4g}")
     assert out["gof_test"]["test"] == "Cramér-von Mises" and out["gof_test"]["n_boot"] == 200
     assert out["systems_vs_model"][0]["system"] == "C"

@@ -267,9 +267,8 @@ for name, value in zip(names, values):
     ci = intervals.get(name)
     print_interval(f"Parameter {name}", value, *(ci or (None, None)))
 
-# The growth shape: above 1 the failures come faster as the systems age
-# (deteriorating), below 1 slower (improving). The verdict follows its 90%
-# interval: a trend is called only when the interval leaves out 1.
+# The growth shape: above 1 the failures come faster as the systems age,
+# below 1 slower. The evidence is printed; the analyst judges it.
 GROWTH = {"crow_amsaa": ("beta", 1.0), "duane": ("alpha", 1.0), "cox_lewis": ("beta", 0.0)}
 if MODEL_ID in ("crow_amsaa", "duane"):
     shape = GROWTH[MODEL_ID][0]
@@ -278,11 +277,7 @@ if MODEL_ID in ("crow_amsaa", "duane"):
 if MODEL_ID in GROWTH:
     shape, no_trend = GROWTH[MODEL_ID]
     value, ci = values[names.index(shape)], intervals.get(shape)
-    if ci:
-        verdict = "deteriorating" if ci[0] > no_trend else "improving" if ci[1] < no_trend else "stable"
-    else:
-        verdict = "deteriorating" if value > no_trend else "improving" if value < no_trend else "stable"
-    print(f"Trend: {verdict}")
+    print(f"Above {no_trend:g} failures come faster as time goes on; below {no_trend:g}, slower.")
 
 # The failure rate (ROCOF) and the MTBF (its reciprocal) at the end of
 # observation, with 90% two-sided intervals, and the demonstrated MTBF: the
