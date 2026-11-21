@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  predictionAsModel,
   csvFileName, factorsText, fmtHours, fmtPerHour, fmtPerMillion, fmtReliability, lineFromServer, linesCsv,
   linesForServer, linesFromSaved, linesProblem, newPredictionPath, paretoBars, parsePartsList, predictionPath,
   partTypeMode, summaryText,
@@ -167,4 +168,14 @@ test("which of the three a parts-list line uses", () => {
   assert.equal(partTypeMode({ rateMode: true }), "rate");
   assert.equal(partTypeMode({ rate: " " }), "type");
   assert.equal(partTypeMode(), "type");
+});
+
+test("a prediction's rate as a constant-rate model, named for where it came from", () => {
+  const m = predictionAsModel({ name: "Speed controller stock", results: { failure_rate_per_hour: 60.4e-6 } });
+  assert.equal(m.name, "Speed controller stock (predicted, 60.4 per million h)");
+  assert.equal(m.distribution, "exponential");
+  assert.equal(m.unit, "Hours");
+  assert.deepEqual(m.params, [{ name: "failure_rate", value: 60.4e-6 }]);
+  assert.equal(predictionAsModel({ name: "x", results: { failure_rate_per_hour: 0 } }), null);
+  assert.equal(predictionAsModel({ name: "x", results: {} }), null);
 });

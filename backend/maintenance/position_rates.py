@@ -61,16 +61,18 @@ def _fmt(x: float) -> str:
     return f"{x:,.3g}" if x < 1000 else f"{x:,.0f}"
 
 
-def _prediction_doc(db, owners, pid: str) -> dict | None:
+def _prediction_doc(db, owners, pid: str, fetch=None) -> dict | None:
     from backend.services import reliability_prediction as rp
 
-    doc = rp.get_prediction(db, pid, owners) if pid else None
+    if not pid:
+        return None
+    doc = fetch("prediction", pid) if fetch is not None else rp.get_prediction(db, pid, owners)
     if doc is None:
         return None
     return {"_id": doc.id, "name": doc.name, "results": doc.results or {}}
 
 
-def _nearest_parts_count(m, db, owners, position_id: str) -> tuple[dict, dict] | None:
+def _nearest_parts_count(m, db, owners, position_id: str, fetch=None) -> tuple[dict, dict] | None:
     """(the position holding it {id, name}, its rates by part number): the nearest saved parts
     count on the position or above it."""
     from backend.services import maintainability
@@ -84,7 +86,7 @@ def _nearest_parts_count(m, db, owners, position_id: str) -> tuple[dict, dict] |
         for x in m.position_models(pid):
             if x.get("role") != "prediction":
                 continue
-            doc = _prediction_doc(db, owners, (x.get("source") or {}).get("prediction_id") or "")
+            doc = _prediction_doc(db, owners, (x.get("source") or {}).get("prediction_id") or "", fetch)
             got = maintainability.rates_of(doc) if doc else None
             if got and got["rates"]:
                 return {"id": node["id"], "name": node["name"]}, got
@@ -93,8 +95,9 @@ def _nearest_parts_count(m, db, owners, position_id: str) -> tuple[dict, dict] |
     return None
 
 
-def parts_count_rate(m, db, owners, position_id: str) -> dict | None:
-    """The position's rate from the parts count (step 2 above), or None."""
+def parts_count_rate(m, db, owners, position_id: str, fetch=None) -> dict | None:
+    """The position's rate from the parts count (step 2 above), or None. ``fetch`` (a
+    ``position_models.fetcher``) reads the predictions in place of ``db`` and ``owners``."""
     from backend.maintenance.position_models import PREDICTION_ROLES
     from backend.services.maintainability import ref_key
 
@@ -112,7 +115,7 @@ def parts_count_rate(m, db, owners, position_id: str) -> dict | None:
         listed.append((part, qty))
     if not listed:
         return None
-    found = _nearest_parts_count(m, db, owners, position_id)
+    found = _nearest_parts_count(m, db, owners, position_id, fetch)
     if found is None:
         return None
     holder, got = found

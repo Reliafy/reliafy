@@ -127,7 +127,11 @@ def _life(m: Maintenance, pos: dict, fetch, class_only: bool):
     node = m.s.node(m.org, svc.class_id(m.org, key)) if key else None
     model = (node or {}).get("model")
     if not model:
-        return None, None, None, "no life model (none in use here, and its class has none fitted)"
+        predicted = _predicted_life(m, pos, fetch) if not class_only else None
+        if predicted is not None:
+            return predicted
+        return None, None, None, ("no life model (none in use here, its class has none fitted, "
+                                  "and no parts count gives it a rate)")
     if (model.get("extras") or {}).get("p") is not None:
         return None, None, None, "its class's model is a limited-failure-population fit: no renewals from it"
     try:
@@ -135,6 +139,26 @@ def _life(m: Maintenance, pos: dict, fetch, class_only: bool):
     except StrategyError as exc:
         return None, None, None, f"its class's model can't be evaluated: {exc}"
     return dist, svc._norm_unit(model.get("unit")) or "days", f"{label} (the {m._class_label(key)} class's)", None
+
+
+def _predicted_life(m: Maintenance, pos: dict, fetch):
+    """(dist, "hours", label, None) for a position with no life model but a parts-count rate (the
+    position's parts at their rates in the nearest saved parts count, ``position_rates``): a constant
+    failure rate, so failures come at that rate whatever the age. None when there's no such rate."""
+    from backend.maintenance import position_rates
+    from backend.services.strategy import StrategyError, _model_from_params
+
+    if fetch is None:
+        return None
+    got = position_rates.parts_count_rate(m, None, None, pos["id"], fetch=fetch)
+    if not got or not got["per_hour"] > 0:
+        return None
+    try:
+        dist, _label = _model_from_params("exponential", [{"name": "failure_rate", "value": got["per_hour"]}], None)
+    except StrategyError:
+        return None
+    per_m = position_rates._fmt(got["per_million_hours"])
+    return dist, "hours", f"Constant rate from the prediction: {per_m} per million hours ({got['prediction']['name']})", None
 
 
 def _fail_parts(m: Maintenance, position_id: str) -> dict[str, float]:

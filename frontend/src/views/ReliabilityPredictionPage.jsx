@@ -8,9 +8,9 @@ import { itemName } from "../components/LibRows.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
-import { deletePrediction, getPrediction } from "../api.js";
+import { createModelFromParams, deletePrediction, getPrediction, listModels } from "../api.js";
 import { deleteOrRemoveConfirm } from "../confirm.js";
-import { PREDICTIONS_LABEL, PREDICTIONS_PATH, newPredictionPath } from "../predictions.js";
+import { PREDICTIONS_LABEL, PREDICTIONS_PATH, newPredictionPath, predictionAsModel } from "../predictions.js";
 import { productPath } from "../products.js";
 import { tabPlace } from "../explorerTabs.js";
 import "./Predictions.css";
@@ -31,6 +31,26 @@ export default function ReliabilityPredictionPage() {
     setError(null);
     getPrediction(id).then(setDoc).catch((e) => setError(e.message));
   }, [id, attempt]);
+
+  // Spares from this rate: the rate as a constant-rate model (the one made
+  // before, if there is one), then a new fleet forecast on it, where the
+  // fleet, its hours and the lead time give how many to hold.
+  const [sizing, setSizing] = useState(false);
+  const [sizeError, setSizeError] = useState(null);
+  const onSpares = async () => {
+    const spec = predictionAsModel(doc);
+    if (!spec) return;
+    setSizing(true);
+    setSizeError(null);
+    try {
+      const have = ((await listModels())?.models || []).find((x) => x.name === spec.name && String(x.distribution).toLowerCase() === "exponential" && !x.read_only);
+      const model = have || await createModelFromParams(spec.name, spec.distribution, spec.params, { unit: spec.unit });
+      navigate(`/forecasts?new=1&model=${encodeURIComponent(model.id)}`);
+    } catch (e) {
+      setSizeError(e.message);
+      setSizing(false);
+    }
+  };
 
   const onDelete = async () => {
     if (!(await confirm(deleteOrRemoveConfirm(doc, "prediction", { name: itemName(doc) })))) return;
@@ -92,6 +112,18 @@ export default function ReliabilityPredictionPage() {
 
       <div className="card">
         <PredictionResult results={doc.results} name={itemName(doc)} />
+        {predictionAsModel(doc) && (
+          <div className="row" style={{ gap: "0.8rem", alignItems: "center", flexWrap: "wrap" }} data-testid="prediction-spares">
+            <button className="secondary" onClick={onSpares} disabled={sizing}>
+              {sizing ? "Opening…" : "Forecast spares from this rate"}
+            </button>
+            <span className="muted-line" style={{ margin: 0, flex: "1 1 260px" }}>
+              Uses the rate as a constant failure rate (a model named “{predictionAsModel(doc).name}”), then asks for the
+              fleet, its hours and the lead time: the forecast gives the failures a year and how many to hold.
+            </span>
+          </div>
+        )}
+        {sizeError && <p className="hint fleet-alert-warn" role="alert">{sizeError}</p>}
       </div>
     </div>
   );

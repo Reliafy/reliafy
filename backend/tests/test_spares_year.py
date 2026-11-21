@@ -345,3 +345,41 @@ def test_bad_requests_are_refused(m):
         sy.spares_year(m, {}, months=0)
     with pytest.raises(Invalid, match="service level"):
         sy.spares_year(m, {}, service_level=2)
+
+
+def test_a_parts_count_rate_sizes_the_spares_when_there_is_no_life_model():
+    """A speed controller with no life model of its own and no class model, but a rate in the
+    product's parts count (60.4 per million hours): a planned fleet of 10 running 150 hours a year
+    needs 60.4e-6 x 150 x 10 = 0.0906 a year, a constant rate, said to be from the prediction."""
+    import mongomock
+
+    from backend.maintenance import position_models as pm
+    from backend.services import samples
+
+    db = mongomock.MongoClient()["spares_prediction"]
+    samples.seed_samples(db)
+    owners = ["user-spy", "__samples__"]
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), "user-spy", "tester")
+    m.as_of = TODAY
+    product = m.create_product("Survey drone")
+    top = product["id"] if "id" in product else product["product"]["id"]
+    esc = m.create_position("Speed controller", parent_id=top)["id"]
+    part = m.create_part("ESC-40", "Speed controller 40 A")["id"]
+    m.update_part(part, lead_time_days=365.25, service_level=0.95)
+    m.add_position_part(esc, part, role="replacement", quantity=1)
+    fetch_ = pm.fetcher(db, owners)
+    before = sy.spares_year(m, sy.scope_of(m, top, fleet_size=10, hours_per_day=150 / 365.25), fetch=fetch_)
+    assert before["parts"] == [] or _row(before, "ESC-40")["demand"]["failures"] == 0
+    assert any("parts count" in n["reason"] for n in before["not_forecast"])
+    pm.predict_position(m, db, owners, set(), top, assign={"ESC-40": {"rate_per_million_hours": 60.4}}, save=True)
+
+    out = sy.spares_year(m, sy.scope_of(m, top, fleet_size=10, hours_per_day=150 / 365.25), fetch=pm.fetcher(db, owners))
+    r = _row(out, "ESC-40")
+    expected = 60.4e-6 * 150 * 10 * (12 * 30.4375 / 365.25)  # the horizon is 12 x 30.4375 days
+    assert expected == pytest.approx(0.0906, abs=1e-4)
+    assert r["demand"]["failures"] == pytest.approx(expected, abs=0.015)
+    # Poisson(0.0906) over a year's lead time: P(0) = 0.913 < 95%, P(<= 1) = 0.996: hold 1.
+    assert r["hold"] == 1
+    units = [u for u in out["units"] if u["position"]["id"] == esc]
+    assert len(units) == 10
+    assert units[0]["model"].startswith("Constant rate from the prediction: 60.4 per million hours")
