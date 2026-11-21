@@ -130,18 +130,34 @@ export function risingText(sp, periodLabel = "periods") {
   return `${formatNumber(r.hold)} ${how} ${word} ${r.peak_period}`;
 }
 
-// A fleet's replacement-part plan: one row per period.
+// A fleet's replacement-part plan: one row per period, and on the first the
+// answer for the whole forecast (its demand, what to order now and to buy).
 export function fleetSparesCsv(sp, { fleet = "", periodLabel = "periods" } = {}) {
   if (!sp || sp.status !== "ok") return "";
+  const y = sp.year || {};
   const rows = [["fleet", "period", "hold", "reorder_at", "expected_demand", "service_level",
     `lead_time_${periodLabel}`, `review_${periodLabel}`, "per_failure", "repairable", `turnaround_${periodLabel}`,
-    "unit_cost", "hold_cost"]];
-  for (const p of sp.per_period || []) {
+    "unit_cost", "hold_cost", "horizon_demand_mean", "horizon_demand_p90", "horizon_planned", "order_now",
+    "buy_for_horizon", "buy_high_case"]];
+  (sp.per_period || []).forEach((p, i) => {
+    const first = i === 0;
     rows.push([fleet, p.period, p.hold, p.reorder_at ?? "", csvNumber(p.expected_demand), sp.service_level,
       sp.lead_time ?? "", sp.review ?? "", sp.per_failure, sp.repairable ? "yes" : "no", sp.turnaround ?? "",
-      sp.unit_cost ?? "", sp.unit_cost != null ? csvNumber(p.hold * sp.unit_cost) : ""]);
-  }
+      sp.unit_cost ?? "", sp.unit_cost != null ? csvNumber(p.hold * sp.unit_cost) : "",
+      first ? csvNumber(y.mean) ?? "" : "", first ? y.p90 ?? "" : "", first ? csvNumber(y.planned) ?? "" : "",
+      first ? y.order_now ?? "" : "", first ? y.buy ?? "" : "", first ? y.buy_high_case ?? "" : ""]);
+  });
   return toCsv(rows);
+}
+
+// The demand over the whole forecast in words: "about 2.4 over 12 months
+// (likely 1–4): 1.4 failures + 1 planned".
+export function yearText(y) {
+  if (!y || y.mean == null) return "";
+  const span = `${y.periods} ${String(y.period_label || "periods").replace(/s$/i, "")}${y.periods === 1 ? "" : "s"}`;
+  let text = `${useText(y.mean).replace("≈", "about")} over ${span} (likely ${formatNumber(y.p10)}–${formatNumber(y.p90)})`;
+  if (y.planned > 0) text += `: ${formatNumber(y.failures, { sig: 2 })} failures + ${formatNumber(y.planned, { sig: 2 })} planned`;
+  return text;
 }
 
 // Save text as a file (CSV exports).
