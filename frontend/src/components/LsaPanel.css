@@ -90,7 +90,7 @@
 .lsa-err { color: var(--danger-text); }
 .lsa-hint { margin: 0 0 6px; }
 .lsa-rows { list-style: none; margin: 0 0 4px; padding: 0; }
-.lsa-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 0; }
+.lsa-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 8px; padding: 4px 0; }
 .lsa-row input, .lsa-row select, .lsa-duration input { min-width: 0; box-sizing: border-box; }
 .lsa-wide { flex: 1 1 180px; }
 .lsa-row select { flex: 1 1 160px; max-width: 100%; }
@@ -101,6 +101,12 @@
 .lsa-remove { min-width: 32px; min-height: 32px; }
 .lsa-add { margin-top: 2px; }
 .lsa-duration { display: flex; width: fit-content; margin-top: 8px; }
+/* Each input with its label above it (LsaTask's Cell). */
+.lsa-cell { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.lsa-cell-label { font-size: var(--fs-12); line-height: var(--lh-16); font-weight: 500; color: var(--text-secondary); white-space: nowrap; }
+.lsa-cell.lsa-num { display: flex; align-items: stretch; }
+.lsa-cell.lsa-num input { width: 88px; }
+.lsa-cell.lsa-wide input, .lsa-cell.lsa-wide select { width: 100%; max-width: none; }
 .lsa-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 12px; }
 .lsa-field { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; }
 .lsa-field input { min-width: 0; }

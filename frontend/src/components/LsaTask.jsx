@@ -34,6 +34,17 @@ function Section({ title, hint, state, onLeave, children }) {
   );
 }
 
+// One input with its label shown above it (not only a placeholder): a typed value
+// can't land in a field you can't name.
+function Cell({ label, className = "", children }) {
+  return (
+    <label className={`lsa-cell ${className}`.trim()}>
+      <span className="lsa-cell-label">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 function Rows({ rows, onRows, blank, addLabel, render, label }) {
   return (
     <>
@@ -54,6 +65,11 @@ function Rows({ rows, onRows, blank, addLabel, render, label }) {
 }
 
 const SECTIONS = ["labour", "tools", "spares", "consumables", "access", "method", "duration_hours"];
+// Typing also saves once it pauses (not only when focus leaves the section), so a
+// reload or a closed tab doesn't lose what was typed, and emptying a field clears it.
+const TYPING_PAUSE = 1200;
+// Sections saved together (the Labour section holds the elapsed time too).
+const GROUP = { labour: ["labour", "duration_hours"], duration_hours: ["labour", "duration_hours"] };
 
 export default function LsaTask({ taskId, onBack, onChanged }) {
   const location = useLocation();
@@ -64,6 +80,8 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
   const [parts, setParts] = useState(null);
   const last = useRef({});
   const timers = useRef({});
+  const typing = useRef({});
+  const latest = useRef(null);
 
   useEffect(() => {
     let live = true;
@@ -73,13 +91,17 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
       const r = data.task.resources || {};
       const d = Object.fromEntries(SECTIONS.map((k) => [k, sectionDraft(k, r)]));
       setDraft(d);
+      latest.current = d;
       setInstructions(data.task.instructions || "");
       last.current = Object.fromEntries(SECTIONS.map((k) => [k, JSON.stringify(cleanSection(k, d[k]))]));
       last.current.instructions = data.task.instructions || "";
     }).catch((e) => live && setState({ id: taskId, data: null, error: e.message }));
     return () => { live = false; };
   }, [taskId]);
-  useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
+  useEffect(() => () => {
+    Object.values(timers.current).forEach(clearTimeout);
+    Object.values(typing.current).forEach(clearTimeout);
+  }, []);
 
   const flash = (key, value) => {
     setSaved((s) => ({ ...s, [key]: value }));
@@ -98,7 +120,7 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
     }
   };
   // Leaving a section: saved when it changed (cleaned, as the server keeps it).
-  const leave = (keys, from = draft) => {
+  const leave = (keys, from = latest.current || draft) => {
     const changes = {};
     for (const k of keys) {
       const clean = cleanSection(k, from[k]);
@@ -110,14 +132,24 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
     if (Object.keys(changes).length) save(keys[0], { resources: changes });
   };
   const set = (key, value, now = false) => {
-    const next = { ...draft, [key]: value };
+    const next = { ...(latest.current || draft), [key]: value };
+    latest.current = next;
     setDraft(next);
-    if (now) leave([key], next); // a line removed: saved at once
+    const keys = GROUP[key] || [key];
+    clearTimeout(typing.current[keys[0]]);
+    if (now) leave(keys, next); // a line removed: saved at once
+    else typing.current[keys[0]] = setTimeout(() => leave(keys, latest.current), TYPING_PAUSE);
   };
-  const leaveInstructions = () => {
-    if (instructions === last.current.instructions) return;
-    last.current.instructions = instructions;
-    save("instructions", { instructions });
+  const leaveInstructions = (text = instructions) => {
+    clearTimeout(typing.current.instructions);
+    if (text === last.current.instructions) return;
+    last.current.instructions = text;
+    save("instructions", { instructions: text });
+  };
+  const typeInstructions = (text) => {
+    setInstructions(text);
+    clearTimeout(typing.current.instructions);
+    typing.current.instructions = setTimeout(() => leaveInstructions(text), TYPING_PAUSE);
   };
   const needParts = () => {
     if (parts) return;
@@ -167,29 +199,29 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
         <Rows label="Labour lines" rows={draft.labour} onRows={(v, now) => set("labour", v, now)} blank={{ trade: t.trade || "", people: "1", hours: "" }} addLabel="+ Add labour"
               render={(x, patch, i) => (
                 <>
-                  <input className="lsa-wide" aria-label={`Trade, line ${i + 1}`} placeholder="Trade, e.g. Fitter" value={x.trade} maxLength={200} onChange={(e) => patch({ trade: e.target.value })} />
-                  <label className="lsa-num"><input type="number" min="1" step="1" inputMode="numeric" aria-label={`People, line ${i + 1}`} value={x.people} onChange={(e) => patch({ people: e.target.value })} /> people</label>
-                  <label className="lsa-num"><input type="number" min="0" step="0.25" inputMode="decimal" aria-label={`Hours each, line ${i + 1}`} value={x.hours} onChange={(e) => patch({ hours: e.target.value })} /> h each</label>
+                  <Cell label="Trade" className="lsa-wide"><input aria-label={`Trade, line ${i + 1}`} placeholder="e.g. Fitter" value={x.trade} maxLength={200} onChange={(e) => patch({ trade: e.target.value })} /></Cell>
+                  <Cell label="People" className="lsa-num"><input type="number" min="1" step="1" inputMode="numeric" aria-label={`People, line ${i + 1}`} value={x.people} onChange={(e) => patch({ people: e.target.value })} /></Cell>
+                  <Cell label="Hours each" className="lsa-num"><input type="number" min="0" step="0.25" inputMode="decimal" aria-label={`Hours each, line ${i + 1}`} value={x.hours} onChange={(e) => patch({ hours: e.target.value })} /></Cell>
                 </>
               )} />
-        <label className="lsa-num lsa-duration">Elapsed
-          <input type="number" min="0" step="0.25" inputMode="decimal" aria-label="Elapsed hours" value={draft.duration_hours} onChange={(e) => set("duration_hours", e.target.value)} /> h
-        </label>
+        <Cell label="Elapsed, start to finish (h; empty: not set)" className="lsa-duration">
+          <input type="number" min="0" step="0.25" inputMode="decimal" aria-label="Elapsed hours" value={draft.duration_hours} onChange={(e) => set("duration_hours", e.target.value)} />
+        </Cell>
       </Section>
 
       <Section title="Tools and instruments" hint="Tools and test equipment. An instrument can name the measuring point or channel it reads." state={saved.tools} onLeave={() => leave(["tools"])}>
         <Rows label="Tool lines" rows={draft.tools} onRows={(v, now) => set("tools", v, now)} blank={{ name: "", qty: "", note: "", point_id: "" }} addLabel="+ Add a tool"
               render={(x, patch, i) => (
                 <>
-                  <input className="lsa-wide" aria-label={`Tool, line ${i + 1}`} placeholder="e.g. Torque wrench" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} />
-                  <label className="lsa-num"><input type="number" min="0" step="1" inputMode="numeric" aria-label={`How many, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} /> off</label>
+                  <Cell label="Tool" className="lsa-wide"><input aria-label={`Tool, line ${i + 1}`} placeholder="e.g. Torque wrench" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} /></Cell>
+                  <Cell label="How many" className="lsa-num"><input type="number" min="0" step="1" inputMode="numeric" aria-label={`How many, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} /></Cell>
                   {data.points.length > 0 && (
-                    <select aria-label={`Reads, line ${i + 1}`} value={x.point_id} onChange={(e) => patch({ point_id: e.target.value })}>
+                    <Cell label="Reads" className="lsa-wide"><select aria-label={`Reads, line ${i + 1}`} value={x.point_id} onChange={(e) => patch({ point_id: e.target.value })}>
                       <option value="">Reads no point</option>
                       {data.points.map((p) => <option key={p.id} value={p.id}>{p.name}{p.unit ? ` (${p.unit})` : ""}{p.kind === "channel" ? " · channel" : ""}{p.on ? ` · ${p.on}` : ""}</option>)}
-                    </select>
+                    </select></Cell>
                   )}
-                  <input className="lsa-wide" aria-label={`Note, line ${i + 1}`} placeholder="Note" value={x.note} maxLength={200} onChange={(e) => patch({ note: e.target.value })} />
+                  <Cell label="Note" className="lsa-wide"><input aria-label={`Note, line ${i + 1}`} value={x.note} maxLength={200} onChange={(e) => patch({ note: e.target.value })} /></Cell>
                 </>
               )} />
       </Section>
@@ -198,13 +230,13 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
         <Rows label="Spare lines" rows={draft.spares} onRows={(v, now) => set("spares", v, now)} blank={{ part_id: "", name: "", qty: "1", part_number: "" }} addLabel="+ Add a spare"
               render={(x, patch, i) => (
                 <>
-                  <input className="lsa-wide" list="lsa-parts" aria-label={`Spare, line ${i + 1}`} placeholder="Part number or name"
+                  <Cell label="Spare" className="lsa-wide"><input list="lsa-parts" aria-label={`Spare, line ${i + 1}`} placeholder="Part number or name"
                          value={x.part_id ? `${x.part_number ? `${x.part_number} ` : ""}${x.name}` : x.name} maxLength={200} onFocus={needParts}
                          onChange={(e) => {
                            const hit = register.find((p) => partLabel(p) === e.target.value);
                            patch(hit ? { part_id: hit.id, name: hit.name, part_number: hit.part_number } : { part_id: "", name: e.target.value, part_number: "" });
-                         }} />
-                  <label className="lsa-num"><input type="number" min="0" step="1" inputMode="decimal" aria-label={`Quantity, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} /> off</label>
+                         }} /></Cell>
+                  <Cell label="Quantity" className="lsa-num"><input type="number" min="0" step="1" inputMode="decimal" aria-label={`Quantity, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} /></Cell>
                   {x.part_id ? <span className="lib-date">from the register</span> : null}
                 </>
               )} />
@@ -215,17 +247,17 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
         <Rows label="Consumable lines" rows={draft.consumables} onRows={(v, now) => set("consumables", v, now)} blank={{ name: "", qty: "1", unit: "", cost: "" }} addLabel="+ Add a consumable"
               render={(x, patch, i) => (
                 <>
-                  <input className="lsa-wide" aria-label={`Consumable, line ${i + 1}`} placeholder="e.g. Grease" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} />
-                  <input className="lsa-qty" type="number" min="0" step="any" inputMode="decimal" aria-label={`Quantity, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} />
-                  <input className="lsa-unit" aria-label={`Unit, line ${i + 1}`} placeholder="unit" value={x.unit} maxLength={20} onChange={(e) => patch({ unit: e.target.value })} />
-                  <label className="lsa-num">cost ({workspaceCurrency()}) <input type="number" min="0" step="any" inputMode="decimal" aria-label={`Cost, line ${i + 1}`} value={x.cost} onChange={(e) => patch({ cost: e.target.value })} /></label>
+                  <Cell label="Consumable" className="lsa-wide"><input aria-label={`Consumable, line ${i + 1}`} placeholder="e.g. Grease" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} /></Cell>
+                  <Cell label="Quantity" className="lsa-num"><input type="number" min="0" step="any" inputMode="decimal" aria-label={`Quantity, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} /></Cell>
+                  <Cell label="Unit" className="lsa-num"><input aria-label={`Unit, line ${i + 1}`} placeholder="e.g. litre" value={x.unit} maxLength={20} onChange={(e) => patch({ unit: e.target.value })} /></Cell>
+                  <Cell label={`Cost (${workspaceCurrency()})`} className="lsa-num"><input type="number" min="0" step="any" inputMode="decimal" aria-label={`Cost, line ${i + 1}`} value={x.cost} onChange={(e) => patch({ cost: e.target.value })} /></Cell>
                 </>
               )} />
       </Section>
 
       <Section title="Access and downtime" state={saved.access} onLeave={() => leave(["access"])}>
         <div className="lsa-grid">
-          <label className="lsa-field"><span>Downtime (h)</span>
+          <label className="lsa-field"><span>Downtime (h; empty: none)</span>
             <input type="number" min="0" step="0.25" inputMode="decimal" value={draft.access.downtime_hours} onChange={(e) => set("access", { ...draft.access, downtime_hours: e.target.value })} /></label>
           <label className="lsa-field"><span>Permits (comma between)</span>
             <input value={draft.access.permits} placeholder="e.g. Hot work, Confined space" onChange={(e) => set("access", { ...draft.access, permits: e.target.value })} /></label>
@@ -240,8 +272,8 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
         <input className="lsa-full" aria-label="Method" value={draft.method} maxLength={500} onChange={(e) => set("method", e.target.value)} />
       </Section>
 
-      <Section title="Instructions" hint="The steps, as they go on its work orders." state={saved.instructions} onLeave={leaveInstructions}>
-        <textarea className="lsa-full" rows={4} aria-label="Instructions" value={instructions} maxLength={4000} onChange={(e) => setInstructions(e.target.value)} />
+      <Section title="Instructions" hint="The steps, as they go on its work orders." state={saved.instructions} onLeave={() => leaveInstructions()}>
+        <textarea className="lsa-full" rows={4} aria-label="Instructions" value={instructions} maxLength={4000} onChange={(e) => typeInstructions(e.target.value)} />
       </Section>
     </div>
   );

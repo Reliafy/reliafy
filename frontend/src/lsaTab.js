@@ -456,12 +456,14 @@ export function lsaRollup(tasks = []) {
 }
 
 // A rollup as lines to read: [{label, text}], only those with something in them.
-export function rollupLines(rollup) {
+// labourLabel: what the labour line is called ("Labour per visit" where the tasks'
+// own intervals differ, so it isn't read as a year's).
+export function rollupLines(rollup, labourLabel = "Labour") {
   if (!rollup) return [];
   const out = [];
   if (rollup.labour_hours) {
     const by = rollup.labour.map((x) => `${x.trade || "no trade set"} ${num(x.hours)} h`).join(", ");
-    out.push({ label: "Labour", text: `${num(rollup.labour_hours)} h${by ? ` (${by})` : ""}` });
+    out.push({ label: labourLabel, text: `${num(rollup.labour_hours)} h${by ? ` (${by})` : ""}` });
   }
   if (rollup.tools.length) out.push({ label: "Tools", text: rollup.tools.map((x) => lineText("tools", x)).join(", ") });
   if (rollup.spares.length) out.push({ label: "Spares to stage", text: rollup.spares.map((x) => lineText("spares", x)).join(", ") });
@@ -489,6 +491,59 @@ export function annualLsa(tasks = []) {
     counted += 1;
   }
   return { hours: Math.round(hours * 10) / 10, counted, onEvent, byUse, spareLines };
+}
+
+// The labour a year by trade, from each task's labour per visit and how often it's
+// done: hours a visit × visits a year (365.25 days ÷ its interval in days; a week
+// is 52.18 visits a year). Tasks raised by an event, or counted by use (run hours),
+// have no fixed visits a year: left out and named. rates: [{trade, rate}] (the
+// workspace's trade rates); a trade with a rate gets its cost a year.
+export function labourYear(tasks = [], rates = []) {
+  const key = (x) => String(x || "").split(/\s+/).filter(Boolean).join(" ").toLowerCase();
+  const rateOf = new Map((rates || []).filter((r) => r.rate != null).map((r) => [key(r.trade), r.rate]));
+  const by = new Map();
+  const leftOut = [];
+  let counted = 0;
+  for (const t of tasks) {
+    const lines = t.resources?.labour || [];
+    if (!lines.length) continue;
+    const days = !t.on_event && t.unit !== "hours" && DAYS[t.unit] && t.interval > 0 ? t.interval * DAYS[t.unit] : null;
+    if (!days) { leftOut.push(t.name); continue; }
+    counted += 1;
+    const perYear = 365.25 / days;
+    for (const x of lines) {
+      const trade = x.trade || t.trade || "";
+      const row = by.get(key(trade)) || { trade, hours: 0 };
+      row.hours += (x.people || 1) * (x.hours || 0) * perYear;
+      by.set(key(trade), row);
+    }
+  }
+  const rows = [...by.entries()].map(([k, x]) => {
+    const rate = rateOf.get(k);
+    return { trade: x.trade, hours: Math.round(x.hours * 100) / 100, cost: rate == null || !x.trade ? null : Math.round(x.hours * rate * 100) / 100 };
+  }).sort((a, b) => b.hours - a.hours || a.trade.localeCompare(b.trade));
+  const priced = rows.filter((x) => x.cost != null);
+  return {
+    counted, leftOut, rows,
+    hours: Math.round(rows.reduce((n, x) => n + x.hours, 0) * 100) / 100,
+    cost: priced.length ? Math.round(priced.reduce((n, x) => n + x.cost, 0) * 100) / 100 : null,
+    unpriced: rows.filter((x) => x.cost == null).map((x) => x.trade || "no trade set"),
+  };
+}
+
+// labourYear in words, one line: "25.4 h (Operator 10.4 h, …), about $2,128 at trade
+// rates. Left out, no fixed interval: Flow test." "" when nothing counts.
+export function labourYearText(y) {
+  if (!y || (!y.counted && !y.leftOut.length)) return "";
+  const tenth = (v) => (Math.round(v * 10) / 10).toLocaleString("en-AU");
+  const head = y.counted
+    ? `${tenth(y.hours)} h${y.rows.length ? ` (${y.rows.map((x) => `${x.trade || "no trade set"} ${tenth(x.hours)} h`).join(", ")})` : ""}`
+    : "none with a fixed interval";
+  const cost = y.cost != null
+    ? `, about ${money(y.cost)} at trade rates${y.unpriced.length ? ` (no rate yet: ${y.unpriced.join(", ")})` : ""}`
+    : "";
+  const left = y.leftOut.length ? `. Left out, no fixed interval: ${shortList(y.leftOut, 3)}` : "";
+  return `${head}${cost}${left}.`;
 }
 
 export function annualText(a) {

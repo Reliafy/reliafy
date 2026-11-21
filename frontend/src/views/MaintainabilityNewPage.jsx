@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { CapRefusal } from "../components/StorageCap.jsx";
@@ -17,7 +17,7 @@ import {
 import { formatNumber } from "../format.js";
 import {
   ELEMENTS, MAINTAINABILITY_GUIDE, MAINTAINABILITY_PATH, RATE_UNITS, UNITS, emptyForm, emptyLine, formProblem,
-  fromInputs, hasElements, isBlank, lineMttr, linesFromProduct, parsePartsList, rateUnitText, toInputs,
+  fromInputs, hasElements, isBlank, lineColumns, lineMttr, mttrIsSum, linesFromProduct, parsePartsList, rateUnitText, toInputs,
 } from "../maintainability.js";
 import "./Maintainability.css";
 
@@ -130,6 +130,59 @@ export default function MaintainabilityNewPage() {
 
   const defaultName = form.product?.name ? `${form.product.name} — maintainability` : (state?.name || "Maintainability prediction");
   const unitWord = form.unit === "hours" ? "h" : "min";
+  // The header and every row take their columns from one list (lineColumns), so with the
+  // split on each step has a box on every line, a line with none typed yet included.
+  const showSplit = split || anyElements;
+  const columns = lineColumns(showSplit);
+  const element = (c) => ELEMENTS.find((e) => `element:${e.key}` === c);
+  // Plain functions, not components: a component made in render would remount its inputs
+  // (and lose focus) on every keystroke.
+  const head = (col) => {
+    const e = element(col);
+    if (e) return <th className="mp-el" title={`${e.label}: ${e.help}`}>{e.short} ({unitWord})</th>;
+    if (col === "ref") return <th>Ref</th>;
+    if (col === "name") return <th>Name</th>;
+    if (col === "assembly") return <th>Assembly</th>;
+    if (col === "quantity") return <th className="mp-el">Qty</th>;
+    if (col === "failure_rate") return <th className="mp-el">Failure rate<span className="th-unit">{rateUnitText(form.failure_rate_unit)}</span></th>;
+    if (col === "mttr") return <th className="mp-el" title={showSplit ? "The line's mean repair time: the sum of its elements, or typed when they're blank" : "The line's mean time to repair"}>MTTR ({unitWord})</th>;
+    if (col === "maximum") return <th className="mp-el" title="Optional: the time most (95%) of this line's repairs are done by. It gives the spread, which M_max needs.">Most done by ({unitWord})</th>;
+    return <th><span className="sr-only">Remove</span></th>;
+  };
+  const cell = (col, l, i) => {
+    const e = element(col);
+    if (e) {
+      return (
+        <td className="mp-cell">
+          <input type="text" inputMode="decimal" aria-label={`Line ${i + 1} ${e.label.toLowerCase()}`} value={l.elements[e.key]}
+            onChange={(ev) => setElement(i, e.key, ev.target.value)} />
+        </td>
+      );
+    }
+    if (col === "ref") return <td className="mp-cell"><input type="text" aria-label={`Line ${i + 1} ref`} value={l.ref} onChange={(ev) => setLine(i, { ref: ev.target.value })} placeholder="Part no." /></td>;
+    if (col === "name") return <td className="mp-text"><input type="text" aria-label={`Line ${i + 1} name`} value={l.name} onChange={(ev) => setLine(i, { name: ev.target.value })} placeholder="What can fail" /></td>;
+    if (col === "assembly") return <td className="mp-text"><input type="text" aria-label={`Line ${i + 1} assembly`} value={l.assembly} onChange={(ev) => setLine(i, { assembly: ev.target.value })} placeholder="Propulsion › Arm 1" /></td>;
+    if (col === "quantity") return <td className="mp-cell mp-qty"><input type="text" inputMode="decimal" aria-label={`Line ${i + 1} quantity`} value={l.quantity} onChange={(ev) => setLine(i, { quantity: ev.target.value })} /></td>;
+    if (col === "failure_rate") return <td className="mp-cell"><input type="text" inputMode="decimal" aria-label={`Line ${i + 1} failure rate`} value={l.failure_rate} onChange={(ev) => setLine(i, { failure_rate: ev.target.value })} placeholder="optional" /></td>;
+    if (col === "mttr") {
+      const t = lineMttr(l);
+      return (
+        <td className="mp-cell">
+          {mttrIsSum(l)
+            ? <span className="mp-sum" title="The sum of the elements">{t != null && !Number.isNaN(t) ? formatNumber(t, { sig: 4 }) : "—"}</span>
+            : <input type="text" inputMode="decimal" aria-label={`Line ${i + 1} MTTR`} value={l.mttr} onChange={(ev) => setLine(i, { mttr: ev.target.value })} />}
+        </td>
+      );
+    }
+    if (col === "maximum") return <td className="mp-cell"><input type="text" inputMode="decimal" aria-label={`Line ${i + 1} most done by`} value={l.maximum} onChange={(ev) => setLine(i, { maximum: ev.target.value })} placeholder="optional" /></td>;
+    return (
+      <td>
+        {!isBlank(l) && (
+          <button type="button" className="act del mp-remove" aria-label={`Remove line ${i + 1}`} title="Remove" onClick={() => removeLine(i)}><TrashIcon /></button>
+        )}
+      </td>
+    );
+  };
   const productOptions = [{ value: "", label: "Start from a product…" },
     ...(products || []).map((p) => ({ value: p.id, label: p.name, hint: p.part?.part_number || "" }))];
 
@@ -179,52 +232,15 @@ export default function MaintainabilityNewPage() {
           <span>Split repair times into elements (isolate, access, replace, restore, check out)</span>
         </label>
 
-        <div className={"mp-lines maint-scroll" + (split || anyElements ? " is-split" : "")}>
+        <div className={"mp-lines maint-scroll" + (showSplit ? " is-split" : "")}>
           <table className="lib-table">
             <thead>
-              <tr>
-                <th>Ref</th>
-                <th>Name</th>
-                <th>Assembly</th>
-                <th className="mp-el">Qty</th>
-                <th className="mp-el">Failure rate<span className="th-unit">{rateUnitText(form.failure_rate_unit)}</span></th>
-                {(split || anyElements) && ELEMENTS.map((e) => <th key={e.key} className="mp-el" title={`${e.label}: ${e.help}`}>{e.short} ({unitWord})</th>)}
-                <th className="mp-el" title={split || anyElements ? "The line's mean repair time: the sum of its elements, or typed when they're blank" : "The line's mean time to repair"}>MTTR ({unitWord})</th>
-                <th className="mp-el" title="Optional: the time most (95%) of this line's repairs are done by. It gives the spread, which M_max needs.">Most done by ({unitWord})</th>
-                <th><span className="sr-only">Remove</span></th>
-              </tr>
+              <tr>{columns.map((c) => <Fragment key={c}>{head(c)}</Fragment>)}</tr>
             </thead>
             <tbody>
-              {form.lines.map((l, i) => {
-                const t = lineMttr(l);
-                const split = hasElements(l);
-                return (
-                  <tr key={i}>
-                    <td className="mp-cell"><input type="text" aria-label={`Line ${i + 1} ref`} value={l.ref} onChange={(e) => setLine(i, { ref: e.target.value })} placeholder="Part no." /></td>
-                    <td className="mp-text"><input type="text" aria-label={`Line ${i + 1} name`} value={l.name} onChange={(e) => setLine(i, { name: e.target.value })} placeholder="What can fail" /></td>
-                    <td className="mp-text"><input type="text" aria-label={`Line ${i + 1} assembly`} value={l.assembly} onChange={(e) => setLine(i, { assembly: e.target.value })} placeholder="Propulsion › Arm 1" /></td>
-                    <td className="mp-cell mp-qty"><input type="text" inputMode="decimal" aria-label={`Line ${i + 1} quantity`} value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} /></td>
-                    <td className="mp-cell"><input type="text" inputMode="decimal" aria-label={`Line ${i + 1} failure rate`} value={l.failure_rate} onChange={(e) => setLine(i, { failure_rate: e.target.value })} placeholder="optional" /></td>
-                    {(split || anyElements) && ELEMENTS.map((e) => (
-                      <td key={e.key} className="mp-cell">
-                        <input type="text" inputMode="decimal" aria-label={`Line ${i + 1} ${e.label.toLowerCase()}`} value={l.elements[e.key]}
-                          onChange={(ev) => setElement(i, e.key, ev.target.value)} />
-                      </td>
-                    ))}
-                    <td className="mp-cell">
-                      {split
-                        ? <span className="mp-sum" title="The sum of the elements">{t != null && !Number.isNaN(t) ? formatNumber(t, { sig: 4 }) : "—"}</span>
-                        : <input type="text" inputMode="decimal" aria-label={`Line ${i + 1} MTTR`} value={l.mttr} onChange={(e) => setLine(i, { mttr: e.target.value })} />}
-                    </td>
-                    <td className="mp-cell"><input type="text" inputMode="decimal" aria-label={`Line ${i + 1} most done by`} value={l.maximum} onChange={(e) => setLine(i, { maximum: e.target.value })} placeholder="optional" /></td>
-                    <td>
-                      {!isBlank(l) && (
-                        <button type="button" className="act del mp-remove" aria-label={`Remove line ${i + 1}`} title="Remove" onClick={() => removeLine(i)}><TrashIcon /></button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+              {form.lines.map((l, i) => (
+                <tr key={i}>{columns.map((c) => <Fragment key={c}>{cell(c, l, i)}</Fragment>)}</tr>
+              ))}
             </tbody>
           </table>
         </div>

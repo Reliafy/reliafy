@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  TASK_COLUMNS, lsaColumns, cadenceFor, cadenceWords, cantJoin, cellText, daysLate, freeTasks, kindText, lateText, nextSort, nextVisit, ordinal, packageScope, parseSort, searchTasks, sortParam, sortTasks, tickAll, tickState, proposalBatch, proposalProblem, proposalRows, renameRow, toggleRow, visitRuleText, annualLsa, annualText, cleanSection, countTitle, lsaCsv, lsaRollup, rollupLines, sectionDraft,
+  TASK_COLUMNS, lsaColumns, cadenceFor, cadenceWords, cantJoin, cellText, daysLate, freeTasks, kindText, lateText, nextSort, nextVisit, ordinal, packageScope, parseSort, searchTasks, sortParam, sortTasks, tickAll, tickState, proposalBatch, proposalProblem, proposalRows, renameRow, toggleRow, visitRuleText, annualLsa, annualText, cleanSection, labourYear, labourYearText, countTitle, lsaCsv, lsaRollup, rollupLines, sectionDraft,
 } from "./lsaTab.js";
 
 const pkg = (over) => ({ id: "x", name: "X", status: "active", parent: null, task_count: 0, cadence: { text: "every Saturday" }, ...over });
@@ -235,4 +235,58 @@ test("taskOnText: a task named with the position it's on and what that sits in",
   assert.equal(taskOnText({ name: "Check", subject: { name: "Drive motor", within: "Pump 3" } }), "Check (Pump 3 › Drive motor)");
   assert.equal(taskOnText({ name: "Check", subject: { name: "Pump 3" } }), "Check (Pump 3)");
   assert.equal(taskOnText({ name: "Check" }), "Check");
+});
+
+test("labourYear: hours a year by trade, from each task's labour and interval, priced at trade rates", () => {
+  // One pump set's five tasks (two identical pump sets on the skid), per visit:
+  // flow test every 3 months 0.5 h technician, leak check weekly 0.1 h operator,
+  // oil change every 6 months 0.5 h fitter, coupling every 12 months 1.5 h fitter,
+  // vibration check monthly 0.25 h technician.
+  const set = (n) => [
+    { name: `Flow test ${n}`, interval: 3, unit: "months", resources: { labour: [{ trade: "Technician", people: 1, hours: 0.5 }] } },
+    { name: `Leak check ${n}`, interval: 1, unit: "weeks", resources: { labour: [{ trade: "Operator", people: 1, hours: 0.1 }] } },
+    { name: `Oil change ${n}`, interval: 6, unit: "months", resources: { labour: [{ trade: "Fitter", people: 1, hours: 0.5 }] } },
+    { name: `Coupling ${n}`, interval: 12, unit: "months", resources: { labour: [{ trade: "Fitter", people: 1, hours: 1.5 }] } },
+    { name: `Vibration ${n}`, interval: 1, unit: "months", resources: { labour: [{ trade: "Technician", people: 1, hours: 0.25 }] } },
+  ];
+  const rates = [{ trade: "Fitter", rate: 110 }, { trade: "operator", rate: 60 }, { trade: "Technician", rate: 95 }, { trade: "Pool owner", rate: null }];
+  const y = labourYear([...set(1), ...set(2)], rates);
+  // By hand: technician 2 × (0.5 × 4 + 0.25 × 12) = 10 h; fitter 2 × (0.5 × 2 + 1.5 × 1) = 5 h;
+  // operator 2 × 0.1 × 52.18 (365.25 / 7 visits a year) = 10.44 h. 25.44 h in all.
+  const h = Object.fromEntries(y.rows.map((x) => [x.trade, x.hours]));
+  assert.equal(h.Technician, 10);
+  assert.equal(h.Fitter, 5);
+  assert.equal(h.Operator, 10.44);
+  assert.equal(y.hours, 25.44);
+  assert.equal(y.counted, 10);
+  // Cost a year: 10 × 95 + 5 × 110 + 10.4357 × 60 = 950 + 550 + 626.14 = 2,126.14.
+  assert.equal(y.cost, 2126.14);
+  assert.match(labourYearText(y), /^25\.4 h \(Operator 10\.4 h, Technician 10 h, Fitter 5 h\), about \$2,126 at trade rates\.$/);
+});
+
+test("labourYear: tasks with no fixed interval are left out and named; trades with no rate are listed", () => {
+  const y = labourYear([
+    { name: "Weekly check", interval: 1, unit: "weeks", resources: { labour: [{ trade: "Fitter", people: 2, hours: 1 }] } },
+    { name: "After a trip", on_event: true, resources: { labour: [{ trade: "Fitter", hours: 3 }] } },
+    { name: "Every 500 run hours", interval: 500, unit: "hours", resources: { labour: [{ trade: "Fitter", hours: 2 }] } },
+    { name: "No labour", interval: 1, unit: "weeks", resources: {} },
+  ], [{ trade: "Electrician", rate: 120 }]);
+  assert.equal(y.counted, 1);
+  assert.deepEqual(y.leftOut, ["After a trip", "Every 500 run hours"]);
+  assert.equal(y.hours, 104.36); // 2 people × 1 h × 52.18 visits
+  assert.equal(y.cost, null);
+  assert.equal(labourYearText(y), "104.4 h (Fitter 104.4 h). Left out, no fixed interval: After a trip, Every 500 run hours.");
+  assert.equal(labourYearText(labourYear([])), "");
+});
+
+test("rollupLines names the labour line as asked (per visit)", () => {
+  const r = lsaRollup([{ trade: "Fitter", resources: { labour: [{ hours: 2 }] } }]);
+  assert.equal(rollupLines(r, "Labour per visit")[0].label, "Labour per visit");
+});
+
+test("cleanSection: an emptied downtime or elapsed time clears (null), not the old value", () => {
+  assert.equal(cleanSection("access", { downtime_hours: "", permits: "", isolation: "", access_equipment: "" }), null);
+  assert.deepEqual(cleanSection("access", { downtime_hours: "", permits: "", isolation: "Lock out", access_equipment: "" }), { isolation: "Lock out" });
+  assert.equal(cleanSection("duration_hours", ""), null);
+  assert.equal(cleanSection("duration_hours", "0"), 0);
 });

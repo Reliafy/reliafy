@@ -66,6 +66,18 @@ export function lineMttr(line) {
   return v === null ? null : (Number.isNaN(v) || v < 0 ? NaN : v);
 }
 
+// The lines table's columns, in order, for the header and every row alike: with the
+// split on, an input for each of the five elements on every line (a line with none
+// typed yet included), so no element column is left without a box and the MTTR and
+// "most done by" boxes stay under their own headings.
+export function lineColumns(showSplit) {
+  return ["ref", "name", "assembly", "quantity", "failure_rate",
+    ...(showSplit ? ELEMENTS.map((e) => `element:${e.key}`) : []), "mttr", "maximum", "remove"];
+}
+
+// A line's MTTR cell: the sum of its elements once any is typed, else a box to type it in.
+export const mttrIsSum = (line) => hasElements(line);
+
 // Why the form can't be computed yet (null when it can): the first thing to fix.
 export function formProblem(form) {
   const lines = (form.lines || []).filter((l) => !isBlank(l));

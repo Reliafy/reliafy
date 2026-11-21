@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   lateWorkText, createDetail, createLabel, createPlan, dueSearchText, inArea, daysLate, doneText, dueWindow, groupDue, lateText, linesText,
-  orderCardMeta, orderKind, orderTab, ordersPath, ordersSummary, packageMatches, packagePath, packageStatusText, splitOpen,
+  orderCardMeta, orderKind, orderTab, ordersPath, ordersSummary, packageMatches, packagePath, packageStatusText, packageTasksOn, splitOpen,
 } from "./maintenanceOrders.js";
 
 const TODAY = "2026-11-10";
@@ -160,4 +160,10 @@ test("a work order on a phone: when, then where, under its title", () => {
     { when: "Due [2026-12-04]", late: false, where: "Media filter" });
   assert.deepEqual(orderCardMeta({ overdue: true }, TODAY, fmt), { when: "Late", late: true, where: "" });
   assert.deepEqual(orderCardMeta({}, TODAY, fmt), { when: "No due date", late: false, where: "" });
+});
+
+test("Package tasks on… opens the picked tree isolated, on its LSA tab, its top row picked", () => {
+  const url = new URL(packageTasksOn("pos 1"), "http://x");
+  assert.equal(url.pathname, "/asset-register/explorer");
+  assert.deepEqual(Object.fromEntries(url.searchParams), { arrange: "positions", tab: "lsa", root: "pos 1", sel: "pos 1" });
 });
