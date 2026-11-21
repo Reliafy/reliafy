@@ -122,8 +122,9 @@ its range, and each month's expectation and range.
 ## Build your own forecast
 
 1. On **Forecasts**, press **New forecast**. Give it a name,
-   choose the **Equipment** — **Replaceable** (a life, regression or ALT model)
-   or **Repairable** (a repairable model) — and the **Model**. With a regression
+   say **What happens when one fails** — **Replaced** (a life, regression or
+   ALT model) or **Repaired** (a repairable model) — and choose the **Life
+   model to forecast with**. With a regression
    or ALT model each item is forecast at its own conditions or stress.
 2. Add the units in service, each with its **Current use** (its age in the
    model's time unit). An item can have its **Own rate** if it runs harder or
@@ -144,7 +145,10 @@ its range, and each month's expectation and range.
    To change many items at once, tick them (or tick the header to select all)
    and set their current use or own rate, or remove them.
 3. Set the **Usage per month** for the fleet, the **Horizon** (12) and the
-   **Period** (months, weeks, years…).
+   **Period** (months, weeks, years…). Changing the period converts what you
+   typed: 730 hours a month becomes 2,190 hours a quarter, a 12-month horizon
+   becomes 4 quarters, and the items' own rates, the lead time and the review
+   interval follow, so the forecast covers the same time at the same use.
 4. Press **Save & forecast**.
 
 ![A new forecast: name, equipment type and the model it runs on](/guides/img/fleet-02-new.png)

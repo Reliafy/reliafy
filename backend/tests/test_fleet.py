@@ -384,3 +384,40 @@ def test_orphan_items_adopted_into_fleet(client):
     assert len(mine) == 1 and mine[0]["n_items"] == 1
     detail = client.get(f"/api/fleet/tracked/{mine[0]['id']}").json()
     assert [it["name"] for it in detail["items"]] == ["legacy"]
+
+
+def test_same_span_in_months_or_quarters(session):
+    """730 h a month for 12 months is 2,190 h a quarter for 4 quarters: the same
+    forecast. The page converts the usage when the period changes; reading 730
+    as a quarter's usage would forecast a third of the use."""
+    from backend.services import fleet as fs
+    from backend.services import models as ms
+
+    belt = ms.import_model(session, A, "Belt", "weibull", unit="hours",
+                           params=[{"name": "alpha", "value": 17520}, {"name": "beta", "value": 3}])
+    items = [{"name": f"BELT-{k + 1:02d}", "current_use": 2000.0 * k} for k in range(8)]
+
+    def run(label, periods, rate, method):
+        fleet = fs.create_fleet(session, "F", belt.id, A)
+        fleet = fs.replace_items(session, fleet.id, {"periods": periods, "period_label": label,
+                                                      "default_rate": rate, "method": method}, items, A)
+        return fs.compute(session, fleet, A)
+
+    monthly = run("months", 12, 730.0, "single")
+    quarterly = run("quarters", 4, 2190.0, "single")
+    # Hand check (first failures): sum over items of 1 - R(a + 8,760) / R(a),
+    # R(t) = exp(-(t / 17,520)^3).
+    r = lambda t: math.exp(-((t / 17520.0) ** 3))  # noqa: E731
+    hand = sum(1 - r(a + 8760.0) / r(a) for a in (2000.0 * k for k in range(8)))
+    assert monthly["expected"] == pytest.approx(hand, rel=1e-6)
+    assert quarterly["expected"] == pytest.approx(hand, rel=1e-6)
+    # Each quarter is the sum of its three months.
+    by_quarter = [sum(monthly["per_period"][3 * q:3 * q + 3]) for q in range(4)]
+    assert quarterly["per_period"] == pytest.approx(by_quarter, rel=1e-6)
+    # The unconverted reading (730 h a quarter) forecasts far fewer failures.
+    unconverted = run("quarters", 4, 730.0, "single")
+    assert unconverted["expected"] < 0.5 * hand
+
+    renew_m = run("months", 12, 730.0, "renewals")
+    renew_q = run("quarters", 4, 2190.0, "renewals")
+    assert renew_q["expected"] == pytest.approx(renew_m["expected"], rel=0.05)
