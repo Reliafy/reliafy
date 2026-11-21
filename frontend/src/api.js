@@ -1433,7 +1433,7 @@ export function getRecurrentOptions() {
   return request("/api/recurrent/options");
 }
 
-function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows, recordEnd } = {}) {
+function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows, recordEnd, systems } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -1447,6 +1447,8 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name, options, w
   if (windows && String(windows).trim()) form.append("windows", windows);
   // One end of test for every system with no end of record of its own.
   if (recordEnd != null && String(recordEnd).trim()) form.append("record_end", String(recordEnd).trim());
+  // Only these systems, fitted by themselves (none: every system).
+  (systems || []).forEach((sid) => form.append("systems", sid));
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;

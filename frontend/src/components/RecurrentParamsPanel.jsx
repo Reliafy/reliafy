@@ -15,7 +15,7 @@ const MODELS = [
   { value: "duane", label: "Duane" },
 ];
 const MODEL_DESC = {
-  crow_amsaa: "NHPP power law: MCF(t) = (t/α)^β. β < 1 improving, β > 1 deteriorating.",
+  crow_amsaa: "NHPP power law: MCF(t) = (t/α)^β. β below 1: failures come slower over time; above 1, faster.",
   duane: "Duane growth model — a cumulative-MTBF power law.",
 };
 
@@ -38,7 +38,7 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
   const why = busy ? null : whyCantCreate({ name, missing, unit });
   // Known parameters have no interval: β itself against 1 decides (as the server does).
   const growth = ok(beta, nb)
-    ? (nb < 1 ? "improving — failures slowing" : nb > 1 ? "deteriorating — failures accelerating" : "stable — constant rate")
+    ? (nb < 1 ? "failures come slower as time goes on" : nb > 1 ? "failures come faster as time goes on" : "a constant failure rate")
     : null;
 
   const onSave = async () => {

@@ -1159,7 +1159,6 @@ def _recurrent_brief(doc) -> dict:
         "model": (r.get("model") or {}).get("name"),
         "family": r.get("family", "nhpp"),
         "beta": r.get("beta"),
-        "growth": r.get("growth"),
         "n_systems": r.get("n_systems"),
         "n_events": r.get("n_events"),
         "unit": r.get("unit", ""),
@@ -1173,8 +1172,8 @@ _RESIDUAL_SYSTEMS = 10  # get kind model lists this many systems, most excess fa
 
 
 def _recurrent_evidence(r: dict) -> dict:
-    """A recurrent model's evidence (#81): the growth verdict and what it
-    rests on (β's interval against 1), the ROCOF and instantaneous MTBF at
+    """A recurrent model's evidence (#81): the growth shape with its interval and
+    what its no-trend value means (no verdict: the analyst decides), the ROCOF and instantaneous MTBF at
     the end of observation with their intervals (90% two-sided; ``ci_level``
     says the level, 95% for a fit saved before the rule), the demonstrated MTBF's 90% lower
     bound, both trend tests, the goodness of fit (AIC/BIC and the Cramér-von
@@ -1187,12 +1186,13 @@ def _recurrent_evidence(r: dict) -> dict:
         sym = f"{basis.get('symbol', 'β')} ({basis.get('what')})"
         if basis.get("ci"):
             lo, hi = basis["ci"]
-            excludes = "excludes" if (lo > basis["no_trend"] or hi < basis["no_trend"]) else "includes"
-            reading = (f"{sym} = {basis['estimate']:.4g}, {level:.0%} interval [{lo:.4g}, {hi:.4g}] {excludes} "
-                       f"{basis['no_trend']:g} (no trend)")
+            reading = (f"{sym} = {basis['estimate']:.4g}, {level:.0%} interval [{lo:.4g}, {hi:.4g}]")
         else:
             reading = (f"{sym} = {basis['estimate']:.4g} (no interval: built from parameters or the "
-                       "information matrix is singular, so the estimate decides)")
+                       "information matrix is singular)")
+        nt = basis["no_trend"]
+        reading += (f". Above {nt:g} failures come faster as time goes on; below {nt:g}, slower. "
+                    "Report the evidence; the analyst judges it")
         out["growth_basis"] = reading
     if r.get("beta_ci"):
         out["beta_ci"] = [_sig(v) for v in r["beta_ci"]]
@@ -1202,6 +1202,13 @@ def _recurrent_evidence(r: dict) -> dict:
     if term:
         out["record_ends"] = ("time-terminated (an end of test or end of record was given)"
                               if term["kind"] == "time" else "failure-terminated: each system ends at its last failure")
+        ends = term.get("ends") or []
+        if 1 < len(ends) <= 3:  # each system's own end, so a record cut short is seen
+            out["record_ends"] += "; " + "; ".join(
+                f"{', '.join(g['systems']) if len(g['systems']) <= 2 else str(len(g['systems'])) + ' systems'} "
+                f"to {_sig(g['end'])}" for g in ends)
+    if r.get("subset"):
+        out["fitted_systems"] = r["subset"]
     out["rocof"] = _sig(r.get("rocof"))
     if r.get("rocof_ci"):
         out["rocof_ci"] = [_sig(v) for v in r["rocof_ci"]]
@@ -1215,10 +1222,11 @@ def _recurrent_evidence(r: dict) -> dict:
             "mtbf": _sig(dm.get("mtbf")), "lower_bound": _sig(dm.get("lower")),
             "confidence": dm.get("confidence"), "at": _sig(dm.get("at")), "method": method}
     if r.get("trend_tests"):
-        out["trend_tests"] = [{k: (_sig(v) if isinstance(v, float) else v) for k, v in t.items() if k != "id"}
+        out["trend_tests"] = [{k: (_sig(v) if isinstance(v, float) else v) for k, v in t.items()
+                               if k in ("test", "statistic", "p_value", "dof")}
                               for t in r["trend_tests"]]
-    elif r.get("trend"):
-        out["trend"] = r["trend"]
+        out["trend_tests_note"] = ("Null: a constant failure rate. A p-value is how often a pattern this strong "
+                                   "arises by chance with no trend.")
     out["gof"] = {g["id"]: _sig(g["value"]) for g in r.get("gof") or []}
     cvm = r.get("gof_test")
     if cvm:
@@ -1281,8 +1289,7 @@ def _recurrent_extras(r: dict) -> dict:
             out["by_cause"] = [
                 {"cause": c["label"], "failures": c["failures"], "share": _sig(c["share"]),
                  **({"beta": _sig(c["fit"]["beta"]),
-                     "beta_ci": [_sig(v) for v in c["fit"]["beta_ci"]] if c["fit"].get("beta_ci") else None,
-                     "growth": c["fit"].get("growth")} if c.get("fit") else {})}
+                     "beta_ci": [_sig(v) for v in c["fit"]["beta_ci"]] if c["fit"].get("beta_ci") else None} if c.get("fit") else {})}
                 for c in bc["causes"][:_CAUSES_LISTED]]
         elif bc.get("reason"):
             out["by_cause_note"] = bc["reason"]
@@ -1508,7 +1515,7 @@ def get_model(
     `life` (B1–B50 and MTTF with one-sided 90% lower bounds); regression models add `validation` (Harrell's C,
     Brier score, time-dependent AUC) and `diagnostics` (the proportional-hazards test with a plain reading;
     Cox PH: robust errors, ties, strata); by failure mode (competing_risks): each mode's share with 90%
-    intervals, Gray's test and the life if each mode were eliminated. Recurrent: the growth verdict on β's 90% interval, ROCOF and MTBF with bounds,
+    intervals, Gray's test and the life if each mode were eliminated. Recurrent: the growth shape β with its 90% interval and what it means (no verdict), ROCOF and MTBF with bounds,
     the demonstrated MTBF's lower bound, trend and goodness-of-fit tests, systems_vs_model, and where they
     apply covariate_effects, repair_effectiveness, repair_test, next_failure_by_system and by_cause."""
     user, db = _caller(ctx), _db()
@@ -7409,15 +7416,15 @@ def _overhaul_shape_uncertainty(db, doc, cost_repair: float, cost_overhaul: floa
         return out
     if lo <= 1:
         out["uncertainty_note"] = (
-            f"The growth shape's 90% interval [{lo:.3g}, {hi:.3g}] includes 1: the data don't clearly show the "
-            "system deteriorating. If its failure rate isn't rising, an overhaul doesn't pay — treat this "
-            "interval as tentative and say so.")
+            f"The growth shape's 90% interval [{lo:.3g}, {hi:.3g}] includes 1: a constant failure rate "
+            "is within it. An overhaul pays only when the failure rate rises — give the interval and let the "
+            "analyst decide.")
     elif low is not None and saving and (not low["pays"] or (low["saving_pct"] or 0) < 0.5 * saving):
         what = f"saves {low['saving_pct']:.3g}%" if low["pays"] else "doesn't pay"
         out["uncertainty_note"] = (
-            f"The growth shape's 90% interval reaches down to {lo:.3g}: the data only weakly show deterioration. "
-            f"At that end overhauling {what} (vs {saving:.3g}% at the estimate), so the recommendation is less "
-            "firm than the point estimate suggests — say so.")
+            f"The growth shape's 90% interval reaches down to {lo:.3g}. "
+            f"At that end overhauling {what} (vs {saving:.3g}% at the estimate), so the answer depends on where in "
+            "the interval β lies — give both ends.")
     return out
 
 
@@ -7603,7 +7610,7 @@ def fit_recurrent_model(
 ) -> dict[str, Any]:
     """Fit a recurrent-event (repairable-system) model to failure histories, many
     failures per system, and save it (save=false: report only). Inline times + systems or a dataset. Reports the
-    growth verdict from β's 90% interval, ROCOF and MTBF with bounds; pi_nhpp each covariate's effect; imperfect
+    growth shape β with its 90% interval (no verdict), ROCOF and MTBF with bounds; pi_nhpp each covariate's effect; imperfect
     repair the repair effectiveness, its test and each system's next failure; causes each cause's growth."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
@@ -7667,7 +7674,7 @@ def fit_recurrent_model(
         out = {"saved": False, "model": payload.get("model"), "family": payload.get("family"),
                "unit": payload.get("unit"), "n_systems": payload.get("n_systems"),
                "n_events": payload.get("n_events"), "params": payload.get("params"),
-               "growth": payload.get("growth"), **_recurrent_evidence(payload)}
+               **_recurrent_evidence(payload)}
         return out
     _cap(db, user, "models", "models")
     created = None

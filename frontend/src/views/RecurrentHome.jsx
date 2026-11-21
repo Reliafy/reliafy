@@ -41,7 +41,7 @@ export default function RecurrentHome() {
       <SectionHeader
         section="models"
         title="Repairable models"
-        purpose="Repairable systems: is the failure rate improving or worsening?"
+        purpose="Repairable systems: how is the failure rate changing over time?"
         help={HELP}
         primary={newModel}
       />

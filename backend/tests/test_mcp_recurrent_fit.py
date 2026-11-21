@@ -38,7 +38,9 @@ def test_fit_recurrent_model_inline_crow_amsaa_matches_the_app_and_saves(env):
                      "hours", gof_test=False)
     assert out["saved"] and out["url"].endswith(f"/models/recurrent/{out['model_id']}")
     assert [p["value"] for p in out["params"]] == pytest.approx([p["value"] for p in ref["params"]])
-    assert out["growth"] == "deteriorating" and out["family"] == "nhpp"
+    assert out["family"] == "nhpp" and "growth" not in out
+    assert "failures come faster as time goes on" in out["growth_basis"] and "analyst" in out["growth_basis"]
+    assert all("trend" not in t and "significant" not in t for t in out["trend_tests"])
     assert [c["cause"] for c in out["by_cause"]] == ["valve", "bearing", "seal", "electrical"]
     doc = env.db.recurrent_models.find_one({"_id": out["model_id"]})
     assert doc["spec"]["mapping"] == {"i": "system", "x": "time", "tr": "observed_to", "mode": "cause"}

@@ -192,7 +192,7 @@ def fit_spec(df: pd.DataFrame, spec: dict, gof_test: bool = True) -> tuple[dict,
     observation windows and the end of test, ``record_end``)."""
     return fit(df, spec.get("mapping", {}), model_id=spec.get("model_id", "crow_amsaa"),
                unit=spec.get("unit", ""), gof_test=gof_test, options=spec.get("options"),
-               windows=spec.get("windows"), record_end=spec.get("record_end"))
+               windows=spec.get("windows"), record_end=spec.get("record_end"), systems=spec.get("systems"))
 
 
 RECORD_END_COLUMN = "__record_end__"  # the column a typed end of test becomes
@@ -255,7 +255,7 @@ def with_record_end(df: pd.DataFrame, mapping: dict, record_end) -> tuple[pd.Dat
 @hides_solver_names
 def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str = "",
         gof_test: bool = True, options: dict | None = None, windows=None,
-        record_end=None) -> tuple[dict, str]:
+        record_end=None, systems=None) -> tuple[dict, str]:
     """Fit the recurrent model and build the JSON-safe results payload.
 
     Returns ``(payload, cache_id)`` addressing the live parametric model.
@@ -266,10 +266,14 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     columns come in the mapping (``ws`` / ``we``). A cause column (``mode``)
     adds the MCF of each cause (#65). ``record_end`` is one end of test for
     every system with no end of record of its own (:func:`with_record_end`).
+    ``systems`` fits only those systems (one, or a chosen set) by themselves
+    (:func:`backend.recurrent_systems.only_systems`); empty fits every system.
     """
     from backend import recurrent_models as extra
+    from backend import recurrent_systems as per
 
     given = mapping
+    df, chosen = per.only_systems(df, mapping, systems)
     df, mapping = with_record_end(df, mapping, record_end)
 
     if model_id in extra.EXTRA_MODELS:
@@ -279,6 +283,7 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
         _add_marks(payload, df, mapping)
         _record_end_note(payload, df, mapping, windows)
         _termination(payload, given, record_end)
+        _per_system(payload, df, mapping, windows, chosen)
         return payload, store_live(live)
     if model_id not in MODELS:
         choices = MODEL_CHOICES + list(extra.EXTRA_MODELS)
@@ -308,7 +313,30 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     _add_marks(payload, df, mapping, inputs=None if gaps else inputs)
     _record_end_note(payload, df, mapping, windows)
     _termination(payload, given, record_end)
+    _per_system(payload, df, mapping, windows, chosen)
     return payload, store_live(para)
+
+
+def _per_system(payload: dict, df: pd.DataFrame, mapping: dict, windows, chosen: dict | None) -> None:
+    """System by system: which systems the fit covers (``subset``, when only
+    some), where each system's record ends (``termination.ends``, on a
+    time-terminated fit without windows) and each system's downtime and cost
+    (``system_costs``, when those columns are mapped)."""
+    from backend import recurrent_systems as per
+
+    if chosen:
+        payload["subset"] = chosen
+    term = payload.get("termination")
+    if term and term.get("kind") == "time" and not (windows or mapping.get("ws")):
+        try:
+            ends = per.record_ends(build_inputs(df, mapping))
+        except FitError:
+            ends = None
+        if ends:
+            term["ends"] = _json_safe(ends)
+    costs = per.system_costs(df, mapping, chosen)
+    if costs:
+        payload["system_costs"] = _json_safe(costs)
 
 
 RECORD_END_NOTE = ("No end of record is given, so each system's record is taken to end at its last failure "

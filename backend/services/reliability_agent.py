@@ -808,7 +808,7 @@ def _headline(kind: str, m) -> dict:
                            for p in (r.get("params") or [])]}
     if kind == "recurrent":
         return {**common, "model": (r.get("model") or {}).get("name"),
-                "beta": r.get("beta"), "growth": r.get("growth"),
+                "beta": r.get("beta"),
                 "n_systems": r.get("n_systems"), "n_events": r.get("n_events")}
     if kind == "alt":
         return {**common, "distribution": r.get("distribution"),
@@ -958,8 +958,8 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
             dm = r.get("demonstrated_mtbf") or {}
             return {"ok": True, "model_id": doc.id, "kind": "recurrent",
                     "model": (r.get("model") or {}).get("name"), "beta": r.get("beta"),
-                    "beta_ci": r.get("beta_ci"), "growth": r.get("growth"),
-                    "trend_tests": [{"test": t["test"], "p_value": t["p_value"], "trend": t["trend"]}
+                    "beta_ci": r.get("beta_ci"),
+                    "trend_tests": [{"test": t["test"], "statistic": t.get("statistic"), "p_value": t["p_value"]}
                                     for t in r.get("trend_tests") or []],
                     "mtbf": r.get("mtbf"), "demonstrated_mtbf_lower_90": dm.get("lower"),
                     "summary": f"Created recurrent model “{doc.name}” — "

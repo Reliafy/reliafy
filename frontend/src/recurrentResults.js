@@ -88,36 +88,29 @@ export function orderedParams(r) {
 export const ciText = (ci, sig = 3) => (ci && Number.isFinite(ci[0]) && Number.isFinite(ci[1])
   ? `${formatNumber(ci[0], { sig })}–${formatNumber(ci[1], { sig })}` : null);
 
-const GROWTH = {
-  improving: { title: "Improving", note: "failures are slowing" },
-  stable: { title: "No clear trend", note: "the data don't show the failure rate changing" },
-  deteriorating: { title: "Deteriorating", note: "failures are accelerating" },
-};
+// What a growth parameter means, without a judgement: which way the failure
+// rate moves as time goes on on either side of its no-trend value.
+const growthMeaning = (r, sym, nul) => (r?.growth_basis?.parameter === "beta" && nul === 0
+  ? `${sym} above 0 means failures come faster as time goes on; below 0, slower.`
+  : `${sym} above ${nul} means failures come faster as time goes on; below ${nul}, slower.`);
 
-// The growth verdict and why (#81): the growth parameter's interval (90%)
-// against its no-trend value, or the value itself for a model built from
-// parameters. Null when the model has no growth parameter.
 // The growth parameter's symbol, as the parameter table names it (Duane's
 // shape is its α).
 const growthSymbol = (r) => (r?.model?.id === "duane" || (familyOf(r) === "regression" && r?.baseline?.id === "duane")
   ? "α" : r?.growth_basis?.symbol || "β");
 
+// The growth shape's evidence and what it means, no verdict (the analyst
+// decides): "β 1.35 (90% range 1.02–1.80). β above 1 means ...". Null when the
+// model has no growth parameter.
 export function growthReading(r) {
-  const g = GROWTH[r?.growth];
-  if (!g) return null;
-  const b = r.growth_basis;
-  if (!b) return { title: g.title, text: `${g.note[0].toUpperCase()}${g.note.slice(1)}.` };
+  const b = r?.growth_basis;
+  if (!b || b.estimate == null) return null;
   const sym = growthSymbol(r);
-  const nul = b.no_trend;
-  let why;
-  if (b.ci) {
-    const [lo, hi] = b.ci;
-    const where = lo > nul ? `wholly above ${nul}` : hi < nul ? `wholly below ${nul}` : `includes ${nul}`;
-    why = `${sym}'s ${ciPct(r)} interval, ${ciText(b.ci)}, is ${where}`;
-  } else {
-    why = `${sym} = ${formatNumber(b.estimate, { sig: 4 })}${r.from_params ? ", built from parameters (no interval)" : " (this fit gives no interval)"}`;
-  }
-  return { title: g.title, text: `${why}: ${g.note}.` };
+  const est = formatNumber(b.estimate, { sig: 3 });
+  let what;
+  if (b.ci && ciText(b.ci)) what = `${sym} ${est} (${ciPct(r)} range ${ciText(b.ci)})`;
+  else what = `${sym} ${est}${r.from_params ? " (built from parameters, no range)" : " (this fit gives no range)"}`;
+  return { title: "Shape of the failure rate", text: `${what}. ${growthMeaning(r, sym, b.no_trend)}` };
 }
 
 // A rate ratio as words for a chip: "×2.2", "×0.85".
@@ -127,9 +120,8 @@ export const ratioText = (v) => (v == null ? "—" : `×${formatNumber(v, { sig:
 export const ratioCiText = (ci) =>
   ci ? `${formatNumber(ci[0], { sig: ratioSig(ci[0]) })}–${formatNumber(ci[1], { sig: ratioSig(ci[1]) })}` : null;
 
-// A covariate effect's tone: green only for a good one (fewer failures),
-// amber for more, neutral when the data can't tell.
-export const effectTone = (effect) => (effect === "lower" ? "success" : effect === "higher" ? "warning" : "neutral");
+// A covariate effect carries no good/bad colour: more or fewer failures is for the analyst to judge.
+export const effectTone = () => "neutral";
 
 // The repair-test verdict as a short title.
 // The verdict follows the restoration interval (an end is named only when the
@@ -154,9 +146,42 @@ export const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${Math.ro
 // What the data are: "4 systems, 30 failures".
 export function dataText(r) {
   if (r?.n_systems == null) return null;
-  const s = r.n_systems === 1 ? "1 system" : `${r.n_systems.toLocaleString()} systems`;
   const f = r.n_events === 1 ? "1 failure" : `${(r.n_events ?? 0).toLocaleString()} failures`;
+  const sub = r.subset;
+  if (sub?.systems?.length) {
+    const of = sub.of ? ` of ${sub.of.toLocaleString()}` : "";
+    const s = sub.systems.length === 1 ? `${sub.systems[0]} alone (1${of} systems)` : `${sub.systems.length}${of} systems`;
+    return `${s}, ${f}`;
+  }
+  const s = r.n_systems === 1 ? "1 system" : `${r.n_systems.toLocaleString()} systems`;
   return `${s}, ${f}`;
+}
+
+// Where each system's record ends (``termination.ends``: [{end, systems}],
+// most systems first), so a cut-short record is visible: "every system to
+// 1,096 days", or "6 systems to 1,096 days; CV-03-GB to 995 days". Many
+// different ends: their range. Null when the fit doesn't say.
+export function recordEndsText(ends, r) {
+  if (!Array.isArray(ends) || !ends.length) return null;
+  const u = unitWord(r) ? ` ${unitWord(r)}` : "";
+  const at = (v) => `${formatNumber(v, { sig: 6 })}${u}`;
+  if (ends.length === 1) {
+    return ends[0].systems.length === 1 ? `${ends[0].systems[0]} to ${at(ends[0].end)}` : `every system to ${at(ends[0].end)}`;
+  }
+  if (ends.length > 3) {
+    const all = ends.map((g) => g.end);
+    return `each system to its own end of record, from ${at(Math.min(...all))} to ${at(Math.max(...all))}`;
+  }
+  const who = (g) => (g.systems.length <= 2 ? g.systems.join(" and ") : `${g.systems.length} systems`);
+  return ends.map((g) => `${who(g)} to ${at(g.end)}`).join("; ");
+}
+
+// The link that fits some of a saved model's systems by themselves: the new
+// repairable model flow, started from the model's data and settings.
+export function fitSystemsHref(modelId, systems = []) {
+  const q = new URLSearchParams({ from: modelId });
+  systems.forEach((s) => q.append("system", s));
+  return `/models/recurrent/new?${q}`;
 }
 
 // How the record ends, said on every fit to data: "time-terminated at 1,000
@@ -171,6 +196,8 @@ export function terminationText(r) {
   const at = term.end != null && Number.isFinite(term.end) ? withUnitR(term.end, r) : null;
   const one = r.n_systems === 1;
   if (term.kind === "time") {
+    const ends = recordEndsText(term.ends, r);
+    if (ends) return `time-terminated: ${ends}`;
     if (!at) return "time-terminated";
     return one ? `time-terminated at ${at}` : `time-terminated: each system to its end of record (the latest ${at})`;
   }
@@ -292,13 +319,12 @@ function strongestCoefficient(r) {
   return `${top.name.replace(": ", " ")}: failures ${ratioText(top.ratio)}${top.ratio_ci ? ` (${ratioCiText(top.ratio_ci)})` : ""}`;
 }
 
-// The answer line under the model's name: the verdict, the shape, the rate
+// The answer line under the model's name: the model, the shape, the rate
 // now and the data, as short phrases. ``saved`` ends it.
 export function recurrentAnswer(r, { saved = null } = {}) {
   const parts = [];
   const add = (p) => p && parts.push(p);
   const fam = familyOf(r);
-  const g = GROWTH[r?.growth];
   if (fam === "renewal") {
     add(r.repair_test ? repairTitle(r.repair_test.verdict) : r.model?.name);
     const rest = r.restoration;
@@ -312,7 +338,7 @@ export function recurrentAnswer(r, { saved = null } = {}) {
     const soon = r.next_failure?.units?.[0];
     if (soon?.median != null) add(`next failure: ${soon.system} in about ${withUnitR(soon.median, r)} (median)`);
   } else {
-    add(g ? g.title : r?.model?.id === "hpp" || r?.baseline?.id === "hpp" ? "Constant failure rate" : r?.model?.name);
+    add(r?.model?.id === "hpp" || r?.baseline?.id === "hpp" ? "Constant failure rate" : r?.model?.name);
     add(fam === "regression" ? strongestCoefficient(r) : shapeWords(r));
     add(mtbfWords(r));
   }
@@ -326,30 +352,20 @@ export function recurrentAnswer(r, { saved = null } = {}) {
 
 const pText = (p) => (p < 0.001 ? "p < 0.001" : `p = ${formatNumber(p, { sig: 2 })}`);
 
-// Whether the model assumes a constant failure rate (HPP, or covariates on
-// an HPP baseline): then a trend is a fault, not a finding.
-export const assumesConstantRate = (r) => r?.model?.id === "hpp" || r?.baseline?.id === "hpp";
-
 // "Is the failure rate changing?" from the Laplace and MIL-HDBK-189C trend
-// tests (null: a constant rate). For a model that assumes a constant rate a
-// trend is a problem; for the others it is what they model, and no trend
-// means a constant-rate model may do as well. { tone, words } or null.
+// tests (null hypothesis: a constant rate): each test's statistic and p-value,
+// and what a p-value is. No verdict, no tone. { words } or null.
+const TREND_STAT = { laplace: "U", mil_hdbk_189c: "χ²" };
 export function trendCheck(r) {
   const tests = (r?.trend_tests || []).filter((t) => t.p_value != null);
   if (!tests.length) return null;
-  const sig = tests.filter((t) => t.significant && t.trend !== "no trend");
-  const ps = tests.map((t) => `${t.test} ${pText(t.p_value)}`).join(", ");
-  if (sig.length) {
-    const dir = sig[0].trend === "decreasing" ? "falling: failures are slowing" : "rising: failures are accelerating";
-    if (assumesConstantRate(r)) {
-      return { tone: "bad", words: `Yes, it's ${dir}, but this model assumes a constant rate: try Crow-AMSAA (${ps}).` };
-    }
-    return { tone: "good", words: `Yes, it's ${dir}, which this model allows for (${ps}).` };
-  }
-  if (assumesConstantRate(r)) {
-    return { tone: "good", words: `No clear change: a constant rate fits the data (${ps}).` };
-  }
-  return { tone: "caveat", words: `No clear change (${ps}): a constant-rate model (HPP) may do as well. Compare their AIC.` };
+  const rows = tests.map((t) => {
+    const stat = Number.isFinite(t.statistic) ? `${TREND_STAT[t.id] || "statistic"} = ${formatNumber(t.statistic, { sig: 3 })}, ` : "";
+    return `${t.test} trend test: ${stat}${pText(t.p_value)}`;
+  });
+  return {
+    words: `${rows.join("; ")}. The p-value is how often a pattern this strong arises by chance when the failure rate is constant.`,
+  };
 }
 
 // The Duane plot's points: the cumulative MTBF (time ÷ failures per system so
@@ -386,35 +402,17 @@ export function logSlope({ x, y }) {
   return pts.reduce((s, [a, b]) => s + (a - mx) * (b - my), 0) / sxx;
 }
 
-// "Is reliability growing?" in words: the model's growth verdict where it has
-// one (its shape's interval), else the slope of the data's Duane plot. A
-// reading, not a test of the model: no tone.
+// "Is reliability growing?" as evidence: the model's growth shape with its
+// range where it has one, and the slope of the data's Duane plot. No verdict:
+// the analyst decides.
 export function growingCheck(r) {
   const slope = logSlope(duanePoints(r).observed);
   const minus = (v) => formatNumber(v, { sig: 2 }).replace(/^-/, "−");
   const slopeWords = slope == null ? ""
-    : ` The cumulative MTBF ${slope > 0.05 ? "rises" : slope < -0.05 ? "falls" : "is about level"} (Duane slope ${minus(slope)}).`;
-  const g = GROWTH[r?.growth];
-  const b = r?.growth_basis;
-  if (g) {
-    const lead = r.growth === "improving" ? "Yes" : r.growth === "deteriorating" ? "No, it's getting worse" : "Not clearly";
-    let why = "";
-    if (ciText(b?.ci)) {
-      const [lo, hi] = b.ci;
-      const nul = b.no_trend;
-      const where = lo > nul ? `wholly above ${nul}` : hi < nul ? `wholly below ${nul}` : `includes ${nul}`;
-      why = ` (${growthSymbol(r)}'s ${ciPct(r)} interval, ${ciText(b.ci)}, is ${where})`;
-    } else if (b?.estimate != null) {
-      why = ` (${growthSymbol(r)} = ${formatNumber(b.estimate, { sig: 3 })})`;
-    }
-    return { words: `${lead}: ${g.note}${why}.${slopeWords}` };
-  }
-  if (slope == null) return null;
-  return {
-    words: slope > 0.05 ? `Yes: the time between failures is getting longer.${slopeWords}`
-      : slope < -0.05 ? `No: the time between failures is getting shorter.${slopeWords}`
-      : `Not clearly: the time between failures is about steady.${slopeWords}`,
-  };
+    : `The cumulative MTBF ${slope > 0.05 ? "rises" : slope < -0.05 ? "falls" : "is about level"} as time goes on (Duane slope ${minus(slope)}).`;
+  const shape = growthReading(r)?.text || "";
+  const words = [shape, slopeWords].filter(Boolean).join(" ");
+  return words ? { words } : null;
 }
 
 // "Do the event times follow the model?" (Cramér-von Mises).
@@ -441,26 +439,20 @@ export function poissonUpperTail(k, mu) {
 }
 
 // "Does any system fail more than the model expects?" from each system's
-// failures against the model's expectation over its own window. A system is
-// called a bad actor only when that many failures would be unlikely by
-// chance with this many systems to pick from (a Poisson tail under 5% / the
-// number of systems); a small excess is said to be within chance.
+// failures against the model's expectation over its own window: the counts,
+// and the chance of that many or more from a Poisson count (a p-value, and the
+// level it would take across this many systems). No verdict.
 export function systemsCheck(r) {
   const rows = r?.system_residuals || [];
   if (rows.length < 2) return null;
   const top = rows[0];
-  if (!(top.excess >= 1)) {
-    return { rows, words: "No system stands out: each has about the failures the model expects." };
-  }
   const n = Math.max(rows.length, Number(r?.n_systems) || 0);
   const p = poissonUpperTail(top.failures, top.expected);
-  const what = `${formatNumber(top.failures)} failures where it expects ${formatNumber(top.expected, { sig: 2 })}`;
-  if (p >= 0.05 / n) {
-    return {
-      rows,
-      words: `${top.system} has the most failures beyond the model (${what}), but no more than chance gives `
-        + `across ${n} systems: no system stands out.`,
-    };
-  }
-  return { rows, words: `${top.system} fails most beyond the model: ${what}. Worth a look as a bad actor.` };
+  const what = `${formatNumber(top.failures)} failures where the model expects ${formatNumber(top.expected, { sig: 2 })}`;
+  const pw = p < 0.001 ? "p < 0.001" : `p = ${formatNumber(p, { sig: 2 })}`;
+  return {
+    rows,
+    words: `Largest excess: ${top.system}, ${what} (${pw}: how often that many or more arise by chance for one system; `
+      + `with ${n} systems to pick from, compare it with ${formatNumber(0.05 / n, { sig: 2 })}).`,
+  };
 }
