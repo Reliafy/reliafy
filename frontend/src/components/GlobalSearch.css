@@ -1,0 +1,98 @@
+/* The one search for everything (GlobalSearch.jsx; docs/design-system/components/GlobalSearch.md). */
+
+/* The top bar's box: reads as a search field, opens the dialog. */
+.gsearch-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 240px;
+  height: var(--control-md);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: none;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+  font-weight: var(--weight-regular);
+  cursor: text;
+  transition: border-color 150ms;
+}
+.gsearch-trigger:hover:not(:disabled) { background: var(--bg-surface); border-color: var(--border-control-hover); color: var(--text-secondary); }
+.gsearch-trigger svg { width: var(--icon-md); height: var(--icon-md); flex: none; }
+.gsearch-trigger-text { flex: 1; text-align: left; }
+.gsearch-kbd {
+  font-family: var(--font-sans);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+}
+
+/* The dialog: a tall list under one box, near the top of the page. */
+.gsearch-overlay { align-items: flex-start; }
+.modal.gsearch-modal { max-width: 680px; margin: 8vh auto auto; height: min(640px, calc(100dvh - 16vh)); }
+.gsearch-modal .modal-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) var(--space-4) 0; }
+.gsearch-box.search.live {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  color: var(--text-secondary);
+}
+.gsearch-box svg { width: var(--icon-lg); height: var(--icon-lg); flex: none; }
+/* The box draws the field and its focus ring; the input inside draws neither. */
+.gsearch-box.search.live input,
+.gsearch-box.search.live input:focus,
+.gsearch-box.search.live input:focus-visible { border: none; box-shadow: none; outline: none; background: none; }
+.gsearch-box.search.live input { flex: 1; width: auto; min-width: 0; font-size: var(--fs-16); line-height: var(--lh-16); padding-block: var(--space-3); }
+.gsearch-results { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: var(--space-4); }
+.gsearch-hint { margin: var(--space-2) 0; padding-inline: var(--space-2); color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+.gsearch-group + .gsearch-group { margin-top: var(--space-3); }
+.gsearch-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+.gsearch-count { font-weight: var(--weight-regular); color: var(--text-tertiary); }
+.gsearch-option {
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  min-width: 0;
+}
+.gsearch-option.active { background: var(--accent-wash); box-shadow: inset 2px 0 0 var(--accent); }
+.gsearch-name { font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); overflow-wrap: anywhere; }
+.gsearch-context {
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gsearch-option mark { background: none; color: inherit; font-weight: var(--weight-semibold); }
+.gsearch-name mark { color: var(--accent-text); }
+
+/* A phone: the top bar keeps a 40px icon; the dialog fills the screen. */
+@media (max-width: 720px) {
+  .gsearch-trigger { width: var(--control-lg); min-width: var(--control-lg); height: var(--control-lg); justify-content: center; padding: 0; border: none; color: var(--text-secondary); }
+  .gsearch-trigger svg { width: var(--icon-lg); height: var(--icon-lg); }
+  .gsearch-trigger-text, .gsearch-kbd { display: none; }
+  .gsearch-overlay.overlay { padding: 0; }
+  .modal.gsearch-modal { max-width: none; width: 100%; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; border: none; }
+  .gsearch-option { padding-block: var(--space-3); }
+}

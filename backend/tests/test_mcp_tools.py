@@ -63,6 +63,8 @@ LEGACY: dict = {
 # them that are heavy (a compute slot) or whose results carry people's text (the
 # data notice). A PR that adds core actions adds them here, under its own comment.
 NEW_ACTIONS = {
+    # One search for everything the user can open, by name (Nov 2026).
+    ("list", "search"),
     # Overhaul every X, replace after N overhauls (Nov 2026).
     ("analyse", "optimal_overhaul_replace"),
     # A how-often rule's dates, or an operating plan's hours by date, saved nowhere (Nov 2026).
@@ -97,7 +99,9 @@ NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions"
             # A reliability prediction's lines and assemblies are named by people (or a product's parts list).
             "list.predictions", "get.prediction", "analyse.prediction",
             # A mission's and its phases' names, the blocks' labels.
-            "analyse.rbd_mission"}
+            "analyse.rbd_mission",
+            # Every kind's names (and a part's or a position's words) in one list.
+            "list.search"}
 
 # The earlier tools' sets (to 1 Nov 2026), by their old keys: the new sets must be these, renamed.
 OLD_PRO_ONLY = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent", "list.fleets",
@@ -244,7 +248,8 @@ def test_the_listed_tools_are_small(env):
     after shortening the analyse intro again; 7,988 with libraries of datasets and models
     (library_add / library_remove renamed, library_use added), after shortening the list intro; 7,987 with
     analyse schedule, after shortening the analyse and list intros again; 7,994 with analyse
-    optimal_overhaul_replace, after shortening the change, report_problem and guide intros) and
+    optimal_overhaul_replace, after shortening the change, report_problem and guide intros; 7,985 with
+    list search, after shortening the get and list intros) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

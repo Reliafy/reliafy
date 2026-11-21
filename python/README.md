@@ -167,6 +167,7 @@ reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007 --dry-r
 reliafy maintenance get.design_rollup --id DESIGN_POSITION_ID   # one design position across every item built
 reliafy maintenance get.item_class --id ITEM_CLASS_ID --fleet true   # a class's positions, with risk now where a model is linked
 reliafy apply ops.json --run                     # maintenance changes in one call (dry run without --run)
+reliafy list search --q "oil filter"            # anything you can open, by name, tag, serial or part number
 reliafy list library --query "check valve" --record-kind rate   # published failure data
 reliafy get library_record --id nrc-inl-2020:ckv-fto
 reliafy get library_record --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed

@@ -130,7 +130,9 @@ export const TABS = [
   },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"], asset: true },
 ];
-const BY_ID = new Map(TABS.filter(offered).map((t) => [t.id, t]));
+// The tabs on offer now (the hidden ones left out): the one search lists them as places to go.
+export const OFFERED_TABS = TABS.filter(offered);
+const BY_ID = new Map(OFFERED_TABS.map((t) => [t.id, t]));
 export const DEFAULT_TAB = "summary";
 
 // Earlier tab ids and the tab they open now (Derryn, 9 Nov 2026: Packages became

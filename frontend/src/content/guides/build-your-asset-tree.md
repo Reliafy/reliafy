@@ -39,6 +39,11 @@ on **Assets**: an asset's name, a position's name or tag (P-101), or an item's
 name or serial. Under the assets that match, it lists the positions and items
 that match, each with the asset it's at. Choose one to open its page.
 
+From any page, the search in the top bar (or **⌘K**, **Ctrl K** on Windows)
+finds the same and more: parts by part number, products, places, work orders,
+and your data, models and diagrams. A position or an item opens in the
+**Explorer** on its own asset, with it picked.
+
 To see two assets together, merge one into the other. Choose **Merge into
 another asset…** from the asset's **⋯** on the **Assets** page (or from its top
 row's menu in the Explorer). Pick the asset it joins and where in that asset's

@@ -2620,6 +2620,14 @@ export function searchAssets(q, { signal } = {}) {
   return request(`/api/maintenance/search?q=${encodeURIComponent(q)}`, signal ? { signal } : undefined);
 }
 
+// The one search for everything (the header's search, ⌘K): each kind's best matches the viewer
+// can open in the active workspace, grouped by kind ({q, groups: [{kind, label, total, results}]}).
+export function searchEverything(q, { kinds = null, limit = 5, signal } = {}) {
+  const query = new URLSearchParams({ q, limit: String(limit) });
+  if (kinds) query.set("kinds", kinds.join(","));
+  return request(`/api/search?${query}`, signal ? { signal } : undefined);
+}
+
 // Every item of a product (built from one, or of a product's part), with where it is.
 export function listItemsOfProducts() {
   return request("/api/maintenance/items/of-products");

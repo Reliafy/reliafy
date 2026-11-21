@@ -1,11 +1,16 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import PublicNav from "../components/PublicNav.jsx";
 import PublicFooter from "../components/PublicFooter.jsx";
+import ListSearch from "../components/ListSearch.jsx";
 import { guidesByCategory } from "../guides.js";
+import { filterGuideGroups } from "../guideFilter.js";
 
-// Public index of the task-oriented product guides, grouped by category.
+// Public index of the task-oriented product guides, grouped by category, with the same
+// filter box as the in-app Guides drawer (guideFilter.js).
 export default function GuidesIndex() {
-  const groups = guidesByCategory();
+  const [query, setQuery] = useState("");
+  const groups = filterGuideGroups(guidesByCategory(), query);
   return (
     <div className="landing">
       <PublicNav />
@@ -19,6 +24,13 @@ export default function GuidesIndex() {
             screenshot for every step.
           </p>
         </header>
+
+        <div className="tablebar guides-filter">
+          <ListSearch value={query} onChange={setQuery} placeholder="Filter guides…" />
+        </div>
+        {groups.length === 0 && (
+          <p className="guides-none" role="status">No guide matches “{query.trim()}”. Try fewer words.</p>
+        )}
 
         {groups.map((group) => (
           <div className="guide-group" key={group.category}>

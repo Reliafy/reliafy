@@ -121,6 +121,139 @@ class AssetSearchOps:
         return {"q": " ".join(words), "positions": positions, "items": items,
                 "positions_total": len(found_pos), "items_total": len(found_items)}
 
+    # -- the one search for everything (backend/services/global_search.py)
+
+    def search_records(self, tier, kinds, limit: int = 5) -> dict:
+        """The register's records for the app's one search: {kind: (total, hits)}, each hit
+        {kind, id, name, tier, context, path}, best first, the first ``limit`` of each.
+        ``tier(keys, extra)`` ranks a record (None: no match; global_search.Matcher.tier).
+        Kinds: asset (a top place), location, position (a product's design positions too,
+        opening on the product), item, part, product, work_order. Each opens where it lives:
+        a place, position or item in the Explorer on its own asset (?root=) with it picked;
+        a design's position on its product's page; a part, product or work order on its page."""
+        designs = self._design_ids()
+        found: dict[str, list] = {k: [] for k in kinds}
+
+        def keep(kind, node, keys, extra=()):
+            if kind in found:
+                t = tier(keys, extra)
+                if t is not None:
+                    found[kind].append((t, (node.get("name") or node.get("title") or "").lower(), node))
+
+        if "asset" in found or "location" in found:
+            for loc in self.s.nodes(self.org, "Location"):
+                if loc.get("retired") or self._location_realm(loc):
+                    continue
+                ups = self._location_path(loc["id"])
+                keep("location" if ups else "asset", loc, [loc.get("name")],
+                     [loc.get("description"), *(a["name"] for a in ups)])
+        if "position" in found:
+            for p in self.s.nodes(self.org, "Position"):
+                if p.get("retired") or (p.get("design") and self._parent(p["id"]) is None):
+                    continue
+                keep("position", p, [p.get("name"), p.get("tag")])
+        if "item" in found:
+            for it in self.s.nodes(self.org, "Item"):
+                if not it.get("retired"):
+                    keep("item", it, [it.get("name"), it.get("serial"), it.get("part_number")],
+                         [it.get("manufacturer"), it.get("model")])
+        if "part" in found:
+            for pt in self.s.nodes(self.org, "Part"):
+                if not pt.get("retired"):
+                    keep("part", pt, [pt.get("part_number"), pt.get("name")], [pt.get("manufacturer"), pt.get("notes")])
+        if "product" in found:
+            for p in self.s.nodes(self.org, "Position"):
+                if p.get("design") and not p.get("retired") and self._parent(p["id"]) is None:
+                    part = self._part_view((p.get("design") or {}).get("part_id")) or {}
+                    keep("product", p, [p.get("name"), part.get("part_number")], [p.get("description")])
+        if "work_order" in found:
+            for w in self.s.nodes(self.org, "WorkOrder"):
+                keep("work_order", w, [w.get("title"), str(w.get("number") or "")])
+
+        out = {}
+        for kind, rows in found.items():
+            rows.sort(key=lambda r: (r[0], r[1]))
+            hits = []
+            for t, _, node in rows[:limit]:
+                hit = self._search_hit(kind, node, designs)
+                if hit:
+                    hits.append({"kind": kind, "id": node["id"], "tier": t, "updated_at": None, "sample": False, **hit})
+            out[kind] = (len(rows), hits)
+        return out
+
+    def _search_hit(self, kind: str, node: dict, designs: set) -> dict | None:
+        """A record's name, the line under it and where it opens, for search_records."""
+        from urllib.parse import urlencode
+
+        def explorer(arrange, root, sel):
+            q = {"arrange": arrange, **({"root": root} if root else {}), "sel": sel}
+            return "/asset-register/explorer?" + urlencode(q)
+
+        def at_position(pos_id: str, sel: str) -> str:
+            site = self._site_of_position(pos_id)
+            if site.get("id"):
+                return explorer("locations" if site["kind"] == "location" else "positions", site["id"], sel)
+            return explorer("positions", pos_id, sel)
+
+        name = node.get("name") or "(no name)"
+        if kind == "asset":
+            return {"name": name, "context": "Asset", "path": explorer("locations", node["id"], node["id"])}
+        if kind == "location":
+            path = self._location_path(node["id"])
+            top = path[0]["id"] if path else node["id"]
+            return {"name": name, "context": " › ".join(a["name"] for a in path),
+                    "path": explorer("locations", top, node["id"])}
+        if kind == "position":
+            way = self._position_path(node["id"])
+            tag = node.get("tag") or ""
+            title = f"{tag} · {name}" if tag and tag != name else name
+            if node["id"] in designs:
+                top = next((n for n in way if n.get("kind") == "Position"), None)
+                product = top or node
+                return {"name": title, "context": f"In product {product['name']}"
+                        + (" · " + " › ".join(n["name"] for n in way[1:]) if len(way) > 1 else ""),
+                        "path": f"/products/{product['id']}?sel={node['id']}"}
+            site = self._site_of_position(node["id"], way)
+            where = site.get("unit") or site.get("name") or "Not at an asset yet"
+            down = " › ".join(n["name"] for n in way)
+            return {"name": title, "context": " · ".join(x for x in (where, down) if x and x != name),
+                    "path": at_position(node["id"], node["id"])}
+        if kind == "item":
+            hit = self._item_hit(node)
+            w = hit["where"]
+            if w.get("how") == "fitted":
+                path, where = at_position(w["position"]["id"], w["position"]["id"]), f"fitted to {w['position']['name']}"
+            elif w.get("how") == "placed":
+                site = hit["site"]
+                path = explorer("locations", site.get("id"), node["id"])
+                where = f"kept at {w['location']['name']}"
+            else:
+                path, where = f"/asset-register/items/{node['id']}", "not fitted or placed"
+            serial = hit["serial"] and hit["serial"] not in name and f"serial {hit['serial']}"
+            product = hit["product"] and f"{'built from' if hit['product']['built'] else 'a'} {hit['product']['name']}"
+            return {"name": name, "context": " · ".join(x for x in (serial, where, product) if x), "path": path}
+        if kind == "part":
+            pt = self.part(node["id"])
+            stock = f"{pt['on_hand']:g} on hand" + (" · low" if pt.get("low") else "") if pt.get("stock") else "no stock kept"
+            by = pt.get("superseded_by") and f"superseded by {pt['superseded_by']['part_number']}"
+            title = f"{pt['part_number']} · {pt['name']}" if pt.get("name") and pt["name"] != pt["part_number"] else pt["part_number"]
+            return {"name": title, "context": " · ".join(x for x in ("Part", stock, by) if x),
+                    "path": f"/asset-register/parts/{node['id']}"}
+        if kind == "product":
+            row = self._product_row(node)
+            part = (row.get("part") or {}).get("part_number")
+            built = row["items_built"]
+            return {"name": name, "context": " · ".join(x for x in (
+                "Product", part and f"part {part}", f"{built} built" if built else "none built yet") if x),
+                    "path": f"/products/{node['id']}"}
+        if kind == "work_order":
+            due = node.get("due") and f"due {node['due']}"
+            return {"name": node.get("title") or node.get("number") or "Work order",
+                    "context": " · ".join(str(x) for x in (node.get("number") and f"No. {node['number']}",
+                                                            node.get("status"), due) if x),
+                    "path": f"/maintenance/work-orders/{node['id']}"}
+        return None
+
     def _item_hit(self, it: dict) -> dict:
         """An item as a search result: its serial and part number, the product it is, and
         where it is: fitted (the position, and its site), placed (the location's top
