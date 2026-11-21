@@ -1203,6 +1203,27 @@ how. Each task carries its LSA record: what doing it needs.
 - **Copies.** Copying a position copies its tasks' records, less the tools'
   `point_id` (the copy has no points yet).
 
+## Stock counts and spares for the year
+
+- **A dated count.** `stock.counted {part_id, location_id, counted, delta, on,
+  by, reason, was}` records what was on the shelf on the day it was counted.
+  The service works out `delta` (the count less what the system held that
+  day, so anything received or issued after the count still stands) and the
+  projector applies it like `stock.adjusted`, keeping the latest count on the
+  stock node as `counted {on, quantity, by}`. A part read carries each store's
+  `counted` and the part's `counted_on` (the oldest store's last count; none
+  while a store holding it was never counted) and `counted_days_ago`.
+  `Maintenance.count_stock_sheet` takes a whole sheet, all rows checked first.
+- **Spares for the year** (`backend/maintenance/spares_year.py`, engine in
+  `backend/services/spares_year.py`): one row per part a failure or a task
+  uses in a scope (a position and what's inside it, a location, a class, a
+  product's items or a planned fleet, the workspace). Demand is the failures
+  (a renewal simulation from each item's age) plus the planned jobs falling
+  due (package visits, a shutdown's `older_than` deciding each job on the
+  item's age then; other tasks on RePyability's due dates), and a
+  fixed-interval task renews the item. Reads only; nothing is stored. The
+  class forecast's spares and its headline failures come from the same runs.
+
 ## A task's cost each time
 
 One figure per task, kept with the task on its position, so the RCM reads it

@@ -604,6 +604,14 @@ at today's usable stock, hold_cost from the part's unit_cost; summary says it in
 answer "what if we hold 4?". Read off the simulated demand; one site. Set a part's lead_time_days and service_level \
 (or repairable with turnaround_days: the pool covers the repair turnaround) with maintenance parts.update; without \
 a lead time 30 days is assumed and said.
+- Spares for the year: maintenance get.spares_year (id: a position and what's inside it, a location, a position \
+class, a product; none: the workspace) gives one row per part a failure or a task uses: demand (mean, p10, p90, \
+failures + planned: tasks falling due, a shutdown's "only if older" counted at its chance), hold over the lead \
+time, usable_now and counted_on, order_now, order_by ([{qty, by, for}] for planned jobs past the lead time), \
+buy_for_year and buy_high_case. Quote rule with the numbers. Costing and orders are the user's own systems: give \
+quantities and dates, never prices. maintenance get.package_parts: a package's next visit against stock, when an \
+order placed today lands, and the chance of running out first; leave_out [task ids] for "what if the shut skips \
+these?". Record a stores count with maintenance parts.count (counted on a date; counts for a whole sheet).
 - maintenance topology.generate_rbd, position_id = a system position: a reliability block diagram from the \
 positions inside it (connections wire the blocks, redundancy groups become k of n or a standby block, each \
 block takes its class's \

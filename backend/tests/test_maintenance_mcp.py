@@ -117,7 +117,7 @@ def test_one_tool_with_every_areas_actions(env):
     # arguments, and the action enum. Each action adds about 40 characters to both; the
     # failure_reports area (Nov 2026) took them to about 7,000 and 5,200; with signals too, 7,400 and 5,500;
     # get.forecast (Nov 2026) took the enum to 5,812 (the maintenance tool is operators' only; the core
-    # tools' 8,000 stays as it is).
+    # tools' 8,000 stays as it is); get.spares_year, get.package_parts and parts.count to 6,480 and 5,867.
     assert len(t.description) < 7_800 and len(json.dumps(t.input_schema)) < 5_900
     for action, (required, optional, _) in table.items():
         own = mcp_server.ACTION_SCHEMAS[("maintenance", action)]
@@ -1240,3 +1240,58 @@ def test_a_class_model_by_use_over_mcp(env):
     assert fit["model"]["unit"] == "hours" and fit["proposals"]
     assert econ["unit"] == "hours" and econ["positions"] == len(FLEET)
     assert bad.is_error and "counted in days" in bad.content[0].text
+
+
+def test_spares_for_the_year_and_a_stock_count_over_mcp_and_rest(env):
+    """get.spares_year: one row per part a failure or task uses; parts.count: a dated stock count
+    (and a sheet of them); get.package_parts: a package's next visit against stock. The same over REST."""
+    from fastapi.testclient import TestClient
+
+    from backend import mcp_server
+    from backend.main import app
+    from backend.maintenance.service import Maintenance
+    from backend.routers import maintenance as router
+
+    assert {"maintenance_get.spares_year", "maintenance_get.package_parts"} <= set(mcp_server.HEAVY_TOOLS)
+    _fitted_class()
+    m = Maintenance(router._store, UID, UID)
+    positions = [p["id"] for p in m.s.nodes(UID, "Position") if p.get("position_class")]
+    store = m.create_location("Plant room")["id"]
+
+    async def flow(client):
+        part = _ok(await _do(client, "maintenance", "parts.create", part_number="PP-1", name="Pool pump"))
+        for pid in positions:
+            _ok(await _do(client, "maintenance", "parts.add_to_position", position_id=pid, part_id=part["id"],
+                          role="replacement"))
+        counted = _ok(await _do(client, "maintenance", "parts.count", part_id=part["id"], location_id=store,
+                                counted=2, on=m.today(), by="Stores"))
+        sheet = _ok(await _do(client, "maintenance", "parts.count",
+                              counts=[{"part_number": "PP-1", "location": "Plant room", "counted": 3}]))
+        bare = await _do(client, "maintenance", "parts.count", part_id=part["id"])
+        year = _ok(await _get(client, "spares_year", "Pool pump", months=6, lead_time_days=20))
+        whole = _ok(await _get(client, "spares_year"))
+        nothing = await _get(client, "spares_year", "No such thing")
+        guide = _ok(await client.call_tool("maintenance", {"action": "guide", "topic": "decide"}))
+        return part, counted, sheet, bare, year, whole, nothing, guide
+
+    part, counted, sheet, bare, year, whole, nothing, guide = _session(env["token"], flow)
+    assert counted["on_hand"] == 2 and counted["counted_on"] == m.today()
+    assert sheet["dry_run"] and sheet["rows"][0]["change"] == 1 and m.part(part["id"])["on_hand"] == 2
+    assert bare.is_error and "counted" in bare.content[0].text
+    row = year["parts"][0]
+    assert year["scope"] == "class" and year["months"] == 6 and row["lead_time_days"] == 20
+    assert row["usable_now"] == 2 and row["counted_on"] == m.today() and "risk_curve" not in row
+    assert row["demand"]["mean"] > 0 and year["rule"].startswith("Demand = planned replacements")
+    assert whole["scope"] == "workspace" and whole["parts"][0]["part"]["part_number"] == "PP-1"
+    assert nothing.is_error
+    assert "get.spares_year" in guide["guide"] and "parts.count" in guide["guide"]
+
+    auth = {"Authorization": f"Bearer {env['token']}"}
+    client = TestClient(app)
+    rest = client.post("/api/v1/maintenance/get.spares_year", json={"id": "Pool pump", "months": 6,
+                                                                    "lead_time_days": 20}, headers=auth)
+    assert rest.status_code == 200, rest.text
+    assert rest.json()["parts"][0]["hold"] == row["hold"]
+    done = client.post("/api/v1/maintenance/parts.count", json={"part_id": part["id"], "location_id": store,
+                                                               "counted": 1}, headers=auth)
+    assert done.status_code == 200 and done.json()["on_hand"] == 1

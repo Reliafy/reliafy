@@ -14,16 +14,19 @@ with nothing fitted, or with no counter rate to go on, is listed, not forecast.
 
 The forecast is the fleet forecast's renewals engine
 (``services.fleet._forecast_renewals``): a failed item is replaced and its
-replacement can fail again. Each failure uses the parts on that position's parts
-list that replace it (the replacement part, and any critical spare) at their
-quantity per job, so the same simulation gives each part's demand as a
-distribution per period, against its stock. Class costs price the failures, and
-the class's scheduled replacements falling due price the planned work.
+replacement can fail again. Class costs price the failures, and the class's
+scheduled replacements falling due price the planned work.
 
-Each part also gets stock levels (#31, ``services.spares``): how many to hold for
-a service level over its lead time plus the review period, when to reorder, and
-the chance today's stock runs out, read off the raw simulated demand over those
-windows (a second run of the same engine that keeps every failure's time).
+The spares are the spares-for-the-year engine's (``maintenance.spares_year``,
+``services.spares_year``) over the class's positions: each part's demand per
+period is the failures that use it (the parts list's replacement part and
+critical spares, at their quantity per job) plus the planned jobs falling due
+that use it (a task's LSA spares, or what a replacement uses), and a planned
+replacement renews the item, so it takes failures off. Each part's stock levels
+(#31, ``services.spares``): how many to hold for a service level over its lead
+time plus the review period, when to reorder, and the chance today's stock runs
+out, read off that simulated demand. Where planned replacements renew items, the
+headline failures are that engine's too.
 
 Nothing is stored: it's worked out on read, and kept briefly for repeat reads
 until the workspace's next event (fitments, close-outs, manual readings) or a
@@ -44,7 +47,6 @@ import numpy as np
 from backend.maintenance import service as svc
 from backend.maintenance.service import Invalid, Maintenance, class_id
 from backend.services import spares
-from backend.errors import client_message
 
 PERIODS = ("month", "quarter", "year")
 MAX_PERIODS = 120
@@ -149,37 +151,6 @@ def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str, horizon
     ahead = max(0, (date.fromisoformat(m.today()) - date.fromisoformat(last["on"])).days) * per_day
     return {"age": max(0.0, float(last["value"]) - float(start) + ahead), "per_day": per_day, "basis": basis,
             "counter": {"id": counter["id"], "name": counter["name"], "reading": last["value"], "read_on": last["on"]}}
-
-
-def _spare_columns(m: Maintenance, units: list[dict]) -> tuple[list[dict], np.ndarray]:
-    """The parts a failure at each forecast position uses: what replaces the
-    item (role replacement) and any critical spare, by quantity per job. One
-    entry per part, and a matrix of quantity per job (positions × parts)."""
-    parts: dict[str, dict] = {}
-    per_unit: list[dict[str, float]] = []
-    for u in units:
-        mine: dict[str, float] = {}
-        for listing in m._listings_at(u["id"]):
-            if listing["role"] != "replacement" and not listing.get("critical"):
-                continue
-            view = m._listing_view(listing)
-            pid = view["part"]["id"]
-            mine[pid] = mine.get(pid, 0.0) + float(view["quantity"])
-            entry = parts.setdefault(pid, {"part": view["part"], "roles": set(), "critical": False,
-                                           "usable_on_hand": view["usable_on_hand"], "min_on_hand": None,
-                                           "use_instead": view["use_instead"], "positions": 0, "per_job": set()})
-            entry["roles"].add(view["role"])
-            entry["critical"] = entry["critical"] or view["critical"]
-            entry["positions"] += 1
-            entry["per_job"].add(float(view["quantity"]))
-            if view["min_on_hand"] is not None:
-                entry["min_on_hand"] = max(entry["min_on_hand"] or 0.0, float(view["min_on_hand"]))
-        per_unit.append(mine)
-    ordered = sorted(parts.items(), key=lambda kv: ("replacement" not in kv[1]["roles"], not kv[1]["critical"],
-                                                    kv[1]["part"]["part_number"].lower()))[:MAX_PARTS]
-    matrix = np.array([[mine.get(pid, 0.0) for pid, _ in ordered] for mine in per_unit],
-                      dtype=float).reshape(len(units), len(ordered))
-    return [entry for _pid, entry in ordered], matrix
 
 
 def _planned(m: Maintenance, positions: list[dict], starts: list[str], end: str) -> list[int]:
@@ -327,8 +298,7 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
         notes.append("Positions without a usage rate aren't forecast (not counted as no failures): record "
                      f"readings on their {unit} counter.")
 
-    spares_cols, matrix = _spare_columns(m, units)
-    weights = np.column_stack([np.ones(len(units)), matrix]) if units else np.zeros((0, 1 + len(spares_cols)))
+    weights = np.ones((len(units), 1))
     if units:
         ages = np.array([u["age"] for u in units], dtype=float)
         rates = np.array([u["rate"] for u in units], dtype=float)
@@ -339,7 +309,15 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
     else:
         sims, tally, nxt, sim = 0, np.zeros((1, periods, weights.shape[1])), np.zeros(0), {"per_item": []}
 
+    # The spares (failures and planned jobs, #31) on the spares-for-the-year engine, and the failures
+    # from the same runs: planned replacements renew items, so they come off the count.
+    from backend.maintenance import spares_year
+
+    spare_rows, stocking_meta, renewals = spares_year.class_spares(
+        m, name, positions, periods, days, starts, opts or _stocking_options(None, None, None))
     failures = tally[:, :, 0]
+    if units and renewals["failures"] is not None:
+        failures = renewals["failures"]  # the same runs as the spares: a part's demand adds up to its failures
     total = failures.sum(axis=1)
     expected = float(total.mean())
     interval = [_q(total, Q_LOW), _q(total, Q_HIGH)]
@@ -352,39 +330,13 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
 
     ranked = []
     for u, p_next, row in zip(units, nxt, sim["per_item"]):
+        row = renewals["per_unit"].get(u["id"], row)  # the same runs as the headline and the spares
         ranked.append({**{k: u[k] for k in ("position", "item", "fitted_on", "rate_basis")},
                        "age": round(u["age"], 2), "rate_per_period": round(u["rate"], 3),
                        **({"counter": u["counter"]} if "counter" in u else {}),
                        "prob_next_period": float(p_next), "prob_in_horizon": row["prob_any"],
                        "expected_failures": row["expected"]})
     ranked.sort(key=lambda r: (-r["prob_next_period"], r["position"]["name"].lower()))
-
-    spare_rows = []
-    for j, entry in enumerate(spares_cols, start=1):
-        demand = tally[:, :, j]
-        cum = np.cumsum(demand, axis=1)
-        have = float(entry["usable_on_hand"])
-        # P(the stock in hand covers the demand to the end of each period).
-        cumulative = [{**_summary(cum[:, k], (0.1, 0.5, 0.9, 0.95)),
-                       "prob_covered": float((cum[:, k] <= have + 1e-9).mean())} for k in range(periods)]
-        covered = sum(1 for c in cumulative if c["p90"] <= have + 1e-9)
-        pt = entry["part"]
-        unit_text = pt.get("unit") or "each"
-        words = (f"≈ {_num(cumulative[-1]['mean'])} needed over the next {periods} {word} (likely "
-                 f"{cumulative[-1]['p10']:g}–{cumulative[-1]['p90']:g}); {have:g} usable in stock.")
-        if covered < periods:
-            words += (f" Stock covers {covered} {period}{'s' if covered != 1 else ''} at the likely high end "
-                      f"(P90); {cumulative[0]['prob_covered']:.0%} chance it covers the first {period}.")
-        spare_rows.append({
-            "part": pt, "roles": sorted(entry["roles"]), "critical": entry["critical"],
-            "positions": entry["positions"], "per_job": sorted(entry["per_job"]), "unit": unit_text,
-            "usable_on_hand": have, "min_on_hand": entry["min_on_hand"], "use_instead": entry["use_instead"],
-            "stock": m._stock_rows(m._stocks(pt["id"])),
-            "expected": cumulative[-1]["mean"], "interval": [cumulative[-1]["p10"], cumulative[-1]["p90"]],
-            "per_period": [_summary(demand[:, k]) for k in range(periods)],
-            "cumulative": cumulative, "covered_periods": covered,
-            "short": cumulative[-1]["p90"] > have + 1e-9, "summary": words,
-        })
 
     out = {**base, "sims": sims, "expected": expected, "interval": interval,
            "headline": _headline(name, expected, interval, periods, word, len(units)),
@@ -393,9 +345,10 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
                      "replacement can fail again."),
            "per_period": per_period, "at_risk": ranked[:MAX_RANKED], "at_risk_truncated": len(ranked) > MAX_RANKED,
            "spares": spare_rows, "budget": _budget(m, node, positions, failures, starts, periods)}
-    out["stocking"] = _stocking(m, dist, units, matrix, spare_rows, opts or _stocking_options(None, None, None),
-                                periods, days, starts)
-    if out["budget"] and out["budget"].get("planned"):
+    out["stocking"] = stocking_meta
+    if renewals["planned"]:
+        notes.append("Planned replacements renew the items they replace: the failures after one count from new.")
+    elif out["budget"] and out["budget"].get("planned"):
         notes.append("Planned replacements aren't taken off the failure count (each failure is replaced like for "
                      "like), so with a replacement plan in place the failures err high.")
     out["notes"] = notes
@@ -436,58 +389,6 @@ def _part_stocking(node: dict, opts: dict) -> dict:
             "lead_time_basis": lead_basis, "review_days": review, "repairable": repairable,
             "turnaround_days": float(turnaround) if turnaround is not None else None,
             "window_days": float(turnaround) if repairable else lead + review}
-
-
-def _demand(events: dict, start: float, length: float, weights: np.ndarray):
-    """One part's simulated demand over ``length`` periods from ``start``."""
-    return spares.Demand.from_samples(spares.window_demand(events, start, start + length, weights)[:, 0])
-
-
-def _stocking(m: Maintenance, dist, units: list[dict], matrix: np.ndarray, rows: list[dict], opts: dict,
-              periods: int, days: float, starts: list[str]) -> dict:
-    """Each spare's stock levels (#31), on its row as ``stocking``: hold N, reorder
-    at, the risk at today's usable stock, what holding N costs, a risk curve for
-    any stock, and the same for a window starting at each period. Returns what
-    applies to them all."""
-    from backend.services import fleet
-    from backend.services.strategy import StrategyError
-
-    meta = {"service_level": opts["service_level"], "default_service_level": spares.DEFAULT_SERVICE_LEVEL,
-            "lead_time_days": opts["lead_time_days"], "default_lead_time_days": DEFAULT_LEAD_DAYS,
-            "review_days": opts["review_days"], "note": STOCKING_NOTE}
-    if not rows or not units:
-        return meta
-    inputs = [_part_stocking(m.s.node(m.org, r["part"]["id"]) or {}, opts) for r in rows]
-    ages = np.array([u["age"] for u in units], dtype=float)
-    rates = np.array([u["rate"] for u in units], dtype=float)
-    horizon = (periods - 1) + max(i["window_days"] for i in inputs) / days
-    try:
-        events = fleet._renewal_events(dist, ages, rates, horizon)
-    except StrategyError as exc:
-        return {**meta, "error": client_message(exc)}
-    meta["sims"] = events["sims"]
-    for j, (row, inp) in enumerate(zip(rows, inputs)):
-        weights = matrix[:, j:j + 1]
-        level = inp["service_level"]
-        protect = [_demand(events, k, inp["window_days"] / days, weights) for k in range(periods)]
-        lead = None if inp["repairable"] else [_demand(events, k, inp["lead_time_days"] / days, weights)
-                                               for k in range(periods)]
-        now = spares.answer(protect[0], lead[0] if lead else None, row["usable_on_hand"], level,
-                            row["part"].get("unit_cost"))
-        plan = [{"start": starts[k], "hold": protect[k].quantile(level),
-                 "reorder_at": lead[k].quantile(level) if lead else None,
-                 "expected_demand": protect[k].mean} for k in range(periods)]
-        if inp["repairable"]:
-            window = f"the repair turnaround ({_days(inp['window_days'])})"
-        elif inp["review_days"]:
-            window = f"the lead time and review period ({_days(inp['window_days'])})"
-        else:
-            window = f"the lead time ({_days(inp['lead_time_days'])})"
-        words = spares.sentence(now, level, window, row["unit"], inp["repairable"], inp["review_days"] > 0)
-        if inp["lead_time_basis"] == "assumed" and not inp["repairable"]:
-            words += f" No lead time is set for this part: {DEFAULT_LEAD_DAYS} days assumed."
-        row["stocking"] = {**inp, **now, "per_period": plan, "summary": words}
-    return meta
 
 
 def _headline(name, expected, interval, periods, word, n) -> str:

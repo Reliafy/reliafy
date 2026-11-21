@@ -2324,6 +2324,68 @@ def adjust_stock(part_id: str, body: dict = Body(...), m: Maintenance = Depends(
                 body.get("on"))
 
 
+@router.post("/parts/{part_id}/count")
+def count_stock(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A stock count: what's on the shelf at a location on the day it was counted (later moves stand).
+    Also over MCP and the CLI: maintenance parts.count."""
+    return _run(m.count_stock, part_id, body.get("location_id"), body.get("counted"), body.get("on"),
+                body.get("by", ""), body.get("reason", ""))
+
+
+@router.post("/stock-counts")
+def count_stock_sheet(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A count sheet (rows {part_number, location, counted, on, by}): every row checked first; dry_run
+    (the default) previews. Also over MCP and the CLI: maintenance parts.count with counts."""
+    return _run(m.count_stock_sheet, body.get("counts"), body.get("dry_run", True) is not False)
+
+
+@router.get("/spares-year")
+def spares_year(id: str | None = None, root: str | None = None, months: int = 12,
+                service_level: float | None = None, lead_time_days: float | None = None,
+                review_days: float | None = None, fleet_size: int | None = None,
+                hours_per_day: float | None = None, leave_out: str | None = None, format: str = "json",
+                session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                m: Maintenance = Depends(maintenance)):
+    """Spares for the year: every part a failure or a task uses in a scope (id: a position and what's
+    inside it, within root; a location; a position class; a product; none: the workspace), one row each.
+    format csv: the table as CSV. leave_out: comma-separated task ids taken off their next visit. Also
+    over MCP and the CLI: maintenance get.spares_year."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance import spares_year as sy
+
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    skip = [x for x in (leave_out or "").split(",") if x.strip()]
+
+    def read():
+        scope = sy.scope_of(m, id, root, fleet_size, hours_per_day)
+        return sy.spares_year(m, scope, months=months, service_level=service_level, lead_time_days=lead_time_days,
+                              review_days=review_days, fetch=fetch, leave_out=skip, curves=True)
+    if format == "csv":
+        try:
+            out = read()
+        except NotFound:
+            return JSONResponse(status_code=404, content={"detail": "Not found."})
+        except Invalid as err:
+            return JSONResponse(status_code=422, content={"detail": client_message(err)})
+        return Response(content=sy.csv_text(out), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": 'attachment; filename="spares-for-the-year.csv"'})
+    return _run(read)
+
+
+@router.get("/packages/{package_id}/parts")
+def package_parts(package_id: str, leave_out: str | None = None, service_level: float | None = None,
+                  session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A package's next visit: its parts against usable stock and lead time (leave_out: comma-separated
+    task ids taken off the visit, a what-if). Also over MCP and the CLI: maintenance get.package_parts."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance import spares_year as sy
+
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    skip = [x for x in (leave_out or "").split(",") if x.strip()]
+    return _run(sy.package_parts, m, package_id, fetch=fetch, leave_out=skip, service_level=service_level)
+
+
 @router.post("/parts/{part_id}/reorder-point")
 def set_reorder_point(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.set_reorder_point, part_id, body.get("location_id"), body.get("reorder_point"))

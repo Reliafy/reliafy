@@ -2436,6 +2436,22 @@ def _consumable_used(s: GraphStore, org: str, p: dict) -> None:
         s.put_edge(org, "OF", p["id"], p["part_id"])
 
 
+def _stock_counted(s: GraphStore, org: str, p: dict) -> None:
+    """A stock count (Nov 2026): what was on the shelf on the day it was counted. The service works
+    out the difference from what the system held that day (``delta``: anything booked after the
+    count still stands), so replay needs nothing but the payload. The latest count is kept."""
+    _stock_adjusted(s, org, {**p, "delta": p["delta"], "reason": p.get("reason") or "Stock count"})
+    sid = stock_id(p["part_id"], p["location_id"])
+    node = s.node(org, sid)
+    moves = list(node.get("moves") or [])
+    if moves:
+        moves[-1] = {**moves[-1], "count": p["counted"]}
+    patch = {"moves": moves}
+    if not (node.get("counted") or {}).get("on") or node["counted"]["on"] <= p["on"]:
+        patch["counted"] = {"on": p["on"], "quantity": p["counted"], "by": p.get("by", "")}
+    s.patch_node(org, sid, patch)
+
+
 def _stock_reorder_set(s: GraphStore, org: str, p: dict) -> None:
     sid = stock_id(p["part_id"], p["location_id"])
     if s.node(org, sid) is None:
@@ -2821,6 +2837,7 @@ PROJECTORS = {
     "parts.interchangeable": _parts_interchangeable,
     "stock.adjusted": _stock_adjusted,
     "stock.reorder_set": _stock_reorder_set,
+    "stock.counted": _stock_counted,
     "position_part.listed": _position_part_listed,
     "position_part.updated": _patch,
     "position_part.removed": _flag("removed"),
@@ -6886,6 +6903,92 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                       "work_order_id": work_order_id})
         return self.part(part_id)
 
+    def _count_checked(self, part_id: str, location_id: str, counted, on=None) -> dict:
+        """A stock count's payload, checked: the count, its date (not in the future) and the
+        difference from what the system held on that day (moves booked after it stand)."""
+        self._get(part_id, "Part")
+        loc = self._get(location_id, "Location")
+        self._guard_design_location(loc, "stock")
+        qty = _number(counted, "count", 0, MAX_AMOUNT)
+        day = _day(on, "count date", today=self.today())
+        if day > self.today():
+            raise Invalid(f"The count date can't be in the future: it's {self.today()} in this workspace.")
+        stock = self.s.node(self.org, stock_id(part_id, location_id)) or {}
+        after = sum(mv["delta"] for mv in stock.get("moves") or [] if mv["on"] > day)
+        held = float(stock.get("quantity") or 0) - after
+        delta = round(qty - held, 6)
+        if float(stock.get("quantity") or 0) + delta < 0:
+            raise Invalid(f"Counting {qty:g} on {day} leaves less than none now: {-after:g} were issued after it. "
+                          "Check the count and the issues since.")
+        return {"part_id": part_id, "location_id": location_id, "counted": qty, "delta": delta, "on": day,
+                "held": held}
+
+    def count_stock(self, part_id: str, location_id: str, counted, on=None, by="", reason="") -> dict:
+        """Record a stock count: ``counted`` on the shelf at ``location_id`` on the day ``on`` (default
+        today). The stock becomes the count plus anything received or issued after that day, and the
+        part says when it was last counted."""
+        p = self._count_checked(part_id, location_id, counted, on)
+        held = p.pop("held")
+        self._emit("stock.counted", {**p, "by": _text(by, "counted by")[:120],
+                                     "reason": _text(reason, "reason")[:200] or f"Stock count {p['on']}",
+                                     "was": held})
+        return self.part(part_id)
+
+    def count_stock_sheet(self, counts, dry_run: bool = True) -> dict:
+        """A count sheet: rows of {part_id or part_number, location_id or location (its name), counted
+        (or on_hand), on (or counted_on), by (or counted_by)}. Every row is checked first; with any
+        error nothing is written. dry_run previews each row's change."""
+        if not isinstance(counts, list) or not counts:
+            raise Invalid("counts is a list of rows: {part_number, location, counted, on}.")
+        if len(counts) > 2000:
+            raise Invalid("A count sheet holds at most 2,000 rows: split it.")
+        parts = {(pt.get("part_number") or "").strip().lower(): pt for pt in self.s.nodes(self.org, "Part")
+                 if not pt.get("retired")}
+        places = {}
+        for loc in self.s.nodes(self.org, "Location"):
+            if not loc.get("retired"):
+                places.setdefault((loc.get("name") or "").strip().lower(), []).append(loc)
+        rows, errors, seen = [], [], set()
+        for i, raw in enumerate(counts, start=1):
+            try:
+                if not isinstance(raw, dict):
+                    raise Invalid("each row is an object")
+                pid = raw.get("part_id")
+                if not pid:
+                    pt = parts.get(str(raw.get("part_number") or "").strip().lower())
+                    if pt is None:
+                        raise Invalid(f"no part numbered {raw.get('part_number')!r} in the catalogue")
+                    pid = pt["id"]
+                lid = raw.get("location_id")
+                if not lid:
+                    found = places.get(str(raw.get("location") or "").strip().lower()) or []
+                    if len(found) != 1:
+                        raise Invalid(f"no single location named {raw.get('location')!r}" if not found else
+                                      f"more than one location is named {raw.get('location')!r}: give location_id")
+                    lid = found[0]["id"]
+                if (pid, lid) in seen:
+                    raise Invalid("this part and location are counted twice on the sheet")
+                seen.add((pid, lid))
+                counted = raw.get("counted", raw.get("on_hand"))
+                p = self._count_checked(pid, lid, counted, raw.get("on", raw.get("counted_on")))
+                pt = self.s.node(self.org, pid)
+                loc = self.s.node(self.org, lid)
+                rows.append({**p, "by": _text(raw.get("by", raw.get("counted_by", "")), "counted by")[:120],
+                             "reason": _text(raw.get("reason", ""), "reason")[:200],
+                             "part_number": pt.get("part_number"), "location": loc.get("name")})
+            except Invalid as exc:
+                errors.append({"row": i, "error": str(exc)})
+        preview = [{"row": i, "part_number": r["part_number"], "location": r["location"], "on": r["on"],
+                    "counted": r["counted"], "was": r["held"], "change": r["delta"]} for i, r in enumerate(rows, 1)]
+        if errors or dry_run:
+            return {"dry_run": True if not errors else dry_run, "ok": not errors, "errors": errors, "rows": preview}
+        for r in rows:
+            held = r.pop("held")
+            for k in ("part_number", "location"):
+                r.pop(k)
+            self._emit("stock.counted", {**r, "reason": r["reason"] or f"Stock count {r['on']}", "was": held})
+        return {"dry_run": False, "ok": True, "errors": [], "rows": preview}
+
     def set_reorder_point(self, part_id: str, location_id: str, reorder_point) -> dict:
         self._get(part_id, "Part")
         self._live_location(location_id)
@@ -6903,7 +7006,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for st in stocks:
             loc = self.s.out(self.org, st["id"], "AT")[0]
             locs.append({"location": {"id": loc["id"], "name": loc["name"]}, "quantity": st["quantity"],
-                         "reorder_point": st.get("reorder_point"),
+                         "reorder_point": st.get("reorder_point"), "counted": st.get("counted"),
                          "low": st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]})
         return sorted(locs, key=lambda x: x["location"]["name"].lower())
 
@@ -6936,7 +7039,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             **{k: pt.get(k) for k in PART_STOCKING}, "retired": bool(pt.get("retired")),
             "superseded_by": by and {"id": by["id"], "part_number": by["part_number"], "name": by["name"]},
             "interchangeable": [{"id": a["id"], "part_number": a["part_number"], "name": a["name"]} for a in alike],
-            "stock": locs, "on_hand": on_hand,
+            "stock": locs, "on_hand": on_hand, **self._count_age(locs),
             "used_last_year": used, "months_of_cover": round(on_hand / monthly, 1) if monthly else None,
             "low": any(x["low"] for x in locs),
             "used_at": sorted(used_at, key=lambda u: u["position"]["name"].lower()),
@@ -6948,6 +7051,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # Its indenture level and structure one level down (#435).
             **self._structure_summary(part_id, pt),
         }
+
+    def _count_age(self, locs: list[dict]) -> dict:
+        """When a part's stock was last counted: the oldest of its stores' last counts (a store
+        holding it that was never counted makes it None), and how many days ago that was."""
+        held = [x for x in locs if x["quantity"] or x.get("counted")]
+        dated = [x["counted"]["on"] for x in held if x.get("counted")]
+        oldest = min(dated) if dated and len(dated) == len(held) else None
+        days = (date.fromisoformat(self.today()) - date.fromisoformat(oldest)).days if oldest else None
+        return {"counted_on": oldest, "counted_days_ago": days}
 
     def parts(self, item_class_id=None, manufacturer_id=None) -> list[dict]:
         """The catalogue, by part number. item_class_id: only parts in that class or a
