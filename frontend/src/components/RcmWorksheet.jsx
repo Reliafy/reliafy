@@ -32,6 +32,7 @@ import { explorerHere } from "../products.js";
 import { costWhere, money } from "../lsaTab.js";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
+import { evidenceBody } from "../evidenceCandidates.js";
 import RcmNotes from "./RcmNotes.jsx";
 import RcmFunctionPdfs from "./RcmFunctionPdfs.jsx";
 import ModeFailureReports from "./ModeFailureReports.jsx";
@@ -647,6 +648,7 @@ export function Details({
                         title="Open the function's notes and rationale">{d.artifact_name}</button>
               : d.artifact_link_path
                 ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
+            {d.artifact_name && d.window_words && <span className="rw-evwindow"> · only {d.window_words}</span>}
             {!d.status && !d.artifact_name && "None needed"}
             {!readOnly && ops?.decide && (
               <> · <button type="button" className="link" onClick={() => setLinkingEvidence({ at: null })}
@@ -676,6 +678,7 @@ export function Details({
                       title="Open the function's notes and rationale">{d.artifact_name}</button>
             : d.artifact_link_path ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)
             : <span className="rw-basedon-none">{d.status === "unevidenced" ? "nothing linked yet" : "judgement (none needed)"}</span>}
+          {d.artifact_name && d.window_words && <span className="rw-evwindow"> · only {d.window_words}</span>}
           {!readOnly && ops?.decide && (
             <> · <button type="button" className="link" aria-label={d.status === "unevidenced" ? "Link evidence…" : "Change evidence…"}
                          title={d.status === "unevidenced" ? "Link the model, analysis, report or function notes behind this decision (optional)" : "Link other evidence, or none"}
@@ -1286,7 +1289,7 @@ function EvidenceDialog({ r, at = null, options, workings, ops, onClose, onDone 
     setBusy(true);
     setFailed(null);
     try {
-      const evidence = value ? { type: value.type, id: value.id } : null;
+      const evidence = evidenceBody(value);
       await ops.decide(r, { consequence: r.ref.consequence || null,
         decision: member ? decisionWithMemberEvidence(d, at, evidence) : decisionBody(d, { evidence }) });
       onDone();
@@ -1303,10 +1306,9 @@ function EvidenceDialog({ r, at = null, options, workings, ops, onClose, onDone 
                <button type="button" onClick={save} disabled={busy} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save"}</button>
              </>
            )}>
-      <p className="rw-fhelp">The model, analysis, report or function notes behind this {member ? "task" : "decision"} (optional).</p>
+      <p className="rw-fhelp">The model, analysis, history, readings, report or function notes behind this {member ? "task" : "decision"} (optional). Nothing is linked until you pick one.</p>
       <EvidencePicker expectedType={expected} analysisKind={analysisKind} value={value} onChange={setValue} workings={workings}
-                      positionId={r.ref.position_id || null} modeId={r.ref.id || null}
-                      onCandidate={(o) => { if (!start?.id) setValue((v) => v || { type: o.type, id: o.id }); }} />
+                      positionId={r.ref.position_id || null} modeId={r.ref.id || null} />
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
   );

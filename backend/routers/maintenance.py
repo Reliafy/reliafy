@@ -951,6 +951,19 @@ def import_rcm_sheet(position_id: str, file: UploadFile = File(...), sheet: str 
     return _rcm_sheet(m, ctx, position_id, file, sheet, header_row, options, dry_run=False)
 
 
+@router.get("/rcm/evidence-candidates")
+def rcm_evidence_candidates(position_id: str, mode_id: str | None = None, q: str = "", kind: str | None = None,
+                            limit: int = 200, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                            m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What a decision on a position (for a failure mode) could link as its evidence, best first: life
+    models (this mode's, the position's, its class's), saved analyses on them, the failure history
+    (the position's and its class's), condition readings and failure reports; q searches, kind
+    (model, analysis, history, readings, failure_report, degradation_model) filters. Links nothing."""
+    from backend.maintenance import rcm_evidence
+
+    return _run(rcm_evidence.candidates, m, session, ctx.read_owners, ctx.hidden, position_id, mode_id, q, kind, limit)
+
+
 @router.get("/rcm/options")
 def rcm_options(user: dict = Depends(get_current_user)) -> dict:
     """The RCM decision vocabulary with its hints (consequences, outcomes and
@@ -1497,7 +1510,7 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     try:
         if body.get("fit"):
             return _run(pm.fit_position_model, m, session, position_id, body.get("distribution") or "weibull",
-                        modes, body.get("scope") or "auto", note, replace)
+                        modes, body.get("scope") or "auto", note, replace, body.get("window"))
     except fitting.FitError as err:
         return _fit_failed(err)
     if body.get("from_class"):

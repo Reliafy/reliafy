@@ -7953,6 +7953,26 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .evidence-option input { flex: none; align-self: center; }
 .evidence-name { font-weight: 500; }
 .evidence-meta { font-size: var(--fs-12); color: var(--text-secondary); }
+/* Found here (EvidencePicker): search and kind side by side (stacked on a phone), the
+   candidates grouped by where each is from, a history's window and a fit on part of it. */
+.evidence-found { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.evidence-found-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 14rem); gap: 8px; align-items: end; }
+.evidence-found-bar .field { min-width: 0; }
+.evidence-found .evidence-picker { max-height: 280px; gap: 4px; }
+.evidence-group { display: flex; flex-direction: column; gap: 6px; }
+.evidence-group + .evidence-group { margin-top: 8px; }
+.evidence-group-head { margin: 0; font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 500; color: var(--text-secondary); }
+.evidence-option .evidence-name, .evidence-option .evidence-meta { min-width: 0; overflow-wrap: anywhere; }
+.evidence-window { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 12px; margin: 0; min-width: 0; }
+.evidence-window-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.evidence-window-row .field { flex: 1 1 10rem; min-width: 0; }
+.evidence-fit > summary { cursor: pointer; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--accent-text); }
+.evidence-fit-body { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; align-items: flex-start; }
+.evidence-fit-body .evidence-window-row { align-self: stretch; }
+.rw-evwindow { color: var(--text-secondary); }
+@media (max-width: 720px) {
+  .evidence-found-bar { grid-template-columns: minmax(0, 1fr); }
+}
 
 .rcm-form { display: flex; flex-direction: column; gap: 14px; }
 .login-field textarea {

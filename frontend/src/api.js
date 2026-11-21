@@ -1902,6 +1902,15 @@ export function searchLibrary({ q, source, equipmentType, failureMode, kind, pag
 export function getRcmOptions() {
   return request("/api/maintenance/rcm/options");
 }
+// What a decision on a position (for a failure mode) could link as its evidence, best first
+// (backend/maintenance/rcm_evidence.py): {position, mode, class, kinds, candidates, total}.
+export function listEvidenceCandidates(positionId, modeId = null, { q = "", kind = "" } = {}) {
+  const p = new URLSearchParams({ position_id: positionId });
+  if (modeId) p.set("mode_id", modeId);
+  if (q) p.set("q", q);
+  if (kind) p.set("kind", kind);
+  return request(`/api/maintenance/rcm/evidence-candidates?${p.toString()}`);
+}
 
 // ---- RCM studies: stand-alone worksheets (/maintenance/rcm). They share no
 // data with the RCM on the asset tree, and keep their own decision options.

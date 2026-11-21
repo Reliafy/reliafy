@@ -43,7 +43,8 @@ _OUTCOME = {o["id"]: o["label"] for o in rcm_decisions.OUTCOME_OPTIONS}
 _STATUS = {"supported": "Supported", "contradicted": "Contradicted", "inconclusive": "Inconclusive",
            "stale": "Stale link", "partly": "Partly evidenced"}
 # Linked, not checked: what's linked says which ("Report linked", "Notes linked": a function's notes and rationale).
-_LINKED = {"report": "Report linked", "working": "Notes linked"}
+_LINKED = {"report": "Report linked", "working": "Notes linked", "history": "History linked",
+           "point": "Readings linked", "failure_report": "Failure report linked"}
 _AP = fmea.AP_LABELS
 _FILENAME_BAD = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 

@@ -38,6 +38,20 @@ from backend.maintenance.rcm_decisions import (  # noqa: F401  (re-exported for 
 )
 
 
+def _study_decision(decision):
+    """A study's decision, cleaned as the tree's, but a study isn't on the tree: a failure history,
+    readings or a failure report (the tree's own records) can't be its evidence."""
+    from backend.maintenance.rcm_decisions import GRAPH_TYPES
+
+    cleaned = _clean_decision(decision)
+    for holder in [cleaned or {}, *((cleaned or {}).get("outcomes") or [])]:
+        if (holder.get("evidence") or {}).get("type") in GRAPH_TYPES:
+            raise RcmValidationError("A study isn't on the asset tree, so its evidence is a model, an analysis, a "
+                                     "report or notes; link a failure history, readings or a failure report from "
+                                     "the RCM on the tree.")
+    return cleaned
+
+
 # A study keeps its own consequence list: the four classes plus "hidden" as a
 # fifth value, the way studies have always been saved. (The RCM on the asset
 # tree asks evident or hidden as a separate question; the two don't share
@@ -177,7 +191,7 @@ def clean_tree(functions) -> list[dict]:
                     "id": _node_id(mode),
                     "text": _require_text(mode, "failure mode"),
                     "consequence": consequence,
-                    "decision": _clean_decision(mode.get("decision")),
+                    "decision": _study_decision(mode.get("decision")),
                 }
                 effects = str(mode.get("effects") or "").strip()
                 if effects:
