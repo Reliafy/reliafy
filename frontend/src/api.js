@@ -1364,6 +1364,16 @@ export function rbdPhases(graph, currentState = null) {
   });
 }
 
+// Availability with repairs for any diagram (non-repairable included): {graph, rbdId, repairs
+// ({block id: mean time to repair}, hours where the clock is a time), period (diagram unit)}.
+export function rbdRepairAvailability({ graph, rbdId = null, repairs = null, period = null }) {
+  return request("/api/rbds/repair-availability", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, rbd_id: rbdId, repairs: repairs || null, period: period ?? null }),
+  });
+}
+
 // A network's two-terminal reliability (#160) at ``t`` (null = where it's
 // about 90%), with ``tMax`` the curve's end (null = automatic).
 export function rbdNetwork(graph, t = null, tMax = null) {

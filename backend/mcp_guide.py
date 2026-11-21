@@ -333,6 +333,12 @@ discount_rate); capacities the production availability. The Monte-Carlo simulati
 only where a figure needs it unless simulate=true. A saved result is served when one matches. When a response \
 says figures are simulation-only (e.g. one crew for wear-out lives), say so; offer rbd_export_python to run it \
 locally. summary_only gives the headline figures.
+- rbd with_repairs, any diagram (non-repairable, a mission's, one built from the tree): its availability with \
+every block repaired after it fails, in the long run and over period (default the mission, else a year), with \
+drivers (each block's share of the downtime) and answer. Each block's mean time to repair is repair_times \
+({node: hours}), else its own repair model, the outage history or its position's maintainability prediction \
+(repairs[].source); blocks with none are in needs and nothing is worked out — ask the user, never invent one. \
+achieved adds the positions' planned work where there is any. Exact, free, no bound.
 - Jobs: a long simulation or calculation returns a job_id: call get kind job every few seconds until done. \
 rbd_quote_simulation says how long one should take before anything runs; list kind rbd_runs / get kind rbd_run read \
 past simulations.
