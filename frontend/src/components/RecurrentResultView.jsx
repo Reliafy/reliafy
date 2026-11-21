@@ -83,10 +83,10 @@ export default function RecurrentResultView({
       if (planView === "next") body = <NextFailureView r={r} name={label} />;
       break;
     case "diag":
-      body = <RecurrentDiagnostics r={r} name={label} />;
+      body = <RecurrentDiagnostics r={r} name={label} modelId={datasetId ? modelId : null} />;
       break;
     case "data":
-      body = <RecurrentData r={r} datasetId={datasetId} />;
+      body = <RecurrentData r={r} datasetId={datasetId} modelId={modelId} />;
       break;
     default:
   }

@@ -154,9 +154,42 @@ export const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${Math.ro
 // What the data are: "4 systems, 30 failures".
 export function dataText(r) {
   if (r?.n_systems == null) return null;
-  const s = r.n_systems === 1 ? "1 system" : `${r.n_systems.toLocaleString()} systems`;
   const f = r.n_events === 1 ? "1 failure" : `${(r.n_events ?? 0).toLocaleString()} failures`;
+  const sub = r.subset;
+  if (sub?.systems?.length) {
+    const of = sub.of ? ` of ${sub.of.toLocaleString()}` : "";
+    const s = sub.systems.length === 1 ? `${sub.systems[0]} alone (1${of} systems)` : `${sub.systems.length}${of} systems`;
+    return `${s}, ${f}`;
+  }
+  const s = r.n_systems === 1 ? "1 system" : `${r.n_systems.toLocaleString()} systems`;
   return `${s}, ${f}`;
+}
+
+// Where each system's record ends (``termination.ends``: [{end, systems}],
+// most systems first), so a cut-short record is visible: "every system to
+// 1,096 days", or "6 systems to 1,096 days; CV-03-GB to 995 days". Many
+// different ends: their range. Null when the fit doesn't say.
+export function recordEndsText(ends, r) {
+  if (!Array.isArray(ends) || !ends.length) return null;
+  const u = unitWord(r) ? ` ${unitWord(r)}` : "";
+  const at = (v) => `${formatNumber(v, { sig: 6 })}${u}`;
+  if (ends.length === 1) {
+    return ends[0].systems.length === 1 ? `${ends[0].systems[0]} to ${at(ends[0].end)}` : `every system to ${at(ends[0].end)}`;
+  }
+  if (ends.length > 3) {
+    const all = ends.map((g) => g.end);
+    return `each system to its own end of record, from ${at(Math.min(...all))} to ${at(Math.max(...all))}`;
+  }
+  const who = (g) => (g.systems.length <= 2 ? g.systems.join(" and ") : `${g.systems.length} systems`);
+  return ends.map((g) => `${who(g)} to ${at(g.end)}`).join("; ");
+}
+
+// The link that fits some of a saved model's systems by themselves: the new
+// repairable model flow, started from the model's data and settings.
+export function fitSystemsHref(modelId, systems = []) {
+  const q = new URLSearchParams({ from: modelId });
+  systems.forEach((s) => q.append("system", s));
+  return `/models/recurrent/new?${q}`;
 }
 
 // How the record ends, said on every fit to data: "time-terminated at 1,000
@@ -171,6 +204,8 @@ export function terminationText(r) {
   const at = term.end != null && Number.isFinite(term.end) ? withUnitR(term.end, r) : null;
   const one = r.n_systems === 1;
   if (term.kind === "time") {
+    const ends = recordEndsText(term.ends, r);
+    if (ends) return `time-terminated: ${ends}`;
     if (!at) return "time-terminated";
     return one ? `time-terminated at ${at}` : `time-terminated: each system to its end of record (the latest ${at})`;
   }

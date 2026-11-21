@@ -21,6 +21,7 @@ import pandas as pd
 
 from backend import recurrent as rec
 from backend import recurrent_models as extra
+from backend import recurrent_systems as rec_systems
 from backend.fitting import FitError, surpyval_unit
 from backend.services import datasets as datasets_service
 from backend.services import python_export as px
@@ -586,6 +587,8 @@ def export_python(db, model, owners=None) -> tuple[str, str]:
     if dataset is None:
         raise FitError("This model's dataset is gone, so there's no data to put in the script.")
     df = datasets_service.load_dataframe(dataset)
+    if spec.get("systems"):  # fitted to some systems only: the script's data is theirs
+        df, _ = rec_systems.only_systems(df, spec.get("mapping") or {}, spec["systems"])
     if spec.get("record_end") is not None:  # a typed end of test: the column it stands for
         df, mapping = rec.with_record_end(df, spec.get("mapping") or {}, spec["record_end"])
         model = model.model_copy(update={"spec": {**spec, "mapping": mapping}})
