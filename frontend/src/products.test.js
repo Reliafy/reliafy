@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildProblem, designActions, explorerHere, hoursText, isDesignScope, itemTreePath, productViewPath, productPath,
-  productRbds, productTab, productTreeIds, scopeTree,
+  itemsBuiltText, productRbds, productTab, productTreeIds, scopeTree,
 } from "./products.js";
 
 // A plant, a product's design (d…) and an item's tree built from it (b…).
@@ -134,4 +134,11 @@ test("a link to another row or tab stays on the tree being looked at", () => {
   // Elsewhere: the Explorer by positions.
   assert.equal(explorerHere("/asset-register/explorer", "?tab=rcm", { sel: "k", tab: "lsa", task: "t" }),
     "/asset-register/explorer?arrange=positions&sel=k&tab=lsa&task=t");
+});
+
+test("Items built says how many of the part weren't built from the design", () => {
+  assert.equal(itemsBuiltText(0, 0), "0 items");
+  assert.equal(itemsBuiltText(3, 3), "3 items");
+  assert.equal(itemsBuiltText(0, 4), "0 built from this design · 4 more items of its part");
+  assert.equal(itemsBuiltText(1, 3), "1 built from this design · 2 more items of its part");
 });

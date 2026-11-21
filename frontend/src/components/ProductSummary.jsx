@@ -17,7 +17,7 @@ import { BuildItemModal, DesignReports } from "./ProductPanels.jsx";
 import TreeSummary from "./TreeSummary.jsx";
 import { newPredictionPath } from "../predictions.js";
 import {
-  hoursText, itemPagePath, itemTreePath, itemsText, productRbds, revText,
+  hoursText, itemPagePath, itemTreePath, itemsBuiltText, productRbds, revText,
 } from "../products.js";
 import "../views/MaintenanceProducts.css";
 
@@ -40,7 +40,7 @@ function ProductFacts({ product }) {
     ["Part", product.part ? <><Link to={`/asset-register/parts/${product.part.id}`}>{product.part.part_number}</Link>
       <span className="td-quiet td-sub">{product.part.name}</span></> : quiet("No part yet")],
     ["Positions", Number(product.positions || 0).toLocaleString("en-AU")],
-    ["Items built", itemsText(product.items_built)],
+    ["Items built", itemsBuiltText(product.items_built, product.items_of_part)],
     ["Open failure reports", product.open_reports ? Number(product.open_reports).toLocaleString("en-AU") : quiet("None")],
   ];
   return (

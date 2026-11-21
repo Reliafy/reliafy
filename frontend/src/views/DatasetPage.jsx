@@ -22,6 +22,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
+import { datasetModelsForLibrary } from "../libraries.js";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
@@ -149,7 +150,8 @@ export default function DatasetPage() {
     <div className="app">
       <PageTitle name={ds && itemName(ds)} />
       {adding && ds && (
-        <AddToLibraryDialog datasetId={ds.id} datasetName={itemName(ds)} onClose={() => setAdding(false)} />
+        <AddToLibraryDialog datasetId={ds.id} datasetName={itemName(ds)} models={datasetModelsForLibrary(ds)}
+                            onClose={() => setAdding(false)} />
       )}
       <PageHeader
         crumbs={[{ label: "Data", to: "/data" }]}
@@ -176,12 +178,14 @@ export default function DatasetPage() {
             {fit.label}
           </button>
         )}
-        actions={((canCompare && !comparing) || alsoFit) && (
+        actions={ds && (
           <>
             {alsoFit && <button className="secondary ds-fit-action" onClick={() => navigate(alsoFit.to)}>{alsoFit.label}</button>}
             {canCompare && !comparing && (
               <button className="secondary" onClick={() => setComparing(true)}>Compare groups</button>
             )}
+            {/* Out of the ⋯ menu: keeping data (and its fit) for the next project is a common step. */}
+            <button className="secondary" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>
           </>
         )}
         id={ds?.id}
@@ -204,7 +208,6 @@ export default function DatasetPage() {
               {busy === "csv" ? "Preparing…" : parts.life && parts.measurements && part === "measurements"
                 ? "Download measurements CSV" : "Download CSV"}
             </button>
-            <button className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>
             <ShareButton
               collection="datasets"
               artifactId={ds.id}
