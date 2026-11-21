@@ -520,6 +520,14 @@ export function getDataset(id) {
   return request(`/api/datasets/${id}`);
 }
 
+// A window of a dataset's rows (the dataset page's "Show all rows"): ``limit``
+// rows from ``offset`` (0-based), with the table's columns and row count.
+export function getDatasetRows(id, { part = "life", offset = 0, limit = 200 } = {}) {
+  const q = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  if (part === "measurements") q.set("part", "measurements");
+  return request(`/api/datasets/${encodeURIComponent(id)}/rows?${q}`);
+}
+
 // Split a dataset by a column and compare the groups (log-rank, RMST, Gray's).
 // ``body`` = { time_column, group_column, censor_column?, count_column?,
 // cause_column?, c_invert?, groups?, reference?, tau?, unit? }.

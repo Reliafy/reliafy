@@ -632,6 +632,23 @@ def download_dataset_csv(
     })
 
 
+@router.get("/datasets/{dataset_id}/rows")
+def dataset_rows(
+    dataset_id: str,
+    part: str = Query("life", pattern="^(life|measurements)$"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=1000),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A window of the dataset's rows (the dataset page's "Show all rows"):
+    ``limit`` rows from ``offset``, with the table's columns and row count."""
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    return JSONResponse(content=datasets_service.rows_window(dataset, part, offset, limit))
+
+
 @router.delete("/datasets/{dataset_id}")
 def delete_dataset(
     dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)

@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import LoadFailed from "../components/LoadFailed.jsx";
 import { getDataset, deleteDataset, downloadDatasetCsv, removeMeasurements, renameDataset, splitDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
+import DatasetAllRows from "../components/DatasetAllRows.jsx";
 import CompareGroups from "../components/CompareGroups.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { DatasetPartModal } from "../components/DatasetPartInput.jsx";
@@ -48,6 +49,8 @@ export default function DatasetPage() {
   const [partModal, setPartModal] = useState(null); // { part, replacing }
   const [keepOne, setKeepOne] = useState(false);
   const [adding, setAdding] = useState(false);
+  // "Show all rows": the table's every row, a window at a time, instead of the short preview.
+  const [allRows, setAllRows] = useState(false);
   // Creating a dataset whose data you already had opens that one: say so,
   // and offer the name you just typed (location state from the New flow).
   const [reused, setReused] = useState(() => (location.state?.reused ? location.state : null));
@@ -68,7 +71,7 @@ export default function DatasetPage() {
     setParams(next, { replace: true });
   };
   const setComparing = (on) => setParam("compare", on ? "" : null);
-  const setPart = (p) => setParam("part", p === "life" ? null : p);
+  const setPart = (p) => { setAllRows(false); setParam("part", p === "life" ? null : p); };
 
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -259,13 +262,25 @@ export default function DatasetPage() {
                 {shown ? (
                   <>
                     <div className="ds-section-h">
-                      {shown.preview.length < shown.n_rows
+                      {shown.preview.length < shown.n_rows && !allRows
                         ? `Preview · first ${shown.preview.length} of ${shown.n_rows.toLocaleString()} rows · ${shown.n_columns} column${shown.n_columns === 1 ? "" : "s"}`
                         : `${shown.n_rows.toLocaleString()} row${shown.n_rows === 1 ? "" : "s"} · ${shown.n_columns} column${shown.n_columns === 1 ? "" : "s"}`}
                       {part === "measurements" && parts.readingsOnly && " · readings alone"}
                       {part === "life" && parts.combined && " · readings in the same table"}
                     </div>
-                    <PreviewTable columns={shown.columns} rows={shown.preview} types={types} className="ds-preview" />
+                    {allRows && shown.preview.length < shown.n_rows ? (
+                      <DatasetAllRows key={`${ds.id}-${part}`} datasetId={ds.id} part={part} nRows={shown.n_rows}
+                                      types={types} onClose={() => setAllRows(false)} />
+                    ) : (
+                      <>
+                        <PreviewTable columns={shown.columns} rows={shown.preview} types={types} className="ds-preview" />
+                        {shown.preview.length < shown.n_rows && (
+                          <button type="button" className="secondary ds-allrows-open" onClick={() => setAllRows(true)}>
+                            Show all {shown.n_rows.toLocaleString()} rows
+                          </button>
+                        )}
+                      </>
+                    )}
                   </>
                 ) : part === "measurements" && parts.combined ? (
                   <div className="ds-part-empty">
