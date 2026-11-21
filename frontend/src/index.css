@@ -1746,6 +1746,11 @@ h6 {
   background: transparent;
   border: none;
   box-shadow: none;
+  /* Saved-item tables scroll inside their own container, at every width: a
+     table wider than its card (one long cell) never pushes the page sideways.
+     Row menus open at screen coordinates (MoreMenu), so this doesn't clip them. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .lib-table {
@@ -9658,11 +9663,6 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   }
   .ds-aside {
     width: auto;
-  }
-  /* Saved-item tables scroll inside their own container. */
-  .lib {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
   /* ...and keep only the name, the key detail and Delete: a tap on the row
      opens it, and a long detail chip wraps rather than pushing Delete off. */

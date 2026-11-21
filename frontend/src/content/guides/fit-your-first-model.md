@@ -59,6 +59,10 @@ Every model you build from it then asks nothing about columns.
 Upload it under [Data](/data) → **New dataset**: drop a CSV or Excel file (for
 a workbook, choose the sheet and the header row), or **Paste or type the
 data**. Reliafy shows the first rows, then asks once how the columns are read.
+Each column's name carries a small tag (text, integer, number, date): the way
+Reliafy read it. A column of times tagged *text* is the sign to look at the
+file: a value like `14,010` with a thousands separator, or a stray letter, is
+read as text, so clean it in your spreadsheet first, or hand it to the agent.
 
 ### How the columns are read
 

@@ -694,7 +694,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     );
   } else {
     // The name and Save sit in the "isn't saved yet" banner above (#311).
-    nav = <button className="secondary" onClick={goBack} disabled={saving}>Back</button>;
+    nav = <button className="secondary" data-wt="fit-back" onClick={goBack} disabled={saving}>Back</button>;
   }
 
   return (

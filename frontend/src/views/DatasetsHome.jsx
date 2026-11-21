@@ -9,6 +9,7 @@ import { PlusIcon, RowActions, itemName, rowOpen } from "../components/LibRows.j
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { datasetPath } from "../navigation.js";
 import { fitOptions } from "../datasetFit.js";
+import { sizeLines } from "../datasetGuess.js";
 import "../components/Datasets.css";
 import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
@@ -144,7 +145,16 @@ export default function DatasetsHome() {
               <div className="ds-tags">{(d.tags || []).map((t) => <Chip key={t}>{t}</Chip>)}</div>
             </td>
             <td className="ds-units">
-              {d.summary || `${(d.n_rows ?? 0).toLocaleString()} rows`}
+              {(() => {
+                // Two facts on the first line; a long breakdown wraps beneath, smaller.
+                const { head, rest } = sizeLines(d.summary || `${(d.n_rows ?? 0).toLocaleString()} rows`);
+                return (
+                  <>
+                    <div>{head}</div>
+                    {rest && <div className="ds-units-more">{rest}</div>}
+                  </>
+                );
+              })()}
               {d.n_models > 0 && <div className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</div>}
             </td>
             <td className="lib-opt ds-tu">{d.time_unit ? `${d.time_unit}s` : <span className="ds-tu-none">—</span>}</td>
