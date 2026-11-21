@@ -90,6 +90,8 @@ one there, the model has a **Strategy** row under it.
 Run from a position, a model in running hours is put on the calendar at that
 position's operating plan: 1,000 h is about 125 days at 8 hours a day. With no
 plan set, it's taken to run all the time, 24 hours a day. The answer says which.
+A model in km or cycles needs the plan's **Other use** (400 km a day, say);
+without it, the answer says it can't be put on dates and what to set.
 
 ## What it assumes
 

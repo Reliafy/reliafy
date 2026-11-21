@@ -188,9 +188,115 @@ def _as_unit(days: float, unit: Optional[str]) -> dict:
     return {"value": value, "unit": TASK_UNIT[key], "days": value * DAYS_IN[key]}
 
 
+# ---- on a position: running hours at its duty ---------------------------------------------
+#
+# A task card's calculators sit on a task that belongs to a position. There a P-F interval or a
+# device's model in running hours (hours, operating, running or flight hours) meets the calendar
+# at the position's duty, else all the time, 24 h a day (running_clock; Derryn, 21 Nov 2026):
+# it's put in days first, and the answer says so. Asked for an answer in running hours (a task by
+# its hours counter), nothing is converted: the P-F rule and a target unavailability are the same
+# in any one unit. Without a clock (a stand-alone calculation), as before.
+
+def _clock_of(hours_per_day, clock):
+    from backend.services import running_clock
+
+    if isinstance(clock, dict):
+        found = running_clock.Clock.from_dict(clock)
+        if found is not None:
+            return found
+    if hours_per_day not in (None, ""):
+        hours = _number(hours_per_day, "hours a day", positive=True)
+        if hours > 24:
+            raise IntervalError("The hours a day it runs are at most 24.")
+        return running_clock.Clock(hours, "duty")
+    return None
+
+
+def _calendar_target(unit, current_unit) -> bool:
+    """Whether the answer is wanted on the calendar: asked in a calendar unit, or (none asked) the
+    task's interval now is in one."""
+    from backend.services import running_clock
+
+    return running_clock.is_calendar(unit) or (not unit and running_clock.is_calendar(current_unit))
+
+
+def _use_to_days(clock, value_unit, unit, current_unit, what: str):
+    """A P-F interval or a device's model in use (km, cycles) meeting a task on the calendar at a
+    position: the conversion to days at its duty, or IntervalError saying why it can't (no km a
+    day there). None when nothing meets the calendar (answered in that unit, as before)."""
+    from backend.services import running_clock
+
+    if clock is None or not running_clock.is_use(value_unit) or not _calendar_target(unit, current_unit):
+        return None
+    why = running_clock.refusal(value_unit, "days", clock, what)
+    if why:
+        raise IntervalError(why)
+    return running_clock.conversion(value_unit, "days", clock)
+
+
+def _answer_in_running_hours(unit, current_unit) -> bool:
+    from backend.services import running_clock
+
+    return running_clock.is_running_hours(unit) or (not unit and running_clock.is_running_hours(current_unit))
+
+
+def _current_in_days(clock, current_interval, current_unit):
+    """The task's interval now in days when it's in running hours (at ``clock``)."""
+    from backend.services import running_clock
+
+    if clock is None or current_interval in (None, "") or not running_clock.is_running_hours(current_unit):
+        return current_interval, current_unit
+    conv = running_clock.conversion(current_unit, "days", clock)
+    if conv is None:
+        return current_interval, current_unit
+    return _number(current_interval, "task's interval now", positive=True) * conv["factor"], "days"
+
+
+def _said(out: dict, conv: dict, clock, amount=None, what="answer", source="model") -> dict:
+    from backend.services import running_clock
+
+    note = running_clock.note(conv, amount, what, source)
+    out = {**out, "unit_conversion": note, "clock": clock.to_dict()}
+    if out.get("summary"):
+        out["summary"] = f"{out['summary']} ({note[:1].upper()}{note[1:]}.)"
+    return out
+
+
 def on_condition_interval(pf_interval=None, pf_unit=None, onset_rate=None, inspection_cost=None, found_cost=None,
                           failure_cost=None, detection_probability=1.0, unit: Optional[str] = None,
-                          current_interval=None, current_unit: Optional[str] = None, act_time=None) -> dict:
+                          current_interval=None, current_unit: Optional[str] = None, act_time=None,
+                          hours_per_day=None, clock=None) -> dict:
+    """:func:`_on_condition_interval`, on a position (``hours_per_day`` / ``clock``, its
+    running_clock): a P-F interval in running hours is put in days at its duty first."""
+    from backend.services import running_clock
+
+    rclock = _clock_of(hours_per_day, clock)
+    conv = None
+    if rclock is not None and running_clock.is_running_hours(pf_unit) and not _answer_in_running_hours(
+            unit, current_unit):
+        conv = running_clock.conversion(pf_unit, "days", rclock)
+        if conv is None:
+            raise IntervalError("This position's operating plan gives no running in the year ahead, so a P-F "
+                                "interval in running hours can't be put on the calendar.")
+    else:
+        conv = _use_to_days(rclock, pf_unit, unit, current_unit, "P-F interval")
+    if conv is not None:
+        pf = _number(pf_interval, "P-F interval", positive=True)
+        act = _number(act_time, "time needed to act", allow_none=True)
+        pf_interval, pf_unit = pf * conv["factor"], "days"
+        act_time = None if act is None else act * conv["factor"]
+    if rclock is not None and not _answer_in_running_hours(unit, current_unit):
+        current_interval, current_unit = _current_in_days(rclock, current_interval, current_unit)
+    out = _on_condition_interval(pf_interval, pf_unit, onset_rate, inspection_cost, found_cost, failure_cost,
+                                 detection_probability, unit, current_interval, current_unit, act_time)
+    if conv is None:
+        return out
+    return _said(out, conv, rclock, _number(pf_interval, "P-F interval") / conv["factor"], "task", "P-F interval")
+
+
+def _on_condition_interval(pf_interval=None, pf_unit=None, onset_rate=None, inspection_cost=None, found_cost=None,
+                           failure_cost=None, detection_probability=1.0, unit: Optional[str] = None,
+                           current_interval=None, current_unit: Optional[str] = None, act_time=None) -> dict:
     """How often to check for a warning sign that comes a P-F interval before the
     failure.
 
@@ -541,7 +647,44 @@ def failure_finding_interval(failure_rate=None, distribution_id: Optional[str] =
                              model_unit: Optional[str] = None, extras: Optional[dict] = None,
                              target_unavailability=None, test_cost=0.0, repair_cost=0.0, demand_rate=None,
                              consequence_cost=0.0, unit: Optional[str] = None,
-                             current_interval=None, current_unit: Optional[str] = None) -> dict:
+                             current_interval=None, current_unit: Optional[str] = None,
+                             hours_per_day=None, clock=None) -> dict:
+    """:func:`_failure_finding_interval`, on a position (``hours_per_day`` / ``clock``, its
+    running_clock): a device's model in running hours is put in days at its duty first (its
+    parameters rescaled, model_units)."""
+    from backend.services import model_units, running_clock
+
+    rclock = _clock_of(hours_per_day, clock)
+    conv = None
+    if rclock is not None and distribution_id and running_clock.is_running_hours(model_unit) \
+            and not _answer_in_running_hours(unit, current_unit):
+        conv = running_clock.conversion(model_unit, "days", rclock)
+        if conv is None:
+            raise IntervalError("This position's operating plan gives no running in the year ahead, so a model in "
+                                "running hours can't be put on the calendar.")
+    elif distribution_id:
+        conv = _use_to_days(rclock, model_unit, unit, current_unit, "model")
+    if conv is not None:
+        scaled = model_units.scale_params(distribution_id, params or [], conv["factor"])
+        if scaled is None:
+            conv = None  # a family with no parameter rule: read as before
+        else:
+            params, extras, model_unit = scaled, model_units.scale_extras(extras, conv["factor"]), "days"
+    if rclock is not None and not _answer_in_running_hours(unit, current_unit):
+        current_interval, current_unit = _current_in_days(rclock, current_interval, current_unit)
+    out = _failure_finding_interval(failure_rate, distribution_id, params, model_unit, extras, target_unavailability,
+                                    test_cost, repair_cost, demand_rate, consequence_cost, unit, current_interval,
+                                    current_unit)
+    if conv is None:
+        return out
+    return _said(out, conv, rclock, None, "answer", "device's model")
+
+
+def _failure_finding_interval(failure_rate=None, distribution_id: Optional[str] = None, params=None,
+                              model_unit: Optional[str] = None, extras: Optional[dict] = None,
+                              target_unavailability=None, test_cost=0.0, repair_cost=0.0, demand_rate=None,
+                              consequence_cost=0.0, unit: Optional[str] = None,
+                              current_interval=None, current_unit: Optional[str] = None) -> dict:
     """How often to test a protective device whose failure is hidden: the longest
     interval that keeps its mean unavailability (the chance it's failed when
     needed) within ``target_unavailability``, or without a target the cheapest

@@ -126,7 +126,7 @@ export default function FailureFinding({ modelId = null, target = null, extraInp
       {error && <div className="error">{error}</div>}
 
       {result?.calendar && (
-        <p className="hint" data-testid="ffi-calendar">On the calendar: {result.calendar.note}.</p>
+        <p className="hint" data-testid="ffi-calendar">On the calendar: {result.calendar.note.replace(/\.$/, "")}.</p>
       )}
       {result && (
         <FfiResult

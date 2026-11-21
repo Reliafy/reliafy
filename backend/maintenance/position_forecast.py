@@ -307,6 +307,15 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         age_text = f"{age:,.0f} h since it was fitted on {_short(fitment['from'])}"
         lib_unit = "hours"
     else:
+        from backend.services import running_clock
+
+        if unit and running_clock.is_use(unit):
+            why = running_clock.refusal(unit, "days", running_clock.for_position(m, pos["id"]))
+            if why:
+                return None, {**brief, "reason": why}
+            # The duty gives a rate in it, but RePyability lays lives on dates in operating time only.
+            return None, {**brief, "reason": (f"this life is in {unit}: its duty gives {unit} a day, but lives are "
+                                              "laid on dates in operating hours or calendar time only for now")}
         counter = svc._counter_on(m.s, m.org, pos["id"], unit) if unit else None
         what = unit or "a unit not given"
         return None, {**brief, "reason": (f"this life is in {what}: only lives in operating hours or calendar time "
@@ -516,8 +525,9 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
                        "text": f"The operating plan ended on {_short(own_map['basis']['ended'])}: nothing runs after "
                                "it, so no hours are added. Give it a new plan if it still runs."})
     for x in not_forecast:
-        if x["reason"].startswith("this life is in"):
-            states.append({"kind": "unit_not_measured", "text": f"{x['position']['name']}: {x['reason']}."})
+        if x["reason"].startswith(("this life is in", "This model is in")):
+            states.append({"kind": "unit_not_measured",
+                           "text": f"{x['position']['name']}: {x['reason'].rstrip('.')}."})
     for r in models:
         if r["placeholder"]:
             states.append({"kind": "placeholder",

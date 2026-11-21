@@ -133,7 +133,7 @@ export default function OptimalReplacement({ modelId = null, planned = null, unp
         <p className="hint" role="status">The inputs changed: Compute to update the answer below.</p>
       )}
       {result?.calendar && (
-        <p className="hint" data-testid="repl-calendar">On the calendar: {result.calendar.note}.</p>
+        <p className="hint" data-testid="repl-calendar">On the calendar: {result.calendar.note.replace(/\.$/, "")}.</p>
       )}
       {result && (
         <ReplacementResult

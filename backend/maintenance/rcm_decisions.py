@@ -367,11 +367,9 @@ def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
     clock = _clock(decision)
     if clock is not None and running_clock.same_clock(decision.get("interval_unit"), evidence_unit):
         return None  # flight hours and hours at a position: both its running hours
-    if clock is not None and not clock.converts and task_unit and ev_unit and task_unit != ev_unit:
-        return {"status": "inconclusive",
-                "reason": (f"The task interval is in {unit_in_text(decision.get('interval_unit'))} and the linked "
-                           f"analysis in {unit_in_text(evidence_unit)}, but this position's operating plan gives no "
-                           "running in the year ahead, so its running hours can't be put on the calendar.")}
+    why = running_clock.refusal(evidence_unit, decision.get("interval_unit"), clock, "evidence")
+    if why:
+        return {"status": "inconclusive", "reason": why}
     if task_unit and ev_unit and task_unit != ev_unit:
         return {
             "status": "inconclusive",
