@@ -8923,6 +8923,11 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .help-filter.tablebar { margin: 0; padding: 12px 20px; border-bottom: 1px solid var(--border); }
 .help-filter .search { flex: 1; width: auto; min-width: 0; }
 .help-filter .search.live input { flex: 1; width: auto; min-width: 0; }
+/* The public /guides page's filter box (GuidesIndex.jsx). */
+.guides-filter.tablebar { margin: 0 0 var(--space-6); }
+.guides-filter .search { flex: 1; width: auto; max-width: 420px; min-width: 0; }
+.guides-filter .search.live input { flex: 1; width: auto; min-width: 0; }
+.guides-none { color: var(--text-secondary); }
 .help-none { margin: 0; padding: 10px 12px; font-size: var(--fs-14); color: var(--text-secondary); }
 /* Help trigger in the top bar + inline "how do I…" links */
 .nav-help-btn {

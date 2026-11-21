@@ -51,6 +51,7 @@ from backend.routers import maintenance as maintenance_router
 from backend.routers import maintainability as maintainability_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
+from backend.routers import search as search_router
 from backend.routers import rbd_jobs as rbd_jobs_router
 from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
@@ -227,6 +228,8 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
 
 app.include_router(auth_router.router)
 app.include_router(models_router.router)
+# The one search for everything (the header's search box, ⌘K).
+app.include_router(search_router.router)
 app.include_router(rbds_router.router)
 # Analysis jobs (#146): polling, and the compute service's callback.
 app.include_router(rbd_jobs_router.router)

@@ -4,6 +4,12 @@
 
 Needs a server on the same release.
 
+- **One search for everything**: `list search` (`q`, optional `kinds` and `limit`) finds what you can
+  open by name, tag, serial or part number, small typos tolerated: data, models, diagrams, fault
+  trees, saved analyses, reports, libraries and their records, and for Reliafy Maintenance users
+  the assets, positions, items, parts, products and work orders. Grouped by kind, best match first,
+  each with a context line and its address in the app. The REST twin (`POST /api/v1/list/search`)
+  and the CLI (`reliafy list search --q …`) take it too.
 - **What a condition and life model's risk follows**: `analyse fit_joint` and
   `change model_fit_joint` take `link`: `value` (the reading's level, the default), `slope` (how
   fast it is moving, whatever its level) or `value_slope` (both). A rate-of-change link needs a
