@@ -4,12 +4,13 @@
 // the fit already returns: the trend tests, the Duane plot of the data, each
 // system against the model, the Cramér-von Mises test, the repair test
 // (imperfect repair) and the fit statistics.
+import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { CheckCard, ChecksGrid } from "./model/ModelLayouts.jsx";
 import { FitStatsCard } from "./model/Diagnostics.jsx";
 import { DATA_INK, dataPoints, fitLine } from "../plotTheme.js";
 import { formatNumber } from "../format.js";
-import { cvmCheck, dataText, duanePoints, growingCheck, systemsCheck, trendCheck } from "../recurrentResults.js";
+import { cvmCheck, dataText, duanePoints, fitSystemsHref, growingCheck, systemsCheck, trendCheck } from "../recurrentResults.js";
 import { xTitle } from "./RecurrentCharts.jsx";
 
 const SMALL = { margin: { t: 6, r: 10, b: 40, l: 54 } };
@@ -63,14 +64,27 @@ function GrowthCheck({ r, name }) {
 }
 
 // "Does any system fail more than the model expects?": each system's
-// failures against the model's expectation over its own window.
-function SystemsCheck({ r }) {
+// failures against the model's expectation over its own window. A saved
+// model links to fitting the top system (or a chosen set) by itself.
+function SystemsCheck({ r, modelId }) {
   const c = systemsCheck(r);
   if (!c) return null;
+  const top = c.rows[0]?.system;
   return (
     <CheckCard question="Does any system fail more than the model expects?" term="martingale residuals"
                verdict={c.words} className="rec-systems"
-               footer={<p className="muted-line">Most excess failures first, each over its own window.</p>}>
+               footer={(
+                 <>
+                   <p className="muted-line">Most excess failures first, each over its own window.</p>
+                   {modelId && top && (
+                     <p className="muted-line">
+                       <Link className="link" to={fitSystemsHref(modelId, [top])}>Fit {top} alone ›</Link>
+                       {" · "}
+                       <Link className="link" to={fitSystemsHref(modelId)}>Fit some systems by themselves ›</Link>
+                     </p>
+                   )}
+                 </>
+               )}>
       <table className="mini-table rec-stats-table">
         <thead><tr><th>System</th><th>Failures</th><th>Expected</th></tr></thead>
         <tbody>
@@ -107,7 +121,7 @@ function RepairCheck({ rt }) {
   );
 }
 
-export default function RecurrentDiagnostics({ r, name }) {
+export default function RecurrentDiagnostics({ r, name, modelId = null }) {
   const cvm = cvmCheck(r);
   return (
     <ChecksGrid
@@ -119,7 +133,7 @@ export default function RecurrentDiagnostics({ r, name }) {
                        verdict={cvm.words} />
           )}
           <RepairCheck rt={r.repair_test} />
-          <SystemsCheck r={r} />
+          <SystemsCheck r={r} modelId={modelId} />
           <FitStatsCard gof={r.gof} note={dataText(r) ? `Fitted to ${dataText(r)}.` : null} />
         </>
       }

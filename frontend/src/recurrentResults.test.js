@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   cvmCheck, duanePoints, fittedToData, growingCheck, logSlope, mtbfWords, planViews, recurrentAnswer, recurrentTabs,
   resolveRecurrentTab, systemsCheck, trendCheck, poissonUpperTail, scaledParam,
-  dataText, effectTone, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle, terminationText,
+  dataText, effectTone, fitSystemsHref, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle, terminationText,
 } from "./recurrentResults.js";
 
 test("paramLabel: plain names with the unit, per model", () => {
@@ -61,6 +61,9 @@ test("small words", () => {
   assert.equal(pct(null), "—");
   assert.equal(dataText({ n_systems: 4, n_events: 30 }), "4 systems, 30 failures");
   assert.equal(dataText({ n_systems: null }), null);
+  assert.equal(dataText({ n_systems: 1, n_events: 8, subset: { systems: ["CV-03"], of: 7 } }), "CV-03 alone (1 of 7 systems), 8 failures");
+  assert.equal(dataText({ n_systems: 2, n_events: 9, subset: { systems: ["A", "B"], of: 7 } }), "2 of 7 systems, 9 failures");
+  assert.equal(fitSystemsHref("m1", ["CV-03 GB"]), "/models/recurrent/new?from=m1&system=CV-03+GB");
   assert.equal(familyOf({}), "nhpp");
 });
 
@@ -218,6 +221,17 @@ test("terminationText: says how the record ends", () => {
   assert.equal(terminationText({ ...one, end_of_observation: 940, warnings: [{ id: "no_record_end" }] }),
     "failure-terminated: ended at the last failure (940 hours)");
   assert.equal(terminationText(one), null);
+  // Each system's own end of record, so a record cut short is seen.
+  const ends = [{ end: 1096, systems: ["CV-01", "CV-02", "CV-04", "CV-05", "CV-06", "CV-08"] }, { end: 995, systems: ["CV-03"] }];
+  assert.equal(terminationText({ ...one, unit: "days", n_systems: 7, termination: { kind: "time", end: 1096, ends } }),
+    "time-terminated: 6 systems to 1,096 days; CV-03 to 995 days");
+  assert.equal(terminationText({ ...one, unit: "days", n_systems: 7, termination: { kind: "time", end: 1096, ends: [ends[0]] } }),
+    "time-terminated: every system to 1,096 days");
+  assert.equal(terminationText({ ...one, unit: "days", termination: { kind: "time", end: 995, ends: [ends[1]] } }),
+    "time-terminated: CV-03 to 995 days");
+  const many = [1, 2, 3, 4].map((k) => ({ end: k * 100, systems: [`S${k}`] }));
+  assert.equal(terminationText({ ...one, n_systems: 4, termination: { kind: "time", end: 400, ends: many } }),
+    "time-terminated: each system to its own end of record, from 100 hours to 400 hours");
   assert.equal(terminationText({ from_params: true, termination: { kind: "time", end: 1 } }), null);
   // On the answer line, after the data.
   const words = recurrentAnswer({ ...one, model: { id: "crow_amsaa" }, termination: { kind: "time", end: 1000 } });
