@@ -28,14 +28,16 @@ router = APIRouter(prefix="/api/strategy")
 
 
 def _position_clock(ctx: AccessCtx, position_id, unit) -> dict:
-    """Run from a position (the Explorer's Strategy pane) with a model in running hours: the
-    position's clock, ``{"hours_per_day", "clock"}`` (its duty, else all the time: running_clock),
-    for the calculators to meet the calendar at. Empty otherwise (no position, another unit, or
-    the position can't be read): the calculation runs as it would stand-alone."""
+    """Run from a position (the Explorer's Strategy pane, or MCP analyse with position_id) with a
+    model in running hours or in use (km, cycles): the position's clock, ``{"clock"}``, and
+    ``"hours_per_day"`` (the model's units a day there: its duty's hours, else 24; its km a day)
+    when the duty gives a rate in that unit (running_clock). Without one, the clock alone: the
+    calculators then say plainly why the model can't meet the calendar. Empty otherwise (no
+    position, a calendar or blank unit, or a position the reader can't read)."""
     from backend.maintenance.rbd_tree_plan import maintenance_for
     from backend.services import running_clock
 
-    if not position_id or not running_clock.is_running_hours(unit):
+    if not position_id or not (running_clock.is_running_hours(unit) or running_clock.is_use(unit)):
         return {}
     m = maintenance_for(ctx)
     if m is None:
@@ -45,10 +47,8 @@ def _position_clock(ctx: AccessCtx, position_id, unit) -> dict:
     except Exception:  # noqa: BLE001 - not a position the reader has: stand-alone
         return {}
     clock = running_clock.for_position(m, str(position_id))
-    if not clock.converts:
-        raise StrategyError("This position's operating plan gives no running in the year ahead, so its running "
-                            "hours can't be put on dates. Change its plan, or run the calculation from Strategy.")
-    return {"hours_per_day": clock.hours_per_day, "clock": clock.to_dict()}
+    rate = clock.per_day(unit)
+    return {"clock": clock.to_dict(), **({"hours_per_day": rate[0]} if rate else {})}
 
 
 @router.post("/optimal-replacement")
@@ -366,7 +366,7 @@ def save_analysis(
         return JSONResponse(status_code=status, content=payload)
     try:
         if kind in ("optimal_replacement", "failure_finding", "calendar_replacement") and \
-                (inputs or {}).get("position_id") and "hours_per_day" not in (inputs or {}):
+                (inputs or {}).get("position_id") and "clock" not in (inputs or {}):
             # Saved from a position: the duty it was run at is kept with it, so it recomputes the same.
             inputs = {**inputs, **_position_clock(ctx, inputs["position_id"], inputs.get("unit"))}
         doc = strategy_store.save_analysis(session, name, kind, inputs, ctx.write_owner)

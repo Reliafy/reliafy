@@ -102,6 +102,11 @@ export function formFromPlan(brief, today) {
     name: brief?.name || "", from: today, notes: brief?.notes || "",
     // The share of the planned running that happens (kept as it was; offered from plan against actual).
     utilisation: p?.utilisation ?? null,
+    // Use that isn't time, at a rate (400 km a day): a model in km meets the calendar at it.
+    // The form edits the first; any others are kept as they were.
+    use: p?.meters?.[0] ? { amount: String(p.meters[0].amount), meter: p.meters[0].meter, per: p.meters[0].per }
+      : { amount: "", meter: "", per: "day" },
+    otherUse: (p?.meters || []).slice(1),
   };
 }
 
@@ -145,6 +150,18 @@ export function planFromForm(form) {
     if (!(u > 0)) return { problem: "Utilisation is a share more than 0 (1 is all of it)." };
     plan.utilisation = u;
   }
+  const use = form.use || {};
+  const meters = [];
+  if (String(use.amount ?? "").trim() !== "" || String(use.meter ?? "").trim() !== "") {
+    const amount = Number(use.amount);
+    const meter = String(use.meter || "").trim();
+    if (!meter) return { problem: "Say what the other use counts: km, cycles, landings." };
+    if (/^(h|hrs?|hours?|starts?)$/i.test(meter)) return { problem: `${meter} come from how it runs above, not a rate of their own.` };
+    if (!(amount > 0)) return { problem: `Say about how many ${meter} a ${use.per || "day"}: a number more than 0.` };
+    meters.push({ meter, amount, per: use.per || "day" });
+  }
+  for (const m of form.otherUse || []) if (!meters.some((x) => x.meter.toLowerCase() === m.meter.toLowerCase())) meters.push(m);
+  if (meters.length) plan.meters = meters;
   if (form.kind !== "runs" && form.specific.trim()) {
     const { runs, problems } = parseRuns(form.specific);
     if (problems.length) return { problem: problems[0] };
@@ -277,6 +294,7 @@ export function planWords(plan) {
     }).join("; ");
   }
   if (plan.utilisation) text += `, ${Math.round(plan.utilisation * 100)}% utilisation`;
+  for (const m of plan.meters || []) text += `; about ${Number(m.amount).toLocaleString("en-GB")} ${m.meter} a ${m.per}`;
   const n = (plan.specific || []).reduce((t, s) => t + s.runs.length, 0);
   if (n) text += `; ${n} set run${n === 1 ? "" : "s"} first`;
   return text;

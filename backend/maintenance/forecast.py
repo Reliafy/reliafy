@@ -122,20 +122,24 @@ def _plan_rate(m: Maintenance, position_id: str, counter: dict, readings: list[d
     return max(0.0, added / horizon_days), mapped["basis"]
 
 
-def _clock_age(m: Maintenance, position_id: str, fitment: dict) -> dict:
-    """Age and rate in running hours with no hours counter: the days since it was fitted at
-    the position's duty (its operating plan's hours a day over the year ahead), else all the
-    time, 24 h a day (running_clock; Derryn, 21 Nov 2026). {age, per_day, basis (duty or
-    continuous), counter None, clock, note} or {reason} when its plan gives no running."""
+def _clock_age(m: Maintenance, position_id: str, fitment: dict, unit: str = "hours") -> dict:
+    """Age and rate in running hours, or in use (km), with no counter for it: the days since it
+    was fitted at the position's duty (its hours a day over the year ahead, or its km a day),
+    hours else all the time, 24 h a day (running_clock; Derryn, 21 Nov 2026). {age, per_day,
+    basis (duty or continuous), counter None, clock, note}, or {reason} in plain words when the
+    duty gives no rate in that unit (a model in km with no km a day here)."""
     clock = running_clock.for_position(m, position_id)
-    if not clock.converts:
-        return {"reason": "no hours counter here, and its operating plan gives no running in the year ahead"}
+    why = running_clock.refusal(unit, "days", clock)
+    if why:
+        return {"reason": f"no {unit} counter here. {why}"}
+    rate = clock.per_day(unit)
     days = _calendar_age(m, position_id, fitment)
-    age = days * clock.hours_per_day
-    conv = running_clock.conversion("hours", "days", clock)
-    return {"age": age, "per_day": clock.hours_per_day, "basis": clock.basis, "counter": None,
+    age = days * rate[0]
+    conv = running_clock.conversion(unit, "days", clock)
+    word = "hours" if running_clock.is_running_hours(unit) else unit
+    return {"age": age, "per_day": rate[0], "basis": clock.basis, "counter": None,
             "clock": clock.to_dict(),
-            "note": f"No hours counter: age {running_clock.note(conv, age)} since it was fitted."}
+            "note": f"No {word} counter: age {running_clock.note(conv, age)} since it was fitted."}
 
 
 def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str, horizon_days: float = 0.0) -> dict:
@@ -146,8 +150,8 @@ def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str, horizon
     # Its own counter, else the one above it (a propeller's flight hours are its air vehicle's).
     counter = m._use_counter(position_id, unit)
     if counter is None:
-        if running_clock.is_running_hours(unit):
-            return _clock_age(m, position_id, fitment)
+        if running_clock.is_running_hours(unit) or running_clock.is_use(unit):
+            return _clock_age(m, position_id, fitment, unit)
         return {"reason": f"no {unit} counter on this position"}
     readings = svc._readings(m.s, m.org, counter, m.tz)
     per_day, _n = _counter_rate(readings)

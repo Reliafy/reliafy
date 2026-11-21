@@ -33,6 +33,12 @@ specific runs hand over to a rate, the rate counts only the time they leave, pro
 rata, so no hours appear or go missing at the handover. ``day_runs`` only lays
 out the strip's bars (clock times on each day) for the screen.
 
+An optional ``meters`` list adds use that isn't time, spread evenly at a rate
+(``[{"meter": "km", "amount": 400, "per": "day"}]``: a haul truck's 400 km a
+day). RePyability's ``Rate(meter="km")`` drives that meter beside the hours, so
+a model in km meets the calendar at it (running_clock). Starts aren't one of
+these: they come from the runs and shifts.
+
 An optional ``utilisation`` (0 to 1: the share of the planned running that
 happens) scales every planned hour and start. Reliafy offers one from plan
 against actual (the last 90 days' readings) and never applies it unasked.
@@ -48,6 +54,9 @@ WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 RATE_PER = {"day": 1.0, "week": 7.0, "month": 365.25 / 12, "year": 365.25}
 MAX_RUNS = 2000
 MAX_SHIFTS = 14
+MAX_METERS = 6
+#: Meters a plan counts by itself (hours, and starts from its runs), so not a rate of their own.
+OWN_METERS = ("hours", "hour", "h", "hrs", "starts", "start")
 
 
 class PlanError(ValueError):
@@ -164,12 +173,42 @@ def _background(bg) -> dict:
     return {"kind": "runs", "runs": _runs(bg.get("runs"), "The runs")}
 
 
+def _meters(value) -> list[dict]:
+    """A plan's rates of use that isn't time ([{meter, amount, per}]), checked: a meter's name
+    (km, cycles, landings), more than 0 a day, week, month or year."""
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list) or len(value) > MAX_METERS:
+        raise PlanError(f"A plan's other use is a list of up to {MAX_METERS} rates, each {{meter, amount, per}}: "
+                        "400 km a day is {meter: 'km', amount: 400, per: 'day'}.")
+    out, seen = [], set()
+    for i, rate in enumerate(value, 1):
+        if not isinstance(rate, dict):
+            raise PlanError(f"Rate {i} is {{meter, amount, per}}: 400 km a day is {{meter: 'km', amount: 400, per: 'day'}}.")
+        meter = str(rate.get("meter") or "").strip()[:24]
+        if not meter:
+            raise PlanError(f"Rate {i}: say what it counts (km, cycles, landings).")
+        if meter.lower() in OWN_METERS:
+            raise PlanError(f"Rate {i}: {meter} come from how it runs above, not a rate of their own.")
+        if meter.lower() in seen:
+            raise PlanError(f"Two rates count {meter}: keep one.")
+        seen.add(meter.lower())
+        per = rate.get("per", "day")
+        if per not in RATE_PER:
+            raise PlanError(f"Rate {i}: a rate is per day, week, month or year.")
+        amount = _number(rate.get("amount"), f"rate {i}'s amount", 0.0, 1e9)
+        if amount <= 0:
+            raise PlanError(f"Rate {i}: say how many {meter} a {per}, more than 0.")
+        out.append({"meter": meter, "amount": amount, "per": per})
+    return out
+
+
 def check_plan(plan) -> dict:
     """``plan`` checked and tidied (sorted runs, day names in full, the version
     added); PlanError, saying what to change, when it can't be saved."""
     if not isinstance(plan, dict):
         raise PlanError("A plan is {background: {...}, specific: [...]}.")
-    extra = sorted(set(plan) - {"background", "specific", "version", "utilisation"})
+    extra = sorted(set(plan) - {"background", "specific", "version", "utilisation", "meters"})
     if extra:
         raise PlanError(f"A plan doesn't take {', '.join(extra)}.")
     bg = _background(plan.get("background"))
@@ -194,6 +233,9 @@ def check_plan(plan) -> dict:
         if b[0] < a[1]:
             raise PlanError(f"Two lots of specific runs cover the same time ({b[0]} to {a[1]}): merge them.")
     out = {"version": PLAN_VERSION, "background": bg, "specific": specific}
+    meters = _meters(plan.get("meters"))
+    if meters:
+        out["meters"] = meters
     if plan.get("utilisation") not in (None, "", 1, 1.0):
         out["utilisation"] = _number(plan["utilisation"], "utilisation", 0.01, 1.0)
     return out
@@ -326,6 +368,8 @@ def describe(plan: dict) -> str:
         text = "; ".join(parts)
     if plan.get("utilisation"):
         text += f", {plan['utilisation']:.0%} utilisation"
+    for rate in plan.get("meters") or []:
+        text += f"; about {rate['amount']:,g} {rate['meter']} a {rate['per']}"
     runs = sum(len(s["runs"]) for s in plan.get("specific") or [])
     if runs:
         end = max(s["covers"][1] for s in plan["specific"])

@@ -368,8 +368,11 @@ def _fleet_units(m: Maintenance, top: dict, size: int, hours_per_day, horizon_da
                 per_day = 1.0 / svc._DAYS_PER[life_unit]
             elif life_unit == "hours" and run_hours:
                 per_day = run_hours
+            elif life_unit != "hours" and clock is not None and clock.per_day(life_unit):
+                per_day = clock.per_day(life_unit)[0]  # use at the design position's duty: 400 km a day
             else:
-                why = f"this life is in {life_unit}: say how many {life_unit} a day each unit runs"
+                why = (running_clock.refusal(life_unit, "days", clock or running_clock.CONTINUOUS)
+                       or f"this life is in {life_unit}: say how many {life_unit} a day each unit runs")
         if why and fail_parts:
             not_forecast.append({"position": brief, "reason": why})
             dist = None
@@ -382,6 +385,8 @@ def _fleet_units(m: Maintenance, top: dict, size: int, hours_per_day, horizon_da
                 every = float(task["interval"]) * svc._DAYS_PER[unit_t]
             elif unit_t == "hours" and run_hours:
                 every = float(task["interval"]) / run_hours
+            elif clock is not None and clock.per_day(unit_t):
+                every = float(task["interval"]) / clock.per_day(unit_t)[0]
             else:
                 continue
             k = 1
@@ -395,7 +400,7 @@ def _fleet_units(m: Maintenance, top: dict, size: int, hours_per_day, horizon_da
                           "position": brief, "seed": _seed(f"{pos['id']}#{n + 1}"), "dist": dist, "age": 0.0,
                           "per_day": per_day, "fail_parts": fail_parts,
                           "planned": [dict(p) for p in planned], "model": label, "unit": life_unit,
-                          **({"clock": clock.to_dict()} if clock is not None and life_unit == "hours" else {})})
+                          **({"clock": clock.to_dict()} if clock is not None and life_unit not in svc.CALENDAR_UNITS else {})})
     return units, not_forecast
 
 

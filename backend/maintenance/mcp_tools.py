@@ -1017,6 +1017,21 @@ _CALCULATOR = {"pf_interval": ("on_condition", "on_condition_interval", "P-F cal
                                             "failure-finding calculator", "test interval")}
 
 
+def _mode_clock(m, failure_mode_id, unit) -> dict:
+    """{hours_per_day, clock} of the failure mode's position (running_clock: its duty, else 24 h a
+    day) when ``unit`` is in running hours; {} otherwise, or with no failure mode."""
+    from backend.services import running_clock
+
+    if not failure_mode_id or not (running_clock.is_running_hours(unit) or running_clock.is_use(unit)):
+        return {}
+    try:
+        position_id = m._live_mode(str(failure_mode_id))[1]["id"]
+    except Exception:  # noqa: BLE001 - an unknown mode is refused where it's used
+        return {}
+    clock = running_clock.for_position(m, position_id)
+    return {"hours_per_day": clock.hours_per_day, "clock": clock.to_dict()}
+
+
 def rcm_apply_interval(m, failure_mode_id: str, task_id, action: str, inputs: dict, out: dict, owner_id) -> dict:
     """What maintenance rcm.interval_* with save_evidence does with its answer, as
     the app's "Use N" (RcmModeTasks.jsx useInterval): the task (task_id, else the
@@ -2960,6 +2975,7 @@ def register() -> None:
                     "detection_probability": detection_probability, "unit": unit,
                     "current_interval": current_interval, "current_unit": current_unit, "act_time": act_time,
                 }.items() if v is not None}
+                inputs.update(_mode_clock(m, failure_mode_id, pf_unit))
                 out = rcm_intervals.on_condition_interval(**inputs)
             else:
                 extras = None
@@ -2979,6 +2995,7 @@ def register() -> None:
                     "consequence_cost": consequence_cost, "unit": unit, "current_interval": current_interval,
                     "current_unit": current_unit,
                 }.items() if v is not None}
+                inputs.update(_mode_clock(m, failure_mode_id, model_unit))
                 out = rcm_intervals.failure_finding_interval(**inputs)
         except StrategyError as exc:
             raise ToolError(str(exc)) from None

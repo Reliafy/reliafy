@@ -108,7 +108,10 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
         # waits for failures beyond those on record now, not for those to be counted.
         **({"failures_seen": m.position_class(key)["failures"]} if use else {}),
     })
-    out = {**m.position_class(key), "proposals": propose(m, key), "uncertain": data["uncertain"]}
+    refused: list = []
+    out = {**m.position_class(key), "proposals": propose(m, key, refused), "uncertain": data["uncertain"]}
+    if refused:
+        out["not_proposed"] = refused  # tasks the model can't be read against, and why
     if use:
         out |= {"unit": unit, "excluded": data["excluded"], "counters": data["counters"], "note": data["note"]}
     return out
@@ -143,9 +146,11 @@ def _describe(model: dict) -> str:
     return text
 
 
-def propose(m: Maintenance, position_class: str) -> list[dict]:
+def propose(m: Maintenance, position_class: str, refused: list | None = None) -> list[dict]:
     """Proposals for every task on the class's positions that the model and costs
-    support changing. Returns the proposals made now."""
+    support changing. Returns the proposals made now. ``refused`` (a list) gets each task
+    the model can't be read against, and why ({position, task, reason}): a model in km
+    against a task in days at a position with no km duty, say."""
     from backend.services import strategy as strategy_service
 
     position_class = m._resolve_class(position_class) or str(position_class or "").strip()
@@ -168,8 +173,8 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
             return 1.0
         if normalize_unit(life_unit) in KM_PER and normalize_unit(unit) in KM_PER:
             return unit_factor(life_unit, unit)
-        conv = running_clock.conversion(life_unit, unit, clock) if running_clock.is_running_hours(life_unit) \
-            else None
+        # Running hours or use (km at 400 km a day) meet a task on the calendar at the position's duty.
+        conv = running_clock.conversion(life_unit, unit, clock)
         return conv["factor"] if conv else None
 
     def in_task_unit(t: float, unit: str, clock) -> float:
@@ -193,6 +198,10 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
             unit = task["unit"]
             if by_use:
                 if use_factor(unit, clock) is None:
+                    why = running_clock.refusal(life_unit, unit, clock)
+                    if why and refused is not None:
+                        refused.append({"position": {"id": position["id"], "name": position.get("name", "")},
+                                        "task": {"id": task["id"], "name": task.get("name", "")}, "reason": why})
                     continue  # a model by use proposes for tasks by that use (or one of its kind) only
             elif unit not in DAYS_PER:
                 continue  # by use: needs a model in that unit (fit the class's model in it)

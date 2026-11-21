@@ -358,9 +358,16 @@ class _Inputs:
         from backend.services import running_clock
 
         self.clock, self.hours_given = None, False
-        if hours_per_day not in (None, "") and running_clock.is_running_hours(unit):
+        counts = running_clock.is_running_hours(unit) or running_clock.is_use(unit)
+        if counts and hours_per_day in (None, "") and isinstance(clock, dict):
+            # From a position whose duty gives no rate in the model's unit: say so, never guess.
+            why = running_clock.refusal(unit, "days", running_clock.Clock.from_dict(clock))
+            if why:
+                raise StrategyError(why)
+        if hours_per_day not in (None, "") and counts:
+            # ``hours_per_day``: the model's units a day at the position (its hours, or its km).
             self.per_day = _number(hours_per_day, "hours_per_day", strict=True)
-            if self.per_day > 24:
+            if running_clock.is_running_hours(unit) and self.per_day > 24:
                 raise StrategyError("hours_per_day is at most 24.")
             self.clock = clock if isinstance(clock, dict) else None
             self.hours_given = True
@@ -628,10 +635,16 @@ def _headline(inp: _Inputs, policy, comparisons: list[dict], lines: list[dict]) 
 def _convention(inp: "_Inputs") -> str:
     """How dates became model time: the app's convention, or, run from a position with a model in
     running hours, its duty ("… at this position's duty (8 h a day)")."""
+    from backend.services import running_clock
+
+    what = "running hours" if running_clock.is_running_hours(inp.unit) else running_clock.use_word(inp.unit)
     if inp.clock:
-        return f"Today is time 0. Dates become running hours{inp.clock.get('where') or ''}."
+        found = running_clock.Clock.from_dict(inp.clock)
+        where = found.where(inp.unit) if found is not None else inp.clock.get("where") or ""
+        return f"Today is time 0. Dates become {what}{where}."
     if inp.hours_given:
-        return f"Today is time 0. Dates become running hours at {inp.per_day:g} h a day."
+        rate = f"{inp.per_day:g} h" if what == "running hours" else f"{inp.per_day:g} {what}"
+        return f"Today is time 0. Dates become {what} at {rate} a day."
     return CONVENTION
 
 

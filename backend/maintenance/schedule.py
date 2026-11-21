@@ -261,6 +261,9 @@ def duty_plan(plans: list[dict], time_zone: Optional[str] = None, outages=None) 
         part = background_part(rec["plan"]["background"], start, end, rec["plan"].get("utilisation"))
         if part is not None:
             back.append(part)
+        # Use that isn't time (400 km a day): its own meter, spread evenly (operating_plan.py's meters).
+        for rate in rec["plan"].get("meters") or []:
+            back.append(Rate(rate["amount"], per=rate["per"], meter=rate["meter"], from_=start, until=end))
         for sp in specific_parts(rec["plan"]):
             a, b = sp.from_, sp.until
             if b <= start or (end is not None and a >= end):
@@ -284,9 +287,11 @@ def plan_from_library(data: dict) -> dict:
     1): the background's first part and the specific runs. Raises ValueError for parts
     the app's plan has no shape for."""
     dp = DutyPlan.from_dict(data)
-    if len(dp.background) != 1:
+    meters = [p for p in dp.background if isinstance(p, Rate) and p.meter_name != "hours"]
+    parts = [p for p in dp.background if p not in meters]
+    if len(parts) != 1:
         raise ValueError("The app's plan has one background part.")
-    part = dp.background[0]
+    part = parts[0]
     if isinstance(part, Continuous):
         bg = {"kind": "continuous"}
     elif isinstance(part, Shifts):
@@ -307,6 +312,9 @@ def plan_from_library(data: dict) -> dict:
     specific = [{"kind": "runs", "runs": [[f"{a:%Y-%m-%dT%H:%M}", f"{b:%Y-%m-%dT%H:%M}"] for a, b in sp.runs],
                  "covers": [f"{sp.from_:%Y-%m-%dT%H:%M}", f"{sp.until:%Y-%m-%dT%H:%M}"]} for sp in dp.specific]
     out = {"version": 1, "background": bg, "specific": specific}
+    if meters:
+        out["meters"] = [{"meter": p.meter_name, "amount": int(p.amount) if float(p.amount).is_integer() else p.amount,
+                          "per": p.per} for p in meters]
     if part.utilisation not in (None, 1.0):
         out["utilisation"] = part.utilisation
     return out
