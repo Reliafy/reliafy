@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  ELEMENTS, availabilityText, emptyForm, emptyLine, formProblem, fromInputs, hasElements, isBlank, lineMttr,
+  ELEMENTS, availabilityText, emptyForm, emptyLine, formProblem, fromInputs, hasElements, isBlank, lineColumns, lineMttr, mttrIsSum,
   linesFromProduct, parsePartsList, plainHeadline, toInputs, usedElements, weightsText,
 } from "./maintainability.js";
 
@@ -156,4 +156,24 @@ test("the weights' source in words", () => {
     "2 lines take their rate from the parts count “Rates”. The MTBF agrees.");
   assert.match(weightsText({ weights: { source: "typed", note: "Its own rates, typed here.", parts_count: null, compare: null } }),
     /^Its own rates, typed here\.$/);
+});
+
+test("with the split on, every line has a box for each of the five steps, under its own heading", () => {
+  const cols = lineColumns(true);
+  assert.deepEqual(cols.filter((c) => c.startsWith("element:")),
+    ["element:isolation", "element:access", "element:replace", "element:restore", "element:checkout"]);
+  // MTTR and "most done by" follow the steps, so their boxes sit under their own headings.
+  assert.deepEqual(cols.slice(-3), ["mttr", "maximum", "remove"]);
+  assert.equal(lineColumns(false).some((c) => c.startsWith("element:")), false);
+  // A line with no step typed yet still gets the MTTR box; once a step is typed, the sum.
+  const line = emptyLine();
+  assert.equal(mttrIsSum(line), false);
+  line.name = "Proportional valve block";
+  Object.assign(line.elements, { isolation: "20", access: "40", replace: "60", restore: "30", checkout: "30" });
+  assert.equal(mttrIsSum(line), true);
+  assert.equal(lineMttr(line), 180);
+  // Compute takes it: the steps go to the server, their sum is the line's MTTR.
+  const form = { ...emptyForm(), lines: [line] };
+  assert.equal(formProblem(form), null);
+  assert.deepEqual(toInputs(form).lines[0].elements, { isolation: 20, access: 40, replace: 60, restore: 30, checkout: 30 });
 });

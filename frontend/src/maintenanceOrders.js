@@ -5,6 +5,11 @@ export const ORDERS_PATH = "/maintenance/work-orders";
 export const PACKAGES_PATH = "/maintenance/packages";
 export const packagePath = (id) => `${PACKAGES_PATH}/${encodeURIComponent(id)}`;
 export const workOrderPath = (id) => `${ORDERS_PATH}/${encodeURIComponent(id)}`;
+// Packages are made where the tasks are: the Explorer's LSA tab on the tree picked, isolated to
+// it (root=) with its top row picked so its tasks are there to tick. Without root= a built
+// item's tree opened on an empty Explorer.
+export const packageTasksOn = (id) =>
+  `/asset-register/explorer?${new URLSearchParams({ arrange: "positions", tab: "lsa", root: id, sel: id })}`;
 
 // The Orders page's tabs, in order; Open is the default.
 export const ORDER_TABS = [

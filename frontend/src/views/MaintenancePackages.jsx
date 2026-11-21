@@ -11,7 +11,7 @@ import { planWords } from "../workManagement.js";
 import { SubjectCell } from "./MaintenanceHome.jsx";
 import { explorerPath } from "../assetTree.js";
 import {
-  lateText, packageMatches, packagePath, packageStatusText,
+  lateText, packageMatches, packagePath, packageStatusText, packageTasksOn,
 } from "../maintenanceOrders.js";
 import { PACKAGES_LABEL } from "../navigation.js";
 import { tabPlace } from "../explorerTabs.js";
@@ -21,7 +21,7 @@ const HELP = { guide: "maintenance-work-orders" };
 // Packages are made where the tasks are: the Explorer's LSA tab (tick tasks, then package them),
 // opened on the tree picked (not whichever tree comes first: another team's asset).
 const LSA_PATH = explorerPath("positions", { tab: "lsa" });
-const lsaOn = (id) => explorerPath("positions", { tab: "lsa", sel: id });
+const lsaOn = packageTasksOn;
 
 const STATUSES = [
   { value: "", label: "Active and paused" },

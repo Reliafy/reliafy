@@ -71,6 +71,27 @@ def test_resources_are_set_projected_merged_and_cleared(m):
     _rebuilds_the_same(m)
 
 
+def test_an_emptied_downtime_or_elapsed_time_clears_over_the_route(api):
+    """The task's LSA form sends what an emptied field cleans to: access without
+    downtime_hours (or null when nothing is left) and duration_hours null. Each
+    clears the old value rather than keeping it."""
+    pos = api.post(f"{M}/positions", json={"name": "Skid"}).json()
+    task = api.post(f"{M}/positions/{pos['id']}/tasks", json={"name": "Check coolant level", "interval": 3,
+                                                              "unit": "months"}).json()
+    url = f"{M}/tasks/{task['id']}"
+
+    def patch(resources):
+        r = api.patch(url, json={"resources": resources})
+        assert r.status_code == 200, r.text
+        return r.json()["resources"]
+
+    r = patch({"access": {"downtime_hours": 0.25, "isolation": "Engine off"}, "duration_hours": 1})
+    assert r["access"] == {"downtime_hours": 0.25, "isolation": "Engine off"} and r["duration_hours"] == 1
+    r = patch({"access": {"isolation": "Engine off"}, "duration_hours": None})
+    assert r["access"] == {"isolation": "Engine off"} and r["duration_hours"] is None
+    assert patch({"access": None})["access"] == {}
+
+
 @pytest.mark.parametrize("bad, words", [
     ({"crew": []}, "doesn't take crew"),
     ({"labour": {"trade": "x"}}, "must be a list"),

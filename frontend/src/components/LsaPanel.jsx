@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addPackageTask, changePackage, createPackage, createPackages, getPackage, getTaskTable, listPackages, proposePackages,
-  removePackageTask,
+  listTradeRates, removePackageTask,
 } from "../api.js";
 import { Field, FormModal, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import HowOften from "./HowOften.jsx";
@@ -19,7 +19,7 @@ import { usePanelMenu } from "../panelMenu.js";
 import {
   DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
   kindText, lateText, lsaColumns, taskOnText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
-  renameRow, rollupLines, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
+  renameRow, rollupLines, labourYear, labourYearText, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
   MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money, tasksHere,
 } from "../lsaTab.js";
 import { saveText } from "../sparesPlan.js";
@@ -83,8 +83,8 @@ function useOpenParam(name) {
 }
 
 // What a set of tasks needs together, as label: text lines.
-export function Rollup({ rollup, title, empty = null }) {
-  const lines = rollupLines(rollup);
+export function Rollup({ rollup, title, empty = null, labourLabel = "Labour", extra = [] }) {
+  const lines = [...rollupLines(rollup, labourLabel), ...extra.filter((l) => l.text)];
   if (!lines.length) return empty;
   return (
     <div className="lsa-rollup" role="group" aria-label={title}>
@@ -698,6 +698,13 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const [said, setSaid] = useState(null);
   const [version, setVersion] = useState(0);
   const [cols, setColsState] = useState(() => readCols(variant));
+  // The trade rates, to price the labour a year (none: hours only).
+  const [rates, setRates] = useState([]);
+  useEffect(() => {
+    let live = true;
+    listTradeRates().then((d) => live && setRates(d.rates || [])).catch(() => {});
+    return () => { live = false; };
+  }, [version]);
   const [colsOpen, setColsOpen] = useState(false);
   const [query, setQuery] = useState(tq.q);
   const key = `${row.key}:${version}`;
@@ -922,7 +929,8 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       {design && shown?.length > 0 && (
         <div className="pk-actions pk-design-foot" role="region" aria-label="What the tasks need">
           <span className="pk-actions-n">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>
-          <Rollup rollup={lsaRollup(shown)} title="Together they need"
+          <Rollup rollup={lsaRollup(shown)} title="Together they need" labourLabel="Labour per visit (each task once)"
+                  extra={[{ label: "Labour a year", text: labourYearText(labourYear(shown, rates)) }]}
                   empty={<span className="lib-date">No labour, tools or spares set yet: open a task to add them.</span>} />
         </div>
       )}
@@ -940,7 +948,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                   title={free.length ? undefined : "They're all in a package already"}>Package selected…</button>
           <button type="button" className="link" disabled={!free.length} onClick={() => setModal("add-to")}>Add to a package…</button>
           <button type="button" className="link" onClick={() => setPicked(new Set())}>Clear</button>
-          <Rollup rollup={lsaRollup(chosen)} title="To bring" />
+          <Rollup rollup={lsaRollup(chosen)} title="To bring" labourLabel="Labour per visit" />
           {inOne.length > 0 && <span className="lib-date pk-actions-note">{plural(inOne.length, "task")} already in a package stay{inOne.length === 1 ? "s" : ""} there.</span>}
         </div>
       )}
