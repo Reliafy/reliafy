@@ -58,8 +58,7 @@ When the part is in stock at a store, the addition comes out of that stock
 details show what's been added over time by month, every addition with its
 work order or *by hand*, the year's total, and, when a task's LSA lists the
 consumable, the dose it says beside what was really added. A part used on a
-work order at the position counts too. (Where work orders are turned off, every
-addition is recorded here, by hand.)
+work order at the position counts too.
 
 ## Channels are rows of Readings
 

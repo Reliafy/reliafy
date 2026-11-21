@@ -19,8 +19,9 @@ A work package is the tasks done together on one visit: the weekly check of
 the pool, the Saturday walk round the plant room. Each visit raises **one**
 work order with a line per task, instead of one work order per task. The tasks
 keep their instructions, checklists and failure modes; the package only
-decides when they're done. Where work orders are turned off, a package is the
-plan of visits: record each task done on the package's page.
+decides when they're done. Where work management is turned off, a package is a
+grouping of tasks and dates in a hypothetical plan, which the forecasts use:
+nothing is raised.
 
 A package can have **layers**: a monthly check is the weekly visit plus a few
 more lines on the first Saturday of the month, and a quarterly one adds more

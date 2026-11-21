@@ -57,7 +57,7 @@ from datetime import datetime, timedelta, timezone
 
 from backend.errors import client_message
 from backend.maintenance.service import (CLOCK_TOLERANCE, OPEN_STATUSES, Invalid, Maintenance, NotFound, RateLimited,
-                                         op_node_id, work_orders_on)
+                                         op_node_id, work_management_on)
 from backend.maintenance.store import new_id, scratch_copy
 from backend.services import time_zones
 
@@ -528,7 +528,7 @@ def pack(m: Maintenance, body: dict | None = None) -> dict:
         return {"unchanged": True, **stamp}
     wanted = body.get("work_order_ids")
     # Work orders off: none goes to a device (those it holds come back as gone); the tree still does.
-    briefs = m.work_orders("open") if work_orders_on() else []
+    briefs = m.work_orders("open") if work_management_on() else []
     more = False
     if wanted is not None:
         if not isinstance(wanted, list) or len(wanted) > MAX_PACK or any(not isinstance(w, str) for w in wanted):
@@ -540,7 +540,7 @@ def pack(m: Maintenance, body: dict | None = None) -> dict:
         ids = [b["id"] for b in briefs]
     full, gone = [], []
     for wo_id in ids:
-        if not work_orders_on():
+        if not work_management_on():
             gone.append(wo_id)
             continue
         try:

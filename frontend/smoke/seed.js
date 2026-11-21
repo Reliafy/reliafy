@@ -133,12 +133,9 @@ export default async function seed(config) {
     const item = await post(`${m}/items`, { name: "Smoke test brake set", serial: "SMOKE-1" });
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });
     await post(`${m}/positions/${position_id}/fit`, { item_id: item.id });
-    // With work orders turned off (SMOKE_WORK_ORDERS=off), the inspection is recorded as done instead.
+    // With work management turned off (SMOKE_WORK_MANAGEMENT=off) there are no work orders.
     const served = await (await api.fetch("/api/config")).json();
-    if (served.maintenance_work_orders === false) {
-      await post(`${m}/work-done`, { position_id, title: "Smoke test inspection",
-                                     actions: [{ kind: "inspect", finding: "ok" }] });
-    } else {
+    if (served.work_management !== false) {
       await post(`${m}/work-orders`, { position_id, title: "Smoke test inspection" });
     }
     // A weekly check in a work package (Maintenance › Packages, and a package's own page).

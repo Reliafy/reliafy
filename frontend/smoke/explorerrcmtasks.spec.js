@@ -464,6 +464,9 @@ test("Calculate… in an on-condition task's details: the P-F interval alone, co
 });
 
 test("a task's first due date: set on Add a task (behind a link), shown and changed in its Interval row, cleared", async ({ page, request, problems }) => {
+  // Work management off (SMOKE_WORK_MANAGEMENT=off): a hypothetical plan says "planned", not "due".
+  const off = (await (await request.get("/api/config")).json()).work_management === false;
+  const due = off ? "planned" : "due";
   const tag = `d${Date.now()}`;
   const p = await plant(request, tag);
   const year = new Date().getFullYear() + 1;
@@ -484,17 +487,17 @@ test("a task's first due date: set on Add a task (behind a link), shown and chan
   await add.getByRole("button", { name: "Save" }).click();
   await expect(titleOf(page)).toHaveText(`Raise the acid dose for summer ${tag}`);
   const iv = section(page, "Interval");
-  await expect(iv.locator(".rim-tdue")).toContainText(`First due 1 Oct ${year}`);
+  await expect(iv.locator(".rim-tdue")).toContainText(`First ${due} 1 Oct ${year}`);
   // Changed in place: a date box, Save.
   await iv.getByRole("button", { name: "Change…" }).click();
   const form = iv.getByRole("form", { name: "When it's first due" });
   await form.getByLabel("First due").fill(`${year}-04-01`);
   await form.getByRole("button", { name: "Save" }).click();
-  await expect(iv.locator(".rim-tdue")).toContainText(`First due 1 Apr ${year}`);
+  await expect(iv.locator(".rim-tdue")).toContainText(`First ${due} 1 Apr ${year}`);
   // Cleared: one interval from when it was made again.
   await iv.getByRole("button", { name: "Change…" }).click();
   await iv.getByRole("button", { name: "Count from last done instead" }).click();
-  await expect(iv.locator(".rim-tdue")).toContainText("Next due");
+  await expect(iv.locator(".rim-tdue")).toContainText(`Next ${due}`);
   // A task by the calendar without a date set says its next due date too.
   await page.setViewportSize({ width: 400, height: 860 });
   // Measured once the layout has settled at the new width (the drawer and the panel move in).

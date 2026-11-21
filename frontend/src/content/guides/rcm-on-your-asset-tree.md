@@ -400,9 +400,7 @@ CSV and Excel exports write the same words in that column. A reading past the
 limit raises the task's work order, dated the reading's day; a named event is
 logged on the position, or one above it, from its **⋯** › **Log an event…**
 (also at the foot of **Work** on the Summary tab). Each event raises one work
-order: another while it's open raises nothing. (Where work orders are turned
-off, nothing is raised: record the task done on its row when the work is
-finished.) The task waits for the event,
+order: another while it's open raises nothing. The task waits for the event,
 so it's never overdue; tick **Keep the interval too** if the interval should
 run as well.
 

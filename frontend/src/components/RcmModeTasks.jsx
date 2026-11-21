@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, allowedChoices, modeAnswers, startUnit, worthLine } from "../decisionCheck.js";
 import {
@@ -1204,12 +1205,14 @@ function DueLine({ task, can, busy, onSave }) {
   const [value, setValue] = useState(task.first_due || task.next_due || "");
   const [tried, setTried] = useState(false);
   const why = startWhy(value);
-  const text = dueText(task);
+  // Work management off (workManagement.js): the plan's planned date, not a due date.
+  const plan = !useWorkManagementOn();
+  const text = dueText(task, { plan });
   if (!open) {
     if (!text && !can) return null;
     return (
       <p className="rim-tquiet rim-tdue">
-        {text ? text.charAt(0).toUpperCase() + text.slice(1) : "No due date yet"}
+        {text ? text.charAt(0).toUpperCase() + text.slice(1) : plan ? "No planned date yet" : "No due date yet"}
         {can && <> · <button type="button" className="link" disabled={busy} onClick={() => setOpen(true)}>Change…</button></>}
       </p>
     );

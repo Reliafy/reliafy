@@ -6,7 +6,7 @@ import { rcmDetail } from "./changes.js";
 import { formatDate } from "./dates.js";
 import { datasetPath } from "./navigation.js";
 import { partsPath } from "./redirects.js";
-import { ORDERS_PATH, daysLate, lateText, lateWorkText, ordersPath, workOrderPath } from "./maintenanceOrders.js";
+import { ORDERS_PATH, PACKAGES_PATH, daysLate, lateText, lateWorkText, ordersPath, workOrderPath } from "./maintenanceOrders.js";
 
 // Most rows each list shows (the counts above them are complete).
 export const ATTENTION_ROWS = 6;
@@ -34,19 +34,6 @@ export function dayText(iso) {
 }
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-// The overview as Home reads it with work orders turned off (workOrdersFlag.js):
-// no work orders (they're kept, only hidden), no task's open work order, and the
-// late counts as tasks overdue. Marked `work_orders_off`, so the rows and figures
-// below drop their work-order words. With work orders on, the overview as it came.
-export function homeOverview(maintenance, workOrders = true) {
-  if (workOrders || !maintenance) return maintenance;
-  const due = (maintenance.due || []).map((t) => ({ ...t, open_work_order: null }));
-  return {
-    ...maintenance, open_work_orders: [], due, work_orders_off: true,
-    late: { work_orders_late: 0, tasks_overdue_without_work_order: due.filter((t) => t.overdue).length },
-  };
-}
 
 // Reliafy Maintenance's work, from its overview: every open work order,
 // however it was raised (from a task, a package's visit or by hand), and the
@@ -78,7 +65,7 @@ export function maintenanceRows(maintenance) {
       tone: t.overdue ? "danger" : null,
       name: t.name,
       url: ordersPath("due"),
-      detail: maintenance.work_orders_off ? `Due ${dayText(t.next_due)}` : `Due ${dayText(t.next_due)} · no work order yet`,
+      detail: `Due ${dayText(t.next_due)} · no work order yet`,
       due: t.next_due,
       at: null,
     });
@@ -89,10 +76,7 @@ export function maintenanceRows(maintenance) {
 
 // The late work in Home's words, the same as Orders and Assets say it (lateWorkText):
 // "27 work orders late · 5 tasks overdue with no work order". "" with none, or no overview.
-export const lateSummary = (maintenance) => (maintenance?.work_orders_off
-  ? (maintenance.late?.tasks_overdue_without_work_order
-    ? `${plural(maintenance.late.tasks_overdue_without_work_order, "task")} overdue` : "")
-  : lateWorkText(maintenance?.late));
+export const lateSummary = (maintenance) => lateWorkText(maintenance?.late);
 
 // What needs the user: fleet alerts that fired and RCM decisions whose
 // evidence now contradicts them (from GET /api/changes), tracked items due
@@ -240,9 +224,6 @@ export function dueRows(maintenance) {
 // orders late (on Orders) and tasks overdue with no work order (on Due soon).
 export function lateFigures(maintenance) {
   const late = maintenance?.late || {};
-  if (maintenance?.work_orders_off) {
-    return [{ label: "tasks overdue", n: late.tasks_overdue_without_work_order || 0, to: ordersPath("due"), alert: true }];
-  }
   return [
     { label: "work orders late", n: late.work_orders_late || 0, to: ORDERS_PATH, alert: true },
     { label: "tasks overdue with no work order", n: late.tasks_overdue_without_work_order || 0, to: ordersPath("due"), alert: true },
@@ -253,21 +234,6 @@ export function lateFigures(maintenance) {
 export function workTodayRows(maintenance) {
   const today = maintenance?.today;
   if (!today) return [];
-  // Work orders turned off: the tasks due today or before, each recorded as done on Due soon.
-  if (maintenance.work_orders_off) {
-    return (maintenance.due || [])
-      .filter((t) => t.next_due && t.next_due <= today)
-      .sort((a, b) => (a.next_due > b.next_due ? 1 : a.next_due < b.next_due ? -1 : 0))
-      .map((t) => ({
-        key: `due-${t.id}`,
-        kind: t.next_due < today ? "Overdue" : "Today",
-        tone: t.next_due < today ? "danger" : null,
-        name: t.name,
-        url: ordersPath("due"),
-        detail: t.subject?.name || t.position?.name || null,
-        at: null,
-      }));
-  }
   return (maintenance.open_work_orders || [])
     .filter((w) => w.due && w.due <= today)
     .sort((a, b) => (a.due > b.due ? 1 : a.due < b.due ? -1 : 0))
@@ -311,13 +277,27 @@ export function waitingFigures(rollup = null, maintenance = null) {
       { label: "without evidence", n: n("unevidenced") + n("inconclusive") + n("partly"), to: rcm },
     );
   }
-  if (maintenance) {
+  if (maintenance && maintenance.work_management === false) {
+    // Work management off: no late or open work, and the proposals are on Packages.
+    figures.push({ label: "changes to decide", n: (maintenance.proposals || []).length, to: PACKAGES_PATH, alert: true });
+  } else if (maintenance) {
     figures.push(
       { label: "changes to decide", n: (maintenance.proposals || []).length, to: ORDERS_PATH, alert: true },
       ...lateFigures(maintenance),
-      ...(maintenance.work_orders_off ? []
-        : [{ label: "open work orders", n: (maintenance.open_work_orders || []).length, to: ORDERS_PATH }]),
+      { label: "open work orders", n: (maintenance.open_work_orders || []).length, to: ORDERS_PATH },
     );
   }
   return figures;
+}
+
+// The "plan" card's figures (work management turned off: the maintenance plan is
+// hypothetical, so no due, late or open work): what the records propose changing,
+// critical spares short, and the forecasts to look at.
+export function planFigures(maintenance) {
+  if (!maintenance) return [];
+  return [
+    { label: "changes proposed", n: (maintenance.proposals || []).length, to: PACKAGES_PATH, alert: true },
+    { label: "critical spares short", n: (maintenance.critical_spares || []).length, to: partsPath(), alert: true },
+    { label: "planned tasks", n: maintenance.summary?.tasks ?? 0, to: PACKAGES_PATH },
+  ];
 }

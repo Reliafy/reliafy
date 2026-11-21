@@ -62,8 +62,8 @@ export const STRUCTURE_PATH = "/systems/structure";
 // or condition-and-life model; or the menu preview is on), "preview" (the
 // deployment shows the menu's not-yet-built entries as blank pages,
 // plannedPages.js; nothing else has them, so they stay hidden), "work_orders"
-// (Reliafy Maintenance with its work orders on: off, MAINTENANCE_WORK_ORDERS,
-// Maintenance opens on Packages and there's no Orders, workOrdersFlag.js).
+// (Reliafy Maintenance with work management on: off, WORK_MANAGEMENT,
+// Maintenance opens on Packages and there's no Orders, workManagement.js).
 //
 // `landingNeeds`: the entry's own landing page needs that; without it the
 // entry opens on its first live child instead, and that child isn't repeated
@@ -391,8 +391,17 @@ export function rolesInUse({ roles = [], offer = false } = {}, on = false) {
 // Home's role cards for these roles, in order: the primary role's first, then
 // the other roles'. Each card once. No roles: none (Home shows what it always
 // has: what changed, what needs attention, recent work).
-export function homeCards(roles = []) {
+// With work management turned off (workManagement.js) there's no to-do list and no
+// technician's work: "due" and "work-today" become "plan", the maintenance plan and
+// its risk (proposed changes, spares short, forecasts).
+const PLAN_CARD = { due: "plan", "work-today": "plan" };
+export function homeCards(roles = [], { workManagement = true } = {}) {
   const out = [];
-  for (const r of roles) for (const c of roleById.get(r)?.home || []) if (!out.includes(c)) out.push(c);
+  for (const r of roles) {
+    for (const c of roleById.get(r)?.home || []) {
+      const card = workManagement ? c : PLAN_CARD[c] || c;
+      if (!out.includes(card)) out.push(card);
+    }
+  }
   return out;
 }

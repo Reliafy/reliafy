@@ -14,8 +14,7 @@ import { explorerHere } from "../products.js";
 import { tabPlace } from "../explorerTabs.js";
 import { getMaintenanceLocation, getOperatingPlan, getPositionCondition } from "../api.js";
 import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../positionClass.js";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
-import { RecordDone } from "./RecordDone.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { hoursWords, planWords } from "../operatingPlan.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
@@ -69,6 +68,8 @@ function StatusChips({ r, position, version }) {
   const risk = useRiskNow(asked ? r.key : null, version);
   const tasks = position?.data ? [...(position.data.tasks || []), ...(position.data.item_tasks || [])] : null;
   const { words, clear, failed } = summaryStatus(r, { risk, riskAsked: asked, tasks });
+  // Work management off (workManagement.js): nothing is overdue or open, so only alarms are said.
+  const workManagement = useWorkManagementOn();
   const chip = (w, i) => {
     const tone = TONE[w.kind] || "danger";
     const text = tone === "warning" ? `! ${w.text}` : w.text;
@@ -84,7 +85,7 @@ function StatusChips({ r, position, version }) {
   return (
     <div className="chip-row td-status">
       {words.map(chip)}
-      {clear && <Chip tone="success">✓ Nothing overdue, no open work and no alarms{r.kids.length ? ", here or inside" : ""}</Chip>}
+      {clear && <Chip tone="success">{workManagement ? "✓ Nothing overdue, no open work and no alarms" : "✓ No alarms"}{r.kids.length ? ", here or inside" : ""}</Chip>}
       {!words.length && failed && <Chip>Its risk now couldn't be read: open {tabPlace("condition")} to try again</Chip>}
     </div>
   );
@@ -234,9 +235,19 @@ const SHOWN_TASKS = 8;
 
 // "Log an event…" (the row's action, when it has one) sits at the foot of Work:
 // tasks waiting for an event are raised from here.
+// A task's line in a hypothetical plan (work management off): its next planned date and
+// when it was last done, if set; never "due" or "overdue".
+function planText(t, fmt, note = null) {
+  const last = t.last_done ? ` · last done ${fmt(t.last_done)}` : "";
+  if (t.next_due) return `Next planned ${fmt(t.next_due)}${last}`;
+  if (t.on_event) return `On an event${t.trigger?.text ? `: ${t.trigger.text}` : ""}`;
+  return note || "No planned date";
+}
+
 function Work({ r, state, today, fullPage, logEvent = null }) {
-  // Work orders turned off (workOrdersFlag.js): no open work orders; each task is recorded done on its row.
-  const workOrders = useWorkOrdersOn();
+  // Work management off (workManagement.js): the maintenance plan, hypothetical: its tasks
+  // and their next planned dates, no open work orders, nothing overdue.
+  const workOrders = useWorkManagementOn();
   // The LSA links stay in the tree on show (one asset open on its own stays so).
   const { pathname, search } = useLocation();
   const { data, error } = state;
@@ -255,7 +266,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
     // Its tasks' LSA over a year (hours × 365.25 ÷ interval; event and by-use tasks left out, and said).
     const annual = annualText(annualLsa(tasks));
     if (!count) {
-      body = <p className="td-quiet">No tasks or open work on this position itself.{r.kids.length ? " What's inside it has its own: see Directly inside." : ""}</p>;
+      body = <p className="td-quiet">{workOrders ? "No tasks or open work on this position itself." : "No planned tasks on this position itself."}{r.kids.length ? " What's inside it has its own: see Directly inside." : ""}</p>;
     } else {
       body = (
         <>
@@ -280,7 +291,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
           )}
           {visit && (
             <p className="td-quiet td-next-visit">
-              Next visit: <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
+              {workOrders ? "Next visit" : "Next planned visit"}: <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
             </p>
           )}
           {annual && (
@@ -296,12 +307,11 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
                   const note = (t.limits || []).map((l) => l.note).find(Boolean);
                   return (
                     <Row key={`${t.onItem ? "i" : "p"}${t.id}`} title={t.name}
-                         meta={taskDueText(t, fmtDate, note)}
-                         chips={(t.overdue || t.onItem || t.on_event || !workOrders) ? <>
-                           {t.overdue && <Chip tone="danger">Overdue</Chip>}
+                         meta={workOrders ? taskDueText(t, fmtDate, note) : planText(t, fmtDate, note)}
+                         chips={((t.overdue && workOrders) || t.onItem || t.on_event) ? <>
+                           {t.overdue && workOrders && <Chip tone="danger">Overdue</Chip>}
                            {t.on_event && <Chip>On event</Chip>}
                            {t.onItem && <Chip>On the item</Chip>}
-                           {!workOrders && <RecordDone task={t} />}
                          </> : null} />
                   );
                 })}
@@ -316,7 +326,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
     }
   }
   return (
-    <Section title="Work" count={count || null}>
+    <Section title={workOrders ? "Work" : "Maintenance plan"} count={count || null}>
       {body}
       {logEvent && (
         <button type="button" className="link td-more" disabled={logEvent.disabled} title={logEvent.reason || undefined}
@@ -335,10 +345,10 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
 const SORTS = [
   { id: "tree", label: "As in the tree" },
   { id: "name", label: "Name" },
-  { id: "overdue", label: "Most overdue", get: (r) => r.sum.overdue, desc: true },
-  { id: "open", label: "Most open work", get: (r) => r.sum.open_work, desc: true },
+  { id: "overdue", label: "Most overdue", get: (r) => r.sum.overdue, desc: true, work: true },
+  { id: "open", label: "Most open work", get: (r) => r.sum.open_work, desc: true, work: true },
   { id: "alarms", label: "Most alarms", get: (r) => r.sum.alarms, desc: true },
-  { id: "due", label: "Next due first", get: (r) => r.sum.next_due || "￿" },
+  { id: "due", label: "Next due first", planLabel: "Next planned first", get: (r) => r.sum.next_due || "￿" },
   { id: "inside", label: "Most positions inside", get: (r) => r.sum.positions, desc: true, positionsOnly: true },
 ];
 const SHOWN_INSIDE = 500;
@@ -358,8 +368,11 @@ function insideChips(k) {
 
 function Inside({ r, display, onSelect, add, here = null, design = false }) {
   const [sort, setSort] = useState("tree");
+  // Work management off (workManagement.js): no sort by overdue or open work.
+  const workOrders = useWorkManagementOn();
   const ofItems = r.kids.length > 0 && r.kids.every((k) => display.rows.get(k).type === "item");
-  const sorts = SORTS.filter((s) => !(ofItems && s.positionsOnly) && !(design && s.get && !s.positionsOnly));
+  const sorts = SORTS.filter((s) => !(ofItems && s.positionsOnly) && !(design && s.get && !s.positionsOnly)
+    && (workOrders || !s.work)).map((s) => (!workOrders && s.planLabel ? { ...s, label: s.planLabel } : s));
   const kids = useMemo(() => {
     const rows = r.kids.map((k) => display.rows.get(k));
     const s = SORTS.find((x) => x.id === sort);

@@ -23,8 +23,8 @@ import {
 import { ORDERS_PATH, PACKAGES_LABEL } from "../navigation.js";
 import { subjectPath } from "../maintenanceSubjects.js";
 import { tabPlace } from "../explorerTabs.js";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
-import { RecordDone } from "../components/RecordDone.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
+import { planWords } from "../workManagement.js";
 import "./Maintenance.css";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -39,8 +39,8 @@ export default function MaintenancePackage() {
   const navigate = useNavigate();
   const phone = usePhone();
   const [rawPkg, setPkg] = useState(null);
-  // Work orders turned off (workOrdersFlag.js): a plan of visits, each task recorded done on its row.
-  const workOrders = useWorkOrdersOn();
+  // Work management off (workManagement.js): a plan of visits for the forecasts; nothing raised or done.
+  const workOrders = useWorkManagementOn();
   const pkg = packageWithoutWorkOrders(rawPkg, workOrders);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -120,7 +120,7 @@ export default function MaintenancePackage() {
               setSaid(e.message);
             }
           }} />
-          <Tasks pkg={pkg} recordDone={!workOrders} onRecorded={() => setAttempt((n) => n + 1)} />
+          <Tasks pkg={pkg} workOrders={workOrders} />
           {workOrders && <WorkOrders pkg={pkg} navigate={navigate} />}
         </div>
         {editing && (
@@ -190,7 +190,7 @@ function NextVisits({ pkg, today, onRaise, canRaiseAny = true }) {
   const canRaise = canRaiseAny && pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order;
   return (
     <section className="card">
-      <div className="maint-head maint-wrap"><h2>{visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2>
+      <div className="maint-head maint-wrap"><h2>{!canRaiseAny ? "Planned visits" : visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2>
         {canRaise && (
           <button type="button" className="secondary sm" disabled={busy}
                   onClick={async () => { setBusy(true); await onRaise(); setBusy(false); }}>
@@ -231,14 +231,14 @@ function NextVisits({ pkg, today, onRaise, canRaiseAny = true }) {
   );
 }
 
-function Tasks({ pkg, recordDone = false, onRecorded }) {
+function Tasks({ pkg, workOrders = true }) {
   const tasks = pkg.tasks || [];
   return (
     <section className="card">
       <div className="maint-head"><h2>Tasks ({tasks.length})</h2></div>
       {tasks.length === 0 ? <p className="lib-date">No tasks in it yet. Add them from the Explorer&apos;s {tabPlace("lsa")}.</p> : (
         <div className="maint-scroll"><table className="lib-table">
-          <thead><tr><th>Task</th><th>On</th><th>On which visits</th><th>Interval</th><th>Next due</th><th>Last done</th>{recordDone && <th>Done</th>}</tr></thead>
+          <thead><tr><th>Task</th><th>On</th><th>On which visits</th><th>Interval</th><th>{planWords(workOrders).next}</th><th>Last done</th></tr></thead>
           <tbody>
             {tasks.map((t) => (
               <tr key={t.task_id} className="maint-plain-row">
@@ -253,7 +253,6 @@ function Tasks({ pkg, recordDone = false, onRecorded }) {
                 <td className="lib-date maint-nowrap">{t.rule_text || `every ${t.interval} ${unitWord(t.interval, t.unit)}`}</td>
                 <td className="maint-nowrap"><DueChip task={t} /></td>
                 <td className="lib-date maint-nowrap">{fmtDate(t.last_done)}</td>
-                {recordDone && <td>{!t.retired && <RecordDone task={{ id: t.task_id, name: t.name }} onDone={onRecorded} />}</td>}
               </tr>
             ))}
           </tbody>

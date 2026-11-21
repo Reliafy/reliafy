@@ -151,35 +151,38 @@ class LimitReached(Invalid):
     status = 422
 
 
-WORK_ORDERS_OFF = ("Work orders are turned off for this workspace. Record what was done on the task or the "
-                   "position instead (Record what was done, or a task's last done), or import the history.")
+WORK_MANAGEMENT_OFF = ("Work management is turned off: Reliafy is set up as reliability software here, so "
+                       "work orders, visits, to-do lists and corrective actions aren't available. Plans, "
+                       "forecasts, history and failure reports work as before.")
 
 
-class WorkOrdersOff(Invalid):
-    """Work orders are turned off (config.MAINTENANCE_WORK_ORDERS): raising, changing or
-    reading one is refused (HTTP 409); the rest of Maintenance works as before."""
+class WorkManagementOff(Invalid):
+    """Work management is turned off (config.WORK_MANAGEMENT): anything about executing
+    work (work orders, package visits, corrective actions, the to-do list) is refused
+    (HTTP 409); the reliability side works as before."""
 
     status = 409
 
     def __init__(self):
-        super().__init__(WORK_ORDERS_OFF, agent=(
-            "Record work done with maintenance fitments.record_work_done (a task's renewal, a replacement, a "
-            "repair, an inspection), or set when a task was last done with maintenance tasks.set_last_done."))
+        super().__init__(WORK_MANAGEMENT_OFF, agent=(
+            "A task's last done is a plan input: maintenance tasks.set_last_done. History goes in as data: "
+            "maintenance fitments.add_past, fitments.remove (how it ended) or an import."))
 
 
 def _open_work_why(who: str) -> str:
-    """Why something with open work orders can't be retired; with work orders turned off
-    they're hidden, so say how they can be dealt with."""
-    if work_orders_on():
+    """Why something with open work orders can't be retired; with work management turned
+    off they're hidden, so say how they can be dealt with."""
+    if work_management_on():
         return f"{who} open work orders. Close or cancel them first."
-    return (f"{who} open work orders from before work orders were turned off: they are kept, hidden. "
-            "Turn work orders back on to close or cancel them, or delete it with everything inside "
+    return (f"{who} open work orders from before work management was turned off: they are kept, hidden. "
+            "Turn work management back on to close or cancel them, or delete it with everything inside "
             "(that cancels them).")
 
 
-def work_orders_on() -> bool:
-    """Whether this deployment has work orders (MAINTENANCE_WORK_ORDERS, on by default)."""
-    return bool(config.MAINTENANCE_WORK_ORDERS)
+def work_management_on() -> bool:
+    """Whether this deployment has work management (WORK_MANAGEMENT, on by default;
+    MAINTENANCE_WORK_ORDERS is its earlier name)."""
+    return bool(config.WORK_MANAGEMENT)
 
 
 class RateLimited(LimitReached):
@@ -3742,11 +3745,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _fitments_of(self, item_id: str) -> list[dict]:
         return [f for f in self.s.out(self.org, item_id, "IN") if f["label"] == "Fitment" and not f.get("voided")]
 
-    def _need_work_orders(self) -> None:
-        """Refuse when work orders are turned off, except while record_work_done records
-        work done through the same events a work order's close writes."""
-        if not work_orders_on() and not getattr(self, "_recording_work", False):
-            raise WorkOrdersOff()
+    def _need_work_management(self) -> None:
+        """Refuse when work management is turned off (config.WORK_MANAGEMENT)."""
+        if not work_management_on():
+            raise WorkManagementOff()
 
     def current_fitment(self, position_id: str) -> dict | None:
         return next((f for f in self._fitments_at(position_id) if f.get("to") is None), None)
@@ -3762,9 +3764,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         self._not_a_design(position_id)
         if self.current_fitment(position_id):
             raise Invalid("Something is already fitted here. Replace it through a work order, "
-                          "or remove it first." if work_orders_on() else
-                          "Something is already fitted here. Record what was done (a replacement), "
-                          "or remove it first.")
+                          "or remove it first." if work_management_on() else
+                          "Something is already fitted here. Remove it first (saying how it ended), "
+                          "then fit the new one.")
         day, precision = dated(on, from_precision, "fitted date", today=self.today())
         iid = self._item_from(item_id, new_item)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": iid, "position_id": position_id, "on": day,
@@ -6780,6 +6782,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if scheduled and (not held.get("until") or scheduled < held["until"]):
                 scheduled = held.get("until")
         out["scheduled_due"] = scheduled
+        if not work_management_on():
+            # A hypothetical plan has no to-do: its next date is planned, never overdue.
+            out["overdue"] = False
+            out.pop("overdue_before_package", None)
         return out
 
     @staticmethod
@@ -6787,7 +6793,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """A task's open work order, of the work orders raised for it: the one due first
         (one with no due date last), then the lowest number. None while work orders are
         turned off: the ones raised before are hidden."""
-        if not work_orders_on():
+        if not work_management_on():
             return None
         return min((w for w in work_orders if w.get("status") in OPEN_STATUSES),
                    key=lambda w: (w.get("due") or "9999-12-31", w["number"]), default=None)
@@ -7979,7 +7985,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if task_id not in (None, ""):
                 raise Invalid("task_id goes with work_order_id: the work order the reading was taken at.")
             return {}
-        self._need_work_orders()
+        self._need_work_management()
         wo = self._get(str(work_order_id), "WorkOrder")
         if wo["status"] == "cancelled":
             raise Invalid(f"Work order #{wo['number']} was cancelled: record the reading on its own, or on the work "
@@ -8089,7 +8095,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         above, below = point.get("alarm_above"), point.get("alarm_below")
         status = "high" if above is not None and value >= above else "low" if below is not None and value <= below \
             else "ok"
-        if status == "ok" or not work_orders_on():
+        if status == "ok" or not work_management_on():
             # Work orders off: the reading is kept and the point shows its alarm; nothing is raised.
             return None
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES
@@ -8275,7 +8281,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                 projection = None
             alarm_wo = next((w for w in self.s.inn(self.org, point_id, "ALARM_FOR")
                              if w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES), None) \
-                if work_orders_on() else None
+                if work_management_on() else None
             out |= {"trend_per_day": trend, "projected_alarm": projection,
                     "alarm_work_order": alarm_wo and {"id": alarm_wo["id"], "number": alarm_wo["number"]}}
         return out
@@ -8308,68 +8314,41 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return used and _reading_at(used["rows"], day)
         return None
 
-    def set_last_done(self, task_id: str, on) -> dict:
-        """Record when a task was last done (before it was tracked here), so
-        its next due date counts from then. A task by use records its counter's
-        reading that day too (an item's: the use it had had by then)."""
+    LAST_DONE_DEFAULT = ("Without a last done, the plan counts from the day the task was added, or from "
+                         "a new item fitted since (a renewal: last fitted), or from the first-due date set on it.")
+
+    def set_last_done(self, task_id: str, on, reading=None) -> dict:
+        """When a task was last done: a plan parameter the forecasts and simulations count
+        from (its next date is one interval after it). It records no work done and
+        marks nothing done. A task by use takes its counter's reading that day too (an
+        item's: the use it had had by then), or ``reading`` when given. ``on`` "none"
+        clears it, and the plan falls back to its default (LAST_DONE_DEFAULT)."""
         task = self._get(task_id, "Task")
+        if isinstance(on, str) and on.strip().lower() == "none":
+            changes = {"last_done": None}
+            if _use_unit(task):
+                changes |= {"last_done_reading": None, "last_done_reading_estimated": False}
+            self._emit("task.updated", {"id": task_id, "changes": changes})
+            return self._task_view(self._get(task_id, "Task"))
         day = _day(on, today=self.today())
         if day > self.today():
             raise Invalid("Last done can't be in the future.")
         changes = {"last_done": day}
         if _use_unit(task):
-            changes["last_done_reading"] = self._task_reading(task, day)
+            if reading not in (None, ""):
+                try:
+                    changes["last_done_reading"] = float(reading)
+                except (TypeError, ValueError):
+                    raise Invalid("The reading at last done is a number, in the task's unit.") from None
+            else:
+                changes["last_done_reading"] = self._task_reading(task, day)
             if task.get("last_done_reading_estimated"):
                 changes["last_done_reading_estimated"] = False
+        elif reading not in (None, ""):
+            raise Invalid("A reading at last done is for a task by use (hours, cycles, km); this one goes by "
+                          "the calendar.")
         self._emit("task.updated", {"id": task_id, "changes": changes})
         return self._task_view(self._get(task_id, "Task"))
-
-    RECORDED_NOTE = "Work recorded as done, without a work order."
-
-    def record_work_done(self, position_id=None, item_id=None, location_id=None, task_id=None, actions=(),
-                         on=None, notes="", readings=(), title=None) -> dict:
-        """Record work that was done, with no work order to raise or close: the way work
-        is recorded when work orders are turned off (it works with them on too). On a
-        position, an item or a location (exactly one; or a task's alone: the task's subject).
-        task_id: the task done, renewed on ``on`` as its work order's close would (its last
-        done, and a task by use's reading). actions, readings and notes: as a work order's
-        close takes them, so a replacement ends the fitted item's fitment and starts the new
-        one's, a repair is a recurrent event, and an inspection that found it failed leaves
-        its life interval censored.
-
-        It writes exactly the events opening and closing a work order write (no new event,
-        so the graph and every forecast read it as they read a closed work order); the
-        work order is marked in its notes as recorded, and is hidden while work orders are
-        off. Everything is first done on a throwaway copy: any refusal writes nothing.
-        Returns {on, task (its view, when one was done), work_order_id}."""
-        day = _day(on, today=self.today())
-        if day > self.today():
-            raise Invalid("Work done can't be recorded in the future.")
-        if not task_id and not any(x not in (None, "") for x in (position_id, item_id, location_id)):
-            raise Invalid("Say what the work was on: a position, an item, a location or a task.")
-        actions, readings = _dicts(actions, "actions"), _dicts(readings, "readings")
-        if not task_id and not actions and not readings and not str(notes or "").strip():
-            raise Invalid("Say what was done: the task, an action (replace, repair, inspect or other), "
-                          "readings or notes.")
-        kinds = {a.get("kind") for a in actions}
-        type = "preventive" if task_id else "inspection" if kinds == {"inspect"} else "corrective"
-        if not task_id and not str(title or "").strip():
-            title = {"replace": "Replacement", "repair": "Repair", "inspect": "Inspection"}.get(
-                next(iter(kinds)) if len(kinds) == 1 else "", "Work done")
-        from backend.maintenance.store import scratch_copy
-
-        rehearsal = Maintenance(scratch_copy(self.s, self.org), self.org, self.actor, limited=self.limited,
-                                time_zone=self.time_zone, as_of=self.as_of)
-        for m in (rehearsal, self):
-            m._recording_work = True
-            try:
-                wo = m.open_work_order(position_id or None, title, type, task_id or None, None, self.RECORDED_NOTE,
-                                       None, item_id or None, location_id or None, opened=day)
-                m.close_work_order(wo["id"], actions, day, notes or "", readings)
-            finally:
-                m._recording_work = False
-        return {"on": day, "work_order_id": wo["id"],
-                "task": self._task_view(self._get(task_id, "Task")) if task_id else None}
 
     def due_tasks(self, horizon_days: int = 30) -> list[dict]:
         """Tasks falling due within the horizon (overdue ones too), soonest first, each
@@ -8465,7 +8444,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         name, shortened to fit when it's long, with the full name at the top of the notes.
         ``opened`` (not a tool argument): the day it opened, when not today (a task raised by a
         reading opens on the reading's day)."""
-        self._need_work_orders()
+        self._need_work_management()
         task = self._get(task_id, "Task") if task_id else None
         if task and str(title or "").strip() in ("", str(task.get("name") or "").strip()):
             title, full = derived_title(task.get("name") or "Task")
@@ -8514,7 +8493,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
         location_id: only the work in that area (a site and the places inside it): tasks
         whose work is there, and packages on a position or place there."""
-        if not work_orders_on():
+        if not work_management_on():
             # Work orders off: nothing is raised, by hand or by the daily run.
             return {"work_orders": [], "skipped": []}
         made, skipped = [], []
@@ -8598,7 +8577,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         A replacement's new item given only by its serial (no name, no part) is named
         after what it replaces: the outgoing item's part, its name, else the position's
         class or name."""
-        self._need_work_orders()
+        self._need_work_management()
         wo = self._get(work_order_id, "WorkOrder")
         if wo["status"] not in OPEN_STATUSES:
             raise Invalid("This work order is already closed.")
@@ -8839,7 +8818,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         lost signal or a refresh keeps it): done, not_done (reason), problem (done, with a
         finding recorded at that line's position when the work order closes) or todo
         (cleared). Marking again replaces the mark."""
-        self._need_work_orders()
+        self._need_work_management()
         wo = self._open_wo(work_order_id)
         if not self.s.out(self.org, work_order_id, "RAISED_FROM"):
             raise Invalid("Lines are marked on a work package's work order. Tick this one's checklist with "
@@ -9157,7 +9136,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         Every version is kept in note_history. trade: who may do the work. ``readings``
         records readings and settings taken at it now (as close does; a closed one
         too), each linked to the work order."""
-        self._need_work_orders()
+        self._need_work_management()
         wo = self._get(work_order_id, "WorkOrder")
         reading_plans = self._work_order_reading_plans(wo, readings, None) if readings else []
         if notes is not None and str(notes).strip() == (wo.get("notes") or ""):
@@ -9198,7 +9177,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """Readings and settings taken at a work order, recorded now (its page's
         Record): [{point_id, value, unit?, on?, at?, task_id?, note?}], an empty value
         skipped. All are checked before any is written. Returns the work order."""
-        self._need_work_orders()
+        self._need_work_management()
         wo = self._get(work_order_id, "WorkOrder")
         plans = self._work_order_reading_plans(wo, readings, None)
         if not plans:
@@ -9346,7 +9325,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def set_work_status(self, work_order_id: str, status: str, note="") -> dict:
         """Move an open work order along: open, planned, in_progress, waiting. (Close it
         with close_work_order, or cancel it.)"""
-        self._need_work_orders()
+        self._need_work_management()
         wo = self._open_wo(work_order_id)
         if status not in self.WORK_STATUSES:
             raise Invalid(f"The status is one of {', '.join(self.WORK_STATUSES)}.")
@@ -9374,7 +9353,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return value
 
     def log_labour(self, work_order_id: str, hours, who="", rate=None, on=None, note="") -> dict:
-        self._need_work_orders()
+        self._need_work_management()
         self._open_or_closed(work_order_id)
         hours = self._amount(hours, "hours", allow_none=False)
         if hours <= 0 or hours > 1000:
@@ -9388,7 +9367,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                       part_id=None, from_location_id=None) -> dict:
         """A part used on a work order: free text, or a catalogue part (part_id), issued from
         stock at a location (from_location_id) if given."""
-        self._need_work_orders()
+        self._need_work_management()
         self._open_or_closed(work_order_id)
         qty = self._amount(quantity, "quantity", allow_none=False)
         if qty <= 0:
@@ -9412,7 +9391,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return self.work_order(work_order_id)
 
     def add_cost(self, work_order_id: str, description, amount) -> dict:
-        self._need_work_orders()
+        self._need_work_management()
         self._open_or_closed(work_order_id)
         self._emit("work_order.cost", {"id": new_id(), "work_order_id": work_order_id,
                                        "description": _text(description, "description", required=True)[:200],
@@ -9420,7 +9399,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return self.work_order(work_order_id)
 
     def remove_entry(self, entry_id: str) -> dict:
-        self._need_work_orders()
+        self._need_work_management()
         node = self.s.node(self.org, entry_id)
         if node is None or node["label"] not in ("Labour", "PartUse", "Cost"):
             raise NotFound(entry_id)
@@ -9431,7 +9410,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return self.work_order(wo["id"])
 
     def check_item(self, work_order_id: str, index: int, done: bool = True) -> dict:
-        self._need_work_orders()
+        self._need_work_management()
         wo = self._open_wo(work_order_id)
         if not 0 <= int(index) < len(wo.get("checklist") or []):
             raise Invalid("There's no checklist item with that number.")
@@ -9465,7 +9444,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         }
 
     def cancel_work_order(self, work_order_id: str, reason="") -> dict:
-        self._need_work_orders()
+        self._need_work_management()
         wo = self._get(work_order_id, "WorkOrder")
         if wo["status"] not in OPEN_STATUSES:
             raise Invalid("Only an open work order can be cancelled.")
@@ -9717,7 +9696,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                       if w["label"] == "WorkOrder" and w.get("status") != "cancelled"),
                      key=lambda w: (w.get("visit_on") or "", w["number"]))
         # Work orders off: one left open from before is hidden, and the visits go on as planned.
-        open_wo = next((w for w in wos if w["status"] in OPEN_STATUSES), None) if work_orders_on() else None
+        open_wo = next((w for w in wos if w["status"] in OPEN_STATUSES), None) if work_management_on() else None
         last = max((w for w in wos if w["status"] == "closed"), key=lambda w: (w.get("closed") or "", w["number"]),
                    default=None)
         state = {"open": open_wo, "last": last, "raised": len(wos), "tolerance_days": tol, "next_visit": None,
@@ -10435,7 +10414,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         is. With its work order already open, any visits since are added to it as lines and
         that one is returned. A layer raises its top package's visit. Returns {work_order,
         raised (a new one), lines_added, package}."""
-        self._need_work_orders()
+        self._need_work_management()
         pkg = self._live_package(package_id)
         root = self._package_chain(pkg)[-1]
         if self._pause_now(root):
@@ -11997,7 +11976,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         None when one is open already (one event, one work order) or the task or
         what it's on is retired. A work order that can't be opened is logged and
         skipped: it never stops the reading or event being recorded. Work orders off: none."""
-        if task.get("retired") or not work_orders_on():
+        if task.get("retired") or not work_management_on():
             return None
         subject = _subject(self.s, self.org, task)
         if not subject or subject.get("retired"):
@@ -13269,7 +13248,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """The work orders on a position, item or location, newest first. Work orders off:
         the closed ones only (the record of work done; open ones from before are hidden)."""
         wos = [w for w in self.s.inn(self.org, node_id, "ON") if w["label"] == "WorkOrder"
-               and (work_orders_on() or w["status"] == "closed")]
+               and (work_management_on() or w["status"] == "closed")]
         return [self._wo_brief(w) for w in sorted(wos, key=lambda w: w["number"], reverse=True)]
 
     def _points_on(self, node_id: str) -> list[dict]:
@@ -13358,7 +13337,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if day > self.today():
             raise _future_reading(time_zones.now(), self.tz, what="use")
         if work_order_id:
-            self._need_work_orders()
+            self._need_work_management()
             self._open_or_closed(work_order_id)
         store = self._consumable_store(part["id"], position_id, amount, from_location_id) if part else None
         if store:
@@ -13555,7 +13534,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         loose = self._loose_items(inside)
         open_wos = {p["id"]: sum(1 for w in self.s.inn(self.org, p["id"], "ON")
                                  if w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES)
-                    if work_orders_on() else 0 for p, _, _ in found}
+                    if work_management_on() else 0 for p, _, _ in found}
         systems: dict[str, dict] = {}
         for position, at, source in found:
             top = self._system_of(position["id"])
@@ -14438,7 +14417,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if node is None or node["label"] not in self.PHOTO_KINDS:
             raise NotFound(node_id)
         if node["label"] == "WorkOrder":
-            self._need_work_orders()
+            self._need_work_management()
         return node
 
     def add_photo(self, photo_id: str, target_id: str, cleaned: dict, caption="", via="app") -> dict:
@@ -14467,7 +14446,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         and failure reports, each by name (a report's: its title)."""
         found = [{"id": n["id"], "kind": n["label"], "name": n.get("name") or n.get("title")}
                  for n in self.s.out(self.org, photo_id, "OF") if n["label"] in self.PHOTO_KINDS
-                 and (n["label"] != "WorkOrder" or work_orders_on())]  # off: hidden
+                 and (n["label"] != "WorkOrder" or work_management_on())]  # off: hidden
         found.sort(key=lambda t: (self.PHOTO_KINDS.index(t["kind"]), (t["name"] or "").lower(), t["id"]))
         return found
 
@@ -14720,7 +14699,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         designs = self._design_ids()
         work_orders = s.nodes(org, "WorkOrder")
         # Work orders off: those left open from before are hidden (no open work on the tree).
-        open_wos = {w["id"]: w for w in work_orders if w["status"] in OPEN_STATUSES} if work_orders_on() else {}
+        open_wos = {w["id"]: w for w in work_orders if w["status"] in OPEN_STATUSES} if work_management_on() else {}
         raised_for: dict[str, list] = {}  # task -> its open work orders
         for src, dst in s.pairs(org, "FOR"):
             if src in open_wos:
@@ -14752,7 +14731,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if due:
                 st = on_node(subject)
                 st["next_due"] = min(st["next_due"] or due, due)
-                st["overdue"] += overdue
+                # Work management off: a plan has no to-do, so nothing on the tree is overdue.
+                st["overdue"] += overdue and work_management_on()
         for w in open_wos.values():
             if on.get(w["id"]):
                 on_node(on[w["id"]])["open_work"] += 1
@@ -15089,7 +15069,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         modes = self._modes_on(id)
         tasks = [self._task_view(t) for t in self._tasks_on(id)]
         wos = [w for w in self.s.inn(self.org, id, "ON") if w["label"] == "WorkOrder"
-               and (work_orders_on() or w["status"] == "closed")]  # off: the record of work done only
+               and (work_management_on() or w["status"] == "closed")]  # off: the record of work done only
         wos.sort(key=lambda w: w["number"], reverse=True)
         kids = sorted(self.s.inn(self.org, id, "PART_OF"), key=lambda c: c["name"].lower())
         return {
@@ -15643,7 +15623,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if work_order_id in (None, "", "none"):
             return None
         # Work orders off: only a reference kept elsewhere (work_order_ref) can be linked.
-        self._need_work_orders()
+        self._need_work_management()
         if self.s.node(self.org, work_order_id, "WorkOrder") is None:
             raise Invalid("work_order_id must be a work order in this workspace (its id); for a number or link "
                           "kept elsewhere, use work_order_ref.")
@@ -15709,7 +15689,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """A corrective work order for one corrective action, on the report's position,
         linked to the action (its work_order_id), so the report and the work order name
         each other. The action keeps any reference typed before. Returns the report."""
-        self._need_work_orders()
+        self._need_work_management()
         r = self._open_report(report_id)
         action = next((a for a in r.get("actions") or [] if a["id"] == action_id), None)
         if action is None:
@@ -16304,7 +16284,7 @@ def summary(m: Maintenance) -> dict:
         "locations": sum(1 for x in m.s.nodes(m.org, "Location") if not x.get("retired")),
         "items": sum(1 for x in m.s.nodes(m.org, "Item") if not x.get("retired")),
         "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] in OPEN_STATUSES)
-        if work_orders_on() else 0,
+        if work_management_on() else 0,
         "low_stock": sum(1 for st in m.s.nodes(m.org, "Stock")
                          if st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]),
         "critical_short": len(m.critical_spares_short()),

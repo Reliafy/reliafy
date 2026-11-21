@@ -23,7 +23,7 @@ from backend.maintenance.access import allowed
 from backend.maintenance import documents as documents_mod
 from backend.maintenance import photos as photos_mod
 from backend.maintenance.service import (PROJECTORS, Invalid, LimitReached, Maintenance, NeedsChoice, NotFound,
-                                         WorkOrdersOff, summary, work_orders_on)
+                                         WorkManagementOff, summary, work_management_on)
 from backend.maintenance.store import new_id
 from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.services import access as access_service
@@ -298,7 +298,7 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
     except NeedsChoice as err:
         # Not a refusal: the move goes ahead once the caller says what its tasks count there.
         return JSONResponse(status_code=409, content={"detail": client_message(err), "needs_choice": err.choice})
-    except (LimitReached, WorkOrdersOff) as err:
+    except (LimitReached, WorkManagementOff) as err:
         return JSONResponse(status_code=err.status, content={"detail": client_message(err)})
     except photos_mod.Busy as err:
         return JSONResponse(status_code=503, content={"detail": client_message(err)}, headers={"Retry-After": "30"})
@@ -306,14 +306,14 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": client_message(err)})
 
 
-def _work_orders_on() -> None:
-    """The work-order routes' gate: with work orders turned off (MAINTENANCE_WORK_ORDERS),
-    each answers 409 with what to do instead; the work orders stay in the log, hidden."""
-    if not work_orders_on():
-        raise HTTPException(status_code=409, detail=str(WorkOrdersOff()))
+def _work_management_on() -> None:
+    """The work-management routes' gate: with work management turned off (WORK_MANAGEMENT),
+    each answers 409 saying so; work orders stay in the log, hidden."""
+    if not work_management_on():
+        raise HTTPException(status_code=409, detail=str(WorkManagementOff()))
 
 
-WORK_ORDERS = [Depends(_work_orders_on)]
+WORK_ORDERS = [Depends(_work_management_on)]
 
 
 # ---- overview ----------------------------------------------------------------------
@@ -322,10 +322,13 @@ WORK_ORDERS = [Depends(_work_orders_on)]
 def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts)."""
     def read():
-        due, wos = m.due_tasks(30), m.work_orders("open") if work_orders_on() else []
+        # Work management off: no to-do list (what's due, late, open work orders).
+        on = work_management_on()
+        due, wos = (m.due_tasks(30), m.work_orders("open")) if on else ([], [])
         return {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
                 "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
-                "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short()}
+                "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short(),
+                "work_management": on}
     return _run(read)
 
 
@@ -1094,7 +1097,7 @@ def failure_mode_interval_inputs(mode_id: str, task_id: str | None = None, sessi
 
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Set when it was last done, and/or change its name, interval or unit, when it next falls due
+    """Set when it was last done (a plan input; "none" clears it), and/or change its name, interval or unit, when it next falls due
     (start; null or '' goes back to one interval from last done), its trigger or what doing it
     needs (resources: its LSA record)."""
     def go():
@@ -2178,18 +2181,7 @@ def list_work_orders(status: str | None = None, location_id: str | None = None, 
     return _run(read)
 
 
-@router.post("/work-done")
-def record_work_done(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Work that was done, recorded with no work order (how work is recorded when work orders
-    are turned off; it works with them on too): exactly one of position_id, item_id,
-    location_id, or task_id alone (the task's subject); task_id: the task done (its last
-    done renews); actions, readings, on, notes: as a work order's close takes them."""
-    return _run(m.record_work_done, body.get("position_id"), body.get("item_id"), body.get("location_id"),
-                body.get("task_id"), body.get("actions") or [], body.get("on"), body.get("notes", ""),
-                body.get("readings") or [], body.get("title"))
-
-
-@router.get("/due")
+@router.get("/due", dependencies=WORK_ORDERS)
 def due_tasks(horizon_days: int = 30, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The tasks falling due within the horizon (overdue ones too), soonest first: each with
     its due date (an open work order's own when it has one), its package and open work order."""

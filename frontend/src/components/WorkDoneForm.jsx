@@ -11,10 +11,9 @@ import {
 
 // What was done, as a work order's close records it: each action (checked, replaced,
 // repaired, inspected, other; a replacement's failure mode, the part and the new
-// item), the day and notes. Shared by a work order's close (onSubmit closes it) and,
-// with work orders turned off (workOrdersFlag.js), "Record what was done" on a
-// position or item (onSubmit records the same work without a work order).
-// `wo`: a work order, or the work-order-shaped subject from workDone.js.
+// item), the day and notes: a work order's close (onSubmit closes it). Work
+// management only: with it turned off (workManagement.js) nothing records work done.
+// `wo`: the work order.
 
 export const KINDS = [
   // A check that found nothing to do: sent as an inspection that found it OK.

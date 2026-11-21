@@ -163,7 +163,7 @@ test("without Reliafy Maintenance: no Assets, and Maintenance opens on RCM studi
   assert.deepEqual(kids(liveEntries({ preview: true }), "maintenance"), ["Requests"]);
 });
 
-test("work orders turned off: no Orders, and Maintenance opens on Packages", () => {
+test("work management turned off: no Orders, and Maintenance opens on Packages", () => {
   const off = { ...ALL, work_orders: false };
   const live = liveEntries(off);
   const m = live.find((e) => e.id === "maintenance");
@@ -592,4 +592,13 @@ test("every top-level menu entry has a sidebar icon", () => {
   const topLevel = [...new Set(ROLES.flatMap((r) => r.entries || []))];
   const missing = topLevel.filter((id) => !new RegExp(`\\n\\s*${id}:`).test(table));
   assert.deepEqual(missing, []);
+});
+
+test("work management turned off: Home's to-do cards become the plan card", () => {
+  assert.deepEqual(homeCards(["planner"]), ["due"]);
+  assert.deepEqual(homeCards(["technician"]), ["work-today"]);
+  assert.deepEqual(homeCards(["planner"], { workManagement: false }), ["plan"]);
+  assert.deepEqual(homeCards(["technician", "planner"], { workManagement: false }), ["plan"]);
+  assert.deepEqual(homeCards(["logistics"], { workManagement: false }), ["spares", "plan"]);
+  assert.deepEqual(homeCards(["analyst"], { workManagement: false }), ["recent-models", "recent-data"]);
 });

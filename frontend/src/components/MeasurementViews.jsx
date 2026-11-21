@@ -17,7 +17,7 @@ import {
 } from "../measuringPoint.js";
 import { ACCENT, DANGER, MUTED } from "../plotTheme.js";
 import { PointReadingModal } from "../views/MaintenancePosition.jsx";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import "../views/Maintenance.css";
 import "./MeasurementViews.css";
 
@@ -142,8 +142,8 @@ export function pointViewMenu(point, { onRead, onLimits, onMove }) {
 }
 
 export function PointView({ id, onBack, onMenu = null, onChanged }) {
-  // Work orders turned off (workOrdersFlag.js): no alarm work order, no links to one.
-  const workOrders = useWorkOrdersOn();
+  // Work management off (workManagement.js): no alarm work order, no links to one.
+  const workOrders = useWorkManagementOn();
   const [point, setPoint] = useState(null);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null); // "read" | "limits" | "move"
@@ -272,7 +272,7 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
               {settingChangeRows(point, today).map((c) => (
                 <li key={c.key}>
                   <span className="mv-change-text">{c.text}</span>
-                  {c.workOrder && !workOrders ? <span className="lib-date"> · with work done</span>
+                  {c.workOrder && !workOrders ? null
                     : c.workOrder
                     ? <> · <Link to={`/maintenance/work-orders/${c.workOrder.id}`}>WO {c.workOrder.number}</Link>{c.task && <span className="lib-date"> · {c.task.name}</span>}</>
                     : <span className="lib-date"> · by hand</span>}

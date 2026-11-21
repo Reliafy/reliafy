@@ -5,10 +5,12 @@ import { dayText } from "./measuringPoint.js";
 
 // "first due 1 Oct 2027" (a date set for it), "next due 9 Nov 2027", or "" (by use, raised
 // only by an event, or no date yet).
-export function dueText(task) {
+// plan: work management turned off (workManagement.js), a hypothetical plan's "planned".
+export function dueText(task, { plan = false } = {}) {
   if (!task) return "";
-  if (task.first_due) return `first due ${dayText(task.first_due)}`;
-  return task.next_due ? `next due ${dayText(task.next_due)}` : "";
+  const word = plan ? "planned" : "due";
+  if (task.first_due) return `first ${word} ${dayText(task.first_due)}`;
+  return task.next_due ? `next ${word} ${dayText(task.next_due)}` : "";
 }
 
 // Whether a task takes a start date: one by the calendar (a task by use falls due on its counter).

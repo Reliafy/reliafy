@@ -20,7 +20,9 @@ for (const width of [1440, 400]) {
     await open(page, `/maintenance/packages/${pkg.id}`);
     await expect(page.getByRole("heading", { name: `Smoke round ${tag}`, level: 1 })).toBeVisible();
     await expect(page.locator(".maint-answer")).toContainText(/^Every Saturday, next visit /);
-    await expect(page.getByRole("heading", { name: "Next visits" })).toBeVisible();
+    // Work management off (SMOKE_WORK_MANAGEMENT=off): the visits are a plan.
+    const off = (await (await request.get("/api/config")).json()).work_management === false;
+    await expect(page.getByRole("heading", { name: off ? "Planned visits" : "Next visits" })).toBeVisible();
     await expect(page.getByRole("row", { name: new RegExp(`Grease ${tag}.*every 4th visit`) })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 

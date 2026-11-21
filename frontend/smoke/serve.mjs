@@ -22,9 +22,9 @@ Object.assign(env, {
   // "What do you do?" (the roles picker, off by default), so its tests run.
   MENU_ROLES: "true",
   MAINTENANCE_STORE: "mongo",
-  // Work orders on (the default), or off with SMOKE_WORK_ORDERS=off: the rest of
-  // Maintenance with no work orders (MAINTENANCE_WORK_ORDERS).
-  MAINTENANCE_WORK_ORDERS: process.env.SMOKE_WORK_ORDERS || "on",
+  // Work management on (the default), or off with SMOKE_WORK_MANAGEMENT=off
+  // (SMOKE_WORK_ORDERS, its earlier name, too): Reliafy as reliability software.
+  WORK_MANAGEMENT: process.env.SMOKE_WORK_MANAGEMENT || process.env.SMOKE_WORK_ORDERS || "on",
   // The single-user mode's fixed user, made an operator, so operator-only
   // behaviour (and any installed extension's operator pages) is tested too.
   ADMIN_EMAILS: "dev@local",
