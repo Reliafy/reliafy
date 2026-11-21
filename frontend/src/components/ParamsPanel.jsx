@@ -3,6 +3,7 @@ import { ErrorNotice } from "./StorageCap.jsx";
 import Select from "./Select.jsx";
 import Units from "./Units.jsx";
 import { unitSettled } from "../lifeData.js";
+import { whyCantCreate } from "../newModelWhy.js";
 import { getDistributions, createModelFromParams } from "../api.js";
 
 // Build a model from known parameters — no data. For handbook values, a figure
@@ -36,6 +37,9 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
   const paramsReady = paramNames.length > 0 && paramNames.every((p) => num(values[p]));
   // The unit is one required choice: a unit, or "No unit" ticked.
   const canSave = name.trim() && paramsReady && unitSettled(unit) && !busy;
+  // Said beside Create model while it's unavailable (the unit box can sit below the fold).
+  const why = busy || !paramNames.length ? null
+    : whyCantCreate({ name, missing: paramNames.filter((p) => !num(values[p])), unit });
 
   const onSave = async () => {
     setBusy(true);
@@ -127,7 +131,7 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
       <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
-        <span />
+        {why ? <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span> : <span />}
         <div className="row" style={{ margin: 0 }}>
           <button className="secondary" onClick={onCancel} disabled={busy}>Back</button>
           <button onClick={onSave} disabled={!canSave}>{busy ? "Creating…" : "Create model"}</button>

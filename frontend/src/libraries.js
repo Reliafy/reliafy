@@ -177,3 +177,14 @@ export function createdState(ds, typedName = null) {
   };
   return Object.keys(state).length ? { state } : undefined;
 }
+
+// The models fitted to a dataset that a library can take with it (non-repairable, repairable and
+// accelerated life; not samples), offered as ticked choices in the dataset's Add to library…
+const LIBRARY_MODEL_COLLECTIONS = new Set(["models", "recurrent_models", "alt_models"]);
+export function datasetModelsForLibrary(ds) {
+  if (!ds) return [];
+  const own = (ds.models || []).filter((m) => m.kind !== "joint").map((m) => ({ id: m.id, name: m.name, collection: "models", is_sample: m.is_sample }));
+  const others = (ds.other_models || []).map((m) => ({ id: m.id, name: m.name, collection: m.collection, is_sample: m.is_sample }));
+  return [...own, ...others].filter((m) => LIBRARY_MODEL_COLLECTIONS.has(m.collection) && !m.is_sample)
+    .map(({ id, name, collection }) => ({ id, name, collection }));
+}

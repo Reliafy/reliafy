@@ -51,6 +51,22 @@ def _rebuilt_matches(m):
 
 # ---- products and designs -----------------------------------------------------------------
 
+def test_product_counts_items_of_its_part_apart_from_items_built(m):
+    """Items registered as the product's part (not built from the design) don't count as
+    built, but the product says how many of its part there are, so "0 built" can't mislead."""
+    ids = _uav(m)
+    part_id = ids["product"]["part"]["id"]
+    assert m.product(ids["root"])["items_of_part"] == 0
+    for serial in ("D1", "D2"):
+        m.create_item("UAV", serial=serial, part_id=part_id)
+    p = m.product(ids["root"])
+    assert p["items_built"] == 0 and p["items_of_part"] == 2
+    _built(m, ids["root"], "B1")
+    p = m.product(ids["root"])
+    assert p["items_built"] == 1 and p["items_of_part"] == 3
+
+
+
 def test_create_product_makes_the_part_and_the_declared_design(m):
     p = m.create_product("UAV Mk2", part_number="UAV-2", rev="C", description="Quadcopter")
     assert p["name"] == "UAV Mk2" and p["rev"] == "C" and p["description"] == "Quadcopter"

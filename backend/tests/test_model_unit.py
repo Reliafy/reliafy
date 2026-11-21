@@ -203,3 +203,19 @@ def test_no_unit_writes_no_unit_argument(client):
     script = client.get(f"/api/models/{saved['id']}/export.py").text
     assert "unit=" not in script.split("model = Weibull.fit(", 1)[1].split("\n", 1)[0]
     assert np.isfinite(saved["results"]["params"][0]["value"])
+
+
+def test_a_dataset_whose_columns_name_no_unit_shows_the_unit_typed_for_its_fit(client):
+    """Pasted values come in as "time" and "censored": the columns say no unit, so the Data list
+    and the dataset's page showed none ("—") even after a fit in hours. The fit's unit is shown."""
+    from backend.services.datasets import typed_time_unit
+
+    csv = PUMPS.replace("months,censored", "time,censored")
+    saved = _save(client, csv=csv, x="time", unit="hours")
+    ds_id = saved["dataset_id"]
+    assert client.get(f"/api/datasets/{ds_id}").json()["time_unit"] == "hour"
+    listed = next(d for d in client.get("/api/datasets").json()["datasets"] if d["id"] == ds_id)
+    assert listed["time_unit"] == "hour"
+    # "No unit" stays none; a unit that isn't time keeps its own word.
+    assert typed_time_unit("units") is None and typed_time_unit("") is None
+    assert typed_time_unit("Operating hours") == "hour" and typed_time_unit("Starts") == "start"

@@ -1693,7 +1693,29 @@ def dataset_tags(dataset: Dataset, last_mapping: dict | None = None) -> dict:
             _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": "", "time_unit": None}
         if len(_TAG_CACHE) > 5000:
             _TAG_CACHE.pop(next(iter(_TAG_CACHE)))
-    return _TAG_CACHE[key]
+    out = _TAG_CACHE[key]
+    if not out.get("time_unit"):
+        # The columns don't name a unit ("time"), but the unit typed for the data
+        # (its saved reading) or for the newest fit of it does: show that one.
+        typed = typed_time_unit((reading or {}).get("unit") or (last_mapping or {}).get("unit"))
+        if typed:
+            out = {**out, "time_unit": typed}
+    return out
+
+
+def typed_time_unit(unit) -> str | None:
+    """A unit someone typed ("Hours", "operating hours", "cycles"), in the
+    singular form the dataset's ``time_unit`` uses ("hour", "cycle"), or None
+    for none or "No unit". A unit of time is named the way the column guess
+    names it; anything else keeps its own word, lower case."""
+    text = str(unit or "").strip()
+    if not text or text.lower() in ("units", "unitless", "no unit"):
+        return None
+    known = _time_unit([text])
+    if known:
+        return known
+    word = text.lower()
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
 
 
 def profile(dataset: Dataset) -> dict:

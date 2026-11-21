@@ -664,10 +664,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
         {source === "saved" ? (
-          <button data-wt="fit-source-next" onClick={useSaved} disabled={!picked?.detail || loading}
-                  title={picked ? undefined : "Pick a dataset first"}>
-            Next
-          </button>
+          <>
+            {!picked && !loading && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>Pick a dataset first.</span>}
+            <button data-wt="fit-source-next" onClick={useSaved} disabled={!picked?.detail || loading}
+                    title={picked ? undefined : "Pick a dataset first"}>
+              Next
+            </button>
+          </>
         ) : (
           <span className="hint" style={{ margin: 0 }}>
             {source === "paste" ? "Paste your values to continue" : "Upload a CSV or Excel file to continue"}
@@ -676,10 +679,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       </>
     );
   } else if (step === 3) {
+    // Every reason Fit is unavailable is said beside it, not only in a tooltip.
+    const fitWhy = waitingFor || (bayes ? priorWanting : groupProblem(selectedOpt, group))
+      || (!bayes && !distribution ? "Choose a model to fit first." : null);
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading || rd.saving}>Back</button>
-        {!rd.editing && waitingFor && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{waitingFor}</span>}
+        {!rd.editing && fitWhy && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{fitWhy}</span>}
         {rd.editing ? null : bayes ? (
           <button data-wt="fit-run" onClick={onFit} disabled={loading || !!priorWanting || !mappingValid} title={priorWanting || undefined}>
             {loading ? "Fitting: about 10 seconds…" : "Fit with the prior"}

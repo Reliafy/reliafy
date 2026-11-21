@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addWorkspaceId, countsText, dataLine, entryAnchor, entryPath, entryTags, filterEntries, groupLibraries, libraryMatches,
+  addWorkspaceId, countsText, dataLine, datasetModelsForLibrary, entryAnchor, entryPath, entryTags, filterEntries, groupLibraries, libraryMatches,
   libraryPath, modelBasis, modelHeadline, previewRowsText, publicLibraryId, sharingProblems, showsPublicLibrary, usedLinks, visibilityBody,
 } from "./libraries.js";
 
@@ -127,4 +127,20 @@ test("an entry's preview line matches what the table shows", () => {
   assert.equal(previewRowsText(4, 4), "4 rows.");
   assert.equal(previewRowsText(14, 14), "14 rows: scroll the table to see them all.");
   assert.equal(previewRowsText(50, 120), "The first 50 of 120 rows: scroll the table to see them.");
+});
+
+test("a dataset's Add to library offers the models fitted to it that a library can hold", () => {
+  const ds = {
+    models: [{ id: "w", name: "Weibull", kind: "life" }, { id: "j", name: "Joint", kind: "joint" }],
+    other_models: [
+      { id: "r", name: "Crow-AMSAA", collection: "recurrent_models" },
+      { id: "d", name: "Wear", collection: "degradation_models" },
+      { id: "s", name: "Sample ALT", collection: "alt_models", is_sample: true },
+    ],
+  };
+  assert.deepEqual(datasetModelsForLibrary(ds), [
+    { id: "w", name: "Weibull", collection: "models" },
+    { id: "r", name: "Crow-AMSAA", collection: "recurrent_models" },
+  ]);
+  assert.deepEqual(datasetModelsForLibrary(null), []);
 });
