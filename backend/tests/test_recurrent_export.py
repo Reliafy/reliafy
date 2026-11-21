@@ -65,7 +65,7 @@ def _check_nhpp(out, res):
     if res["model"]["id"] in ("crow_amsaa", "duane"):
         _check_interval(out["Growth shape (beta)"], res["beta"], res["beta_ci"])
     if res.get("growth"):
-        assert f"Trend: {res['growth']}" in out["_stdout"]
+        assert "Trend:" not in out["_stdout"] and "come faster as time goes on" in out["_stdout"]
     python_scripts.close(out["End of observation"]["value"], res["end_of_observation"])
     _check_interval(out["ROCOF at end"], res["rocof"], res.get("rocof_ci"))
     _check_interval(out["MTBF at end"], res["mtbf"], res.get("mtbf_ci"))

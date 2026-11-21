@@ -835,7 +835,7 @@ def restoration(model_id: str, opts: dict, value: float, ci, method: str = "wald
         if rci:
             text += f" (90% range {rci[0]:.2f}× to {rci[1]:.2f}×)"
         text += f": the gap {trend} with every repair"
-        text += " (deterioration)." if ratio < 1 else " (improvement)." if ratio > 1 else "."
+        text += "."
         out.update({"effectiveness": None, "ratio": ratio, "ratio_ci": rci, "sentence": text, "short": short,
                     "scale": "Below 1, failures come closer together; above 1, further apart."})
         return out

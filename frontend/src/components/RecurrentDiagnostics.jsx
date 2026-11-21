@@ -1,6 +1,6 @@
 // A repairable model's Diagnostics tab: "Can I trust this model?" as small
 // checks titled with their question, the technical name in brackets and a
-// one-line verdict (components/model/ModelLayouts.jsx CheckCard), from what
+// one-line reading (components/model/ModelLayouts.jsx CheckCard), from what
 // the fit already returns: the trend tests, the Duane plot of the data, each
 // system against the model, the Cramér-von Mises test, the repair test
 // (imperfect repair) and the fit statistics.
@@ -33,7 +33,7 @@ function TrendCheck({ r, name }) {
                            marker: { size: 4, line: { width: 0 } }, name: "The data" }));
   return (
     <CheckCard chart question="Is the failure rate changing?" term="Laplace and MIL-HDBK-189C trend tests"
-               tone={c?.tone} verdict={c?.words || "No trend test for this model."}>
+               verdict={c?.words || "No trend test for this model."}>
       <Plot fill data={traces} download={`${name} — trend`}
             layout={{ ...SMALL, legend: LEGEND, showlegend: true, xaxis: { title: { text: xTitle(r.unit) }, rangemode: "tozero" },
                       yaxis: { title: { text: "Failures per system" }, rangemode: "tozero" } }} />

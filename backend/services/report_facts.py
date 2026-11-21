@@ -112,7 +112,6 @@ def _recurrent(payload: dict) -> list[str]:
     _add(lines, "Systems", num(r.get("n_systems")))
     _add(lines, "Failures recorded", num(r.get("n_events")))
     _add(lines, "Growth shape β", num(r.get("beta")))
-    _add(lines, "Trend", r.get("growth"))
     _add(lines, "Current MTBF", _with_unit(r.get("mtbf"), unit))
     _add(lines, "Current failure rate (per " + (unit.rstrip("s") or "unit") + ")", num(r.get("rocof")))
     demo = r.get("demonstrated_mtbf") or {}

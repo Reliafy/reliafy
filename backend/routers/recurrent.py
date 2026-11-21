@@ -77,7 +77,6 @@ def _model_summary(doc, ctx: AccessCtx) -> dict:
         "n_systems": r.get("n_systems"),
         "n_events": r.get("n_events"),
         "beta": r.get("beta"),
-        "growth": r.get("growth"),
         "unit": r.get("unit", ""),
         "dataset_id": doc.dataset_id,
         "is_sample": samples_service.is_sample(doc.owner_id),
