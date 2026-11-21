@@ -11,6 +11,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { generatePositionRbd, getPartStructure, getProduct, listProductItems, listRbds } from "../api.js";
 import Section from "./ui/Section.jsx";
+import RedundancyAsk from "./RedundancyAsk.jsx";
+import { arrangementsFrom, askProblem } from "../redundancyAsk.js";
 import { fmtDate } from "./MaintenanceParts.jsx";
 import { RollupCard, StructureTree } from "./MaintenanceStructure.jsx";
 import { BuildItemModal, DesignReports } from "./ProductPanels.jsx";
@@ -135,15 +137,31 @@ function Analyses({ product }) {
   const [rbds, setRbds] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Look-alike positions to ask about first (null: not asked yet), and the answers.
+  const [sets, setSets] = useState(null);
+  const [answers, setAnswers] = useState({});
+  const [tried, setTried] = useState(false);
   useEffect(() => {
     listRbds().then((d) => setRbds(productRbds(product, d.rbds || []))).catch((e) => setError(e.message));
   }, [product]);
+  const fail = (e) => { setError(`The RBD wasn't made: ${e.message}`); setBusy(false); };
+  const make = (arrangements = []) => generatePositionRbd(product.id, arrangements.length ? { arrangements } : {})
+    .then((r) => navigate(`/systems/b/${r.rbd_id}`)).catch(fail);
+  const unanswered = sets ? askProblem(sets, answers) : null;
   const derive = () => {
-    setBusy(true);
     setError(null);
-    generatePositionRbd(product.id)
-      .then((r) => navigate(`/systems/b/${r.rbd_id}`))
-      .catch((e) => { setError(`The RBD wasn't made: ${e.message}`); setBusy(false); });
+    if (sets?.length) {
+      setTried(true);
+      if (unanswered) return;
+      setBusy(true);
+      make(arrangementsFrom(sets, answers));
+      return;
+    }
+    setBusy(true);
+    generatePositionRbd(product.id, { check: true }).then((r) => {
+      if (r.ask?.length) { setSets(r.ask); setBusy(false); return; }
+      make();
+    }).catch(fail);
   };
   return (
     <Section title="Analyses of this design" count={rbds?.length || null} id="design-analysis">
@@ -158,14 +176,24 @@ function Analyses({ product }) {
           ))}
         </ul>
       )}
+      {sets?.length > 0 && (
+        <RedundancyAsk sets={sets} answers={answers} onChange={setAnswers} disabled={busy} tried={tried} />
+      )}
       <div className="maint-row">
-        <button type="button" className="secondary sm" onClick={derive} disabled={busy}>{busy ? "Making…" : "Make an RBD from this structure"}</button>
+        <button type="button" className="secondary sm" onClick={derive} disabled={busy}>
+          {busy ? "Making…" : sets?.length ? "Make the RBD" : "Make an RBD from this structure"}</button>
+        {sets?.length > 0 && (
+          <button type="button" className="secondary sm" disabled={busy}
+                  onClick={() => { setSets(null); setAnswers({}); setTried(false); }}>Cancel</button>
+        )}
         <button type="button" className="secondary sm" onClick={() => navigate(newPredictionPath({ product: product.id }))}>
           New prediction from its parts list
         </button>
       </div>
       <p className="td-quiet">Making an RBD turns each part directly under {product.name} into a block, wired by its connections
-        and redundancy groups; a block with no model for its class gets a placeholder, which the RBD says. A prediction is
+        and redundancy sets. Each block takes its position's model (or its class's, or its parts-count rate; a part made of
+        others becomes a sub-system); only one with none of these gets a placeholder, which the RBD says. Parts that look
+        alike are asked about first. A prediction is
         a parts count from handbook base rates, for a design with no failure data yet.</p>
     </Section>
   );

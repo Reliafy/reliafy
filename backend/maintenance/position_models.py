@@ -1851,7 +1851,7 @@ def _tree_graph(m, db, owners, hidden, position_id: str):
 
 def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = None,
               replace_link_id: str | None = None, note: str = "", _unit: str | None = None,
-              _depth: int = 0, name: str | None = None) -> dict:
+              _depth: int = 0, name: str | None = None, arrangements=None, check: bool = False) -> dict:
     """"Build an RBD from what's inside": a new diagram whose blocks are the positions one level
     inside (each block the child's model in use: a saved model, or its own RBD as a sub-system;
     else a placeholder, flagged, never invented), wired by their connections and redundancy
@@ -1867,12 +1867,19 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     ``name``: the new diagram's (asked once, in the app); else "<position> (from the tree)". A
     sub-assembly's own diagram (made only where it has no model of its own, so its life is its
     parts') is named after its position and marked on its block as a sub-diagram, so the RBD list
-    shows it under this one."""
+    shows it under this one.
+
+    ``check``: only what to ask first ({ask}: positions inside that look alike and are in no
+    redundancy set), nothing saved. ``arrangements``: the answers (rbd_derive.apply_arrangements:
+    parallel or standby become redundancy sets on the tree; series is left as it is)."""
     from backend.maintenance import rbd_derive
     from backend.services import rbds as rbds_service
     from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
 
     sv = _sv()
+    if check:
+        return {"ask": rbd_derive.ask(m, position_id)}
+    said = rbd_derive.apply_arrangements(m, position_id, arrangements) if arrangements else []
     p, fetch, children, unit, block, nested = _tree_parts(m, db, owners, hidden, position_id,
                                                           owner_id=owner_id or m.org, unit=_unit, depth=_depth)
     old_link = None
@@ -1886,7 +1893,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         old_link = next((x for x in m.position_models(position_id) if x["id"] == replace_link_id), None)
         if old_link is None or old_link["model_type"] != "rbd":
             raise sv.Invalid("Rebuild names this position's RBD row (replace_link_id).")
-    built = rbd_derive.build(m, position_id, block_model=block, unit=unit)
+    built = rbd_derive.build(m, position_id, block_model=block, unit=unit, said_series=said)
     kept_gone: list = []
     resolve = lambda mid: fetch("model", mid)  # noqa: E731
     try:
@@ -1933,7 +1940,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     if nested:
         built["notes"].append(f"Placeholders inside sub-systems: {', '.join(nested[:8])}"
                               f"{' …' if len(nested) > 8 else ''}. Give each a model in Models › Life models and rebuild.")
-    return {**link, "notes": built["notes"], "placeholders": built["placeholders"] + nested}
+    return {**link, "notes": built["notes"], "placeholders": built["placeholders"] + nested, "ask": built["ask"]}
 
 
 def new_rbd(m, db, owners, hidden, position_id: str, owner_id: str, repairable: bool = False,

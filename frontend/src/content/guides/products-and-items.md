@@ -46,7 +46,13 @@ under **⋯** at the end of the row):
     made of, as designed, with the quantities rolled up (no stock: stock is
     kept for assets). **Change it…** opens the part's page.
   - **Analyses of this design**: the product's RBDs, **Make an RBD from this
-    structure**, and a reliability prediction from its parts list.
+    structure**, and a reliability prediction from its parts list. The RBD's
+    blocks take each position's model in use (or its class's, or its
+    parts-count rate; a part made of others becomes a sub-system), with a
+    placeholder only where there's nothing to go on. Parts that look alike
+    (Pump set 1 and Pump set 2) and aren't marked as backing each other up are
+    asked about first: **Every one needed**, **Fewer will do** or **Duty and
+    standby**. The last two are saved on the tree as a redundancy set.
 - **Maintenance**: the design's maintenance programme. **Tasks** lists every
   task in the design; **What it needs** shows what each one needs to be done
   (labour, tools, spares, consumables, method), added up. Its tasks are

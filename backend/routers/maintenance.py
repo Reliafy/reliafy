@@ -1473,7 +1473,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
                     bool(spec.get("repairable")), str(spec.get("start") or "blank"), note)
     if body.get("build_rbd"):
         return _run(pm.build_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, replace, note,
-                    name=str(body.get("name") or "").strip() or None)
+                    name=str(body.get("name") or "").strip() or None, arrangements=body.get("arrangements"),
+                    check=bool(body.get("check")))
     if body.get("rbd_id"):
         return _run(pm.link_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, body["rbd_id"], note, replace)
     if isinstance(body.get("prediction"), dict):
@@ -1937,10 +1938,15 @@ def impact(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespo
 
 
 @router.post("/positions/{position_id}/rbd")
-def generate_rbd(position_id: str, session=Depends(get_session), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+def generate_rbd(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                 ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Make (or remake) the position's RBD from the positions inside it. check true: only the
+    look-alike positions to ask about first ({ask}); arrangements [{position_ids, how: parallel |
+    standby | series, k?, standby?}]: the answers, recorded as redundancy sets before building."""
     from backend.maintenance import rbd_derive
 
-    return _run(rbd_derive.save, m, session, position_id)
+    return _run(rbd_derive.save, m, session, position_id, ctx.read_owners, ctx.hidden, body.get("arrangements"),
+                bool(body.get("check")))
 
 
 # ---- graph queries in Cypher (#423): owner-only ------------------------------------------

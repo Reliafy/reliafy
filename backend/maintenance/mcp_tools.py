@@ -781,8 +781,8 @@ TOPOLOGY: Table = {
     "restore_group": ("group_id", "", "Bring a retired group back with its members."),
     "generate_rbd": ("position_id", "", """Generate (or regenerate) an RBD for a system position from the
         positions inside it: connections wire the blocks, groups become k of n (or one standby block), blocks
-        take their class's
-        fitted model (placeholders otherwise, listed in notes). Saved as a normal RBD: analyse rbd."""),
+        take each position's model in use (placeholders otherwise, in notes); look-alikes with no group come back
+        in ask (create_group, then regenerate). Saved as a normal RBD: analyse rbd."""),
 }
 
 ITEM_CLASSES: Table = {

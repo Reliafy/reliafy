@@ -1,0 +1,5 @@
+.rask { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--bg-subtle); }
+.rask-lede { margin: 0; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
+.rask-set { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
+.rask-set > * { min-width: 0; }

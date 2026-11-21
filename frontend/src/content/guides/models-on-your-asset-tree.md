@@ -219,7 +219,12 @@ their own plan.
 
 ### Positions that back each other up
 
-Blocks built from the tree are in series unless the tree says otherwise. To say
+Blocks built from the tree are in series unless the tree says otherwise.
+Positions inside that look like units of one job (the same name but for a
+number or letter, and the same class) with no set marked are asked about when
+you build: **Every one needed**, **Fewer will do** (with how many are needed,
+for three or more) or **Duty and standby**. The last two are saved as a set,
+as below. To say
 two or more positions inside one back each other up, open the position's
 **⋯** menu on **Models › Life models** (or **Models › Missions**) and choose **RBD ›
 Redundancy inside…**. It fills the table area beside the tree, with no dialog:

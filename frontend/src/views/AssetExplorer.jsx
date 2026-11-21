@@ -1083,7 +1083,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // Missions tabs both build through here. A new one is named first, once, in the table pane
   // (NewRbdPane: `name` undefined opens it), and nothing is saved until it's named.
   const building = useRef(false);
-  const buildRbd = async (position, link = null, name = undefined) => {
+  const buildRbd = async (position, link = null, name = undefined, arrangements = null) => {
     if (building.current) return;
     const had = link ? null : builtRbdLink(pmodels.links, position.id);
     if (had) return openRbd(position, had.model_id);
@@ -1102,7 +1102,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     say(`${link ? "Rebuilding" : "Building"} an RBD from what's inside ${position.name}…`);
     try {
       const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}),
-                                                          ...(name ? { name } : {}) });
+                                                          ...(name ? { name } : {}),
+                                                          ...(arrangements?.length ? { arrangements } : {}) });
       say(made.existing ? `Opened ${made.name}: ${position.name} already has an RBD built from what's inside.`
         : `${link ? "Rebuilt" : "Built"} ${made.name}.`);
       pmodels.load();
@@ -2734,7 +2735,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const paneSide = !panePosition ? null : paneKind === "rbd" && paneAt.rbd === NEW_RBD ? (
     <div className="rw tt-side">
       <NewRbdPane position={panePosition} kids={insideOf(panePosition.id)} phone={phone} headingRef={paneHeading}
-                  onClose={() => closePane()} onCreate={(name) => buildRbd(panePosition, null, name)} />
+                  onClose={() => closePane()} onCreate={(name, arrangements) => buildRbd(panePosition, null, name, arrangements)} />
     </div>
   ) : paneKind === "rbd" ? (
     <div className="rw tt-side">

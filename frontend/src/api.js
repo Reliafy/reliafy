@@ -3154,8 +3154,9 @@ export function getRedundancyInside(positionId) {
 export function getPositionImpact(id) {
   return request(`/api/maintenance/positions/${id}/impact`);
 }
-export function generatePositionRbd(id) {
-  return postJson(`/api/maintenance/positions/${id}/rbd`, {});
+// body: {check: true} for what to ask first ({ask}); {arrangements} with the answers.
+export function generatePositionRbd(id, body = {}) {
+  return postJson(`/api/maintenance/positions/${id}/rbd`, body);
 }
 
 export function setWorkStatus(id, status, note = "") {
