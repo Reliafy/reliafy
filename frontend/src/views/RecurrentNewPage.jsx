@@ -123,7 +123,7 @@ export default function RecurrentNewPage() {
   // read its columns starts from that model's columns.
   const rd = useDatasetReading(detail);
   const kept = useMemo(
-    () => (detail && rd.source !== "saved" && !detail.reading_kept ? savedRecurrentMapping(detail.last_recurrent_mapping, rd.cols?.columns) : null),
+    () => (detail && rd.source === "guessed" && !detail.reading_kept ? savedRecurrentMapping(detail.last_recurrent_mapping, rd.cols?.columns) : null),
     [detail, rd.source, rd.cols],
   );
   const reading = useMemo(
