@@ -293,21 +293,24 @@ export default function OperatingPlanPane({ position, root = null, phone = false
               <p className="lib-date op-hint">{PLAN_KINDS.find(([k]) => k === form.kind)?.[2]}</p>
             </fieldset>
             <KindForm form={form} set={set} disabled={saving} />
-            <div className="op-row op-use">
-              <span>Other use (optional): about</span>
-              <input className="op-num" type="number" min="0" step="any" inputMode="decimal" value={form.use.amount}
-                     disabled={saving} aria-label="Other use amount" placeholder="400"
-                     onChange={(e) => set({ use: { ...form.use, amount: e.target.value } })} />
-              <input className="op-unit" value={form.use.meter} maxLength={24} disabled={saving}
-                     aria-label="Other use unit" placeholder="km"
-                     onChange={(e) => set({ use: { ...form.use, meter: e.target.value } })} />
-              <span>a</span>
-              <select value={form.use.per} disabled={saving} aria-label="Other use per"
-                      onChange={(e) => set({ use: { ...form.use, per: e.target.value } })}>
-                {Object.keys(RATE_PER).map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <p className="lib-date op-hint">Distance or counts it does, such as 400 km a day, so a model in km or cycles can be read against dates.</p>
+            <fieldset className="op-kinds op-use">
+              <legend className="op-label">Other use (optional)</legend>
+              <p className="lib-date op-hint">Distance or counts it does, such as 400 km a day, so a model in km or cycles can be read against dates.</p>
+              <div className="op-row">
+                <span>About</span>
+                <input className="op-num" type="number" min="0" step="any" inputMode="decimal" value={form.use.amount}
+                       disabled={saving} aria-label="How much" placeholder="400"
+                       onChange={(e) => set({ use: { ...form.use, amount: e.target.value } })} />
+                <input className="op-unit" value={form.use.meter} maxLength={24} disabled={saving}
+                       aria-label="Unit, such as km or cycles" placeholder="km"
+                       onChange={(e) => set({ use: { ...form.use, meter: e.target.value } })} />
+                <span>a</span>
+                <select value={form.use.per} disabled={saving} aria-label="Per"
+                        onChange={(e) => set({ use: { ...form.use, per: e.target.value } })}>
+                  {Object.keys(RATE_PER).map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+            </fieldset>
             {form.kind !== "runs" && (
               <details className="op-specific" open={!!form.specific.trim()}>
                 <summary>Set runs first (optional)</summary>
