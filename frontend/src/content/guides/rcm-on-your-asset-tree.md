@@ -476,6 +476,11 @@ Each decision's **Evidence check** shows one of these:
   rationale are linked. Nothing is worked out from them, so it never says
   supported or contradicted. Click it to open the report, or the function's
   notes beside the table.
+- **Model linked** — a fitted life model is linked to a fixed-interval (or
+  uneconomic run-to-failure) decision. It shows how the item fails, but not
+  which interval pays: run **Optimal replacement** on it and link the saved
+  analysis to have the interval checked. The picker lists your life models
+  after the saved analyses.
 
 A decision with nothing linked yet shows **Not linked**, quietly: plenty of
 decisions are made from judgement, and linking evidence is optional. Its

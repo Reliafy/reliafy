@@ -477,10 +477,12 @@ export function NotesCard({ notes, history = [], onAppend, title = "Notes", canA
   );
 }
 
-// How something failed: the position's modes, those seen at like positions
-// (same class), or "something else" typed in. value is { choice, typed } (see
+// How something failed: the position's modes, those analysed on the positions
+// above it (`aboveModes`, [{position: {id, name}, modes}]: a pump set's FME(C)A
+// covers its coupling), those seen at like positions (same class), or
+// "something else" typed in. value is { choice, typed } (see
 // maintenanceModes.js for turning it into request fields).
-export function FailureModePicker({ modes = [], classModes = [], value, onChange, noneLabel = "Not known" }) {
+export function FailureModePicker({ modes = [], aboveModes = [], classModes = [], value, onChange, noneLabel = "Not known" }) {
   const v = value || { choice: "", typed: "" };
   return (
     <>
@@ -491,6 +493,11 @@ export function FailureModePicker({ modes = [], classModes = [], value, onChange
             {modes.map((m) => <option key={m.id} value={`id:${m.id}`}>{m.text}</option>)}
           </optgroup>
         )}
+        {aboveModes.map((g) => (
+          <optgroup key={g.position.id} label={`Analysed on ${g.position.name}`}>
+            {g.modes.map((m) => <option key={m.id} value={`id:${m.id}`}>{m.text}</option>)}
+          </optgroup>
+        ))}
         {classModes.length > 0 && (
           <optgroup label="Seen at like positions">
             {classModes.map((t) => <option key={t} value={`text:${t}`}>{t}</option>)}

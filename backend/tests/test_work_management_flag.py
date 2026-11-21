@@ -81,6 +81,9 @@ def test_work_management_refuses_saying_so(off):
             call()
         assert str(err.value).startswith(OFF_TEXT)
         assert isinstance(err.value, Invalid) and err.value.status == 409
+        # FRACAS corrective actions stay available: the refusal never says otherwise.
+        assert "corrective actions aren't" not in str(err.value)
+        assert "failure reports (with their corrective actions) work as before" in str(err.value)
     assert not hasattr(m, "record_work_done")  # work done is never recorded with it off
     before = m.s.event_count(ORG)
     assert m.generate(30) == {"work_orders": [], "skipped": []}

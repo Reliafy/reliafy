@@ -212,7 +212,7 @@ def test_filters_sort_pagination_and_counts(m):
     root = ids["plant"]
     every = m.failure_reports(position_id=root)
     assert every["counts"] == {"reported": 2, "investigating": 1, "corrective_action": 0, "verifying": 0,
-                               "closed": 0, "rejected": 1, "open": 3}
+                               "closed": 0, "rejected": 1, "no_fault_found": 0, "open": 3}
     assert [r["label"] for r in every["reports"]] == ["FR-2", "FR-4", "FR-3", "FR-1"]
     assert [r["label"] for r in m.failure_reports(position_id=root, status="open")["reports"]] == [
         "FR-2", "FR-3", "FR-1"]
@@ -494,6 +494,114 @@ def test_the_limits(m, monkeypatch):
     assert free.file_failure_report(ids["pump"], "Three")["label"] == "FR-3"
 
 
+# ---- what's already known: modes analysed above, a position with nothing fitted ---------
+
+def _skid(m):
+    """Skid › Pump set 1 › Flexible coupling, the FME(C)A on the pump set (a level up), an
+    item fitted on the pump set but nothing at the coupling; and a Fan elsewhere."""
+    skid = m.create_position("Skid")["id"]
+    pump_set = m.create_position("Pump set 1", parent_id=skid)["id"]
+    coupling = m.create_position("Flexible coupling", parent_id=pump_set)["id"]
+    fan = m.create_position("Fan")["id"]
+    m.fit(pump_set, new_item={"name": "Pump set unit", "serial": "PS-1"}, on="2025-01-01")
+    modes = {t: m.add_failure_mode(pump_set, t)["id"] for t in ("Coupling element fails", "Bearing seizes")}
+    return {"skid": skid, "pump_set": pump_set, "coupling": coupling, "fan": fan, **modes}
+
+
+def test_a_report_names_a_mode_analysed_above_it(m):
+    ids = _skid(m)
+    above = m.position(ids["coupling"])["failure_modes_above"]
+    assert above == [{"position": {"id": ids["pump_set"], "name": "Pump set 1"},
+                      "modes": [{"id": ids["Bearing seizes"], "text": "Bearing seizes"},
+                                {"id": ids["Coupling element fails"], "text": "Coupling element fails"}]}]
+    assert m.position(ids["coupling"])["failure_modes"] == []
+    r = _file(m, ids["coupling"], "Coupling element failed", failure_mode_id=ids["Coupling element fails"])
+    assert r["position"]["id"] == ids["coupling"]
+    assert r["failure_mode"] == {"id": ids["Coupling element fails"], "text": "Coupling element fails",
+                                 "ad_hoc": False, "on": {"id": ids["pump_set"], "name": "Pump set 1"}}
+    # Nothing new is added at the coupling; the same mode filters the list.
+    assert m.position(ids["coupling"])["failure_modes"] == []
+    assert m.failure_reports(failure_mode_id=ids["Coupling element fails"])["total"] == 1
+    # Changing to the other mode above works; a mode that isn't above it is refused.
+    r = m.update_failure_report(r["id"], failure_mode_id=ids["Bearing seizes"])
+    assert r["failure_mode"]["id"] == ids["Bearing seizes"]
+    with pytest.raises(Invalid, match="not this position"):
+        _file(m, ids["fan"], "Wrong", failure_mode_id=ids["Bearing seizes"])
+    # Other failures (a fitment's) still take only the position's own modes.
+    with pytest.raises(Invalid):
+        m._mode_ref(ids["coupling"], ids["Bearing seizes"])
+    before = m.s.snapshot()
+    m.s.rebuild()
+    assert m.s.snapshot() == before
+
+
+def test_a_report_at_a_position_with_nothing_fitted_is_kept_there(m):
+    ids = _skid(m)
+    r = _file(m, ids["coupling"], "Coupling element failed", occurred_on="2026-03-01")
+    assert r["item"] is None
+    life = r["life_data"]
+    assert life["counts"] is False and life["no_item"] is True
+    assert life["why"].startswith("nothing was fitted at this position that day")
+    # It isn't counted against the pump set's item (a report counts only where it's filed).
+    assert [row["c"] for row in m.life_data(ids["pump_set"])] == [1]
+    assert m.life_data(ids["coupling"]) == []
+    # Named the item, it counts: the pump set's item isn't fitted at the coupling, so it still says why.
+    item = m.position(ids["pump_set"])["fitted"]["item"]["id"]
+    named = m.update_failure_report(r["id"], item_id=item)["life_data"]
+    assert named["counts"] is False and "no_item" not in named
+
+
+# ---- no fault found ----------------------------------------------------------------------
+
+def test_no_fault_found_is_a_removal_never_a_failure(m):
+    ids = _plant(m)
+    rid = _file(m, ids["pump"], "Pump tripped, removed", occurred_on="2025-06-01")["id"]
+    # Open, the report counts the fitted item as failed on the day.
+    assert [row["c"] for row in m.life_data(ids["pump"])] == [0]
+    with pytest.raises(Invalid, match="what the test found"):
+        m.set_failure_report_status(rid, "no_fault_found")
+    with pytest.raises(Invalid, match="tested_with goes with status no_fault_found"):
+        m.set_failure_report_status(rid, "rejected", note="Dup", tested_with="TS-2")
+    r = m.set_failure_report_status(rid, "no_fault_found", note="Passed every test", tested_with="Test set TS-2",
+                                    by="Depot")
+    assert r["status"] == "no_fault_found" and r["rejected"] is None and r["closed"] is None
+    assert r["no_fault_found"] == {"on": m.today(), "by": "Depot", "note": "Passed every test",
+                                   "tested_with": "Test set TS-2"}
+    assert r["history"][-1]["change"] == "No fault found: Passed every test"
+    assert r["life_data"]["counts"] is False and r["life_data"]["removal"] is True
+    # Its life isn't ended by a failure: censored (still working) instead.
+    [row] = m.life_data(ids["pump"])
+    assert row["c"] == 1
+    # It's counted as its own status, not as open, closed or rejected.
+    counts = m.failure_reports(position_id=ids["plant"])["counts"]
+    assert counts["no_fault_found"] == 1 and counts["open"] == 0 and counts["rejected"] == 0
+    assert m.failure_reports(status="no_fault_found")["total"] == 1
+    # A later failure at the position isn't a repeat of it; the only move is a reopen.
+    with pytest.raises(Invalid, match="reopen"):
+        m.set_failure_report_status(rid, "closed")
+    r = m.set_failure_report_status(rid, "investigating")
+    assert r["status"] == "investigating" and r["no_fault_found"] is None
+    assert r["history"][-1]["change"] == "Reopened as investigating"
+    assert [row["c"] for row in m.life_data(ids["pump"])] == [0]
+    m.set_failure_report_status(rid, "no_fault_found", note="Retested: still nothing")
+    before = m.s.snapshot()
+    m.s.rebuild()
+    assert m.s.snapshot() == before
+    assert [e["type"] for e in m.s.events(ORG, type="failure_report.no_fault_found")] == [
+        "failure_report.no_fault_found"] * 2
+
+
+def test_no_fault_found_over_the_route(api):
+    M = "/api/maintenance"
+    pump = api.post(f"{M}/positions", json={"name": "Pump"}).json()
+    rid = api.post(f"{M}/failure-reports", json={"position_id": pump["id"], "title": "Removed"}).json()["id"]
+    r = api.post(f"{M}/failure-reports/{rid}/status", json={"status": "no_fault_found", "note": "Nothing wrong",
+                                                             "tested_with": "Bench"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "no_fault_found" and r.json()["no_fault_found"]["tested_with"] == "Bench"
+    assert api.get(f"{M}/failure-reports", params={"status": "no_fault_found"}).json()["total"] == 1
+
+
 # ---- the routes --------------------------------------------------------------------------
 
 UID = "user-fr-api"
@@ -654,6 +762,10 @@ def test_failure_reports_over_mcp(env):  # noqa: F811
                                                            "root_cause": "Ran dry"}},
         ]}))
         after = _ok(await _get(client, "failure_report", batch["results"][0]["result"]["id"]))
+        nff = _ok(await _do(client, "maintenance", "failure_reports.set_status", report_id=after["id"],
+                            status="no_fault_found", note="Bench test passed", tested_with="Test set TS-2"))
+        assert nff["status"] == "no_fault_found" and nff["no_fault_found"]["tested_with"] == "Test set TS-2"
+        assert nff["life_data"]["counts"] is False
         guide = _ok(await client.call_tool("maintenance", {"action": "guide", "topic": "failures"}))
         return filed, missing, closed, refused, got, listed, alone, by_item, bad_status, events, batch, after, guide
 

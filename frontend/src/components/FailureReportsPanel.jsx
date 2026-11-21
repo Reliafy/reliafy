@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDesignRollup, listFailureReports } from "../api.js";
+import { getDesignRollup, getMaintenanceTree, listFailureReports } from "../api.js";
 import {
-  CONSEQUENCES, DEFAULT_FILTERS, DESIGN_FILTERS, SORTS, STATUS_CHIPS, builtItemChoices, builtItemPlace, consequenceShort,
-  countsSentence, filtering, levelText, positionsInScope, queryParams, scopeOf, statusLabel,
+  ALL_STATUSES, CONSEQUENCES, DEFAULT_FILTERS, DESIGN_FILTERS, SORTS, STATUS_CHIPS, builtItemChoices, builtItemPlace, consequenceShort,
+  countsSentence, filtering, levelText, positionsInScope, positionsWithin, queryParams, scopeOf, statusLabel,
 } from "../failureReports.js";
 import { isDesignRow } from "../explorerTabs.js";
 import { PRODUCTS_GUIDE } from "../products.js";
@@ -30,7 +30,7 @@ import "./FailureReports.css";
 // implementing the row on each item and below it (the server rolls them up given
 // the design position), every one, open first; each row says which item (serial).
 // No report is filed on a design: "Report a failure" asks which built item it was
-// on, then files it at that item's position (with one item built, straight there).
+// on and where on it (that item's position, or one inside it), then files it there.
 
 const HELP = { guide: "failure-reports-on-your-asset-tree" };
 const BUILD_HELP = { guide: PRODUCTS_GUIDE };
@@ -51,18 +51,42 @@ function PickPositionModal({ positions, onClose, onPick }) {
   );
 }
 
-// A report filed from a product's design: which item built from it (by serial).
+// A report filed from a product's design: which item built from it (by serial),
+// then where on it (the item's position for this row, or any position inside it:
+// the coupling on pump set 1), so a report needn't start from the right tree row.
 function PickItemModal({ items, onClose, onPick }) {
   const [id, setId] = useState(items[0]?.id || "");
+  const [where, setWhere] = useState(null);
+  const [inside, setInside] = useState(null);
+  useEffect(() => {
+    setWhere(id || null);
+    setInside(null);
+    if (!id) return undefined;
+    let live = true;
+    getMaintenanceTree({ within: id })
+      .then((d) => live && setInside(positionsWithin(d.positions, id)))
+      .catch(() => live && setInside([]));
+    return () => { live = false; };
+  }, [id]);
+  const pick = () => {
+    const it = items.find((x) => x.id === id);
+    const at = where && where !== id ? (inside || []).find((p) => p.id === where) : null;
+    onPick(at ? { ...it, id: at.id, name: at.name } : it);
+  };
   return (
-    <FormModal title="Which item?" submitLabel="Next" canSubmit={!!id} onClose={onClose}
-               onSubmit={async () => onPick(items.find((it) => it.id === id))}>
-      <p className="lib-date">A failure report is about one item built from this product. Pick the one it happened on.</p>
+    <FormModal title="Which item?" submitLabel="Next" canSubmit={!!id} onClose={onClose} onSubmit={async () => pick()}>
+      <p className="lib-date">A failure report is about one item built from this product. Pick the one it happened on, then where on it.</p>
       <Field label="Item (serial)">
         <select value={id} autoFocus onChange={(e) => setId(e.target.value)}>
           {items.map((it) => <option key={it.id} value={it.id}>{it.label}</option>)}
         </select>
       </Field>
+      {inside && inside.length > 1 && (
+        <Field label="Where on it">
+          <PositionPicker positions={inside.map((p) => (p.id === id ? { ...p, name: `${p.name} (the whole item)` } : p))}
+                          value={where} onChange={(v) => setWhere(v || id)} emptyLabel={null} aria-label="Where on it" />
+        </Field>
+      )}
     </FormModal>
   );
 }
@@ -163,8 +187,8 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const addHere = () => {
     if (reports.viewOnly) return;
     if (design) {
-      if (built?.length === 1) fileOn(built[0]);
-      else if (built?.length) setPicking(true);
+      // Even with one item built: which position on it comes next.
+      if (built?.length) setPicking(true);
     } else if (row.type === "pos") reports.onNew(row.key, row.ref.name);
     else setPicking(true);
   };
@@ -183,7 +207,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   }
 
   const counts = data?.counts || {};
-  const total = ["reported", "investigating", "corrective_action", "verifying", "closed", "rejected"].reduce((t, k) => t + (counts[k] || 0), 0);
+  const total = ALL_STATUSES.reduce((t, k) => t + (counts[k] || 0), 0);
   const chipCount = (id) => (id === "all" ? total : id === "open" ? counts.open || 0 : counts[id] || 0);
   const narrowed = filtering(filters, defaults);
   const list = data?.reports || [];

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   CONSEQUENCES, DEFAULT_FILTERS, DESIGN_FILTERS, OPEN_STATUSES, STATUSES, STATUS_CHIPS, canMoveTo, closeBlock, consequenceLabel,
   consequenceShort, countsSentence, defaultFoundBy, filtering, fmtWhen, historyRows, isOpen, itemText, levelText, nextStatus,
-  builtItemChoices, builtItemPlace, lifeDataText, positionsInScope, queryParams, repeatSentence, reportLink, scopeOf, signOffText, statusLabel,
+  builtItemChoices, builtItemPlace, lifeDataText, positionsInScope, positionsWithin, ALL_STATUSES, queryParams, repeatSentence, reportLink, scopeOf, signOffText, statusLabel,
 } from "./failureReports.js";
 import { buildDisplay } from "./assetTree.js";
 
@@ -17,7 +17,10 @@ test("the loop in order, Rejected outside it", () => {
   assert.ok(isOpen("corrective_action"));
   assert.ok(!isOpen("closed") && !isOpen("rejected"));
   assert.equal(statusLabel("corrective_action"), "Corrective action");
-  assert.deepEqual(STATUS_CHIPS.map((c) => c.id), ["open", ...STATUSES, "rejected", "all"]);
+  assert.deepEqual(STATUS_CHIPS.map((c) => c.id), ["open", ...STATUSES, "no_fault_found", "rejected", "all"]);
+  assert.equal(statusLabel("no_fault_found"), "No fault found");
+  assert.ok(!isOpen("no_fault_found"));
+  assert.deepEqual(ALL_STATUSES, [...STATUSES, "rejected", "no_fault_found"]);
   assert.equal(STATUS_CHIPS[0].label, "Open");
 });
 
@@ -30,6 +33,9 @@ test("what a status may move to: open any way, close only verified, reopen from 
   assert.ok(!canMoveTo("closed", "rejected"));
   assert.ok(canMoveTo("closed", "investigating"));
   assert.ok(canMoveTo("rejected", "reported"));
+  assert.ok(canMoveTo("investigating", "no_fault_found"));
+  assert.ok(!canMoveTo("no_fault_found", "rejected") && !canMoveTo("closed", "no_fault_found"));
+  assert.ok(canMoveTo("no_fault_found", "investigating"));
   assert.ok(!canMoveTo("reported", "reported"));
   assert.ok(!canMoveTo("reported", "nope"));
 });
@@ -169,4 +175,29 @@ test("a report says what it does to the life data, and opens from a work order",
   assert.equal(lifeDataText({ counts: false, why: "rejected: not counted as a failure" }), "Not in the life data: rejected: not counted as a failure.");
   assert.equal(lifeDataText(null), "");
   assert.equal(reportLink({ id: "r1", position_id: "p1" }), "/asset-register/explorer?arrange=positions&tab=reports&sel=p1&report=r1");
+});
+
+test("where on a built item a report can go: its top, then every position inside it, with the way down", () => {
+  const rows = [
+    { id: "top", name: "Skid · 0001", parent_id: "site" },
+    { id: "ps2", name: "Pump set 2", parent_id: "top" },
+    { id: "ps1", name: "Pump set 1", parent_id: "top" },
+    { id: "c1", name: "Flexible coupling", parent_id: "ps1" },
+    { id: "other", name: "Elsewhere", parent_id: "site" },
+  ];
+  assert.deepEqual(positionsWithin(rows, "top"), [
+    { id: "top", name: "Skid · 0001", path: [] },
+    { id: "ps1", name: "Pump set 1", path: [] },
+    { id: "c1", name: "Flexible coupling", path: ["Pump set 1"] },
+    { id: "ps2", name: "Pump set 2", path: [] },
+  ]);
+  assert.deepEqual(positionsWithin(rows, "nope"), []);
+  assert.deepEqual(positionsWithin(null, "top"), []);
+});
+
+test("a report with no item, and a no fault found, say why they aren't in the life data", () => {
+  assert.equal(lifeDataText({ counts: false, no_item: true, why: "nothing was fitted at this position that day" }),
+    "Not in the life data: nothing was fitted at this position that day.");
+  assert.match(lifeDataText({ counts: false, removal: true, why: "no fault found: kept as a removal, not counted as a failure" }),
+    /^Not in the life data: no fault found/);
 });

@@ -99,7 +99,7 @@ export const STATUS_LABEL = {
 // hold the working behind its performance standard): linked, not checked
 // (nothing is computed from them), so the check names what's linked and never
 // says it's supported.
-export const LINKED_LABEL = { report: "Report linked", working: "Notes linked" };
+export const LINKED_LABEL = { report: "Report linked", working: "Notes linked", model: "Model linked" };
 export const isLinkedOnly = (d) => d?.status === "linked";
 // The kinds of evidence a decision can link, as the decision dialog offers
 // them: models (a model or saved analysis, checked) when the decision expects

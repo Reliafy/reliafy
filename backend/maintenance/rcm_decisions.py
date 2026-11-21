@@ -937,6 +937,16 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         base = {"artifact_name": artifact.name, "artifact_link_path": _link_path(evidence["type"], artifact.id)}
         return {**base, **_check_on_condition_interval(decision, artifact)}
 
+    if evidence["type"] == "model" and expected == "strategy_analysis":
+        # A fitted life model behind an interval: it says how the item fails, not what interval pays.
+        # Linked, not checked (like a report), with what would check it.
+        return {
+            "status": "linked", "evidence_kind": "model",
+            "artifact_name": artifact.name, "artifact_link_path": _link_path("model", artifact.id),
+            "summary": "Life model linked: it shows how the item fails, but not which interval pays. To check "
+                       "the interval, run Optimal replacement on this model, save it and link the analysis.",
+        }
+
     if evidence["type"] != expected:
         return {
             "status": "inconclusive",

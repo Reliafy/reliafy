@@ -486,7 +486,7 @@ replacement; new_item, item_id or part_id is what went in), repair, inspect (fin
 ok, degraded or found_failed: found_failed records the fitted item as failed between its last good check and \
 now, interval censored in its life data), other. When the failed thing is inside the work order's position \
 (the seal in the pump), give the action position_id from get.work_order's inside_positions, for the finding and \
-the replacement alike. A failure report that isn't rejected already counts the item as failed on the day it \
+the replacement alike. A failure report that isn't rejected (or no fault found) already counts the item as failed on the day it \
 occurred; a replacement for the same failure ends the same life, never a second one. Plus readings taken (readings [{point_id, value}]: get.work_order's \
 reading_points lists what it asks for: its tasks' tools' points, a trigger's point, a counter, the settings \
 there). Example: the seasonal change-over work order records the new chlorinator output, {action: \
@@ -806,12 +806,17 @@ failure_mode_text, item_id). It's numbered FR-n and starts as reported. The item
 as a snapshot (name, serial, part, item class), so the report still says what was there after a replacement.
 - consequence uses the RCM vocabulary, so a report compares with its failure mode's decision: safety, \
 environmental, operational, non_operational, hidden, or none when not sure.
-- The failure mode: one of the position's by id (maintenance get.position lists them), or in words \
+- The failure mode: one of the position's by id (maintenance get.position lists them), one analysed on a \
+position above it (get.position's failure_modes_above: a pump set's FME(C)A covers its coupling), or in words \
 (failure_mode_text: the position's mode of that name, else a new ad-hoc one). Always name it when you can.
+- A position with nothing fitted takes a report too: it is kept at the position with no item, and its \
+life_data says it isn't in any item's life.
 - Statuses: reported → investigating → corrective_action → verifying → closed, or rejected (not a failure, \
-or a duplicate: note = the reason, duplicate_of = the other report). Move among the open four freely \
-(set_status); the investigation, actions and verification can be edited in any open status. From closed or \
-rejected the only move is back to an open status (a reopen).
+or a duplicate: note = the reason, duplicate_of = the other report), or no_fault_found (the removal was \
+tested and nothing was wrong: note = the finding, tested_with = how). No fault found keeps the report as a \
+removal but never counts it as a failure: a life it ended is censored. Move among the open four freely \
+(set_status); the investigation, actions and verification can be edited in any open status. From closed, \
+rejected or no_fault_found the only move is back to an open status (a reopen).
 - Investigate: failure_reports.investigate (notes, root_cause_category: design, material, installation, \
 operation, maintenance, wear, environment, unknown, other; root_cause in words; whys, up to 7 lines).
 - Corrective actions: add_action (what, owner, due; work_order_id links a work order here, work_order_ref is a \

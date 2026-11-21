@@ -123,3 +123,22 @@ def test_one_decision_names_its_evidence():
     for empty in (None, {}, {"evidence": None}, {"evidence": "x"}, {"evidence": {"type": "photo", "id": "p"}},
                   {"evidence": {"type": "model", "id": ""}}):
         assert access.refs_of_decision(empty) == []
+
+
+def test_a_life_model_behind_an_interval_is_linked_not_checked(db):
+    """A fitted life model linked to a fixed-interval (or uneconomic run-to-failure) decision:
+    linked, with what would check the interval, not refused as the wrong kind."""
+    from backend.services.samples import SAMPLE_OWNER
+
+    fetch = rcm_decisions.evidence_fetcher(db, [ORG, SAMPLE_OWNER])
+    for decision in ({"outcome": "fixed_interval", "interval": 2000, "interval_unit": "hours",
+                      "evidence": {"type": "model", "id": "sample-model-bearings-weibull"}},
+                     {"outcome": "rtf", "rtf_basis": "uneconomic",
+                      "evidence": {"type": "model", "id": "sample-model-bearings-weibull"}}):
+        got = rcm_decisions.resolve_decision(rcm_decisions.clean_decision(decision), fetch)
+        assert got["status"] == "linked" and got["evidence_kind"] == "model"
+        assert got["artifact_link_path"] == "/models/m/sample-model-bearings-weibull"
+        assert "run Optimal replacement on this model" in got["summary"]
+    # A model that has gone is still stale.
+    gone = {"outcome": "fixed_interval", "interval": 2, "evidence": {"type": "model", "id": "gone"}}
+    assert rcm_decisions.resolve_decision(rcm_decisions.clean_decision(gone), fetch)["status"] == "stale"
