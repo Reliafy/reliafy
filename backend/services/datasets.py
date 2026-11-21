@@ -498,6 +498,21 @@ def preview_rows(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dic
     return _preview(bytes(dataset.data), rows, distinct=distinct)
 
 
+def rows_window(dataset: Dataset, part: str = "life", offset: int = 0, limit: int = 200) -> dict:
+    """A window of the dataset's rows, for the dataset page's "Show all rows":
+    the columns, ``limit`` rows from ``offset`` (0-based) and the table's
+    ``n_rows``, cells as the preview gives them (blank as None). ``part``
+    "measurements" reads the readings part when the dataset has one, else the
+    one table it holds."""
+    measured = part == "measurements" and dataset.measurements is not None
+    df = read_dataframe(bytes(dataset.measurements.data if measured else dataset.data))
+    offset = max(0, int(offset))
+    chunk = df.iloc[offset:offset + max(1, int(limit))]
+    rows = chunk.astype(object).where(pd.notna(chunk), None).values.tolist()
+    return {"columns": [str(c) for c in df.columns], "rows": rows, "n_rows": int(df.shape[0]),
+            "offset": offset, "limit": int(limit), "part": "measurements" if measured else "life"}
+
+
 def csv_filename(name: str | None, part: str | None = None) -> str:
     """A download name for a dataset's table: its name with characters a file
     name can't hold removed, plus the part ("measurements") when there is one."""

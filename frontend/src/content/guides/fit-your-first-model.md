@@ -63,6 +63,9 @@ Each column's name carries a small tag (text, integer, number, date): the way
 Reliafy read it. A column of times tagged *text* is the sign to look at the
 file: a value like `14,010` with a thousands separator, or a stray letter, is
 read as text, so clean it in your spreadsheet first, or hand it to the agent.
+A saved dataset's page previews its first rows; **Show all rows** opens the whole
+table, numbered from 1, a couple of hundred at a time, to find a single value
+(a time ten times the others, say) before you fit.
 
 ### How the columns are read
 
