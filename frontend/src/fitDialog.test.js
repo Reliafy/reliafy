@@ -77,6 +77,12 @@ test("a library record as the prior", async () => {
   assert.ok(!showsTrust("library"));
   assert.match(libraryPriorWords("exponential"), /conjugate/);
   assert.match(libraryPriorWords("weibull"), /prior on the mean life/);
+  // A rate or a per-demand record can't be a B10 prior, and the page says why and which clock it's on.
+  const rate = libraryPriorWords("weibull", { kind: "rate", units: "per hour (calendar)" });
+  assert.match(rate, /can't be a prior on a B10/);
+  assert.match(rate, /calendar hours/);
+  assert.match(libraryPriorWords("weibull", { kind: "per_demand", units: "per demand" }), /demands a year/);
+  assert.doesNotMatch(libraryPriorWords("exponential", { kind: "rate", units: "per hour" }), /B10/);
 });
 
 test("refusalWords names the distribution as the app does; dataOptions counts positions in the singular", () => {

@@ -116,7 +116,8 @@ valve: **98%** of the PFDavg; the transmitters' common cause is about 1.5% and
 each transmitter on its own a few hundredths of a percent.
 
 **What to improve**, between the chart and Details, says the same as a ranked
-list of changes, each moved 10% the way that helps. In the starter the top two
+list of changes, each moved 10% the way that helps, with the PFDavg each one
+takes off (a negative change is better). In the starter the top two
 are the valve's proof-test interval (8,760 → 7,880 hours) and its mean life; the
 transmitters' common-cause β comes a distant third.
 

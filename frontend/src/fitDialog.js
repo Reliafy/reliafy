@@ -186,11 +186,23 @@ export function libraryPriorWords(distribution, record = null) {
     return `A snapshot of a saved ${record.family || ""} model: the fit is in its family and unit, each parameter about its value`
       + (bounded ? ", between the record's bounds." : ", within about 30% (the record has no bounds).");
   }
+  // A rate or a chance per demand says how often it fails, not when in its life: it can be a prior
+  // on the mean life, never on a B10 or a shape. Say so, and which clock its hours are on.
+  const units = String(record?.units || "");
+  const clock = /\(calendar\)/.test(units) ? " Its hours are calendar hours: your data's times should be too."
+    : /\(running\)/.test(units) ? " Its hours are running hours: your data's times should be too." : "";
+  const what = record?.kind === "per_demand"
+    ? "The record gives a chance of failing per demand, which says nothing about age; with the demands a year below "
+      + "it becomes a failure rate in calendar time."
+    : "The record gives a failure rate, which says how often it fails but not when in its life.";
+  const noB10 = " So it can't be a prior on a B10 or a shape: for a B10 prior, use \u201cA B10 I believe\u201d.";
   if (distribution === "weibull" || distribution === "lognormal") {
-    return "The record gives a failure rate: for this distribution it's a prior on the mean life (one over the rate), "
-      + `with the ${distribution === "weibull" ? "shape" : "spread"} between the bounds below (0.5 to 5 if left empty).`;
+    return `${what} For this distribution it's a prior on the mean life (one over the rate), `
+      + `with the ${distribution === "weibull" ? "shape" : "spread"} between the bounds below (0.5 to 5 if left empty).`
+      + noB10 + clock;
   }
-  return "On an exponential the record's distribution is the prior exactly (conjugate: worked out in closed form).";
+  return `${what} On an exponential the record's distribution is the prior exactly (conjugate: worked out in closed form).`
+    + clock;
 }
 
 // The form as it opens: `start` (what the opener chose for it: Refit…, a library record from

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import RbdEditor, { SAMPLE_SUFFIX } from "../components/RbdEditor.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -39,6 +39,15 @@ export default function RbdBuilder() {
   const [fromTree] = useState(() => (id ? location.state?.fromFaultTree || null : null));
   const [fromTreeHidden, setFromTreeHidden] = useState(false);
   const [meta, setMeta] = useState({});
+  // Changes not yet saved (a starter's or an import's edits live only in this
+  // page): the browser asks before a reload or close throws them away.
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   const [tab, setTab] = useState("builder");
   const [loadError, setLoadError] = useState(null); // { id, missing, message }
   const onLoadError = useCallback((err) => setLoadError({
@@ -101,8 +110,9 @@ export default function RbdBuilder() {
         <div className="card note rbd-import-note">
           {imported.starter ? (
             <p>
-              <b>A starter safety function</b> — not saved yet. Calculate it as it is, or rename the blocks and set
-              each one’s λDU and proof test to your loop’s, then Save.
+              <b>A starter safety function</b> — not saved yet, and its figures are typical ones, not your
+              loop’s. Rename the blocks and set each one’s λDU and proof test to your loop’s, then Save: until
+              you save, your edits are lost if you reload or leave this page.
               {" "}<button className="link" onClick={() => setNotesHidden(true)}>Dismiss</button>
             </p>
           ) : (
@@ -150,6 +160,7 @@ export default function RbdBuilder() {
         }}
         onMeta={setMeta}
         onTab={setTab}
+        onDirty={setDirty}
         addModel={addModel}
         onModelAdded={onModelAdded}
         onLoadError={onLoadError}
