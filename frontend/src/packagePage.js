@@ -18,8 +18,7 @@ export function visitDay(iso, today = null) {
   return formatDate(String(iso).slice(0, 10), { weekday: true, year: !sameYear }) || String(iso);
 }
 
-// The page's first line, the answer first: "Every Saturday, next visit Sat 14 Nov; 1 visit late".
-// A package as its page shows it with work orders turned off (workOrdersFlag.js): a
+// A package as its page shows it with work management turned off (workManagement.js): a
 // plan of visits, with no open or recent work orders (kept, only hidden). On: as it came.
 export function packageWithoutWorkOrders(pkg, workOrders = true) {
   if (workOrders || !pkg) return pkg;
@@ -29,6 +28,7 @@ export function packageWithoutWorkOrders(pkg, workOrders = true) {
   };
 }
 
+// The page's first line, the answer first: "Every Saturday, next visit Sat 14 Nov; 1 visit late".
 export function packageSentence(pkg, today = null) {
   if (!pkg) return "";
   const cadence = cadenceWords(pkg) || "No timing set";

@@ -163,8 +163,10 @@ export function maintenanceOrder(columns) {
 // packages: its tasks fall due and are packaged into visits on the items built
 // from it. Its LSA table leaves those columns out.
 const DESIGN_HIDDEN = new Set(["due", "package"]);
-export function lsaColumns({ design = false } = {}) {
-  return design ? TASK_COLUMNS.filter((c) => !DESIGN_HIDDEN.has(c.id)) : TASK_COLUMNS;
+// workManagement false (workManagement.js): a hypothetical plan, so Next due reads Next planned.
+export function lsaColumns({ design = false, workManagement = true } = {}) {
+  const cols = design ? TASK_COLUMNS.filter((c) => !DESIGN_HIDDEN.has(c.id)) : TASK_COLUMNS;
+  return workManagement ? cols : cols.map((c) => (c.id === "due" ? { ...c, label: "Next planned" } : c));
 }
 const COLUMN_IDS = new Set(DEFAULT_TASK_COLUMNS);
 const COUNTED = { tools: "tools", spares: "spares", consumables: "consumables" };

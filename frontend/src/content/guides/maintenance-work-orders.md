@@ -110,29 +110,27 @@ tasks, its next visits and its recent work orders. Packages are made from the
 tasks in the Explorer's **Maintenance › What it needs**: tick the tasks, then
 package them.
 
-## When work orders are turned off
+## When work management is turned off
 
-A workspace can have work orders turned off while the rest of Maintenance keeps
-working: the tree, tasks and when they fall due, packages as plans, forecasts,
-spares, readings and failure reports. There's no **Orders** then: Maintenance
-opens on **Packages**, and the tasks falling due are listed on **Due soon**
-(linked from Home). Nothing raises a work order, by date, by reading or by
-event.
+A deployment can run Reliafy as reliability software only, with work
+management turned off. Then the maintenance plan is **hypothetical**: its
+tasks, intervals, packages and shutdowns are groupings and dates for the
+forecasts and simulations, and nothing is raised, marked done or overdue.
 
-Record the work instead where it was done:
+- There's no **Orders** page, no work orders and no list of what's due:
+  Maintenance opens on **Packages**, and the changes the records propose to
+  the plan are listed there.
+- A task's next date is shown as **Next planned**, not due.
+- Each task has an optional **Last done** (its row's date, or the task's
+  form): an input to the forecasts only. It records no work. Leave it blank and
+  the forecasts count from the day the task was added, or from a new item
+  fitted since. **Clear it** puts it back to blank.
+- History still goes in as data: fit and remove items (saying how each ended),
+  add past fitments, or import them. Failure reports work in full.
+- Home shows the plan and its risk (changes proposed, critical spares short)
+  instead of the work due.
 
-- **Record done** on a task's row (on Due soon, on a position's, item's or
-  place's page, on a package's page, or in the Explorer's **Work**): the day it
-  was done. Its next due date counts from then, as closing its work order
-  would, and so do the forecasts and spares.
-- **Record what was done…** on a position's page: a replacement, a repair or
-  an inspection, with the failure mode, what went in and the day. It records
-  the same history a work order's close does, so the position's life data
-  stays right. The position's **Work done** lists what's been recorded.
-- A task's **Last done** date can still be set by hand, for work done before it
-  was tracked here.
-
-Work orders recorded before they were turned off are kept, only hidden. Turned
+Work orders recorded before it was turned off are kept, only hidden. Turned
 back on, they show again.
 
 ## Dates follow your time zone

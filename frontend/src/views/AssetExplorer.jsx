@@ -5,7 +5,7 @@ import {
   MEAS_TABLE_COLS, MEAS_TREE_HEAD, MeasCell, MeasDialogs, MeasSide, measPhoneRow, measRowActions, retireMeasurement, useTreeMeasurements,
 } from "../components/MeasurementTable.jsx";
 import { graftMeasurements, isMeasRow, measAddActions, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
-import { measurementsCsv } from "../measurementsTable.js";
+import { measColumns as measColumnsFor, measurementsCsv } from "../measurementsTable.js";
 import {
   LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, NewRbdModal, ParamsModal, RbdLinkModal, modelPhoneRow, modelRowActions,
   unlinkModel, useTreeModels,
@@ -117,7 +117,7 @@ import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import LoadFailed from "../components/LoadFailed.jsx";
 import "./AssetExplorer.css";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { classFields, classKey } from "../positionClass.js";
 
 // The new-position (or new-location) dialog opened from the tree's last row:
@@ -219,8 +219,8 @@ const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_ne
 // the address's name for its tabs (?view= on a product's page). `heading`: the
 // picked row's heading level (1 where the tree is the page, as a product's is).
 export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null }) {
-  // Work orders turned off (workOrdersFlag.js): an event logged raises none.
-  const workOrders = useWorkOrdersOn();
+  // Work management off (workManagement.js): an event logged raises nothing.
+  const workOrders = useWorkManagementOn();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -2219,7 +2219,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     say(raised.length
       ? `Logged ${out.event.event_type}: raised ${raised.map((w) => `#${w.number}`).join(", ")}.`
       : workOrders ? `Logged ${out.event.event_type}. No task here is waiting for it, or its work order is open already.`
-        : `Logged ${out.event.event_type}. Record what was done on the tasks it sets off.`, "ok", { fade: !raised.length });
+        : `Logged ${out.event.event_type}. It's kept in the history, as data.`, "ok", { fade: !raised.length });
   };
   const reportFiled = (view) => {
     const select = reportFor?.select || view.position?.id;
@@ -2356,7 +2356,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   for (const c of cols) widths[c.id] = prefsW[c.id] ?? c.width;
   // The Measurements tab's table: the tree, then Kind, Latest, State, Trend,
   // Next due and Record; a position's roll-up across them.
-  const mcols = wideDetails ? [] : MEAS_TABLE_COLS.filter((c) => measCols.includes(c.id));
+  const mcols = wideDetails ? [] : measColumnsFor(MEAS_TABLE_COLS, workOrders).filter((c) => measCols.includes(c.id));
   const mwidths = Object.fromEntries(mcols.map((c) => [c.id, c.width]));
   const measTable = {
     cols: mcols, widths: mwidths, treeW: shownWidth, total: shownWidth + mcols.reduce((t, c) => t + c.width, 0), expanded: wideDetails,
@@ -2489,7 +2489,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     ...(isMeasRow(focusRow) && panel ? tabMenu || [] : []),
   ].filter(Boolean) : [];
   const measColumns = measOn && colsOpen && !phone && (
-    <ColumnChooser open cols={measCols} usual={MEAS_TABLE_COLS.map((c) => c.id)} columns={MEAS_TABLE_COLS}
+    <ColumnChooser open cols={measCols} usual={MEAS_TABLE_COLS.map((c) => c.id)} columns={measColumnsFor(MEAS_TABLE_COLS, workOrders)}
                    onCols={(next) => setMeasCols(next)} onClose={() => setColsOpen(false)} returnFocus={moreButton} />
   );
   // The Modelling tab's "…": attach a model to the position picked (fit from its history, a

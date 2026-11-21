@@ -14,11 +14,13 @@ import {
 import { SAMPLE_MODEL, useFirstRun } from "../firstRun.js";
 import { TYPE_LABEL, loadAllModels } from "../allModels.js";
 import {
-  ATTENTION_ROWS, RECENT_ROWS, attentionFailed, homeOverview, attentionReady, attentionRest, attentionRows, dueRows, fleetRows,
-  lateFigures, lateSummary, otherRecent, recentFor, recentRows, sparesRows, startersPlace, waitingFigures, workTodayRows,
+  ATTENTION_ROWS, RECENT_ROWS, attentionFailed, attentionReady, attentionRest, attentionRows, dueRows, fleetRows,
+  lateFigures, lateSummary, otherRecent, planFigures, recentFor, recentRows, sparesRows, startersPlace, waitingFigures,
+  workTodayRows,
 } from "../home.js";
+import { PACKAGES_PATH } from "../maintenanceOrders.js";
 import { RBDS_LABEL, RBDS_PATH, homeCards } from "../navigation.js";
-import { useAppConfig, useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { useAppConfig, useWorkManagementOn } from "../ConfigProvider.jsx";
 import { useRoles } from "../RolesProvider.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { RolesCard } from "../components/RolePicker.jsx";
@@ -157,8 +159,7 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has, onRetry }) {
       return (
         <HomeList id={id} title="Due and at risk" all={{ to: ordersPath("due"), label: "Maintenance" }}
                   rows={first(due)} loading={maintenance === undefined} failed={overviewFailed}
-                  empty={!maintenance ? NO_OVERVIEW : maintenance.work_orders_off ? "Nothing due in the next 30 days."
-                    : "No open work orders and nothing due in the next 30 days."}>
+                  empty={maintenance ? "No open work orders and nothing due in the next 30 days." : NO_OVERVIEW}>
           {maintenance && (
             <Figures items={[
               ...lateFigures(maintenance),
@@ -173,13 +174,6 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has, onRetry }) {
     case "work-today": {
       if (!has.maintenance) return null;
       const open = maintenance?.open_work_orders || [];
-      if (maintenance?.work_orders_off) {
-        return (
-          <HomeList id={id} title="Today's work" all={{ to: ordersPath("due"), label: "Due soon" }}
-                    rows={first(workTodayRows(maintenance))} loading={false} failed={overviewFailed}
-                    empty="Nothing due today." />
-        );
-      }
       return (
         <HomeList id={id} title="Today's work orders"
                   all={{ to: ORDERS_PATH, label: maintenance ? `All ${open.length} open` : "Maintenance" }}
@@ -187,6 +181,22 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has, onRetry }) {
                   empty={!maintenance ? NO_OVERVIEW : open.length ? "Nothing due today." : "No open work orders."} />
       );
     }
+    case "plan":
+      // Work management turned off (workManagement.js): the hypothetical plan and its risk,
+      // in place of what's due and the technician's work.
+      if (!has.maintenance) return null;
+      return (
+        <HomeList id={id} title="Maintenance plan and risk" all={{ to: "/forecasts", label: "Forecasts" }}
+                  rows={first(sparesRows(maintenance))} loading={maintenance === undefined} failed={overviewFailed}
+                  empty={maintenance ? "Every critical spare is stocked." : NO_OVERVIEW}>
+          {maintenance && <Figures items={planFigures(maintenance)} />}
+          {maintenance && (
+            <p className="home-none">
+              The plan is hypothetical: <Link to={PACKAGES_PATH}>its packages</Link> and tasks feed the forecasts.
+            </p>
+          )}
+        </HomeList>
+      );
     case "spares":
       if (!has.maintenance) return null;
       return (
@@ -223,6 +233,8 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has, onRetry }) {
 // sentence ("Nothing needs you right now.") is only ever an answer.
 export default function HomePage() {
   const { roles, offer, has } = useRoles();
+  // Work management turned off (workManagement.js): the plan card instead of the to-do ones.
+  const workManagement = useWorkManagementOn();
   const { maintenance: maintenanceOn, loaded: configLoaded } = useAppConfig();
   const [lists, setLists] = useState(null);
   const [changes, setChanges] = useState(undefined);
@@ -234,8 +246,6 @@ export default function HomePage() {
   // every decision's evidence check): undefined while loading, null when they
   // couldn't be read.
   const [maintenance, setMaintenance] = useState(undefined);
-  // Work orders turned off (workOrdersFlag.js): Home leaves them out (homeOverview).
-  const workOrders = useWorkOrdersOn();
   const [rcm, setRcm] = useState(undefined);
   // Try again: each press reads everything again.
   const [attempt, setAttempt] = useState(0);
@@ -291,12 +301,12 @@ export default function HomePage() {
   useEffect(() => {
     if (!access) return undefined;
     let live = true;
-    getMaintenanceOverview().then((o) => live && setMaintenance(homeOverview(o, workOrders))).catch(() => live && setMaintenance(null));
+    getMaintenanceOverview().then((o) => live && setMaintenance(o)).catch(() => live && setMaintenance(null));
     getWorkspaceRcm().then((d) => live && setRcm(d?.rollup || null)).catch(() => live && setRcm(null));
     return () => {
       live = false;
     };
-  }, [access, attempt, workOrders]);
+  }, [access, attempt]);
 
   useActivation(lists?.models);
 
@@ -318,7 +328,8 @@ export default function HomePage() {
   const late = maintenance ? lateSummary(maintenance) : "";
 
   // The roles' cards, and what they already show (left out of the lists below).
-  const cards = homeCards(roles).filter((c) => has.maintenance || !["due", "work-today", "spares", "waiting"].includes(c));
+  const cards = homeCards(roles, { workManagement })
+    .filter((c) => has.maintenance || !["due", "work-today", "spares", "waiting", "plan"].includes(c));
   const cardShows = (r) => (cards.includes("due") && (r.key.startsWith("due-") || r.key.startsWith("order-")))
     || (cards.includes("fleets") && (r.key.startsWith("alert-") || r.key.startsWith("track-")));
   const needs = attention.filter((r) => !cardShows(r));

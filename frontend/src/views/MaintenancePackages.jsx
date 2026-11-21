@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
-import { WORK_ORDERS_OFF_NOTE } from "../workOrdersFlag.js";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { Link, useNavigate } from "react-router-dom";
 import { getMaintenanceOverview, listPackages } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import ListSearch from "../components/ListSearch.jsx";
 import Select from "../components/Select.jsx";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
-import { fmtDate } from "../components/MaintenanceParts.jsx";
+import { Proposals, fmtDate } from "../components/MaintenanceParts.jsx";
+import { planWords } from "../workManagement.js";
 import { SubjectCell } from "./MaintenanceHome.jsx";
 import { explorerPath } from "../assetTree.js";
 import {
@@ -40,10 +40,15 @@ export default function MaintenancePackages() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [roots, setRoots] = useState(null);
+  // The plan changes the records propose (shown on Orders while work management is on).
+  const [proposals, setProposals] = useState([]);
+  const [read, setRead] = useState(0);
   useEffect(() => {
-    getMaintenanceOverview().then((d) => setRoots((d.tree || []).map((n) => ({ id: n.id, name: n.name }))))
-      .catch(() => setRoots([]));
-  }, []);
+    getMaintenanceOverview().then((d) => {
+      setRoots((d.tree || []).map((n) => ({ id: n.id, name: n.name })));
+      setProposals(d.proposals || []);
+    }).catch(() => setRoots([]));
+  }, [read]);
   useEffect(() => {
     let live = true;
     setData(null);
@@ -51,10 +56,9 @@ export default function MaintenancePackages() {
     return () => { live = false; };
   }, [status]);
   const rows = data?.packages;
-  // Work orders turned off (workOrdersFlag.js): packages are plans of visits; each
-  // task is recorded done on the package's page. A plain note says so when someone
-  // lands here from Maintenance's own address or an old work-order link.
-  const workOrders = useWorkOrdersOn();
+  // Work management off (workManagement.js): packages are groupings of tasks and dates
+  // in a hypothetical plan, for the forecasts; nothing is raised or done.
+  const workOrders = useWorkManagementOn();
   const shown = (rows || []).filter((p) => packageMatches(p, query));
   return (
     <div className="app">
@@ -62,7 +66,7 @@ export default function MaintenancePackages() {
         section="maintenance"
         title={PACKAGES_LABEL}
         purpose={workOrders ? "Tasks done together on one visit, with one work order for each visit."
-          : "Tasks done together on one visit: the plan of visits, each task recorded done on the package's page."}
+          : "Tasks planned together on one visit: groupings and dates the forecasts and simulations use."}
         help={HELP}
         primary={roots && roots.length > 1 ? (
           <Select ariaLabel="Package tasks on" value="" onChange={(id) => id && navigate(lsaOn(id))}
@@ -71,8 +75,8 @@ export default function MaintenancePackages() {
           <button onClick={() => navigate(roots?.length === 1 ? lsaOn(roots[0].id) : LSA_PATH)}>Package tasks</button>
         )}
       />
-      {!workOrders && <p className="lib-date" role="note">{WORK_ORDERS_OFF_NOTE}</p>}
       {error && <div className="card error">{error}</div>}
+      {!workOrders && <Proposals proposals={proposals} onDecided={() => setRead((n) => n + 1)} />}
       {data && (
         <p className="maint-answer">
           {rows.length === 0 ? "No packages here."
@@ -100,7 +104,7 @@ export default function MaintenancePackages() {
           <p className="lib-date">No package matches.</p>
         ) : (
           <div className="maint-scroll"><table className="lib-table">
-            <thead><tr><th>Name</th><th>On</th><th>Timing</th><th>Next due</th><th>Tasks</th><th>Status</th></tr></thead>
+            <thead><tr><th>Name</th><th>On</th><th>Timing</th><th>{planWords(workOrders).next}</th><th>Tasks</th><th>Status</th></tr></thead>
             <tbody>
               {shown.map((p) => <PackageRow key={p.id} p={p} navigate={navigate} />)}
             </tbody>

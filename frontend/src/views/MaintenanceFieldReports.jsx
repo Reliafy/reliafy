@@ -12,7 +12,7 @@ import {
   STATUS_CHIP, STATUS_LABEL, arrivingText, clockLength, contentsText, keepText, matches, takenText,
 } from "../fieldReports.js";
 import { workOrderPath } from "../maintenanceOrders.js";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import "./Maintenance.css";
 
 const STATUSES = [
@@ -125,7 +125,7 @@ function ReportRows({ report, day, open, onToggle }) {
 
 function ReportDetail({ id, day, onChanged }) {
   const confirm = useConfirm();
-  const workOrders = useWorkOrdersOn();
+  const workOrders = useWorkManagementOn();
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);

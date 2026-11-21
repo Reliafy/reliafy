@@ -10,28 +10,23 @@ Reliafy Maintenance (the CMMS) is on for this account: the maintenance tool. Sta
 then maintenance guide topic start.
 """
 
-# Added to the instructions, and the run topic's place, while work orders are turned off
-# (MAINTENANCE_WORK_ORDERS): nothing about raising or closing them is offered then.
-WORK_ORDERS_OFF_INSTRUCTIONS = """\
-Work orders are turned off for this account: record work done with maintenance fitments.record_work_done.
+# Added to the instructions, and to the plan topic, while work management is turned off
+# (WORK_MANAGEMENT): Reliafy is reliability software here, and nothing about executing
+# work (work orders, visits, the to-do list) is offered; the run topic is gone.
+WORK_MANAGEMENT_OFF_INSTRUCTIONS = """\
+Work management is turned off here: maintenance plans are hypothetical (no work orders); a task's last done is a \
+plan input (tasks.set_last_done).
 """
 
-RUN_WITHOUT_WORK_ORDERS = ("Record work done (work orders are turned off): a task done, a replacement, a repair.", """\
-Work orders are turned off here: nothing raises them (by hand, the daily run, a task trigger or an alarm), and \
-the work_orders actions refuse. Everything else works: tasks still fall due, packages and shutdowns are plans, \
-forecasts, spares, readings and failure reports are as before.
-- A task done: maintenance fitments.record_work_done with task_id and on (default today): the task renews from \
-then, as closing its work order would (a task by use records its reading). Before it was tracked here: \
-maintenance tasks.set_last_done.
-- Work on a position or item: record_work_done with position_id (or item_id, location_id) and actions, each \
-{kind: replace|repair|inspect|other, failure_mode_id or failure_mode_text, finding (inspect: ok, degraded, \
-found_failed), new_item {name, serial?} or item_id (replace: what went in), part_id, quantity, \
-from_location_id, reason (replace: failure, planned, other), notes}. A replacement ends the fitted item's \
-fitment and starts the new one's (a renewal); a repair is a recurrent event; an inspection that found it \
-failed leaves its life interval censored. Name the failure mode whenever it failed. readings: [{point_id, \
-value}] taken at the work.
-- Earlier history: maintenance fitments.add_past, or an import (topic data).
-""")
+PLAN_WITHOUT_WORK_MANAGEMENT = """
+Work management is turned off here, so a maintenance plan is hypothetical: tasks, intervals, packages and \
+shutdowns are groupings and dates for the forecasts and simulations, and nothing is raised, marked done or \
+overdue. Each task has an optional last done (a date, and for a task by use its counter reading), set with \
+maintenance tasks.set_last_done {task_id, on, last_done_reading?} (on 'none' clears it). It is an input only: \
+it records no work. Without it the plan counts from the day the task was added, or from a new item fitted \
+since, or from its first-due date. History goes in as data: fitments.add_past, \
+fitments.remove (how it ended), an import. Failure reports (FRACAS) work in full.
+"""
 
 TOPICS: dict[str, tuple[str, str]] = {
     "start": ("Start here: the four structures, the tool, the data rules.", """\

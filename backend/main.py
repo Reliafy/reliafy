@@ -355,8 +355,11 @@ def app_config() -> dict:
         "mcp": mcp_switch.enabled(get_db()),
         # Reliafy Maintenance (local only for now).
         "maintenance": bool(config.MAINTENANCE_ENABLED),
-        # Maintenance's work orders: off hides and refuses them (MAINTENANCE_WORK_ORDERS).
-        "maintenance_work_orders": bool(config.MAINTENANCE_WORK_ORDERS),
+        # Work management (work orders, visits, to-do lists): off keeps Reliafy as
+        # reliability software (WORK_MANAGEMENT). maintenance_work_orders: the earlier
+        # name, the same value, for a page loaded before the rename.
+        "work_management": bool(config.WORK_MANAGEMENT),
+        "maintenance_work_orders": bool(config.WORK_MANAGEMENT),
         # Placeholder menu entries, on a private test site only.
         "menu_preview": bool(config.MENU_PREVIEW),
         # "What do you do?": the roles picker and the menu and Home it shapes.

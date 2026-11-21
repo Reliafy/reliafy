@@ -48,7 +48,7 @@ import { pointPagePath } from "../measurementsTab.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PartEntryModal } from "../components/PartForms.jsx";
 import { roleLabel, stockText } from "../maintenanceSpares.js";
-import { TasksCard, WorkDoneHistory } from "../components/MaintenanceTasks.jsx";
+import { TasksCard } from "../components/MaintenanceTasks.jsx";
 import { ConditionsCard, ConnectionConditions } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
@@ -59,14 +59,13 @@ import { explorerPath } from "../assetTree.js";
 import { ASSETS_LIST_PATH } from "../maintenanceAssets.js";
 import { partsPath } from "../redirects.js";
 import { classLabel, isDesignClass } from "../positionClass.js";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
-import { RecordWorkDone } from "../components/RecordDone.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
 export default function MaintenancePosition() {
-  // Work orders turned off (workOrdersFlag.js): work is recorded here (Record what was done).
-  const workOrders = useWorkOrdersOn();
+  // Work management off (workManagement.js): no work orders here; history comes from fitments.
+  const workOrders = useWorkManagementOn();
   const { id } = useParams();
   const navigate = useNavigate();
   const [p, setP] = useState(null);
@@ -196,8 +195,6 @@ export default function MaintenancePosition() {
 
       <ConnectionsCard p={p} onChanged={refresh} />
 
-      {!workOrders && (p.retired ? <WorkDoneHistory workOrders={p.work_orders} />
-        : <RecordWorkDone position={p} workOrders={p.work_orders} onDone={refresh} />)}
       {workOrders && <section className="card">
         <div className="maint-head"><h2>Work orders</h2></div>
         {p.work_orders.length === 0 ? (
@@ -320,7 +317,7 @@ function FitModal({ positionId, onClose, onDone }) {
 }
 
 function RemoveModal({ position, onClose, onDone }) {
-  const workOrders = useWorkOrdersOn();
+  const workOrders = useWorkManagementOn();
   const [on, setOn] = useState(roughDate(today()));
   const [reason, setReason] = useState("planned");
   const [mode, setMode] = useState(null);
@@ -331,8 +328,8 @@ function RemoveModal({ position, onClose, onDone }) {
                onSubmit={async () => onDone(await removeMaintenanceItem(position.id, {
                  on: onText, to_precision: on.precision, reason, ...(reason === "failure" ? failureModeBody(mode) : {}),
                }))}>
-      <p className="lib-date">For corrections and moves. Work done on it belongs {workOrders ? "on a work order"
-        : "under Work done (Record what was done)"}.</p>
+      <p className="lib-date">{workOrders ? "For corrections and moves. Work done on it belongs on a work order."
+        : "Its history: when it came out and how it ended (a failure, with its mode, is life data)."}</p>
       <RoughDateField label="Removed on" value={on} onChange={setOn} />
       <Field label="Why">
         <select value={reason} onChange={(e) => setReason(e.target.value)}>
@@ -755,7 +752,7 @@ function Sparkline({ point }) {
 // What's measured on a position or an item (target: {kind, id}), with its latest
 // readings: counters for tasks by use, condition with alarm limits.
 export function MeasurementsCard({ measurements, target, onChanged }) {
-  const workOrders = useWorkOrdersOn();
+  const workOrders = useWorkManagementOn();
   const [modal, setModal] = useState(null);
   return (
     <section className="card">
@@ -812,7 +809,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
 
 // `kind`: the kind it starts as ("setting" from Add a setting…).
 export function PointModal({ target, kind = "condition", onClose, onDone }) {
-  const workOrders = useWorkOrdersOn();
+  const workOrders = useWorkManagementOn();
   const [f, setF] = useState({ name: "", kind, unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "",
     range_min: "", range_max: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });

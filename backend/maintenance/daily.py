@@ -1,5 +1,7 @@
 """The daily maintenance run: raise work orders for tasks coming due, and email
-each person a digest when there's new work.
+each person a digest when there's new work. With work management turned off
+(WORK_MANAGEMENT) it raises nothing: it refits stale models and emails their
+proposals and spares short only.
 
 Called from the scheduled content job (backend/services/content_jobs.py), so
 it needs no scheduler of its own. Runs once a day: a ``maintenance_runs``
@@ -16,7 +18,7 @@ from datetime import date
 from backend import config
 from backend.maintenance import forecast, loop
 from backend.maintenance.access import allowed
-from backend.maintenance.service import Maintenance, work_orders_on
+from backend.maintenance.service import Maintenance, work_management_on
 from backend.services import time_zones
 
 logger = logging.getLogger(__name__)
@@ -70,7 +72,7 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_sp
             lines.append(f"  {v['part']['part_number']} {v['part']['name']} for {v['position_class']}: "
                          f"{v['usable_on_hand']:g} usable, {need} ({level} service level)")
     base = (config.PUBLIC_BASE_URL or "https://reliafy.com").rstrip("/")
-    lines += ["", f"Open them: {base}/maintenance", "",
+    lines += ["", f"Open them: {base}/maintenance" if work_management_on() else f"Open Reliafy: {base}/home", "",
               "Turn these emails off on the Maintenance page.", "", "— Reliafy"]
     return subject, "\n".join(lines)
 
@@ -83,8 +85,8 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
         due = [t for t in m.due_tasks(HORIZON_DAYS)
                if not t["open_work_order"] and not (t.get("package") or {}).get("active")]
         result["orgs"] += 1
-        # Work orders off: the run would raise none (generate raises nothing either).
-        result["work_orders"] += len(due) + m.packages_due(HORIZON_DAYS) if work_orders_on() else 0
+        # Work management off: the run would raise none (generate raises nothing either).
+        result["work_orders"] += (len(due) + m.packages_due(HORIZON_DAYS)) if work_management_on() else 0
         return
     # Each task stands alone: one that can't have its work order is reported in
     # the result and the digest, and the rest still get theirs.
@@ -107,7 +109,8 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
     user = db.users.find_one({"_id": org}) or {}
     if not allowed({**user, "uid": org}) or user.get("maintenance_digest_off") or not user.get("email"):
         return
-    overdue = [t for t in m.due_tasks(0) if t["overdue"]]
+    # Work management off: the digest has no to-do list (only proposals and spares).
+    overdue = [t for t in m.due_tasks(0) if t["overdue"]] if work_management_on() else []
     # Spares short ride along with an email that's going anyway; on their own they'd
     # repeat every day until restocked. So do critical spares a class's forecast
     # (#407) expects to need more of next month than there are, and parts below

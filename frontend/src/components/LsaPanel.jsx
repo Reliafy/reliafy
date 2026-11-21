@@ -34,7 +34,7 @@ import "./RcmWorksheet.css";
 import "./Outline.css";
 import "../views/Maintenance.css";
 import "./LsaPanel.css";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 
 // The LSA tab of the Explorer's panel (Assets › Explorer, ?tab=lsa; it was the
 // Packages tab, and ?tab=packages still opens it. Derryn, 8–9 Nov 2026: the
@@ -118,8 +118,8 @@ export function StatusChips({ pkg, today }) {
 }
 
 function WhenCell({ pkg }) {
-  // Work orders turned off (workOrdersFlag.js): the next visit only.
-  const workOrders = useWorkOrdersOn();
+  // Work management off (workManagement.js): the next planned visit only.
+  const workOrders = useWorkManagementOn();
   const wo = workOrders ? pkg.open_work_order : null;
   return (
     <span className="pk-when">
@@ -433,7 +433,7 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
 // trade, how many tasks and whether it's paused. A name opens the package in the tab (?package=),
 // its back link coming here again. Packages are made from the What it needs view (tick tasks).
 function PackagesHere({ scope, where, onOpen, version }) {
-  const workOrders = useWorkOrdersOn();
+  const workOrders = useWorkManagementOn();
   const [state, setState] = useState({ data: null, error: null });
   useEffect(() => {
     let live = true;
@@ -671,6 +671,7 @@ const TICK_W = 36;
 // opening as its own pane (?mtask=, MaintenanceTask.jsx) rather than its LSA. "Trade rates…" in the
 // heading's "…" (?rates=1) prices every task's labour.
 export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" }) {
+  const workManagementHere = useWorkManagementOn();
   const maint = variant === "maintenance";
   const open = useOpenParam("package");
   const taskOpen = useOpenParam(maint ? "mtask" : "task");
@@ -722,7 +723,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const design = isDesignRow(row);
   // No ticks or packaging bar: a design's (packaged on the built items) and the Maintenance tab's.
   const plain = design || maint;
-  const offered = lsaColumns({ design });
+  const offered = lsaColumns({ design, workManagement: workManagementHere });
   // The row's own tasks alone are all on it: no Position column.
   const chosenCols = offered.filter((c) => cols.includes(c.id) && (below || c.id !== "position"));
   const columns = maint ? maintenanceOrder(chosenCols) : chosenCols;

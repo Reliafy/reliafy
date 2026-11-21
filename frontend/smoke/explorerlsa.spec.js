@@ -36,6 +36,8 @@ const rows = (page) => panel(page).locator(".pk-trow");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth);
 
 test("LSA: search and sort the tasks below, tick two and package them", async ({ page, request, problems }) => {
+  // Work management off (SMOKE_WORK_MANAGEMENT=off): a hypothetical plan says "planned", not "due".
+  const off = (await (await request.get("/api/config")).json()).work_management === false;
   const tag = `k${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -45,7 +47,7 @@ test("LSA: search and sort the tasks below, tick two and package them", async ({
   await expect.poll(() => query(page).get("tab")).toBe("lsa");
   await expect(rows(page)).toHaveCount(3);
   await expect(panel(page).getByRole("columnheader")).toHaveText(
-    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Next due", "Package", "Labour", "People", "Tools", "Spares",
+    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", off ? "Next planned" : "Next due", "Package", "Labour", "People", "Tools", "Spares",
       "Consumables", "Method"]);
   await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Columns…", "Export CSV", "Package the tasks…", "Add a package…", "Open the full page"]);
   await page.keyboard.press("Escape");

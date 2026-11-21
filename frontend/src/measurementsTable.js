@@ -30,6 +30,11 @@ export const MEAS_COLUMNS = [
   { id: "record", label: "Record", width: 128, title: "Type a value and press Enter to record it now" },
 ];
 export const DEFAULT_MEAS_COLUMNS = MEAS_COLUMNS.map((c) => c.id);
+// With work management turned off (workManagement.js) a reading round isn't a to-do:
+// its column reads Next reading.
+export function measColumns(columns, workManagement = true) {
+  return workManagement ? columns : columns.map((c) => (c.id === "due" ? { ...c, label: "Next reading" } : c));
+}
 const SORTABLE = new Set(["position", "point", "kind", "latest", "state", "due"]);
 
 // What kind of row it is, in a word: Fed (a sensor channel, a feed's point, one

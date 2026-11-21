@@ -36,7 +36,7 @@ import { countsText, inheritedText } from "../maintenanceLocations.js";
 import { ASSETS_LIST_PATH, openWorkPath } from "../maintenanceAssets.js";
 import { subjectBadge } from "../maintenanceSubjects.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import {
   ItemClassesSection, KindFilters, PartKindModal, useKinds,
 } from "../components/MaintenanceItemClasses.jsx";
@@ -141,7 +141,7 @@ export function NewLocationModal({ locations, parentId = null, asset = false, de
 }
 
 export function MaintenanceLocation() {
-  const workOrders = useWorkOrdersOn();
+  const workOrders = useWorkManagementOn();
   const { id } = useParams();
   const navigate = useNavigate();
   const [loc, setLoc] = useState(null);
@@ -231,7 +231,7 @@ export function MaintenanceLocation() {
       {!loc.design_of && <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
                  emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
                    + (workOrders ? "building or area check: it raises one work order here, and can list every position here to check."
-                     : "building or area check, and record it done here each time.")} />}
+                     : "building or area check, in the plan for this place.")} />}
       {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
       <ConditionsCard target={{ id: loc.id, name: loc.name, kind: "Location" }} view={loc} onChanged={refresh} />
       <MaintenancePhotos targetId={loc.id} targetKind="Location" targetName={loc.name} photos={loc.photos} onChanged={refresh} />
@@ -293,7 +293,7 @@ function OpenWorkHere({ loc }) {
 // The positions at a location (set on them or inherited, here or inside it), by the
 // system each belongs to, with what's fitted to each.
 function LocationPositions({ loc, onAdd = null }) {
-  const workOrders = useWorkOrdersOn();
+  const workOrders = useWorkManagementOn();
   return (
     <section className="card">
       <div className="maint-head">

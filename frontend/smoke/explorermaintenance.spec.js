@@ -52,7 +52,10 @@ test("Maintenance: every task here with where it came from and its cost; add one
   await expect.poll(() => query(page).get("tab")).toBe("maintenance");
   // The position's own tasks: from the RCM (its failure mode) and added directly (and why).
   await expect(rows(page)).toHaveCount(2);
-  await expect(panel(page).getByRole("columnheader")).toHaveText(["Task", "From", "Interval", "Cost each time", "Next due", "Package", "Kind"]);
+  // With work management off (SMOKE_WORK_MANAGEMENT=off) the plan is hypothetical: Next planned.
+  const off = (await (await request.get("/api/config")).json()).work_management === false;
+  await expect(panel(page).getByRole("columnheader")).toHaveText(
+    ["Task", "From", "Interval", "Cost each time", off ? "Next planned" : "Next due", "Package", "Kind"]);
   await expect(row(page, `Check the seal ${tag}`)).toContainText(`RCM: Seal leaks ${tag}`);
   await expect(row(page, `Check the seal ${tag}`)).toContainText("$45");
   await expect(row(page, `Inspect the guard ${tag}`)).toContainText("Added directly: law, regulation or standard (AS 4024)");

@@ -176,7 +176,7 @@ export function movedHref(to, search = "", hash = "") {
 }
 
 // Where an earlier address lands in this deployment: its row's `to`, except that
-// with work orders turned off (workOrdersFlag.js) Maintenance's own address opens
+// with work management turned off (workManagement.js) Maintenance's own address opens
 // on Packages, its landing page then, rather than on Orders.
 export function movedTarget(row, { workOrders = true } = {}) {
   if (!workOrders && row.to === ORDERS_PATH) return PACKAGES_PATH;

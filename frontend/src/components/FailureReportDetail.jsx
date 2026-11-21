@@ -5,7 +5,7 @@ import {
   saveFailureReportInvestigation, setFailureReportStatus, updateCorrectiveAction, verifyFailureReport,
 } from "../api.js";
 import { workOrderPath } from "../maintenanceOrders.js";
-import { useWorkOrdersOn } from "../ConfigProvider.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import {
   ACTION_STATUSES, MAX_WHYS, RESULTS, ROOT_CAUSES, STATUSES, canMoveTo, closeBlock, consequenceLabel, fmtWhen, historyRows,
   isOpen, itemText, lifeDataText, repeatSentence, resultLabel, rootCauseLabel, signOffText, stageOf, statusLabel,
@@ -182,9 +182,9 @@ function Actions({ report, editable, today, onAdd, onUpdate, onRaise, busy }) {
   const [ref, setRef] = useState("");
   const [woId, setWoId] = useState("");
   const actions = report.actions || [];
-  // Work orders turned off (workOrdersFlag.js): an action keeps a reference kept elsewhere
+  // Work management off (workManagement.js): an action keeps a reference kept elsewhere
   // and is marked done here; no work order is raised, linked or shown.
-  const workOrders = useWorkOrdersOn();
+  const workOrders = useWorkManagementOn();
   const wos = useReportWorkOrders(report, editable && workOrders);
   const add = async () => {
     const ok = await onAdd({ what: what.trim(), owner: owner.trim(), due: due || null, work_order_ref: ref.trim(),

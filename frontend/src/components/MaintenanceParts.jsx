@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { Link } from "react-router-dom";
 import {
   addMaintenanceDocument, decideProposal, getMaintenanceDocumentBlob, removeMaintenanceDocument,
@@ -324,6 +325,8 @@ export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onCl
 }
 
 export function DueChip({ task }) {
+  // Work management off (workManagement.js): a plan's next date, never a to-do that's overdue.
+  const workManagement = useWorkManagementOn();
   // Raised by an event, not a date: it waits for it (never overdue).
   if (!task.next_due && task.on_event) {
     return <span className="lib-date" title={task.trigger?.text ? `On event: ${task.trigger.text}` : undefined}>{task.status || "On event"}</span>;
@@ -332,6 +335,7 @@ export function DueChip({ task }) {
     const note = (task.limits || []).map((l) => l.note).find(Boolean);
     return <span className="lib-date">{note || "—"}</span>;
   }
+  if (!workManagement) return <span className="lib-date">{fmtDate(task.next_due)}</span>;
   return (
     <span className={task.overdue ? "maint-overdue" : "lib-date"}
           title={task.overdue_before_package ? "Overdue before it went into its package: it stays overdue until it's done" : undefined}>
