@@ -234,9 +234,26 @@ export const NO_HOME = {
 };
 
 // A position above a place's positions, shown by Positions for what they're
-// part of (buildDisplay): a muted row, keyed apart from the position itself.
+// part of (buildDisplay): a muted row in the tree (no count, picker or row
+// action takes it for one of the place's positions), keyed by the position's
+// own id (an ancestor is never one of the place's positions, so the keys don't
+// clash), so a link (?sel=) and the panel's way up find it.
 export const VIA = { via: true, note: "Not at this place: shown for what the positions here are part of" };
-export const viaKey = (id) => `via:${id}`;
+export const viaKey = (id) => id;
+export const isViaRow = (r) => r?.type === "group" && !!r.ref?.via;
+
+// The row the panel beside the tree shows (its heading, tab bar and tabs) for
+// the row picked. A via row is a position all the same (Derryn, 21 Nov 2026:
+// "the tabs should be available at all levels of the tree"): the panel shows it
+// as a position, with every tab a position has, each reading what's there and
+// below it. Every other row is itself. The same object each time for the same
+// row, so a body that reads on the row's identity doesn't read again.
+const asPosition = new WeakMap();
+export function panelRow(r) {
+  if (!isViaRow(r)) return r ?? null;
+  if (!asPosition.has(r)) asPosition.set(r, { ...r, type: "pos" });
+  return asPosition.get(r);
+}
 
 // The last group in Classes: positions with nothing fitted, or whose item has
 // no item class.
@@ -277,8 +294,9 @@ export function buildDisplay(data, mode) {
   // the positions above them (data.ancestors: House > Climate control, at no
   // place, over a bedroom's air conditioner; a top here names its own in `via`),
   // so the tree keeps its shape. They're context, not part of the place: a
-  // muted heading row each (VIA), never a position row, so no tab, count,
-  // picker or action takes them for one. Other arrangements leave them out.
+  // muted row each (VIA), never a position row in the tree, so no count,
+  // picker or row action takes them for one; the panel shows one as the
+  // position it is, with its tabs (panelRow). Other arrangements leave them out.
   const up = new Map(mode === "positions" ? (data?.ancestors || []).map((a) => [a.id, a]) : []);
   const upKids = new Map(); // what an ancestor hangs under (an ancestor, a position here, or null: a top)
   const viaTops = new Map(); // an ancestor's positions here
@@ -294,7 +312,7 @@ export function buildDisplay(data, mode) {
   }
   const addVia = (a, parent) => {
     const key = viaKey(a.id);
-    if (!add(key, "group", { ...VIA, name: a.name }, parent)) return;
+    if (!add(key, "group", { ...VIA, id: a.id, name: a.name }, parent)) return;
     for (const x of [...(upKids.get(a.id) || []), ...(viaTops.get(a.id) || [])].sort(byName)) {
       if (up.get(x.id) === x) addVia(x, key); // another ancestor
       else addPosTree(x, key, false);
