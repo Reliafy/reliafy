@@ -714,3 +714,47 @@ def test_an_aiag_style_fmea_maps_its_abbreviated_columns(m):
     # Only the unreadable date is a problem (30/06/2024 reads day first), and the message says
     # which column and what's in it.
     assert out["errors"] == ["Row 6, Action due “next June”: The due date is a date (YYYY-MM-DD)."]
+
+
+def test_task_id_labour_hours_and_trade_go_on_the_tasks(m):
+    """A maintenance system's plan with Task ID, Labour hours and Trade columns: the
+    default mapping finds them, and each task the import makes carries its reference,
+    its trade and one labour line (one person, those hours). A combination's second
+    row puts its own on its own task. A row with no task to put them on keeps them in
+    the mode's notes; labour hours that aren't a number are a row error."""
+    header = ["Task ID", "Component", "Task", "Task type", "Interval", "Interval unit", "Labour hours", "Trade",
+              "Function", "Functional failure", "Failure mode", "Consequence"]
+    rows = [
+        ["PM-01", "Engine", "Change engine oil", "Fixed interval", 25, "hours", 0.4, "Mechanic",
+         "Provide power", "Loses power", "Oil oxidised", "Operational"],
+        ["PM-08", "Engine", "Daily operator check", "On condition", 6, "hours", "0.25 h", "Operator",
+         "Provide power", "Overheats", "Fins blocked", "Operational"],
+        ["PM-04", "Engine", "Clean cooling fins", "Fixed interval", 25, "hours", 0.4, "Mechanic",
+         "Provide power", "Overheats", "Fins blocked", "Operational"],
+        ["PM-09", "Engine", "", "Run to failure", "", "", 1, "Mechanic",
+         "Provide power", "Loses power", "Starter worn", "Operational"],
+    ]
+    table = rcm_sheet.read_table(_csv(header, rows), "plan.csv")
+    options = rcm_sheet.default_options(table)
+    assert {k: options["mapping"].get(k) for k in ("task_ref", "labour_hours", "trade")} == {
+        "task_ref": "Task ID", "labour_hours": "Labour hours", "trade": "Trade"}
+    options["outcome_map"] = {"Run to failure": "rtf:uneconomic"}
+    pid = m.create_position("Mower")["id"]
+    out = rcm_sheet.run(m, pid, table, options, dry_run=False)
+    assert out["ok"], out["errors"]
+    tasks = {t["name"]: m.explain_task(t["id"])["task"] for t in m._tasks_on(pid)}
+    oil = tasks["Change engine oil"]
+    assert (oil["reference"], oil["trade"]) == ("PM-01", "Mechanic")
+    assert oil["resources"]["labour"] == [{"trade": "Mechanic", "people": 1, "hours": 0.4}]
+    check, fins = tasks["Daily operator check"], tasks["Clean cooling fins"]
+    assert (check["reference"], check["trade"], check["resources"]["labour"][0]["hours"]) == ("PM-08", "Operator", 0.25)
+    assert (fins["reference"], fins["trade"], fins["resources"]["labour"][0]["hours"]) == ("PM-04", "Mechanic", 0.4)
+    starter = next(md for fn in _rcm(m, pid)["functions"] for ff in fn["failures"] for md in ff["modes"]
+                   if md["text"] == "Starter worn")
+    assert "Task ID: PM-09 · Trade: Mechanic · Labour hours: 1" in (starter.get("notes") or "")
+    _rebuilds_the_same(m)
+
+    rows[0][6] = "half an hour"
+    bad = rcm_sheet.run(m, m.create_position("Mower 2")["id"], rcm_sheet.read_table(_csv(header, rows), "plan.csv"),
+                        options, dry_run=True)
+    assert not bad["ok"] and any("Labour hours" in e and "half an hour" in e for e in bad["errors"])

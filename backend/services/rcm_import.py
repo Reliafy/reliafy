@@ -165,6 +165,17 @@ FIELDS = [
     {"id": "interval_unit", "label": "Interval unit",
      "help": "Hours, days, months, cycles…",
      "synonyms": ["interval unit", "unit", "units", "frequency unit", "interval units"]},
+    {"id": "task_ref", "label": "Task ID",
+     "help": "Optional: the task's number in your maintenance system (“PM-104”). It goes on the task as its reference.",
+     "synonyms": ["task id", "task no", "task number", "task ref", "task reference", "task code", "pm id",
+                  "pm number", "pm no", "job id", "job number", "maintenance task id"]},
+    {"id": "labour_hours", "label": "Labour hours",
+     "help": "Optional: the hours one person takes to do the task. It goes on the task's labour (LSA), with the trade.",
+     "synonyms": ["labour hours", "labor hours", "man hours", "manhours", "person hours", "labour hrs",
+                  "labor hrs", "work hours", "craft hours", "hours per person"]},
+    {"id": "trade", "label": "Trade",
+     "help": "Optional: who does the task (“Mechanic”, “Electrician”). It goes on the task and its labour.",
+     "synonyms": ["trade", "craft", "labour trade", "labor trade", "skill", "work centre", "work center"]},
     {"id": "on_found", "label": "On found",
      "help": "What's done when an on-condition or failure-finding check finds it (“Then, if found”).",
      "synonyms": ["on found", "then if found", "if found", "then if failed", "action if found", "when found",
@@ -371,6 +382,27 @@ def guess_rtf_basis(raw: Any) -> Optional[str]:
     if "economic" in t or "cost" in t:
         return "uneconomic"
     return None
+
+
+MAX_LABOUR_HOURS = 10000  # a labour line's hours per person (the service's limit)
+# Decisions that schedule a task (the service's SCHEDULED_OUTCOMES).
+SCHEDULED = ("on_condition", "fixed_interval", "failure_finding")
+
+
+def _hours(raw: str) -> Optional[float]:
+    """Labour hours from a cell ("0.4", "1.5 h", "2 hours"), or None when it isn't one."""
+    m = re.fullmatch(r"\s*([0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)\s*(?:h|hr|hrs|hour|hours)?\.?\s*", raw, re.I)
+    if not m:
+        return None
+    value = float(m.group(1).replace(",", "."))
+    return value if 0 <= value <= MAX_LABOUR_HOURS else None
+
+
+def _lsa_words(lsa: dict, mapping: dict) -> str:
+    """A row's Task ID, trade and labour hours in words, for the notes when there's no task to put them on."""
+    named = [("reference", "task_ref"), ("trade", "trade"), ("hours", "labour_hours")]
+    return " · ".join(f"{mapping.get(field, field)}: {f'{lsa[key]:g}' if key == 'hours' else lsa[key]}"
+                      for key, field in named if key in lsa)
 
 
 def _choice(raw: Any, explicit: dict, guess) -> Optional[str]:
@@ -613,6 +645,20 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                 and needs_choice(r[outcome_col]) and guess_rtf_basis(cell(r, "rtf_basis")):
             # Run to failure with its basis in its own column (as the export writes it).
             outcome = "rtf:" + guess_rtf_basis(cell(r, "rtf_basis"))
+        # The task's Task ID, labour hours and trade: they go on the task the row makes (its
+        # reference, trade and LSA labour). Labour hours that aren't a number of hours are a row error.
+        task_lsa: dict = {}
+        if cell(r, "task_ref"):
+            task_lsa["reference"] = clip(cell(r, "task_ref"))
+        if cell(r, "trade"):
+            task_lsa["trade"] = clip(cell(r, "trade"))
+        if cell(r, "labour_hours"):
+            hours = _hours(cell(r, "labour_hours"))
+            if hours is None:
+                errors.append(f"Row {rnum}, {mapping['labour_hours']} “{cell(r, 'labour_hours')[:40]}”: labour hours "
+                              f"are a number of hours, 0 to {MAX_LABOUR_HOURS:,}.")
+            else:
+                task_lsa["hours"] = hours
         if outcome:
             decision: dict = {"outcome": outcome, "evidence": None}
             if outcome.startswith("rtf:"):
@@ -632,6 +678,10 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                 notes.append(f"On found: {found}")
             mode["decision"] = decision
             n_decisions += 1
+            if task_lsa and decision["outcome"] in SCHEDULED and decision.get("task"):
+                mode["task_lsa"] = task_lsa
+            elif task_lsa:  # no task to put them on: kept in the notes, as a task with no decision type is
+                notes.append(_lsa_words(task_lsa, mapping))
         else:
             kept = []
             if task:
@@ -641,6 +691,8 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                 kept.append(f"Interval: {_text(raw_interval)}{' ' + unit_cell if unit_cell else ''}")
             if col["outcome"] is not None and _text(r[col["outcome"]]):
                 kept.append(f"{mapping['outcome']}: {_text(r[col['outcome']])}")
+            if task_lsa:
+                kept.append(_lsa_words(task_lsa, mapping))
             if kept:
                 notes.append(" · ".join(kept))
                 stashed_tasks += 1
@@ -718,11 +770,15 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                 cfn["standard_basis"] = fn["standard_basis"]
             for mode, cmode in zip(fn.get("modes") or [], cfn.get("modes") or []):
                 cmode["row"] = mode["_row"]
+                if mode.get("task_lsa"):  # its task's Task ID, trade and labour hours
+                    cmode["task_lsa"] = mode["task_lsa"]
             for failure, cfailure in zip(fn["failures"], cfn["failures"]):
                 if failure.get("causes"):  # the lower failures named in "Caused by (below)", by row
                     cfailure["causes"] = failure["causes"]
                 for mode, cmode in zip(failure["modes"], cfailure["modes"]):
                     cmode["row"] = mode["_row"]
+                    if mode.get("task_lsa"):
+                        cmode["task_lsa"] = mode["task_lsa"]
 
     values = {
         "consequence": _values(rows, col["consequence"], guess_consequence, CONSEQUENCE_CHOICES),
