@@ -54,7 +54,7 @@ test("the tasks tab: Focus tasks on a mid-level position opens only its branch, 
   await nameRow(page, `Focus line A ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Focus line A ${tag}`);
   await expect(menu.getByRole("menuitem", { name: "Focus tasks", exact: true }).first()).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Focus tasks", exact: true }).last()).toHaveAttribute("aria-haspopup", "menu");
+  await expect(menu.getByRole("menuitem", { name: "Focus to a depth", exact: true })).toHaveAttribute("aria-haspopup", "menu");
   await expect(menu.getByRole("menuitem", { name: "Pin this branch" })).toBeVisible();
   await shot(page, "tabfocus-1-menu-1440");
   await menu.getByRole("menuitem", { name: "Focus tasks", exact: true }).first().click();

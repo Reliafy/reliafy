@@ -22,6 +22,9 @@ test("a repairable block follows a covariate schedule", async ({ page, request, 
     edges: [{ id: "a", source: "input", target: "p" }, { id: "b", source: "p", target: "output" }],
   };
   const { id } = await (await request.post("/api/rbds", { data: { name: "Smoke repairable schedule", graph } })).json();
+  // Autosave never asks "leave site?": a waiting save is sent as the page goes.
+  const prompts = [];
+  page.on("dialog", (d) => { prompts.push(d.type()); d.dismiss().catch(() => {}); });
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     await open(page, `/systems/b/${id}`);
@@ -37,10 +40,13 @@ test("a repairable block follows a covariate schedule", async ({ page, request, 
     await dialog.getByRole("button", { name: "Apply" }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.locator(".rbd-cov-bar")).toContainText("load_pct follows a schedule");
-    // The schedule is part of the diagram, so it autosaves: wait for that before the next
-    // page load (with a save still waiting, leaving asks first and the load is held back).
-    await expect(page.locator(".rbd-save-status")).toContainText("Saved", { timeout: 15_000 });
+    // The schedule is part of the diagram, so it autosaves. Leave straight away (the next
+    // pass loads the page again): the waiting save is sent as the page goes, with no prompt.
+    await page.goto("about:blank");
+    await expect.poll(async () => JSON.stringify((await (await request.get(`/api/rbds/${id}`)).json()).graph), { timeout: 15_000 }).toMatch(/t % 24 < 16/);
   }
+  expect(prompts).toEqual([]);
+  await open(page, `/systems/b/${id}`);
   await expectHealthy(page, problems, { label: "repairable covariate schedule" });
   await request.delete(`/api/rbds/${id}`);
 });

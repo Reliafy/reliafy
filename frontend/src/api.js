@@ -758,9 +758,11 @@ export function getRbd(id) {
 }
 
 // ``auto``: the builder's autosave, which saves after each change: not counted as a save event.
-export function saveRbd(name, graph, id, expectedUpdatedAt, { auto = false } = {}) {
+// ``keepalive``: the save goes on after the page is gone (leaving with a save waiting).
+export function saveRbd(name, graph, id, expectedUpdatedAt, { auto = false, keepalive = false } = {}) {
   const saving = request("/api/rbds", {
     method: "POST",
+    ...(keepalive ? { keepalive: true } : {}),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
   });

@@ -92,9 +92,18 @@ export function leaveLosesChanges({ dirty, autosave, saveState }) {
   return !!dirty && (!autosave || saveState === "failed");
 }
 
-// Whether closing or reloading the tab should ask (the browser's own prompt): as above, or an
-// autosave still waiting or running, which the prompt gives time to finish.
-export function unloadShouldAsk({ dirty, autosave, saveState }) {
-  return leaveLosesChanges({ dirty, autosave, saveState })
-    || (!!autosave && (saveState === "pending" || saveState === "saving"));
+// A save is waiting or running (the update bar holds a reload back for it).
+export const savePending = ({ dirty, autosave, saveState }) =>
+  !!autosave && (saveState === "pending" || saveState === "saving" || (!!dirty && saveState !== "failed"));
+
+// What closing or reloading the tab does: "ask" (the browser's own prompt) only when changes would
+// be lost: autosave off, or its save failed, or the save is too big to send as the page goes
+// (a keepalive request carries 64 KB at most). Otherwise a waiting save is "send"t at once with
+// keepalive, and "none" when nothing waits.
+export const KEEPALIVE_LIMIT = 60000;
+export function unloadAction({ dirty, autosave, saveState, bodyBytes = 0 }) {
+  if (leaveLosesChanges({ dirty, autosave, saveState })) return "ask";
+  if (!savePending({ dirty, autosave, saveState })) return "none";
+  return bodyBytes > KEEPALIVE_LIMIT ? "ask" : "send";
 }
+export const unloadShouldAsk = (a) => unloadAction(a) === "ask";

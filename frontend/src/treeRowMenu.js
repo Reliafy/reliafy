@@ -144,20 +144,21 @@ export function tabMenu(tab, items, { lead = [], pin = [] } = {}) {
 //   "Focus here" — this row opened at every level below it, so everything in
 //     it shows (its tasks, failure modes, measuring points, models), every
 //     other branch closed (id isolate:all);
-//   "Focus ›" — the same, opened only 1, 2 or 3 levels (isolate:1, :2, :3; on
+//   "Focus to a depth ›" — the same, opened only 1, 2 or 3 levels (isolate:1, :2, :3; on
 //     the RCM tab, where a row goes five deep, 4 and 5 too where they exist).
 // On a tab with its own table the words name what it shows: "Focus tasks"
 // (Maintenance), "Focus failure modes" (RCM, FME(C)A), "Focus measurements",
-// "Focus models" (the Models tab, its missions included; focusNoun), and "Focus tasks ›" likewise.
+// "Focus models" (the Models tab, its missions included; focusNoun), and ""Focus to a depth ›" on every tab.
 // A row with nothing inside it has just "Focus here" (it closes the rest;
 // there's nothing to open). While a focus is on (`focused`: the tree has one),
 // "Clear focus" follows them: what was open before the focus, back again.
 // `can`: whether this row can be focused (treeIsolate.canIsolate). `levels`:
 // how many levels there are below it (treeIsolate.levelsBelow).
 export const FOCUS_HERE = "Focus here";
+export const DEPTH_MENU = "Focus to a depth";
 export const CLEAR_FOCUS = { id: "focus-clear", label: "Clear focus" };
 // `noun`: what the open tab's table shows ("tasks", "failure modes", "measurements", "models",
-// "missions"): the labels then read "Focus tasks" and "Focus tasks ›"; without one, "Focus here" and "Focus".
+// "missions"): the first label reads "Focus tasks"; without one, "Focus here".
 export function focusNoun(tab, { tasks = false } = {}) {
   if (tab === "maintenance") return tasks ? "tasks" : "";
   return { rcm: "failure modes", fmea: "failure modes", measurements: "measurements", models: "models", missions: "missions" }[tab] || "";
@@ -167,15 +168,15 @@ export function isolateItems(r, { can, levels = 0, focused = false, noun = "" } 
   if (!r || !can) return focused ? [CLEAR_FOCUS] : [];
   const clear = focused ? [CLEAR_FOCUS] : [];
   if (!r.kids?.length) return [{ id: "isolate:1", label: here }, ...clear];
-  const deeper = [4, 5].filter((n) => levels >= n).map((n) => ({ id: `isolate:${n}`, label: `With ${n} levels open` }));
+  const deeper = [4, 5].filter((n) => levels >= n).map((n) => ({ id: `isolate:${n}`, label: `${n} levels` }));
   return [
     { id: "isolate:all", label: here },
     {
-      id: "isolate", label: here === FOCUS_HERE ? "Focus" : here,
+      id: "isolate", label: DEPTH_MENU,
       items: [
-        { id: "isolate:1", label: "With 1 level open" },
-        { id: "isolate:2", label: "With 2 levels open" },
-        { id: "isolate:3", label: "With 3 levels open" },
+        { id: "isolate:1", label: "1 level" },
+        { id: "isolate:2", label: "2 levels" },
+        { id: "isolate:3", label: "3 levels" },
         ...deeper,
       ],
     },

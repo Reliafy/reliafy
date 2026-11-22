@@ -61,7 +61,7 @@ import { TextInput } from "./ui/Controls.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveEditorPrefs, useEditorPrefs } from "../editorPrefs.js";
-import { createAutosaver, leaveLosesChanges, unloadShouldAsk } from "../rbdAutosave.js";
+import { createAutosaver, leaveLosesChanges, unloadAction, savePending } from "../rbdAutosave.js";
 import { canRedo, canUndo, emptyHistory, historyKey, recordHistory, redoHistory, resetHistory, undoHistory } from "../rbdHistory.js";
 import { formatPercent } from "../format.js";
 import {
@@ -1292,24 +1292,41 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // before closing, and the page asks before a link takes it away.
   const losesChanges = leaveLosesChanges({ dirty, autosave, saveState: saveState.state });
   useEffect(() => { onDirty?.(losesChanges); }, [onDirty, losesChanges]);
-  const askOnUnload = unloadShouldAsk({ dirty, autosave, saveState: saveState.state });
-  // Also the update bar's unsaved signal: a new release doesn't reload the tab over changes.
-  useUnsavedSignal("rbd-editor", askOnUnload);
+  // Also the update bar's unsaved signal: a new release doesn't reload the tab over changes
+  // or a save still going.
+  useUnsavedSignal("rbd-editor", losesChanges || savePending({ dirty, autosave, saveState: saveState.state }));
+  // Closing or reloading the tab: with autosave on, a waiting save goes out at once (keepalive,
+  // so it finishes as the page goes) and nothing is asked. The browser asks only when changes
+  // would be lost (autosave off, its save failed, or the diagram is too big to send that way).
+  const unloadRef = useRef(null);
+  unloadRef.current = () => {
+    const state = { dirty, autosave, saveState: saveState.state };
+    const graph = saveGraphRef.current;
+    const bodyBytes = state.dirty || savePending(state) ? JSON.stringify(graph || {}).length : 0;
+    const act = unloadAction({ ...state, bodyBytes });
+    if (act === "send") {
+      saveRbd(savedRbdName, graph, savedRbdId, updatedAtRef.current, { auto: true, keepalive: true }).catch(() => {});
+    }
+    return act === "ask";
+  };
+  const watchUnload = losesChanges || savePending({ dirty, autosave, saveState: saveState.state });
   useEffect(() => {
-    if (!askOnUnload) return undefined;
-    const ask = (e) => {
-      saverRef.current.flush();
-      e.preventDefault();
-      e.returnValue = "";
+    if (!watchUnload) return undefined;
+    const onUnload = (e) => {
+      if (unloadRef.current()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
     };
-    window.addEventListener("beforeunload", ask);
-    return () => window.removeEventListener("beforeunload", ask);
-  }, [askOnUnload]);
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [watchUnload]);
   const confirm = useConfirm();
   const navigate = useNavigate();
   useEffect(() => {
     // In the Explorer the pane asks itself (onDirty).
-    if (embedded || !losesChanges) return undefined;
+    if (embedded || !watchUnload) return undefined;
+    const leave = (url) => navigate(url.pathname + url.search + url.hash);
     const onClick = (e) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       const a = e.target?.closest?.("a[href]");
@@ -1318,16 +1335,20 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
       e.preventDefault();
       e.stopPropagation();
-      confirm({
+      const ask = () => confirm({
         title: "Leave without saving?",
         body: "Your changes to this diagram aren't saved. Leave and lose them, or stay and Save.",
         confirmLabel: "Leave without saving",
         cancelLabel: "Stay",
-      }).then((ok) => { if (ok) navigate(url.pathname + url.search + url.hash); });
+      }).then((ok) => { if (ok) leave(url); });
+      // Autosave on: save what waits first, then go; ask only if that save fails.
+      if (losesChanges) { ask(); return; }
+      const saver = saverRef.current;
+      saver.flush().then(() => (saver.state === "failed" ? ask() : leave(url)));
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [embedded, losesChanges, confirm, navigate]);
+  }, [embedded, watchUnload, losesChanges, confirm, navigate]);
   const toggleAutosave = useCallback(() => {
     saveEditorPrefs({ autosave: !autosavePref }).catch(() => setConnectHint("Couldn't change autosave. Try again in a moment."));
   }, [autosavePref]);
