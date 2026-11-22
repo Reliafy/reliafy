@@ -23,12 +23,21 @@ test("type five lives in, create the dataset and fit a Weibull", async ({ page, 
   await expect(dialog.getByRole("radio", { name: "Type it in" })).toHaveAttribute("aria-checked", "true");
   const name = `Typed seals ${Date.now()}`;
   await dialog.getByLabel("Dataset name").fill(name);
-  const lives = dialog.getByLabel("Lives");
+  const lives = dialog.getByRole("textbox", { name: "Lives", exact: true });
   // A mistake says where, in SurPyval's words.
   await lives.fill("120, 31O");
   await expect(dialog.getByRole("alert")).toContainText("Entry 2");
   await lives.fill("120, 310, [400, 450], 620, 1000+");
   await expect(dialog.getByText("5 units: 3 failed, 1 in a window 400–450, 1 still running at 1,000")).toBeVisible();
+  // The lifetimes, drawn as the dataset's page will draw them, redrawn as the text changes.
+  const lifetimes = dialog.getByTestId("lifetimes-summary");
+  await expect(lifetimes).toContainText("Not saved yet");
+  await expect(lifetimes).toContainText("5 units");
+  await expect(dialog.locator(".lt .js-plotly-plot, .lt svg").first()).toBeVisible();
+  await lives.fill("120, 310, [400, 450], 620, 1000+, 1100+");
+  await expect(lifetimes).toContainText("6 units");
+  await lives.fill("120, 310, [400, 450], 620, 1000+");
+  await expect(lifetimes).toContainText("5 units");
   const create = dialog.getByRole("button", { name: "Create dataset" });
   await expect(create).toBeDisabled(); // no unit yet
   await dialog.getByRole("combobox", { name: "Unit of the times" }).fill("hours");

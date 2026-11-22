@@ -3,6 +3,7 @@ import Field from "./ui/Field.jsx";
 import Units from "./Units.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import Loading from "./ui/Loading.jsx";
+import LifetimesView from "./LifetimesView.jsx";
 import { readNotation } from "../api.js";
 import {
   NOTATION_HINT, NOTATION_PLACEHOLDER, NOTATION_RULES, createNotationReader, readingView,
@@ -13,7 +14,7 @@ import {
 export function useNotationReading(text) {
   const [answer, setAnswer] = useState(null);
   const reader = useRef(null);
-  if (!reader.current) reader.current = createNotationReader((t, opts) => readNotation(t, null, opts), setAnswer);
+  if (!reader.current) reader.current = createNotationReader((t, opts) => readNotation(t, null, { ...opts, lifetimes: true }), setAnswer);
   useEffect(() => { reader.current.read(text); }, [text]);
   useEffect(() => () => reader.current.stop(), []);
   return readingView(text, answer);
@@ -24,6 +25,11 @@ export function useNotationReading(text) {
 // box, the unit (required, as for an upload), and the live reading: what was
 // understood and the columns it will be saved with, or where it stopped.
 export default function NotationEntry({ text, onText, unit, onUnit, view, disabled }) {
+  const [lastLifetimes, setLastLifetimes] = useState(null);
+  useEffect(() => {
+    if (view.state === "ok") setLastLifetimes(view.lifetimes || null);
+    else if (view.state === "empty") setLastLifetimes(null);
+  }, [view.state, view.lifetimes]);
   return (
     <div className="ds-notation">
       <Field label="Lives" help={NOTATION_HINT} error={view.state === "error" ? view.error : null}>
@@ -63,6 +69,9 @@ export default function NotationEntry({ text, onText, unit, onUnit, view, disabl
           <PreviewTable columns={view.columns} rows={view.rows} />
         </section>
       )}
+      {/* The lifetimes as the dataset's page will draw them, redrawn as you type (the last good reading stays
+          while the text can't be read). */}
+      {lastLifetimes && <LifetimesView data={lastLifetimes} name="New dataset" />}
     </div>
   );
 }

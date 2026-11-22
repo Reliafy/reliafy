@@ -299,6 +299,21 @@ def read(text: str, unit: str | None = None) -> dict:
             "rows": rows[:8], "n_rows": len(rows), "reading": reading, "notation": canonical}
 
 
+def draft_lifetimes(read_out: dict) -> dict:
+    """The Lifetimes view's payload (services/lifetimes.py) for text :func:`read` has read, before it is
+    saved: the same CSV and reading the dataset will have, drawn exactly as its page will draw it (histories
+    as repairable systems). ``{"error", "lines": []}`` where a fit would refuse the rows."""
+    import pandas as pd
+
+    from backend.services import lifetimes
+
+    df = pd.read_csv(io.StringIO(read_out["csv"]))
+    try:
+        return lifetimes.for_frame(df, read_out["reading"], repairable=read_out["kind"] == "histories")
+    except lifetimes.LifetimesError as exc:
+        return {"error": str(exc), "lines": []}
+
+
 def dataset_text(df, reading: dict) -> dict:
     """``{"text", "kind", "n_rows"}``: a dataset's life data written in the
     notation (``SurpyvalData.to_notation()``), read as its reading says; or a
