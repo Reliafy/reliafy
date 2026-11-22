@@ -449,3 +449,101 @@ test("the roll-up over the tab counts the missions below at every depth, and how
   // Nothing here or below: the row's own words.
   assert.equal(headRollupText(d.rows.get("battery")), "No missions yet · needs a life model or positions inside");
 });
+
+// ---- the Models tab: one tree, missions as rows under the model each is flown on (22 Nov 2026) ----
+
+import { graftModels, modelKey, rollupText as modelRollupText } from "./explorerModels.js";
+import { missionCountText, missionHost, missionsOf, modelMissionActions, nestMissions } from "./explorerMissions.js";
+
+const MODEL_LINKS = [
+  // The drone's own RBD (in use), and a Weibull on the battery (a leaf), in use.
+  { id: "l1", position_id: "drone", model_type: "rbd", model_id: "r1", in_use: true, model: { name: "Drone RBD", family: "rbd" } },
+  { id: "l3", position_id: "battery", model_type: "model", model_id: "w1", in_use: true, model: { name: "Battery Weibull", kind: "Weibull" } },
+  // A covariate model on the gimbal (a leaf), not in use: no mission can be flown on it until it is.
+  { id: "l4", position_id: "gimbal", model_type: "model", model_id: "ph1", in_use: false, model: { name: "Gimbal PH", covariates: ["temp"] } },
+];
+const NESTED_LINKS = [
+  // Stored on the drone's linked RBD: under that RBD's row.
+  LINKS[0],
+  // A mission's own RBD copied from the drone's RBD (from_rbd): under the RBD's row too.
+  { position_id: "drone", link_id: null, rbd: { id: "r5", name: "Drone — Night", unit: "Hours", mission_rbd: true, from_rbd: "r1", built_from: "copy" },
+    missions: [{ id: "mission", name: "Night", phases: 2, phase_names: ["Out", "Back"], phase_durations: [1, 1], duration: 2, unit: "Hours",
+      covariates: [{ name: "temp", unit: "°C" }], phase_settings: [{ covariates: [{ name: "temp", value: 5 }], rules: [] }, { covariates: [], rules: [] }] }] },
+  // One block, the battery's model in use (built_from model): under the Weibull's row.
+  { position_id: "battery", link_id: null, rbd: { id: "r6", name: "Battery — Hover", unit: "Hours", mission_rbd: true, built_from: "model", on_link: "l3" },
+    missions: [{ id: "mission", name: "Hover", phases: 1, phase_names: ["Hover"], phase_durations: [0.5], duration: 0.5, unit: "Hours" }] },
+  // Built from the positions inside the arm (no RBD of the arm's): a row of the arm itself.
+  { position_id: "arm", link_id: null, rbd: { id: "r7", name: "Arm — Lift", unit: "Hours", mission_rbd: true, built_from: "tree" },
+    missions: [{ id: "mission", name: "Lift", phases: 0, phase_names: [], duration: 0, unit: "Hours" }] },
+];
+
+const modelling = () => nestMissions(graftModels(buildDisplay(DATA, "positions"), MODEL_LINKS), NESTED_LINKS, ["battery"]);
+
+test("Models tab: a mission is a row under the model it's flown on, its phases and settings under it", () => {
+  const d = modelling();
+  const rbdRow = d.rows.get(modelKey("l1"));
+  // The RBD's row: the missions stored on it, then the one copied from it.
+  assert.deepEqual(rbdRow.kids, [missionKey("r1", "m1"), missionKey("r1", "m2"), missionKey("r5", "mission")]);
+  const night = d.rows.get(missionKey("r5", "mission"));
+  assert.equal(night.parent, modelKey("l1"));
+  assert.equal(night.depth, rbdRow.depth + 1);
+  // position › model › mission › phase › covariate, each a level deeper.
+  const out = d.rows.get(phaseKey("r5", "mission", 0));
+  assert.equal(out.parent, night.key);
+  assert.equal(out.depth, night.depth + 1);
+  const temp = d.rows.get(covKey("r5", "mission", 0, "temp"));
+  assert.equal(temp.parent, out.key);
+  assert.equal(temp.depth, out.depth + 1);
+  assert.equal(temp.ref.cov.value, 5);
+  // A leaf's one-block mission: under its model in use.
+  assert.equal(d.rows.get(missionKey("r6", "mission")).parent, modelKey("l3"));
+  // Built from the positions inside, with no model row to go under: the position's own row, after its models.
+  const arm = d.rows.get("arm");
+  assert.equal(d.rows.get(missionKey("r7", "mission")).parent, "arm");
+  assert.equal(arm.kids[0], missionKey("r7", "mission"));
+  assert.equal(d.rows.get(arm.kids[1]).type, "pos");
+  // The drone's kids: its model first, then the positions inside (its missions are under the model).
+  assert.equal(d.rows.get("drone").kids[0], modelKey("l1"));
+  assert.ok(d.rows.get("drone").kids.slice(1).every((k) => d.rows.get(k).type === "pos"));
+});
+
+test("Models tab: the roll-ups count models and missions, here and inside", () => {
+  const d = modelling();
+  const drone = d.rows.get("drone");
+  assert.equal(missionCountText(drone, true), "3 missions");
+  // Closed: everything inside too (the battery's and the arm's).
+  assert.equal(missionCountText(drone, false), "5 missions");
+  assert.equal([modelRollupText(drone, true), missionCountText(drone, true)].join(" · "), "1 model · 3 missions");
+  assert.equal(missionCountText(d.rows.get("gimbal"), true), "");
+  // Every mission of a position, wherever it hangs (for the new mission's name check).
+  assert.deepEqual(missionsOf(d.rows, "drone").map((r) => r.ref.mission.name).sort(), ["Corridor inspection", "Night", "Survey grid"]);
+});
+
+test("Models tab: a mission made before its model was kept still finds it", () => {
+  const d = graftModels(buildDisplay(DATA, "positions"), MODEL_LINKS);
+  // Copied from the drone's RBD, no on_link: the RBD it came from.
+  assert.equal(missionHost(d.rows, { position_id: "drone", link_id: null, rbd: { id: "x", from_rbd: "r1" } }, "drone"), modelKey("l1"));
+  // One block on a leaf, no built_from: the leaf's model in use.
+  assert.equal(missionHost(d.rows, { position_id: "battery", link_id: null, rbd: { id: "y" } }, "battery"), modelKey("l3"));
+  // Built from the tree on a position with positions inside: none.
+  assert.equal(missionHost(d.rows, { position_id: "arm", link_id: null, rbd: { id: "z" } }, "arm"), null);
+  // The RBD it came from unlinked since: none (it stays on the position).
+  assert.equal(missionHost(d.rows, { position_id: "drone", link_id: null, rbd: { id: "x", from_rbd: "gone" } }, "drone"), null);
+});
+
+test("Models tab: + Mission on a model's row, for an RBD and for the model in use a block can take", () => {
+  const d = modelling();
+  const ids = (k, pos, opts) => modelMissionActions(d.rows.get(modelKey(k)), d.rows.get(pos), opts).map((a) => a.id);
+  assert.deepEqual(ids("l1", "drone"), ["mission-new-on"]);
+  assert.deepEqual(ids("l3", "battery"), ["mission-new-on"]);
+  // Not in use (and its position can't take one as a block): none.
+  assert.deepEqual(ids("l4", "gimbal"), []);
+  // View only: there, off, saying why.
+  const [off] = modelMissionActions(d.rows.get(modelKey("l1")), d.rows.get("drone"), { viewOnly: "View only" });
+  assert.equal(off.disabled, true);
+  // A network RBD isn't flown on.
+  assert.deepEqual(modelMissionActions({ ref: { link: { model_type: "rbd", model: { network: true } } } }, null), []);
+  // A position with models inside still offers Redundancy inside (its kids include model rows).
+  assert.ok(positionMissionActions(d.rows.get("drone")).some((a) => a.id === "mission-redundancy"));
+  assert.ok(!positionMissionActions(d.rows.get("battery")).some((a) => a.id === "mission-redundancy"));
+});

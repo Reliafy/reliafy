@@ -63,8 +63,8 @@ under **⋯** at the end of the row):
   modes, with everything the RCM on **Assets** has: functions, functional
   failures, failure modes, decisions and their tasks. The items built from it
   carry the programme out.
-- **Models**: the life models on the design's positions (**Life models**) and
-  the missions flown on their RBDs (**Missions**).
+- **Models**: the models on the design's positions, with the missions flown on
+  each as rows under it.
 - **Field reports**: on the product's row or any position in its design, the
   reports raised on the items built from it at that position and below, open
   ones first, each with the item's serial. Pick one to open it beside the tree.

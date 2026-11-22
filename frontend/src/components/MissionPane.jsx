@@ -339,7 +339,8 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
 // made, until it's named. Its RBD is then built and saved as "<position> — <name>", so the RBDs list
 // never fills with "Mission 1"s. `taken`: the position's mission names (a clash is said as typed).
 //   position {id, name}   onCreate(name) a promise (a refusal's message shows here)   onClose()
-export function NewMissionPane({ position, taken = [], phone = false, headingRef = null, onCreate, onClose }) {
+// `on`: the model it's flown on, when added from a model row's menu (that RBD's name, or the model in use).
+export function NewMissionPane({ position, taken = [], on = null, phone = false, headingRef = null, onCreate, onClose }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
@@ -370,8 +371,9 @@ export function NewMissionPane({ position, taken = [], phone = false, headingRef
                  aria-invalid={tried && why ? "true" : undefined} onChange={(e) => setName(e.target.value)} />
         </label>
         <p className="rim-tquiet">
-          A mission is the system run through phases, each with its own length and the blocks it needs. Adding it builds
-          an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.{" "}
+          A mission is the system run through phases, each with its own length and the blocks it needs.{" "}
+          {on ? <>Adding it makes an RBD of its own from {on}, named after the mission; you then give it its phases.</>
+            : <>Adding it builds an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.</>}{" "}
           <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
         </p>
         {tried && why && <p className="field-error" role="alert">{why}</p>}

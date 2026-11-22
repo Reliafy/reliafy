@@ -129,8 +129,14 @@ def mission_of(graph: dict) -> Optional[dict]:
         return None
     # from_rbd: the position's diagram it was started from (a copy), so the RBD list shows it under that one.
     src = str(raw.get("from_rbd") or "").strip()
+    # on_link: the position's model row the mission was started on (its RBD copied, or its model in
+    # use as the one block), and built_from (copy, tree or model): where the Explorer's Models tab
+    # shows the mission, as a row under that model.
+    on = str(raw.get("on_link") or "").strip()
+    built = raw.get("built_from") if raw.get("built_from") in ("copy", "tree", "model") else None
     return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {}),
-            **({"from_rbd": src[:80]} if src else {})}
+            **({"from_rbd": src[:80]} if src else {}), **({"on_link": on[:80]} if on else {}),
+            **({"built_from": built} if built else {})}
 
 
 def all_in_series(graph: dict) -> bool:
@@ -836,7 +842,7 @@ def tree_info(graph: dict, mission: dict, rows: list[dict]) -> dict:
             "phase_settings": settings}
 
 
-# ---- the missions on positions (the Explorer's Missions tab) ---------------------------------
+# ---- the missions on positions (the Explorer's Models tab, under the model each is flown on) ---------------------------------
 
 def position_missions(m, db, owners, hidden=frozenset(), position_ids=None) -> list[dict]:
     """For each RBD linked to a position (its own, never a parent's): {position_id, link_id,
@@ -856,9 +862,13 @@ def position_missions(m, db, owners, hidden=frozenset(), position_ids=None) -> l
         return out
 
     def brief(rbd, graph) -> dict:
+        owner = mission_of(graph) or {}
+        # from_rbd, on_link, built_from: the model a mission's own RBD was started from, so the
+        # Explorer shows the mission under that model's row (Models tab).
         return {"id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "",
                 "repairable": bool(graph.get("repairable")), "network": bool(graph.get("network")),
-                "mission_rbd": bool(mission_of(graph))}
+                "mission_rbd": bool(owner), "from_rbd": owner.get("from_rbd"), "on_link": owner.get("on_link"),
+                "built_from": owner.get("built_from")}
 
     out = []
     for link in m.all_position_models(position_ids):

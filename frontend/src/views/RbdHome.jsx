@@ -232,7 +232,7 @@ export default function RbdHome() {
               <div className="lib-name">
                 <RowLink to={pathOf(r.id)}>{itemName(r)}</RowLink>
                 {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
-                {r.mission && <Chip tone="accent" title="A mission's own RBD, built on its position (Assets › Explorer › Missions)">Mission</Chip>}
+                {r.mission && <Chip tone="accent" title="A mission's own RBD, built on its position (Assets › Explorer › Models, under the model it is flown on)">Mission</Chip>}
               </div>
               {r.mission && <div className="rim-tquiet lib-mission">{missionRbdLine(r)}</div>}
               {r.depth > 0 && !r.mission && <div className="rim-tquiet lib-mission">Part of {parentName(r)}</div>}

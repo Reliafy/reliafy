@@ -249,7 +249,7 @@ reliafy maintenance rcm.ff_interval --failure-rate 0.1 --target-unavailability 0
 (These two were `rcm.interval_on_condition` and `rcm.interval_failure_finding`
 until Nov 2026; `parts.build_positions` was `parts.positions_from_structure`.)
 
-Life models on positions (the Explorer's Models › Life models): `maintenance
+Life models on positions (the Explorer's Models tab): `maintenance
 models.link` attaches a model to a position (a link, never a copy): a saved one
 (`model_id`, with `model_type` `model` (the default), `recurrent_model`,
 `degradation_model` or `alt_model`), the position class's (`from_class: true`)
@@ -358,10 +358,10 @@ a row as above plus `subject` (`{id, name, within}`: where it lives) and
 Risks are never summed. `within` (the asset opened) keeps it to that asset.
 The Summary's counts: `GET /api/maintenance/rollup/{id}` answers `{node,
 design, here, inside}`, each with `positions`, `items` (fitted), `tasks`,
-`failure_modes`, `models` (not RBDs), `failure_reports` and `open_reports`;
+`failure_modes`, `models` (RBDs included), `failure_reports` and `open_reports`;
 `within` as above. Both are reads for the page, with no tool or CLI twin.
 
-Missions (the Explorer's Models › Missions): a non-repairable RBD can carry several
+Missions (rows under their model on the Explorer's Models tab): a non-repairable RBD can carry several
 named phased missions over the same blocks, in `graph.missions` (`[{id, name,
 phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,
 named by `mission_name`). A phase is `{name, duration, not_needed?: [block
@@ -384,8 +384,10 @@ adds a mission to a position with an RBD of its own, built from the positions
 inside (as Build from what's inside builds it: placeholders flagged), or,
 where it has nothing inside, copied from the position's non-repairable RBD, or
 else one block, the position's own model in use (refused when it has none).
+`link_id` (one of the position's model rows) flies it on that model instead:
+an RBD row is copied, the model in use is the one block (any other is refused).
 It is saved as "<position> — <mission>" with `graph.mission_of:
-{position_id}` and answers `{rbd: {id, name, updated_at}, mission, position_id,
+{position_id, built_from, on_link?, from_rbd?}` and answers `{rbd: {id, name, updated_at}, mission, position_id,
 notes, placeholders, built_from` (`tree`, `copy` or `model`)`}`. In `GET
 /api/rbds` such a diagram carries `mission: {name, position_id, position}`. The mission is that RBD's own (id `mission`, named by
 `mission_name`, kept with no phases); it isn't linked as one of the position's
@@ -394,7 +396,9 @@ RBD. Missions stored on a position's RBD keep working as before.
 `GET /api/maintenance/position-missions?position_ids=` lists each
 position's RBDs and their missions (a position has its own RBDs' missions,
 never a parent's); a mission's own RBD is a row with `link_id` null and
-`rbd.mission_rbd` true. `has_model` lists the positions whose model in use can
+`rbd.mission_rbd` true, with `rbd.from_rbd`, `rbd.on_link` and `rbd.built_from`
+saying which model it was started from (the Models tab shows it under that
+model's row). `has_model` lists the positions whose model in use can
 be a mission's one block. A mission in a list is `{id, name, phases` (how many)`,
 phase_names, phase_durations` (each phase's own length, in the same
 order)`, duration` (the whole mission)`, unit, result?}`. On an RBD: `GET /api/rbds/{id}/missions`, `POST
