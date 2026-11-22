@@ -93,10 +93,10 @@ To find your way around a big tree:
   and notes, keeping the rows each match sits inside.
 - **Focus failure modes** in any row's menu (a position, function, performance standard, functional
   failure, failure mode or task) closes every other branch of the tree and opens
-  that row **with 1 level open**, **2 levels open**, **3 levels open** or
-  **everything open** below it. On the RCM tab, where a row can go five levels
-  deep, **4 levels open** and **5 levels open** are offered too where the rows
-  go that deep: from a position, **4 levels open** shows its failure modes'
+  that row at every level below it, or use **Focus to a depth** for **1 level**,
+  **2 levels** or **3 levels**. On the RCM tab, where a row can go five levels
+  deep, **4 levels** and **5 levels** are offered too where the rows
+  go that deep: from a position, **4 levels** shows its failure modes'
   tasks. The other rows stay on show, closed, so you
   can still see where you are; open and close rows by hand after as usual.
 - **Pin this branch** in a position's row menu shows that position and what's

@@ -179,7 +179,7 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   // A function's menu: Add a performance standard… (the first standard; its loose failure stays on show, under "No standard").
   let menu = await menuOf(page, circulate);
   // With the mouse: Move to…, but no Move up / down (a drag does them); Focus › before Delete.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Focus failure modes", "Focus failure modes", "Focus on incomplete rows", "Delete function…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Delete function…"]);
   await menu.getByRole("menuitem", { name: "Add a performance standard…" }).click();
   // The function's details, on the standards' add row: typed in place, Enter writes it.
   const details = page.getByRole("complementary", { name: "Details" });
@@ -279,7 +279,7 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   // The one text's row: Edit text changes the function's text; Remove clears it; no event for a standard.
   const legacy = trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`);
   menu = await menuOf(page, legacy);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Focus failure modes", "Focus failure modes", "Focus on incomplete rows", "Remove performance standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Remove performance standard"]);
   await menu.getByRole("menuitem", { name: "Remove performance standard" }).click();
   const confirm2 = page.getByRole("alertdialog", { name: "Remove this performance standard?" });
   await expect(confirm2).toContainText("is cleared from this function. Its functional failures stay on the function");
