@@ -303,3 +303,25 @@ test("tasks by operating hours make a package by hours, longer ones on every Nth
   assert.equal(hoursCadenceFor([air, { id: "w", unit: "weeks", interval: 1 }]), null);
   assert.equal(hoursCadenceFor([]), null);
 });
+
+import { intervalsText, packageMembers, packageNameFor, visitPlanText } from "./lsaTab.js";
+
+test("a new package's tasks: a whole multiple of its interval on every Nth visit, named from the interval", () => {
+  const tasks = [
+    { id: "a", name: "Blades", interval: 50, unit: "hours" },
+    { id: "b", name: "Oil", interval: 100, unit: "hours" },
+    { id: "c", name: "Belt", interval: 75, unit: "hours" },
+  ];
+  assert.deepEqual(packageMembers(tasks, 50, "hours"), ["a", { task_id: "b", visit_rule: "nth", every_nth: 2 }, "c"]);
+  // The interval changed to 25 h: each comes on every 2nd, 4th or 3rd visit.
+  assert.deepEqual(packageMembers(tasks, 25, "hours").map((m) => m.every_nth), [2, 4, 3]);
+  assert.equal(visitPlanText(tasks, 50, "hours"), "On every visit: Blades, Belt. On every 2nd visit: Oil.");
+  assert.equal(visitPlanText(tasks.slice(0, 1), 50, "hours"), "");
+  assert.equal(intervalsText(tasks), "50 h (1 task), 100 h (1 task), 75 h (1 task)");
+  assert.equal(intervalsText(tasks.slice(0, 1)), "");
+  // Calendar: a yearly check on every 4th quarterly visit.
+  assert.deepEqual(packageMembers([{ id: "y", interval: 1, unit: "years" }], 3, "months"), [{ task_id: "y", visit_rule: "nth", every_nth: 4 }]);
+  assert.equal(packageNameFor(50, "hours"), "50 h service");
+  assert.equal(packageNameFor(1, "months"), "Monthly service");
+  assert.equal(packageNameFor(3, "months"), "3-monthly service");
+});

@@ -59,7 +59,7 @@ test("Maintenance: the tasks in the tree with a roll-up at each level; open one,
   // The level's roll-up: its own and everything below it.
   await expect(page.locator(".mt-rollup")).toHaveText("2 here · 3 tasks at and below");
   // With work management off (SMOKE_WORK_MANAGEMENT=off) the column still reads Next due here.
-  await expect(page.getByRole("columnheader")).toHaveText([/Position, and its tasks/, "Interval", "Next due", "Cost each time", "Package", "From", "Kind"]);
+  await expect(page.getByRole("columnheader")).toHaveText([/Position, and its tasks/, "Interval", "Next due", "Cost each time", "Trade", "Packaged", "From", "Kind"]);
   await expect(nameRow(page, `Check the seal ${tag}`)).toContainText("$45");
   await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("Added directly: law, regulation or standard (AS 4024)");
   await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("Not set");
