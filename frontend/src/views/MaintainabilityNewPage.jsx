@@ -5,7 +5,7 @@ import { CapRefusal } from "../components/StorageCap.jsx";
 import Card from "../components/ui/Card.jsx";
 import Field from "../components/ui/Field.jsx";
 import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
-import { TextInput } from "../components/ui/Controls.jsx";
+import { Checkbox, TextInput } from "../components/ui/Controls.jsx";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
 import MaintainabilityResult from "../components/MaintainabilityResult.jsx";
@@ -227,10 +227,9 @@ export default function MaintainabilityNewPage() {
           </Field>
         </div>
 
-        <label className="mp-split" title={anyElements ? "Some lines have elements: clear them to give one time per line." : undefined}>
-          <input type="checkbox" checked={split || anyElements} disabled={anyElements} onChange={(e) => setSplit(e.target.checked)} />
-          <span>Split repair times into elements (isolate, access, replace, restore, check out)</span>
-        </label>
+        <Checkbox className="mp-split" title={anyElements ? "Some lines have elements: clear them to give one time per line." : undefined}
+                  checked={split || anyElements} disabled={anyElements} onChange={(e) => setSplit(e.target.checked)}
+                  label="Split repair times into elements (isolate, access, replace, restore, check out)" />
 
         <div className={"mp-lines maint-scroll" + (showSplit ? " is-split" : "")}>
           <table className="lib-table">

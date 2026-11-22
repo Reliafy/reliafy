@@ -32,6 +32,7 @@ import { installPrintFit } from "../printFit.js";
 import { rangeLevelText } from "../levels.js";
 import "./Predictions.css";
 import "./PublicPage.css";
+import Loading from "../components/ui/Loading.jsx";
 
 // Public, read-only view of a shared artifact (/p/:token) — no account
 // needed. Renders the same payloads as the in-app detail pages through the
@@ -380,7 +381,7 @@ export default function PublicArtifact() {
         )}
         {locked && !error && <PasswordGate token={token} onUnlocked={onUnlocked} />}
         {!error && !locked && !data && (
-          <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>Loading…</div>
+          <div style={{ margin: "3rem auto", maxWidth: 520 }}><Loading card /></div>
         )}
         {data?.collection === "reports" && (
           <div className="app public-app">

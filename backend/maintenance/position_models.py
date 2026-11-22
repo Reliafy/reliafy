@@ -708,6 +708,10 @@ def describe(m, db, owners, hidden, links: list[dict], age: float | None = None)
     fetch = fetcher(db, owners, hidden)
     decisions = m.decisions_using() if links else {}
     rbds = rbds_using(db, owners, hidden) if links else {}
+    # The tasks whose interval an Optimise rests on each model ("sets the interval of").
+    from backend.maintenance.task_optimise import tasks_set_by
+
+    sets = tasks_set_by(m, db, owners, hidden, [x["model_id"] for x in links if x["model_type"] in ("model", "degradation_model")])
     out = []
     for link in links:
         doc = fetch(link["model_type"], link["model_id"])
@@ -745,7 +749,8 @@ def describe(m, db, owners, hidden, links: list[dict], age: float | None = None)
                 model["covers"] = covers
         out.append({**link, "model": model,
                     "source_text": text, "stale": stale(m, link),
-                    "used_by": {"decisions": used, "rbds": rbds.get(link["model_id"], [])}})
+                    "used_by": {"decisions": used, "rbds": rbds.get(link["model_id"], []),
+                                "tasks": sets.get(link["model_id"], [])}})
     return out
 
 

@@ -62,6 +62,8 @@ import { partsPath } from "../redirects.js";
 import { classLabel, isDesignClass } from "../positionClass.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { DateInput, TimeInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
+import { Checkbox, Select } from "../components/ui/Controls.jsx";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -86,7 +88,7 @@ export default function MaintenancePosition() {
   };
 
   if (error && !p) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
-  if (!p) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!p) return <div className="app"><Loading card /></div>;
 
   return (
     <div className="app">
@@ -334,11 +336,11 @@ function RemoveModal({ position, onClose, onDone }) {
         : "Its history: when it came out and how it ended (a failure, with its mode, is life data)."}</p>
       <RoughDateField label="Removed on" value={on} onChange={setOn} />
       <Field label="Why">
-        <select value={reason} onChange={(e) => setReason(e.target.value)}>
+        <Select value={reason} onChange={(e) => setReason(e.target.value)}>
           <option value="planned">Planned (still working)</option>
           <option value="failure">It failed</option>
           <option value="other">Other</option>
-        </select>
+        </Select>
       </Field>
       {reason === "failure" && (
         <Field label="How it failed">
@@ -371,10 +373,10 @@ function FailureModeModal({ p, mode, onClose, onDone }) {
       <Field label="Consequence (optional)"><input value={f.consequence} placeholder="e.g. operational" onChange={set("consequence")} disabled={!!into} /></Field>
       {!adding && others.length > 0 && (
         <Field label="Or merge it into (its failures and tasks move across)">
-          <select value={into} onChange={(e) => setInto(e.target.value)}>
+          <Select value={into} onChange={(e) => setInto(e.target.value)}>
             <option value="">Don't merge</option>
             {others.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
     </FormModal>
@@ -407,10 +409,10 @@ function PastFitmentModal({ p, onClose, onDone }) {
         fitment here; what's fitted now and the tasks stay as they are.</p>
       {items?.length > 0 && (
         <Field label="Item">
-          <select value={f.item_id} onChange={set("item_id")}>
+          <Select value={f.item_id} onChange={set("item_id")}>
             <option value="">A new item (below)</option>
             {items.map((i) => <option key={i.id} value={i.id}>{i.name}{i.serial ? ` (${i.serial})` : ""}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
       {!f.item_id && <>
@@ -420,11 +422,11 @@ function PastFitmentModal({ p, onClose, onDone }) {
       <RoughDateField label="Went in" value={start} max={today()} onChange={setStart} />
       <RoughDateField label="Came out" value={end} max={today()} onChange={setEnd} />
       <Field label="Why it came out">
-        <select value={f.reason} onChange={set("reason")}>
+        <Select value={f.reason} onChange={set("reason")}>
           <option value="planned">Planned (still working)</option>
           <option value="failure">It failed</option>
           <option value="other">Other</option>
-        </select>
+        </Select>
       </Field>
       {f.reason === "failure" && (
         <Field label="How it failed">
@@ -653,16 +655,16 @@ function ConnectModal({ p, positions, onClose, onDone }) {
                  from_id: direction === "out" ? p.id : other, to_id: direction === "out" ? other : p.id, kind, medium,
                }))}>
       <Field label="Direction">
-        <select value={direction} onChange={(e) => setDirection(e.target.value)}>
+        <Select value={direction} onChange={(e) => setDirection(e.target.value)}>
           <option value="out">{p.name} feeds…</option>
           <option value="in">{p.name} is fed by…</option>
-        </select>
+        </Select>
       </Field>
       <Field label="Position"><PositionPicker positions={positions} value={other} onChange={setOther} emptyLabel="Choose…" /></Field>
       <Field label="What passes">
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        <Select value={kind} onChange={(e) => setKind(e.target.value)}>
           {["flow", "electrical", "mechanical", "signal", "data", "other"].map((k) => <option key={k} value={k}>{k}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Medium or rating (optional)"><input value={medium} placeholder="e.g. water, 240 V, 4-20 mA" onChange={(e) => setMedium(e.target.value)} /></Field>
     </FormModal>
@@ -682,20 +684,18 @@ function GroupModal({ p, positions, onClose, onDone }) {
       <div className="login-field">
         <span>With</span>
         {positions.map((x) => (
-          <label key={x.id} className="maint-row mt-0 gap-1-5">
-            <input type="checkbox" checked={chosen.includes(x.id)}
-                   onChange={(e) => setChosen(e.target.checked ? [...chosen, x.id] : chosen.filter((c) => c !== x.id))} />
-            {"\u00a0\u00a0".repeat(x.depth)}{x.name}
-          </label>
+          <Checkbox key={x.id} checked={chosen.includes(x.id)}
+                    onChange={(e) => setChosen(e.target.checked ? [...chosen, x.id] : chosen.filter((c) => c !== x.id))}
+                    label={<>{"\u00a0\u00a0".repeat(x.depth)}{x.name}</>} />
         ))}
       </div>
       <Field label={`How many of the ${n} are needed`}><input type="number" inputMode="numeric" min="1" max={Math.max(1, n - 1)} value={k}
              onChange={(e) => setK(Number(e.target.value))} /></Field>
       <Field label="The others">
-        <select value={mode} onChange={(e) => setMode(e.target.value)}>
+        <Select value={mode} onChange={(e) => setMode(e.target.value)}>
           <option value="active">run all the time (active)</option>
           <option value="standby">wait to take over (standby)</option>
-        </select>
+        </Select>
       </Field>
       <Field label="Name (optional)"><input value={name} placeholder="e.g. Pool pumps" onChange={(e) => setName(e.target.value)} /></Field>
     </FormModal>
@@ -827,18 +827,18 @@ export function PointModal({ target, kind = "condition", onClose, onDone }) {
                  range_min: setting ? blank(f.range_min) : null, range_max: setting ? blank(f.range_max) : null,
                }))}>
       <Field label="What it is">
-        <select value={f.kind} onChange={set("kind")}>
+        <Select value={f.kind} onChange={set("kind")}>
           <option value="condition">Condition (vibration, temperature, wear)</option>
           <option value="counter">Counts use (run hours, cycles, km)</option>
           <option value="setting">Setting (output %, hours a day, a setpoint)</option>
-        </select>
+        </Select>
       </Field>
       <Field label="Name" text={f.name}><input value={f.name} placeholder={counter ? "e.g. Hour meter" : setting ? "e.g. Chlorinator output" : "e.g. Vibration"} onChange={set("name")} /></Field>
       {counter ? (
-        <Field label="Counts"><select value={f.unit} onChange={set("unit")}>
+        <Field label="Counts"><Select value={f.unit} onChange={set("unit")}>
           <option value="">Choose…</option>
           {["hours", "cycles", "km", "starts", "tonnes", "litres"].map((u) => <option key={u} value={u}>{u}</option>)}
-        </select></Field>
+        </Select></Field>
       ) : setting ? (
         <>
           <p className="lib-date">A value someone sets. It holds until the next change: no alarm, never due.{workOrders ? " A work order can record each change." : ""}</p>
@@ -854,10 +854,10 @@ export function PointModal({ target, kind = "condition", onClose, onDone }) {
         </>
       )}
       <Field label="Readings come from">
-        <select value={f.source} onChange={set("source")}>
+        <Select value={f.source} onChange={set("source")}>
           <option value="manual">Someone reads it</option>
           <option value="automated">A feed (Home Assistant, a PLC, a historian)</option>
-        </select>
+        </Select>
       </Field>
       {f.source === "automated" && (
         <Field label="Tag the feed sends"><input value={f.tag} placeholder="e.g. sensor.pool_pump_hours" onChange={set("tag")} /></Field>

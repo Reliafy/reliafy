@@ -30,6 +30,7 @@ import {
 } from "../lifeData.js";
 import Units from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Select } from "./ui/Controls.jsx";
 import LibraryRecordPicker from "./LibraryRecordPicker.jsx";
 import { useRecordCovariates } from "./LibraryParts.jsx";
@@ -724,20 +725,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       <div className="fit-flow-head">{stepper}</div>
       {step === 1 && (
         <>
-          <div className="source-toggle" role="tablist" aria-label="Where the data comes from">
-            {SOURCES.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                role="tab"
-                aria-selected={source === o.value}
-                className={`source-tab${source === o.value ? " active" : ""}`}
-                onClick={() => { setSource(o.value); setError(null); }}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl className="source-toggle" label="Where the data comes from" options={SOURCES}
+                            value={source} onChange={(v) => { setSource(v); setError(null); }} />
 
           {source === "saved" && (
             <DatasetPicker kind="life" datasets={datasets} value={picked?.summary.id} onPick={pickSaved} disabled={loading}>

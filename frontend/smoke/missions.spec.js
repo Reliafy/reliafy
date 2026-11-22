@@ -7,6 +7,7 @@
 // gimbal inside has its own RBD and its own mission, and doesn't show the drone's. Nothing scrolls
 // sideways at 400 px.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { choose, expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const BEARING = "nswc-11:bearing-rolling-load-rating";
@@ -96,8 +97,7 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await surveyCovs.getByRole("textbox", { name: "Operating speed", exact: true }).fill("1800");
   await expect(surveyCovs).not.toContainText("needs a value");
   // The rear bearing runs slower in the survey: its own value, shown on its row.
-  await surveyCovs.getByRole("combobox", { name: "Set a block's own Operating speed in this phase" })
-    .selectOption({ label: `Rear motor bearing ${tag}` });
+  await choose(surveyCovs.getByRole("combobox", { name: "Set a block's own Operating speed in this phase" }), { label: `Rear motor bearing ${tag}` });
   await surveyCovs.getByLabel(`Rear motor bearing ${tag}'s own in this phase`).fill("1200");
   await expect(surveyCovs).toContainText("The other uses 1800 rpm (this phase)");
   await pane.getByRole("button", { name: "Calculate" }).click();
@@ -192,9 +192,9 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   await phases.nth(1).getByLabel(/Duration of phase 2/).fill("500");
   const grid = pane.getByRole("region", { name: "Blocks in each phase" });
   await expect(grid.getByRole("columnheader")).toContainText(["Block", "1 Day", "2 Night"]);
-  await grid.getByRole("combobox", { name: `Pump B ${tag} in Day` }).selectOption("standby");
-  await grid.getByRole("combobox", { name: `Pump A ${tag} in Night` }).selectOption("standby");
-  await expect(grid.getByRole("combobox", { name: `Pump A ${tag} in Day` })).toHaveValue("working");
+  await choose(grid.getByRole("combobox", { name: `Pump B ${tag} in Day` }), "standby");
+  await choose(grid.getByRole("combobox", { name: `Pump A ${tag} in Night` }), "standby");
+  await expectChosen(grid.getByRole("combobox", { name: `Pump A ${tag} in Day` }), "working");
   await shot(page, "mission-grid-1440");
   await pane.getByRole("button", { name: "Calculate" }).click();
   const answer = pane.locator(".mission-answer");
@@ -337,7 +337,7 @@ test("missions: a mission resting on placeholders says so, and can leave them ou
   await nameRow(page, `Deployment ${tag}`).locator(".tp-nm").dblclick();
   await expect(note).toBeVisible({ timeout: 30_000 });
   await note.getByRole("button", { name: "Leave all 3 out" }).click();
-  await expect(grid.getByRole("combobox", { name: `Battery ${tag} in Run` })).toHaveValue("off");
+  await expectChosen(grid.getByRole("combobox", { name: `Battery ${tag} in Run` }), "off");
   await pane.getByRole("button", { name: "Calculate" }).click();
   await expect(answer).toContainText("The mission completes with probability", { timeout: 30_000 });
   await expect(note).toHaveCount(0);

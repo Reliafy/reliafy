@@ -200,8 +200,8 @@ h6 {
 
 /* The toggle is the "sidebar" glyph (SidebarIcon) in the same square ghost
    button as the Explorer pane's fold button (views/AssetExplorer.css,
-   .tp button.tp-icon-btn: 30px, same border, fill and colours), so the two
-   read as one family. */
+   .tp button.tp-icon-btn: control-md, same border, fill and colours), so the
+   two read as one family. */
 .sidebar-toggle {
   flex: 0 0 auto;
   display: grid;
@@ -211,8 +211,8 @@ h6 {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: none;
-  width: 30px;
-  height: 30px;
+  width: var(--control-md);
+  height: var(--control-md);
   padding: 0;
   font-size: var(--fs-14);
   line-height: 1;
@@ -454,8 +454,8 @@ h6 {
   }
   /* The collapse toggle's slot holds the drawer's close button. */
   .sidebar.drawer .sidebar-toggle {
-    width: 32px;
-    height: 32px;
+    width: var(--control-md);
+    height: var(--control-md);
     font-size: var(--fs-20);
   }
   .sidebar-backdrop {
@@ -574,7 +574,9 @@ h6 {
 
 .side-subitem {
   display: block;
-  padding: 0.35rem 0.7rem;
+  /* control-md tall: (32 - 20) / 2 above and below the line. */
+  padding: calc((var(--control-md) - var(--lh-13)) / 2) 0.7rem;
+  line-height: var(--lh-13);
   font-size: var(--fs-13);
   color: var(--text-secondary);
   text-decoration: none;
@@ -1365,43 +1367,6 @@ h6 {
    it. Absolutely positioned so the overlay stays one row tall when collapsed. */
 .rbd-ccf-menu { position: relative; }
 
-/* "Unit [Hours]": one bordered field, its label inside the border. */
-.rbd-unit-field {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 32px;
-  box-sizing: border-box;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 0 0 0 10px;
-}
-
-.rbd-unit-field:focus-within {
-  border-color: var(--accent);
-  box-shadow: var(--focus-ring);
-}
-
-.rbd-unit-field span {
-  font-size: var(--fs-13);
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.rbd-unit-input {
-  width: 96px;
-  border: none;
-  padding: 0 10px 0 0;
-  font-size: var(--fs-14);
-  font-family: inherit;
-  color: var(--text);
-  background: transparent;
-}
-
-.rbd-unit-input:focus {
-  outline: none;
-}
 
 /* Node unit-mismatch warning */
 .react-flow__node .rbd-comp.unit-warn,
@@ -2208,6 +2173,9 @@ button.link.sm {
   border-radius: var(--radius-md);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
+/* Exactly control-md (and control-lg on a phone), whatever the font or the
+   padding: a text box never grows a pixel or two past its neighbours. */
+.ctl:not(textarea) { height: var(--control-md); }
 select.ctl { padding-right: 30px; }
 .ctl:hover:not(:focus):not(:disabled):not([readonly]) { border-color: var(--border-control-hover); }
 .ctl:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
@@ -2217,6 +2185,10 @@ select.ctl { padding-right: 30px; }
 .ctl-area:focus { overflow: auto; }
 @media (max-width: 600px) {
   .ctl, .ctl-group .ctl { font-size: var(--fs-16); } /* no zoom on focus */
+}
+@media (max-width: 720px) {
+  .ctl:not(textarea) { height: var(--control-lg); }
+  .ctl-group > .ctl:not(textarea) { height: calc(var(--control-lg) - 2px); }
 }
 
 .field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; margin: 0; padding: 0; border: 0; }
@@ -2250,9 +2222,18 @@ select.ctl { padding-right: 30px; }
 /* A checkbox with its label (ui/Controls Checkbox): the whole label is the target. */
 .check { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; padding: var(--space-1) 0;
   font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); cursor: pointer; overflow-wrap: anywhere; }
-.check > input[type="checkbox"] { flex: none; width: var(--icon-md); height: var(--icon-md); margin: 2px 0 0; accent-color: var(--accent); cursor: inherit; }
+.check > input:is([type="checkbox"], [type="radio"]) { flex: none; width: var(--icon-md); height: var(--icon-md); margin: 2px 0 0; accent-color: var(--accent); cursor: inherit; }
 .check:has(> input:disabled) { color: var(--text-disabled); cursor: not-allowed; }
-@media (max-width: 720px) { .check { min-height: var(--control-lg); align-items: center; } .check > input[type="checkbox"] { margin-top: 0; } }
+/* The box alone (a row-select in a table): no row padding; on a phone an invisible
+   40 px target around it, so the row keeps its height. */
+.check.check-bare { display: inline-flex; vertical-align: middle; padding: 0; position: relative; }
+.check.check-bare > input { margin: 0; position: relative; z-index: var(--z-raised); }
+@media (max-width: 720px) {
+  .check { min-height: var(--control-lg); align-items: center; }
+  .check > input:is([type="checkbox"], [type="radio"]) { margin-top: 0; }
+  .check.check-bare { min-height: 0; }
+  .check.check-bare::after { content: ""; position: absolute; inset: calc((var(--icon-md) - var(--control-lg)) / 2); }
+}
 
 /* Controls joined into one: comparator + value + unit, interval + unit. */
 .ctl-group {
@@ -2264,15 +2245,15 @@ select.ctl { padding-right: 30px; }
 .ctl-group:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .ctl-group:has([aria-invalid="true"]) { border-color: var(--danger); }
 .ctl-group > .ctl {
-  flex: 1 1 4rem; min-height: calc(var(--control-md) - 2px); border: 0; border-radius: 0; box-shadow: none; background-color: transparent;
+  flex: 1 1 4rem; min-height: calc(var(--control-md) - 2px); height: calc(var(--control-md) - 2px); border: 0; border-radius: 0; box-shadow: none; background-color: transparent;
 }
 .ctl-group > .ctl:focus { box-shadow: none; }
 .ctl-group > .ctl[aria-invalid="true"] { background-color: var(--danger-bg); }
 .ctl-group > .ctl:first-child { border-radius: var(--radius-md) 0 0 var(--radius-md); }
 .ctl-group > .ctl:last-child { border-radius: 0 var(--radius-md) var(--radius-md) 0; }
 .ctl-group > * + * { border-left: 1px solid var(--border); }
-.ctl-group > select.ctl { flex: 0 1 auto; min-width: 5.5rem; }
-.ctl-group > .ctl:not(select) { min-width: 3.5rem; }
+.ctl-group > :is(select, .sel-trigger).ctl { flex: 0 1 auto; min-width: 5.5rem; }
+.ctl-group > .ctl:not(select, .sel-trigger) { min-width: 3.5rem; }
 .ctl-group > .ctl-unit { flex: 0 1 4.5rem; background-color: var(--bg-subtle); color: var(--text); }
 /* DateTimeInput.jsx: a date as "22 Nov 2026" and a time as "16:00", whatever the browser's language. */
 .ctl-group.dti { display: inline-flex; width: fit-content; position: relative; }
@@ -2335,7 +2316,7 @@ button.add-row svg { width: 14px; height: 14px; }
 /* The new row an add row turns into (components/ui/InlineAdd.jsx): the
    list's own row, a box where its text goes, one line under it. */
 .ia-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.ctl.ia-box { width: 100%; min-height: 28px; padding: 2px 8px; font-size: inherit; }
+.ctl.ia-box { width: 100%; height: auto; min-height: var(--control-sm); padding: 2px 8px; font-size: inherit; }
 /* A section's "?": its guidance, on press. */
 button.psec-tip {
   width: 20px; height: 20px; min-height: 0; padding: 0; justify-content: center; border-radius: var(--radius-full);
@@ -2424,6 +2405,7 @@ button.switch {
   font-weight: 500;
 }
 button.switch:hover:not(:disabled) { background: none; }
+.switch-label { min-width: 0; text-align: left; white-space: normal; }
 .switch-track {
   position: relative;
   width: 32px;
@@ -4721,30 +4703,8 @@ h1 .chip,
 .sample-pick-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .sample-pick-blurb { font-size: var(--fs-12); color: var(--text-secondary); line-height: var(--lh-12); }
 
-/* Fit-flow source step: switch between the CSV dropzone and pasted values. */
-.source-toggle {
-  display: inline-flex;
-  gap: 4px;
-  padding: 3px;
-  margin-bottom: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-canvas);
-}
-.source-tab {
-  padding: 6px 12px;
-  font-size: var(--fs-13);
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-md);
-  box-shadow: none;
-  cursor: pointer;
-}
-.source-tab:hover:not(:disabled) { color: var(--text); background: transparent; }
-.source-tab.active,
-.source-tab.active:hover:not(:disabled) { color: var(--accent-text); background: var(--bg-surface); box-shadow: var(--shadow-sm); }
+/* Fit-flow source step: where the data comes from (a SegmentedControl). */
+.seg.source-toggle { margin-bottom: var(--space-3); }
 .paste-source { display: flex; flex-direction: column; gap: 0.75rem; }
 .paste-source .paste-area { box-sizing: border-box; min-height: 180px; }
 
@@ -5410,12 +5370,13 @@ select:disabled {
   background: var(--bg-canvas);
 }
 
-.login-field select {
+.login-field select, .login-field .sel-trigger {
   border-radius: var(--radius-md);
   padding: 9px 32px 9px 12px;
   font-size: var(--fs-14);
   background-color: var(--bg-canvas);
 }
+.login-field .sel-trigger { padding-right: 12px; }
 
 .login-field input:focus {
   outline: none;
@@ -5446,11 +5407,11 @@ select:disabled {
   text-decoration: underline;
 }
 
-/* Sign-out control in the sidebar footer. */
+/* Sign-out control in the sidebar footer: the fold toggle's size. */
 .side-signout {
   margin-left: auto;
-  width: 30px;
-  height: 30px;
+  width: var(--control-md);
+  height: var(--control-md);
   border-radius: var(--radius-md);
   display: grid;
   place-items: center;
@@ -6778,7 +6739,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .api-docs-menu a.active { color: var(--accent-text); background: var(--accent-subtle); font-weight: 600; }
 .api-docs-select { display: none; }
 .api-docs-select span { font-size: var(--fs-13); color: var(--text-secondary); }
-.api-docs-select select { flex: 1; min-width: 0; font-size: var(--fs-14); }
+.api-docs-select select, .api-docs-select .sel-trigger { flex: 1; min-width: 0; font-size: var(--fs-14); }
 .api-docs-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -8001,6 +7962,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .evidence-group + .evidence-group { margin-top: 8px; }
 .evidence-group-head { margin: 0; font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 500; color: var(--text-secondary); }
 .evidence-option .evidence-name, .evidence-option .evidence-meta { min-width: 0; overflow-wrap: anywhere; }
+/* A shared Radio/Checkbox as the option: its label keeps the name and meta side by side. */
+.evidence-option > .check-label { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); min-width: 0; }
 .evidence-window { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 12px; margin: 0; min-width: 0; }
 .evidence-window-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .evidence-window-row .field { flex: 1 1 10rem; min-width: 0; }
@@ -8034,7 +7997,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   color: var(--text);
   background: var(--bg-surface);
 }
-.decision-step select {
+.decision-step select, .decision-step .sel-trigger {
   border-radius: var(--radius-md);
   padding: 6px 30px 6px 10px;
   min-height: 34px;
@@ -8042,6 +8005,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   line-height: var(--lh-14);
   background-color: var(--bg-surface);
 }
+.decision-step .sel-trigger { padding-right: 9px; }
 .login-field textarea:focus,
 .decision-step input:focus,
 .decision-step textarea:focus {
@@ -8061,6 +8025,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   padding: 6px 30px 6px 10px;
   width: 288px;
 }
+.nav-workspace .nav-workspace-select { box-sizing: border-box; height: var(--control-bar); }
 .nav-team-settings {
   display: inline-flex;
   align-items: center;
@@ -8139,9 +8104,11 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   width: 160px;
   /* The whole field takes the click, not a 19px line inside it. */
   align-self: stretch;
-  padding-block: 8px;
+  padding-block: 0;
 }
 .tablebar .search.live { padding-block: 0; }
+/* A list search is a control: exactly control-md (control-lg on a phone). */
+.search.live:not(.gsearch-box) { box-sizing: border-box; height: var(--control-md); }
 /* Every list search shows keyboard focus, in a table toolbar or not. */
 .search.live:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .search.live input::placeholder { color: var(--text-tertiary); }
@@ -8251,21 +8218,25 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   gap: 8px;
   font-family: inherit;
   font-size: var(--fs-13);
+  line-height: var(--lh-13);
+  font-weight: 400; /* a value is read, like a text box's (buttons are 500) */
   color: var(--text);
   background: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
-  padding: 7px 10px;
+  min-height: var(--control-md);
+  padding: 5px 9px 5px var(--space-3);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
   text-align: left;
   min-width: 0;
+  max-width: 100%;
   box-shadow: none;
 }
-.sel-trigger:hover:not(.sel-embedded) {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-}
+/* In a form (ui/Controls' Select): the text size of the inputs beside it. */
+.sel-trigger.ctl-sel { font-size: var(--fs-14); line-height: var(--lh-14); }
+.sel-trigger:hover:not(.sel-embedded):not(:disabled) { border-color: var(--border-control-hover); }
+.sel-trigger[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
 .sel-trigger.open,
 .sel-trigger:focus-visible {
   outline: none;
@@ -8274,6 +8245,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .sel-trigger:disabled { cursor: not-allowed; color: var(--text-secondary); background: var(--bg-subtle); }
 .sel-label {
+  flex: 1 1 auto;
+  min-width: 0; /* shrinks to an ellipsis instead of widening the trigger past its box */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8334,6 +8307,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* A long list (a tree of positions) never runs off a phone's screen; the position picker fills its field. */
 .sel-menu { max-width: calc(100vw - 32px); }
 .sel-trigger.position-picker { width: 100%; }
+.sel-trigger.nav-workspace-select { font-weight: 500; } /* the workspace switcher reads as a control in the bar */
 .sel-group {
   padding: 8px 12px 4px;
   font-size: var(--fs-12);
@@ -8348,6 +8322,10 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .sel-check { display: inline-flex; color: var(--accent-text); flex-shrink: 0; }
 .sel-check svg { width: 13px; height: 13px; }
+/* A finger-sized row on a phone (control-lg); the search box's 16px text comes from the touch block. */
+@media (max-width: 720px) {
+  .sel-option { min-height: var(--control-lg); }
+}
 
 /* Embedded variant: fused into a bordered parent (column mapper fields). */
 .sel-trigger.sel-embedded {
@@ -8786,7 +8764,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-asof-table { margin-bottom: 0; }
 .rbd-asof-source { display: block; max-width: 280px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); white-space: normal; }
 .rbd-asof-source.is-caveat { color: var(--warning-text); }
-.rbd-asof-table select, .rbd-asof-table input {
+.rbd-asof-table select, .rbd-asof-table input, .rbd-asof-table .sel-trigger {
   background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 3px 6px; font: inherit; font-size: var(--fs-13);
 }
@@ -8992,9 +8970,9 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 /* Help trigger in the top bar + inline "how do I…" links */
 .nav-help-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; border-radius: var(--radius-md); background: none; border: none;
+  width: var(--control-bar); height: var(--control-bar); border-radius: var(--radius-md); background: none; border: none;
   color: var(--text-secondary); cursor: pointer; box-shadow: none;
-  /* The global `button` padding (11px 17px) exactly consumes the 34px width
+  /* The global `button` padding (11px 17px) exactly consumes the width
      under border-box, leaving a zero-width content box that collapses the
      icon. Reset it, and stop the icon shrinking if that ever recurs. */
   padding: 0;
@@ -9484,42 +9462,62 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .rbd-intervals-check input { margin-top: 3px; flex: none; }
 .rbd-intervals .rbd-costs-table td .muted { font-size: var(--fs-12); font-weight: 400; }
 
-/* One toolbar above the canvas: the diagram's settings on the left, its
-   actions on the right, which wrap onto a second row when it is narrow. The
-   common-cause button floats over the canvas's top while blocks are selected. */
+/* The RBD builder's toolbar (docs/design-system/components/RbdToolbar.md): one row of
+   control-sm controls (control-lg on a phone, the global touch rule). The tools on the left,
+   what an action did in the middle, the state and the rest on the right; each group wraps as
+   one. The common-cause button floats over the canvas's top while blocks are selected. */
 .rbd-toolbar {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  /* The actions keep to the right (margin-left: auto); the settings stay beside
-     + Add block when the toolbar wraps. */
-  justify-content: flex-start;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
   padding-bottom: var(--space-3);
 }
-.rbd-toolbar-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-left: auto; align-items: center; }
-/* Save ▾, ⋯ and the validation status (#314). */
-.rbd-tb-trigger { min-height: 32px; }
+.rbd-tb-tools, .rbd-toolbar-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: nowrap; min-width: 0; }
+.rbd-tb-tools > *, .rbd-toolbar-actions > * { flex: none; }
+.rbd-toolbar-actions { margin-left: auto; }
+.rbd-tb-history { display: inline-flex; gap: 0; }
+button.rbd-icon-btn { width: var(--control-sm); padding-left: 0; padding-right: 0; justify-content: center; }
+.rbd-icon-btn.is-icon .full-screen-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .rbd-tb-caret { display: inline-flex; margin-left: 2px; color: var(--text-secondary); }
+/* The primary + Add block: its caret is the fill's text colour. */
+.rbd-add-menu .rbd-tb-trigger:not(.secondary) .rbd-tb-caret { color: inherit; }
 .rbd-tb-menu .ovm-menu { min-width: 200px; }
 .rbd-tb-menu .ovm-item:disabled { color: var(--text-tertiary); cursor: not-allowed; }
-button.rbd-valid-toggle {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px;
-  font-size: var(--fs-13); font-weight: 500; border-radius: var(--radius-md); border: 1px solid var(--border);
+/* Diagram settings: the trigger says what they are now; the popover holds the fields. */
+.rbd-settings-trigger { max-width: 280px; }
+.rbd-settings-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rbd-settings-menu .ovm-menu { left: 0; right: auto; }
+.ovm-menu.rbd-settings-pop { width: min(380px, calc(100vw - 32px)); padding: var(--space-4); gap: var(--space-3); }
+.rbd-settings-pop .field { margin: 0; }
+.rbd-settings-pop .rbd-unit-input { width: 100%; }
+.rbd-settings-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* The check's answer, run after each change: a chip that opens the list. */
+.rbd-valid-toggle {
+  display: inline-flex; align-items: center; gap: 6px; height: var(--control-sm); box-sizing: border-box; padding: 0 var(--space-2);
+  font-size: var(--fs-13); line-height: var(--lh-13); font-weight: 500; border-radius: var(--radius-md); border: 1px solid var(--border);
   background: var(--bg-surface); color: var(--text); box-shadow: none; cursor: pointer; white-space: nowrap;
 }
+.rbd-valid-toggle.is-checking { color: var(--text-tertiary); border-color: transparent; background: none; cursor: default; }
 button.rbd-valid-toggle.is-ok, button.rbd-valid-toggle.is-ok:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
 button.rbd-valid-toggle.is-caveat, button.rbd-valid-toggle.is-caveat:hover:not(:disabled) { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
 button.rbd-valid-toggle.is-bad, button.rbd-valid-toggle.is-bad:hover:not(:disabled) { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); }
 button.rbd-valid-toggle:hover:not(:disabled) { border-color: currentColor; }
 button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--text); background: var(--bg-surface); }
-.ovm-menu.rbd-valid-pop { width: min(440px, calc(100vw - 48px)); padding: 8px; gap: 8px; align-items: flex-start; }
+.rbd-valid-menu .ovm-menu { right: 0; left: auto; }
+.ovm-menu.rbd-valid-pop { width: min(440px, calc(100vw - 48px)); padding: var(--space-2); gap: var(--space-2); align-items: flex-start; }
 .rbd-valid-pop .rbd-check { width: 100%; box-sizing: border-box; }
-/* The toolbar's settings inside ⋯: a phone's (#301); hidden on a wide screen. */
-.rbd-ovm-settings { display: none; }
-.rbd-mode-select .sel-trigger { min-height: 32px; }
+/* Saved, Saving…, Couldn't save: quiet words with a dot (the words carry it, not the colour). */
+.rbd-save-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); white-space: nowrap; }
+.rbd-save-dot { flex: none; width: 6px; height: 6px; border-radius: var(--radius-full); background: currentColor; }
+.rbd-save-status.is-ok { color: var(--success-text); }
+.rbd-save-status.is-todo { color: var(--warning-text); }
+.rbd-save-status.is-bad { color: var(--danger-text); }
+.rbd-save-status.is-plain .rbd-save-dot { background: var(--text-tertiary); }
+button.rbd-save-retry { font-size: var(--fs-13); }
+.rbd-full-name { font-size: var(--fs-13); font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 280px; }
 .rbd-toolbar-float { display: flex; justify-content: center; }
-.rbd-toolbar .rbd-toolbar-row { flex-wrap: wrap; row-gap: 0.4rem; min-width: 0; }
 
 /* ---- RBD builder: full screen ------------------------------------------- */
 /* The toolbar and canvas cover the screen: the browser's own full screen where
@@ -9552,34 +9550,15 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   background: var(--bg-surface);
 }
 .full-screen-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; white-space: nowrap; }
-/* Exit: after ⋯, as close as the actions are to each other. */
-.rbd-toolbar > .full-screen-btn { margin-left: calc(0.4rem - var(--space-3)); }
-/* The way in: over the canvas's top-right corner, with the view controls'
-   look (the toolbar above is full at a laptop's width). */
-.rbd-full-panel.react-flow__panel { margin: 10px; }
-.rbd-full-panel .full-screen-btn, .public-rbd-canvas-wrap > .full-screen-btn {
+.public-rbd-canvas-wrap > .full-screen-btn {
   background: var(--bg-surface); box-shadow: var(--shadow-sm);
 }
 .full-screen-btn svg { flex: none; }
-/* The diagram's name and whether it's saved (the page title is out of sight). */
-.rbd-full-status {
-  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 340px;
-  font-size: var(--fs-13); color: var(--text-secondary); margin-right: var(--space-2);
-}
-.rbd-full-name { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.rbd-full-dot { flex: none; width: 7px; height: 7px; border-radius: var(--radius-full); background: currentColor; }
-.rbd-full-saved { white-space: nowrap; }
-.rbd-full-status.is-ok { color: var(--success-text); }
-.rbd-full-status.is-todo { color: var(--warning-text); }
 @media (max-width: 640px) {
   /* A phone: the corner button is the icon alone. */
   .full-screen-word.is-compact { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .full-screen-btn:has(.is-compact) { min-width: 40px; min-height: 40px; justify-content: center; }
   .rbd-full-name { display: none; }
-  .rbd-full-status { margin-right: 0; }
-  /* Exit sits on the first row beside + Add; the actions wrap under them. */
-  .rbd-builder.is-full .rbd-toolbar > .full-screen-btn { order: 1; margin-left: auto; min-height: 40px; }
-  .rbd-builder.is-full .rbd-toolbar-actions { order: 2; }
 }
 /* The shared page's diagram: a Full screen button over its corner. */
 .public-rbd-canvas-wrap { position: relative; }
@@ -9749,7 +9728,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
     width: 44px;
     height: 44px;
   }
-  .search.live input { padding-block: 12px; }
+  .search.live:not(.gsearch-box) { height: var(--control-lg); }
   /* Model page: the parameters card goes under the plot, not beside it. */
   .detail-panel {
     flex-direction: column;
@@ -9773,33 +9752,44 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   }
   /* Big enough to tap. (The toolbar's narrow layout goes by the builder's own
      width: .rbd-builder.is-narrow, below.) */
-  .rbd-toolbar button.sm, .rbd-toolbar button.rbd-valid-toggle { min-height: 40px; }
+  .rbd-toolbar .rbd-valid-toggle { height: var(--control-lg); }
+  .rbd-toolbar button.rbd-icon-btn, .rbd-toolbar .full-screen-btn { min-width: var(--control-lg); min-height: var(--control-lg); }
   /* The standing hint (right-click, shift-click, keys) is for a mouse and
      keyboard: on a phone, show the diagram. */
   .rbd-hint {
     display: none;
   }
 }
-/* A narrow builder (rbdEditorLayout.js: a phone, or the Explorer's table area
-   beside the tree): the toolbar collapses to its actions (#301), the unit and
-   mode moving into ⋯, so the canvas keeps the room. */
-.rbd-builder.is-narrow .rbd-toolbar .rbd-tb-settings { display: none; }
-.rbd-builder.is-narrow .rbd-ovm-settings {
-  display: flex; flex-direction: column; gap: 8px; padding: 6px 8px 10px;
-  margin-bottom: 4px; border-bottom: 1px solid var(--border-subtle);
-}
-.rbd-builder.is-narrow .rbd-ovm-settings label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); color: var(--text-secondary); }
-.rbd-builder.is-narrow .rbd-ovm-settings input, .rbd-builder.is-narrow .rbd-ovm-settings select { font-size: var(--fs-16); min-height: 40px; }
-/* The minimap would cover a third of a narrow canvas: show the diagram. */
+/* A narrow builder (rbdEditorLayout.js: a phone, or the Explorer's table area beside the
+   tree): the settings trigger is its icon alone, the minimap goes, and what an action did takes
+   a row of its own while it shows. */
+.rbd-builder.is-narrow .rbd-settings-summary { display: none; }
 .rbd-builder.is-narrow .rbd-canvas .react-flow__minimap { display: none; }
-/* No gap to spare: the notice takes a row of its own under the actions while
-   it shows. */
-.rbd-builder.is-narrow .rbd-tb-flash { flex-basis: 100%; order: 1; text-align: left; }
-/* "+ Add block" says "+ Add" so the toolbar keeps one row; the diagram's name
-   (in full screen, or beside the tree) leaves "Saved" alone. */
-.rbd-builder.is-tight .rbd-add-word { display: none; }
+/* What an action did floats under the toolbar's row (the toolbar never wraps). */
+.rbd-builder.is-narrow .rbd-tb-flash {
+  position: absolute; top: calc(100% - var(--space-2)); left: 0; right: 0; z-index: calc(var(--z-sticky) + 3); flex: none; text-align: left;
+  background: var(--bg-surface); padding: 2px var(--space-2); border-radius: var(--radius-md); pointer-events: none;
+}
 .rbd-builder.is-narrow .rbd-full-name { display: none; }
-.rbd-builder.is-narrow .rbd-full-status { margin-right: 0; }
+/* One row at every width (docs/design-system/components/RbdToolbar.md "Running short"):
+   "+ Add block" is the "+" alone, then Full screen goes into ⋯ and the status and check show
+   their icon alone, then Undo and Redo go into ⋯. */
+.rbd-builder.is-narrow .rbd-add-word, .rbd-builder.is-narrow .rbd-add-menu .rbd-tb-caret { display: none; }
+.rbd-builder.is-narrow .rbd-add-menu .rbd-tb-trigger { min-width: var(--control-sm); justify-content: center; font-size: var(--fs-16); font-weight: 600; }
+.rbd-builder:not(.is-tight) .rbd-mi-tight, .rbd-builder:not(.is-cramped) .rbd-mi-cramped { display: none; }
+.rbd-builder.is-tight:not(.is-full) .rbd-tb-full { display: none; }
+.rbd-builder.is-cramped .rbd-tb-history-bar { display: none; }
+.rbd-builder.is-tight .rbd-save-text, .rbd-builder.is-tight .rbd-valid-text:not(.is-keep) {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.rbd-builder.is-tight .rbd-valid-toggle { padding: 0 var(--space-2); gap: 4px; }
+.rbd-builder.is-tight .rbd-valid-toggle .rbd-valid-text { margin-left: -4px; }
+.rbd-builder.is-cramped .rbd-toolbar, .rbd-builder.is-cramped .rbd-tb-tools, .rbd-builder.is-cramped .rbd-toolbar-actions { gap: 4px; }
+.rbd-builder.is-cramped .rbd-save-main { padding-left: var(--space-2); padding-right: var(--space-2); }
+.rbd-save-icon { flex: none; }
+.rbd-save-spin { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: currentColor; border-radius: var(--radius-full); animation: rbd-spin 0.8s linear infinite; }
+@keyframes rbd-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rbd-save-spin { animation-duration: 3s; } }
 
 /* Reliability growth projection panel (#232). */
 .growth-projection .strategy-costs .calc-t { min-width: 0; }
@@ -9882,7 +9872,6 @@ input.rbd-rename {
   border: 1px solid var(--accent); border-radius: var(--radius-md); box-shadow: var(--focus-ring); background: var(--bg-surface);
 }
 /* The toolbar's Safety function switch (#298) and "+ Add block" (#299). */
-.rbd-safety-switch { font-size: var(--fs-13); white-space: nowrap; }
 .rbd-add-menu .rbd-tb-trigger { font-weight: 600; }
 /* It sits at the toolbar's left: its menu opens rightwards. */
 .rbd-add-menu .ovm-menu { left: 0; right: auto; }
@@ -10125,7 +10114,7 @@ main.content:focus { outline: none; }
    margin alone a small link lost 24 px and sat on the text above it ("Read
    more" on "Attach a PDF…" in the RCM sheet). */
 @media (max-width: 720px) {
-  .side-subitem { min-height: 44px; display: flex; align-items: center; }
+  .side-subitem { min-height: var(--control-touch); display: flex; align-items: center; }
   .crumb-link, button.link, button.link.sm, .mapper button.link.rec-map-link { padding-block: 12px; margin-block: -12px; }
 }
 
@@ -10133,14 +10122,14 @@ main.content:focus { outline: none; }
    the workspace picker, team settings, the drawer's close button and each
    menu row are at least 44 px to press. */
 @media (max-width: 720px) {
-  .nav-menu-btn { width: 44px; height: 44px; margin-left: -10px; margin-right: 4px; }
-  .nav-help-btn { width: 44px; height: 44px; }
-  .nav-workspace .nav-workspace-select { min-height: 44px; }
-  .nav-team-settings { min-width: 44px; min-height: 44px; justify-content: center; }
-  .sidebar.drawer .sidebar-toggle { width: 44px; height: 44px; font-size: var(--fs-20); }
-  .sidebar.drawer .side-item { min-height: 44px; }
-  .sidebar.drawer .side-signout { min-width: 44px; min-height: 44px; }
-  .navbar .brand { min-height: 44px; }
+  .nav-menu-btn { width: var(--control-touch); height: var(--control-touch); margin-left: -10px; margin-right: 4px; }
+  .nav-help-btn { width: var(--control-touch); height: var(--control-touch); }
+  .nav-workspace .nav-workspace-select { height: var(--control-touch); min-height: var(--control-touch); }
+  .nav-team-settings { min-width: var(--control-touch); min-height: var(--control-touch); justify-content: center; }
+  .sidebar.drawer .sidebar-toggle { width: var(--control-touch); height: var(--control-touch); font-size: var(--fs-20); }
+  .sidebar.drawer .side-item { min-height: var(--control-touch); }
+  .sidebar.drawer .side-signout { min-width: var(--control-touch); min-height: var(--control-touch); }
+  .navbar .brand { min-height: var(--control-touch); }
 }
 .rbd-compare-chosen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-13); }
 .rbd-compare-chosen li { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
@@ -10212,11 +10201,6 @@ main.content:focus { outline: none; }
 .spares-by-period th:first-child, .spares-by-period td:first-child { text-align: left; }
 
 /* RBD toolbar: Save saves; the arrow beside it opens the rest. */
-.rbd-save-split { display: inline-flex; align-items: stretch; }
-.rbd-save-split .rbd-save-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.rbd-save-split .rbd-save-more .rbd-tb-trigger { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; padding-left: 6px; padding-right: 6px; height: 100%; }
-.rbd-save-split .rbd-save-more .ovm-menu { right: 0; left: auto; }
-.rbd-plan-btn.is-on { background: var(--accent-subtle); color: var(--accent-text); border-color: var(--accent); }
 .rbd-menu-note { margin: 2px 10px 6px; font-size: var(--fs-12); color: var(--text-secondary); }
 
 /* The same task on identical positions, offered after an interval change (TaskTwins.jsx). */

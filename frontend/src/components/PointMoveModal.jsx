@@ -5,6 +5,7 @@ import { pointMoveChoices } from "../measuringPoint.js";
 import { Field, FormModal } from "./MaintenanceParts.jsx";
 import { EXPLORER_PATH } from "../navigation.js";
 import "../views/AssetExplorer.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // "Move…" for a measuring point (the Measurements tab's ⋯ menu and the
 // point's own page): pick another position from the tree, searchable, and
@@ -43,10 +44,8 @@ export default function PointMoveModal({ point, onClose, onDone }) {
                aria-label="Find a position" autoFocus />
       </Field>
       {within && (
-        <label className="maint-place-any">
-          <input type="checkbox" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }} />
-          {" "}Any asset <span className="lib-date">(not only the one open)</span>
-        </label>
+        <Checkbox className="maint-place-any" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }}
+                  label={<>Any asset <span className="lib-date">(not only the one open)</span></>} />
       )}
       {error && <div className="card error">{error}</div>}
       {positions === null && !error ? <p className="lib-date">Loading the tree…</p> : (

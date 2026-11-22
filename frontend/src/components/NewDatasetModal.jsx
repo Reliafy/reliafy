@@ -16,6 +16,7 @@ import ReadingEditor, { readingWaiting } from "./ReadingEditor.jsx";
 import { useUploadReading } from "../useUploadReading.js";
 import { emptyReading, readingPayload, withoutColumn } from "../datasetReading.js";
 import "./Datasets.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // ---- structured form fields (SurPyval survival inputs, no covariates) --------
 // One comma-separated value list per field. Canonical column order for the CSV.
@@ -371,13 +372,11 @@ export default function NewDatasetModal({
           <button type="button" className="link" onClick={() => setHeaderChoice(false)}>Undo</button>
         </p>
       )}
-      <label className="ds-check">
-        <input type="checkbox" checked={noHeader} onChange={(e) => setHeaderChoice(e.target.checked)} />
-        <span>
-          No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …
-          {excelNote && " (for an Excel file you choose the header row next)"}
-        </span>
-      </label>
+      <Checkbox className="ds-check" checked={noHeader} onChange={(e) => setHeaderChoice(e.target.checked)}
+                label={<>
+                  No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …
+                  {excelNote && " (for an Excel file you choose the header row next)"}
+                </>} />
     </>
   );
 

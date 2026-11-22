@@ -4,6 +4,7 @@ import { createPerDemandModel, getDataset, listDatasets } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
+import { Select } from "./ui/Controls.jsx";
 
 const isCount = (v, min) => v !== "" && Number.isInteger(Number(v)) && Number(v) >= min;
 const pct = (v) => `${(v * 100).toFixed(v > 0.99 || v < 0.01 ? 2 : 1)}%`;
@@ -139,10 +140,10 @@ export default function PerDemandPanel({ onCreated, onBack }) {
         <div className="pd-dataset">
           <label className="login-field">
             <span>Dataset (one row per batch)</span>
-            <select value={datasetId} onChange={(e) => pickDataset(e.target.value)}>
+            <Select value={datasetId} onChange={(e) => pickDataset(e.target.value)}>
               <option value="">{datasets === null ? "Loading…" : "Choose a dataset"}</option>
               {(datasets || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            </Select>
           </label>
           {columns.length > 0 && (
             <div className="row" style={{ gap: "0.6rem", marginTop: "0.6rem", flexWrap: "wrap" }}>
@@ -150,10 +151,10 @@ export default function PerDemandPanel({ onCreated, onBack }) {
                 ([key, label]) => (
                   <label className="login-field" key={key} style={{ flex: "1 1 160px" }}>
                     <span>{label}</span>
-                    <select value={cols[key]} onChange={(e) => setCols((c) => ({ ...c, [key]: e.target.value }))}>
+                    <Select value={cols[key]} onChange={(e) => setCols((c) => ({ ...c, [key]: e.target.value }))}>
                       <option value="">—</option>
                       {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    </Select>
                   </label>
                 ))}
             </div>

@@ -11,6 +11,7 @@ import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import HowOften from "./HowOften.jsx";
 import { LAST_DONE_NOTE, planWords } from "../workManagement.js";
 import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // What a task's "how often" shows under it: the next dates, from when it was last done (else today).
 function preview(how, task) {
@@ -135,48 +136,46 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
                 {...preview(how, null)} />
       {counters.length > 0 && (
         <Field label="Measurement (for a task by use, optional)">
-          <select value={f.point_id} onChange={set("point_id")}>
+          <Select value={f.point_id} onChange={set("point_id")}>
             <option value="">{kind === "item" ? "Automatic: its own counter in that unit, else its use where fitted" : "Automatic: this position's counter in that unit"}</option>
             {counters.map((mp) => <option key={mp.id} value={mp.id}>{mp.name} ({mp.unit})</option>)}
-          </select>
+          </Select>
         </Field>
       )}
       {kind === "item" && (
         <Field label="While it's out of a position (in a store, or away)">
-          <select value={f.while_stored} onChange={set("while_stored")}>
+          <Select value={f.while_stored} onChange={set("while_stored")}>
             <option value="run">Keep counting the calendar (it can fall due in the store)</option>
             <option value="pause">Pause: the days out of a position don't count</option>
-          </select>
+          </Select>
         </Field>
       )}
       {kind === "location" && (
-        <label className="maint-row gap-2">
-          <input type="checkbox" checked={f.include_positions} onChange={(e) => setF({ ...f, include_positions: e.target.checked })} />
-          {workOrders ? "List every position here on its work orders (a walkdown: one line each)"
-            : "List every position here (a walkdown: one line each)"}
-        </label>
+        <Checkbox className="maint-row" checked={f.include_positions} onChange={(e) => setF({ ...f, include_positions: e.target.checked })}
+                  label={workOrders ? "List every position here on its work orders (a walkdown: one line each)"
+                    : "List every position here (a walkdown: one line each)"} />
       )}
       <Field label="What kind of task">
-        <select value={f.outcome} onChange={set("outcome")}>
+        <Select value={f.outcome} onChange={set("outcome")}>
           <option value="">Routine work (lubricate, clean, adjust, inspect)</option>
           <option value="fixed_interval">Replace at age (every … since it was last done)</option>
           <option value="failure_finding">Check a hidden function (failure-finding)</option>
           <option value="on_condition">Check condition</option>
-        </select>
+        </Select>
       </Field>
       {f.outcome === "fixed_interval" && <p className="lib-date">{AGE_NOTE}</p>}
       <Field label="Where it comes from">
-        <select value={f.source} onChange={set("source")}>
+        <Select value={f.source} onChange={set("source")}>
           {["manual", "oem", "statutory", "other"].map((k) => <option key={k} value={k}>{TASK_SOURCES[k]}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Reference (optional)"><input value={f.reference} placeholder="e.g. Owner's manual §7, AS 1851 table 5" onChange={set("reference")} /></Field>
       {kind === "position" && modes.length > 0 && (
         <Field label="Failure mode it prevents (optional)">
-          <select value={f.failure_mode_id} onChange={set("failure_mode_id")}>
+          <Select value={f.failure_mode_id} onChange={set("failure_mode_id")}>
             <option value="">None</option>
             {modes.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
       <Field label="Who may do it (optional)"><input value={f.trade} placeholder="e.g. licensed electrician" onChange={set("trade")} /></Field>
@@ -228,17 +227,15 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
       {meas.error && <p className="lib-date">{meas.error}</p>}
       {kind === "item" && (
         <Field label="While it's out of a position (in a store, or away)">
-          <select value={whileStored} onChange={(e) => setWhileStored(e.target.value)}>
+          <Select value={whileStored} onChange={(e) => setWhileStored(e.target.value)}>
             <option value="run">Keep counting the calendar</option>
             <option value="pause">Pause: the days out of a position don't count</option>
-          </select>
+          </Select>
         </Field>
       )}
       {kind === "location" && (
-        <label className="maint-row gap-2">
-          <input type="checkbox" checked={includePositions} onChange={(e) => setIncludePositions(e.target.checked)} />
-          {workOrders ? "List every position here on its work orders" : "List every position here"}
-        </label>
+        <Checkbox className="maint-row" checked={includePositions} onChange={(e) => setIncludePositions(e.target.checked)}
+                  label={workOrders ? "List every position here on its work orders" : "List every position here"} />
       )}
       <Field label="Who may do it: trade, licence or competency (optional)"><input value={trade}
              placeholder="e.g. Licensed electrician" onChange={(e) => setTrade(e.target.value)} /></Field>
@@ -248,18 +245,18 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
       {workOrders && <p className="lib-date">Each work order this task raises gets the trade, the instructions and the checklist to tick off.</p>}
       {byHand && <>
         <Field label="Where it comes from">
-          <select value={source} onChange={(e) => setSource(e.target.value)}>
+          <Select value={source} onChange={(e) => setSource(e.target.value)}>
             {["manual", "oem", "statutory", "other"].map((k) => <option key={k} value={k}>{TASK_SOURCES[k]}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Reference (optional)"><input value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
         {kind === "position" && modes.length > 0 && (
           <>
             <Field label="Failure mode it prevents">
-              <select value={mode} onChange={(e) => setMode(e.target.value)}>
+              <Select value={mode} onChange={(e) => setMode(e.target.value)}>
                 <option value="">None</option>
                 {modes.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
-              </select>
+              </Select>
             </Field>
             <p className="lib-date">Linked to a failure mode, this task is the one its RCM decision schedules.</p>
           </>

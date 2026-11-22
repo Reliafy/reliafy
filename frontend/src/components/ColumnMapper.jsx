@@ -7,6 +7,7 @@ import {
   UNITLESS, codeReading, countProblem, isUnitless, issueRow, lateEntryWords, setMappingField, statusCodesOnly, unitColumnWords,
 } from "../lifeData.js";
 import { TVC_STATUS } from "./TvcColumns.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // The Data step's selectors, one per SurPyval input, each with its label (i,
 // x, xl, xr, c, n, tl, tr, m) and a few plain words, for every flow that maps
@@ -129,10 +130,8 @@ export default function ColumnMapper({
              placeholder={isUnitless(value) ? "No unit" : placeholder}
              onChange={(e) => onSet(e.target.value)} />
       <datalist id={id}>{COMMON_UNITS.map((u) => <option value={u} key={u} />)}</datalist>
-      <label className="ds-unitless">
-        <input type="checkbox" checked={isUnitless(value)} onChange={(e) => onSet(e.target.checked ? UNITLESS : "")} />
-        no unit
-      </label>
+      <Checkbox className="ds-unitless" checked={isUnitless(value)} onChange={(e) => onSet(e.target.checked ? UNITLESS : "")}
+                label="no unit" />
     </span>
   );
   const xUnit = unitBox(unit, onUnitChange, "xcn-units", "Unit of the values", "hours, cycles, km…");
@@ -164,11 +163,9 @@ export default function ColumnMapper({
           {read || (mapping.c_invert ? "1 = failed, 0 = running" : codeWords)}
           {unsure && <> · “{cCol}” doesn&apos;t say which way round: check the counts</>}
         </span>
-        <label className="xcn-tick">
-          <input type="checkbox" checked={!!mapping.c_invert}
-                 onChange={(e) => onChange({ ...mapping, c_invert: e.target.checked, c_map: null }, { meanings: true })} />
-          my column uses 1 = failed
-        </label>
+        <Checkbox className="xcn-tick" checked={!!mapping.c_invert}
+                  onChange={(e) => onChange({ ...mapping, c_invert: e.target.checked, c_map: null }, { meanings: true })}
+                  label="my column uses 1 = failed" />
       </>
     );
   };

@@ -82,6 +82,16 @@ export const TABLE_PANES = {
       confirmLabel: "Close it", cancelLabel: "Keep it open",
     },
   },
+  // Optimise… on a task (?optimise=<task id>&on=<its position id>; the Maintenance tab): how often to
+  // do it, from its failure modes' life models. Each Use saves on its own: nothing to discard.
+  optimise: {
+    param: "optimise",
+    on: "on",
+    discard: {
+      title: "Leave Optimise?", body: "The figures you've changed aren't used until you press Use.",
+      confirmLabel: "Leave it", cancelLabel: "Stay",
+    },
+  },
   rbd: {
     param: "rbd",
     on: "on",

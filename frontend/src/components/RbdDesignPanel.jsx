@@ -17,6 +17,7 @@ import { unitInText } from "./unitText.js";
 import { formatPercent } from "../format.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // "Design for a target" (redundancy allocation, #98): how many copies of each
 // block a non-repairable diagram needs — the most reliable design within a
@@ -337,11 +338,10 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
       </div>
 
       <div className="rbd-design-toggles">
-        <label><input type="checkbox" checked={useWeight} onChange={(e) => setUseWeight(e.target.checked)} /> Weight</label>
-        <label><input type="checkbox" checked={useVolume} onChange={(e) => setUseVolume(e.target.checked)} /> Volume</label>
-        <label title="With alternative types, a block's copies may be of different types">
-          <input type="checkbox" checked={mixing} onChange={(e) => setMixing(e.target.checked)} /> Mix types within a block
-        </label>
+        <Checkbox checked={useWeight} onChange={(e) => setUseWeight(e.target.checked)} label="Weight" />
+        <Checkbox checked={useVolume} onChange={(e) => setUseVolume(e.target.checked)} label="Volume" />
+        <Checkbox title="With alternative types, a block's copies may be of different types"
+                  checked={mixing} onChange={(e) => setMixing(e.target.checked)} label="Mix types within a block" />
       </div>
 
       {designable.length === 0 ? (
@@ -371,13 +371,12 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                 return [
                   <tr key={n.id} className={off ? "off" : ""}>
                     <td className="rbd-design-block">
-                      <label title={off ? "Stays as drawn" : "Designed"}>
-                        <input type="checkbox" checked={r.include} onChange={(e) => update(n.id, { include: e.target.checked })} />
-                        <span>
-                          <b>{n.data.label || n.id}</b>
-                          <small title={modelSummary(n.data.model)}>{lifeLine(n.data.model, graph.unit)}</small>
-                        </span>
-                      </label>
+                      <Checkbox title={off ? "Stays as drawn" : "Designed"}
+                                checked={r.include} onChange={(e) => update(n.id, { include: e.target.checked })}
+                                label={<span>
+                                  <b>{n.data.label || n.id}</b>
+                                  <small title={modelSummary(n.data.model)}>{lifeLine(n.data.model, graph.unit)}</small>
+                                </span>} />
                     </td>
                     <td>{n.type === "parallel" ? Math.max(Number(n.data.n) || 1, 1) : 1}</td>
                     <td><input className="rbd-design-num" type="number" inputMode="decimal" min="0" step="any" disabled={off} value={r.cost} onChange={(e) => update(n.id, { cost: e.target.value })} /></td>

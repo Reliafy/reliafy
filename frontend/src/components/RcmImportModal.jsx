@@ -5,6 +5,7 @@ import ExcelSheetPicker, { useExcelInspection } from "./ExcelSheetPicker.jsx";
 import SheetColumnMapper, { mappingComplete } from "./SheetColumnMapper.jsx";
 import { excelTable, importPositionRcm, previewPositionRcmImport } from "../api.js";
 import { WORKSHEET_ACCEPT, importSummary, isCsvFile } from "../rcmImport.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const CONSEQUENCES = [
   ["safety", "Safety"],
@@ -207,21 +208,17 @@ export default function RcmImportModal({ position, onClose, onImported }) {
 
           {unmapped.length > 0 && (
             <div className="xl-extras">
-              <label className="ds-check">
-                <input type="checkbox" checked={extrasOn} onChange={(e) => setExtrasOn(e.target.checked)} />
-                <span>
-                  Keep other columns in each failure mode's notes (e.g. “Severity 8 · Occurrence 4 · RPN 96”)
-                  — Reliafy has no FMEA scoring yet.
-                </span>
-              </label>
+              <Checkbox className="ds-check" checked={extrasOn} onChange={(e) => setExtrasOn(e.target.checked)}
+                        label={<span>
+                          Keep other columns in each failure mode's notes (e.g. “Severity 8 · Occurrence 4 · RPN 96”)
+                          — Reliafy has no FMEA scoring yet.
+                        </span>} />
               {extrasOn && (
                 <div className="xl-chips">
                   {unmapped.map((c) => (
-                    <label key={c} className={"xl-chip" + (extras.includes(c) ? " on" : "")}>
-                      <input type="checkbox" checked={extras.includes(c)}
-                             onChange={(e) => setExtras((cur) => e.target.checked ? [...cur, c] : cur.filter((x) => x !== c))} />
-                      {c}
-                    </label>
+                    <Checkbox key={c} className={"xl-chip" + (extras.includes(c) ? " on" : "")} checked={extras.includes(c)}
+                              onChange={(e) => setExtras((cur) => e.target.checked ? [...cur, c] : cur.filter((x) => x !== c))}
+                              label={c} />
                   ))}
                 </div>
               )}

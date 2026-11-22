@@ -14,4 +14,4 @@
 .table-pane-phone .table-pane-head { position: sticky; top: 0; z-index: var(--z-raised); background: var(--bg-surface); padding: 6px 12px; justify-content: flex-start; }
 .table-pane-phone .table-pane-title { white-space: normal; font-size: var(--fs-16); }
 .table-pane-phone button.table-pane-back { min-height: 40px; flex: none; }
-.table-pane-phone :is(input, textarea, select) { font-size: var(--fs-16); }
+.table-pane-phone :is(input, textarea, select, .sel-trigger) { font-size: var(--fs-16); }

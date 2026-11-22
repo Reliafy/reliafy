@@ -987,6 +987,23 @@ def _resolve_linked(decision: dict, evidence: dict, fetch) -> dict:
 
 
 def _resolve_decision(decision: dict, fetch) -> dict:
+    """The evidence check (_resolve_decision_core), and, when the evidence is an Optimise
+    analysis whose model has been refitted since, a line saying its optimum may have moved
+    (``refitted``): the status stays as it is, and the interval isn't changed by itself."""
+    out = _resolve_decision_core(decision, fetch)
+    evidence = decision.get("evidence") or {}
+    if evidence.get("type") == "strategy_analysis" and evidence.get("id"):
+        from backend.maintenance.task_optimise import refitted_note
+
+        artifact = fetch("strategy_analysis", evidence["id"])
+        note = refitted_note(artifact, fetch) if artifact is not None else None
+        if note:
+            out = {**out, "refitted": note,
+                   "summary": f"{out.get('summary') or out.get('reason') or ''} {note}".strip()}
+    return out
+
+
+def _resolve_decision_core(decision: dict, fetch) -> dict:
     outcome = decision["outcome"]
     evidence = decision.get("evidence")
 

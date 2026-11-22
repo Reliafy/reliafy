@@ -141,9 +141,12 @@ export function countsText(model) {
 export function usedText(link) {
   const d = link?.used_by?.decisions?.length || 0;
   const r = link?.used_by?.rbds?.length || 0;
+  const t = link?.used_by?.tasks?.length || 0;
   const out = [];
   if (d) out.push(`${d} decision${d === 1 ? "" : "s"}`);
   if (r) out.push(`${r} RBD${r === 1 ? "" : "s"}`);
+  // The tasks whose interval Optimise rests on it ("sets the interval of").
+  if (t) out.push(`${t} task interval${t === 1 ? "" : "s"}`);
   return out.join(" · ");
 }
 

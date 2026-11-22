@@ -6,7 +6,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
 import Field from "../components/ui/Field.jsx";
-import { Select, TextInput } from "../components/ui/Controls.jsx";
+import { Checkbox, Radio, Select, TextInput } from "../components/ui/Controls.jsx";
 import { SectionHeader, ShowMe } from "../components/SectionPage.jsx";
 import ProTag from "../components/ProTag.jsx";
 import { LIBRARIES_PRO_TITLE, LIBRARIES_PRO_TEXT, LibrariesProNotice } from "../components/LibrariesPro.jsx";
@@ -24,6 +24,7 @@ import {
   visibilityBody,
 } from "../libraries.js";
 import "./LibraryPages.css";
+import Loading from "../components/ui/Loading.jsx";
 
 // Libraries (Derryn, 13 Nov 2026): your own libraries of datasets and models (copies, kept as they
 // were when added), shared with other workspaces by their IDs or published, beside the built-in
@@ -85,7 +86,7 @@ export default function LibrariesHome() {
       <SectionHeader title="All libraries" help={HELP} primary={newButton}
                      purpose="Collections of data and models to keep, share with other workspaces or publish, and the built-in handbooks." />
       {error && <LoadFailed what="Couldn't load your libraries." error={error} onRetry={() => setAttempt((n) => n + 1)} />}
-      {d === null && !error && <div className="card empty">Loading…</div>}
+      {d === null && !error && <Loading card />}
       {d && (
         <>
           <div className="lib-filters">
@@ -164,7 +165,7 @@ export function LibraryEntriesPage({ type }) {
             ))}
           </p>
         )}
-        {d === null && !error ? <p className="lib-quiet">Loading…</p> : d && (
+        {d === null && !error ? <Loading /> : d && (
           <EntryList entries={d.entries || []} showLibrary showKind={false}
                      emptyText={isModel
                        ? "No models in any library you can see yet. Add one with Add to library… in a model’s ⋯ menu."
@@ -211,10 +212,8 @@ function SharingPanel({ lib, onSaved, onClose }) {
     }
   };
   const choice = (value, label, words) => (
-    <label className="lib-share-choice">
-      <input type="radio" name="lib-visibility" value={value} checked={visibility === value} onChange={() => setVisibility(value)} />
-      <span><strong>{label}</strong><br /><span className="lib-quiet">{words}</span></span>
-    </label>
+    <Radio className="lib-share-choice" name="lib-visibility" value={value} checked={visibility === value} onChange={() => setVisibility(value)}
+           label={<><strong>{label}</strong><br /><span className="lib-quiet">{words}</span></>} />
   );
   return (
     <section className="card lib-share" aria-labelledby="lib-share-h">
@@ -261,10 +260,8 @@ function SharingPanel({ lib, onSaved, onClose }) {
           <Field label="Citation" help="How people should cite it.">
             <TextInput value={citation} onChange={(e) => setCitation(e.target.value)} maxLength={1000} />
           </Field>
-          <label className="lib-share-choice">
-            <input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />
-            <span>I have the right to publish this</span>
-          </label>
+          <Checkbox className="lib-share-choice" checked={rights} onChange={(e) => setRights(e.target.checked)}
+                    label="I have the right to publish this" />
         </div>
       )}
       {tried && problems.length > 0 && <ul className="field-error" role="alert">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
@@ -420,7 +417,7 @@ export function LibraryPage() {
       {error && <div className="card error" role="alert">{error}</div>}
       {!lib && loadError && <LoadFailed what="Couldn't open this library." error={loadError} to="/libraries" label="See all libraries"
                                         onRetry={() => setAttempt((n) => n + 1)} />}
-      {!lib && !error && !loadError && <div className="card empty">Loading…</div>}
+      {!lib && !error && !loadError && <Loading card />}
       {lib && (
         <>
           {sharing && canEdit && (

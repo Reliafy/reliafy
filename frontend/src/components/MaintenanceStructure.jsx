@@ -14,6 +14,8 @@ import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import {
   bomFormatText, bomImportSummary, bomIsIndented, levelsIn, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
 } from "../maintenanceStructure.js";
+import Loading from "./ui/Loading.jsx";
+import { Checkbox, Radio, Select } from "./ui/Controls.jsx";
 
 const partLink = (id) => `/asset-register/parts/${id}`;
 
@@ -95,10 +97,7 @@ export function RollupCard({ structure, design = false }) {
     <section className="card">
       <div className="maint-head">
         <h2>Quantities rolled up</h2>
-        <label className="maint-row lib-date mt-0 gap-1-5">
-          <input type="checkbox" checked={every} onChange={(e) => setEvery(e.target.checked)} />
-          Every level
-        </label>
+        <Checkbox className="lib-date" checked={every} onChange={(e) => setEvery(e.target.checked)} label="Every level" />
       </div>
       <p className="lib-date">
         How many of each part go into one {structure.part.part_number}, multiplied down the tree (an SRU inside an LRU
@@ -209,11 +208,11 @@ export function ComponentModal({ part, line, onClose, onDone }) {
                onSubmit={submit}>
       {!line && (
         <Field label="Part">
-          {catalogue === null ? <span className="lib-date">Loading…</span> : (
-            <select autoFocus value={childId} onChange={(e) => setChildId(e.target.value)}>
+          {catalogue === null ? <Loading inline /> : (
+            <Select autoFocus value={childId} onChange={(e) => setChildId(e.target.value)}>
               <option value="">Choose…</option>
               {options.map((p) => <option key={p.id} value={p.id}>{p.part_number} {p.name}{p.level ? ` (${p.level})` : ""}</option>)}
-            </select>
+            </Select>
           )}
         </Field>
       )}
@@ -243,10 +242,10 @@ export function LevelModal({ part, onClose, onDone }) {
     <FormModal title={`Indenture level of ${part.part_number}`} submitLabel="Save" onClose={onClose}
                onSubmit={async () => onDone(await setPartLevel(part.id, level))}>
       <Field label="Level">
-        <select autoFocus value={level} onChange={(e) => setLevel(e.target.value)}>
+        <Select autoFocus value={level} onChange={(e) => setLevel(e.target.value)}>
           <option value="">None</option>
           {(levels || []).map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
-        </select>
+        </Select>
       </Field>
       <p className="lib-date">Where it sits in a structure: a system, an assembly, a line-replaceable unit… The list is the
         workspace's own: change it from the Parts page.</p>
@@ -277,7 +276,7 @@ export function LevelsModal({ onClose, onDone }) {
     <FormModal title="Indenture levels" submitLabel="Save" canSubmit={!!rows?.some((r) => r.name.trim())}
                onClose={onClose} onSubmit={submit}>
       <p className="lib-date">Top first. Rename a level and the parts at it follow. A level parts are at can't be removed.</p>
-      {rows === null ? <p className="lib-date">Loading…</p> : (
+      {rows === null ? <Loading /> : (
         <ol className="maint-levels">
           {rows.map((r, i) => (
             <li key={i}>
@@ -343,11 +342,9 @@ export function ImportBomModal({ onClose, onDone }) {
             <p>{bomImportSummary(preview)}</p>
             {preview.format && <p className="lib-date">Read as: {bomFormatText(preview)}</p>}
             {bomIsIndented(preview) && (
-              <label className="maint-row lib-date mt-0 gap-1-5">
-                <input type="checkbox" checked={byDepth} onChange={(e) => nameByDepth(e.target.checked)} />
-                Name each part's indenture level by its depth, from this workspace's list (a part's own indenture
-                level column still wins)
-              </label>
+              <Checkbox className="lib-date" checked={byDepth} onChange={(e) => nameByDepth(e.target.checked)}
+                        label={<>Name each part's indenture level by its depth, from this workspace's list (a part's own indenture
+                          level column still wins)</>} />
             )}
             <p className="lib-date">Columns: {Object.entries(preview.columns).map(([f, c]) => `${FIELD_NAMES[f] || f} = "${c}"`).join("; ")}.</p>
             {preview.errors.length > 0 && (
@@ -387,25 +384,19 @@ export function PositionsFromStructureModal({ structure, onClose, onDone }) {
         Pump unit 2), tagged with the line's references, each with its part as the replacement part. Positions already there
         with the same name are used again.</p>
       <Field label="Under">
-        {positions === null ? <span className="lib-date">Loading…</span>
+        {positions === null ? <Loading inline />
           : <PositionPicker positions={positions} value={parentId} onChange={(v) => { setParentId(v); setPreview(null); }} />}
       </Field>
       <fieldset className="maint-fieldset">
         <legend>Which levels become positions</legend>
-        <label className="maint-row mt-0 gap-1-5">
-          <input type="radio" checked={every} onChange={() => { setEvery(true); setPreview(null); }} /> Every part
-        </label>
+        <Radio checked={every} onChange={() => { setEvery(true); setPreview(null); }} label="Every part" />
         {found.length > 0 && (
-          <label className="maint-row mt-1 gap-1-5">
-            <input type="radio" checked={!every} onChange={() => { setEvery(false); setPreview(null); }} /> Only these levels:
-          </label>
+          <Radio checked={!every} onChange={() => { setEvery(false); setPreview(null); }} label="Only these levels:" />
         )}
         {!every && (
           <div className="maint-row mt-1">
             {found.map((l) => (
-              <label key={l} style={{ display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
-                <input type="checkbox" checked={chosen.has(l)} onChange={() => flip(l)} /> {l}
-              </label>
+              <Checkbox key={l} checked={chosen.has(l)} onChange={() => flip(l)} label={l} />
             ))}
           </div>
         )}

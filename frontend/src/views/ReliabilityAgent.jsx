@@ -11,6 +11,7 @@ import {
 import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import { renderAgentMarkdown } from "../agentMarkdown.js";
 import { relativeTime } from "../instrument.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // A conversational chat with the Reliability Agent (Anthropic Managed Agents).
 // The agent assesses the task, builds the solution with surpyval/repyability in
@@ -313,7 +314,7 @@ export default function ReliabilityAgent() {
       {view === "list" ? (
         // Landing: every saved run, newest first. Click to reopen/continue.
         sessions === null ? (
-          <div className="card"><p className="muted-line">Loading…</p></div>
+          <Loading card />
         ) : sessions.length === 0 ? (
           <div className="card empty-note">
             <p>No conversations yet.</p>

@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import Switch from "../components/ui/Switch.jsx";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   generateWorkOrders,
@@ -27,6 +28,7 @@ import { ORDERS_LABEL } from "../navigation.js";
 import "./Maintenance.css";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { plainLoadError } from "../components/loadFailed.js";
+import Loading from "../components/ui/Loading.jsx";
 
 const HELP = { guide: "maintenance-work-orders" };
 
@@ -107,7 +109,7 @@ export default function MaintenanceOrders() {
       {data && <TimeZoneNudge zone={data.time_zone} onSet={refresh} />}
       {data === null ? (
         loadError ? <LoadFailed what="Couldn't load your work orders." error={loadError} onRetry={refresh} />
-          : <div className="card empty">Loading…</div>
+          : <Loading card />
       ) : data.tree.length === 0 ? (
         <div className="card empty">
           <h2>Nothing here yet</h2>
@@ -141,10 +143,7 @@ export default function MaintenanceOrders() {
           </div>
 
           {digest !== null && (
-            <label className="maint-row lib-date gap-2">
-              <input type="checkbox" checked={digest} onChange={(e) => toggleDigest(e.target.checked)} />
-              Email me when new work orders are raised for tasks coming due
-            </label>
+            <Switch checked={digest} onChange={toggleDigest} label="Email me when new work orders are raised for tasks coming due" />
           )}
         </>
       )}

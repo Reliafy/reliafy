@@ -5,6 +5,7 @@ import { formatDateTime } from "../dates.js";
 import { CardHeader } from "./ui/Card.jsx";
 import Switch from "./ui/Switch.jsx";
 import { PlusIcon } from "./LibRows.jsx";
+import { Radio } from "./ui/Controls.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -169,11 +170,9 @@ export default function FleetAlertsCard({ fleetId, version }) {
         <form className="fleet-alert-form" onSubmit={onAdd}>
           <div className="fleet-alert-kinds" role="radiogroup" aria-label="Alert type">
             {KINDS.map((k) => (
-              <label key={k.value} className="set-check">
-                <input type="radio" name="fleet-alert-kind" value={k.value}
-                       checked={kind === k.value} onChange={() => setKind(k.value)} />
-                <span>{k.text(label)}</span>
-              </label>
+              <Radio key={k.value} className="set-check" name="fleet-alert-kind" value={k.value}
+                     checked={kind === k.value} onChange={() => setKind(k.value)}
+                     label={k.text(label)} />
             ))}
           </div>
           <div className="row fleet-alert-fields">

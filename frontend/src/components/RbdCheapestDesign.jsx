@@ -10,6 +10,7 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // The Design tab for a repairable diagram (#99): how many copies of each block
 // with a purchase price own the system at the lowest total cost over a
@@ -151,11 +152,10 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                     const on = t.blocks.includes(n.id);
                     const elsewhere = ownerOf[n.id] != null && ownerOf[n.id] !== i;
                     return (
-                      <label key={n.id} className={"cov-chip" + (on ? " on" : "") + (elsewhere ? " disabled" : "")}
-                             title={elsewhere ? `In ${trains[ownerOf[n.id]].name}` : undefined}>
-                        <input type="checkbox" checked={on} disabled={elsewhere} onChange={() => toggleBlock(i, n.id)} />
-                        {n.data?.label || n.id}
-                      </label>
+                      <Checkbox key={n.id} className={"cov-chip" + (on ? " on" : "") + (elsewhere ? " disabled" : "")}
+                                title={elsewhere ? `In ${trains[ownerOf[n.id]].name}` : undefined}
+                                checked={on} disabled={elsewhere} onChange={() => toggleBlock(i, n.id)}
+                                label={n.data?.label || n.id} />
                     );
                   })}
                 </div>
@@ -166,10 +166,8 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                 + Add a train
               </button>
               {usedTrains.length > 0 && (
-                <label className="rbd-train-singles">
-                  <input type="checkbox" checked={singles} onChange={(e) => setSingles(e.target.checked)} />
-                  Also copy single priced blocks outside the trains
-                </label>
+                <Checkbox className="rbd-train-singles" checked={singles} onChange={(e) => setSingles(e.target.checked)}
+                          label="Also copy single priced blocks outside the trains" />
               )}
             </div>
           </div>

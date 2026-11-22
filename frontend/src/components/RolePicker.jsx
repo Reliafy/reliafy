@@ -4,6 +4,7 @@ import { useRoles } from "../RolesProvider.jsx";
 import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import Chip from "./ui/Chip.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -15,16 +16,17 @@ export default function RolePicker({ value, onChange, disabled = false }) {
       {ROLES.map((r) => {
         const at = value.indexOf(r.id);
         return (
-          <label key={r.id} className={"role-option" + (at >= 0 ? " on" : "")}>
-            <input
-              type="checkbox"
-              checked={at >= 0}
-              disabled={disabled}
-              onChange={() => onChange(at >= 0 ? value.filter((x) => x !== r.id) : [...value, r.id])}
-            />
-            <span className="role-option-label">{r.label}</span>
-            {at === 0 && value.length > 1 && <Chip tone="accent">Primary</Chip>}
-          </label>
+          <Checkbox
+            key={r.id}
+            className={"role-option" + (at >= 0 ? " on" : "")}
+            checked={at >= 0}
+            disabled={disabled}
+            onChange={() => onChange(at >= 0 ? value.filter((x) => x !== r.id) : [...value, r.id])}
+            label={<>
+              <span className="role-option-label">{r.label}</span>
+              {at === 0 && value.length > 1 && <Chip tone="accent">Primary</Chip>}
+            </>}
+          />
         );
       })}
     </div>

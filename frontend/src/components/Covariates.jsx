@@ -1,3 +1,4 @@
+import { Checkbox } from "./ui/Controls.jsx";
 // Covariate selection for proportional-hazards models. Two modes:
 //   - simple: tick CSV columns to use as covariates (Z)
 //   - advanced: write a formula (e.g. "load + speed + site")
@@ -23,14 +24,12 @@ export default function Covariates({
     <div className={"cov" + (folded ? " cov-folded" : "")}>
       <div className="cov-head">
         {!folded && <span className="map-group-title-text">Covariates (optional)</span>}
-        <label className="cov-adv-toggle">
-          <input
-            type="checkbox"
-            checked={advanced}
-            onChange={(e) => onSetAdvanced(e.target.checked)}
-          />
-          Advanced formula
-        </label>
+        <Checkbox
+          className="cov-adv-toggle"
+          checked={advanced}
+          onChange={(e) => onSetAdvanced(e.target.checked)}
+          label="Advanced formula"
+        />
       </div>
 
       <p className="cov-hint">
@@ -64,14 +63,13 @@ export default function Covariates({
         <div className="cov-chips">
           {/* The time, status and count columns are never covariates (#291). */}
           {columns.filter((col) => !isMapped(col)).map((col) => (
-            <label key={col} className={"cov-chip" + (selected.includes(col) ? " on" : "")}>
-              <input
-                type="checkbox"
-                checked={selected.includes(col)}
-                onChange={() => onToggle(col)}
-              />
-              {col}
-            </label>
+            <Checkbox
+              key={col}
+              className={"cov-chip" + (selected.includes(col) ? " on" : "")}
+              checked={selected.includes(col)}
+              onChange={() => onToggle(col)}
+              label={col}
+            />
           ))}
         </div>
       )}
