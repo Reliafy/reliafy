@@ -118,3 +118,17 @@ def test_both_over_rest(client):  # noqa: F811
     assert out["inside"]["positions"] == 1 and out["inside"]["items"] == 1
     assert client.get("/api/maintenance/rollup/nope").status_code == 404
     assert client.get("/api/maintenance/condition-below/nope").status_code == 404
+
+
+def test_a_position_shown_above_the_place_opened_counts_what_is_inside_it(m, db):
+    """A place opened by Positions shows the positions its positions sit in (at no place) as rows
+    above them: picking one counts what's inside the place below it, not a refusal."""
+    t = _tree(m, db)
+    house = m.create_position("House")["id"]
+    m.create_position("Pool", parent_id=house, location_id=t["site"])
+    m.create_position("Shed", parent_id=house)  # at no place: outside the asset opened
+    out = rollup.rollup(m, house, within=t["site"])
+    assert out["inside"]["positions"] == 1 and out["here"]["positions"] == 0
+    # A position with nothing inside the asset opened is still refused.
+    with pytest.raises(Invalid):
+        rollup.rollup(m, t["other"], within=t["site"])
