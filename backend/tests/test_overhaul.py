@@ -123,3 +123,12 @@ def test_api_overhaul_owner_share_and_isolation(monkeypatch):
         assert test_db.recurrent_models.find_one({"_id": mid}) == before  # computing wrote nothing
     finally:
         app.dependency_overrides.clear()
+
+
+def test_an_interval_past_the_data_says_how_far_past():
+    from backend.recurrent import beyond_data
+
+    out = beyond_data(20200.0, 11800.0)
+    assert out["data_end"] == 11800.0 and out["times"] == pytest.approx(1.712, abs=1e-3)
+    assert out["note"].startswith("This is 1.7× the longest record in the data (11,800)")
+    assert beyond_data(9000.0, 11800.0) is None and beyond_data(20200.0, None) is None

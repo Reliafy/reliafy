@@ -8,6 +8,7 @@ import { PlotCard, PlotPanel } from "./model/ModelLayouts.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
 import { costLabel, formatCost, workspaceCurrency } from "../money.js";
+import { beyondDataWords } from "../recurrentResults.js";
 
 // Optimal overhaul interval for a saved recurrent model: minimal repair between
 // overhauls, an overhaul renews the system. Minimises the long-run cost rate
@@ -40,6 +41,7 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
   };
 
   const opt = result?.optimal;
+  const beyond = result?.beyond_data;
   const none = result?.never_overhaul;
   let plot = null;
   if (opt && result.curve) {
@@ -97,7 +99,7 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
           {opt && (
             <>
               <ResultSummary
-                tone={result.saving_pct > 0 ? "good" : "neutral"}
+                tone={beyond ? "caveat" : result.saving_pct > 0 ? "good" : "neutral"}
                 sentence={
                   <>
                     Overhaul about every <b>{formatWithUnit(opt.interval, ut)}</b>
@@ -109,7 +111,7 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
                 }
                 stats={[
                   {
-                    label: `Interval, ${LEVEL_TEXT} range`,
+                    label: `Interval, ${LEVEL_TEXT} two-sided range`,
                     value: result.interval_range?.ci
                       ? `${formatWithUnit(result.interval_range.ci[0], ut)} to ${result.interval_range.ci[1] != null
                         ? formatWithUnit(result.interval_range.ci[1], ut) : "no upper limit"}`
@@ -118,7 +120,9 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
                   },
                   { label: "Repairs between overhauls", value: `≈ ${formatNumber(opt.expected_failures_per_cycle)}` },
                 ]}
-              />
+              >
+                {beyond ? beyondDataWords(beyond, ut) : null}
+              </ResultSummary>
               <ResultDetails
                 rows={[
                   { label: "Cost rate at the optimum", value: formatCost(opt.cost_rate, workspaceCurrency(), { sig: 4 }) },
