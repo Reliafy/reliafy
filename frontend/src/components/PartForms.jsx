@@ -6,7 +6,7 @@ import { ClassPicker } from "./MaintenanceItemClasses.jsx";
 import { PART_ROLES } from "../maintenanceSpares.js";
 import { partsPath } from "../redirects.js";
 import Loading from "./ui/Loading.jsx";
-import { Checkbox } from "./ui/Controls.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // The parts forms, one copy each wherever they're used (Derryn, 9 Nov 2026: "use the same
 // components so a change in one place appears in the other"): New part (the Parts tab; the
@@ -52,10 +52,10 @@ export function NewPartModal({ kinds = {}, onClose, onDone, place = null }) {
       )}
       {kinds.makers?.length > 0 && (
         <Field label="Manufacturer in the register (optional)">
-          <select value={f.manufacturer_id || ""} onChange={(e) => setF({ ...f, manufacturer_id: e.target.value || null })}>
+          <Select value={f.manufacturer_id || ""} onChange={(e) => setF({ ...f, manufacturer_id: e.target.value || null })}>
             <option value="">None</option>
             {kinds.makers.map((mk) => <option key={mk.id} value={mk.id}>{mk.name}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
     </FormModal>
@@ -104,19 +104,19 @@ export function PartEntryModal({ p, entry, onClose, onDone, positions = null }) 
           {catalogue === null ? <Loading inline /> : catalogue.length === 0 ? (
             <span className="lib-date">The catalogue is empty: add parts on the <Link to={partsPath()}>Parts and stock</Link> page first.</span>
           ) : (
-            <select autoFocus value={f.part_id} onChange={set("part_id")} aria-label="Part">
+            <Select autoFocus value={f.part_id} onChange={set("part_id")} aria-label="Part">
               <option value="">Choose…</option>
               {catalogue.filter((pt) => !listed.has(pt.id)).map((pt) => (
                 <option key={pt.id} value={pt.id}>{pt.part_number}: {pt.name}{pt.superseded_by ? " (superseded)" : ""}</option>
               ))}
-            </select>
+            </Select>
           )}
         </Field>
       )}
       <Field label="Role">
-        <select value={f.role} onChange={set("role")}>
+        <Select value={f.role} onChange={set("role")}>
           {PART_ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Quantity per job"><input type="number" inputMode="decimal" min="0" step="any" value={f.quantity}
              onChange={set("quantity")} /></Field>

@@ -13,6 +13,7 @@ import { usePanelMenu } from "../panelMenu.js";
 import "./FailureReports.css";
 import { DateInput } from "./ui/DateTimeInput.jsx";
 import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // The Explorer's Failure reports tab: every report at the row picked and
 // below it (a position and everything inside it; a location's positions; the
@@ -79,9 +80,9 @@ function PickItemModal({ items, onClose, onPick }) {
     <FormModal title="Which item?" submitLabel="Next" canSubmit={!!id} onClose={onClose} onSubmit={async () => pick()}>
       <p className="lib-date">A failure report is about one item built from this product. Pick the one it happened on, then where on it.</p>
       <Field label="Item (serial)">
-        <select value={id} autoFocus onChange={(e) => setId(e.target.value)}>
+        <Select value={id} autoFocus onChange={(e) => setId(e.target.value)}>
           {items.map((it) => <option key={it.id} value={it.id}>{it.label}</option>)}
-        </select>
+        </Select>
       </Field>
       {inside && inside.length > 1 && (
         <Field label="Where on it">
@@ -303,19 +304,19 @@ export default function FailureReportsPanel({ row, display, today, version, repo
         </div>
         <div className="fr-controls">
           <input type="search" value={q} placeholder="Search reports" aria-label="Search failure reports" onChange={(e) => setQ(e.target.value)} />
-          <select value={filters.consequence} aria-label="Consequence" onChange={(e) => set("consequence", e.target.value)}>
+          <Select value={filters.consequence} aria-label="Consequence" onChange={(e) => set("consequence", e.target.value)}>
             <option value="">Any consequence</option>
             {CONSEQUENCES.filter((c) => c.id).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-          <select value={filters.failure_mode_id} aria-label="Failure mode" onChange={(e) => set("failure_mode_id", e.target.value)}>
+          </Select>
+          <Select value={filters.failure_mode_id} aria-label="Failure mode" onChange={(e) => set("failure_mode_id", e.target.value)}>
             <option value="">Any failure mode</option>
             {[...modes.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, text]) => <option key={id} value={id}>{text}</option>)}
-          </select>
+          </Select>
           <label className="fr-date"><span>Since</span><DateInput value={filters.since} max={filters.until || undefined} onChange={(e) => set("since", e.target.value)} /></label>
           <label className="fr-date"><span>Until</span><DateInput value={filters.until} min={filters.since || undefined} onChange={(e) => set("until", e.target.value)} /></label>
-          <select value={filters.sort} aria-label="Order" onChange={(e) => set("sort", e.target.value)}>
+          <Select value={filters.sort} aria-label="Order" onChange={(e) => set("sort", e.target.value)}>
             {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
+          </Select>
         </div>
       </div>
       )}
