@@ -80,3 +80,62 @@ def test_one_stream_fits_as_one_system(web):
     # No item column and no one_stream: it says what to give.
     bad = client.post("/api/recurrent/fit", data={**form, "one_stream": ""})
     assert bad.status_code == 422 and "one stream" in bad.json()["detail"]
+
+
+# ---- The dataset's own end of record ------------------------------------------
+
+_SUP_J17 = "/Users/derrynknife/Projects/reliafy/planning/testing/data/sup-j17-lift-pump-replacements.csv"
+
+
+def _fit_form(dataset_id, **extra):
+    return {"dataset_id": dataset_id, "i": "", "one_stream": "true", "x": "fleet_hours", "unit": "hours",
+            "model": "crow_amsaa", **extra}
+
+
+def _upload(client, content, **reading):
+    base = {"x": "fleet_hours", "all_failed": True, "unit": "Hours", "one_stream": True, **reading}
+    res = client.post("/api/datasets/paste", json={"name": "Lift pumps", "content": content, "reading": base})
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_the_reading_keeps_and_checks_the_end_of_record(web):
+    client, _ = web
+    d = _upload(client, _log(), record_end=216000)
+    assert d["reading"]["record_end"] == 216000
+    assert "record ends at 216000" in d["reading_summary"]
+    res = client.put(f"/api/datasets/{d['id']}/reading", json={"reading": {**d["reading"], "record_end": "abc"}})
+    assert res.status_code == 422 and "end of the record" in res.json()["detail"]
+    cleared = client.put(f"/api/datasets/{d['id']}/reading", json={"reading": {**d["reading"], "record_end": ""}})
+    assert cleared.status_code == 200 and cleared.json()["reading"]["record_end"] is None
+
+
+def test_a_fit_with_no_end_given_uses_the_datasets_end(web):
+    client, _ = web
+    d = _upload(client, _log(), record_end=216000)
+    out = client.post("/api/recurrent/fit", data=_fit_form(d["id"])).json()["results"]
+    assert out["end_of_observation"] == 216000
+    typed = client.post("/api/recurrent/fit", data=_fit_form(d["id"], record_end="216000")).json()["results"]
+    assert out["beta"] == pytest.approx(typed["beta"])
+    # A typed end overrides it; with none on the dataset, the last failure ends the record.
+    over = client.post("/api/recurrent/fit", data=_fit_form(d["id"], record_end="250000")).json()["results"]
+    assert over["end_of_observation"] == 250000
+    plain = _upload(client, _log() + " ")
+    assert plain["id"] != d["id"]
+    last = client.post("/api/recurrent/fit", data=_fit_form(plain["id"])).json()["results"]
+    assert last["end_of_observation"] < 216000 and last["beta"] != pytest.approx(out["beta"])
+    # A saved model keeps the end it was fitted to.
+    saved = client.post("/api/recurrent/models", data={**_fit_form(d["id"]), "name": "Fleet trend"})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["results"]["end_of_observation"] == 216000
+
+
+@pytest.mark.skipif(not __import__("os").path.exists(_SUP_J17), reason="planning test data not checked out")
+def test_the_sup_j17_log_fits_to_its_datasets_end(web):
+    client, _ = web
+    with open(_SUP_J17) as f:
+        content = f.read()
+    d = _upload(client, content, record_end=216000, not_used=["date", "genset", "part", "reason", "replacement"])
+    out = client.post("/api/recurrent/fit", data=_fit_form(d["id"])).json()["results"]
+    assert out["end_of_observation"] == 216000
+    assert out["beta"] == pytest.approx(0.588, abs=0.0006)

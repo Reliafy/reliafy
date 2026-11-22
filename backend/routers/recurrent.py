@@ -72,6 +72,16 @@ def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=No
     return spec
 
 
+def with_dataset_end(session, ctx: AccessCtx, dataset_id, spec: dict) -> dict:
+    """``spec`` with the dataset's own end of record (its reading's ``record_end``) as the fit's end of test
+    when none was typed: a typed end always wins."""
+    if spec.get("record_end") is not None or not dataset_id:
+        return spec
+    dataset = datasets_service.get_dataset(session, dataset_id, owner_id=ctx.read_owners)
+    end = recurrent_fit.dataset_record_end(dataset)
+    return {**spec, "record_end": end} if end is not None else spec
+
+
 def _model_summary(doc, ctx: AccessCtx) -> dict:
     r = doc.results or {}
     return {
@@ -152,6 +162,7 @@ def fit_preview(
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
                                windows=windows, baseline=baseline, m=m, record_end=record_end,
                                systems=systems, downtime=downtime, cost=cost, one_stream=one_stream)
+        spec = with_dataset_end(session, ctx, dataset_id, spec)
         payload, _ = recurrent_fit.fit_spec(df, spec)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -209,6 +220,7 @@ def save_model(
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
                                windows=windows, baseline=baseline, m=m, record_end=record_end,
                                systems=systems, downtime=downtime, cost=cost, one_stream=one_stream)
+        spec = with_dataset_end(session, ctx, dataset.id, spec)
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:
