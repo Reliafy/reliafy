@@ -113,8 +113,9 @@ up, or saving a lot for a small step down.
 longer-lived pump. With **Mix types within a block** ticked, a block's
 copies can be of different types.
 
-Press **Apply to diagram** to draw the design on the canvas. Nothing is
-saved: review it on the Builder tab, then **Save** to keep it, or **Undo**.
+Press **Apply to diagram** to draw the design on the canvas. Review it on the
+Builder tab: a saved diagram keeps it by itself, and **Undo** (`Ctrl+Z`) takes it
+back.
 
 Only single components and parallel blocks of identical units can be given
 copies. The tab lists any other blocks (standby, k-out-of-n, sub-systems)

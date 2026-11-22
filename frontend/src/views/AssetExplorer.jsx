@@ -3030,7 +3030,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                onRebuild={seed?.start?.rebuild && seed.link && !viewOnly ? () => buildRbd(panePosition, seed.link) : null}
                phone={phone} headingRef={paneHeading} onClose={closeRbd}
                onDirty={(d) => { paneDirty.current = d; }}
-               onSaved={(id) => {
+               onSaved={(id, { auto = false } = {}) => {
+                 // An autosave changes nothing the tree lists.
+                 if (auto) return;
                  pmodels.load();
                  if (missionsOn) pmissions.load();
                  // Save as new: the copy is what's open now, as on the RBD's page.

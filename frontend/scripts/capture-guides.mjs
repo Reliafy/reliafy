@@ -540,7 +540,7 @@ async function chooseOption(page, label, option) {
 
 // Open the builder's ⋯ menu and choose an item.
 async function builderMenu(page, item) {
-  await page.getByRole("button", { name: "More diagram settings" }).click();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await wait(300);
   await page.getByRole("button", { name: item }).click();
 }
@@ -557,17 +557,15 @@ async function arrange(page) {
   await builderMenu(page, /^Auto-arrange$/);
   await wait(1200);
 }
-// Validate on the Builder tab (Calculate is gated on it). After a pass the
-// button becomes the "✓ Valid" status.
+// The check runs by itself a moment after the diagram opens or changes (Calculate is gated on
+// it): wait for its answer, the "✓ Valid" chip.
 async function validate(page) {
-  const btn = page.getByRole("button", { name: /^Validate$/ });
-  if (await btn.count()) await btn.click();
-  await page.locator(".rbd-valid-toggle").waitFor({ timeout: 20000 });
+  await page.locator("button.rbd-valid-toggle").waitFor({ timeout: 20000 });
 }
-// The check itself: validate, then open the status's panel.
+// The check itself: its answer, then the chip's panel.
 async function validateAndShowCheck(page) {
   await validate(page);
-  await page.locator(".rbd-valid-toggle").click();
+  await page.locator("button.rbd-valid-toggle").click();
   await wait(500);
 }
 // Full run: validate, open the Calculator tab, Calculate, wait for the results
@@ -946,7 +944,7 @@ async function main() {
     // Availability guide.
     { file: "availability-01-new.png", url: "/systems/b", settle: 900 },
     { file: "availability-02-system.png", url: `/systems/b/${fx.repairableId}`, settle: 1200,
-      async act(page) { await page.locator(".rbd-mode-select .sel-trigger, .sel-trigger", { hasText: /^Repairable$/ }).first().click(); await wait(700); } },
+      async act(page) { await page.getByRole("button", { name: /^Diagram settings/ }).click(); await wait(700); } },
     { file: "availability-03-add.png", url: `/systems/b/${fx.repairableId}`, settle: 1200,
       async act(page) { await page.getByRole("button", { name: "Add block" }).click(); await wait(600); } },
     { file: "availability-04-models.png", url: `/systems/b/${fx.repairableId}`, settle: 1400,
@@ -1076,7 +1074,10 @@ async function main() {
     // --- Costs, intervals and what to improve ---
     { file: "costs-00-plan.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
-        await page.locator('[data-wt="rbd-plan-chip"]').click();
+        // The Maintenance plan's switch is in the diagram's settings.
+        await page.getByRole("button", { name: /^Diagram settings/ }).click();
+        await page.getByRole("switch", { name: "Show the maintenance plan" }).click();
+        await page.keyboard.press("Escape");
         await page.locator(".rbd-plan-table").waitFor({ timeout: 20000 }); await wait(1000);
         await scrollTo(page.locator(".rbd-plan"), 300);
       } },
