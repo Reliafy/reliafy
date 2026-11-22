@@ -34,6 +34,8 @@ proof-tested every 8,760 hours (yearly) and is repaired at once when a test
 finds it failed. The diagram is a **Safety function**, with a target of SIL 2:
 the switch on the builder's toolbar is on, and the chip beside it holds the
 target. Calculate it as it is to see the results, then make it yours.
+Until you **Save**, your edits stay in this browser tab, so a reload keeps
+them; the note above the diagram says when they've been brought back.
 
 ![The starter: two transmitters in a common-cause group, a logic solver and a shutdown valve](/guides/img/sif-01-starter.png)
 
@@ -90,6 +92,12 @@ results lead with:
   SIL 2 below 0.01, SIL 3 below 0.001, SIL 4 below 0.0001), and whether it
   meets the target, with the margin to the band's limit;
 - the **risk reduction factor** (RRF = 1 / PFDavg);
+- the **hardware fault tolerance (HFT)**: how many dangerous failures each part
+  can take and still trip, read from the diagram (1oo1 = 0, 1oo2 = 1,
+  2oo3 = 1), and the function's own, the smallest of them. It is architecture
+  only: rates and common cause don't enter it. The safe failure fraction and
+  the spurious trip rate need each block's safe and detected failure rates,
+  which blocks don't take yet, so they aren't shown;
 - **PFD(t)**, which climbs between proof tests as hidden failures build up and
   drops at each test. Its average is the PFDavg.
 
@@ -116,7 +124,8 @@ valve: **98%** of the PFDavg; the transmitters' common cause is about 1.5% and
 each transmitter on its own a few hundredths of a percent.
 
 **What to improve**, between the chart and Details, says the same as a ranked
-list of changes, each moved 10% the way that helps. In the starter the top two
+list of changes, each moved 10% the way that helps, with each one's change in
+the PFDavg (a minus is an improvement). In the starter the top two
 are the valve's proof-test interval (8,760 → 7,880 hours) and its mean life; the
 transmitters' common-cause β comes a distant third.
 

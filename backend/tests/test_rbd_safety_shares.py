@@ -156,3 +156,25 @@ def test_a_named_2oo3_vote_exports_and_runs(tmp_path):
     code = rbd_export.to_python(g, "SIF 2oo3", exported_at=datetime(2026, 10, 10, tzinfo=timezone.utc))
     res, _ = _run(code, tmp_path, n_sims="60")
     assert res["safety"]["pfd_avg"] == pytest.approx(app["safety"]["pfd_avg"], rel=1e-12)
+
+
+def test_hardware_fault_tolerance_per_subsystem_from_the_cut_sets():
+    """1oo2 transmitters take one failure (HFT 1); the logic solver and the
+    valve none (HFT 0), so the function's HFT is 0. Common cause doesn't enter it."""
+    for beta in (0.05, None):
+        hft = ra.analyze_availability(_sif(beta), simulate=False)["safety"]["fault_tolerance"]
+        by = {tuple(sorted(s["ids"])): s["hft"] for s in hft["subsystems"]}
+        assert by == {("pt1", "pt2"): 1, ("ls",): 0, ("valve",): 0}
+        assert hft["function"] == 0 and not hft["at_least"]
+
+
+def test_two_valves_in_parallel_make_the_final_element_tolerant():
+    g = _sif()
+    g["nodes"].append(_node("valve2", model=_exp(2e-7), instant_repair=True, inspection={"interval": 8760}))
+    g["edges"] = [e for e in g["edges"] if e["source"] != "valve"] + [
+        {"id": "x1", "source": "ls", "target": "valve2"},
+        {"id": "x2", "source": "valve", "target": "output"},
+        {"id": "x3", "source": "valve2", "target": "output"}]
+    hft = ra.analyze_availability(g, simulate=False)["safety"]["fault_tolerance"]
+    by = {tuple(sorted(s["ids"])): s["hft"] for s in hft["subsystems"]}
+    assert by[("valve", "valve2")] == 1 and by[("ls",)] == 0

@@ -359,7 +359,7 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
 // Shared samples are stored with a "(sample)" suffix; the header says so with a chip.
 export const SAMPLE_SUFFIX = /\s*\(sample\)\s*$/i;
 
-function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMeta, onTab, onDirty, addModel = null, onModelAdded, onLoadError }) {
+function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMeta, onTab, onDirty, onDraft = null, addModel = null, onModelAdded, onLoadError }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -633,6 +633,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     [tracked, rebasing, saveGraph, savedSnap]
   );
   useEffect(() => { onDirty?.(dirty); }, [onDirty, dirty]);
+  // An unsaved diagram's canvas, for the page to keep over a reload (views/RbdBuilder.jsx).
+  useEffect(() => {
+    // Only once it differs from what was opened: an untouched starter isn't "your edits".
+    if (onDraft && !savedRbdId && rbdDirty({ rebasing, graph: saveGraph, savedSnap })) onDraft(saveGraph);
+  }, [onDraft, savedRbdId, saveGraph, rebasing, savedSnap]);
   const saveStatus = useMemo(() => {
     if (!full && !embedded) return null;
     return rbdSaveStatus({ savedId: savedRbdId, readOnly: savedRbdReadOnly, dirty });
@@ -2473,6 +2478,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
 //              the address's ?tab= alone
 //   onSaved(id)      saved (a new id after Save as new, or a first save)
 //   onMeta({id, name, readOnly})   onTab(tab)   onDirty(changed since opened or saved)
+//   onDraft(graph)   an unsaved diagram's canvas as it changes (the page keeps it over a reload)
 //   onLoadError(err) the diagram couldn't be opened (not there, not yours, offline)
 //   addModel, onModelAdded   a model's "Add to an RBD" (#294), on the page
 export default function RbdEditor({ embedded = false, ...props }) {
