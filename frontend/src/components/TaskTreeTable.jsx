@@ -81,7 +81,7 @@ export function taskPhoneRow(r, rollup) {
 // `taskName`: the opened task's name from its row, the panel's title until the task has loaded.
 // The head (where it is, Expand or Back to table, Close) is the same as the Models and RCM panels';
 // the task's form draws its own title, body and footer under it, so its Save sits in the footer.
-export function TaskSide({ holder, taskId = null, taskName = "", rates = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged }) {
+export function TaskSide({ holder, taskId = null, taskName = "", rates = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged, onOptimise = null }) {
   const title = rates ? "Trade rates" : taskId ? (taskName || "Maintenance task") : "Add a task";
   const head = (
     <div className="rw-panel-head">
@@ -115,7 +115,7 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
         </>
       ) : holder && (
         <MaintenanceTask key={`${holder.key}:${taskId || "new"}`} row={holder} taskId={taskId} taskName={taskName}
-                         head={head} headingRef={headingRef} onBack={onClose} onDone={onDone}
+                         head={head} headingRef={headingRef} onBack={onClose} onDone={onDone} onOptimise={taskId ? onOptimise : null}
                          uses={taskId ? <RbdTaskUses taskIds={[taskId]} /> : null} />
       )}
     </aside>

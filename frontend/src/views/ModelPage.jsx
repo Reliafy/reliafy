@@ -25,6 +25,7 @@ import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import LoadFailed from "../components/LoadFailed.jsx";
+import ModelSetsInterval from "../components/ModelSetsInterval.jsx";
 import Loading from "../components/ui/Loading.jsx";
 
 const CRUMBS = [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
@@ -127,8 +128,9 @@ export default function ModelPage() {
           </button>
         </>
       )}
-      notice={(error || model?.from_library) && (
+      notice={(
         <>
+          {model && <ModelSetsInterval modelId={model.id} />}
           {model?.from_library && <FromLibrary from={model.from_library} className="mf-notice" />}
           {error && <div className="card error mf-notice" role="alert">{error}</div>}
         </>

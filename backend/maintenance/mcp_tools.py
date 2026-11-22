@@ -893,6 +893,16 @@ RCM: Table = {
         the target. A model in a unit of use (cycles, flight hours) answers in it, with a target and no costs.
         save_evidence true, with failure_mode_id (task_id optional): as pf_interval's. With task_id and demand_rate
         but no test_cost, the task's own cost is used (task_cost_used)."""),
+    "optimise_task": ("task_id", "failure_mode_id model_type model_id planned_cost unplanned_cost pf_interval pf_unit "
+                                 "act_time target_unavailability use", """The app's Optimise… on a task: how
+        often to do it, for each failure mode it prevents, from that mode's life model (the one an earlier
+        Optimise used, the decision's evidence or the position's model; model_type model or degradation_model
+        + model_id to choose). Replace or restore: the cost-optimal age with its range across the model's 90%
+        parameter bounds (planned_cost defaults to the task's cost, unplanned_cost to the one saved before or
+        its class's); condition check: half the P-F interval (pf_interval, pf_unit, act_time); hidden
+        function: the test interval for target_unavailability (default 0.01). Each mode's use is the interval
+        in the task's unit. use true (with failure_mode_id when it prevents several): sets the task's
+        interval, saves the calculation as the mode's evidence and adds a line to its notes."""),
 }
 
 
@@ -2988,16 +2998,33 @@ def register() -> None:
                         demand_rate: float | None = None, consequence_cost: float | None = None,
                         unit: str | None = None, current_interval: float | None = None,
                         current_unit: str | None = None, failure_mode_id: str | None = None,
-                        task_id: str | None = None, save_evidence: bool | None = None) -> dict[str, Any]:
+                        task_id: str | None = None, save_evidence: bool | None = None,
+                        model_type: Literal["model", "degradation_model"] | None = None,
+                        planned_cost: float | None = None, unplanned_cost: float | None = None,
+                        use: bool | None = None) -> dict[str, Any]:
         """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding.
         save_evidence (with failure_mode_id; task_id: which of its tasks, else its first of the kind): use the
-        answer as the app's "Use" does (rcm_apply_interval)."""
+        answer as the app's "Use" does (rcm_apply_interval). optimise_task: the app's Optimise… on a task
+        (task_optimise.py)."""
         from backend.mcp_server import _owners
         from backend.services import models as models_service
         from backend.services import rcm_intervals
         from backend.services.strategy import StrategyError
 
         m = m_for(ctx)  # Maintenance users only, like the rest of the tool
+        if action == "optimise_task":
+            from backend.maintenance import task_optimise
+            from backend.mcp_server import _require_scope
+
+            owners = _owners(_caller(ctx)["uid"])
+            args = {"failure_mode_id": failure_mode_id, "planned_cost": planned_cost, "unplanned_cost": unplanned_cost,
+                    "pf_interval": pf_interval, "pf_unit": pf_unit, "act_time": act_time,
+                    "target_unavailability": target_unavailability,
+                    "model": {"type": model_type or "model", "id": model_id} if model_id else None}
+            if not use:
+                return run(task_optimise.optimise, m, _db(), owners, frozenset(), task_id, **args)
+            _require_scope(ctx, "write")  # the call writes: a read-only token can't
+            return run(task_optimise.use, m, _db(), owners, frozenset(), _caller(ctx)["uid"], task_id, **args)
         if save_evidence and not failure_mode_id:
             raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
         # The task's own cost (its position's figure, task_costs.py) where a priced call leaves it out:
