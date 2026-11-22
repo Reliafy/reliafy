@@ -120,7 +120,7 @@ def test_mcp_optimise_task_action(api):
 
     mcp_tools.register()
     try:
-        assert "rcm.optimise_task" in mcp_tools.TOOL_TABLES["maintenance"][1]
+        assert "rcm.optimise" in mcp_tools.TOOL_TABLES["maintenance"][1]
     finally:
         mcp_tools.unregister()
 

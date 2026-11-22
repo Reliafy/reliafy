@@ -258,7 +258,8 @@ def _lives_on(m: Maintenance, pos: dict) -> tuple[list[tuple[dict, list | None]]
     views = m.position_models(pos["id"])
     own, covered, skipped = [], set(), []
     for v in reversed(views):  # the latest first
-        if v.get("model_type") != "model":
+        # A degradation model on a failure mode: its time to the limit is that mode's life.
+        if v.get("model_type") not in ("model", "degradation_model"):
             continue
         ids = [x["id"] for x in v.get("failure_modes") or [] if not x.get("gone")]
         if not ids:
@@ -483,13 +484,22 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         brief["failure_modes"] = [{"id": i, "text": (m.s.node(m.org, i) or {}).get("text", "")} for i in mode_ids]
     if link["model_type"] == "rbd":
         return None, {**brief, "reason": "a system diagram (RBD): its blocks' positions are forecast instead"}
-    if link["model_type"] != "model":
-        return None, {**brief, "reason": "not a non-repairable life model: not laid on dates yet"}
+    limit = link["model_type"] == "degradation_model"
+    if link["model_type"] != "model" and not (limit and mode_ids):
+        return None, {**brief, "reason": "not a non-repairable life model: not laid on dates yet" if not limit else
+                      "a degradation model counts for the failure modes it's linked for: link it to a failure mode"}
     doc = fetch(link["model_type"], link["model_id"])
     if doc is None:
         return None, {**brief, "reason": "the model can't be opened (deleted, or not shared with you)"}
     r = dict(getattr(doc, "results", None) or {})
-    kind = getattr(doc, "kind", "distribution")
+    if limit:
+        # Its time to the limit (the fitted distribution of when each path crosses it): a crossing is
+        # the mode's failure, charged its failure cost (task_optimise.life_of reads the same).
+        life = r.get("life_model") or {}
+        if not life.get("distribution_id"):
+            return None, {**brief, "reason": "this degradation model has no time-to-limit distribution yet: refit it"}
+        r = {**r, "distribution_id": life["distribution_id"], "params": life.get("params") or [], "extras": None}
+    kind = "distribution" if limit else getattr(doc, "kind", "distribution")
     if kind != "distribution" or (r.get("extras") or {}).get("p") is not None:
         return None, {**brief, "reason": "a covariate, joint or limited-failure model: not laid on dates yet"}
     dist_id = r.get("distribution_id") or getattr(doc, "distribution_id", "")
@@ -497,6 +507,10 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         dist, label = _model_from_params(dist_id, r.get("params") or [], r.get("extras"))
     except StrategyError as exc:
         return None, {**brief, "reason": f"the model can't be evaluated: {exc}"}
+    if limit:
+        thr = r.get("threshold")
+        mu = f" {r['measurement_unit']}" if r.get("measurement_unit") else ""
+        label = f"time to the limit ({_num(thr, 4):g}{mu}), {label}" if thr is not None else f"time to the limit, {label}"
     unit = svc._norm_unit(r.get("unit") or (getattr(doc, "spec", None) or {}).get("unit")) or ""
     fitment = m.current_fitment(pos["id"])
     if fitment is None:
@@ -649,17 +663,46 @@ def _split_each(view: dict) -> tuple[float, float]:
     return lab, mat
 
 
-def _planned_split(planned, lab, mat) -> dict:
-    planned, lab, mat = float(planned), float(lab), float(mat)
-    return {"labour_cost": _money(lab), "materials_cost": _money(mat),
-            "other_planned_cost": _money(max(0.0, planned - lab - mat))}
+def _planned_split(planned, lab, mat, visits=0.0) -> dict:
+    planned, lab, mat, visits = float(planned), float(lab), float(mat), float(visits)
+    return {"labour_cost": _money(lab), "materials_cost": _money(mat), "visits_cost": _money(visits),
+            "other_planned_cost": _money(max(0.0, planned - lab - mat - visits))}
+
+
+def _visits(m: Maintenance, tasks_out: list[dict], starts: list, n: int) -> tuple[np.ndarray, np.ndarray]:
+    """Each visit's cost besides its tasks (visit_costs.py), by period: (cost, count). A package's
+    visit_cost at each time one of its tasks falls due; a task in no package with a visit_cost, each
+    time it does. Tasks due on the same position at the same time (or the same day, on the
+    calendar) are one visit, charged the largest visit cost among them once."""
+    index = m._package_index()
+    visits: dict = {}
+    for t in tasks_out:
+        entry = index.get(t["id"])
+        if entry:
+            cost = 0.0 if not entry["active"] else max(float(entry["root"].get("visit_cost") or 0),
+                                                       float(entry["package"].get("visit_cost") or 0))
+        else:
+            cost = float((m.s.node(m.org, t["id"]) or {}).get("visit_cost") or 0)
+        if not cost:
+            continue
+        keys = t["moments"] if len(t["moments"]) == len(t["dates"]) else t["dates"]
+        for key, day in zip(keys, t["dates"]):
+            k = (t["position"]["id"], key or day)
+            visits[k] = (max(cost, visits.get(k, (0.0, day))[0]), day)
+    cost_arr, count_arr = np.zeros(n), np.zeros(n)
+    day_starts = np.array(starts)
+    for cost, day in visits.values():
+        idx = max(0, min(n - 1, int(np.searchsorted(day_starts, date.fromisoformat(day), side="right")) - 1))
+        cost_arr[idx] += cost
+        count_arr[idx] += 1
+    return cost_arr, count_arr
 
 
 def _cost_basis_words(t: dict, unpriced: list[dict]) -> dict:
     """What each cost rests on, in words, for the screen and the tool."""
     planned = ("Planned: each task's cost each time × the times it falls due. Labour is its LSA's labour at the "
-               "trade rates, parts and consumables its LSA's lines; a typed cost the LSA doesn't explain is "
-               "\"other\".")
+               "trade rates, parts and consumables its LSA's lines; each visit's call-out and setup (the package's visit "
+               "cost, once a visit); a typed cost the LSA doesn't explain is \"other\".")
     unplanned = ("Unplanned: expected failures × what a failure costs (its repair, plus its downtime × the cost of "
                  "an hour down), each figure the failure mode's own, else its position class's.")
     if unpriced:
@@ -883,6 +926,8 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     if own_map is not None:
         got = own_map["usage"].by_period(period).usage.get("hours")
         hours = [float(x) for x in got][:n] if got is not None else None
+    visit_cost, visit_count = _visits(m, tasks_out, starts, n)
+    planned = planned + visit_cost
     priced = bool(model_rows) and any(r["row"]["cost_per_failure"] for r in model_rows)
     any_downtime = any(r["row"]["downtime_hours_each"] for r in model_rows)
     rows = []
@@ -892,7 +937,8 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
         row = {"start": starts[k].isoformat(), "end": p_end.isoformat(),
                "hours": _num(hours[k]) if hours and k < len(hours) else None,
                "tasks": int(count[k]), "labour_hours": _num(labour[k]), "planned_cost": _money(planned[k]),
-               **_planned_split(planned[k], labour_cost[k], materials_cost[k]),
+               **_planned_split(planned[k], labour_cost[k], materials_cost[k], visit_cost[k]),
+               "visits": int(visit_count[k]),
                "failures": _num(fail_exp[k]) if model_rows else None,
                "failure_cost": unplanned, "unplanned_cost": unplanned,
                "downtime_hours": _num(down_hours[k]) if any_downtime else None,
@@ -909,7 +955,8 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     total_cost = float(fail_cost.sum()) if model_rows else None
     unpriced = [r["row"] for r in model_rows if r["row"]["cost_per_failure"] is None]
     totals = {"tasks": int(count.sum()), "labour_hours": _num(labour.sum()), "planned_cost": _money(planned.sum()),
-              **_planned_split(planned.sum(), labour_cost.sum(), materials_cost.sum()),
+              **_planned_split(planned.sum(), labour_cost.sum(), materials_cost.sum(), visit_cost.sum()),
+              "visits": int(visit_count.sum()),
               "failures": _num(fail_exp.sum()) if model_rows else None,
               "failures_range": [f_lo, f_hi] if model_rows else None,
               "failure_cost": _money(total_cost) if priced else None,

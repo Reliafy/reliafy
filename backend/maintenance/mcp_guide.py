@@ -202,6 +202,7 @@ and failure_cost (expected), with failures_range / cost_range when one model is 
 done that period. totals: the same for the whole forecast, with its range. Ranges are 90%: the 5th to 95th \
 percentile of outcomes; with several positions the total's range assumes they fail independently.
 - Cost split (rows and totals): planned_cost = labour_cost + materials_cost (each task's LSA lines) + \
+visits_cost (visits x the package's visit_cost, or a lone task's; same position and time = one visit) + \
 other_planned_cost (a typed cost its LSA doesn't explain); unplanned_cost (= failure_cost) = failures x what a \
 failure costs (failure_cost + downtime_hours x downtime_rate, on the failure mode, else its position class: \
 failure_modes.update, reliability.set_class_costs); downtime_hours, downtime_cost; total_cost; total_complete \
@@ -294,7 +295,7 @@ for the fixed interval, set the task's interval (maintenance tasks.update) and a
 user. Both calculators also work in a unit of use (cycles, flight hours) when the P-F interval or the model is in \
 one, without costs. recommended is rounded down \
 to a unit people schedule in; quote the cost a year and the unavailability with it.
-- Optimising a task from its model in one call (the app's Optimise… on a task): maintenance rcm.optimise_task (task_id) works out each mode's interval from its life model (an earlier Optimise's, the decision's evidence, or the position's model for the mode; a degradation model by its time to the limit), with the cost-optimal range across the model's 90% parameter bounds, in the task's own unit (running hours meet the calendar at the position's duty). Missing inputs come back as problem: ask the user for them (planned_cost, unplanned_cost, pf_interval). use true sets the interval, saves the analysis as the mode's evidence (replacing what it had) and adds a line to the notes; tell the user the interval and the evidence status. A model refitted since shows as moved: offer to re-optimise, never change the interval unasked.
+- Optimising a task from its model in one call (the app's Optimise… on a task): maintenance rcm.optimise (task_id) works out each mode's interval from its life model (an earlier Optimise's, the decision's evidence, or the position's model for the mode; a degradation model by its time to the limit), with the cost-optimal range across the model's 90% parameter bounds, in the task's own unit (running hours meet the calendar at the position's duty). Missing inputs come back as problem: ask the user for them (planned_cost, unplanned_cost, pf_interval). use true sets the interval, saves the analysis as the mode's evidence (replacing what it had) and adds a line to the notes; tell the user the interval and the evidence status. A model refitted since shows as moved: offer to re-optimise, never change the interval unasked.
 - Scoring the same modes as an FME(C)A (the Explorer's FME(C)A tab; the RCM tab shows the same records): \
 maintenance failure_modes.score (failure_mode_id; severity, occurrence, detection, whole numbers 1-10; cause, \
 effect_local, effect_next, effects (the end effect: the RCM's effects, one field), detection_method; \
