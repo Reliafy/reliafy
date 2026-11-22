@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ANY_MODE, anyAt, causesAt, effectSentence, effectsByMode, firstReach, incidenceRows, leadSentence, modeSupport, pct,
-  readingAt, stepAt, timeToChance, widestBand,
+  readingAt, stepAt, timeToChance, widestBand, incidenceCsv, bLives,
 } from "./competingRisks.js";
 
 // A fit payload's shape (backend/competing_risks.py), with round numbers.
@@ -155,4 +155,27 @@ test("effectsByMode words each mode's coefficients, with the interval", () => {
     .lines[0].text, /\(95% 1\.08 to 1\.21\)/);
   assert.match(out[1].lines[0].text, /can't rule out no effect\.$/);
   assert.deepEqual(effectsByMode(null), []);
+});
+
+test("the failure-mode curves download as a table that names its band", () => {
+  const withAll = { ...RESULT, unit: "hours", ci_level: 0.9,
+    curves: { ...RESULT.curves, all: [0, 0.05, 0.2, 0.5, 0.6], all_lower: [null, 0.01, 0.1, 0.4, 0.5], all_upper: [null, 0.1, 0.3, 0.6, 0.7] } };
+  const rows = incidenceCsv(withAll);
+  assert.equal(rows[0][0], "Time (hours)");
+  assert.equal(rows[0][1], "bearing wear: chance of failing from it");
+  assert.equal(rows[0][2], "bearing wear: lower, 90% two-sided");
+  assert.equal(rows[0].at(-3), "Any mode: chance of failing");
+  assert.equal(rows.length, 1 + 5);
+  assert.deepEqual(rows[3], [1000, 0.1, 0.05, 0.2, 0.1, 0.05, 0.2, 0.2, 0.1, 0.3]);
+});
+
+test("B10 from any mode and from each, as the Calculator reads them", () => {
+  const withAll = { ...RESULT, curves: { ...RESULT.curves, all: [0, 0.05, 0.2, 0.5, 0.6] } };
+  const lives = bLives(withAll);
+  assert.deepEqual(lives.map((l) => l.mode), [ANY_MODE, "bearing wear", "seal leak"]);
+  assert.equal(lives[0].time, 1000);
+  assert.equal(lives[1].time, 1000);
+  assert.equal(lives[2].time, 1000);
+  const low = bLives(withAll, 0.35);
+  assert.equal(low[2].time, null); // seal leak never reaches 35%
 });

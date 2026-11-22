@@ -331,3 +331,42 @@ def test_a_failure_mode_columns_blanks_count_as_running_on_the_card_as_in_the_fi
     df2 = df.assign(status=0)
     assert detect_tags(df2, {"x": "hours", "c": "status", "e": "failure_mode", "i": "pump"})["summary"] \
         == "72 pumps · 72 failed"
+
+
+def test_a_failure_logged_twice_at_one_time_is_still_repairable():
+    """A repair history (trucks, the hours of each failure, an end of record)
+    where one failure is logged twice at the same hours: the time never goes
+    back along a truck's rows, so it is still repeat failures, not one life
+    per row ("150 lives · 150 failed")."""
+    rows = []
+    for u in range(4):
+        for k in range(1, 6):
+            rows.append([f"T{u:02d}", "West" if u % 2 else "East", 500 * k + 10 * u, "hose", 3000])
+    rows.insert(3, list(rows[2]))  # T00's third failure entered twice
+    reading = {"x": "hours", "tr": "record_end_hours", "i": "truck", "e": "cause", "unit": "hours", "z": ["depot"]}
+    cols = ["truck", "depot", "hours", "cause", "record_end_hours"]
+    out = _saved(rows, cols, reading, "reading-repairable-tie")
+    assert out["tags"][0] == "Repairable"
+    assert out["summary"] == "4 trucks · 21 failures"
+    # Guessed from the columns alone, the same.
+    assert tags(rows, cols)["tags"][0] == "Repairable"
+
+
+def test_start_stop_rows_with_late_entry_and_an_item_are_not_repairable():
+    """Start and stop rows read as x = stop, tl = start, i = motor (each row
+    starts where the motor's last one stopped): stretches of one life with
+    the load over time, not repeat failures."""
+    rows = [["M-01", 0, 2217, 0, 65], ["M-01", 2217, 4377, 0, 90], ["M-01", 4377, 11275, 1, 65],
+            ["M-02", 0, 20957, 0, 65],
+            ["M-03", 0, 1882, 0, 90], ["M-03", 1882, 8482, 1, 65]]
+    cols = ["motor", "start_h", "stop_h", "failed", "load_pct"]
+    late = {"x": "stop_h", "tl": "start_h", "i": "motor", "c": "failed", "c_invert": True, "z": ["load_pct"]}
+    out = _saved(rows, cols, late, "reading-tvc-late-entry")
+    assert out["tags"] == ["Non-repairable", "Time-varying covariates"]
+    assert out["use_for"][0] == "Non-repairable model with time-varying covariates"
+    assert out["summary"] == "3 motors · 2 failed"
+    # The same rows read as a range (xl = start, xr = stop), as the upload guesses them.
+    ranged = {"xl": "start_h", "xr": "stop_h", "i": "motor", "c": "failed", "c_invert": True, "z": ["load_pct"]}
+    out = _saved(rows, cols, ranged, "reading-tvc-range")
+    assert out["tags"] == ["Non-repairable", "Time-varying covariates"]
+    assert out["summary"] == "3 motors · 2 failed"
