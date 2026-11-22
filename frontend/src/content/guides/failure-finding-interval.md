@@ -40,15 +40,17 @@ asks "Did you mean 99%?" before anything is computed. A saved model brings its
 time unit; with parameters typed in, add the **Unit** (hours here) so the
 answer reads in it.
 
-Three optional inputs follow:
+Then the inputs that shape the answer:
 
 - **Each test takes** — time the device is off-line for the test, in the
   model's unit. It counts as unavailable, so a long test pushes the interval
   out (testing too often then costs availability).
 - **Cost per test** — adds what the tests cost a year.
-- **Each test renews the device** — on (the default) when a test overhauls or
-  replaces the device, as a bench-tested relief valve is; off when a test only
-  checks it and leaves a working one as it was.
+- **Does a test overhaul or replace the device?** — **Yes** (the default) when
+  a test overhauls or replaces the device, as a bench-tested relief valve is;
+  **No** when a test only checks it and leaves a working one as it was. For a
+  wearing-out device the two answers can differ several times over, so the
+  result gives both.
 
 Press **Compute**.
 
@@ -61,6 +63,8 @@ availability at 99%.* Beside it is the device's mean life, the **MTTF**, here
 8,760 hours. For a model fitted to data, a second figure is the **cautious
 end**: the interval at the fit's 90% one-sided bound, the shorter one. Use it
 when the decision is close, for example between six-monthly and yearly tests.
+When the answer depends on whether a test renews the device, the sentence and a
+tile give the other answer too, and the MTTF moves under **Details**.
 
 In plain words: if the device fails at a random moment between tests, it sits
 failed and unnoticed until the next test finds it. Reliafy works out, from the

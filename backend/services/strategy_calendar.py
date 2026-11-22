@@ -854,7 +854,7 @@ def calendar_next(distribution_id: str, params: list, *, age, now_cost=None, **k
     else:
         sentence = "Keep it running: no planned replacement beats running it to failure."
     if replace_from is not None:
-        sentence += f" Replacing now becomes the best choice from an age of {fmt_num(replace_from)} {u}."
+        sentence += f" Replacing it now would be best only once it is older than {fmt_num(replace_from)} {u}."
     return {
         "kind": "calendar_next",
         "unit": inp.unit,

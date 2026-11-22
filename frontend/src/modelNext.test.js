@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   STEP_LABELS, STEP_WHAT, analysisName, graphWithModel, modelFromSearch, nextStepLink, nextStepsFor, plainName,
-  latestOnly, savedModelRef, stepsFor,
+  degradationLifeRef, latestOnly, savedModelRef, stepsFor,
 } from "./modelNext.js";
 
 test("nextStepsFor: which tools take which kind of model", () => {
@@ -113,4 +113,17 @@ test("latestOnly: a pick made while the first choice loads isn't overwritten by 
   const b = start();
   assert.equal(a(), false);
   assert.equal(b(), true);
+});
+
+test("a degradation model is used as its life to the limit", () => {
+  const ref = degradationLifeRef({
+    id: "d1", name: "Liners", unit: "hours",
+    results: { unit: "hours", threshold: 10, measurement_unit: "mm",
+      life_model: { distribution: "Weibull", distribution_id: "weibull", params: [{ name: "alpha", value: 2790 }, { name: "beta", value: 4.8 }] } },
+  });
+  assert.equal(ref.modelId, "deg:d1");
+  assert.equal(ref.distribution_id, "weibull");
+  assert.equal(ref.distribution, "Weibull life to 10 mm");
+  assert.equal(ref.unit, "hours");
+  assert.equal(degradationLifeRef({ id: "d2", results: {} }), null);
 });

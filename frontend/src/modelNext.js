@@ -124,6 +124,31 @@ export function savedModelRef(full) {
   };
 }
 
+// A saved degradation model picked for a tool that takes a life (Optimal
+// replacement, the shutdown calendar): its life to the limit, the plain
+// distribution of the units' crossing times its fit gives. ``modelId`` keeps
+// the ``deg:`` prefix, so a saved analysis reopens on the same model. Null
+// when the fit has no life model (a tool can't use it).
+export const DEG = "deg:";
+export function degradationLifeRef(full) {
+  const life = full?.results?.life_model;
+  if (!life?.distribution_id || !(life.params || []).length) return null;
+  const r = full.results;
+  const limit = r.threshold != null ? ` to ${Number(r.threshold.toPrecision(4))}${r.measurement_unit ? ` ${r.measurement_unit}` : ""}` : "";
+  return {
+    source: "saved",
+    kind: "degradation",
+    modelId: DEG + full.id,
+    name: full.name,
+    distribution: `${life.distribution || life.distribution_id} life${limit}`,
+    distribution_id: life.distribution_id,
+    params: life.params,
+    extras: null,
+    covariates: [],
+    unit: r.unit || full.unit || "",
+  };
+}
+
 // A two-clock model picked for use (an RBD block, a strategy tool) at a usage rate:
 // its reference with ``usage_rate`` and, for tools that take a distribution and its parameters,
 // the plain distribution it equals at that rate (the server's as_distribution).

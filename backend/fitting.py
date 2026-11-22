@@ -3191,7 +3191,12 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int, raw
                             ic_n=ic_sample_size(c, nn if nn is not None else np.ones(c.shape[0])))
         # Draw on the paper of the first component — see _shape_plot.
         paper = np.asarray(raw.params, dtype=float).reshape(raw.m, -1)[0]
-        plot = _shape_plot(model, dist, heuristic="Nelson-Aalen", paper_params=paper)
+        # Inspection windows (interval or left censoring) and right truncation take Turnbull's
+        # plotting positions, as a single fit's do; Nelson-Aalen refuses them.
+        t = getattr(raw.data, "t", None)
+        right_truncated = t is not None and np.any(np.isfinite(np.asarray(t, dtype=float)[..., -1]))
+        heuristic = "Turnbull" if np.any((c == -1) | (c == 2)) or right_truncated else "Nelson-Aalen"
+        plot = _shape_plot(model, dist, heuristic=heuristic, paper_params=paper)
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
     except FitError:
