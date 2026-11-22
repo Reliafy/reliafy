@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import Plot from "../Plot.jsx";
 import ChartPair from "../model/ChartPair.jsx";
 import { PlotCard, PlotPanel, ScrollCard } from "../model/ModelLayouts.jsx";
-import { COLORWAY, DATA_INK, INK, SURFACE, bandPair, fitLine } from "../../plotTheme.js";
+import { COLORWAY, DATA_INK, INK, SURFACE, WARNING, bandPair, fitLine, legendBg, token } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { evaluateAlt } from "../../api.js";
 import { accelerationRows, activationEnergy, enteredUnit, fromKelvin, inputStressName, plotInEnteredUnits, kelvinWords, levelWords, shapeParam, useForModel, useRangeWarning } from "../../altFrame.js";
@@ -18,7 +18,8 @@ import { unitInText } from "../unitText.js";
 import { ciPct } from "../../levels.js";
 
 const SERIES = COLORWAY;
-const USE_MARK = "#b45309";
+// The use point and line: the warning colour (the token, read as the chart draws).
+const useMark = () => token("--warning", WARNING);
 
 // One life-stress chart: ``plot`` is a life_stress_plot from the fit (along
 // one stress); ``along`` the line through the use stress from the
@@ -50,7 +51,7 @@ export function LifeStressChart({ plot, unit, along = null, usePoint = null, oth
     }
     traces.push(fitLine({
       x: along.stress, y: along.life,
-      line: two ? { color: USE_MARK, dash: "dash" } : { color: SERIES[0] },
+      line: two ? { color: useMark(), dash: "dash" } : { color: SERIES[0] },
       name: two ? `${p.secondary_label} = ${formatNumber(otherUse, { sig: 4 })} (use)` : "Fitted line",
       hovertemplate: `${p.x_label}: %{x:.4~g}<br>Life: %{y:.4~g}<extra></extra>`,
     }));
@@ -89,7 +90,7 @@ export function LifeStressChart({ plot, unit, along = null, usePoint = null, oth
   if (usePoint && Number.isFinite(usePoint.x) && Number.isFinite(usePoint.y)) {
     traces.push({
       x: [usePoint.x], y: [usePoint.y], mode: "markers", type: "scatter",
-      marker: { color: USE_MARK, size: 13, symbol: "star", line: { color: SURFACE, width: 1 } },
+      marker: { color: useMark(), size: 13, symbol: "star", line: { color: SURFACE, width: 1 } },
       name: "Use stress",
       hovertemplate: `Use stress: %{x}<br>Life: %{y:.4~g}<extra></extra>`,
     });
@@ -104,7 +105,7 @@ export function LifeStressChart({ plot, unit, along = null, usePoint = null, oth
     },
     showlegend: true,
     // One stress: a small legend inside, top right; two: the theme's, above.
-    ...(two ? {} : { legend: { orientation: "v", x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)" } }),
+    ...(two ? {} : { legend: { orientation: "v", x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: legendBg() } }),
   };
   return <Plot fill={fill} data={traces} layout={layout} download={`${name || "Model"} — life against ${p.x_label || "stress"}`} />;
 }

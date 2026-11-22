@@ -8,14 +8,14 @@ import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { CheckCard, ChecksGrid } from "./model/ModelLayouts.jsx";
 import { FitStatsCard } from "./model/Diagnostics.jsx";
-import { DATA_INK, dataPoints, fitLine } from "../plotTheme.js";
+import { DATA_INK, dataPoints, fitLine, legendBg } from "../plotTheme.js";
 import { formatNumber } from "../format.js";
 import { cvmCheck, dataText, duanePoints, fitSystemsHref, growingCheck, systemsCheck, trendCheck } from "../recurrentResults.js";
 import { xTitle } from "./RecurrentCharts.jsx";
 
 const SMALL = { margin: { t: 6, r: 10, b: 40, l: 54 } };
 const pText = (p) => (p < 0.001 ? "p < 0.001" : `p = ${formatNumber(p, { sig: 2 })}`);
-const LEGEND = { x: 0.015, xanchor: "left", y: 0.985, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)" };
+const LEGEND = { x: 0.015, xanchor: "left", y: 0.985, yanchor: "top", bgcolor: legendBg() };
 
 // "Is the failure rate changing?": the data's MCF against a straight line to
 // its end (a constant rate). Bending above the line, failures come faster.
