@@ -22,6 +22,7 @@ This is version 2: the app's look, with every value following a few rules.
 - **Everything sits on a 4px grid:** spacing, line heights and control heights.
 - **One control height per size:** buttons, inputs, selects and segmented controls are all 32px (`control-md`), or 28px compact (`control-sm`), or 40px on a phone (`control-lg`). A text box is exactly that height (`.ctl` sets `height`, not just a minimum), so padding or a font never adds a pixel. The app's frame has two more: the top bar's workspace picker and help button are 36px (`control-bar`); on a phone the frame's own targets (menu button, help, workspace picker, the drawer's close button and rows) are 44px (`control-touch`). The sidebar's fold toggle and sub-menu rows are `control-md`.
 - **Touch on a phone:** at 720px and under (`usePhone`), every button, input, select, tab, segment and sidebar entry is at least 40px tall (`control-lg`), icon-only buttons 40px wide, and anything you type into uses 16px text. One block in `index.css` does it at no weight, so a control that sets its own size on purpose keeps it.
+- **Shared components, checked:** `npm run lint:js` (`frontend/eslint.config.js`, run in CI) fails on a raw `<select>`: use the shared `Select`.
 
 ## Colour
 
