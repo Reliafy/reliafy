@@ -5409,12 +5409,13 @@ select:disabled {
   background: var(--bg-canvas);
 }
 
-.login-field select {
+.login-field select, .login-field .sel-trigger {
   border-radius: var(--radius-md);
   padding: 9px 32px 9px 12px;
   font-size: var(--fs-14);
   background-color: var(--bg-canvas);
 }
+.login-field .sel-trigger { padding-right: 12px; }
 
 .login-field input:focus {
   outline: none;
@@ -6777,7 +6778,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .api-docs-menu a.active { color: var(--accent-text); background: var(--accent-subtle); font-weight: 600; }
 .api-docs-select { display: none; }
 .api-docs-select span { font-size: var(--fs-13); color: var(--text-secondary); }
-.api-docs-select select { flex: 1; min-width: 0; font-size: var(--fs-14); }
+.api-docs-select select, .api-docs-select .sel-trigger { flex: 1; min-width: 0; font-size: var(--fs-14); }
 .api-docs-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -8033,7 +8034,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   color: var(--text);
   background: var(--bg-surface);
 }
-.decision-step select {
+.decision-step select, .decision-step .sel-trigger {
   border-radius: var(--radius-md);
   padding: 6px 30px 6px 10px;
   min-height: 34px;
@@ -8041,6 +8042,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   line-height: var(--lh-14);
   background-color: var(--bg-surface);
 }
+.decision-step .sel-trigger { padding-right: 9px; }
 .login-field textarea:focus,
 .decision-step input:focus,
 .decision-step textarea:focus {
@@ -8792,7 +8794,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-asof-table { margin-bottom: 0; }
 .rbd-asof-source { display: block; max-width: 280px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); white-space: normal; }
 .rbd-asof-source.is-caveat { color: var(--warning-text); }
-.rbd-asof-table select, .rbd-asof-table input {
+.rbd-asof-table select, .rbd-asof-table input, .rbd-asof-table .sel-trigger {
   background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 3px 6px; font: inherit; font-size: var(--fs-13);
 }
@@ -9795,7 +9797,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   margin-bottom: 4px; border-bottom: 1px solid var(--border-subtle);
 }
 .rbd-builder.is-narrow .rbd-ovm-settings label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); color: var(--text-secondary); }
-.rbd-builder.is-narrow .rbd-ovm-settings input, .rbd-builder.is-narrow .rbd-ovm-settings select { font-size: var(--fs-16); min-height: 40px; }
+.rbd-builder.is-narrow .rbd-ovm-settings input, .rbd-builder.is-narrow .rbd-ovm-settings select, .rbd-builder.is-narrow .rbd-ovm-settings .sel-trigger { font-size: var(--fs-16); min-height: 40px; }
 /* The minimap would cover a third of a narrow canvas: show the diagram. */
 .rbd-builder.is-narrow .rbd-canvas .react-flow__minimap { display: none; }
 /* No gap to spare: the notice takes a row of its own under the actions while
