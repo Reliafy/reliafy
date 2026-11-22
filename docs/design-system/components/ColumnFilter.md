@@ -40,7 +40,8 @@ The button is in the header (Tab reaches it). Opening the list puts the focus on
 A table that acts on several rows at once passes `table.multi = {picked, can(row), onClick(key, event), onToggle(key), onMenu(key)}`:
 
 - A click picks the row alone (and opens its details as before); Shift-click picks every pickable row between it and the last one clicked, as drawn; Ctrl/⌘-click adds or takes one without opening anything.
-- Each pickable row has a checkbox before its icon, for touch and the keyboard; Space on the focused row does the same.
+- **No checkboxes on rows** (Derryn, 22 Nov 2026): a row's picked look is the selection. Keyboard: arrows move, Space adds or takes the focused row, Shift+↑/↓ extends the pick. Phone: the row's ⋯ menu has **Select**, which starts picking by tap until **Done** or **Clear**.
+- While rows are picked the tree column's header (under the search box on a phone) shows **N selected** in the accent pill with **Clear** (and **Done** while picking by tap).
 - Picked rows use the shared `.picked` look (`accent-subtle` with the accent bar) and `aria-selected`; the grid is `aria-multiselectable`.
 - Right-click (or the row's ⋯, or a long press on a phone) on a picked row acts on all the picked rows; on any other row it picks that row alone first. The menu's labels name the action, and the pane it opens says how many rows it's for.
 - Picks that leave the screen (a branch closed, a filter, a read) are dropped.

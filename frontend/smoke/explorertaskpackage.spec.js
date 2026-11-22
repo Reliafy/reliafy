@@ -51,6 +51,14 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").click();
   await nameRow(page, `Grease the bearings ${tag}`).locator(".tp-nm").click({ modifiers: ["ControlOrMeta"] });
   await expect(page.locator(".tp-row.picked")).toHaveCount(2);
+  // No tick boxes on the rows; the header counts the pick, with Clear.
+  await expect(page.locator(".tp-row input[type=checkbox]")).toHaveCount(0);
+  await expect(page.locator(".tt-selected")).toContainText("2 selected");
+  await page.locator(".tt-selected").getByRole("button", { name: "Clear" }).click();
+  await expect(page.locator(".tp-row.picked")).toHaveCount(0);
+  await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").click();
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(page.locator(".tt-selected")).toContainText("2 selected");
   await nameRow(page, `Grease the bearings ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "What it needs…", "Optimise…", "Package…", "Add to package…", "Clear the selection"]);
@@ -86,7 +94,7 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await expectHealthy(page, problems, { label: "tasks packaging" });
 });
 
-test("Maintenance tasks at 400 px: the Filter button, a task's box and its menu; nothing scrolls sideways", async ({ page, request, problems }) => {
+test("Maintenance tasks at 400 px: the Filter button, Select on a task's menu and tapping rows; nothing scrolls sideways", async ({ page, request, problems }) => {
   const tag = `q${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
@@ -97,8 +105,12 @@ test("Maintenance tasks at 400 px: the Filter button, a task's box and its menu;
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "tasks-filter-phone");
   await page.keyboard.press("Escape");
-  await nameRow(page, `Grease the bearings ${tag}`).getByRole("checkbox").check();
-  await nameRow(page, `Megger the windings ${tag}`).getByRole("checkbox").check();
+  // No row boxes: Select on the row's menu, then tap another row.
+  await expect(page.locator(".tp-row input[type=checkbox]")).toHaveCount(0);
+  await nameRow(page, `Grease the bearings ${tag}`).getByRole("button", { name: /^Actions for/ }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Select", exact: true }).click();
+  await nameRow(page, `Megger the windings ${tag}`).click();
+  await expect(page.getByRole("status").filter({ hasText: "2 selected" })).toBeVisible();
   await expect(page.locator(".tp-row.picked")).toHaveCount(2);
   await nameRow(page, `Megger the windings ${tag}`).getByRole("button", { name: /^Actions for/ }).click();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Package…", exact: true })).toBeVisible();
