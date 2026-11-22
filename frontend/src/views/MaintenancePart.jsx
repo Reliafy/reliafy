@@ -6,6 +6,7 @@ import LoadFailed from "../components/LoadFailed.jsx";
 import { getMaintenancePart, getPartStructure, getPartWhereUsed, listMaintenanceLocations } from "../api.js";
 import { StockModal } from "./MaintenanceLists.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { ShowMe } from "../components/SectionPage.jsx";
 import {
   ComponentModal, LevelModal, PositionsFromStructureModal, RollupCard, StructureTree, WhereUsedCard, removeLine,
 } from "../components/MaintenanceStructure.jsx";
@@ -53,6 +54,7 @@ export default function MaintenancePart() {
         actions={<>
           <button className="secondary" onClick={() => setModal("stock")}>Stock…</button>
           <button className="secondary" onClick={() => setModal("level")}>Indenture level</button>
+          <ShowMe help={{ guide: "superseded-and-obsolete-parts" }} asHelp />
         </>}
         primary={<button onClick={() => setModal({ line: null })}>Add a part to it</button>}
       />
