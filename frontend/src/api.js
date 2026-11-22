@@ -669,6 +669,36 @@ export function pasteDataset(name, content, noHeader = null, reading = null, lib
   );
 }
 
+// New dataset's "Type it in": what typed text (SurPyval's notation, "120, 310,
+// [400, 450], 1000+") says and the columns it would be saved with. Saves
+// nothing; a 422's err.data.where says where the reading stopped.
+export function readNotation(text, unit = null, { signal } = {}) {
+  return request("/api/datasets/notation/read", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text || "", ...(unit ? { unit } : {}) }),
+    signal,
+  });
+}
+
+// Save typed text as a dataset: the CSV the same data would be, with its reading.
+export function createNotationDataset(name, text, unit, libraryId = null) {
+  return withEvent(
+    request("/api/datasets/notation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name || "", text: text || "", unit: unit || "",
+                             ...(libraryId ? { library_id: libraryId } : {}) }),
+    }),
+    "dataset_upload"
+  );
+}
+
+// The dataset page's "Show as text": { text, kind, n_rows, unit } (up to 200 rows).
+export function getDatasetNotation(id) {
+  return request(`/api/datasets/${id}/notation`);
+}
+
 // The columns a new dataset would have (exactly as uploadDataset /
 // pasteDataset with the same fields would store them), their facts and the
 // server's guessed reading: New dataset's reading screen. Saves nothing.
@@ -704,6 +734,18 @@ export function setDatasetMeasurementsReading(id, measurements) {
 export function setDatasetReading(id, reading) {
   return request(`/api/datasets/${id}/reading`, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reading }),
+  });
+}
+
+// A dataset's lifetimes (the dataset page's Lifetimes view): one line per
+// unit, read with its saved reading, or with ``reading`` (a draft being
+// changed; nothing is kept).
+export function getDatasetLifetimes(id, reading = null) {
+  if (!reading) return request(`/api/datasets/${id}/lifetimes`);
+  return request(`/api/datasets/${id}/lifetimes`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reading }),
   });

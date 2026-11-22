@@ -132,9 +132,6 @@ ALT_DISTRIBUTIONS = ("weibull", "lognormal", "normal", "exponential", "gamma")
 _STORE: "OrderedDict[str, object]" = OrderedDict()
 _STORE_MAX = 64
 
-# np.trapz was removed in NumPy 2.0 in favour of np.trapezoid.
-_trapezoid = getattr(np, "trapezoid", None) or np.trapz
-
 
 def store_live(model) -> str:
     cache_id = uuid.uuid4().hex
@@ -641,6 +638,7 @@ def _build_payload(
             model, dist_of(distribution_id), inputs, k_dist, uniq, life_at_uniq, labels
         ),
         "gof": _gof(model),
+        **({"activation_energy": ea} if (ea := activation_energy(model)) else {}),
         "functions": {"evaluate_path": None},  # filled by the service with the model id
     }
     return _json_safe(payload)
@@ -1033,23 +1031,25 @@ def evaluate(
 
     life_use = float(_characteristic_life(model, Zuse)[0])
     # A fine grid at the use stress, extended until failure is (nearly)
-    # certain: the mean integrates sf over it, and it backs up the B-lives
-    # where SurPyval's quantile function (qf, 0.23) gives none.
+    # certain: it backs up the B-lives where SurPyval's quantile function
+    # (qf, 0.23) gives none.
     hi = _grid_extent(model, Zuse, life_use, target=0.9999)
     fine = np.linspace(0.0, hi, 4000)
     Zfine = np.repeat(Zuse, fine.size, axis=0)
     with np.errstate(all="ignore"):
         ff_fine = np.clip(np.nan_to_num(np.asarray(model.ff(fine, Zfine), dtype=float), nan=0.0), 0.0, 1.0)
-        sf_fine = np.clip(1.0 - ff_fine, 0.0, 1.0)
 
     # Curves for the calculator over a display grid to the 0.999 life.
     hi_disp = _grid_extent(model, Zuse, life_use, target=0.999)
     grid = np.linspace(0.0, hi_disp, points)
     curves = _eval_functions(model, grid, np.repeat(Zuse, grid.size, axis=0))
 
+    # The mean life is SurPyval's (``mean``), with its two-sided interval
+    # (``mean_cb``); None where it is infinite.
+    mean = mean_at_use(model, Zuse, confidence)
     metrics = {
         "characteristic_life": life_use if np.isfinite(life_use) else None,
-        "mean_life": float(_trapezoid(sf_fine, fine)),
+        "mean_life": mean["value"] if mean else None,
     }
     exact_q = _quantiles(model, Zuse, [0.5, 0.1, 0.01])
     for q, key, v in zip((0.5, 0.1, 0.01), ("b50", "b10", "b1"), exact_q):
@@ -1074,11 +1074,15 @@ def evaluate(
         "metrics": metrics,
         "acceleration_factor": af,
         "t_max": float(hi_disp),
+        "mean_life": mean,
+        "activation_energy": activation_energy(model),
     }
     if tested is None and getattr(model, "data", None) is not None:
         tested = getattr(model.data, "Z", None)
     if tested is not None and len(tested):
         out["life_lines"] = life_lines(model, Zuse, tested)
+        uniq, _ = _unique_rows(np.atleast_2d(np.asarray(tested, dtype=float)))
+        out["tested_lives"] = tested_lives(model, uniq.tolist())
     if bounds_method is not None:
         try:
             out["bounds"] = use_level_bounds(
@@ -1143,8 +1147,136 @@ def life_lines(model, Zuse: np.ndarray, tested) -> list:
         band = _life_band(model, G[keep], life[keep])
         if band:
             line.update(band)
+        line["quantiles"] = _quantile_line(model, G[keep])
         out.append(line)
     return out
+
+
+#: The lives the life-stress chart can draw beside the characteristic life:
+#: the median (B50) and the B10, each with its one-sided lower bound.
+CHART_LIVES = (("b50", 0.5), ("b10", 0.1))
+
+
+def _quantile_line(model, G: np.ndarray, confidence: float = rule.LEVEL) -> dict:
+    """SurPyval's median and B10 life at each stress row of ``G``
+    (``qf``) with their one-sided lower bounds (``quantile_cb``, Wald), for
+    the life-stress chart: ``{"b50": {"life", "lower"}, "b10": {...},
+    "level", "bound": "lower"}``. A life or bound SurPyval can't give is
+    None; a whole line it can't give is left out."""
+    out: dict = {"level": confidence, "bound": rule.LIFE_BOUND}
+    for key, p in CHART_LIVES:
+        probs = np.full(G.shape[0], p)
+        try:
+            with np.errstate(all="ignore"), ignore_warnings():
+                life = np.asarray(model.qf(probs, G), dtype=float).ravel()
+                lower = np.asarray(model.quantile_cb(probs, G, alpha_ci=1.0 - confidence, bound="lower"),
+                                   dtype=float).ravel()
+        except Exception:  # noqa: BLE001 - no covariance: the line without it, or none
+            continue
+        if life.size != G.shape[0] or lower.size != G.shape[0]:
+            continue
+        out[key] = {"life": [_finite_or_none(v) for v in life], "lower": [_finite_or_none(v) for v in lower]}
+    return out
+
+
+def tested_lives(model, tested, confidence: float = rule.LEVEL) -> list:
+    """The median and B10 life (with their one-sided lower bounds) at each
+    tested level's stress row, in the order given: the tested-level marks
+    on the life-stress chart when it shows the median or the B10."""
+    rows = [list(map(float, r)) for r in (tested or [])]
+    if not rows:
+        return []
+    T = np.atleast_2d(np.asarray(rows, dtype=float))
+    lives = _quantile_line(model, T, confidence)
+    out = []
+    for i, row in enumerate(rows):
+        entry: dict = {"stress": row}
+        for key, _ in CHART_LIVES:
+            if key in lives:
+                entry[key] = lives[key]["life"][i]
+                entry[f"{key}_lower"] = lives[key]["lower"][i]
+        out.append(entry)
+    return out
+
+
+def mean_at_use(model, Zuse: np.ndarray, confidence: float = rule.LEVEL) -> Optional[dict]:
+    """SurPyval's mean life (MTTF) at the use stress (``mean``) with its
+    two-sided interval (``mean_cb``, the delta method on the log of the
+    mean): ``{"value", "ci", "level", "bound": "two-sided", "method":
+    "wald"}``. None where the mean is infinite or can't be had (a mean is
+    never shown where it can be infinite); ``ci`` None where it has no
+    finite interval."""
+    try:
+        with np.errstate(all="ignore"), ignore_warnings():
+            value = float(np.asarray(model.mean(Zuse), dtype=float).ravel()[0])
+    except Exception:  # noqa: BLE001 - no mean
+        return None
+    if not math.isfinite(value):
+        return None
+    ci = None
+    try:
+        with np.errstate(all="ignore"), ignore_warnings():
+            b = np.asarray(model.mean_cb(Zuse, alpha_ci=1.0 - confidence, bound="two-sided"),
+                           dtype=float).ravel()
+        if b.size == 2 and np.all(np.isfinite(b)):
+            ci = [float(min(b)), float(max(b))]
+    except Exception:  # noqa: BLE001 - no covariance: the mean without its interval
+        ci = None
+    return {"value": value, "ci": ci, "level": confidence, "bound": "two-sided", "method": "wald"}
+
+
+def activation_energy(model, confidence: float = rule.LEVEL) -> Optional[dict]:
+    """SurPyval's activation energy of a thermally activated model
+    (``activation_energy()``: Arrhenius and Eyring), in eV with its
+    two-sided Wald interval, and ``E_a / k_B`` in kelvin: ``{"value", "ci",
+    "kelvin", "level", "method"}``. None for a life model SurPyval gives
+    none for."""
+    try:
+        with np.errstate(all="ignore"), ignore_warnings():
+            e = model.activation_energy(alpha_ci=1.0 - confidence)
+    except Exception:  # noqa: BLE001 - not thermal, or no covariance
+        return None
+    value = _finite_or_none(e.get("activation_energy"))
+    if value is None:
+        return None
+    lo, hi = _finite_or_none(e.get("lower")), _finite_or_none(e.get("upper"))
+    return {
+        "value": value,
+        "ci": [lo, hi] if lo is not None and hi is not None else None,
+        "kelvin": _finite_or_none(e.get("kelvin")),
+        "level": confidence,
+        "method": "wald",
+    }
+
+
+def common_shape(model) -> Optional[dict]:
+    """SurPyval's likelihood-ratio test that the shape is the same at every
+    tested stress (``common_shape_test()``, Nelson 1990: each level's own
+    shape against one shape for all, chi-squared on k - 1 degrees of
+    freedom; a level with fewer than two failures is left out). ``{"computed":
+    True, "statistic", "df", "p", "parameter", "common_shape", "shapes":
+    [{"stress", "shape"}], "left_out": [{"stress", "failures"}]}``; ``{"computed":
+    False, "detail"}`` where SurPyval can't run it (it says why); None for a
+    distribution with no shape (the exponential)."""
+    if len(list(getattr(model.distribution, "parameter_names", []) or [])) < 2:
+        return None
+    try:
+        with np.errstate(all="ignore"), ignore_warnings():
+            t = model.common_shape_test()
+    except ValueError as exc:
+        return {"computed": False, "detail": _plain_text(str(exc)).rstrip(".")}
+    return {
+        "computed": True,
+        "statistic": _finite_or_none(t.get("statistic")),
+        "df": int(t.get("df")),
+        "p": _finite_or_none(t.get("p_value")),
+        "parameter": t.get("parameter"),
+        "common_shape": _finite_or_none(t.get("common_shape")),
+        "shapes": [{"stress": [float(v) for v in k], "shape": _finite_or_none(v)}
+                   for k, v in (t.get("shapes") or {}).items()],
+        "left_out": [{"stress": [float(v) for v in k], "failures": int(v)}
+                     for k, v in (t.get("left_out") or {}).items()],
+    }
 
 
 def _life_band(model, G: np.ndarray, life: np.ndarray, confidence: float = rule.LEVEL) -> dict | None:
@@ -1853,6 +1985,9 @@ def diagnose(model, life_model_id: str, stresses: list, use_stress: Optional[lis
         "alpha": float(getattr(d, "alpha", 0.05)),
         "use_stress": None if use is None else [float(v) for v in use],
         "shape": _test_row(shape[0]) if shape else None,
+        # The same test from SurPyval's own common_shape_test(), with each
+        # level's shape and the levels left out (fewer than two failures).
+        "common_shape": common_shape(model),
         "life_stress": _test_row(life[0]) if life else None,
         "comparison": comparison,
         "extrapolation": extrapolation,

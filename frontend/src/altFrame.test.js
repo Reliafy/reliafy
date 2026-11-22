@@ -81,7 +81,7 @@ test("diagnostics in words", () => {
   assert.equal(pWords(0.0004), "p < 0.001");
   assert.equal(pWords(0.1902), "p = 0.19");
   const diag = {
-    shape: { verdict: "ok", computed: true, p: 0.19 },
+    common_shape: { computed: true, p: 0.19, statistic: 3.31, df: 2, shapes: [], left_out: [] },
     life_stress: { verdict: "fail", computed: true, p: 0.0205 },
     comparison: [
       { name: "Temperature–nonthermal", current: true, delta: 0 },
@@ -94,7 +94,7 @@ test("diagnostics in words", () => {
       { label: "Load", levels: 2, levels_verdict: "warn", use: 0.35, distance: 0.61, use_verdict: "ok" },
     ],
   };
-  assert.equal(shapeCheck(diag, FLUID).tone, "good");
+  assert.equal(shapeCheck(diag, FLUID).tone, null);
   assert.match(lifeCheck(diag, { life_model: "Temperature–nonthermal" }).words, /^No: .*Temperature–nonthermal line \(p = 0.021\)/);
   const c = compareCheck(diag);
   assert.equal(c.tone, "caveat");
@@ -111,7 +111,10 @@ test("diagnostics in words", () => {
   assert.equal(none.tone, null);
   assert.match(none.words, /Enter your use stress/);
   // An exponential has no shape to test; a test that couldn't run says why.
-  assert.match(shapeCheck({ shape: null }, { distribution_id: "exponential" }).words, /no shape/);
+  assert.match(shapeCheck({ common_shape: null }, { distribution_id: "exponential" }).words, /no shape/);
+  assert.match(shapeCheck({ common_shape: null }, {}).words, /no shape/);
+  assert.equal(shapeCheck({ common_shape: { computed: false, detail: "one level has two failures" } }, {}).words,
+    "Can't tell: one level has two failures.");
   assert.equal(lifeCheck({ life_stress: { computed: false, detail: "two levels" } }).words, "Can't tell: two levels.");
   assert.equal(compareCheck({ comparison: [{ current: true, delta: 0 }, { delta: 1.2 }] }).tone, "good");
 });
@@ -155,13 +158,62 @@ test("useRangeWarning: says when the use stress is far from the tested ones", as
   assert.match(useRangeWarning(t, [313.15]), /^40 °C is well below the tested 105–145 °C/);
 });
 
-test("activationEnergy: a × Boltzmann's constant for the thermal models only", async () => {
+test("activationEnergy: SurPyval's own value; a × k only for the temperature–nonthermal model", async () => {
   const { activationEnergy } = await import("./altFrame.js");
-  const r = { life_model_id: "arrhenius", coefficients: [{ name: "a", value: 6957, ci: [5000, 9000] }, { name: "b", value: 8.39e-5 }] };
-  const ea = activationEnergy(r);
-  assert.ok(Math.abs(ea.value - 0.5995) < 1e-3);
-  assert.ok(Math.abs(ea.ci[0] - 0.4309) < 1e-3);
-  assert.equal(activationEnergy({ ...r, life_model_id: "inverse_power" }), null);
+  const coefficients = [{ name: "a", value: 6957, ci: [5000, 9000] }, { name: "b", value: 8.39e-5 }];
+  const own = { value: 0.5995, ci: [0.473, 0.726], kelvin: 6957, level: 0.9 };
+  // From the fit's payload, or the use-stress answer (a model saved before the fit carried it).
+  assert.deepEqual(activationEnergy({ life_model_id: "arrhenius", activation_energy: own }),
+    { value: 0.5995, ci: [0.473, 0.726], level: 0.9 });
+  assert.equal(activationEnergy({ life_model_id: "eyring" }, { activation_energy: own }).value, 0.5995);
+  // No SurPyval value: none for Arrhenius (it waits for the answer), a × k for temperature–nonthermal.
+  assert.equal(activationEnergy({ life_model_id: "arrhenius", coefficients }), null);
+  const pe = activationEnergy({ life_model_id: "power_exponential", coefficients });
+  assert.ok(Math.abs(pe.value - 0.5995) < 1e-3);
+  assert.ok(Math.abs(pe.ci[0] - 0.4309) < 1e-3);
+  assert.equal(activationEnergy({ life_model_id: "inverse_power", coefficients }), null);
+});
+
+test("shapeCheck: the common-shape test in plain words, with its statistic and the levels left out", () => {
+  const stresses = [{ key: "s1", label: "Temperature", unit: "K", entered_unit: "°C" }];
+  const r = { distribution_id: "weibull", params: [{ name: "beta", value: 2.24 }], stresses };
+  const same = shapeCheck({ common_shape: {
+    computed: true, p: 0.4325, statistic: 1.676, df: 2, parameter: "beta", common_shape: 2.244,
+    shapes: [{ stress: [378.15], shape: 2.474 }, { stress: [398.15], shape: 1.69 }, { stress: [418.15], shape: 2.602 }],
+    left_out: [],
+  } }, r);
+  assert.equal(same.tone, null);
+  assert.equal(same.words, "The shapes are consistent (p = 0.43): one β fits every tested stress, so extrapolating "
+    + "to the use stress rests on that.");
+  assert.equal(same.detail, "Likelihood-ratio statistic 1.68 on 2 degrees of freedom (χ²); each level's own β 2.47 "
+    + "at 105 °C, 1.69 at 125 °C, 2.6 at 145 °C; one β for all 2.24.");
+  assert.equal(same.leftOut, null);
+  const differ = shapeCheck({ common_shape: {
+    computed: true, p: 0.003, statistic: 9.1, df: 1, shapes: [], left_out: [{ stress: [358.15], failures: 1 }],
+  } }, r);
+  assert.equal(differ.tone, "caveat");
+  assert.match(differ.words, /^The shapes differ \(p = 0.003\): .* Extrapolation is unreliable\.$/);
+  assert.match(differ.detail, /on 1 degree of freedom/);
+  assert.equal(differ.leftOut, "Left out of the test: 85 °C (1 failure). A level needs two failures for a shape of its own.");
+  // No verdict words.
+  for (const c of [same, differ]) assert.doesNotMatch(`${c.words} ${c.detail}`, /\b(Yes|No|OK|Perhaps)\b/);
+});
+
+test("meanAtUse and lifeLineFor: the MTTF's two-sided interval and the median or B10 line", async () => {
+  const { meanAtUse, lifeLineFor } = await import("./altFrame.js");
+  assert.deepEqual(meanAtUse({ mean_life: { value: 330538, ci: [112538, 970829], level: 0.9 } }),
+    { value: 330538, ci: [112538, 970829], level: 0.9 });
+  assert.equal(meanAtUse({ mean_life: null }), null);
+  assert.equal(meanAtUse({ mean_life: { value: Infinity } }), null);
+  const along = { stress: [300, 310, 320], life: [9, 8, 7], lower: [5, 4, 3], upper: [12, 11, 10], level: 0.9,
+    quantiles: { level: 0.9, bound: "lower", b10: { life: [4, null, 2], lower: [2, null, 1] } } };
+  const tested = [{ stress: 320, b10: 2, b50: 6 }];
+  const b10 = lifeLineFor(along, "b10", tested);
+  assert.deepEqual(b10.line, { stress: [300, 320], life: [4, 2], lower: [2, 1], level: 0.9, bound: "lower" });
+  assert.deepEqual(b10.points, [{ stress: 320, life: 2 }]);
+  assert.equal(lifeLineFor(along, "eta").line, along);
+  assert.equal(lifeLineFor(along, "b50", tested), null);
+  assert.equal(lifeLineFor(null, "b10"), null);
 });
 
 test("a temperature typed in °C reads in °C on the charts, not kelvin", () => {
