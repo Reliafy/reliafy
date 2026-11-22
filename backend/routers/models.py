@@ -632,6 +632,50 @@ def download_dataset_csv(
     })
 
 
+def _lifetimes(session, ctx: AccessCtx, dataset_id: str, draft: dict | None) -> JSONResponse:
+    from backend.services import lifetimes as lifetimes_service
+
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    try:
+        if draft is None:
+            reading, source = dataset_reading.for_dataset_db(session, dataset, ctx.read_owners, ctx.hidden)
+        else:
+            reading, source = dataset_reading.normalize(draft, dataset.columns, require_x=False), "draft"
+        out = lifetimes_service.for_dataset(dataset, reading)
+    except dataset_reading.ReadingError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except lifetimes_service.LifetimesError as exc:
+        # What a fit would say about these rows: shown in place of the lines.
+        return JSONResponse(content={"error": client_message(exc), "lines": [], "source": source})
+    return JSONResponse(content={**out, "source": source})
+
+
+@router.get("/datasets/{dataset_id}/lifetimes")
+def dataset_lifetimes(
+    dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """One line per unit (or per system), read with the dataset's reading the
+    way a fit reads it: where each came under observation, and how it ended
+    (failed, still running, failed before, failed in a window), for the
+    dataset page's Lifetimes view. Past 5,000 lines an even sample in time
+    order (``sampled``); the counts are of every unit."""
+    return _lifetimes(session, ctx, dataset_id, None)
+
+
+@router.post("/datasets/{dataset_id}/lifetimes")
+def dataset_lifetimes_draft(
+    dataset_id: str,
+    reading: dict = Body(..., embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The lifetimes with a draft reading (Change, before it is saved):
+    nothing is kept."""
+    return _lifetimes(session, ctx, dataset_id, reading)
+
+
 @router.get("/datasets/{dataset_id}/rows")
 def dataset_rows(
     dataset_id: str,

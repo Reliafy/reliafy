@@ -25,6 +25,7 @@ import FromLibrary from "../components/FromLibrary.jsx";
 import { datasetModelsForLibrary } from "../libraries.js";
 import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
 import { useDatasetReading } from "../useDatasetReading.js";
+import LifetimesView from "../components/LifetimesView.jsx";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
@@ -278,6 +279,16 @@ export default function DatasetPage() {
                     )}
                     {writable && !ds.is_sample && <ReadingChange name={itemName(ds)} rd={rd} fit={false} onDone={reload} />}
                   </div>
+                )}
+                {part === "life" && parts.life && rd.reading && (
+                  /* One line per unit, read the way a fit reads it; while the
+                     reading is being changed, drawn with the change. */
+                  <LifetimesView datasetId={ds.id} name={itemName(ds)} draft={rd.editing ? rd.draft : null}
+                                 version={JSON.stringify(ds.reading || null)}
+                                 onChange={writable && !ds.is_sample ? () => {
+                                   rd.startChange();
+                                   document.querySelector(".ds-reading")?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+                                 } : undefined} />
                 )}
                 {shown ? (
                   <>

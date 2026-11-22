@@ -81,6 +81,27 @@ the dataset and upload it again. A reading Reliafy guessed says *guessed —
 check it*, with **Looks right** to keep it. Samples and datasets shared with
 you for viewing show the line without **Change**.
 
+### See every unit's lifetime
+
+Under the reading, **Lifetimes** draws one line per unit, read exactly the way
+a fit will read the dataset: from when the unit came under observation to its
+last time. A filled dot is a failure, an open ▷ a unit still running (last seen
+working), a thick bar a failure found between two inspections, an open ◁ a
+unit found already failed, and a short bar at the start a unit that entered
+late (observed only from then). Above the chart, a count says what the reading
+gives, for example *25 units: 18 failed, 7 still running*. For repairable data
+each system is one line with a tick at each failure, and a bar where its
+record ends.
+
+It's the quickest way to catch a wrong reading: if every unit shows as failed
+when you know some are still running, the status column is the wrong way
+round. Press **Change how it's read**: while you change the selectors the
+lines are redrawn with your change (*With your changes, not saved yet*), and
+**Save the reading** keeps it. Sort the lines by time, by unit (or row order)
+or by a covariate with a few values, which also colours them. Above 200 units
+the chart shows an even sample across the order, with **Show all**; the count
+is always of every unit. On a phone the chart scrolls inside its card.
+
 ### How the columns are read
 
 One selector for each thing a model can use, labelled with SurPyval's name for
