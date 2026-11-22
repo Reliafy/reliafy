@@ -47,7 +47,7 @@
   min-height: 26px;
   padding: 1px 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--bg-surface);
   color: var(--text);
   box-shadow: none;
@@ -84,7 +84,7 @@
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  z-index: 30;
+  z-index: var(--z-popover);
   width: 240px;
   max-height: 60vh;
   overflow: auto;
@@ -102,7 +102,7 @@
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: var(--fs-13);
   cursor: pointer;
 }
@@ -134,7 +134,7 @@
 .rw-head {
   position: sticky;
   top: 0;
-  z-index: 6;
+  z-index: var(--z-sticky-head);
   display: flex;
   min-width: 100%;
   background: var(--bg-subtle);
@@ -152,7 +152,7 @@
   min-width: 0;
 }
 .rw-h.num { justify-content: flex-end; }
-.rw-h.rw-name { position: sticky; left: 0; z-index: 2; background: var(--bg-subtle); padding-left: 12px; border-right: 1px solid var(--border); }
+.rw-h.rw-name { position: sticky; left: 0; z-index: var(--z-sticky); background: var(--bg-subtle); padding-left: 12px; border-right: 1px solid var(--border); }
 .rw button.rw-hs {
   border: 0;
   background: none;
@@ -175,14 +175,14 @@
   bottom: 6px;
   width: 8px;
   cursor: col-resize;
-  z-index: 3;
+  z-index: calc(var(--z-sticky) + 1);
   border-right: 1px solid var(--border);
   outline: none;
 }
 .rw-rz:hover, .rw-rz:focus-visible { border-right: 2px solid var(--accent); }
 .rw-h.rw-name .rw-rz { right: -5px; border-right-color: transparent; }
 
-.rw-pins { position: sticky; z-index: 5; height: 0; overflow: visible; }
+.rw-pins { position: sticky; z-index: calc(var(--z-sticky) + 3); height: 0; overflow: visible; }
 .rw-pins-in { position: absolute; left: 0; top: 0; min-width: 100%; }
 .rw-body { position: relative; min-width: 100%; }
 
@@ -208,7 +208,7 @@
 .rw-row.rw-fail .rw-nm { font-weight: 500; }
 .rw-row.focus, .rw-row.focus .rw-name { background: linear-gradient(var(--accent-subtle), var(--accent-subtle)), var(--bg-surface); }
 .rw-row.focus { box-shadow: inset 3px 0 0 var(--accent); }
-.rw-row:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); z-index: 1; }
+.rw-row:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); z-index: var(--z-raised); }
 .rw-row.dim .rw-nm { color: var(--text-secondary); }
 .rw-row.pin .rw-name { background: var(--bg-subtle); }
 
@@ -228,7 +228,7 @@
 .rw-name {
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: var(--z-raised);
   background: var(--bg-surface);
   padding-left: 8px;
   border-right: 1px solid var(--border);
@@ -261,7 +261,7 @@
   align-items: center;
   padding: 0 7px;
   border: 1px dashed var(--warning-border);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   color: var(--warning-text);
   background: var(--warning-bg);
   font-size: var(--fs-12);
@@ -319,7 +319,7 @@
 .rw-empty p { margin: 0 0 10px; }
 
 /* Compact rows. */
-.rw.compact .rw-row { font-size: 13px; }
+.rw.compact .rw-row { font-size: var(--fs-13); }
 .rw.compact .rw-c .chip { line-height: 16px; }
 
 /* The details panel: 14 px text throughout (link-buttons inherit it), 13 px
@@ -412,7 +412,7 @@
 }
 .rw-ferr::before, .rw-panel .tm-err::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: 50%; background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: var(--radius-full); background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
 }
 .rw-decision { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
 .rw-decision h3 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
@@ -549,12 +549,12 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
   bottom: 0;
   width: auto;
   max-height: 78dvh;
-  z-index: 90;
+  z-index: var(--z-sheet);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   box-shadow: var(--shadow-lg);
   padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
-.rw-scrim { position: fixed; inset: 0; z-index: 89; background: var(--scrim); }
+.rw-scrim { position: fixed; inset: 0; z-index: calc(var(--z-sheet) - 1); background: var(--scrim); }
 
 /* ---- a function's PDFs, at the end of its notes and rationale (RcmFunctionPdfs.jsx) ---- */
 
@@ -568,7 +568,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 
 .rw-pdfs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .rw-pdf { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: var(--fs-13); }
-.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-on-fill); background: var(--danger); border-radius: 3px; padding: 2px 4px; }
+.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-on-fill); background: var(--danger); border-radius: var(--radius-sm); padding: 2px 4px; }
 .rw-pdf-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; flex: 0 1 auto; }
 .rw-pdf-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rw-pdf .ovm { margin-left: auto; }
@@ -628,7 +628,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
    description, a click edits it); the status chips. */
 .rw-panel-top { display: flex; flex-direction: column; gap: 6px; flex: none; }
 .rw-panel.is-expanded > .rw-panel-top { width: 100%; max-width: 760px; box-sizing: border-box; }
-.rw-grab { align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: -4px 0 2px; flex: none; }
+.rw-grab { align-self: center; width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--border); margin: -4px 0 2px; flex: none; }
 .rw-in { flex: none; color: var(--text-secondary); }
 .rw-crumbs .rw-in + button::before { content: none; }
 .rw-title-btn {
@@ -698,7 +698,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 .rfs-list li.rfs-row.editing { display: block; padding: 0; border: 0; background: none; }
 .rfs-list li.rfs-row.dragging { opacity: 0.5; }
 .rfs-list li.rfs-row.drop-before::before, .rfs-list li.rfs-row.drop-after::after {
-  content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--accent);
+  content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: var(--radius-full); background: var(--accent);
 }
 .rfs-list li.rfs-row.drop-before::before { top: -2px; }
 .rfs-list li.rfs-row.drop-after::after { bottom: -2px; }
@@ -720,7 +720,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 
 /* Under a cell being edited: the consequence chips, or why a value wasn't kept. */
 .rw-pop-under {
-  position: fixed; z-index: 95; max-width: min(320px, calc(100vw - 16px));
+  position: fixed; z-index: var(--z-sheet-menu); max-width: min(320px, calc(100vw - 16px));
   display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--radius-md);
   background: var(--bg-surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
 }
@@ -731,7 +731,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 }
 .rw-cell-why::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: 50%; background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: var(--radius-full); background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
 }
 .rw .rw-edit[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-border); }
 .rw-edit-chips { outline: none; }
@@ -967,7 +967,7 @@ span.rim-tname.rim-r1-body { display: block; }
 .rw-notes-foot .rw-notes-act { font-size: var(--fs-13); }
 /* A task's kind in the Tasks row and its panel: a small chip that changes it. */
 select.rim-kindchip {
-  appearance: auto; height: 24px; padding: 0 6px; border: 1px solid var(--border-control); border-radius: 999px;
+  appearance: auto; height: 24px; padding: 0 6px; border: 1px solid var(--border-control); border-radius: var(--radius-full);
   background: var(--bg-surface); color: inherit; font: inherit; font-size: var(--fs-12); max-width: 100%;
 }
 select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring); }

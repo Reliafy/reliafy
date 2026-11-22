@@ -1,5 +1,5 @@
 /* A position's panel on the RCM tab (RcmPositionPanel.jsx): its functions as rows. */
-.rp-fns { list-style: none; margin: 0 0 var(--space-3, 12px); padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rp-fns { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .rp-fns li { display: flex; align-items: flex-start; gap: 8px; }
 .rp-fn {
   all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;

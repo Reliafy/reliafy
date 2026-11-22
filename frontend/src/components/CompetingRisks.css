@@ -1,7 +1,7 @@
 /* Competing risks (#177): the failure-mode panel beside the chart, the
    calculator's table, and the tables in Diagnostics and Data. */
 .cr-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-.cr-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.cr-dot { width: 8px; height: 8px; border-radius: var(--radius-full); flex: 0 0 auto; }
 .detail-panel .gofr .cr-note { font-size: var(--fs-12); line-height: var(--lh-12); }
 
 /* Failure modes: each mode's row, its name and counts under it, its share. */

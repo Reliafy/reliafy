@@ -3,7 +3,7 @@
 .dsp {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: var(--space-4, 16px);
+  gap: var(--space-4);
   align-items: start;
 }
 @media (max-width: 900px) {
@@ -24,7 +24,7 @@
 .dsp-group-h {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-raised);
   padding: 6px 12px;
   font-size: var(--fs-12);
   font-weight: 600;

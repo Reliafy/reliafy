@@ -39,7 +39,7 @@ export function tokensCss(tokens) {
     out.push("}");
   });
   out.push(":root {");
-  for (const family of ["spacing", "radius", "size", "fontSize", "lineHeight", "fontWeight"]) {
+  for (const family of ["spacing", "radius", "zIndex", "size", "fontSize", "lineHeight", "fontWeight"]) {
     for (const t of tokens[family]?.tokens || []) out.push(`  --${t.name}: ${t.value};`);
   }
   for (const [key, stack] of Object.entries(tokens.type.families)) out.push(`  --font-${key}: ${stack};`);

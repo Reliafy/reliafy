@@ -190,7 +190,7 @@
 .ft-circle {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   border: 1.6px solid var(--text-secondary);
   background: var(--bg-subtle);
   display: inline-flex;
