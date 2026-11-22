@@ -108,14 +108,14 @@ def test_a_position_runs_to_its_own_plan_or_the_one_above_else_all_the_time(m):
 
 # ---- the RCM evidence check --------------------------------------------------------------------
 
-def _decided(m, name, unit):
+def _decided(m, name, unit, interval=10):
     from backend.services.samples import SAMPLE_OWNER  # noqa: F401 - the sample analysis's owner
 
     pid = m.create_position(name)["id"]
     ff = m.add_functional_failure(m.add_function(pid, "Turn")["id"], "Seized")
     mode = m.add_failure_mode(pid, "Bearing fatigue", functional_failure_id=ff["id"])
     m.decide_failure_mode(mode["id"], "operational", {
-        "outcome": "fixed_interval", "interval": 10, "interval_unit": unit,
+        "outcome": "fixed_interval", "interval": interval, "interval_unit": unit,
         "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"}})
     return pid
 
@@ -127,10 +127,12 @@ def test_rcm_evidence_in_hours_meets_a_task_in_days_at_the_positions_duty(db):
 
     m = Maintenance(GraphStore(":memory:", PROJECTORS), "user-clock-rcm", "tester")
     owners = ["user-clock-rcm", SAMPLE_OWNER]
-    duty = _decided(m, "Bearing on day shift", "days")
-    m.set_operating_plan(duty, EIGHT_A_DAY)
-    plain = _decided(m, "Bearing, no plan", "days")
     t = float(_sample_analysis(db)["results"]["optimal_time"])
+    # The task at about the optimum at 8 h a day: not far shorter than the evidence supports on either.
+    days = round(t / 8)
+    duty = _decided(m, "Bearing on day shift", "days", days)
+    m.set_operating_plan(duty, EIGHT_A_DAY)
+    plain = _decided(m, "Bearing, no plan", "days", days)
 
     def got(pid):
         sheet = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners, m=m)
