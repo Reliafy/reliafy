@@ -11,6 +11,7 @@ import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { locationChoices } from "../maintenanceAssets.js";
+import { Select } from "../components/ui/Controls.jsx";
 
 // One quiet line when the workspace has no time zone and this device isn't on
 // UTC: the dates here follow UTC until it's set. One button sets this device's
@@ -97,10 +98,10 @@ export function NewPositionModal({ positions, parentId = null, locations = null,
       </Field>
       {places.length > 0 && (
         <Field label="Location (where it physically is; what's inside follows)">
-          <select value={location} onChange={(e) => setLocation(e.target.value)}>
+          <Select value={location} onChange={(e) => setLocation(e.target.value)}>
             <option value="">{parent ? "Where the position it's inside is" : "Not at a place yet"}</option>
             {places.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
       <Field label="Tag (optional)">

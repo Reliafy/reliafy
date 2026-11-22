@@ -17,6 +17,7 @@
 // (side by side, a function with several performance standards expanded, a
 // failure mode with several tasks expanded) for the pull request.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { choose, expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -103,7 +104,7 @@ test("a click shows the details beside the table; a double-click on the name spr
   await expect(panel(page).locator(".rw-checkable")).toContainText("Checkable: Pressure at least 3 bar");
   await panel(page).getByRole("button", { name: "Edit the checkable limit" }).click();
   await expect(panel(page).getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Pressure");
-  await expect(panel(page).getByRole("combobox", { name: "Comparator" })).toHaveValue(">=");
+  await expectChosen(panel(page).getByRole("combobox", { name: "Comparator" }), ">=");
   await panel(page).getByRole("textbox", { name: "When it applies", exact: true }).fill("while the pump runs");
   await panel(page).getByRole("textbox", { name: "Source", exact: true }).fill("the pump's data sheet");
   await panel(page).getByRole("textbox", { name: "Source", exact: true }).press("Enter");
@@ -112,7 +113,7 @@ test("a click shows the details beside the table; a double-click on the name spr
     const st = fn.standards.find((x) => x.text === `At 3 bar ${tag}`);
     return [st.when, st.source];
   }).toEqual(["while the pump runs", "the pump's data sheet"]);
-  await panel(page).getByRole("combobox", { name: "Comparator" }).selectOption(">");
+  await choose(panel(page).getByRole("combobox", { name: "Comparator" }), ">");
   await expect.poll(async () => (await rcmOf(request, p)).functions[0].standards.find((x) => x.text === `At 3 bar ${tag}`).comparator).toBe(">");
 
   // A functional failure: its status in words, its links, its failure modes; one shown from the list.
@@ -429,8 +430,8 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(taskLines).toHaveCount(2);
     await expect(taskLines.nth(0)).toContainText(`Check the seal ${tag}`);
     await expect(taskLines.nth(0)).toContainText("every 1 month");
-    await expect(todo.getByRole("combobox", { name: `Kind of “Check the seal ${tag}”` })).toHaveValue("on_condition");
-    await expect(todo.getByRole("combobox", { name: `Kind of “Replace the seal ${tag}”` })).toHaveValue("fixed_interval");
+    await expectChosen(todo.getByRole("combobox", { name: `Kind of “Check the seal ${tag}”` }), "on_condition");
+    await expectChosen(todo.getByRole("combobox", { name: `Kind of “Replace the seal ${tag}”` }), "fixed_interval");
     await expect(todo.locator(".rim-cards")).toHaveCount(0);
     await expect(todo.getByRole("textbox", { name: "Then, if found:" })).toHaveCount(0); // in the task's own details
     await expect(todo.locator(".task-choice")).not.toContainText("On condition: a check at an interval"); // no bridge line
@@ -535,7 +536,7 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
   // A standard's limit: comparator, value and unit as one group, read back in words.
   await trow(page, `^Performance standard: At 3 bar ${tag}`).locator(".tp-nm").click();
   await panel(page).getByRole("button", { name: "Edit the checkable limit" }).click();
-  await expect(panel(page).getByRole("group", { name: "Limit" }).getByRole("combobox", { name: "Comparator" })).toHaveValue(">=");
+  await expectChosen(panel(page).getByRole("group", { name: "Limit" }).getByRole("combobox", { name: "Comparator" }), ">=");
   await expect(panel(page).locator(".reads-as")).toHaveText("Reads as: Pressure at least 3 bar");
   // A consequence cell: one tap on a chip under it; Escape drops it.
   const conseq = trow(page, `^Failure mode: Seal leaks ${tag}`).locator(".rw-c").filter({ hasText: "Non-operational" }).first();
