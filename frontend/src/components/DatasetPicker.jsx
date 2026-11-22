@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Chip from "./ui/Chip.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { getDataset } from "../api.js";
 import { pickerGroups, rowsWords, shortDate, shownName } from "../datasetPicker.js";
@@ -151,14 +152,8 @@ export function DataSourceStep({ kind, datasets, onUse, upload, extra = null, pa
   const [picked, pick] = usePickedDataset();
   return (
     <>
-      <div className="source-toggle" role="tablist" aria-label="Where the data comes from">
-        {[["saved", "Saved data"], ["upload", "Upload a file"]].map(([v, label]) => (
-          <button key={v} type="button" role="tab" aria-selected={source === v}
-                  className={`source-tab${source === v ? " active" : ""}`} onClick={() => setSource(v)}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl className="source-toggle" label="Where the data comes from" value={source} onChange={setSource}
+                        options={[{ value: "saved", label: "Saved data" }, { value: "upload", label: "Upload a file" }]} />
       {source === "saved" ? (
         <DatasetPicker kind={kind} datasets={datasets} value={picked?.summary.id} onPick={pick} extra={extra} disabled={busy}
                        empty="Pick a dataset to see its first rows.">

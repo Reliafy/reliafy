@@ -28,6 +28,7 @@ import {
 import { ErrorNotice } from "../components/StorageCap.jsx";
 import "../components/RbdFaultTree.css";
 import "./FaultTree.css";
+import Loading from "../components/ui/Loading.jsx";
 import { Checkbox } from "../components/ui/Controls.jsx";
 
 const DotsIcon = () => (
@@ -441,7 +442,7 @@ export default function FaultTreeEditor() {
     return (
       <div className="app">
         <PageHeader crumbs={crumbs} title="Fault tree" />
-        <div className="card empty">Loading…</div>
+        <Loading card />
       </div>
     );
   }

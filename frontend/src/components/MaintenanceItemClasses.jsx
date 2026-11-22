@@ -16,6 +16,8 @@ import {
 } from "../maintenanceItemClasses.js";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { partsPath } from "../redirects.js";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // ---- pickers ---------------------------------------------------------------------------
 
@@ -257,7 +259,7 @@ export function ItemClassesSection() {
           </div>
         </div>
         {error && <div className="card error">{error}</div>}
-        {data === null ? <p className="lib-date">Loading…</p> : empty ? (
+        {data === null ? <Loading /> : empty ? (
           <p className="lib-date">
             Optional. Say what kind of thing each item is (Rotating equipment › Pump › Centrifugal), with attributes to fill in
             from its nameplate. Not the same as a position's class, which is its duty. Start from Reliafy's starter
@@ -304,7 +306,7 @@ function ItemClassPanel({ id, data, onChanged, onRetired, onAddChild }) {
     setError(null);
     try { await retireItemClass(id); onRetired(); } catch (e) { setError(e.message); }
   };
-  if (!c) return <section className="card">{error ? <div className="card error">{error}</div> : <p className="lib-date">Loading…</p>}</section>;
+  if (!c) return error ? <LoadFailed what="Couldn't load the item class." error={error} onRetry={load} /> : <section className="card"><Loading /></section>;
   return (
     <section className="card">
       <div className="maint-head">
@@ -511,7 +513,7 @@ export function ManufacturersCard() {
         </div>
       </div>
       {error && <div className="card error">{error}</div>}
-      {makers === null ? <p className="lib-date">Loading…</p> : makers.length === 0 ? (
+      {makers === null ? <Loading /> : makers.length === 0 ? (
         <p className="lib-date">Optional. A register of makers and the names they go by (KSB, K.S.B., KSB SE &amp; Co. KGaA), so
           items and parts typed in different ways count as one maker. Their typed manufacturer stays as it is.</p>
       ) : (

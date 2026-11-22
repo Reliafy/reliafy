@@ -18,6 +18,8 @@ import ClassForecastList from "../components/ClassForecastList.jsx";
 import { useRoles } from "../RolesProvider.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 import { Checkbox } from "../components/ui/Controls.jsx";
 
 // A forecast's row figure: "≈ 40.3 in 12 months", or why there isn't one.
@@ -60,8 +62,8 @@ function FleetCompare({ ids, onClear }) {
         subtitle="Each as saved, from its own model, items and settings. Ranges are 90%."
         actions={<button className="secondary sm" onClick={onClear}>Close</button>}
       />
-      {error && <div className="card error">{error}</div>}
-      {fleets.length < ids.length ? <p className="muted-line">Loading…</p> : (
+      {error && <LoadFailed what="Couldn't load the fleets." error={error} />}
+      {fleets.length < ids.length ? (!error && <Loading />) : (
         <ScrollCue className="table-scroll">
           <table className="mini-table">
             <thead>

@@ -6,6 +6,7 @@ import Field from "./ui/Field.jsx";
 import { TextArea } from "./ui/Controls.jsx";
 import ClampLines from "./ui/ClampLines.jsx";
 import "./OperatingContextCard.css";
+import Loading from "./ui/Loading.jsx";
 
 // A position's operating context on the Explorer's Summary tab: how it's used
 // (the load, the environment, the hours it runs), kept apart from the short
@@ -84,7 +85,7 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
 
   let body;
   if (state.error && text == null) body = <p className="field-error" role="alert">Couldn't load it: {state.error} Try again in a moment.</p>;
-  else if (text == null) body = <p className="td-quiet">Loading…</p>;
+  else if (text == null) body = <Loading inline as="p" />;
   else if (editing) {
     body = (
       <div className="td-ctx-edit">

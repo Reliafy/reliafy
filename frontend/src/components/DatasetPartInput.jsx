@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Modal from "./Modal.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
@@ -56,12 +57,8 @@ export default function DatasetPartInput({ value, onChange, placeholder, label =
 
   return (
     <div className="ds-part-input">
-      <div className="ds-part-modes" role="tablist" aria-label={`How to give the ${label}`}>
-        <button type="button" role="tab" aria-selected={mode === "file"} className={"tab" + (mode === "file" ? " active" : "")}
-          onClick={() => setMode("file")} disabled={disabled}>File</button>
-        <button type="button" role="tab" aria-selected={mode === "paste"} className={"tab" + (mode === "paste" ? " active" : "")}
-          onClick={() => setMode("paste")} disabled={disabled}>Paste</button>
-      </div>
+      <SegmentedControl size="sm" label={`How to give the ${label}`} value={mode} onChange={setMode}
+                        options={[{ value: "file", label: "File", disabled }, { value: "paste", label: "Paste", disabled }]} />
       {mode === "file" ? (
         !v.file ? (
           <div

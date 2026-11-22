@@ -124,6 +124,7 @@ import LoadFailed from "../components/LoadFailed.jsx";
 import "./AssetExplorer.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { classFields, classKey } from "../positionClass.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // The new-position (or new-location) dialog opened from the tree's last row:
 // at the top level, whatever row is picked.
@@ -2400,7 +2401,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   ) : error ? (
     <LoadFailed className="td-error" onRetry={load} what="Couldn't load the tree." error={error.text} />
   ) : !data ? (
-    <div className="card empty">Loading…</div>
+    <Loading card />
   ) : nothing ? (
     <div className="card empty section-empty">
       <h2>{EMPTY[mode]?.[0] || "No positions yet"}</h2>

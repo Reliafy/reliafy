@@ -64,6 +64,7 @@ import { partsInBranch } from "../explorerTabs.js";
 import { countIsOld, countedText } from "../sparesYear.js";
 import { itemTreePath, productPath } from "../products.js";
 import { DateInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
@@ -165,7 +166,7 @@ export function MaintenanceLocation() {
   const canHoldPositions = !!loc && !loc.design_of && !loc.carried_by;
   const addPosition = () => setModal("position");
   if (error && !loc) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Location not found." to={ASSETS_LIST_PATH} label="Go to Assets" /></div>;
-  if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!loc) return <div className="app"><Loading card /></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
   // (positions, items there now and the place itself), not only the positions'.
   return (
@@ -270,7 +271,7 @@ function OpenWorkHere({ loc }) {
         <h2>Open work here</h2>
         {open?.length > OPEN_HERE && <Link to={openWorkPath(loc.id)} className="lib-date">All {open.length}</Link>}
       </div>
-      {open === null ? <p className="lib-date">Loading…</p> : open.length === 0 ? (
+      {open === null ? <Loading /> : open.length === 0 ? (
         <p className="lib-date">No open work orders here.</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
@@ -414,9 +415,9 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
       </div>
       <p className="lib-date">Position classes group like positions by their duty, so their items' lives can be compared and pooled
         into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to.</p>
-      {error && <div className="card error">{error}</div>}
+      {error && <LoadFailed what="Couldn't load the position classes." error={error} />}
       <h3 className="maint-section">Position classes</h3>
-      {classes === null ? <div className="card empty">Loading…</div> : rows.length === 0 ? (
+      {classes === null ? (!error && <Loading card />) : rows.length === 0 ? (
         <div className="card empty"><p>{all || !classes.length
           ? "No classes yet. Give positions a class (e.g. “Pool pump”) when you create or edit them."
           : `No position inside ${scopeName || "this row"} has a class yet. Give positions a class when you create or edit them, or show all classes.`}</p></div>
@@ -459,7 +460,7 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
                 {data.excluded?.length ? ` · ${data.excluded.length} left out` : ""}</span>}
             </div>
             {data?.note && <p className="lib-date">{data.note}</p>}
-            {data === null ? <p className="lib-date">Loading…</p> : <div className="maint-scroll"><LifeTable rows={data.rows} showPosition unit={data.unit || "days"} /></div>}
+            {data === null ? <Loading /> : <div className="maint-scroll"><LifeTable rows={data.rows} showPosition unit={data.unit || "days"} /></div>}
             {data?.excluded?.length > 0 && (
               <details className="lib-date" style={{ marginTop: "0.5rem" }}>
                 <summary>Left out: {data.excluded.length} fitment{data.excluded.length === 1 ? "" : "s"} the readings can’t count</summary>
@@ -518,7 +519,7 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
     try { const d = await fitClassModel(name, distribution, unit); setMade(d.proposals.length); load(); onChanged?.(); } catch (e) { setError(e.message); }
     setBusy(null);
   };
-  if (!c) return <section className="card">{error ? <div className="card error">{error}</div> : <p className="lib-date">Loading…</p>}</section>;
+  if (!c) return error ? <LoadFailed what="Couldn't load the position class." error={error} onRetry={load} /> : <section className="card"><Loading /></section>;
   const model = c.model;
   const units = c.life_units || ["days"];
   const unitLabel = (u) => (u === "days" ? "days (calendar)" : `${u} (from counters)`);
@@ -879,9 +880,9 @@ export function PartsPanel({ branch, scopeName = "", all = false, onAll, design 
         <span className="grow" />
         <button className="sm" onClick={() => setModal("new")}><PlusIcon /> New part</button>
       </div>
-      {error && <div className="card error">{error}</div>}
+      {error && <LoadFailed what="Couldn't load the parts." error={error} />}
       {!design && all && parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
-      {shown === null ? <div className="card empty">Loading…</div> : shown.length === 0 ? (
+      {shown === null ? (!error && <Loading card />) : shown.length === 0 ? (
         <div className="card empty"><p>{filtered ? "No parts match."
           : parts.length === 0 ? (design ? "No parts yet. Add the parts that go into it, or import a BOM."
             : "No parts yet. Add the spares you keep: anodes, filters, bearings; or import a BOM.")
@@ -968,7 +969,7 @@ function SparesCoverCard({ parts }) {
   useEffect(() => {
     getSparesCover(unlisted).then(setCover).catch((e) => setError(e.message));
   }, [unlisted, parts]);
-  if (error) return <div className="card error">{error}</div>;
+  if (error) return <LoadFailed what="Couldn't load the spares cover." error={error} />;
   if (!cover) return null;
   const bare = cover.without_parts_list || [];
   const line = (v) => (

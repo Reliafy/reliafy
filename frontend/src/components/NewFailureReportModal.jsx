@@ -6,6 +6,7 @@ import { CONSEQUENCES, defaultFoundBy, itemText } from "../failureReports.js";
 import { useAuth } from "../AuthProvider.jsx";
 import { FailureModePicker, Field, FormModal } from "./MaintenanceParts.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import Loading from "./ui/Loading.jsx";
 import { Radio } from "./ui/Controls.jsx";
 
 // A new failure report at a position (the tree's row menu "Add failure
@@ -97,7 +98,7 @@ export default function NewFailureReportModal({ positionId, positionName, today,
       <Field label="Item involved">
         <p className="fr-modal-item">
           {positionError ? <span className="lib-date">Couldn't read what's fitted: {positionError}</span>
-            : !position && !editing ? <span className="lib-date">Loading…</span>
+            : !position && !editing ? <Loading inline />
             : itemLine || <span className="lib-date">Nothing fitted at this position. The report is kept at the position, with no item.</span>}
         </p>
       </Field>
