@@ -61,3 +61,13 @@ test("a mode's own restoration is read, checked and written as % taken away, q s
   assert.deepEqual(modeRestorationBody(task, "m1", { kind: "as_new", restores: "" }), { restoration: { kind: "as_new", failure_mode_id: "m1" } });
   assert.deepEqual(modeRestorationBody(task, "m1", { kind: "task", restores: "" }), { restoration: { failure_mode_id: "m1" } });
 });
+
+test("a servicing task with nothing set starts at the assumed 0%, and As new is then sent in so many words", () => {
+  const task = { restoration: { restoration: { kind: "kijima1", q: 1 }, source: "assumed", own: null, by_mode: [] } };
+  const f = { ...restorationForm(task), outcome: "fixed_interval", unit: "hours" };
+  assert.equal(f.restoreKind, "kijima1");
+  assert.equal(f.restores, "0");
+  assert.deepEqual(restorationBody(task, f), {});
+  assert.deepEqual(restorationBody(task, { ...f, restoreKind: "as_new", restores: "" }), { restoration: { kind: "as_new" } });
+  assert.deepEqual(restorationBody(task, { ...f, restores: "40" }), { restoration: { kind: "kijima1", q: 0.6 } });
+});

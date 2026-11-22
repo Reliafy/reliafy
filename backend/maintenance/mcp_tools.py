@@ -383,8 +383,11 @@ FAILURE_MODES: Table = {
         mode on a position: how it fails ('Bearing worn'); functional_failure_id puts it under one of the
         position's functional failures, function_id directly under a function (no functional failure yet).
         Failures and tasks then name it by id."""),
-    "update": ("failure_mode_id", "text effects notes function failure consequence", """Edit one (editing an
-        ad-hoc mode confirms it). effects and notes are its RCM analysis."""),
+    "update": ("failure_mode_id", "text effects notes function failure consequence failure_cost downtime_hours "
+               "downtime_rate clear", """Edit one (editing an ad-hoc mode confirms it). effects and notes are its
+        RCM analysis. failure_cost (one failure, all repairs), downtime_hours (out of use per failure) and
+        downtime_rate (an hour out of use): what the forecast and Optimise charge a failure; a figure not set takes
+        the position class's. clear: those figures to unset."""),
     "score": ("failure_mode_id", "severity occurrence detection cause effect_local effect_next effects "
               "detection_method recommended_action action_owner action_due action_status failure_rate time_unit "
               "rate_source mode_ratio loss_probability operating_time severity_class clear", """Its FME(C)A:
@@ -730,10 +733,11 @@ STRUCTURE_ACTIONS = ("add_component", "update_component", "remove_component", "s
 
 RELIABILITY: Table = {
     "set_class_costs": ("position_class", "planned_cost failure_cost availability_target replacement_cost "
-                        "clear_replacement_cost", """What a planned replacement and a failure cost for a position
-        class (same currency), and the availability a hidden function must reach (e.g. 0.99): proposed
-        intervals are optimised against them. replacement_cost: the default for items with none of their
-        own. Returns the class."""),
+                        "clear_replacement_cost downtime_hours downtime_rate", """What a planned replacement and a
+        failure cost for a position class (same currency), and the availability a hidden function must reach
+        (e.g. 0.99): proposed intervals are optimised against them. replacement_cost: the default for items with
+        none of their own. downtime_hours (out of use per failure) and downtime_rate (an hour out of use): the
+        default for its positions' failure modes (a mode's own figure wins). Returns the class."""),
     "fit_class_model": ("position_class", "distribution unit", """Pro. Fit a life distribution (weibull default, best,
         lognormal, exponential, gamma) to every fitment of the class's positions, save it as a model and
         propose task intervals from it and the costs. Needs at least 2 failures (exponential: 1, a constant
@@ -1848,8 +1852,15 @@ def register() -> None:
                                   mode_ratio: float | None = None, loss_probability: float | None = None,
                                   operating_time: float | None = None,
                                   severity_class: Literal["I", "II", "III", "IV"] | None = None,
+                                  failure_cost: Annotated[float | None, Field(ge=0, description=(
+                                      "update: what one failure costs to put right."))] = None,
+                                  downtime_hours: Annotated[float | None, Field(ge=0, description=(
+                                      "update: hours out of use per failure."))] = None,
+                                  downtime_rate: Annotated[float | None, Field(ge=0, description=(
+                                      "update: what an hour out of use costs."))] = None,
                                   clear: Annotated[list[str] | None, Field(description=(
-                                      "score: FME(C)A fields to unset (severity, cause, action...)."))] = None
+                                      "score: FME(C)A fields to unset (severity, cause, action...); update: "
+                                      "failure_cost, downtime_hours, downtime_rate."))] = None
                                   ) -> dict[str, Any]:
         """Failure modes and a position's RCM: functions › performance standards › functional failures (each
         breaching one standard, or the whole function) › failure modes, each with its decision. Read it with
@@ -1860,7 +1871,20 @@ def register() -> None:
             return run(m.add_failure_mode, position_id, text, function or "", failure or "", consequence or "",
                        functional_failure_id, function_id)
         if action == "update":
-            return run(m.update_failure_mode, failure_mode_id, text, function, failure, consequence, effects, notes)
+            from backend.maintenance import failure_costs
+
+            costs = {k: v for k, v in (("failure_cost", failure_cost), ("downtime_hours", downtime_hours),
+                                       ("downtime_rate", downtime_rate)) if v is not None}
+            costs.update({k: None for k in clear or [] if k in failure_costs.FIELDS})
+
+            def go():
+                words = (text, function, failure, consequence, effects, notes)
+                out = m.update_failure_mode(failure_mode_id, *words) if any(w is not None for w in words) or not costs \
+                    else m._mode_view(m._get(failure_mode_id, "FailureMode"))
+                if costs:
+                    out = {**out, "costs": m.set_mode_costs(failure_mode_id, **costs)}
+                return out
+            return run(go)
         if action == "score":
             from backend.maintenance import fmea
 
@@ -2607,6 +2631,10 @@ def register() -> None:
                                 planned_cost: float | None = None, failure_cost: float | None = None,
                                 availability_target: float | None = None, replacement_cost: ReplacementCost = None,
                                 clear_replacement_cost: bool | None = None,
+                                downtime_hours: Annotated[float | None, Field(ge=0, description=(
+                                    "set_class_costs: hours out of use per failure."))] = None,
+                                downtime_rate: Annotated[float | None, Field(ge=0, description=(
+                                    "set_class_costs: what an hour out of use costs."))] = None,
                                 distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] | None
                                 = None,
                                 unit: Annotated[str | None, Field(description=(
@@ -2620,6 +2648,9 @@ def register() -> None:
             def go():
                 if (planned_cost, failure_cost, availability_target) != (None, None, None):
                     m.set_class_costs(position_class, planned_cost, failure_cost, availability_target)
+                if (downtime_hours, downtime_rate) != (None, None):
+                    m.set_class_downtime(position_class, ... if downtime_hours is None else downtime_hours,
+                                         ... if downtime_rate is None else downtime_rate)
                 if replacement_cost is not None or clear_replacement_cost:
                     m.set_class_replacement_cost(position_class, None if clear_replacement_cost else replacement_cost)
                 return m.position_class(position_class)

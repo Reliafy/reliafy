@@ -2898,6 +2898,10 @@ export function addFailureMode(positionId, body) {
 export function updateFailureMode(id, body) {
   return patchJson(`/api/maintenance/failure-modes/${id}`, body);
 }
+// What one failure of the mode costs: its own figures, its class's and those in force (failure_costs.py).
+export function getFailureModeCosts(id) {
+  return request(`/api/maintenance/failure-modes/${id}/costs`);
+}
 export function mergeFailureMode(id, intoId) {
   return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
 }
