@@ -34,11 +34,12 @@ export function useTreeMissions({ on, within = null }) {
 export function MissionRollup({ text, onAdd = null }) {
   const tail = " · Add a mission";
   if (!onAdd || !String(text || "").endsWith(tail)) return text || "";
+  // One inline span, so a flex parent (the heading's roll-up) keeps the space before the button.
   return (
-    <>
+    <span>
       {text.slice(0, -tail.length)}{" · "}
       <button type="button" className="link mt-add-mission" onClick={(e) => { e.stopPropagation(); onAdd(); }}>Add a mission</button>
-    </>
+    </span>
   );
 }
 

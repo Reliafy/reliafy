@@ -461,7 +461,7 @@ def below(m, db, owners, hidden, node_id: str, within: str | None = None) -> dic
     no_model = sum(1 for r in rows if r["model"] is None)
     notes = []
     if no_model:
-        notes.append(f"{no_model} of these {'has' if no_model == 1 else 'have'} condition readings but no condition "
+        notes.append(f"{no_model} of these {'has' if no_model == 1 else 'have'} a condition measurement but no condition "
                      "and life model. To see risk, link one to the position in its Models › Life models.")
     if len(rows) > MAX_BOUNDED:
         notes.append(f"The 90% bounds are worked out for the first {MAX_BOUNDED} positions; open any other "

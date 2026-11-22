@@ -23,4 +23,5 @@
   .cf .joint-risk th, .cf .joint-risk td { padding-left: 6px; padding-right: 6px; }
 }
 /* On a node's own table (below): where each position lives, two lines in the cell. */
-.cf-where { display: block; max-width: 260px; min-width: 0; }
+.cf-where { display: block; max-width: 260px; min-width: 0; text-decoration: none; }
+.cf-where .where-lives-name { text-decoration: underline; }
