@@ -170,3 +170,6 @@ them later, which matters when someone asks in six months why the interval is
 what it is. An [RCM study](/maintenance/rcm) can cite a saved analysis as the evidence for a
 failure mode's maintenance task: see
 [running an RCM study](/guides/rcm-study).
+To check the intervals of a plan you already run against your own failures, see
+[check a maintenance plan against its
+evidence](/guides/check-a-maintenance-plan-against-evidence).

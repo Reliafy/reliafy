@@ -289,3 +289,15 @@ test("every row as one stream: said on purpose, cleared by picking an item", () 
   assert.equal(setRole(r, "i", "genset", facts, FLEET_LOG.n_rows).one_stream, false);
   assert.equal(readingPayload(r).one_stream, true);
 });
+
+test("the end of record is kept on the reading and shown on its summary", () => {
+  assert.equal(emptyReading().record_end, null);
+  const r = { ...emptyReading(), x: "fleet_hours", all_failed: true, one_stream: true, unit: "Hours", record_end: 216000 };
+  const part = readingParts(r).find((p) => p.key === "record_end");
+  assert.equal(part.label, "record ends at");
+  assert.match(part.value, /216,000 hours/);
+  assert.ok(readingText(r).includes("record ends at = 216,000 hours"));
+  // A column of ends (tr) says it instead; with none, nothing is shown.
+  assert.equal(readingParts({ ...r, tr: "ends" }).some((p) => p.key === "record_end"), false);
+  assert.equal(readingParts({ ...r, record_end: null }).some((p) => p.key === "record_end"), false);
+});

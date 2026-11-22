@@ -17,7 +17,7 @@ trunc_left (trunc_left_column), not a flag. trunc_right is the age past which a 
 - Params are lists of {name, value} with SurPyval's names: weibull [alpha (scale), beta (shape)], exponential \
 [failure_rate], normal / lognormal [mu, sigma], gamma [alpha, beta]; in the model's time unit.
 - A dataset keeps its reading: which column is x, c, n, the range (xl/xr), tl, tr, i, m, e (failure mode), s \
-(state during the row) and the covariates Z. change dataset_upload takes x_col, c_col, … z_cols, c_meanings, unit; \
+(state during the row) and the covariates Z. change dataset_upload takes x_col, c_col, … z_cols, c_meanings, unit, one_stream (no i_col: every row is one stream of events, one system; repairable); \
 what isn't named is guessed and the answer's reading says so (source guessed): relay it for the user to check, \
 and fix it with change dataset_update. get kind dataset returns it.
 - Fit and report: analyse fit (inline data, or dataset_id: with no time_column it fits from the dataset's \
