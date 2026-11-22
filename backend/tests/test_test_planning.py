@@ -222,11 +222,11 @@ def test_accelerated_refusals(kwargs, message):
 
 def test_logrank_matches_surpyval():
     out = T.comparison(hazard_ratio=0.6, event_probability=0.5, power=0.8, confidence=0.95)
-    assert out["events"] == tp.logrank_events(0.6, 0.8) == 121
-    assert (out["units_new"], out["units_old"]) == tp.logrank_sample_size(0.6, 0.5, 0.8)
+    assert out["events"] == tp.logrank_design(0.6, power=0.8).events == 121
+    assert (out["units_new"], out["units_old"]) == tuple(tp.logrank_design(0.6, power=0.8, event_probability=0.5).n)
     out = T.comparison(solve_for="power", hazard_ratio=0.6, event_probability=0.5, units_per_group=80)
     # 90% confidence by default, as every plan in the app.
-    assert out["power"] == pytest.approx(tp.logrank_power(0.6, (80, 80), 0.5, alpha_ci=0.1))
+    assert out["power"] == pytest.approx(tp.logrank_design(0.6, n=(80, 80), event_probability=0.5, alpha_ci=0.1).power)
     assert "below the usual 80%" in out["summary"]
     _strict(out)
 
@@ -235,15 +235,16 @@ def test_rate_ratio_matches_surpyval():
     rate = 40 / 100_000
     out = T.comparison(kind="rate_ratio", solve_for="exposure", failures_before=40, exposure_before=100_000,
                        rate_ratio=0.5, unit="hours")
-    assert out["exposure_after"] == pytest.approx(tp.rate_ratio_exposure(0.5, rate, 100_000, 0.8, alpha_ci=0.1))
+    assert out["exposure_after"] == pytest.approx(tp.rate_ratio_design(0.5, rate=rate, exposure_before=100_000, power=0.8,
+                                                                          alpha_ci=0.1).value)
     out = T.comparison(kind="rate_ratio", solve_for="detectable", failures_before=40, exposure_before=100_000,
                        exposure_after=50_000)
-    assert out["detectable_ratio"] == pytest.approx(tp.rate_ratio_detectable(rate, 100_000, 50_000, 0.8,
-                                                                              alpha_ci=0.1))
+    assert out["detectable_ratio"] == pytest.approx(tp.rate_ratio_design(
+        rate=rate, exposure_before=100_000, exposure_after=50_000, power=0.8, alpha_ci=0.1, direction="decrease").value)
     out = T.comparison(kind="rate_ratio", solve_for="power", failures_before=40, exposure_before=100_000,
                        exposure_after=50_000, rate_ratio=0.5, one_sided=True)
-    assert out["power"] == pytest.approx(tp.rate_ratio_power(0.5, rate, 100_000, 50_000, alpha_ci=0.1,
-                                                             alternative="one-sided"))
+    assert out["power"] == pytest.approx(tp.rate_ratio_design(
+        0.5, rate=rate, exposure_before=100_000, exposure_after=50_000, alpha_ci=0.1, alternative="one-sided").power)
     _strict(out)
 
 
@@ -371,7 +372,7 @@ def test_mcp_actions(env):  # noqa: F811
     cmp_ = _ok(_call(tok, "analyse", {"action": "plan_comparison", "kind": "logrank",
                                                  "solve_for": "sample_size", "hazard_ratio": 0.6,
                                                  "event_probability": 0.5}))
-    assert cmp_["events"] == tp.logrank_events(0.6, 0.8, alpha_ci=0.1) == 95
+    assert cmp_["events"] == tp.logrank_design(0.6, power=0.8, alpha_ci=0.1).events == 95
     assert "must be above" in _err(_call(tok, "analyse", {"action": "plan_sequential_test",
                                                                      "mtbf": 1000, "design_mtbf": 500}))
     guide = _ok(_call(tok, "guide", {"topic": "test_planning"}))

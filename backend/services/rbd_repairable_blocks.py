@@ -196,14 +196,14 @@ def build_from_params(model: dict, where: str):
                 raise AnalysisError(f"{where}: ARI's baseline must be one of {', '.join(BASELINES)}.")
             rho, *base = _values(model, ARI_PARAMS[baseline], where)
             fitter = {"crow_amsaa": rec.CrowAMSAA, "duane": rec.Duane, "cox_lewis": rec.CoxLewis}[baseline]
-            return rec.ARI.fit_from_parameters(base, rho, m=m, baseline=fitter)
+            return rec.ARI.from_params(base, rho, m=m, baseline=fitter)
         restoration, *life = _values(model, PARAMS[form], where)
         if form == "ara":
-            return rec.ARA.fit_from_parameters(life, restoration, m=m, dist=sp.Weibull)
+            return rec.ARA.from_params(life, restoration, m=m, dist=sp.Weibull)
         if form == "g1":
-            return rec.GeneralizedOneRenewal.fit_from_parameters(life, restoration, dist=sp.Weibull)
+            return rec.GeneralizedOneRenewal.from_params(life, restoration, dist=sp.Weibull)
         kijima = "ii" if form == "grp_ii" else "i"
-        return rec.GeneralizedRenewal.fit_from_parameters(life, restoration, kijima=kijima, dist=sp.Weibull)
+        return rec.GeneralizedRenewal.from_params(life, restoration, kijima=kijima, dist=sp.Weibull)
     except AnalysisError:
         raise
     except Exception as exc:  # noqa: BLE001 - surpyval validates the parameters
@@ -772,16 +772,16 @@ def script_model(model: dict, process=None) -> str:
         base = opts.get("baseline") or "crow_amsaa"
         names = ARI_PARAMS[base]
         cls = {"crow_amsaa": "CrowAMSAA", "duane": "Duane", "cox_lewis": "CoxLewis"}[base]
-        return (f"rec.ARI.fit_from_parameters({[values[n] for n in names[1:]]!r}, {values['rho']!r}, m={m_text}, "
+        return (f"rec.ARI.from_params({[values[n] for n in names[1:]]!r}, {values['rho']!r}, m={m_text}, "
                 f"baseline=rec.{cls})")
     rest = values.get("rho", values.get("q"))
     life = [values["alpha"], values["beta"]]
     if form == "ara":
-        return f"rec.ARA.fit_from_parameters({life!r}, {rest!r}, m={m_text}, dist=surv.Weibull)"
+        return f"rec.ARA.from_params({life!r}, {rest!r}, m={m_text}, dist=surv.Weibull)"
     if form == "g1":
-        return f"rec.GeneralizedOneRenewal.fit_from_parameters({life!r}, {rest!r}, dist=surv.Weibull)"
+        return f"rec.GeneralizedOneRenewal.from_params({life!r}, {rest!r}, dist=surv.Weibull)"
     kij = "ii" if form == "grp_ii" else "i"
-    return f"rec.GeneralizedRenewal.fit_from_parameters({life!r}, {rest!r}, kijima={kij!r}, dist=surv.Weibull)"
+    return f"rec.GeneralizedRenewal.from_params({life!r}, {rest!r}, kijima={kij!r}, dist=surv.Weibull)"
 
 
 def script_entries(data: dict, label: str) -> list[str]:

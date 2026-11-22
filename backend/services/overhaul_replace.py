@@ -8,7 +8,7 @@ balance the repairs (which get more frequent as the unit ages), the overhauls an
 replacement against how long a replacement cycle lasts.
 
 The maths is RePyability's (``Repairable.optimal_overhaul_replace_policy`` and
-``overhaul_replace_cost_rate``, 0.19): failures follow the model's cumulative intensity (minimal
+``overhaul_replace_cost_rate``, 0.20): failures follow the model's cumulative intensity (minimal
 repair), and the long-run cost rate of K = N + 1 periods of length X per replacement cycle is::
 
     g(X, K) = (cr * expected repairs over the cycle + (K - 1) co + cp) / (K X)
@@ -23,8 +23,14 @@ Comparisons, each the best of its kind under the same costs:
 
 * run to failure: repair each failure and replace the unit at the n-th failure (no planned
   work; RePyability's failure-limit policy, with the replacement cost);
-* overhaul only: overhaul every X and never replace (a very long run of overhauls);
+* overhaul only: overhaul every X and never replace (RePyability's own, exact: the unit's age
+  settles at ``f X / (1 - f)``);
 * replace only: replace every X, no overhauls (N = 0).
+
+Since RePyability 0.20 its policy is the cheapest of those plans and overhaul-and-replace, with
+each plan's best in ``alternatives``. This page is the overhaul-and-replace rule, so its best is
+the cheapest of ``"overhaul and replace"`` (N >= 1) and ``"replace only"`` (N = 0), as before;
+a cheaper plan of another kind is said in a warning and the sentence, never hidden.
 """
 
 from __future__ import annotations
@@ -41,9 +47,6 @@ from backend.fitting import FitError, _json_safe
 #: 20 periods; N overhauls is N + 1 periods).
 DEFAULT_MAX_OVERHAULS = 19
 MAX_OVERHAULS = 60
-#: Overhaul only: this many periods between resets stands in for "never replace" (the unit's age
-#: settles within a few periods, so a reset this rare changes the rate by well under 0.1%).
-_OVERHAUL_ONLY_PERIODS = 400
 #: Lines drawn on the chart: N = 0 up to this many overhauls (plus the best N if it's beyond).
 _CHART_LINES = 5
 _GRID = 400
@@ -192,7 +195,7 @@ def optimal_overhaul_replace(model_or_params, *, cost_repair, cost_overhaul, cos
 
     run_to_failure = _run_to_failure(model, cr, cp)
 
-    if not math.isfinite(policy.interval):
+    if policy.plan == "run to failure":
         return _json_safe({
             **base, "pays": False, "best": None,
             "reason": "Failures don't get more frequent as this unit ages, so overhauls and replacements don't "
@@ -202,7 +205,15 @@ def optimal_overhaul_replace(model_or_params, *, cost_repair, cost_overhaul, cos
                         "overhauls and replacements only add cost.",
         })
 
-    x_best, k_best, g_best = float(policy.interval), int(policy.cycles), float(policy.cost_rate)
+    plans = {name: dict(v) for name, v in (policy.alternatives or {}).items()}
+    # The best overhaul-and-replace rule, N = 0 (replace only) included, as the page has always shown.
+    rules = [plans[n] for n in ("replace only", "overhaul and replace")
+             if n in plans and math.isfinite(float(plans[n].get("interval", math.inf)))
+             and math.isfinite(float(plans[n].get("cost_rate", math.inf)))]
+    if not rules:
+        raise FitError("No overhaul-and-replace rule has a finite long-run cost for this unit.")
+    rule = min(rules, key=lambda r: float(r["cost_rate"]))
+    x_best, k_best, g_best = float(rule["interval"]), int(rule["cycles"]), float(rule["cost_rate"])
     scale = x_best
     # The best X for each number of overhauls (N = K - 1), on RePyability's own cost rate.
     rows = []
@@ -214,7 +225,11 @@ def optimal_overhaul_replace(model_or_params, *, cost_repair, cost_overhaul, cos
         rows.append({"overhauls": k - 1, "interval": x if math.isfinite(x) else None, "cost_rate": g,
                      "replace_every": k * x if math.isfinite(x) else None, "best": k == k_best})
 
-    overhaul_only_x, overhaul_only_g = best_interval(rep, _OVERHAUL_ONLY_PERIODS, factor, co, scale)
+    only = plans.get("overhaul only") or {}
+    overhaul_only_x = float(only.get("interval", math.inf))
+    overhaul_only_g = float(only["cost_rate"]) if "cost_rate" in only else None
+    if overhaul_only_g is not None and not math.isfinite(overhaul_only_g):
+        overhaul_only_g = None
     replace_only = rows[0]
     comparisons = [
         run_to_failure,

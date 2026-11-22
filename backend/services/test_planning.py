@@ -840,12 +840,13 @@ def _logrank(tp, solve_for, hazard_ratio, event_probability, units_per_group, al
         event_probability) < 1 else 1.0
     ratio = 1.0 if _blank(allocation_ratio) else _demo_positive(allocation_ratio, "Units in the new group per old",
                                                                 100.0)
-    events = int(tp.logrank_events(hr, pw, alpha_ci=alpha, ratio=ratio, alternative=alternative))
+    events = int(tp.logrank_design(hr, power=pw, alpha_ci=alpha, ratio=ratio, alternative=alternative).events)
     change = f"{abs(1 - hr):.0%} {'lower' if hr < 1 else 'higher'}"
     if solve_for == "sample_size":
-        n1, n2 = (int(v) for v in tp.logrank_sample_size(hr, pe, pw, alpha_ci=alpha, ratio=ratio,
-                                                           alternative=alternative))
-        power_now = float(tp.logrank_power(hr, (n1, n2), pe, alpha_ci=alpha, alternative=alternative))
+        n1, n2 = (int(v) for v in tp.logrank_design(hr, power=pw, event_probability=pe, alpha_ci=alpha,
+                                                      ratio=ratio, alternative=alternative).n)
+        power_now = float(tp.logrank_design(hr, n=(n1, n2), event_probability=pe, alpha_ci=alpha,
+                                            alternative=alternative).power)
         summary = (
             f"To detect a failure rate {change} in the new design (a hazard ratio of {fmt_num(hr)}) with "
             f"{pw:.0%} power at {_pct(1 - alpha)} confidence, you need about {events:,} failures in all: "
@@ -856,7 +857,8 @@ def _logrank(tp, solve_for, hazard_ratio, event_probability, units_per_group, al
             raise StrategyError("Give the units in each group.")
         n2 = _demo_count(units_per_group, "Units per group", 2, _MAX_UNITS)
         n1 = max(2, int(round(ratio * n2)))
-        power_now = float(tp.logrank_power(hr, (n1, n2), pe, alpha_ci=alpha, alternative=alternative))
+        power_now = float(tp.logrank_design(hr, n=(n1, n2), event_probability=pe, alpha_ci=alpha,
+                                            alternative=alternative).power)
         summary = (
             f"With {n1:,} new and {n2:,} old units, and {pe:.0%} of them failing during the study, a log-rank test "
             f"detects a failure rate {change} (hazard ratio {fmt_num(hr)}) {power_now:.0%} of the time at "
@@ -867,8 +869,8 @@ def _logrank(tp, solve_for, hazard_ratio, event_probability, units_per_group, al
     # Power against units per group, for the chart.
     top = max(8, int(n2 * 3))
     xs = sorted({int(v) for v in np.unique(np.geomspace(2, top, _CURVE_POINTS).round())} | {n2})
-    curve = [float(tp.logrank_power(hr, (max(2, int(round(ratio * x))), x), pe, alpha_ci=alpha,
-                                    alternative=alternative)) for x in xs]
+    curve = [float(tp.logrank_design(hr, n=(max(2, int(round(ratio * x))), x), event_probability=pe,
+                                     alpha_ci=alpha, alternative=alternative).power) for x in xs]
     return {
         "kind": "logrank",
         "solve_for": solve_for,
@@ -919,7 +921,7 @@ def _rate_ratio(tp, solve_for, failures_before, exposure_before, exposure_after,
                  "exposure_before": eb, "rate_before": rate, "power_target": pw, "confidence": 1 - alpha,
                  "alternative": alternative, "rate_ratio": ratio}
     if solve_for == "exposure":
-        need = float(tp.rate_ratio_exposure(ratio, rate, eb, pw, **kw))
+        need = float(tp.rate_ratio_design(ratio, rate=rate, exposure_before=eb, power=pw, **kw).value)
         out["exposure_after"] = need if np.isfinite(need) else None
         change = f"a {abs(1 - ratio):.0%} {'drop' if ratio < 1 else 'rise'} in the failure rate"
         if np.isfinite(need):
@@ -937,7 +939,8 @@ def _rate_ratio(tp, solve_for, failures_before, exposure_before, exposure_after,
     elif solve_for == "detectable":
         if ea is None:
             raise StrategyError("Give the operating time after the change.")
-        r = float(tp.rate_ratio_detectable(rate, eb, ea, pw, **kw))
+        r = float(tp.rate_ratio_design(rate=rate, exposure_before=eb, exposure_after=ea, power=pw,
+                                       direction="decrease", **kw).value)
         out["exposure_after"] = ea
         out["detectable_ratio"] = r if np.isfinite(r) else None
         if np.isfinite(r) and r > 0:
@@ -952,7 +955,7 @@ def _rate_ratio(tp, solve_for, failures_before, exposure_before, exposure_after,
     else:
         if ea is None:
             raise StrategyError("Give the operating time after the change.")
-        pwr = float(tp.rate_ratio_power(ratio, rate, eb, ea, **kw))
+        pwr = float(tp.rate_ratio_design(ratio, rate=rate, exposure_before=eb, exposure_after=ea, **kw).power)
         out["exposure_after"] = ea
         out["power"] = pwr
         out["summary"] = (
@@ -961,12 +964,13 @@ def _rate_ratio(tp, solve_for, failures_before, exposure_before, exposure_after,
         ea_curve = ea
     xs = np.geomspace(max(ea_curve / 10, eb / 100), max(ea_curve * 4, eb), _CURVE_POINTS)
     if ratio is not None:
-        ys = np.atleast_1d(tp.rate_ratio_power(ratio, rate, eb, xs, **kw))
+        ys = np.atleast_1d(tp.rate_ratio_design(ratio, rate=rate, exposure_before=eb, exposure_after=xs, **kw).power)
         out["curve"] = {"x_label": f"Operating time after the change{f' ({unit_s})' if unit_s else ''}",
                         "y_label": "Power", "x": xs.tolist(), "power": [float(v) for v in ys],
                         "selected": out.get("exposure_after"), "target": pw}
     else:
-        ys = np.atleast_1d(tp.rate_ratio_detectable(rate, eb, xs, pw, **kw))
+        ys = np.atleast_1d(tp.rate_ratio_design(rate=rate, exposure_before=eb, exposure_after=xs, power=pw,
+                                                 direction="decrease", **kw).value)
         out["curve"] = {"x_label": f"Operating time after the change{f' ({unit_s})' if unit_s else ''}",
                         "y_label": "Smallest detectable drop", "x": xs.tolist(),
                         "detectable_drop": [None if not np.isfinite(v) else float(1 - v) for v in ys],

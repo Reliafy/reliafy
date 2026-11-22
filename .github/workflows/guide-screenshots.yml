@@ -38,8 +38,8 @@ jobs:
           cache-dependency-path: requirements.lock
       - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0"
       # RePyability isn't in requirements.txt: like the Dockerfile and ci.yml,
-      # install the pinned commit (v0.19.1) --no-deps so it can't re-resolve surpyval.
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@a838d416f826e50f31034bf6124f3519dcc73a33"
+      # install the pinned commit (v0.20) --no-deps so it can't re-resolve surpyval.
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@5e81ea18928cb30069e6755577b8825e7d19db07"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"

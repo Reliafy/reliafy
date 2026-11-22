@@ -218,9 +218,10 @@ def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
             )
         switching = 1.0
         if strategy != "active":
-            switching = _number(raw.get("switching", 1.0), f"“{label}”: the switch reliability")
+            # ``switching``: the chance a spare starts when called (the standby block's startProb).
+            switching = _number(raw.get("switching", 1.0), f"“{label}”: the chance a spare starts")
             if switching > 1.0:
-                raise DesignError(f"“{label}”: the switch reliability must be from 0 to 1.")
+                raise DesignError(f"“{label}”: the chance a spare starts must be from 0 to 1.")
         types = [{
             "name": str(raw.get("name") or "Current"),
             "model": data["model"],
@@ -547,7 +548,10 @@ def design_redundancy(
         max_units={b["id"]: b["max_copies"] for b in parsed},
         required={b["id"]: b["required"] for b in parsed},
         strategy={b["id"]: b["strategy"] for b in parsed},
-        switching_probability={b["id"]: b["switching"] for b in parsed if b["strategy"] != "active"},
+        # A cold spare's chance is the chance it starts when called: one that fails to start is
+        # skipped and the next tried (RePyability 0.20), as the standby block :func:`apply_design`
+        # draws takes it ("Chance a spare starts"), so the design found is the diagram applied.
+        start_probability={b["id"]: b["switching"] for b in parsed if b["strategy"] != "active"},
         mixing=bool(mixing),
     )
     # Designed blocks in series with the rest (each alone a cut set) are solved

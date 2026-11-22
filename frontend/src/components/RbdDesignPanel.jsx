@@ -405,8 +405,8 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                           options={STRATEGIES}
                         />
                         {r.strategy !== "active" && (
-                          <label className="rbd-design-switch" title="Probability that switching to a spare works">
-                            <span>switch R</span>
+                          <label className="rbd-design-switch" title="Chance a spare starts when called (one that fails to start is skipped and the next tried), as on a standby block">
+                            <span>starts</span>
                             <input className="rbd-design-num sm" type="number" inputMode="decimal" min="0" max="1" step="any" disabled={off} value={r.switching} onChange={(e) => update(n.id, { switching: e.target.value })} />
                           </label>
                         )}
