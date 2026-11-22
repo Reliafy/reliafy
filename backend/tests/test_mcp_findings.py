@@ -697,7 +697,9 @@ def test_optimal_overhaul_gets_the_shape_treatment(env):
     out = _ok(_call(env.token[A], "analyse", {"action": "optimal_overhaul", "model_id": weak.id, **costs}))
     assert out["optimal"] and out["shape_uncertainty"]["beta_ci"][0] < 1
     assert out["shape_uncertainty"]["at_beta_lower"]["pays"] is False
-    assert "includes 1" in out["uncertainty_note"] and "tentative" in out["uncertainty_note"]
+    # States the fact (the interval includes 1, so a constant rate fits) and leaves the call to the analyst.
+    note = out["uncertainty_note"]
+    assert "includes 1" in note and "constant failure rate" in note and "analyst decide" in note
 
     # A model saved before intervals were stored gets one from a refit, kept on the model.
     params = [{k: v for k, v in p.items() if k != "ci"} for p in clear.results["params"]]

@@ -39,6 +39,7 @@ import re
 from datetime import date
 from typing import Any, Optional
 
+from backend.errors import client_message
 from backend.maintenance import fmea
 from backend.maintenance import rcm_decisions as rcm
 from backend.services.excel import has_words as _has
@@ -618,7 +619,7 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                 mode[f] = fmea.clean_value(f, raw)
             except fmea.FmeaError as err:
                 # The column and what's in it, so the cell can be found and fixed.
-                errors.append(f"Row {rnum}, {mapping[f]} “{_text(raw)[:40]}”: {err}")
+                errors.append(f"Row {rnum}, {mapping[f]} “{_text(raw)[:40]}”: {client_message(err)}")
         if col["rpn"] is not None and _text(r[col["rpn"]]):
             computed = fmea.rpn(mode.get("severity"), mode.get("occurrence"), mode.get("detection"))
             try:

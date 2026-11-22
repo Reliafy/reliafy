@@ -39,6 +39,7 @@ from typing import Any, Callable, Optional
 
 from backend.services.rbd_analysis import AnalysisError
 from backend.units import normalize_unit, unit_factor, unit_in_text
+from backend.errors import client_message
 
 #: Where a block's repair time came from, in the order they're used.
 SOURCES = ("typed", "block", "recorded", "prediction")
@@ -450,7 +451,7 @@ def analyse(graph: dict, rows: list[dict], resolve_model=None, *, period: Option
                                  "availability.")
                 achieved = None
         except AnalysisError as exc:
-            achieved, achieved_note = None, f"The planned work couldn't be included: {exc}"
+            achieved, achieved_note = None, f"The planned work couldn't be included: {client_message(exc)}"
     lead = achieved or inherent
     drivers = _drivers(lead, origin, labels)
     # Placeholder lives: said, with the figure without them (those blocks never failing).

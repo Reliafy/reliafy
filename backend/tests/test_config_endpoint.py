@@ -30,12 +30,15 @@ def test_config_is_public_and_reports_capabilities(client, monkeypatch):
     monkeypatch.setattr(config, "STRIPE_API_KEY", "sk_test_x")
     monkeypatch.setattr(config, "BILLING_ENABLED", True)
     monkeypatch.setattr(config, "RELIABILITY_AGENT_ENABLED", False)
+    monkeypatch.setattr(config, "WORK_MANAGEMENT", False)  # reliability software only
 
     r = client.get("/api/config")  # no Authorization header
     assert r.status_code == 200
     assert r.json() == {"auth": True, "ai": True, "billing": True, "reliability_agent": False,
                         "mcp": False,  # the MCP connector: off by default on the cloud
-                        "maintenance": False, "menu_preview": False, "menu_roles": False}
+                        "maintenance": False,
+                        "work_management": False, "maintenance_work_orders": False,
+                        "menu_preview": False, "menu_roles": False}
 
 
 def test_config_single_user_self_host(client, monkeypatch):
@@ -49,6 +52,8 @@ def test_config_single_user_self_host(client, monkeypatch):
     monkeypatch.setattr(config, "STRIPE_API_KEY", None)
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     monkeypatch.setattr(config, "RELIABILITY_AGENT_ENABLED", False)
+    # Work management is on unless WORK_MANAGEMENT turns it off.
+    monkeypatch.setattr(config, "WORK_MANAGEMENT", config.work_management_from({}))
 
     assert client.get("/api/config").json() == {
         "auth": False,
@@ -57,6 +62,8 @@ def test_config_single_user_self_host(client, monkeypatch):
         "reliability_agent": False,
         "mcp": True,  # on by default self-hosted
         "maintenance": False,
+        "work_management": True,  # on with no env
+        "maintenance_work_orders": True,  # the earlier name, same value
         "menu_preview": False,
         "menu_roles": False,
     }
@@ -72,6 +79,8 @@ def test_config_byo_key_self_host_enables_ai_only(client, monkeypatch):
     monkeypatch.setattr(config, "STRIPE_API_KEY", None)
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     monkeypatch.setattr(config, "RELIABILITY_AGENT_ENABLED", False)
+    # Work management is on unless WORK_MANAGEMENT turns it off.
+    monkeypatch.setattr(config, "WORK_MANAGEMENT", config.work_management_from({}))
 
     assert client.get("/api/config").json() == {
         "auth": False,
@@ -80,6 +89,8 @@ def test_config_byo_key_self_host_enables_ai_only(client, monkeypatch):
         "reliability_agent": False,
         "mcp": True,  # on by default self-hosted
         "maintenance": False,
+        "work_management": True,  # on with no env
+        "maintenance_work_orders": True,  # the earlier name, same value
         "menu_preview": False,
         "menu_roles": False,
     }

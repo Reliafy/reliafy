@@ -39,6 +39,8 @@ from __future__ import annotations
 import math
 from typing import Any, Callable, Optional
 
+from backend.errors import client_message
+
 #: Words that mark an ALT stress or PH covariate as where it works, until the user says otherwise.
 _ENVIRONMENT_WORDS = ("temp", "humid", "vibration", "contamin", "dust", "salt", "altitude", "ambient")
 
@@ -421,7 +423,7 @@ def bind_graph(graph: dict, inputs_for: Callable[[dict], list[dict]], covariates
         try:
             inputs = inputs_for(binding)
         except BindingError as exc:
-            needs.append(f"{label}: {exc}")
+            needs.append(f"{label}: {client_message(exc)}")
             out_nodes.append(n)
             continue
         got = resolve_node(binding, inputs, data.get("covariate_values"), conditions, data.get("covariate_map"))
@@ -433,7 +435,7 @@ def bind_graph(graph: dict, inputs_for: Callable[[dict], list[dict]], covariates
         try:
             made = concrete(binding, ordered, unit)
         except BindingError as exc:
-            needs.append(f"{label}: {exc}")
+            needs.append(f"{label}: {client_message(exc)}")
             out_nodes.append(n)
             continue
         if made.get("kind") == "regression":

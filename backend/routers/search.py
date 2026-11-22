@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from backend.db import get_session
 from backend.services import global_search
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api", tags=["search"])
 
@@ -54,5 +55,5 @@ async def search(
         out = await run_in_threadpool(global_search.search, session, ctx, q, kinds, limit,
                                       maintenance_for(ctx), work_orders_on())
     except ValueError as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
     return JSONResponse(content=out)

@@ -485,7 +485,7 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
             out = {**base, **fleet_strategy.renewals(dist, ages, uses, rates, periods, items, settings,
                                                      _forecast_renewals, period_days(base["period_label"]))}
         except fleet_strategy.StrategyInputError as exc:
-            return {"status": "stale", "reason": str(exc)}
+            return {"status": "stale", "reason": client_message(exc)}
         if (results.get("distribution_id") == "exponential" and not surpyval_extras(results.get("extras"))
                 and (out.get("strategy") or {}).get("kind") == "run_to_failure"):
             _exact_constant_rate(out, dist, uses, rates, periods, settings.get("failure_cost"))

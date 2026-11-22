@@ -237,7 +237,7 @@ async def push_photo(request: Request, op: str = "") -> JSONResponse:
         try:
             parsed = sync.read_op(raw_op, photo=True)
         except sync.Malformed as err:
-            return JSONResponse(status_code=422, content={"detail": str(err)})
+            return JSONResponse(status_code=422, content={"detail": client_message(err)})
         try:
             m.photo_target(str(parsed["args"]["target_id"]))
             cleaned = photos_mod.clean(raw)
