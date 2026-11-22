@@ -55,3 +55,13 @@ test("a typed end of test stands in for the end of record", () => {
   assert.equal(recordEndIssue("-5"), "Enter the time the test stopped, above 0.");
   assert.equal(recordEndIssue("abc"), "Enter the time the test stopped, above 0.");
 });
+
+test("a reading with every row as one stream fits as one system", async () => {
+  const { recurrentFields, recurrentMappingFromReading } = await import("./recurrentMapping.js");
+  const r = { x: "fleet_hours", i: "", c: "", all_failed: true, one_stream: true, unit: "hours" };
+  const out = recurrentMappingFromReading(r, {}, 48);
+  assert.equal(out.missing, null);
+  assert.equal(out.mapping.one_stream, true);
+  assert.deepEqual(recurrentFields(out.mapping).find(([k]) => k === "one_stream"), ["one_stream", "true"]);
+  assert.equal(recurrentIssues(out.mapping, "", "216000").length, 0);
+});

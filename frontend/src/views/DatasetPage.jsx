@@ -23,6 +23,8 @@ import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
 import { datasetModelsForLibrary } from "../libraries.js";
+import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
+import { useDatasetReading } from "../useDatasetReading.js";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
@@ -73,6 +75,10 @@ export default function DatasetPage() {
   };
   const setComparing = (on) => setParam("compare", on ? "" : null);
   const setPart = (p) => { setAllRows(false); setParam("part", p === "life" ? null : p); };
+
+  // How the columns are read, with Change: kept with the dataset for later fits.
+  const rd = useDatasetReading(ds);
+  const reload = () => getDataset(id).then(setDs).catch((e) => setError(e.message));
 
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -262,6 +268,17 @@ export default function DatasetPage() {
             <div className="ds-main">
               <Tabs tabs={PART_TABS} value={part} onChange={setPart} label="Parts of the dataset" className="ds-tabs" idPrefix="ds" />
               <div id="ds-panel" role="tabpanel" aria-labelledby={`ds-tab-${part}`}>
+                {part === "life" && parts.life && rd.reading && (
+                  <div className="ds-reading">
+                    {!rd.editing && (
+                      <ReadingSummary name={itemName(ds)} reading={rd.reading} source={rd.source}
+                                      onChange={writable && !ds.is_sample ? rd.startChange : undefined}
+                                      onConfirm={writable && !ds.is_sample ? async () => { if (await rd.confirm()) reload(); } : undefined}
+                                      confirming={rd.saving} readOnly={!writable || ds.is_sample} />
+                    )}
+                    {writable && !ds.is_sample && <ReadingChange name={itemName(ds)} rd={rd} fit={false} onDone={reload} />}
+                  </div>
+                )}
                 {shown ? (
                   <>
                     <div className="ds-section-h">

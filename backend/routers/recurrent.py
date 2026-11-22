@@ -31,8 +31,14 @@ router = APIRouter(prefix="/api")
 
 def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=None, mode=None,
                     z=None, ws=None, we=None, windows=None, baseline=None, m=None, record_end=None,
-                    systems=None, downtime=None, cost=None) -> dict:
-    mapping = {"i": i, "x": x}
+                    systems=None, downtime=None, cost=None, one_stream=None) -> dict:
+    mapping = {"i": i or "", "x": x}
+    # No item column: every row is one stream of events (one system).
+    if not i:
+        if str(one_stream or "").strip().lower() not in ("1", "true", "yes", "on"):
+            raise FitError("Say which column holds i (which system each row belongs to), or that every row is one "
+                           "stream of events (one_stream).")
+        mapping["one_stream"] = True
     # Optional modifiers (c/n/tl/tr); ``t`` is the legacy alias for ``tr``.
     # ``mode`` is each failure's mode (or cause): a growth projection's modes
     # (#232) and the MCF by cause (#65). ``ws``/``we`` are observation-window
@@ -114,7 +120,8 @@ def recurrent_options(ctx: AccessCtx = Depends(get_access)) -> dict:
 def fit_preview(
     file: UploadFile | None = File(default=None),
     dataset_id: str | None = Form(default=None),
-    i: str = Form(...),
+    i: str = Form(default=""),
+    one_stream: str | None = Form(default=None),
     x: str = Form(...),
     c: str | None = Form(default=None),
     n: str | None = Form(default=None),
@@ -144,7 +151,7 @@ def fit_preview(
         df, preview_dataset_id = datasets_service.preview_frame(session, ctx.write_owner, dataset_id, contents)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
                                windows=windows, baseline=baseline, m=m, record_end=record_end,
-                               systems=systems, downtime=downtime, cost=cost)
+                               systems=systems, downtime=downtime, cost=cost, one_stream=one_stream)
         payload, _ = recurrent_fit.fit_spec(df, spec)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -161,7 +168,8 @@ def save_model(
     name: str = Form(...),
     file: UploadFile | None = File(default=None),
     dataset_id: str | None = Form(default=None),
-    i: str = Form(...),
+    i: str = Form(default=""),
+    one_stream: str | None = Form(default=None),
     x: str = Form(...),
     c: str | None = Form(default=None),
     n: str | None = Form(default=None),
@@ -200,7 +208,7 @@ def save_model(
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
                                windows=windows, baseline=baseline, m=m, record_end=record_end,
-                               systems=systems, downtime=downtime, cost=cost)
+                               systems=systems, downtime=downtime, cost=cost, one_stream=one_stream)
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:

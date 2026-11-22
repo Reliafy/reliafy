@@ -258,3 +258,34 @@ test("a dataset keeps failure modes beside ranges: a note, not a block", () => {
   assert.equal(readingNotes(r)[0].row, "e");
   assert.deepEqual(readingNotes({ ...r, xl: "", xr: "" }), []);
 });
+
+// A replacement log of one fleet: a date, the fleet's hours, the set it was
+// on (a few values), the part and the reason. The date is never the item.
+const FLEET_LOG = {
+  columns: ["replacement", "date", "fleet_hours", "genset", "part", "reason"],
+  n_rows: 48,
+  preview: [[1, "2023-12-01", 191, "GS-09", "FLP-20 fuel lift pump", "failed in service"]],
+  dtypes: ["int64", "str", "int64", "str", "str", "str"],
+  n_unique: [48, 47, 48, 12, 1, 1],
+  blanks: [0, 0, 0, 0, 0, 0],
+  values: [null, null, null, { "GS-01": 4, "GS-02": 4, "GS-09": 5 }, { "FLP-20 fuel lift pump": 48 },
+    { "failed in service": 48 }],
+  whole: [true, null, true, null, null, null],
+};
+
+test("a date column is never guessed as the item", () => {
+  const r = guess(FLEET_LOG);
+  assert.equal(r.x, "fleet_hours");
+  assert.equal(r.i, "");
+  assert.ok(r.not_used.includes("date"));
+});
+
+test("every row as one stream: said on purpose, cleared by picking an item", () => {
+  const facts = columnFacts(FLEET_LOG);
+  const r = { ...guess(FLEET_LOG), one_stream: true };
+  assert.equal(missingFor("repairable", r), null);
+  assert.match(missingFor("repairable", { ...r, one_stream: false }), /one stream/);
+  assert.deepEqual(readingParts(r).find((p) => p.key === "i"), { key: "i", label: "i", value: "none: every row is one stream" });
+  assert.equal(setRole(r, "i", "genset", facts, FLEET_LOG.n_rows).one_stream, false);
+  assert.equal(readingPayload(r).one_stream, true);
+});

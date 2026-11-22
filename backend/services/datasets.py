@@ -1157,6 +1157,14 @@ def _detect_guessed(df: pd.DataFrame) -> dict:
 
 def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
     """``detect_tags`` for a table with a saved reading (see there)."""
+    stream = bool(reading.get("one_stream")) and not roles["i"] and not roles["m"]
+    if stream:
+        # Every row is an event of one stream (one fleet, one system): the
+        # fit's own copy gets a one-value item column; the data is unchanged.
+        from backend.recurrent import ONE_STREAM_COLUMN, ONE_STREAM_NAME
+
+        df = df.assign(**{ONE_STREAM_COLUMN: ONE_STREAM_NAME})
+        roles = {**roles, "i": ONE_STREAM_COLUMN}
     unit = roles["i"] or None
     times = [roles["x"]] if roles["x"] else [roles["xl"], roles["xr"]]
     interval = bool(roles["xl"])
@@ -1176,6 +1184,7 @@ def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
         # Two failures logged at the same value (a tie, or one entered twice)
         # are still repeat failures of that unit: the time never goes back.
         repeat = bool(len(steps)) and bool((steps >= 0).all()) and float((steps > 0).mean()) >= 0.8
+    repeat = repeat or stream  # said on purpose, in whatever order the rows are
     if repeat:
         tags.add("Repairable")
     elif roles["c"] or reading.get("all_failed") or not roles["m"]:
@@ -1311,7 +1320,9 @@ def _reading_summary(df: pd.DataFrame, reading: dict, roles: dict, tags: list[st
     failed", "10 avs · 19 lives · 9 failed between inspections",
     "10 trucks · 71 failures", "30 bearings · 193 readings"."""
     unit = roles["i"] or None
-    noun = _noun(_id_column(df, unit))
+    from backend.recurrent import ONE_STREAM_COLUMN
+
+    noun = "stream" if unit == ONE_STREAM_COLUMN else _noun(_id_column(df, unit))
     n_units = int(df[unit].nunique(dropna=True)) if unit else len(df)
     units = f"{n_units:,} {_plural(noun, n_units)}"
     if "Measurements" in tags:
@@ -1682,7 +1693,8 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
 
 
 _TAG_CACHE: dict[str, dict] = {}
-_READING_KEYS = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "c_invert", "c_map", "all_failed", "unit")
+_READING_KEYS = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "c_invert", "c_map", "all_failed", "one_stream",
+                 "unit")
 
 
 def with_reading_covariates(detected: dict, z: list[str]) -> dict:

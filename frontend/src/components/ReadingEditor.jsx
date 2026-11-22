@@ -37,6 +37,16 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
     </label>
   );
 
+  // No item column: each row is its own unit, unless every row is one stream
+  // of events (one fleet's replacements, one system's failures), said here.
+  const streamTick = !reading.i && !reading.m && (
+    <label className="xcn-tick" key="one-stream">
+      <input type="checkbox" checked={!!reading.one_stream} disabled={disabled}
+             onChange={(e) => { const on = e.target.checked; update((cur) => ({ ...cur, one_stream: on })); }} />
+      No item column: every row is one stream of events (one fleet or one system)
+    </label>
+  );
+
   const zCols = reading.z || [];
   const off = reading.not_used || [];
   return (
@@ -82,7 +92,7 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
         }}
         issues={issues}
         notes={notes}
-        asides={{ c: failedTick ? [failedTick] : [] }}
+        asides={{ c: failedTick ? [failedTick] : [], i: streamTick ? [streamTick] : [] }}
       />
       <section className="reading-z" aria-label="Covariates (Z)">
         <div className="reading-z-head">

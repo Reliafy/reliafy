@@ -239,3 +239,6 @@
    rather than running off the page. */
 .page-header .head-actions { max-width: 100%; }
 .page-header .head-actions > button.ds-fit-action { white-space: normal; max-width: 100%; text-align: left; }
+
+/* The dataset page's reading (how the columns are read), with Change, above the rows. */
+.ds-reading { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); min-width: 0; }
