@@ -582,7 +582,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   const [fullFocusRef] = useState(() => ({
     get current() {
       const b = fullBtnRef.current;
-      return b && b.offsetParent ? b : moreBtnRef.current;
+      return b && b.getClientRects().length ? b : moreBtnRef.current;
     },
   }));
   const { full, toggle: toggleFull, exit: exitFull } = useFullScreen(builderRef, { returnFocus: fullFocusRef });
