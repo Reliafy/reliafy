@@ -91,15 +91,12 @@ _IMPELLER = [{"name": "alpha", "value": 4146.7, "ci": [3660.0, 4700.0]},
              {"name": "beta", "value": 3.073, "ci": [2.40, 3.93]}]
 
 
-def test_replacement_adds_block_replacement_and_the_saving_a_year():
+def test_replacement_gives_the_saving_a_year_and_no_block_replacement():
     r = st.optimal_replacement("weibull", _IMPELLER, 2500, 14000, "Hours", use_per_year=6000, units=30)
     assert r["optimal_time"] == pytest.approx(1999, abs=2)
     assert r["optimal_cost_rate"] == pytest.approx(1.878, abs=1e-3)
     assert r["run_to_failure_cost_rate"] == pytest.approx(3.777, abs=1e-3)
-    # Block replacement: (cp + cu M(T)) / T, M the renewal count — 1,934 h, $1.958 an hour.
-    assert r["block"]["optimal_time"] == pytest.approx(1934, abs=5)
-    assert r["block"]["optimal_cost_rate"] == pytest.approx(1.958, abs=2e-3)
-    assert len(r["curve"]["block_cost_rate"]) == len(r["curve"]["t"])
+    assert "block" not in r and "block_cost_rate" not in r["curve"]
     y = r["yearly"]
     assert y["saving_per_year"] == pytest.approx(11390, abs=10)
     assert y["fleet_saving_per_year"] == pytest.approx(30 * y["saving_per_year"])
@@ -108,11 +105,6 @@ def test_replacement_adds_block_replacement_and_the_saving_a_year():
     assert r["optimal_time_range"]["upper"] == pytest.approx(2266, abs=5)
     with pytest.raises(StrategyError):
         st.optimal_replacement("weibull", _IMPELLER, 2500, 14000, "Hours", use_per_year=-1)
-
-
-def test_block_replacement_never_pays_for_a_constant_rate():
-    r = st.optimal_replacement("exponential", [{"name": "failure_rate", "value": 1e-3}], 1, 10, "Hours")
-    assert r["block"]["beneficial"] is False and r["block"]["optimal_time"] is None
 
 
 # ---- one unit now: every coming shut is a choice ---------------------------------------
