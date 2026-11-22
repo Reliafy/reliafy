@@ -7,7 +7,6 @@
 // design has What it needs too (no packaging there), and its links stay on the product's page.
 // At 400 px nothing scrolls sideways. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -43,8 +42,9 @@ test("Package the tasks… on a level makes every draft; each package sits where
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&root=${set.id}&sel=${set.id}&tab=maintenance`);
   await expect(nameRow(page, `Battery ${tag}`)).toBeVisible();
-  await (await headMenu(page)).locator(".ovm-menu .ovm-item", { hasText: "Package the tasks…" }).click();
-  const packaging = page.getByRole("region", { name: "Package the tasks" });
+  await nameRow(page, `Genset ${tag}`).first().locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu").getByRole("menuitem", { name: "Package the tasks…" }).click();
+  const packaging = page.locator(".pk-packaging");
   await expect(packaging.locator(".pk-prow")).toHaveCount(2);
   await shot(page, "lsa-package-drafts");
   await packaging.getByRole("button", { name: "Make 2 packages" }).click();

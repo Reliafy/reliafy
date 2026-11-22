@@ -677,11 +677,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     return computeFilter(display, { query, chips, extra });
   }, [data, display, query, chips, notPlaced, rpnMin]);
   useEffect(() => setFopen(filter ? filterOpen(filter) : null), [filter]);
-  // The Maintenance tab opens its levels, not its tasks', packages' or Forecast rows' insides.
+  // The Maintenance tab opens its levels, not its tasks', packages' or Forecast rows' insides
+  // (a level chosen, Open everything included, too: each Forecast row opened reads a forecast).
+  const levelsOnly = (d, set) => {
+    if (!d?.tasks && !whole?.tasks) return set;
+    const out = new Set(set);
+    for (const k of set) if (typeof k === "string" && /^(M[TPF]|mpref):/.test(k)) out.delete(k);
+    return out;
+  };
   const defaultOpen = useMemo(() => {
     const out = levelSet(whole, 2);
-    if (whole.tasks) for (const k of [...out]) if (typeof k === "string" && /^M[TPF]:/.test(k)) out.delete(k);
-    return out;
+    return levelsOnly(whole, out);
   }, [whole]);
   const baseOpen = openBy[mode] || defaultOpen;
   const open = filter ? fopen || filterOpen(filter) : baseOpen;
@@ -2336,8 +2342,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (filter || typeof chosenLevel !== "number" || !(chosenLevel > 0)) return;
     setOpenBy((o) => {
       const cur = o[mode] || defaultOpen;
-      const next = keepLevel(display, cur, chosenLevel);
-      return next === cur ? o : { ...o, [mode]: next };
+      const kept = keepLevel(display, cur, chosenLevel);
+      const next = kept === cur ? cur : levelsOnly(display, kept);
+      return next === cur || (next.size === cur.size && [...next].every((k) => cur.has(k))) ? o : { ...o, [mode]: next };
     });
   }, [display, chosenLevel, filter, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2345,7 +2352,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const setLevel = (n) => {
     dropFocus(); // a level chosen for the whole tree: no focus any more
     setLevelBy((l) => ({ ...l, [mode]: n }));
-    let next = levelSet(display, n);
+    let next = levelsOnly(display, levelSet(display, n));
     if (filter) next = new Set([...next].filter((k) => filter.keep.has(k)));
     setOpenSet(next);
     if (focus != null) {

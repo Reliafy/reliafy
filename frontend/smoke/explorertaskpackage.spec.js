@@ -7,6 +7,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it saves screenshots (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -52,7 +53,7 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await expect(page.locator(".tp-row.picked")).toHaveCount(2);
   await nameRow(page, `Grease the bearings ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Package…", "Add to package…", "Clear the selection"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "What it needs…", "Optimise…", "Package…", "Add to package…", "Clear the selection"]);
   await menu.getByRole("menuitem", { name: "Package…", exact: true }).click();
   const pane = page.locator("section.table-pane");
   await expect(pane).toContainText("2 tasks");
@@ -74,7 +75,7 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await nameRow(page, `Megger the windings ${tag}`).locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menu").getByRole("menuitem", { name: "Add to package…" }).click();
   await expect(pane.getByRole("radio", { name: /Monthly service/ })).toBeChecked();
-  await expect(pane.getByRole("combobox", { name: /on which visits/ })).toHaveValue("3");
+  await expectChosen(pane.getByRole("combobox", { name: /on which visits/ }), "3");
   await pane.getByRole("button", { name: "Add", exact: true }).click();
   await expect(nameRow(page, `Megger the windings ${tag}`).locator(".mt-pkg-link")).toHaveText("Monthly service");
 

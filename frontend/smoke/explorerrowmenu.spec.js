@@ -232,7 +232,9 @@ test("the Maintenance tab: Package the tasks… on a position's menu opens in th
     expect(res.ok(), `tasks: ${res.status()} ${await res.text()}`).toBeTruthy();
   }
   const addRow = page.locator(".tp-addrow");
-  const packaging = page.getByRole("region", { name: "Package the tasks" });
+  const packaging = page.locator(".pk-packaging");
+  // The Maintenance tab is a tree-table: its rows are grid rows.
+  const trow = (name) => page.getByRole("row", { name: new RegExp(`^${name}`) });
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
   // Summary: the tree ends with its quiet "+ New position" row.
@@ -241,9 +243,10 @@ test("the Maintenance tab: Package the tasks… on a position's menu opens in th
   // Maintenance (one table, what was the LSA tab in it): no last row; a position's menu has Package the tasks….
   await page.getByRole("tab", { name: "Maintenance", exact: true }).click();
   await expect.poll(() => query(page).get("tab")).toBe("maintenance");
-  await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
+  await expect(trow(`Menu circulation ${tag}`)).toBeVisible();
   await expect(addRow).toHaveCount(0);
-  let menu = await menuOf(page, `Menu circulation ${tag}`);
+  await trow(`Menu circulation ${tag}`).locator(".tp-nm").click({ button: "right" });
+  let menu = rowMenu(page, `Menu circulation ${tag}`);
   await expect(menu.getByRole("menuitem", { name: "Package the tasks…" })).toBeVisible();
   await shot(page, "rowmenu-5-maintenance-row-menu-1440");
   // It opens in the table area, beside the tree: no dialog.
@@ -269,9 +272,9 @@ test("the Maintenance tab: Package the tasks… on a position's menu opens in th
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&tab=maintenance&sel=${p.pool.id}`);
   await phoneTree(page);
-  await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
+  await expect(trow(`Menu circulation ${tag}`)).toBeVisible();
   await expect(addRow).toHaveCount(0);
-  await row(page, `Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / }).click();
+  await trow(`Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / }).click();
   menu = rowMenu(page, `Menu circulation ${tag}`);
   await expect(menu.getByRole("menuitem", { name: "Package the tasks…" })).toBeVisible();
   await shot(page, "rowmenu-7-maintenance-row-menu-400");

@@ -53,23 +53,23 @@ test("packages sit where their tasks meet; Forecast rows under a task and a pack
   await expect(page.locator(`[id^="tp-mpref:${p.service.id}:"]`)).toHaveCount(2);
   await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`).locator(".mt-pkg-link")).toHaveText(`Monthly service ${tag}`);
 
+  // A package opens beside the table, saying where it sits.
+  await eng.locator(".tp-nm").click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("mpkg")).toBe(p.engineOnly.id);
+  await expect(page.getByRole("complementary", { name: `Engine checks ${tag}` })).toContainText(`Shown at Engine ${tag}, where its task is.`);
+
   // A task's Forecast: next due, each month, parts and the total.
   await page.locator(`[id="tp-MT:${p.oil.id}"]`).locator(".tp-chev").click();
   const fc = page.locator(`[id="tp-MF:MT:${p.oil.id}"]`);
   await fc.locator(".tp-chev").click();
   await expect(fc).toContainText(/times to \d+ \w+ \d{4}/);
-  await expect(page.locator(`[id="tp-MF:MT:${p.oil.id}:total"]`)).toContainText("$");
-  await expect(page.locator(`[id="tp-MF:MT:${p.oil.id}:parts"]`)).toContainText("Parts and spares");
+  await expect(fc).toContainText("$");
+  await expect(page.locator(`[id="tp-MF:MT:${p.oil.id}:next"]`)).toContainText("Next due");
   // A package's Forecast adds up its tasks.
   const pfc = page.locator(`[id="tp-MF:MP:${p.service.id}"]`);
   await pfc.locator(".tp-chev").click();
   await expect(pfc).toContainText(/tasks to \d+ \w+ \d{4}/);
   await shot(page, "maintenance-tree-forecasts-1440");
-
-  // A package opens beside the table, saying where it sits.
-  await eng.locator(".tp-nm").click();
-  await expect.poll(() => new URL(page.url()).searchParams.get("mpkg")).toBe(p.engineOnly.id);
-  await expect(page.getByRole("complementary", { name: `Engine checks ${tag}` })).toContainText(`Shown at Engine ${tag}, where its task is.`);
 
   // Open the full forecast…: the level's Forecast… in the table area, with the spares for the year.
   await fc.locator(".tp-nm").click({ button: "right" });
@@ -90,7 +90,8 @@ test("the Maintenance tree at 400 px: a package and a Forecast row, nothing scro
   await expect(svc).toBeVisible();
   await svc.locator(".tp-chev").click();
   await page.locator(`[id="tp-MF:MP:${p.service.id}"]`).locator(".tp-chev").click();
-  await expect(page.locator(`[id="tp-MF:MP:${p.service.id}:total"]`)).toBeVisible();
+  await expect(page.locator(`[id="tp-MF:MP:${p.service.id}"]`)).toContainText(/tasks to \d+ \w+ \d{4}/);
+  await expect(page.locator(`[id="tp-MF:MP:${p.service.id}:next"]`)).toContainText("Next visit");
   await shot(page, "maintenance-tree-400");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "maintenance tree 400" });
