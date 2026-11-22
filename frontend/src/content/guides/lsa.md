@@ -55,7 +55,10 @@ box holds every column's.
 
 **Package tasks from the tree.** Click a task, then **Shift-click** another to
 pick every task between them, or **Ctrl-click** (**⌘-click** on a Mac) to add
-or take one; each task also has a box to tick. Right-click one of them (or
+or take one; **Space** picks the task you're on and **Shift+↑/↓** extends the
+pick. The tree's heading says how many are picked, with **Clear**. On a phone,
+open a task's **⋯** menu and choose **Select**, then tap more tasks until
+**Done**. Right-click one of them (or
 press its **⋯**; on a phone, press and hold) and choose:
 
 - **Package…** — a new work package with them, in the table area beside the

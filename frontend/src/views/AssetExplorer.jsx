@@ -29,7 +29,7 @@ import {
   useTreeForecast, useTreeTasks,
 } from "../components/TaskTreeTable.jsx";
 import {
-  FC_OPEN, PKG_FORECAST, PKG_OPEN, REF_GO, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_FORECAST, TASK_NEEDS, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE,
+  FC_OPEN, PKG_FORECAST, PKG_OPEN, REF_GO, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_FORECAST, TASK_NEEDS, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, TASK_SELECT,
   anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem, forecastRowActions, forecastWanted,
   graftTasks, isForecastRow, isMaintRow, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
@@ -547,6 +547,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [tfilters, setTfilters] = useState({});
   const [tpicked, setTpicked] = useState(() => new Set());
   const tanchor = useRef(null);
+  // A phone: Select on a task's menu starts picking by tap, until Done or Clear.
+  const [tmode, setTmode] = useState(false);
   const [pkgPane, setPkgPane] = useState(null);
   // Package the tasks… open in the table area: the level it drafts for ({key, n}).
   const [draftAt, setDraftAt] = useState(null);
@@ -710,6 +712,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [tasksOn, ptasks.tasks, taskFilterOn, display, list, base, pinKey, open]);
   // The tasks picked that are still on show (a read, a filter, a branch closed, another tab).
   useEffect(() => setTpicked((s) => (tasksOn ? keepShown(s, index) : s.size ? new Set() : s)), [index, tasksOn]);
+  useEffect(() => { if (!tasksOn || !phone) setTmode(false); }, [tasksOn, phone]);
   useEffect(() => { if (!tasksOn) { setPkgPane(null); setDraftAt(null); } }, [tasksOn]);
   // The tree column (a wide screen): fitted to the names on show until the user drags it (the
   // review, Nov 2026: at 1600 px names were cut to a few letters). The same width on every tab,
@@ -2053,7 +2056,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (missionsOn && isMissionRow(r)) return withPin(missionRowActions(r, { viewOnly }), isolateItem(r));
       // The Maintenance tab: a task's own (Open…); a level's: Add task…, Forecast… (a position on an
       // asset), then Rename…, Focus ›, Pin this branch.
-      if (tasksOn && isTaskRow(r)) return taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly });
+      if (tasksOn && isTaskRow(r)) return taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly, canSelect: phone && !designScope && !viewOnly });
       // A package (at the meeting point of its tasks): Open…, Forecast…; a task listed under it: Show
       // the task (under its own position); a Forecast row or line: Open the full forecast….
       if (tasksOn && isPackageRow(r)) return packageRowActions(r);
@@ -2103,6 +2106,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id === TASK_PACKAGE) return openPackaging("new", r);
       if (id === TASK_ADD_TO) return openPackaging("add", r);
       if (id === TASK_CLEAR) return setTpicked(new Set());
+      if (id === TASK_SELECT) {
+        setTmode(true);
+        setTpicked((s) => new Set([...s, r.key]));
+        tanchor.current = r.key;
+        return;
+      }
       if (id === TASK_NEEDS) return openNeeds(r);
       if (id === TASK_DRAFT) return openDraft(r);
       if (id === PKG_OPEN) return openPackageView(r.ref.pkg);
@@ -2712,7 +2721,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     // Rows picked together (Derryn, 22 Nov 2026: "select multiple rows in the table and right click
     // and 'package'"): not on a product's design (its tasks are packaged on the built items).
     multi: designScope || viewOnly ? null : {
-      picked: tpicked, can: isTaskRow,
+      picked: tpicked, can: isTaskRow, mode: phone && tmode,
+      onClear: () => { setTpicked(new Set()); setTmode(false); },
+      onDone: () => setTmode(false),
       onToggle: (key) => {
         const o = pickTasks(tpicked, list, display, key, { toggle: true });
         setTpicked(o.picked);

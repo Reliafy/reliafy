@@ -142,6 +142,8 @@ test("a task's menu: Open…, What it needs…, Optimise…, then Package… and
   const r = { ref: { task: mower[0] } };
   const items = taskRowActions(r);
   assert.deepEqual(items.filter((i) => i.id).map((i) => i.label), ["Open…", "What it needs…", "Optimise…", "Package…", "Add to package…"]);
+  assert.ok(!items.some((i) => i.label === "Select"));
+  assert.equal(taskRowActions(r, { canSelect: true }).filter((i) => i.id).map((i) => i.label)[3], "Select");
   const two = taskRowActions(r, { tasks: [mower[0], mower[1]] }).map((i) => i.id).filter(Boolean);
   assert.deepEqual(two, ["mtask-open", "mtask-needs", "mtask-optimise", TASK_PACKAGE, TASK_ADD_TO, TASK_CLEAR]);
   const inOne = taskRowActions({ ref: { task: mower[2] } }).find((i) => i.id === TASK_PACKAGE);
