@@ -144,7 +144,9 @@ own numbers. Every plan is free.
   for a fixed-length test with the same risks. The headline says the confidence
   the test gives as run: the lines are drawn so that stopping at the longest
   test still keeps the confidence you asked for. The accept and reject lines tell
-  you, failure by failure, whether to stop.
+  you, failure by failure, whether to stop. **Save analysis** keeps the agreed
+  rule under **Strategy** before the data comes in; give the failures and test
+  time so far and save again to keep each verdict on record.
 - **[Life test](/strategy/test-planning/life)**: how precisely a test will *estimate* a B-life or the mean life,
   rather than pass or fail it. Use it to size a test before you fit a model to
   its results. In the example, 30 units stopped at 500 hours give about 6.6

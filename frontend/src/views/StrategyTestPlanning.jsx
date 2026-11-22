@@ -46,7 +46,7 @@ export default function StrategyTestPlanning() {
   useEffect(() => { window.dispatchEvent(new Event("resize")); }, [tab]);
   const show = (id) => tab === id || visited.has(id);
 
-  const tool = STRATEGY_TOOLS[tab === "accelerated" ? "accelerated" : "testPlanning"];
+  const tool = STRATEGY_TOOLS[tab === "accelerated" ? "accelerated" : tab === "sequential" ? "sequential" : "testPlanning"];
   return (
     <div className="app">
       <SectionHeader
@@ -75,7 +75,7 @@ export default function StrategyTestPlanning() {
         )}
         {show("comparison") && <div hidden={tab !== "comparison"}><ComparisonPlan /></div>}
       </Card>
-      {tab === "demonstration" && <SavedOfKind kind={tool.kind} noun={tool.noun} />}
+      {(tab === "demonstration" || tab === "sequential") && <SavedOfKind kind={tool.kind} noun={tool.noun} />}
     </div>
   );
 }

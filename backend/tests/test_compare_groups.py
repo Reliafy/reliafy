@@ -48,8 +48,9 @@ def test_two_groups_match_surpyval_logrank_and_rmst():
 
     x, c, g = np.array(AML_X), np.array(AML_C), np.array(AML_G)
     km = {k: sp.KaplanMeier.fit(x[g == k], c=c[g == k]) for k in ("Maintained", "Nonmaintained")}
-    # Default horizon: the shorter group's longest time.
+    # Default horizon: the shorter group's longest time, said as such.
     assert res["tau"] == 45.0
+    assert res["tau_source"] == "auto" and res["tau_group"] == "Nonmaintained"
     d = sp.rmst_diff(km["Nonmaintained"], km["Maintained"], tau=45.0, alpha_ci=0.10)  # 90%
     (diff,) = res["rmst_differences"]
     assert diff["reference"] == "Maintained" and diff["group"] == "Nonmaintained"
@@ -232,6 +233,7 @@ def test_unknown_group_tau_past_the_data_and_dropped_rows():
         _run(_aml(), time_column="weeks", group_column="arm", groups=["Maintained", "Other"])
     res = _run(_aml(), time_column="weeks", group_column="arm", censor_column="censored", tau=100)
     assert res["tau"] == 45.0  # capped at the shorter group's last time (#211)
+    assert res["tau_source"] == "capped" and res["tau_group"] == "Nonmaintained"
     assert any("capped" in n and "extrapolated" in n for n in res["notes"])
     df = _aml()
     df.loc[0, "arm"] = None

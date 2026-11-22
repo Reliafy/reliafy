@@ -2892,6 +2892,20 @@ h1 .chip,
   flex-direction: column;
 }
 
+/* A stat's interval or bound sits under its number (the label comes first,
+   by order), never above the label where it reads as the card before's. */
+.params .stat .param-ci {
+  order: 3;
+}
+
+/* Per-demand: the one-sided figure in a sentence, above the cards. */
+.pd-answer {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  color: var(--text);
+}
+
 /* Detail panel: plot + goodness-of-fit aside (Instrument). */
 .detail-panel {
   display: flex;

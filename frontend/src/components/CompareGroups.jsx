@@ -10,6 +10,7 @@ import { guessStatus, statusMeaning, statusValues, statusValuesWithBlank } from 
 import StatusMeanings from "./StatusMeanings.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { ciPct } from "../levels.js";
+import { windowText } from "../compareWindow.js";
 import "./Datasets.css";
 
 // Compare groups within one dataset (#175): split by a column, overlay each
@@ -252,7 +253,8 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
             </label>
             <label className="calc-t">
               <span>Window</span>
-              <input type="number" inputMode="decimal" min="0" placeholder="auto" value={tau} onChange={(e) => setTau(e.target.value)} />
+              <input type="number" inputMode="decimal" min="0" placeholder="auto" value={tau} onChange={(e) => setTau(e.target.value)}
+                     title="The time to average life over. Auto: as far as every group has data." />
             </label>
           </div>
           <button className="cg-run" onClick={() => run(null)} disabled={loading || !timeCol || !groupCol || unread.length > 0}
@@ -321,6 +323,7 @@ function CompareGroupsResult({ result, reference, onReference }) {
       <Plot data={traces} layout={layout} />
 
       <div className="ds-section-h cg-h">Groups · average life over the first {fmt(result.tau)}{u}</div>
+      <p className="muted-line cg-window" data-testid="cg-window">{windowText(result, fmt(result.tau) + u)}</p>
       <div className="demo-table-wrap">
         <table className="calc-table cg-table cg-wide">
           <thead>
