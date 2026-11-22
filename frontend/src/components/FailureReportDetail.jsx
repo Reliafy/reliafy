@@ -16,6 +16,7 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import MaintenancePhotos from "./MaintenancePhotos.jsx";
 import { Field, fmtDate } from "./MaintenanceParts.jsx";
 import NewFailureReportModal from "./NewFailureReportModal.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // One failure report, in the Failure reports tab in place of the list: its
 // stage on the loop (Reported › Investigating › Corrective action › Verifying
@@ -249,7 +250,7 @@ function Actions({ report, editable, today, onAdd, onUpdate, onRaise, busy }) {
               <input value={owner} placeholder="A name" onChange={(e) => setOwner(e.target.value)} />
             </Field>
             <Field label="Due (optional)">
-              <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+              <DateInput value={due} onChange={(e) => setDue(e.target.value)} />
             </Field>
             {workOrders && (
               <Field label="Work order (optional)">
@@ -301,7 +302,7 @@ function Verification({ report, editable, today, onSave, busy }) {
           </fieldset>
           <div className="fr-modal-row">
             <Field label="Checked on">
-              <input type="date" value={on} max={today || undefined} onChange={(e) => setOn(e.target.value)} />
+              <DateInput value={on} max={today || undefined} onChange={(e) => setOn(e.target.value)} />
             </Field>
             <Field label="Notes (optional)">
               <input value={notes} placeholder="What was checked, and how" onChange={(e) => setNotes(e.target.value)} />

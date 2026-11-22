@@ -156,7 +156,7 @@ Write like an engineer briefing a manager: **the answer first, then the detail.*
 
 ## Components
 
-`components/` holds the shared primitives: `Button`, `Card`, `Chip`, `ChoiceChips`, `ContextMenu`, `Field`, `HelpLink`, `InputGroup`, `SegmentedControl`, `Select`, `Switch`, `Tabs`, `PageHeader`, `Section` and `ResultSummary`, the one error state for a load, `LoadFailed`, the one warning that an answer lies outside its data, `ExtrapolationNote`, the dialog, `Modal`, and the one search for everything in the top bar, `GlobalSearch`. `WhereItLives` is the one cell that says where a rolled-up record lives in a flat table (the Explorer shows a node's records and everything below it). Their guidelines are in `components/`; the design system artifact shows a preview of each.
+`components/` holds the shared primitives: `Button`, `Card`, `Chip`, `ChoiceChips`, `ContextMenu`, `Field`, the one date and time field, `DateTimeInput` (day first and 24-hour whatever the browser's language), `HelpLink`, `InputGroup`, `SegmentedControl`, `Select`, `Switch`, `Tabs`, `PageHeader`, `Section` and `ResultSummary`, the one error state for a load, `LoadFailed`, the one warning that an answer lies outside its data, `ExtrapolationNote`, the dialog, `Modal`, and the one search for everything in the top bar, `GlobalSearch`. `WhereItLives` is the one cell that says where a rolled-up record lives in a flat table (the Explorer shows a node's records and everything below it). Their guidelines are in `components/`; the design system artifact shows a preview of each.
 
 - Use one primary button per view; everything else is secondary or ghost. Destructive actions are `danger` text and outline, never a red fill.
 - Don't nest grey panels in a card; divide it with `Section`s.

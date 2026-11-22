@@ -3,6 +3,7 @@ import { logPositionEvent } from "../api.js";
 import { SHORT_TEXT, tooLong } from "../maintenanceText.js";
 import { Field, FormModal } from "./MaintenanceParts.jsx";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // Log an event at a position (the tree's row menu "Log an event…", or the
 // Summary tab's Work area): something that happened there, in your words (a
@@ -32,7 +33,7 @@ export default function LogEventModal({ positionId, positionName, today, onClose
         <textarea rows={2} value={note} placeholder="e.g. Board tripped at 3 pm" onChange={(e) => setNote(e.target.value)} />
       </Field>
       <Field label="When">
-        <input type="date" value={when} max={today || undefined} onChange={(e) => setWhen(e.target.value)} />
+        <DateInput value={when} max={today || undefined} onChange={(e) => setWhen(e.target.value)} />
       </Field>
     </FormModal>
   );

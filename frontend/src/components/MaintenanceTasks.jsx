@@ -20,6 +20,7 @@ function preview(how, task) {
 }
 
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // What a task on each kind of subject is for, under the Add task form.
 const SUBJECT_NOTES = {
@@ -181,7 +182,7 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
       <Field label="Who may do it (optional)"><input value={f.trade} placeholder="e.g. licensed electrician" onChange={set("trade")} /></Field>
       <Field label="Instructions (optional)"><textarea rows={3} value={f.instructions} onChange={set("instructions")} /></Field>
       <Field label="Checklist, one step per line (optional)"><textarea rows={3} value={f.checklist} onChange={set("checklist")} /></Field>
-      <Field label="Last done (optional)"><input type="date" value={f.last_done} max={today()} onChange={set("last_done")} /></Field>
+      <Field label="Last done (optional)"><DateInput value={f.last_done} max={today()} onChange={set("last_done")} /></Field>
       <p className="lib-date">{(workOrders ? SUBJECT_NOTES : PLAN_SUBJECT_NOTES)[kind]}</p>
     </FormModal>
   );
@@ -281,7 +282,7 @@ function LastDoneModal({ task, onClose, onDone }) {
                onSubmit={async () => onDone(await setTaskLastDone(task.id, on || "none"))}>
       <p className="lib-date">{workOrders ? "When this was last done, so the next due date counts from then." : LAST_DONE_NOTE}</p>
       <Field label={workOrders ? "Last done on" : "Last done on (optional)"}>
-        <input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} />
+        <DateInput value={on} max={today()} onChange={(e) => setOn(e.target.value)} />
       </Field>
       {!workOrders && task.last_done && (
         <button type="button" className="ghost sm" onClick={() => setOn("")}>Clear it</button>

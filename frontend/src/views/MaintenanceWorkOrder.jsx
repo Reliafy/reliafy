@@ -21,6 +21,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import { ORDERS_LABEL, ORDERS_PATH } from "../navigation.js";
 import { workOrderPath } from "../maintenanceOrders.js";
 import { reportLink } from "../failureReports.js";
+import { DateInput } from "../components/ui/DateTimeInput.jsx";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -228,8 +229,8 @@ function EditWorkOrder({ wo, onClose, onDone }) {
       <Field label="Who may do it: trade, licence or competency"><input value={trade} placeholder="e.g. Licensed electrician"
              onChange={(e) => setTrade(e.target.value)} /></Field>
       <Field label="Assigned to"><input value={assignee} placeholder="a name" onChange={(e) => setAssignee(e.target.value)} /></Field>
-      <Field label="Planned for"><input type="date" value={planned} onChange={(e) => setPlanned(e.target.value)} /></Field>
-      <Field label="Due"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+      <Field label="Planned for"><DateInput value={planned} onChange={(e) => setPlanned(e.target.value)} /></Field>
+      <Field label="Due"><DateInput value={due} onChange={(e) => setDue(e.target.value)} /></Field>
     </FormModal>
   );
 }

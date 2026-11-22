@@ -8,6 +8,7 @@ import {
   actionKinds, closeActionKind, closeTarget, defaultCloseKind, defaultFailed, foundFailedText, newItemBody,
   replaceReason, replaceRecordText, subjectPath, closeActionBlocker,
 } from "../maintenanceSubjects.js";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // What was done, as a work order's close records it: each action (checked, replaced,
 // repaired, inspected, other; a replacement's failure mode, the part and the new
@@ -198,7 +199,7 @@ export default function WorkDoneForm({
         <button className="secondary" onClick={() => setActions((as) => [...as, { kind: "", failed: defaultFailed(wo), where: as[as.length - 1]?.where || startWhere }])}>{actions.length ? "Add another action" : "Add an action"}</button>
       </div>
       <div className="rcm-form">
-        <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
+        <Field label="Done on"><DateInput value={on} onChange={(e) => setOn(e.target.value)} /></Field>
         {readings.length > 0 && (
           <p className="lib-date">Closing also records {readings.length === 1 ? "the value" : `the ${readings.length} values`} filled in under Readings and settings.</p>
         )}

@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import { useField } from "./Field.jsx";
 import useAutoGrow from "./useAutoGrow.js";
+import { DateInput, TimeInput } from "./DateTimeInput.jsx";
 
 // The app's text controls (#UI): one look for every input, textarea and
 // select (.ctl in index.css): white, a 1 px line, 34 px tall, 14 px text
@@ -15,6 +16,9 @@ const cls = (base, className) => base + (className ? ` ${className}` : "");
 
 export const TextInput = forwardRef(function TextInput({ className, ...props }, ref) {
   const field = useField();
+  // A date or a time: the shared fields, day first and 24-hour whatever the browser's language.
+  if (props.type === "date") return <DateInput ref={ref} {...props} type={undefined} className={className} />;
+  if (props.type === "time") return <TimeInput ref={ref} {...props} type={undefined} className={className} />;
   return <input ref={ref} type="text" {...props} {...wire(field, props)} className={cls("ctl", className)} />;
 });
 

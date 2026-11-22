@@ -14,10 +14,6 @@
   background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); padding: 0.45rem 0.6rem;
 }
 .cal-remove { align-self: center; }
-.cal-form .calc-t input[type="date"] {
-  background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
-  padding: 0.4rem 0.6rem; font: inherit; font-size: var(--fs-14);
-}
 .cal-advanced { margin-top: 1rem; }
 .cal-advanced summary { cursor: pointer; color: var(--text-secondary); font-size: var(--fs-14); }
 .cal-block { margin-top: var(--space-6); }

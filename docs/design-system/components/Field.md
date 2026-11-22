@@ -14,6 +14,8 @@ A form field: the label, an "optional" marker beside it, a slot at the label's r
 
 The control is the child: `TextInput`, `TextArea` (starts at one line and grows) and `Select` render `.ctl` — `bg-surface`, a 1px `border-control` (3:1, so the box is visible), `control-md` tall, `fs-14` (16px on a phone so iOS doesn't zoom), the `focus-ring` ring, `danger` border, `danger-bg` fill and `danger-text` message on an error.
 
+A date or a time is `TextInput type="date"` / `type="time"`, which render the shared `DateTimeInput` fields ("22 Nov 2026", "16:00"), never the browser's own.
+
 A long `Select` takes `searchable`: a "Find…" box at the top of the list. Every word typed must appear in an option's name or hint; within each group the closest names come first (exact, then starts with, then holds the phrase), the closest match is highlighted, and Enter takes it (`selectSearch.js`).
 
 Errors say what to do ("Enter a time above 0."), not what went wrong in code.
