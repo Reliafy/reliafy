@@ -9466,13 +9466,15 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
    what an action did in the middle, the state and the rest on the right; each group wraps as
    one. The common-cause button floats over the canvas's top while blocks are selected. */
 .rbd-toolbar {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
   padding-bottom: var(--space-3);
 }
-.rbd-tb-tools, .rbd-toolbar-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
+.rbd-tb-tools, .rbd-toolbar-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: nowrap; min-width: 0; }
+.rbd-tb-tools > *, .rbd-toolbar-actions > * { flex: none; }
 .rbd-toolbar-actions { margin-left: auto; }
 .rbd-tb-history { display: inline-flex; gap: 0; }
 button.rbd-icon-btn { width: var(--control-sm); padding-left: 0; padding-right: 0; justify-content: center; }
@@ -9762,10 +9764,31 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
    a row of its own while it shows. */
 .rbd-builder.is-narrow .rbd-settings-summary { display: none; }
 .rbd-builder.is-narrow .rbd-canvas .react-flow__minimap { display: none; }
-.rbd-builder.is-narrow .rbd-tb-flash { flex-basis: 100%; order: 1; text-align: left; }
-/* "+ Add block" says "+ Add", and the name in full screen gives way. */
-.rbd-builder.is-tight .rbd-add-word { display: none; }
+/* What an action did floats under the toolbar's row (the toolbar never wraps). */
+.rbd-builder.is-narrow .rbd-tb-flash {
+  position: absolute; top: calc(100% - var(--space-2)); left: 0; right: 0; z-index: 5; flex: none; text-align: left;
+  background: var(--bg-surface); padding: 2px var(--space-2); border-radius: var(--radius-md); pointer-events: none;
+}
 .rbd-builder.is-narrow .rbd-full-name { display: none; }
+/* One row at every width (docs/design-system/components/RbdToolbar.md "Running short"):
+   "+ Add block" is the "+" alone, then Full screen goes into ⋯ and the status and check show
+   their icon alone, then Undo and Redo go into ⋯. */
+.rbd-builder.is-narrow .rbd-add-word, .rbd-builder.is-narrow .rbd-add-menu .rbd-tb-caret { display: none; }
+.rbd-builder.is-narrow .rbd-add-menu .rbd-tb-trigger { min-width: var(--control-sm); justify-content: center; font-size: var(--fs-16, 16px); font-weight: 600; }
+.rbd-builder:not(.is-tight) .rbd-mi-tight, .rbd-builder:not(.is-cramped) .rbd-mi-cramped { display: none; }
+.rbd-builder.is-tight:not(.is-full) .rbd-tb-full { display: none; }
+.rbd-builder.is-cramped .rbd-tb-history-bar { display: none; }
+.rbd-builder.is-tight .rbd-save-text, .rbd-builder.is-tight .rbd-valid-text:not(.is-keep) {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.rbd-builder.is-tight .rbd-valid-toggle { padding: 0 var(--space-2); gap: 4px; }
+.rbd-builder.is-tight .rbd-valid-toggle .rbd-valid-text { margin-left: -4px; }
+.rbd-builder.is-cramped .rbd-toolbar, .rbd-builder.is-cramped .rbd-tb-tools, .rbd-builder.is-cramped .rbd-toolbar-actions { gap: 4px; }
+.rbd-builder.is-cramped .rbd-save-main { padding-left: var(--space-2); padding-right: var(--space-2); }
+.rbd-save-icon { flex: none; }
+.rbd-save-spin { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: currentColor; border-radius: var(--radius-full); animation: rbd-spin 0.8s linear infinite; }
+@keyframes rbd-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rbd-save-spin { animation-duration: 3s; } }
 
 /* Reliability growth projection panel (#232). */
 .growth-projection .strategy-costs .calc-t { min-width: 0; }

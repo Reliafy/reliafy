@@ -269,9 +269,19 @@ test("full screen on a phone (400 px): no sideways scroll, big enough to tap", a
   await page.addInitScript(noFullscreenApi);
   await open(page, "/systems/b/sample-rbd-pump-station");
   await expect(page.locator(".react-flow__node").first()).toBeVisible();
-  const enter = page.getByRole("button", { name: "Full screen", exact: true });
-  expect((await enter.boundingBox()).height).toBeGreaterThanOrEqual(40);
-  await enter.click();
+  // One row on a phone: Full screen is in ⋯, the status and the check are icons (named in words).
+  const bar = page.locator(".rbd-toolbar");
+  await expect(bar.getByRole("button", { name: "Full screen", exact: true })).toBeHidden();
+  await expect(bar.getByRole("button", { name: "Add block" })).toBeVisible();
+  await expect(bar.locator(".rbd-save-status")).toHaveAttribute("title", /./);
+  await expect(bar.locator(".rbd-save-text")).toBeAttached();
+  await expect(bar.getByRole("button", { name: /Diagram valid|problem|warning|Nothing to check|Not connected/ })).toBeVisible({ timeout: 15_000 });
+  const tops = await bar.locator(":scope > div > *:visible").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(40); // one row
+  const more = bar.getByRole("button", { name: "More", exact: true });
+  expect((await more.boundingBox()).height).toBeGreaterThanOrEqual(40);
+  await more.click();
+  await page.getByRole("button", { name: "Full screen", exact: true }).click();
   await expect(page.locator(".rbd-builder.is-full")).toBeVisible();
   const exit = page.getByRole("button", { name: "Exit full screen" });
   await expect(exit).toBeVisible();
@@ -284,7 +294,7 @@ test("full screen on a phone (400 px): no sideways scroll, big enough to tap", a
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
   await exit.click();
   await expect(page.locator(".rbd-builder.is-full")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Full screen", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "More", exact: true })).toBeFocused();
   await expectHealthy(page, problems, { label: "full screen at 400 px" });
 });
 
