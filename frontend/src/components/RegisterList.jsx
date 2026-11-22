@@ -9,7 +9,7 @@ import "./RegisterList.css";
 
 // The landing page of a register: Assets (the places you look after) and
 // Products (what you design and build) share it, so the two look and work the
-// same. The section header (title, one-line purpose, "Show me how", the main
+// same. The section header (title, one-line purpose, "Read the guide", the main
 // action top right, a ⋯ menu); the counts line with one search box; one table:
 // the name with a quiet line under it, then the numbers, each column the same
 // width on both pages; the same empty state (what it is, the main action, the
@@ -56,7 +56,7 @@ export default function RegisterList({
           <div className="section-empty-action">{primary}{empty.sample}</div>
           <p className="section-empty-more">
             {empty.more}{empty.more && help ? " " : ""}
-            {help && <ShowMe help={help}>{empty.guide || "Show me how"}</ShowMe>}
+            {help && <ShowMe help={help}>{empty.guide}</ShowMe>}
           </p>
         </div>
       ) : (

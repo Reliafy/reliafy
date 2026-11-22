@@ -218,13 +218,13 @@
 .ds-lib .ds-row-link { overflow-wrap: anywhere; }
 .ds-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px;
   display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border);
-  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; text-align: left; }
+  border-radius: 8px; box-shadow: var(--shadow-md); padding: 4px; text-align: left; }
 .ds-menu button { text-align: left; background: none; border: 0; box-shadow: none; min-height: 0; color: inherit; font-size: 13px; font-weight: 400; padding: 7px 10px; border-radius: 6px; }
 .ds-menu button:hover, .ds-menu button:focus { background: var(--bg-subtle); }
 .ds-menu-h { font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); opacity: .75; padding: 8px 10px 2px; pointer-events: none; }
 .ds-menu-h + button, .ds-menu-h ~ button:not(.ds-menu-del) { padding-left: 18px; }
 .ds-menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
-.ds-menu .ds-menu-del { color: var(--danger, #c0392b); }
+.ds-menu .ds-menu-del { color: var(--danger); }
 .ds-units-h { width: 200px; }
 @media (max-width: 640px) {
   .ds-units-h { width: 34%; }

@@ -6546,7 +6546,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         can count what's inside it (a position carried by an item counts as a
         top: the asset tree places it through the item's fitment). With
         ``within`` (one asset, as positions_inside reads it): that asset's
-        positions alone, the parents stopping at its edge."""
+        positions alone, the parents stopping at its edge. names: {position id: its
+        name} for every position in parents, so a list can say where each one is
+        (the RCM studies page's "Pumping station › Pump 1")."""
         keep = self.positions_inside(within) if within is not None else None
         index = self._rcm_index()
         out = []
@@ -6571,7 +6573,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 up = part_of.get(pid)
                 parents[pid] = up if up in live else None
                 pid = parents[pid]
-        return {"positions": out, "parents": parents}
+        names = {pid: live[pid]["name"] for pid in parents if pid in live}
+        return {"positions": out, "parents": parents, "names": names}
 
     def rcm_worksheet(self, position_id: str, scope: str = "below", limit: int = 2000) -> dict:
         """A position's RCM, read from the graph: for the position (scope "this")

@@ -180,7 +180,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
               <p className="rim-tquiet mission-on">
                 Runs on <b>{detail.rbd.name}</b>{onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}{u ? `, in ${u}` : ""}: {rows.length} phase{rows.length === 1 ? "" : "s"},{" "}
                 {lengthText(total, unit)} in all. The blocks age through the whole mission (a spare idle on standby only as fast as its setting): wear in one phase stays for the next.{" "}
-                <ShowMe help={{ guide: "missions-and-phases" }}>Show me how</ShowMe>
+                <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
               </p>
             </div>
 
@@ -371,7 +371,7 @@ export function NewMissionPane({ position, taken = [], phone = false, headingRef
         <p className="rim-tquiet">
           A mission is the system run through phases, each with its own length and the blocks it needs. Adding it builds
           an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.{" "}
-          <ShowMe help={{ guide: "missions-and-phases" }}>Show me how</ShowMe>
+          <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
         </p>
         {tried && why && <p className="field-error" role="alert">{why}</p>}
         {failed && <p className="field-error" role="alert">{failed}</p>}
