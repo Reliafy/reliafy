@@ -168,6 +168,10 @@ are named (*Taken as new (no age given): …*), and if every block was left new
 the result says these are the figures for new equipment, not an answer from
 today's ages.
 
+For the whole job (the chance the system lasts the next season as it stands,
+compared with new, and with a part failed), see [the chance a system lasts from
+the equipment you have today](/guides/rbd-as-it-is-today).
+
 ## Reading the results
 
 You get the system reliability curve over time, the **MTTF**, and system

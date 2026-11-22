@@ -176,3 +176,7 @@ The analysis comes from [RePyability](https://github.com/derrynknife/RePyability
 an open-source Python library; its guide to
 [repairable systems](https://derrynknife.github.io/RePyability/guide/repairable/)
 runs the same calculations in code.
+
+To start a diagram from the equipment as it stands today (what is down now, and
+how long each part has run) rather than from new, see [the chance a system lasts
+from the equipment you have today](/guides/rbd-as-it-is-today).
