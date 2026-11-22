@@ -1,7 +1,8 @@
+import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent, formatWithUnit } from "../format.js";
-import { CATEGORY, fitLine, optimumMarker, referenceLine } from "../plotTheme.js";
+import { fitLine, optimumMarker, referenceLine } from "../plotTheme.js";
 import { unitInText } from "./unitText.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 import { formatCost, formatCostRate } from "../money.js";
@@ -25,13 +26,7 @@ export default function ReplacementResult({ result, name = null, actions = null,
     const t = friendlyText(v, unit, friendly);
     return t ? ` (${t})` : "";
   };
-  const block = result.block || null;
   const traces = [fitLine({ x: c.t, y: c.cost_rate, name: "Age replacement", connectgaps: false })];
-  if (c.block_cost_rate) {
-    // Block replacement: every unit at fixed times T apart, failures as they come.
-    traces.push({ type: "scatter", mode: "lines", x: c.t, y: c.block_cost_rate, name: "Block replacement",
-                  connectgaps: false, line: { color: CATEGORY.pink, width: 2, dash: "dot" } });
-  }
   if (result.run_to_failure_cost_rate != null) {
     traces.push(referenceLine({
       x: [c.t[0], c.t[c.t.length - 1]],
@@ -53,7 +48,7 @@ export default function ReplacementResult({ result, name = null, actions = null,
   const layout = {
     height: 400,
     showlegend: true,
-    xaxis: { title: { text: c.block_cost_rate ? `Replacement age, or block interval${u}` : `Replacement age${u}` } },
+    xaxis: { title: { text: `Replacement age${u}` } },
     yaxis: {
       title: { text: `Long-run cost (${currency}) per ${per}` },
       rangemode: "tozero",
@@ -72,9 +67,6 @@ export default function ReplacementResult({ result, name = null, actions = null,
   const rangeAlso = range ? friendlyRange(span.lower, span.upper, unit, friendly) : "";
   const yearly = result.yearly;
   const money = (v) => formatCost(v, currency, { sig: 3 });
-  const blockPays = block?.beneficial && block.optimal_time != null;
-  const blockVsAge = blockPays && pays && result.optimal_cost_rate
-    ? block.optimal_cost_rate / result.optimal_cost_rate - 1 : null;
 
   return (
     <>
@@ -101,17 +93,7 @@ export default function ReplacementResult({ result, name = null, actions = null,
               label: `Saves a year, ${formatNumber(yearly.units, { sig: 6 })} units`, value: money(yearly.fleet_saving_per_year),
             },
           ]}
-        >
-          {blockPays && (
-            <>
-              Block replacement (every unit at fixed times) is best every about{" "}
-              {formatWithUnit(block.optimal_time, unitInText(unit))}{also(block.optimal_time)}
-              {blockVsAge != null
-                ? `, ${formatPercent(Math.abs(blockVsAge))} ${blockVsAge >= 0 ? "dearer" : "cheaper"} than replacing by age.`
-                : "."}
-            </>
-          )}
-        </ResultSummary>
+        />
       ) : (
         <ResultSummary tone="caveat" sentence={result.recommendation} wt={wt} />
       )}
@@ -125,13 +107,15 @@ export default function ReplacementResult({ result, name = null, actions = null,
           pays && { label: "Cost rate at the optimum", value: formatCostRate(result.optimal_cost_rate, currency, unit, { sig: 4 }) },
           { label: "Run-to-failure cost rate", value: formatCostRate(result.run_to_failure_cost_rate, currency, unit, { sig: 4 }) },
           { label: `MTTF${u}`, value: formatNumber(result.mttf, { sig: 4 }) },
-          blockPays && { label: `Block replacement, best interval${u}`, value: formatNumber(block.optimal_time, { sig: 4 }) },
-          blockPays && { label: "Block replacement cost rate", value: formatCostRate(block.optimal_cost_rate, currency, unit, { sig: 4 }) },
           yearly?.cost_per_year != null && { label: "Cost a year, per unit", value: money(yearly.cost_per_year) },
           yearly?.run_to_failure_per_year != null && { label: "Run to failure a year, per unit", value: money(yearly.run_to_failure_per_year) },
         ]}
       >
         <p className="rs-note">Cost rates are long-run costs per {per}.</p>
+        <p className="rs-note">
+          Replacing at planned shutdowns? Use the <Link to="/strategy/replacement?mode=calendar">shutdown rule</Link>:
+          replace at the shutdown if older than a set age.
+        </p>
         {result.optimal_time_range_note && <p className="rs-note">{result.optimal_time_range_note}</p>}
       </ResultDetails>
     </>
