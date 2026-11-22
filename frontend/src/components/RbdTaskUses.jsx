@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getRbdPlanUses } from "../api.js";
 import { formatPercent } from "../format.js";
 import { fmtDate } from "./MaintenanceParts.jsx";
+import Section from "./ui/Section.jsx";
 import "./RbdTaskUses.css";
 
 // The Maintenance tab's "Used in RBDs": the repairable RBDs whose plans read these tasks
@@ -24,9 +25,8 @@ export default function RbdTaskUses({ taskIds, version = 0 }) {
   const uses = state.key === key ? state.uses : [];
   if (!uses.length) return null;
   return (
-    <section className="rtu" aria-label="Used in RBDs">
-      <h4 className="rtu-h">Used in RBDs</h4>
-      <p className="lib-date rtu-why">These diagrams take their maintenance from the tasks here, read each time they&apos;re calculated.</p>
+    <Section title="Used in RBDs" count={uses.length} className="ruled rtu">
+      <p className="field-help rtu-why">These diagrams take their maintenance from the tasks here, read each time they&apos;re calculated.</p>
       <ul className="rtu-list">
         {uses.map((u) => (
           <li key={`${u.rbd.id}:${u.block.id}:${u.task.id}`}>
@@ -39,6 +39,6 @@ export default function RbdTaskUses({ taskIds, version = 0 }) {
           </li>
         ))}
       </ul>
-    </section>
+    </Section>
   );
 }

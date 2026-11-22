@@ -34,44 +34,47 @@ export default function HowOften({ value, onChange, units, withAlso = false, pat
   return (
     <div className="how-often" role="group" aria-label={label}>
       <div className="ho-line">
-        <span className="ho-word">Every</span>
-        <input className="ho-num" type="number" inputMode="decimal" min="0" step="any" value={value.every}
-               onChange={set("every")} disabled={disabled} aria-label="How many" />
-        <select value={value.unit} onChange={set("unit")} disabled={disabled} aria-label="Unit">
-          {units.map((u) => <option key={u} value={u}>{unitWord(u, n)}</option>)}
-        </select>
+        {/* "Every [n] [unit]" stays on one line; the rest wraps after it. */}
+        <span className="ho-keep">
+          <span className="ho-word">Every</span>
+          <input className="ctl ho-num" type="number" inputMode="decimal" min="0" step="any" value={value.every}
+                 onChange={set("every")} disabled={disabled} aria-label="How many" />
+          <select className="ctl" value={value.unit} onChange={set("unit")} disabled={disabled} aria-label="Unit">
+            {units.map((u) => <option key={u} value={u}>{unitWord(u, n)}</option>)}
+          </select>
+        </span>
         {offered.length > 1 && (
           <>
             <span className="ho-word">on</span>
             {value.unit === "weeks" ? (
-              <select value={pattern === "weekday" ? value.weekday : "none"} disabled={disabled} aria-label="Day of the week"
+              <select className="ctl" value={pattern === "weekday" ? value.weekday : "none"} disabled={disabled} aria-label="Day of the week"
                       onChange={(e) => onChange({ ...value, pattern: e.target.value === "none" ? "none" : "weekday",
                         weekday: e.target.value === "none" ? value.weekday : e.target.value })}>
                 <option value="none">any day (counted on)</option>
                 {WEEKDAY_NAMES.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             ) : (
-              <select value={onValue} onChange={setOn} disabled={disabled} aria-label="Which day">
+              <select className="ctl" value={onValue} onChange={setOn} disabled={disabled} aria-label="Which day">
                 <option value="none">{value.unit === "years" ? "the same date" : "the same day of the month"}</option>
                 {NTH_CHOICES.map(([v, w]) => <option key={v} value={`nth:${v}`}>{w}</option>)}
                 <option value="day">a date</option>
               </select>
             )}
             {pattern === "nth" && (
-              <select value={value.weekday} onChange={set("weekday")} disabled={disabled} aria-label="Day of the week">
+              <select className="ctl" value={value.weekday} onChange={set("weekday")} disabled={disabled} aria-label="Day of the week">
                 {WEEKDAY_NAMES.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             )}
             {pattern === "day" && (
               <label className="ho-inline">day
-                <input className="ho-num ho-day" type="number" inputMode="numeric" min="1" max="31" step="1" value={value.day}
+                <input className="ctl ho-num ho-day" type="number" inputMode="numeric" min="1" max="31" step="1" value={value.day}
                        onChange={set("day")} disabled={disabled} aria-label="Day of the month" />
               </label>
             )}
             {value.unit === "years" && pattern !== "none" && (
               <>
                 <span className="ho-word">of</span>
-                <select value={value.month} onChange={set("month")} disabled={disabled} aria-label="Month">
+                <select className="ctl" value={value.month} onChange={set("month")} disabled={disabled} aria-label="Month">
                   {MONTH_NAMES.map((mo, i) => <option key={mo} value={String(i + 1)}>{mo}</option>)}
                 </select>
               </>
@@ -81,17 +84,19 @@ export default function HowOften({ value, onChange, units, withAlso = false, pat
       </div>
       {withAlso && (
         <div className="ho-line ho-also">
-          <span className="ho-word">or every</span>
-          <input className="ho-num" type="number" inputMode="decimal" min="0" step="any" value={value.also} placeholder="—"
-                 onChange={set("also")} disabled={disabled} aria-label="Second limit (optional)" />
-          <select value={value.alsoUnit} onChange={set("alsoUnit")} disabled={disabled} aria-label="Second limit's unit">
-            {units.map((u) => <option key={u} value={u}>{unitWord(u, Number(value.also) || 2)}</option>)}
-          </select>
-          <span className="ho-word">whichever comes first <span className="lib-date">(optional)</span></span>
+          <span className="ho-keep">
+            <span className="ho-word">or every</span>
+            <input className="ctl ho-num" type="number" inputMode="decimal" min="0" step="any" value={value.also} placeholder="—"
+                   onChange={set("also")} disabled={disabled} aria-label="Second limit (optional)" />
+            <select className="ctl" value={value.alsoUnit} onChange={set("alsoUnit")} disabled={disabled} aria-label="Second limit's unit">
+              {units.map((u) => <option key={u} value={u}>{unitWord(u, Number(value.also) || 2)}</option>)}
+            </select>
+          </span>
+          <span className="ho-word">whichever comes first <span className="ho-opt">optional</span></span>
         </div>
       )}
       {problem ? <p className="field-error" role="alert">{problem}</p> : (
-        <p className="ho-dates lib-date" aria-live="polite">
+        <p className="ho-dates field-help" aria-live="polite">
           {dates && dates.length > 0
             ? <>{datesLead}: {dates.map((d) => formatDate(d, { weekday: true })).join(" · ")}{datesAfter ? `, ${datesAfter}` : ""}</>
             : datesNote || (isCalendar(value.unit) ? "No dates ahead." : "")}
