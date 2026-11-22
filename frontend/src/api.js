@@ -1507,21 +1507,21 @@ export function predictRecurrent(id, horizon) {
 
 // The Calculator's values with their 90% bounds at t (and over [start, t]);
 // ``profile`` the covariate values of a covariate model. Read-only.
-export function calculateRecurrent(id, { t, start = null, profile = null } = {}) {
+export function calculateRecurrent(id, { t, start = null, profile = null, serviceLevel = null } = {}) {
   return request(`/api/recurrent/models/${id}/calculate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ t, start, profile }),
+    body: JSON.stringify({ t, start, profile, service_level: serviceLevel }),
   });
 }
 
 // The fleet's failures over the next ``horizon`` from where each of the
 // model's systems is now, with a 90% range. Read-only.
-export function recurrentFromNow(id, horizon) {
+export function recurrentFromNow(id, horizon, serviceLevel = null) {
   return request(`/api/recurrent/models/${id}/from-now`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ horizon }),
+    body: JSON.stringify({ horizon, service_level: serviceLevel }),
   });
 }
 
