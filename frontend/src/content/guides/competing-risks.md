@@ -38,19 +38,20 @@ modes and 22 still running.
 ## Fit by failure mode
 
 Go to **Modelling → Models → Non-repairable**, start a new model and choose **Fit to data**.
-Pick your file or dataset. In the **Data** step, choose the mode column as
-**failure mode** (*optional, competing risks*). The step reminds you that *a
-blank mode is a unit still running*.
+Pick your file or dataset. Reliafy reads the dataset's columns and shows how in
+one line on the **Model** step; a blank mode is a unit still running. If the
+mode column isn't named as **failure mode**, press **Change** and choose it
+there (*optional, competing risks*).
 
-When the file has no status column and some rows have no mode, the step asks
-first: *were those units still running?* Answer **Yes** to fit by failure mode,
-or **No** to treat every row as a failure. It doesn't count failures until you
-answer.
+When the file has no status column and some rows have no mode, the reading says
+so: *c = none: a blank failure mode is still running*. To treat every row as a
+failure instead, press **Change**, set the failure mode to none and use it for
+this fit only.
 
-You can still choose a column for **c** (*failed or still running*) if your file has a status column
+You can still choose a column for **c** (*failed or still running*) under **Change** if your file has a status column
 as well. Otherwise the blank modes say which units are running.
 
-Press **Next**. The **Model** step now reads *Failure modes from "failure_mode"
+The **Model** step reads *Failure modes from "failure_mode"
 — they are fitted as competing risks*, and offers **Competing risks (by failure
 mode)**. No distribution is assumed: the curves come straight from the data.
 
