@@ -5,6 +5,7 @@ import { countActions, toolsFromSpec } from "../apiSpec.js";
 import { API_DOCS_PAGES, apiDocsNeighbours, apiDocsPath, legacyApiDocsTarget } from "../apiDocsPages.js";
 import McpOnRequest from "./McpOnRequest.jsx";
 import Tabs from "./ui/Tabs.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // A copyable code block (monospace, with a copy button).
 function Code({ children }) {
@@ -1263,11 +1264,11 @@ function ApiDocsNav({ page }) {
     <nav className="api-docs-nav" aria-label="API docs pages">
       <label className="api-docs-select">
         <span>Page</span>
-        <select value={apiDocsPath(page)} onChange={(e) => navigate(e.target.value)}>
+        <Select value={apiDocsPath(page)} onChange={(e) => navigate(e.target.value)}>
           {API_DOCS_PAGES.map((p) => (
             <option key={p.slug} value={apiDocsPath(p.slug)}>{p.label}</option>
           ))}
-        </select>
+        </Select>
       </label>
       <ul className="api-docs-menu">
         {API_DOCS_PAGES.map((p) => (

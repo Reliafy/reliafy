@@ -18,6 +18,7 @@ import {
   pickerRows, removeSection, renameItem, reportBody, setNote,
 } from "../reportComposer.js";
 import "./ReportComposer.css";
+import { Select } from "./ui/Controls.jsx";
 
 // How each kind of item is renamed (the picker's Rename).
 const RENAME = {
@@ -63,10 +64,10 @@ function ItemPicker({ items, sections, full, onAdd, onRename, disabled }) {
         </label>
         <label className="rc-picker-kind">
           <span className="sr-only">Kind</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          <Select value={kind} onChange={(e) => setKind(e.target.value)}>
             <option value="">All kinds</option>
             {kinds.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       {rows.length === 0 ? (
@@ -323,10 +324,10 @@ export default function ReportComposer({ initial = null, openId = "", onClose, o
       {initial && reports?.length > 0 && (
         <label className="login-field">
           <span>Add it to</span>
-          <select value={reportId} onChange={(e) => choose(e.target.value)} disabled={!!busy}>
+          <Select value={reportId} onChange={(e) => choose(e.target.value)} disabled={!!busy}>
             <option value="">New report</option>
             {reports.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
-          </select>
+          </Select>
         </label>
       )}
 

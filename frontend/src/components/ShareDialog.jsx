@@ -10,7 +10,7 @@ import {
 import Chip from "./ui/Chip.jsx";
 import { formatDate } from "../dates.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
-import { Checkbox } from "./ui/Controls.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 
 // Collections with a public read-only renderer at /p/:token.
@@ -238,9 +238,9 @@ export function PublicLinks({ collection, artifactId, onError, openable = false 
           </label>
           <label className="login-field pl-new-expiry">
             <span>Expires</span>
-            <select value={expires} onChange={(e) => setExpires(e.target.value)}>
+            <Select value={expires} onChange={(e) => setExpires(e.target.value)}>
               {EXPIRY_OPTIONS.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
         <Checkbox
