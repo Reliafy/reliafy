@@ -82,17 +82,17 @@ export default function CovariateInputs({
                         </label>
                       )}
                       {onRole && (
-                        <select className="cov-role" aria-label={`What ${i.label} is`} value={i.role} disabled={readOnly}
+                        <Select className="cov-role" aria-label={`What ${i.label} is`} value={i.role} disabled={readOnly}
                                 onChange={(e) => onRole(i.key, e.target.value)}>
                           {ROLES.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
-                        </select>
+                        </Select>
                       )}
                       {onMap && conditions?.length > 0 && (
-                        <select className="cov-map" aria-label={`Diagram value for ${i.label}`} value={map[i.key] || ""}
+                        <Select className="cov-map" aria-label={`Diagram value for ${i.label}`} value={map[i.key] || ""}
                                 disabled={readOnly} onChange={(e) => onMap(i.key, e.target.value)}>
                           <option value="">Diagram value: matched by name</option>
                           {conditions.map((c) => <option key={c.name} value={c.name}>Diagram: {c.name}{c.unit ? ` (${c.unit})` : ""}</option>)}
-                        </select>
+                        </Select>
                       )}
                     </div>
                   )}

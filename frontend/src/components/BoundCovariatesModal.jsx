@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import BoundBlockFields from "./BoundBlockFields.jsx";
 import { cleanConditions } from "../covariate.js";
 import "./CovariateCalculator.css";
+import { Select } from "./ui/Controls.jsx";
 
 // The covariates an RBD's blocks take that their positions left open (covariate_binding.py): the
 // diagram's Use and Environment values first ("Environment: 40 °C"), which every block with that
@@ -38,9 +39,9 @@ export default function BoundCovariatesModal({ graph, onApply, onClose }) {
                 <tr key={i}>
                   <td><input type="text" aria-label={`Name of value ${i + 1}`} value={r.name} onChange={(e) => set(i, { name: e.target.value })} /></td>
                   <td>
-                    <select aria-label={`What value ${i + 1} is`} value={r.role || "environment"} onChange={(e) => set(i, { role: e.target.value })}>
+                    <Select aria-label={`What value ${i + 1} is`} value={r.role || "environment"} onChange={(e) => set(i, { role: e.target.value })}>
                       <option value="use">Use</option><option value="environment">Environment</option>
-                    </select>
+                    </Select>
                   </td>
                   <td><input type="text" aria-label={`Unit of value ${i + 1}`} value={r.unit || ""} onChange={(e) => set(i, { unit: e.target.value })} /></td>
                   <td><input type="text" inputMode="decimal" aria-label={`Value ${i + 1}`} value={r.value ?? ""} onChange={(e) => set(i, { value: e.target.value })} /></td>
