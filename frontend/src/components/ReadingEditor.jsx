@@ -5,6 +5,10 @@ import {
 } from "../datasetReading.js";
 import { READING_MAIN, READING_MORE } from "../datasetReading.js";
 import { defaultSecondUnit } from "../twoClocks.js";
+import Field from "./ui/Field.jsx";
+import InputGroup, { Addon } from "./ui/InputGroup.jsx";
+import { TextInput } from "./ui/Controls.jsx";
+import { recordEndIssue } from "../recurrentMapping.js";
 
 // How a dataset's columns are read for modelling (datasetReading.js): the
 // shared Data-step selectors (ColumnMapper) for x (with its range xl to xr),
@@ -45,6 +49,20 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
              onChange={(e) => { const on = e.target.checked; update((cur) => ({ ...cur, one_stream: on })); }} />
       No item column: every row is one stream of events (one fleet or one system)
     </label>
+  );
+
+  // Where observation stopped, one number for repairable data (a column of ends is tr).
+  // Fits use it as their end of test unless they are given their own.
+  const recordEndField = (reading.i || reading.one_stream) && !reading.tr && !reading.m && !range && (
+    <Field label="Where the record ends" optional error={recordEndIssue(reading.record_end)} as="fieldset" key="record-end"
+           help="For repairable data: when observation stopped (for example 216,000 fleet hours). Fits use it as the end of test unless they are given their own; leave it empty if it stopped at the last failure.">
+      <InputGroup label="Where the record ends, and its unit">
+        <TextInput type="number" inputMode="decimal" min="0" step="any" value={reading.record_end ?? ""} disabled={disabled}
+                   onChange={(e) => { const v = e.target.value.trim(); update((cur) => ({ ...cur, record_end: v === "" ? null : Number(v) })); }}
+                   aria-label="Where the record ends" placeholder="e.g. 216000" />
+        {reading.unit && <Addon>{String(reading.unit).toLowerCase()}</Addon>}
+      </InputGroup>
+    </Field>
   );
 
   const zCols = reading.z || [];
@@ -92,7 +110,7 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
         }}
         issues={issues}
         notes={notes}
-        asides={{ c: failedTick ? [failedTick] : [], i: streamTick ? [streamTick] : [] }}
+        asides={{ c: failedTick ? [failedTick] : [], i: streamTick ? [streamTick] : [], tr: recordEndField ? [recordEndField] : [] }}
       />
       <section className="reading-z" aria-label="Covariates (Z)">
         <div className="reading-z-head">

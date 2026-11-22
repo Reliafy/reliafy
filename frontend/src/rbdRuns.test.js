@@ -31,7 +31,9 @@ test("status colour carries meaning only", () => {
 
 test("a window availability with its interval, to its precision", () => {
   const a = { value: 0.9512, lower: 0.9480, upper: 0.9544 };
-  assert.deepEqual(availabilityText(a), { value: "95.12%", interval: "94.80–95.44%" });
+  assert.deepEqual(availabilityText(a), { value: "95.12%", interval: "90% two-sided 94.80–95.44%" });
+  // The level comes with the run (its precision's confidence).
+  assert.equal(availabilityText({ ...a, confidence: 0.95 }).interval, "95% two-sided 94.80–95.44%");
   assert.deepEqual(availabilityText(null), { value: "—", interval: null });
   assert.deepEqual(availabilityText({ value: 0.95 }), { value: "95.00%", interval: null });
 });
@@ -39,7 +41,15 @@ test("a window availability with its interval, to its precision", () => {
 test("above 99.9% a run's availability is quoted with its downtime, not seven figures", () => {
   // The review's "99.96858% 99.96768–99.96894%".
   const a = { value: 0.9996858, lower: 0.9996768, upper: 0.9996894 };
-  assert.deepEqual(availabilityText(a), { value: "99.97%", interval: "down 0.0314% (0.0311–0.0323%)" });
+  assert.deepEqual(availabilityText({ ...a, confidence: 0.9 }),
+    { value: "99.97%", interval: "down 0.0314% (90% two-sided 0.0311–0.0323%)" });
+});
+
+test("the downtime range is the unavailability's, the availability's ends flipped", () => {
+  // The run list's "99.90% down 0.0987% (0.0941–0.103%)": 1 − upper to 1 − lower, so the
+  // figures are downtime (unavailability) and right; the range now says its level and sides.
+  const a = { value: 0.999013, lower: 0.998970, upper: 0.999059, confidence: 0.9 };
+  assert.equal(availabilityText(a).interval, "down 0.0987% (90% two-sided 0.0941–0.103%)");
 });
 
 test("runtime beside its quote", () => {
