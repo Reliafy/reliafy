@@ -4,6 +4,8 @@ import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
+import { ParamsModal } from "../components/ModelTable.jsx";
+import { enteredOfModel } from "../explorerModels.js";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
@@ -37,6 +39,7 @@ export default function ModelPage() {
   // Not on this list (404): ModelNotFound looks in the others.
   const [missing, setMissing] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editingParams, setEditingParams] = useState(false);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useTabParam();
   const [loadError, setLoadError] = useState(null);
@@ -80,6 +83,9 @@ export default function ModelPage() {
   // Any model can be added to a library of the user's (a copy of it now), whatever its kind: fitted,
   // from parameters, from a handbook or a prior. Never added automatically.
   const canAddToLibrary = !!model;
+  // A model saved from parameters alone: its numbers can be changed in place (same id, so every
+  // RBD block, position and library "Update from the original" takes them).
+  const entered = enteredOfModel(model);
   const results = model?.results;
   const split = results?.split || null;
   const title = model ? itemName(model) : "Model";
@@ -113,6 +119,7 @@ export default function ModelPage() {
           <DownloadPythonItem download={() => downloadModelPython("life", model.id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           {canEdit && <button className="ovm-item" onClick={() => setEditing(true)}>Edit fit</button>}
+          {entered && <button className="ovm-item" onClick={() => setEditingParams(true)}>Edit parameters</button>}
           {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
@@ -145,6 +152,16 @@ export default function ModelPage() {
                                   onRetry={() => setAttempt((n) => n + 1)} />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       {editModal}
+      {editingParams && entered && (
+        <ParamsModal
+          link={{ model_id: model.id, model: { name: model.name, entered } }}
+          onClose={() => setEditingParams(false)}
+          onDone={async () => {
+            setEditingParams(false);
+            try { setModel(await getModel(model.id)); } catch (e) { setError(e.message); }
+          }}
+        />
+      )}
       {adding && model && <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} collection="models" onClose={() => setAdding(false)} />}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>

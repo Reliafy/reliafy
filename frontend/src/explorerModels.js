@@ -509,3 +509,16 @@ export function enteredStart(entered) {
   }
   return values;
 }
+
+// A model page's "Edit parameters": the numbers a model saved from parameters alone holds, in the
+// shape the Explorer's Edit parameters form starts from ({distribution, unit, params}), or null for
+// a model fitted to data, a per-demand model or a distribution the form doesn't take.
+const EDITABLE = ["weibull", "exponential", "lognormal", "normal", "gamma"];
+export function enteredOfModel(model) {
+  const spec = model?.spec || {};
+  const dist = model?.distribution_id || spec.distribution_id;
+  if (!model || model.read_only || model.dataset_id || !spec.params_only || spec.per_demand || model.kind !== "distribution"
+      || !EDITABLE.includes(dist)) return null;
+  const params = Object.fromEntries((model.results?.params || []).map((p) => [String(p.name), p.value]));
+  return { distribution: dist, unit: spec.unit || model.results?.unit || "", params };
+}

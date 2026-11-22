@@ -490,8 +490,9 @@ def headline_of(db, model_id: str, owners, unit: str = "") -> Optional[dict]:
         return None
     lower = b10.get("lower") if _finite(b10.get("lower")) else None
     u = f" {unit.lower()}" if unit else ""
-    text = f"B10 {_sig(b10['value'])}{u}"
-    text += f" (90% lower bound {_sig(lower)}{u})" if lower is not None else " (no confidence bound)"
+    # Rounded and worded as the model's own page says it (3 significant figures, "≥ … at 90%").
+    text = f"B10 {_sig3(b10['value'])}{u}"
+    text += f" (≥ {_sig3(lower)} at 90%)" if lower is not None else " (no confidence bound)"
     return {"label": "B10", "value": float(b10["value"]), "lower": float(lower) if lower is not None else None,
             "confidence": HEADLINE_CONFIDENCE, "bound": "lower", "unit": unit, "text": text}
 
@@ -504,20 +505,20 @@ def _headline_from_summary(snap: dict) -> None:
     unit = (snap.get("units") or {}).get("value") or ""
     u = f" {unit.lower()}" if unit and unit != "units" else ""
     snap["headline"] = {"label": "B10", "value": float(b10), "lower": None, "confidence": HEADLINE_CONFIDENCE,
-                        "bound": "lower", "unit": unit, "text": f"B10 {_sig(b10)}{u} (no confidence bound)"}
+                        "bound": "lower", "unit": unit, "text": f"B10 {_sig3(b10)}{u} (no confidence bound)"}
 
 
 def _finite(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
-def _sig(v: float) -> str:
-    """About 4 significant figures, with thousands separators."""
+def _sig3(v: float) -> str:
+    """3 significant figures with thousands separators, as the app's screens show a life."""
     if v == 0:
         return "0"
-    if abs(v) >= 1000:
-        return f"{round(v, 3 - int(math.floor(math.log10(abs(v))))):,.0f}"
-    return f"{v:.4g}"
+    digits = 2 - int(math.floor(math.log10(abs(v))))
+    r = round(v, digits)
+    return f"{r:,.0f}" if digits <= 0 else f"{r:,.{digits}f}".rstrip("0").rstrip(".")
 
 
 def _dataset_snapshot(db, dataset, owners, hidden=frozenset()) -> dict:
