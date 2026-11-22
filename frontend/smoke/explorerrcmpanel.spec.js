@@ -408,7 +408,7 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(modeNotes.getByRole("group", { name: "Evidence" })).toContainText("None linked");
     await expect(modeNotes.getByRole("button", { name: "+ Add notes" })).toBeVisible();
     // One grid, "step | choice": a row per question, the step's name on the left (Derryn, 9 Nov 2026).
-    await expect(panel(page).locator(".rw-sl")).toHaveText(["1 · Failure effects", "2 · Hidden failure?", "Consequence", "3 · Task worth doing?", "Tasks", "Rationale"]);
+    await expect(panel(page).locator(".rw-sl")).toHaveText(["1 · Failure effects", "2 · Hidden failure?", "Consequence", "What a failure costs", "3 · Task worth doing?", "Tasks", "Rationale"]);
     await expect(panel(page).locator(".psec-title", { hasText: /Failure effects|Failure consequences|Proactive task/ })).toHaveCount(0);
     // Step 1 is the effects box alone: the step's title is its label (the box's name, not shown again).
     await expect(panel(page).getByRole("region", { name: "Failure effects" }).getByRole("textbox", { name: /^Failure effects/ })).toBeVisible();
@@ -416,7 +416,8 @@ test("one order at every level: its notes under the title and chips, what's insi
     // Step 2: the two chip rows, no help sentences (those are in the Decide dialog).
     const howBad = panel(page).getByRole("region", { name: "Failure consequences" });
     await expect(howBad.getByRole("radiogroup")).toHaveCount(2);
-    await expect(howBad.locator(".field-help")).toHaveCount(0);
+    // (What a failure costs, below the chips, keeps its fields' help: it isn't a chip row.)
+    await expect(howBad.locator(".field-help:not(.fcost .field-help)")).toHaveCount(0);
     // Step 3, in place, top to bottom: the chip row (the decision, chosen), its tasks as a plain list
     // (each a link to the task's row in the tree: name · kind · interval; no cards), the dashed add
     // row (a redesign may sit beside one task), then the evidence, open. No decision notes box: the

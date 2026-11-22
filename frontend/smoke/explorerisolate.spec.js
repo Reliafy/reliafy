@@ -45,11 +45,13 @@ const box = async (loc) => {
   const b = await loc.boundingBox();
   return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) };
 };
-// Right-click a row, then Focus › the level asked for (the submenu beside the menu).
-async function isolate(page, target, label) {
+// Right-click a row, then Focus › the level asked for (the submenu beside the menu). `focus` is
+// the submenu's label: "Focus" on the Summary tab, "Focus failure modes" on the RCM tab (where
+// the item above it, Focus here, reads the same: the submenu is the last of the two).
+async function isolate(page, target, label, focus = "Focus") {
   await target.click({ button: "right" });
-  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus", exact: true }).hover();
-  const sub = page.getByRole("menu", { name: "Focus" });
+  await page.getByRole("menu").first().getByRole("menuitem", { name: focus, exact: true }).last().hover();
+  const sub = page.getByRole("menu", { name: focus, exact: true });
   await expect(sub).toBeVisible();
   await sub.getByRole("menuitem", { name: label }).click();
   await expect(page.getByRole("menu")).toHaveCount(0);
@@ -126,12 +128,12 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   const kmenu = rowMenu(page, `Works line B ${tag}`);
   // The menu puts the focus on its first item as it opens: wait for that, so it doesn't take it back from Isolate.
   await expect(kmenu.getByRole("menuitem").first()).toBeFocused();
-  await kmenu.getByRole("menuitem", { name: "Focus failure modes", exact: true }).last().focus();
-  await expect(kmenu.getByRole("menuitem", { name: "Focus failure modes", exact: true }).last()).toBeFocused();
+  await kmenu.getByRole("menuitem", { name: "Focus", exact: true }).focus();
+  await expect(kmenu.getByRole("menuitem", { name: "Focus", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await expect(sub.getByRole("menuitem", { name: "With 1 level open" })).toBeFocused();
   await page.keyboard.press("ArrowLeft"); // back to Isolate
-  await expect(kmenu.getByRole("menuitem", { name: "Focus failure modes", exact: true }).last()).toBeFocused();
+  await expect(kmenu.getByRole("menuitem", { name: "Focus", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter"); // With 1 level open
   await expect(row(page, `Works line B ${tag}`)).toHaveAttribute("aria-expanded", "true");
@@ -177,7 +179,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   await page.keyboard.press("Escape");
 
   // Isolate the function, 1 level: its failure shows, closed; line B closed, still on show; the pin stays.
-  await isolate(page, fnRow.locator(".tt-tree"), "With 1 level open");
+  await isolate(page, fnRow.locator(".tt-tree"), "With 1 level open", "Focus failure modes");
   await expect(trow(`^Functional failure: No flow ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toHaveCount(0);
   await expect(trow(`^Works pump A ${tag}`)).toHaveAttribute("aria-expanded", "true"); // the way up stays open
@@ -189,7 +191,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   expect([now.tree.x, now.tree.y, now.head.x, now.head.y]).toEqual([frame.tree.x, frame.tree.y, frame.head.x, frame.head.y]);
   await shot(page, "v2-4-rcm-function-isolated-1280");
   // 2 levels: the mode shows.
-  await isolate(page, fnRow.locator(".tt-tree"), "With 2 levels open");
+  await isolate(page, fnRow.locator(".tt-tree"), "With 2 levels open", "Focus failure modes");
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toBeVisible();
   // Switching tabs moves nothing.
   await page.getByRole("tab", { name: "Summary" }).click();
@@ -227,7 +229,7 @@ test("the RCM tab goes five levels deep: a position's Isolate offers 4 levels, w
   await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toHaveAttribute("aria-expanded", "true");
   await expect(spoken(page)).toContainText("opened 4 levels");
   // 3 levels: down to the failure modes, their tasks closed again.
-  await isolate(page, pumpRow.locator(".tt-tree"), "With 3 levels open");
+  await isolate(page, pumpRow.locator(".tt-tree"), "With 3 levels open", "Focus failure modes");
   await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(trow(`^Task: Check the seal ${tag}`)).toHaveCount(0);
   // The function goes four deep (standards aside): no fifth level offered on it.
@@ -251,9 +253,9 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   await expect(row(page, `Works pump B ${tag}`)).toBeVisible();
   await row(page, `Works line A ${tag}`).getByRole("button", { name: /^Actions for / }).click();
   const menu = rowMenu(page, `Works line A ${tag}`);
-  await menu.getByRole("menuitem", { name: "Focus failure modes", exact: true }).last().click();
-  await expect(menu.getByRole("menuitem", { name: "Focus failure modes", exact: true }).last()).toHaveAttribute("aria-expanded", "true");
-  const group = menu.getByRole("group", { name: "Focus failure modes" });
+  await menu.getByRole("menuitem", { name: "Focus", exact: true }).click();
+  await expect(menu.getByRole("menuitem", { name: "Focus", exact: true })).toHaveAttribute("aria-expanded", "true");
+  const group = menu.getByRole("group", { name: "Focus" });
   await expect(group.getByRole("menuitem")).toHaveText(["With 1 level open", "With 2 levels open", "With 3 levels open"]);
   const mb = await menu.boundingBox();
   expect(mb.x + mb.width).toBeLessThanOrEqual(400);
