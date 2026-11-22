@@ -177,9 +177,9 @@ def test_unit_mismatch_blocks_support(session):
     inconclusive — units are free text, so only definite disagreement trips."""
     analysis = _make_replacement(session, A, beneficial=True)  # unit: hours
 
-    def status_for(interval_unit):
+    def status_for(interval_unit, interval=500):
         return _status(session, A, {
-            "outcome": "fixed_interval", "task": "replace", "interval": 500,
+            "outcome": "fixed_interval", "task": "replace", "interval": interval,
             "interval_unit": interval_unit,
             "evidence": {"type": "strategy_analysis", "id": analysis.id},
         })
@@ -191,7 +191,8 @@ def test_unit_mismatch_blocks_support(session):
     assert status_for("hrs")["status"] == "supported"
     assert status_for("hours")["status"] == "supported"
     # Another time unit is checked after conversion, not marked a mismatch, and says so.
-    days = status_for("days")
+    # (12 days, near the optimum: 500 days would be far longer than it supports.)
+    days = status_for("days", 12)
     assert days["status"] == "supported" and "Unit mismatch" not in str(days)
     assert days["unit_conversion"] == "evidence in hours, task interval in days: converted at 1 day = 24 hours (running all the time)"
     assert "≈ 298 hours, about 12.4 days" in days["summary"], days["summary"]
@@ -241,3 +242,28 @@ def test_interval_far_shorter_than_the_evidence_supports_says_so(session):
     assert check(50)["status"] == "supported"
     longer = check(200)
     assert longer["status"] == "contradicted" and "longer than" in longer["summary"]
+
+
+def test_fixed_interval_far_longer_than_its_cost_optimum_says_so(session):
+    """The mirror of the short side: a fixed-interval task set at more than twice its
+    cost-optimal age (about 101 h for the oil) reads contradicted, with both intervals;
+    up to twice it stays supported."""
+    from backend.services import strategy_store
+
+    oil = strategy_store.save_analysis(session, "oil", "optimal_replacement", {
+        "distribution_id": "lognormal", "params": [4.840310090876535, 0.10595790857024777],
+        "planned_cost": 74.0, "unplanned_cost": 250.0, "unit": "hours"}, A)
+
+    def fixed(interval):
+        return _status(session, A, {"outcome": "fixed_interval", "task": "Change oil", "interval": interval,
+                                    "interval_unit": "hours",
+                                    "evidence": {"type": "strategy_analysis", "id": oil.id}})
+
+    r = fixed(250)
+    assert r["status"] == "contradicted"
+    assert "set every 250 hours, far longer than the cost-optimal interval" in r["summary"]
+    assert "about 101 hours: about twice as long as the evidence supports" in r["summary"]
+    assert r["interval_share"] == pytest.approx(250 / oil.results["optimal_time"], rel=1e-3)
+    assert "about 4 times as long" in fixed(400)["summary"]
+    assert fixed(200)["status"] == "supported"  # 1.98 times: within twice
+    assert fixed(150)["status"] == "supported"

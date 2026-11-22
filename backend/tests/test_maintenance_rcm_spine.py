@@ -199,7 +199,8 @@ def test_an_interval_with_no_unit_is_checked_in_the_tasks_unit(m, db):
     mode = m.add_failure_mode(pid, "Bearing fatigue", functional_failure_id=ff["id"])
     decision = {"outcome": "fixed_interval", "interval": 580,
                 "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"}}
-    m.decide_failure_mode(mode["id"], "operational", decision)
+    # 24 days (576 h, near the analysis's optimum): 580 days would be far longer than it supports.
+    m.decide_failure_mode(mode["id"], "operational", {**decision, "interval": 24})
     graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners)
     [got] = graph["positions"][0]["functions"][0]["failures"][0]["modes"]
     assert got["decision"]["interval_unit"] == "days"

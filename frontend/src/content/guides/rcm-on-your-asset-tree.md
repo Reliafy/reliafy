@@ -469,7 +469,9 @@ Each decision's **Evidence check** shows one of these:
   decision linked to a wear-out model is the common case. A task set at less
   than half the interval its analysis supports reads contradicted too, with
   both intervals: *set every 25 hours … the evidence supports about 101
-  hours: done about 4 times as often as the evidence needs*. Whether the
+  hours: done about 4 times as often as the evidence needs*. So does a
+  fixed-interval task set at more than twice its cost-optimal interval
+  (*about twice as long as the evidence supports*). Whether the
   extra work is worth it is your call; the check shows the numbers.
 - **Inconclusive** — the evidence can't decide it. The line underneath says
   why: the wrong kind of analysis, mismatched units, or a fit with no
