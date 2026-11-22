@@ -7,6 +7,7 @@ import {
   useLocation,
   useNavigationType,
 } from "react-router-dom";
+import BuildUpdateWatcher from "./components/BuildUpdateWatcher.jsx";
 import Login from "./views/Login.jsx";
 import Landing from "./views/Landing.jsx";
 import Blog from "./views/Blog.jsx";
@@ -113,6 +114,7 @@ export default function App() {
     <BrowserRouter useTransitions={false}>
       <PageViews />
       <ScrollToTop />
+      <BuildUpdateWatcher />
       <ConfigProvider>
         <AuthProvider>
           <ConfirmProvider>

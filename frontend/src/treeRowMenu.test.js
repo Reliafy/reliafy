@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
-import { TAB_LEADS, addsFirst, isolateItems, liveKids, lsaLead, moveTargets, showsAddRow, summaryActions, tabMenu, viewOnlyReason, withPin } from "./treeRowMenu.js";
+import { TAB_LEADS, addsFirst, focusNoun, isolateItems, liveKids, lsaLead, moveTargets, showsAddRow, summaryActions, tabMenu, viewOnlyReason, withPin } from "./treeRowMenu.js";
 import { designActions } from "./products.js";
 import { measAddActions } from "./explorerMeasurements.js";
 
@@ -103,6 +103,12 @@ test("Focus: Focus here (every level), then Focus › levels; just Focus here wi
   assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, focused: true }).map((i) => i.id), ["isolate:all", "isolate", "focus-clear"]);
   assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true, focused: true }).map((i) => i.label), ["Focus here", "Clear focus"]);
   assert.deepEqual(isolateItems({ key: "h", kids: ["x"] }, { can: false, focused: true }), [{ id: "focus-clear", label: "Clear focus" }]);
+  // A tab with its own table names what it shows.
+  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, noun: "tasks" }).map((i) => i.label), ["Focus tasks", "Focus tasks"]);
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true, noun: "models" }).map((i) => i.label), ["Focus models"]);
+  assert.equal(focusNoun("maintenance", { tasks: true }), "tasks");
+  assert.equal(focusNoun("maintenance"), "");
+  assert.deepEqual(["rcm", "fmea", "measurements", "models", "missions", "summary"].map((t) => focusNoun(t)), ["failure modes", "failure modes", "measurements", "models", "missions", ""]);
   // Before Delete, with Pin this branch after it.
   const skim = summaryActions({ key: "a", type: "pos", kids: ["b"], ref: {} }, { mode: "positions" });
   assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate:all", "isolate", "pin", "tree-delete"]);

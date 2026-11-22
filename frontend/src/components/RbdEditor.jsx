@@ -1,3 +1,4 @@
+import { useUnsavedSignal } from "../useUnsavedSignal.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useMenuDismiss from "./useMenuDismiss.js";
 import { Link, useNavigate } from "react-router-dom";
@@ -1256,6 +1257,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   const losesChanges = leaveLosesChanges({ dirty, autosave, saveState: saveState.state });
   useEffect(() => { onDirty?.(losesChanges); }, [onDirty, losesChanges]);
   const askOnUnload = unloadShouldAsk({ dirty, autosave, saveState: saveState.state });
+  // Also the update bar's unsaved signal: a new release doesn't reload the tab over changes.
+  useUnsavedSignal("rbd-editor", askOnUnload);
   useEffect(() => {
     if (!askOnUnload) return undefined;
     const ask = (e) => {

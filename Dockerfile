@@ -14,7 +14,11 @@ COPY frontend/ ./
 # login) applies — Vite gives real env vars priority over .env files.
 ARG VITE_AUTH_DISABLED=false
 ENV VITE_AUTH_DISABLED=${VITE_AUTH_DISABLED}
-RUN npm run build
+# One id per image build (frontend/src/buildCheck.js compares it with the
+# server's X-Reliafy-Build header); pass --build-arg BUILD_ID=<git sha> to pick it.
+ARG BUILD_ID=""
+RUN VITE_BUILD_ID="${BUILD_ID:-$(date -u +%Y%m%d%H%M%S)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')}" \
+    && export VITE_BUILD_ID && npm run build
 # Cloud builds also prerender the marketing pages (landing/blog/legal) to
 # static HTML for search indexing, plus sitemap.xml and robots.txt. Self-host
 # builds skip it — they have no marketing pages.

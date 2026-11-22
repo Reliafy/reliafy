@@ -1,5 +1,5 @@
-// Focus here in a tab's tree-table (Assets › Explorer, the Maintenance tab's tasks): right-click a
-// level, Focus here, and that level opens at every level below it (all its tasks show) while every
+// Focus tasks in a tab's tree-table (Assets › Explorer, the Maintenance tab's tasks): right-click a
+// level, Focus tasks, and that level opens at every level below it (all its tasks show) while every
 // other branch closes, still on show. The tree column's header says "Focused: <name>" with Clear
 // focus, which puts back what was open before. Nothing is pinned and the address doesn't change.
 // At 400 px the same from the row's ⋯, the pill under the search box, nothing scrolling sideways.
@@ -39,7 +39,7 @@ async function openEverything(page) {
   if (await page.getByRole("menu", { name: "Tree options" }).isVisible()) await page.keyboard.press("Escape");
 }
 
-test("the tasks tab: Focus here on a mid-level position opens only its branch, every task in it; Clear focus puts it back", async ({ page, request, problems }) => {
+test("the tasks tab: Focus tasks on a mid-level position opens only its branch, every task in it; Clear focus puts it back", async ({ page, request, problems }) => {
   const tag = `f${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -50,14 +50,14 @@ test("the tasks tab: Focus here on a mid-level position opens only its branch, e
   await expect(nameRow(page, `Check seal A ${tag}`)).toBeVisible();
   const url = page.url();
 
-  // The level's menu: Focus here, then Focus › levels, then Pin this branch.
+  // The level's menu: Focus tasks, then Focus tasks › levels, then Pin this branch.
   await nameRow(page, `Focus line A ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Focus line A ${tag}`);
-  await expect(menu.getByRole("menuitem", { name: "Focus here", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Focus", exact: true })).toHaveAttribute("aria-haspopup", "menu");
+  await expect(menu.getByRole("menuitem", { name: "Focus tasks", exact: true }).first()).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Focus tasks", exact: true }).last()).toHaveAttribute("aria-haspopup", "menu");
   await expect(menu.getByRole("menuitem", { name: "Pin this branch" })).toBeVisible();
   await shot(page, "tabfocus-1-menu-1440");
-  await menu.getByRole("menuitem", { name: "Focus here", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Focus tasks", exact: true }).first().click();
 
   // Only line A's branch open, down to every task; line B closed but still on show.
   await expect(nameRow(page, `Grease pump A ${tag}`)).toBeVisible();
@@ -82,7 +82,7 @@ test("the tasks tab: Focus here on a mid-level position opens only its branch, e
   await expectHealthy(page, problems, { label: "focus on the tasks tab", root: ".tx" });
 });
 
-test("at 400 px: Focus here from the row's ⋯; the pill under the search box; Clear focus from the tree's ⋯", async ({ page, request, problems }) => {
+test("at 400 px: Focus tasks from the row's ⋯; the pill under the search box; Clear focus from the tree's ⋯", async ({ page, request, problems }) => {
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
@@ -91,7 +91,7 @@ test("at 400 px: Focus here from the row's ⋯; the pill under the search box; C
   await openEverything(page);
   await expect(nameRow(page, `Grease pump B ${tag}`)).toBeVisible();
   await nameRow(page, `Focus line A ${tag}`).getByRole("button", { name: /^Actions for / }).click();
-  await rowMenu(page, `Focus line A ${tag}`).getByRole("menuitem", { name: "Focus here", exact: true }).click();
+  await rowMenu(page, `Focus line A ${tag}`).getByRole("menuitem", { name: "Focus tasks", exact: true }).first().click();
   await expect(nameRow(page, `Check seal A ${tag}`)).toBeVisible();
   await expect(nameRow(page, `Grease pump B ${tag}`)).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Focus" })).toContainText(`Focused: Focus line A ${tag}`);
