@@ -870,8 +870,8 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
     if start is None:
         return out
     out["start"] = start
-    if start.get("note"):
-        out["notes"] = [start["note"], *(out.get("notes") or [])]
+    # One block, no covariates: the RBD notes about blocks, stresses and "As of now" say nothing here.
+    out["notes"] = [start["note"]] if start.get("note") else []
     if out.get("reliability") is not None and out.get("method") == "exact" \
             and not ((current_state or {}).get(simple_block(graph)["id"]) or {}).get("failed"):
         out.pop("interval", None)

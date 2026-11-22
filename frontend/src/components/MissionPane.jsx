@@ -470,14 +470,14 @@ function MissionAnswer({ result, busy, error, pro, stale, total, unit, name, sim
       : simple && !total ? "Give the mission its length, then Calculate." : "Calculate to work out the chance the mission completes."}</p>;
   }
   const lb = result.lower_bound;
-  const from = result.start ? (result.start.age > 0 ? ` starting at ${lengthText(result.start.age, unit)}` : " starting new") : "";
+  const from = result.start ? (result.start.age > 0 ? `starting at ${lengthText(result.start.age, unit)}` : "starting new") : "";
   const waiting = result.reliability == null;
   const risky = result.riskiest;
   const ph = placeholderWarning(result);
   return (
     <>
     <ResultSummary tone={ph?.mostly && !waiting ? "bad" : waiting || ph ? "caveat" : "neutral"} className="mission-answer"
-                   sentence={!waiting && result.start && !ph ? `The item${from} lasts the ${lengthText(total, unit)} mission with probability ${pct(result.reliability)}${lb ? `; at least ${pct(lb.lower)} (${levelPct(lb.confidence)} one-sided lower bound)` : ""}.` : answerText(result)}
+                   sentence={!waiting && result.start && !ph ? `${from ? `${from.trim().charAt(0).toUpperCase()}${from.trim().slice(1)}, the` : "The"} item lasts the mission's ${lengthText(total, unit)} with probability ${pct(result.reliability)}${lb ? `; at least ${pct(lb.lower)} (${levelPct(lb.confidence)} one-sided lower bound)` : ""}.` : answerText(result)}
                    stats={waiting ? [] : [
                      { label: ph ? "With placeholders" : "Completes", value: pct(result.reliability), hint: ph ? "not a real figure" : undefined },
                      ph ? (ph.without != null ? { label: `Without ${ph.n === 1 ? "it" : "them"}`, value: pct(ph.without), hint: "the blocks with models" } : null)

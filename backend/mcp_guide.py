@@ -223,7 +223,10 @@ phase, and the blocks driving each phase's failures (drivers, weakest first); a 
 (needs). Worked out by RePyability's PhasedMission: exact (free) without standby, or with standby when every \
 block has a constant failure rate; otherwise simulated, seeded (Pro; code pro_required without it). With \
 current_state ({node: {failed: true} | {age}}, as analyse rbd) it flies from now: each aged block starts at \
-its age, a failed block stays failed, and the notes say "As of now".
+its age, a failed block stays failed, and the notes say "As of now". A mission on a position's life model \
+with no covariates (one block) is a length from a starting age saved on it (new, an age, or "now": the fitted \
+item's age): analyse rbd_mission gives R(age + length) / R(age) with start and lower_bound (90% one-sided, \
+for a fitted model).
 - Condition and life block (non-repairable diagrams only, one component block per unit): model = \
 {saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
 value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \

@@ -272,7 +272,9 @@ test("missions: a leaf with a model gets a one-block mission; the RBD list label
   expect(body.built_from).toBe("model");
   const pane = page.getByRole("region", { name: "Mission" });
   await expect(pane).toContainText(`Runs on Arm ${tag} — Mission 1`);
-  await expect(pane.getByRole("region", { name: "Blocks in each phase" })).toBeVisible();
+  // A life model with no covariates: the mission is its length from a starting age (no phases, no grid).
+  await expect(pane.getByRole("region", { name: "Length and starting age" })).toBeVisible();
+  await expect(pane.getByRole("region", { name: "Blocks in each phase" })).toHaveCount(0);
   await shot(page, "mission-leaf-one-block-1440");
   await page.setViewportSize({ width: 400, height: 860 });
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);

@@ -451,6 +451,15 @@ export function missionRowActions(r, { viewOnly = null } = {}) {
     ];
   }
   const full = `A mission has at most ${MAX_PHASES} phases.`;
+  const m = r?.ref?.mission;
+  // A plain life model's mission is its length from a starting age: set in the mission editor.
+  if (m?.simple && (m.phases || 0) <= 1) {
+    return [
+      { id: "mission-open", label: "Set its length and starting age…" },
+      { id: "mission-rbd", label: r?.ref?.rbd?.mission_rbd ? "Open its RBD" : "Show the RBD" },
+      { id: "mission-delete", label: "Delete…", ...off },
+    ];
+  }
   return [
     { id: "mission-phase-add", label: "Add a phase",
       ...(viewOnly ? off : (r?.ref?.mission?.phases || 0) >= MAX_PHASES ? { disabled: true, reason: full, title: full } : {}) },
