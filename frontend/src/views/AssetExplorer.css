@@ -658,7 +658,9 @@ button.rw-cklink {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: var(--space-1) 0;
+  /* 2px, not 4: the way up, the name and a save message must fit the 47px
+     heading row without growing it (explorersteady.spec.js). */
+  padding: var(--space-0-5) 0;
 }
 .tt-sub { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .tt-sub .tt-crumb { flex: 0 1 auto; }
