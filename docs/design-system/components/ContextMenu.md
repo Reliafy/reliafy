@@ -48,7 +48,7 @@ The first item takes focus. ↑ ↓ Home End move, Enter or Space chooses, → o
 
 ## Focus and Pin
 
-Every row that has something inside it offers **Focus here** (opened at every level, every other branch closed), then **Focus ›** (1, 2 or 3 levels), then **Pin this branch**, before Delete. A row with nothing inside it has only Focus here. While a focus is on, **Clear focus** follows them. The same words on every tab and in every tree-table: see `TreeTable`.
+Every row that has something inside it offers **Focus here** (opened at every level, every other branch closed), then **Focus ›** (1, 2 or 3 levels), then **Pin this branch**, before Delete. A row with nothing inside it has only Focus here. While a focus is on, **Clear focus** follows them. On a tab with its own table the words name what it shows (**Focus tasks**, **Focus failure modes**, **Focus measurements**, **Focus models**, **Focus missions**, and **Focus tasks ›** likewise); elsewhere they stay Focus here and Focus ›. See `TreeTable`.
 
 ## Order
 

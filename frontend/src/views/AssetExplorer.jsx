@@ -106,7 +106,7 @@ import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import { ASSETS_LIST_PATH, explorerCarry } from "../maintenanceAssets.js";
-import { addsFirst, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
+import { addsFirst, focusNoun, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, focusFrom, focusShown, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
@@ -1350,7 +1350,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const focusOn = focusShown(focusBy[mode], display);
   const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, {
     can: canIsolate(display.rows.get(r.key) || r, mode, canPin), levels: tableOn && !fmeaOn ? levelsBelow(display, r.key) : 0,
-    focused: !!focusOn,
+    focused: !!focusOn, noun: focusNoun(tab, { tasks: tasksOn }),
   });
   const dropFocus = () => setFocusBy((f) => (f[mode] ? { ...f, [mode]: null } : f));
   // Clear focus: what was open before the first Focus, back again (the rows picked stay picked).
