@@ -10,6 +10,7 @@ import { formatNumber } from "../format.js";
 import { money, periodLabels } from "../maintenanceForecast.js";
 import { SERVICE_LEVELS, levelText, overText, riskText, saveText, stockingCsv, windowText } from "../sparesPlan.js";
 import { orderLines, splitText } from "../sparesYear.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const num = (v) => (blank(v) ? null : Number(v));
@@ -40,10 +41,8 @@ function PartStockingModal({ spare, onClose, onDone }) {
           {SERVICE_LEVELS.map((l) => <option key={l} value={l}>{levelText(l)}</option>)}
         </select>
       </Field>
-      <label className="maint-row" style={{ gap: "0.4rem", marginTop: 0 }}>
-        <input type="checkbox" checked={f.repairable} onChange={(e) => setF({ ...f, repairable: e.target.checked })} />
-        Repairable: failed ones are repaired and come back
-      </label>
+      <Checkbox checked={f.repairable} onChange={(e) => setF({ ...f, repairable: e.target.checked })}
+                label="Repairable: failed ones are repaired and come back" />
       {f.repairable && (
         <Field label="Repair turnaround (days)">
           <input type="number" inputMode="decimal" min="0" step="any" value={f.turnaround_days}

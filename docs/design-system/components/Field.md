@@ -16,7 +16,7 @@ The control is the child: `TextInput`, `TextArea` (starts at one line and grows)
 
 A date or a time is `TextInput type="date"` / `type="time"`, which render the shared `DateTimeInput` fields ("22 Nov 2026", "16:00"), never the browser's own.
 
-`Checkbox` (same file as `TextInput`) is a checkbox with its label beside it (`.check`): the whole label is the target, a 16px (`icon-md`) box in `accent`, the label in `body` text, and the row 40px tall on a phone. Use it for a yes/no in a form that waits for Save ("Counted in running hours"); a setting that applies at once is a `Switch`. Several of them (which failure modes a task prevents) go in one `<Field as="fieldset">`, whose label names the group.
+`Checkbox` (same file as `TextInput`) is a checkbox with its label beside it (`.check`): the whole label is the target, a 16px (`icon-md`) box in `accent`, the label in `body` text, and the row 40px tall on a phone. Use it for a yes/no in a form that waits for Save ("Counted in running hours"); a setting that applies at once is a `Switch`. `title` and `style` go on the whole row (the label), the rest on the native input, so `input[type=checkbox]` selectors and `getByRole("checkbox")` keep working. Several of them (which failure modes a task prevents) go in one `<Field as="fieldset">`, whose label names the group.
 
 Without a `label`, `Checkbox` is the box alone (`.check-bare`): a row-select box in a table, or a box under a column heading that names it. Pass `aria-label` (it names the row: "Use pump 3"). It adds no row padding, and on a phone an invisible 40px (`control-lg`) target surrounds it, so the row keeps its height.
 

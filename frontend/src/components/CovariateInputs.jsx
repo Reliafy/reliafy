@@ -1,5 +1,5 @@
 import Field from "./ui/Field.jsx";
-import { Select, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextInput } from "./ui/Controls.jsx";
 import { ROLES, defaultText, groupInputs, limitProblem, limitText, neededInputs } from "../covariate.js";
 import "./CovariateCalculator.css";
 
@@ -74,12 +74,10 @@ export default function CovariateInputs({
                   {(fix || onRole || (onMap && conditions?.length)) && (
                     <div className="cov-extra">
                       {fix && (
-                        <label className="cov-fix">
-                          <input type="checkbox" checked={fixedHere} disabled={readOnly}
-                                 aria-label={`Fix ${i.label} at this position`}
-                                 onChange={(e) => fix.onFix(i.key, e.target.checked)} />
-                          Fix at this position
-                        </label>
+                        <Checkbox className="cov-fix" checked={fixedHere} disabled={readOnly}
+                                  aria-label={`Fix ${i.label} at this position`}
+                                  onChange={(e) => fix.onFix(i.key, e.target.checked)}
+                                  label="Fix at this position" />
                       )}
                       {onRole && (
                         <select className="cov-role" aria-label={`What ${i.label} is`} value={i.role} disabled={readOnly}

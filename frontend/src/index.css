@@ -2432,6 +2432,7 @@ button.switch {
   font-weight: 500;
 }
 button.switch:hover:not(:disabled) { background: none; }
+.switch-label { min-width: 0; text-align: left; white-space: normal; }
 .switch-track {
   position: relative;
   width: 32px;

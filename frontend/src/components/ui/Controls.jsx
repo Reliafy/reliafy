@@ -42,7 +42,7 @@ export const Select = forwardRef(function Select({ className, children, ...props
 // no row padding, named by aria-label, and a 40 px touch target on a phone that doesn't
 // change the row's height.
 //   checked, onChange(event), label (node), disabled, name, className, aria-label,
-//   title (on the whole row)
+//   title and style (on the whole row)
 export const Checkbox = forwardRef(function Checkbox({ label, className, ...props }, ref) {
   return <Check ref={ref} type="checkbox" label={label} className={className} {...props} />;
 });
@@ -56,11 +56,11 @@ export const Radio = forwardRef(function Radio({ label, className, ...props }, r
   return <Check ref={ref} type="radio" label={label} className={className} {...props} />;
 });
 
-// title goes on the label, so the whole row shows it.
-const Check = forwardRef(function Check({ type, label, className, title, ...props }, ref) {
+// title and style go on the label (the whole row).
+const Check = forwardRef(function Check({ type, label, className, title, style, ...props }, ref) {
   const bare = label == null || label === false;
   return (
-    <label className={cls(bare ? "check check-bare" : "check", className)} title={title}>
+    <label className={cls(bare ? "check check-bare" : "check", className)} title={title} style={style}>
       <input ref={ref} {...props} type={type} />
       {!bare && <span className="check-label">{label}</span>}
     </label>

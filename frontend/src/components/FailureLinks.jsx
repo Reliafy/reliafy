@@ -5,6 +5,7 @@ import { saveErrorText } from "../confirm.js";
 import { filterChoices, linkChoices, linkSectionTitle } from "../explorerRcm.js";
 import { FUNCTION_MAX } from "../rcmWorksheet.js";
 import "./FailureLinks.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // A functional failure caused by others on its tree, in the Explorer's RCM tab:
 // the two sections of its details panel (Caused by; Causes), each row naming the
@@ -216,12 +217,13 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
               {linkSectionTitle(g, shown[i - 1], where) && <h4 className="lp-sec">{linkSectionTitle(g, shown[i - 1], where)}</h4>}
               <h4 className="lp-pos" style={{ paddingLeft: 12 + g.depth * 14 }}>{g.name}</h4>
               {g.items.map((it) => (
-                <label key={it.id} className={"lp-item" + (it.linked ? " linked" : "")} style={{ paddingLeft: 12 + g.depth * 14 }}>
-                  <input type="checkbox" checked={it.linked || ticked.has(it.id)} disabled={it.linked || busy}
-                         onChange={(e) => tick(it.id, e.target.checked)} />
-                  <span className="lp-t"><span className="lp-fn">{shorter(it.function, 40)} ›</span> {it.text}</span>
-                  <span className="lp-s">{it.linked ? "linked" : it.summary}</span>
-                </label>
+                <Checkbox key={it.id} className={"lp-item" + (it.linked ? " linked" : "")} style={{ paddingLeft: 12 + g.depth * 14 }}
+                          checked={it.linked || ticked.has(it.id)} disabled={it.linked || busy}
+                          onChange={(e) => tick(it.id, e.target.checked)}
+                          label={<>
+                            <span className="lp-t"><span className="lp-fn">{shorter(it.function, 40)} ›</span> {it.text}</span>
+                            <span className="lp-s">{it.linked ? "linked" : it.summary}</span>
+                          </>} />
               ))}
             </div>
           ))}
@@ -237,12 +239,12 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
             <div className="lp-group">
               <h4 className="lp-pos">To be written</h4>
               {made.map((m) => (
-                <label key={m.id} className="lp-item">
-                  <input type="checkbox" checked={ticked.has(m.id)} disabled={busy} onChange={(e) => tick(m.id, e.target.checked)} />
-                  <span className="lp-t"><span className="lp-fn">{m.position} › {shorter(m.function_text, 40)} ›</span> {m.text}</span>
-                  <span className="lp-s">new <button type="button" className="link" onClick={(e) => { e.preventDefault(); drop(m.id); }}
-                                                      disabled={busy} aria-label={`Don't add ${m.text}`}>Remove</button></span>
-                </label>
+                <Checkbox key={m.id} className="lp-item" checked={ticked.has(m.id)} disabled={busy} onChange={(e) => tick(m.id, e.target.checked)}
+                          label={<>
+                            <span className="lp-t"><span className="lp-fn">{m.position} › {shorter(m.function_text, 40)} ›</span> {m.text}</span>
+                            <span className="lp-s">new <button type="button" className="link" onClick={(e) => { e.preventDefault(); drop(m.id); }}
+                                                                disabled={busy} aria-label={`Don't add ${m.text}`}>Remove</button></span>
+                          </>} />
               ))}
             </div>
           )}

@@ -43,6 +43,7 @@ import { importanceRows } from "../rbdImportance.js";
 import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -189,10 +190,8 @@ function ImportanceHelp({ structural }) {
 const AS_OF_HINT = "Start from today: give each block its age now (or mark it failed), and the results run from now instead of from new.";
 function AsOfToggle({ checked, onChange }) {
   return (
-    <label className="rbd-asof-toggle" title={AS_OF_HINT}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>As of now <small className="rbd-asof-sub">from today's ages</small></span>
-    </label>
+    <Checkbox className="rbd-asof-toggle" title={AS_OF_HINT} checked={checked} onChange={(e) => onChange(e.target.checked)}
+              label={<span>As of now <small className="rbd-asof-sub">from today's ages</small></span>} />
   );
 }
 

@@ -36,6 +36,7 @@ import "../views/Maintenance.css";
 import "./LsaPanel.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import { Checkbox, Radio } from "./ui/Controls.jsx";
 
 // The LSA tab of the Explorer's panel (Assets › Explorer, ?tab=lsa; it was the
 // Packages tab, and ?tab=packages still opens it. Derryn, 8–9 Nov 2026: the
@@ -192,8 +193,8 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
         <ul className="pk-proposal" aria-label="Packages to make">
           {rows.map((r) => (
             <li key={r.ref} className={"pk-prow" + (r.layerOf ? " pk-layer-row" : "")}>
-              <input type="checkbox" checked={r.ticked} aria-label={`Make ${r.name || r.draft.name}`}
-                     onChange={(e) => setRows(toggleRow(rows, r.ref, e.target.checked))} />
+              <Checkbox checked={r.ticked} aria-label={`Make ${r.name || r.draft.name}`}
+                        onChange={(e) => setRows(toggleRow(rows, r.ref, e.target.checked))} />
               <div className="pk-prow-main">
                 <input type="text" className="pk-name-input" value={r.name} aria-label={`Name of ${r.draft.name}`} maxLength={200}
                        onChange={(e) => setRows(renameRow(rows, r.ref, e.target.value))} />
@@ -318,7 +319,7 @@ export function PauseDialog({ pkg, onClose, onDone }) {
       <p className="lib-date">While it&apos;s paused it raises no work orders and its tasks aren&apos;t overdue. It comes back by itself on the return date.</p>
       <Field label="Why" text={reason}><input autoFocus value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Plant shut down for overhaul" /></Field>
       <Field label="Back on (leave blank if not known)"><DateInput value={until} onChange={(e) => setUntil(e.target.value)} /></Field>
-      <label className="pk-check"><input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} /> The first visit back does everything missed while paused</label>
+      <Checkbox className="pk-check" checked={full} onChange={(e) => setFull(e.target.checked)} label="The first visit back does everything missed while paused" />
     </FormModal>
   );
 }
@@ -366,10 +367,8 @@ function AddTasksDialog({ pkg, onClose, onDone }) {
         <ul className="pk-pick">
           {tasks.map((t) => (
             <li key={t.id}>
-              <label className="pk-check">
-                <input type="checkbox" checked={picked.has(t.id)} onChange={() => flip(t.id)} />
-                <span>{t.name} <span className="lib-date">· {[t.subject?.within, t.subject?.name].filter(Boolean).join(" › ")} · every {t.interval} {t.unit}</span></span>
-              </label>
+              <Checkbox className="pk-check" checked={picked.has(t.id)} onChange={() => flip(t.id)}
+                        label={<>{t.name} <span className="lib-date">· {[t.subject?.within, t.subject?.name].filter(Boolean).join(" › ")} · every {t.interval} {t.unit}</span></>} />
             </li>
           ))}
         </ul>
@@ -417,10 +416,8 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
         <ul className="pk-pick" role="radiogroup" aria-label="Packages">
           {list.map((p) => (
             <li key={p.id}>
-              <label className="pk-check">
-                <input type="radio" name="pk-target" checked={pick === p.id} onChange={() => setPick(p.id)} />
-                <span>{p.parent ? "↳ " : ""}{p.name} <span className="lib-date">· {cadenceWords(p)}{p.trade ? ` · ${p.trade}` : ""} · {plural(p.task_count, "task")}</span></span>
-              </label>
+              <Radio className="pk-check" name="pk-target" checked={pick === p.id} onChange={() => setPick(p.id)}
+                     label={<>{p.parent ? "↳ " : ""}{p.name} <span className="lib-date">· {cadenceWords(p)}{p.trade ? ` · ${p.trade}` : ""} · {plural(p.task_count, "task")}</span></>} />
             </li>
           ))}
         </ul>
@@ -855,10 +852,8 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                  aria-label="Search the tasks" />
         </label>
         {maint && (
-          <label className="mt-below">
-            <input type="checkbox" checked={below} onChange={(e) => showBelow(e.target.checked)} />
-            Include what&apos;s inside
-          </label>
+          <Checkbox className="mt-below" checked={below} onChange={(e) => showBelow(e.target.checked)}
+                    label="Include what's inside" />
         )}
         {maint && (
           <button type="button" className="secondary sm mt-add" onClick={() => adding.setOpen(row.key)}>
@@ -895,7 +890,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
             <div className="rw-head" role="row">
               {!plain && (
                 <div className="rw-h pk-tick" role="columnheader" style={{ width: TICK_W }}>
-                  <input type="checkbox" aria-label="Tick every task shown" checked={tick === "all"} disabled={!shown.length}
+                  <Checkbox aria-label="Tick every task shown" checked={tick === "all"} disabled={!shown.length}
                          ref={(el) => { if (el) el.indeterminate = tick === "some"; }}
                          onChange={(e) => setPicked(tickAll(shown.filter((t) => !t.why_not), picked, e.target.checked))} />
                 </div>
@@ -922,7 +917,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                    onClick={(e) => { if (!e.target.closest("button, a, input")) taskOpen.setOpen(t.id); }}>
                 {!plain && (
                   <div className="rw-c pk-tick" role="cell" style={{ width: TICK_W }}>
-                    <input type="checkbox" checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
+                    <Checkbox checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
                            aria-label={`Tick ${t.name}`} title={t.why_not ? `Can't join a package: ${t.why_not}` : undefined} />
                   </div>
                 )}

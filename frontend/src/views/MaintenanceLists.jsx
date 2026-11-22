@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import Switch from "../components/ui/Switch.jsx";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createMaintenanceItem,
@@ -409,9 +410,7 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
       <div className="tablebar section-tablebar">
         <span className="count">{all ? "Every class in the register" : `Classes used at ${scopeName || "this row"} and inside it`}</span>
         <span className="grow" />
-        <label className="maint-row lib-date td-tab-check" style={{ marginTop: 0, gap: "0.4rem" }}>
-          <input type="checkbox" checked={all} onChange={(e) => onAll?.(e.target.checked)} /> Show all classes
-        </label>
+        <Switch className="td-tab-check" checked={all} onChange={(v) => onAll?.(v)} label="Show all classes" ariaLabel="Show all classes" />
       </div>
       <p className="lib-date">Position classes group like positions by their duty, so their items' lives can be compared and pooled
         into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to.</p>
@@ -865,9 +864,7 @@ export function PartsPanel({ branch, scopeName = "", all = false, onAll, design 
         <SegmentedControl size="sm" label="Show" value={view} onChange={(v) => onShow?.(v)} style={{ flex: "none" }}
                           options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />
         <span className="grow" />
-        <label className="maint-row lib-date td-tab-check" style={{ marginTop: 0, gap: "0.4rem" }}>
-          <input type="checkbox" checked={all} onChange={(e) => onAll?.(e.target.checked)} /> Show all parts
-        </label>
+        <Switch className="td-tab-check" checked={all} onChange={(v) => onAll?.(v)} label="Show all parts" ariaLabel="Show all parts" />
       </div>
       <div className="maint-row td-tab-actions">
         <button className="secondary sm" onClick={() => setModal("bom")}>Import a BOM</button>
@@ -979,10 +976,7 @@ function SparesCoverCard({ parts }) {
     <section className="card">
       <div className="maint-head">
         <h2>Spares cover</h2>
-        <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
-          <input type="checkbox" checked={unlisted} onChange={(e) => setUnlisted(e.target.checked)} />
-          Positions with no parts list
-        </label>
+        <Switch checked={unlisted} onChange={setUnlisted} label="Positions with no parts list" />
       </div>
       {cover.no_spare.length > 0 && (
         <>

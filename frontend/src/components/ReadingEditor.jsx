@@ -5,6 +5,7 @@ import {
 } from "../datasetReading.js";
 import { READING_MAIN, READING_MORE } from "../datasetReading.js";
 import { defaultSecondUnit } from "../twoClocks.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // How a dataset's columns are read for modelling (datasetReading.js): the
 // shared Data-step selectors (ColumnMapper) for x (with its range xl to xr),
@@ -30,21 +31,17 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
   const cMissing = !reading.c && !range && !reading.m && !reading.e;
 
   const failedTick = (cMissing || reading.all_failed) && (
-    <label className="xcn-tick" key="all-failed">
-      <input type="checkbox" checked={!!reading.all_failed} disabled={disabled}
-             onChange={(e) => { const on = e.target.checked; update((cur) => ({ ...cur, all_failed: on })); }} />
-      No status column: every row failed
-    </label>
+    <Checkbox className="xcn-tick" key="all-failed" checked={!!reading.all_failed} disabled={disabled}
+              onChange={(e) => { const on = e.target.checked; update((cur) => ({ ...cur, all_failed: on })); }}
+              label="No status column: every row failed" />
   );
 
   // No item column: each row is its own unit, unless every row is one stream
   // of events (one fleet's replacements, one system's failures), said here.
   const streamTick = !reading.i && !reading.m && (
-    <label className="xcn-tick" key="one-stream">
-      <input type="checkbox" checked={!!reading.one_stream} disabled={disabled}
-             onChange={(e) => { const on = e.target.checked; update((cur) => ({ ...cur, one_stream: on })); }} />
-      No item column: every row is one stream of events (one fleet or one system)
-    </label>
+    <Checkbox className="xcn-tick" key="one-stream" checked={!!reading.one_stream} disabled={disabled}
+              onChange={(e) => { const on = e.target.checked; update((cur) => ({ ...cur, one_stream: on })); }}
+              label="No item column: every row is one stream of events (one fleet or one system)" />
   );
 
   const zCols = reading.z || [];
@@ -105,10 +102,8 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
           <ul className="reading-z-list">
             {zCols.map((c) => (
               <li key={c} className="reading-z-item">
-                <label className="reading-z-pick">
-                  <input type="checkbox" checked disabled={disabled} onChange={() => update((cur) => toggleZ(cur, c))} />
-                  <span>{c}</span>
-                </label>
+                <Checkbox className="reading-z-pick" checked disabled={disabled} onChange={() => update((cur) => toggleZ(cur, c))}
+                          label={c} />
                 <input className="units-input reading-z-unit" type="text" aria-label={`Unit of ${c}`} disabled={disabled}
                        placeholder="unit (optional)" value={reading.z_units?.[c] || ""}
                        onChange={(e) => { const u = e.target.value; update((cur) => ({ ...cur, z_units: { ...(cur.z_units || {}), [c]: u } })); }} />
@@ -116,10 +111,8 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
             ))}
             {off.map((c) => (
               <li key={c} className="reading-z-item off">
-                <label className="reading-z-pick" title="Not used: tick to include it as a covariate">
-                  <input type="checkbox" checked={false} disabled={disabled} onChange={() => update((cur) => toggleZ(cur, c))} />
-                  <span>{c}</span>
-                </label>
+                <Checkbox className="reading-z-pick" title="Not used: tick to include it as a covariate" checked={false} disabled={disabled}
+                          onChange={() => update((cur) => toggleZ(cur, c))} label={c} />
                 <span className="xcn-words">not used: {notUsedReason(c, facts[c], nRows) || "left out"}</span>
               </li>
             ))}

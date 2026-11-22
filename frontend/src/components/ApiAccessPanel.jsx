@@ -7,6 +7,7 @@ import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // What a token may do. Each token carries a subset; a token created before
 // scopes existed carries all three.
@@ -154,18 +155,17 @@ export default function ApiAccessPanel() {
             <fieldset className="token-scopes">
               <legend>This token can</legend>
               {SCOPES.map((s) => (
-                <label key={s.id} className="token-scope">
-                  <input
-                    type="checkbox"
-                    checked={scopes.includes(s.id)}
-                    onChange={(e) =>
-                      setScopes((cur) =>
-                        e.target.checked ? [...cur, s.id] : cur.filter((x) => x !== s.id)
-                      )
-                    }
-                  />
-                  <span><b>{s.label}</b> — {s.hint}</span>
-                </label>
+                <Checkbox
+                  key={s.id}
+                  className="token-scope"
+                  checked={scopes.includes(s.id)}
+                  onChange={(e) =>
+                    setScopes((cur) =>
+                      e.target.checked ? [...cur, s.id] : cur.filter((x) => x !== s.id)
+                    )
+                  }
+                  label={<><b>{s.label}</b> — {s.hint}</>}
+                />
               ))}
               {scopes.length === 0 && <p className="muted-line">Pick at least one.</p>}
             </fieldset>

@@ -9,6 +9,7 @@ import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import SparesWhatIf from "./SparesWhatIf.jsx";
 import { SERVICE_LEVELS, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskText, risingText, saveText, useText, yearText } from "../sparesPlan.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const fileName = (name) => `${String(name).replace(/[^\w\- ]+/g, "").trim() || "fleet"} — spares plan.csv`;
@@ -53,11 +54,9 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
       </div>
       {!readOnly && leadHint && <p className="hint" data-testid="fleet-spares-lead-hint" style={{ margin: "0.4rem 0 0" }}>Lead time: {leadHint}.</p>}
       <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-          <input type="checkbox" checked={!!sp.repairable} disabled={readOnly}
-                 onChange={(e) => set("repairable", e.target.checked || null)} />
-          Repairable: failed ones are repaired and come back
-        </label>
+        <Checkbox checked={!!sp.repairable} disabled={readOnly}
+                  onChange={(e) => set("repairable", e.target.checked || null)}
+                  label="Repairable: failed ones are repaired and come back" />
         {sp.repairable && field("turnaround", `Repair turnaround (${label})`)}
       </div>
       {dirty && <p className="lib-date">Save &amp; forecast to update the answer.</p>}

@@ -5,6 +5,7 @@ import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { subjectPath } from "../maintenanceSubjects.js";
 import { progressText } from "../workOrderReadings.js";
 import { LINE_CHOICES, choiceAsks, groupLines, lineChoice, lineText, markBody } from "../packageLines.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // A work package's work order: its lines grouped by position, each answered
 // Done, Done with a problem (a note) or Not done (a reason), saved at once.
@@ -58,11 +59,9 @@ function Line({ wo, line, open, onChanged }) {
       {(line.steps || []).map((i) => {
         const step = wo.checklist[i];
         return (
-          <label key={i} className="maint-row pkg-step">
-            <input type="checkbox" checked={!!step?.done} disabled={!open}
-                   onChange={async (e) => onChanged(await checkWorkItem(wo.id, i, e.target.checked))} />
-            <span>{step?.text}</span>
-          </label>
+          <Checkbox key={i} className="maint-row pkg-step" checked={!!step?.done} disabled={!open}
+                    onChange={async (e) => onChanged(await checkWorkItem(wo.id, i, e.target.checked))}
+                    label={step?.text} />
         );
       })}
       <ChoiceChips label={`${line.name}: was it done?`} options={LINE_CHOICES} value={draft ? draft.choice : saved}
