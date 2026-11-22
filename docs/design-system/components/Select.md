@@ -37,4 +37,4 @@ One value from a list, as a styled drop-down: a trigger button (`role="combobox"
 
 ## Look
 
-The trigger is a control (`control-md`, `control-lg` on a phone) with `border-control`, `border-control-hover` on hover and the focus ring when open or focused; `fs-13` text (`fs-14` in a form). On a phone each row is `control-lg` tall and the search box takes 16px text, so iOS doesn't zoom. The open list is `bg-surface` with `radius-lg` and `shadow-lg`, at most 280px tall, and never wider than the screen less 32px. A hint is `fs-12` in `text-secondary`.
+The trigger is a control (`control-md`, `control-lg` on a phone) with `border-control`, `border-control-hover` on hover and the focus ring when open or focused; `fs-13` text at weight 400, like a text box (`fs-14` in a form). On a phone each row is `control-lg` tall and the search box takes 16px text, so iOS doesn't zoom. The open list is `bg-surface` with `radius-lg` and `shadow-lg`, at most 280px tall, and never wider than the screen less 32px. A hint is `fs-12` in `text-secondary`.
