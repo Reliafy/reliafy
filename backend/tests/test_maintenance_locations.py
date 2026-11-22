@@ -438,3 +438,21 @@ def test_no_places_means_no_assets_and_every_position_is_not_placed(m):
         "roots": [{"id": pid, "name": "Pump", "tag": "", "description": "", "positions": 1, "items": 0,
                    "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None,
                    "late": {"work_orders_late": 0, "tasks_overdue_without_work_order": 0}}]}}
+
+
+def test_the_assets_route_says_today_so_a_past_date_is_never_shown_as_next(monkeypatch):
+    """The Assets list says a next date already past as "overdue since…" (dueText in
+    the app); it needs the workspace's today to tell, so the route sends it."""
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+    from backend.routers import maintenance as router
+
+    stub = Maintenance(GraphStore(":memory:", PROJECTORS), ORG, "tester")
+    app.dependency_overrides[router.maintenance] = lambda: stub
+    try:
+        body = TestClient(app).get("/api/maintenance/places").json()
+    finally:
+        app.dependency_overrides.pop(router.maintenance, None)
+    assert body["today"] == stub.today()
+    assert body["places"] == [] and body["horizon_days"] == 30
