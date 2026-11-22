@@ -727,6 +727,18 @@ export function setDatasetReading(id, reading) {
   });
 }
 
+// A dataset's lifetimes (the dataset page's Lifetimes view): one line per
+// unit, read with its saved reading, or with ``reading`` (a draft being
+// changed; nothing is kept).
+export function getDatasetLifetimes(id, reading = null) {
+  if (!reading) return request(`/api/datasets/${id}/lifetimes`);
+  return request(`/api/datasets/${id}/lifetimes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reading }),
+  });
+}
+
 export function deleteDataset(id) {
   return request(`/api/datasets/${id}`, { method: "DELETE" });
 }

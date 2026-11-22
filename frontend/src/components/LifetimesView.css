@@ -1,0 +1,11 @@
+/* The dataset page's Lifetimes view (LifetimesView.jsx). */
+.lt { margin-bottom: var(--space-4); min-width: 0; }
+.lt-summary { margin: 0 0 var(--space-2); font-size: var(--fs-14); line-height: var(--lh-14); font-variant-numeric: tabular-nums; }
+.lt-draft { color: var(--text-secondary); }
+.lt-msg { margin: 0 0 var(--space-2); }
+.lt-sort { display: inline-flex; align-items: center; gap: var(--space-2); margin-left: auto; }
+.lt-sort-label { color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+/* The chart scrolls inside its card: down past 480px, across on a phone. */
+.lt-scroll { max-height: 480px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.lt-plot { min-width: 520px; }
+.lt-note { margin: var(--space-2) 0 0; }
