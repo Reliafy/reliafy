@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import { useField } from "./Field.jsx";
 import useAutoGrow from "./useAutoGrow.js";
+import { DateInput, TimeInput } from "./DateTimeInput.jsx";
 
 // The app's text controls (#UI): one look for every input, textarea and
 // select (.ctl in index.css): white, a 1 px line, 34 px tall, 14 px text
@@ -15,6 +16,9 @@ const cls = (base, className) => base + (className ? ` ${className}` : "");
 
 export const TextInput = forwardRef(function TextInput({ className, ...props }, ref) {
   const field = useField();
+  // A date or a time: the shared fields, day first and 24-hour whatever the browser's language.
+  if (props.type === "date") return <DateInput ref={ref} {...props} type={undefined} className={className} />;
+  if (props.type === "time") return <TimeInput ref={ref} {...props} type={undefined} className={className} />;
   return <input ref={ref} type="text" {...props} {...wire(field, props)} className={cls("ctl", className)} />;
 });
 
@@ -28,4 +32,18 @@ export const TextArea = forwardRef(function TextArea({ className, rows = 1, valu
 export const Select = forwardRef(function Select({ className, children, ...props }, ref) {
   const field = useField();
   return <select ref={ref} {...props} {...wire(field, props)} className={cls("ctl", className)}>{children}</select>;
+});
+
+// A checkbox with its label beside it (.check in index.css): for a form field that waits
+// for Save (a setting that applies at once is a Switch). The whole label is the target,
+// 16 px box in the accent colour, the label in body text; inside a <Field as="fieldset">
+// a list of them is one group under the field's label.
+//   checked, onChange(event), label (node), disabled, name, className
+export const Checkbox = forwardRef(function Checkbox({ label, className, ...props }, ref) {
+  return (
+    <label className={cls("check", className)}>
+      <input ref={ref} type="checkbox" {...props} />
+      <span className="check-label">{label}</span>
+    </label>
+  );
 });

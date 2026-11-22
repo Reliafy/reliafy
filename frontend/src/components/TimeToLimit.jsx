@@ -8,6 +8,7 @@ import {
 import { ACCENT, DANGER, REFERENCE } from "../plotTheme.js";
 import { PROCESSES, dateText, datasetName, daysText, measurementsOf, percent, usefulHorizons } from "../timeToLimit.js";
 import "./TimeToLimit.css";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 const GUIDE = "/guides/signal-channels#time-to-the-limit";
 
@@ -142,7 +143,7 @@ export default function TimeToLimit({ bands, channelName, selectedId }) {
                  placeholder={band.alarm_above ?? band.alarm_below ?? "needed"} />
         </label>
         <label className="sg-field">Readings from
-          <input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+          <DateInput value={since} onChange={(e) => setSince(e.target.value)} />
         </label>
       </div>
 

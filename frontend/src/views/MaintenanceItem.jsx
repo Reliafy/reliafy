@@ -33,6 +33,7 @@ import "./MaintenanceProducts.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { itemTreePath, productPath } from "../products.js";
+import { DateInput } from "../components/ui/DateTimeInput.jsx";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -314,9 +315,9 @@ function DetailsModal({ item, onClose, onDone }) {
       </Field>
       <Field label="Cost source (optional)"><input value={cost.source} placeholder="e.g. supplier quote"
              onChange={(e) => setCost({ ...cost, source: e.target.value })} /></Field>
-      <Field label="Price as of"><input type="date" value={cost.as_of} max={today()}
+      <Field label="Price as of"><DateInput value={cost.as_of} max={today()}
              onChange={(e) => setCost({ ...cost, as_of: e.target.value })} /></Field>
-      <Field label="Warranty ends on (blank: no warranty)"><input type="date" value={warranty.ends_on} onChange={setW("ends_on")} /></Field>
+      <Field label="Warranty ends on (blank: no warranty)"><DateInput value={warranty.ends_on} onChange={setW("ends_on")} /></Field>
       {warranty.ends_on && <>
         <Field label="What it covers"><input value={warranty.coverage} placeholder="e.g. parts and labour, compressor 5 years"
                onChange={setW("coverage")} /></Field>
@@ -329,7 +330,7 @@ function DetailsModal({ item, onClose, onDone }) {
           <label className="maint-row" style={{ gap: "0.4rem" }}>
             <input type="checkbox" checked={warranty.registered} onChange={setW("registered")} /> Registered
           </label>
-          {!warranty.registered && <Field label="Register by"><input type="date" value={warranty.register_by} onChange={setW("register_by")} /></Field>}
+          {!warranty.registered && <Field label="Register by"><DateInput value={warranty.register_by} onChange={setW("register_by")} /></Field>}
         </>}
       </>}
     </FormModal>
@@ -351,7 +352,7 @@ function MoveModal({ item, onClose, onDone }) {
         {" "}The position must be empty.
       </p>
       <Field label="To position"><PositionPicker positions={positions} value={to} onChange={setTo} emptyLabel="Choose…" /></Field>
-      <Field label="On"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
+      <Field label="On"><DateInput value={on} onChange={(e) => setOn(e.target.value)} /></Field>
     </FormModal>
   );
 }

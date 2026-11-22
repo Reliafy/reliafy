@@ -44,7 +44,7 @@ export const TABLE_PANES = {
       confirmLabel: "Discard them", cancelLabel: "Keep fixing",
     },
   },
-  // How a position runs (?plan=<position id>; the Measurements and Summary tabs): its operating plan.
+  // How a position runs (?plan=<position id>; Monitoring › Readings, where one opened from the Summary moves): its operating plan.
   plan: {
     param: "plan",
     discard: {

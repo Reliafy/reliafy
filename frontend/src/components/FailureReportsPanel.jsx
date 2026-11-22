@@ -11,6 +11,7 @@ import { Field, FormModal, PositionPicker, fmtDate } from "./MaintenanceParts.js
 import { ShowMe } from "./SectionPage.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import "./FailureReports.css";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // The Explorer's Failure reports tab: every report at the row picked and
 // below it (a position and everything inside it; a location's positions; the
@@ -309,8 +310,8 @@ export default function FailureReportsPanel({ row, display, today, version, repo
             <option value="">Any failure mode</option>
             {[...modes.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, text]) => <option key={id} value={id}>{text}</option>)}
           </select>
-          <label className="fr-date"><span>Since</span><input type="date" value={filters.since} max={filters.until || undefined} onChange={(e) => set("since", e.target.value)} /></label>
-          <label className="fr-date"><span>Until</span><input type="date" value={filters.until} min={filters.since || undefined} onChange={(e) => set("until", e.target.value)} /></label>
+          <label className="fr-date"><span>Since</span><DateInput value={filters.since} max={filters.until || undefined} onChange={(e) => set("since", e.target.value)} /></label>
+          <label className="fr-date"><span>Until</span><DateInput value={filters.until} min={filters.since || undefined} onChange={(e) => set("until", e.target.value)} /></label>
           <select value={filters.sort} aria-label="Order" onChange={(e) => set("sort", e.target.value)}>
             {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>

@@ -10,9 +10,13 @@ A form field: the label, an "optional" marker beside it, a slot at the label's r
 - `error` — the reason a value isn't kept; the control is marked invalid.
 - `count` — a node at the label's end (e.g. `<CharCount>`).
 - `saved` — a number that changes on each save: "✓ Saved" shows for 2 s.
-- `as` — "div" (default) or "fieldset" for a group (comparator + value + unit).
+- `as` — "div" (default) or "fieldset" for a group (comparator + value + unit, a list of checkboxes); the group is named by its label.
 
 The control is the child: `TextInput`, `TextArea` (starts at one line and grows) and `Select` render `.ctl` — `bg-surface`, a 1px `border-control` (3:1, so the box is visible), `control-md` tall, `fs-14` (16px on a phone so iOS doesn't zoom), the `focus-ring` ring, `danger` border, `danger-bg` fill and `danger-text` message on an error.
+
+A date or a time is `TextInput type="date"` / `type="time"`, which render the shared `DateTimeInput` fields ("22 Nov 2026", "16:00"), never the browser's own.
+
+`Checkbox` (same file as `TextInput`) is a checkbox with its label beside it (`.check`): the whole label is the target, a 16px (`icon-md`) box in `accent`, the label in `body` text, and the row 40px tall on a phone. Use it for a yes/no in a form that waits for Save ("Counted in running hours"); a setting that applies at once is a `Switch`. Several of them (which failure modes a task prevents) go in one `<Field as="fieldset">`, whose label names the group.
 
 A long `Select` takes `searchable`: a "Find…" box at the top of the list. Every word typed must appear in an option's name or hint; within each group the closest names come first (exact, then starts with, then holds the phrase), the closest match is highlighted, and Enter takes it (`selectSearch.js`).
 

@@ -52,6 +52,13 @@
   width: min(240px, 50%);
 }
 
+/* A form loading (shape="fields"): a label bar over a control-high box. */
+.wait-fields { display: flex; flex-direction: column; gap: var(--space-4); }
+.wait-field { display: flex; flex-direction: column; gap: var(--space-2); }
+.wait-label { width: min(160px, 45%); }
+.wait-box { height: var(--control-md); border-radius: var(--radius-md); background: var(--border-subtle); }
+.wait-field:nth-child(even) .wait-label { width: min(120px, 35%); }
+
 @keyframes wait-pulse {
   50% { opacity: 0.55; }
 }

@@ -7,6 +7,7 @@ import { readingClock } from "../maintenanceReadings.js";
 import { workspaceMoment, workspaceZoneName } from "../workspaceDate.js";
 import { canEditReadings, readingMenu, readingRows, valueHeading } from "../measuringPoint.js";
 import "./ReadingsTable.css";
+import { DateInput, TimeInput } from "./ui/DateTimeInput.jsx";
 
 // A measuring point's readings, newest first (the point's page and the
 // Explorer's Readings dialog share it): the date on one line, the value (its
@@ -115,8 +116,8 @@ export default function ReadingsTable({ point, onChanged, idPrefix = "rd" }) {
                           <Field label={`Right value${unit ? ` (${unit})` : ""}`}>
                             <input type="number" inputMode="decimal" step="any" value={edit.value} onChange={set("value")} />
                           </Field>
-                          <Field label="Really read on"><input type="date" value={edit.on} max={today()} onChange={set("on")} /></Field>
-                          <Field label={`At, ${workspaceZoneName()} time (optional)`}><input type="time" value={edit.time} onChange={set("time")} /></Field>
+                          <Field label="Really read on"><DateInput value={edit.on} max={today()} onChange={set("on")} /></Field>
+                          <Field label={`At, ${workspaceZoneName()} time (optional)`}><TimeInput value={edit.time} onChange={set("time")} /></Field>
                         </>}
                         <Field label={edit.mode === "void" ? "Why it's voided" : "Why it's corrected"}>
                           <input autoFocus value={edit.reason} placeholder={edit.mode === "void" ? "e.g. entered twice" : "e.g. an old reading entered as today"}

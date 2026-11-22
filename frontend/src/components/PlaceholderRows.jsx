@@ -8,7 +8,23 @@ import "./PlaceholderRows.css";
 //
 // It carries `view-loading`, the mark the smoke suite waits on, so a page
 // counts as settled only once its placeholders are gone.
-export default function PlaceholderRows({ rows = 3, label = "Loading…" }) {
+//
+// `shape="fields"`: the shape of a form instead (a details panel loading): each
+// row a short label bar over a control-high box.
+export default function PlaceholderRows({ rows = 3, label = "Loading…", shape = "list" }) {
+  if (shape === "fields") {
+    return (
+      <div className="wait-rows wait-fields view-loading" role={label ? "status" : undefined}>
+        {label && <span className="sr-only">{label}</span>}
+        {Array.from({ length: rows }, (_, i) => (
+          <div className="wait-field" key={i} aria-hidden="true">
+            <span className="wait-bar wait-label" />
+            <span className="wait-bar wait-box" />
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="wait-rows view-loading" role={label ? "status" : undefined}>
       {label && <span className="sr-only">{label}</span>}

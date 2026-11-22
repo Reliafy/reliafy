@@ -5,6 +5,7 @@ import { SHORT_TEXT, tooLong } from "../maintenanceText.js";
 import { CONSEQUENCES, defaultFoundBy, itemText } from "../failureReports.js";
 import { useAuth } from "../AuthProvider.jsx";
 import { FailureModePicker, Field, FormModal } from "./MaintenanceParts.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // A new failure report at a position (the tree's row menu "Add failure
 // report…", or the Failure reports tab's button), or the same fields on one
@@ -86,7 +87,7 @@ export default function NewFailureReportModal({ positionId, positionName, today,
       </Field>
       <div className="fr-modal-row">
         <Field label="When">
-          <input type="date" value={occurredOn} max={today || undefined} onChange={(e) => setOccurredOn(e.target.value)} />
+          <DateInput value={occurredOn} max={today || undefined} onChange={(e) => setOccurredOn(e.target.value)} />
         </Field>
         <Field label="Who found it" text={foundBy} max={SHORT_TEXT}>
           <input value={foundBy} placeholder="A name" onChange={(e) => setFoundBy(e.target.value)} />

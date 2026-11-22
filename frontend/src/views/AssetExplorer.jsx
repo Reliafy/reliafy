@@ -1062,6 +1062,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const panePosition = paneRow?.type === "pos"
     ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", ...classFields(paneRow.ref) } : null;
   const paneKind = panePosition ? paneAt.kind : null;
+  // An operating plan belongs to Monitoring › Readings (its row menu is there, as a fit is under
+  // Models): one opened from the Summary's "Operating plan" line, or an old ?plan= address on the
+  // Summary tab, moves there, so the tabs show where it is and it has the table's room.
+  useEffect(() => {
+    if (tab === "summary" && paneQuery?.kind === "plan") {
+      setQuery_((q) => { q.set(tabKey, "measurements"); q.set("arrange", "positions"); q.delete("mview"); });
+    }
+  }, [tab, paneQuery?.kind]); // eslint-disable-line react-hooks/exhaustive-deps
   // An address for a position that isn't in the tree (deleted, or another tree): the table as usual.
   useEffect(() => {
     if (paneAt && data && !panePosition) setQuery_((q) => { for (const k of PANE_PARAMS) q.delete(k); });
@@ -2936,7 +2944,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const taskSide = (taskRow && sideHolder) || (addingAt && sideHolder) || ratesOn ? (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={closeTaskSide} aria-hidden="true" />}
-      <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} rates={ratesOn} phone={phone}
+      <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} taskName={taskRow ? taskRow.ref.task.name : ""} rates={ratesOn} phone={phone}
                 expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                 headingRef={detailsHeading} onClose={closeTaskSide}
                 onChanged={() => ptasks.load()}

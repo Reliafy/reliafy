@@ -15,6 +15,7 @@ import { SHORT_TEXT, lengthNote } from "../maintenanceText.js";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import { positionOptions } from "../positionPicker.js";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
 
@@ -72,7 +73,7 @@ export function RoughDateField({ label, value, onChange, max }) {
     : precision === "month"
       ? <input type="month" placeholder="e.g. 2022-03" value={text} max={max ? max.slice(0, 7) : undefined}
                onChange={(e) => onChange({ text: e.target.value, precision })} />
-      : <input type="date" value={text} max={max} onChange={(e) => onChange({ text: e.target.value, precision })} />;
+      : <DateInput value={text} max={max} onChange={(e) => onChange({ text: e.target.value, precision })} />;
   return (
     <Field label={label}>
       <div className="maint-row" style={{ marginTop: 0 }}>

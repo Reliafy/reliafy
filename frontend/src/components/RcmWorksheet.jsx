@@ -45,6 +45,7 @@ import { apWords } from "../fmeaWorksheet.js";
 import { CriticalityGroup, FmeaGroup } from "./FmeaPanels.jsx";
 import { PanelField } from "./PanelField.jsx";
 import "./RcmWorksheet.css";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // The RCM worksheet's pieces, drawn by the Explorer's RCM tab (the asset tree
 // and the RCM as one table, TreePane): the level icons, a cell and its
@@ -315,6 +316,8 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
     if (e.key === "Escape") { e.preventDefault(); done.current = true; onCancel(); }
   };
   const label = `${col.label} of ${nameOf(r) || LEVEL_OF[r.type].label.toLowerCase()}`;
+  // A date cell: the shared date field (day first, whatever the browser's language), typed.
+  const Edit = col.edit === "date" ? DateInput : "input";
   if (col.edit === "choice") {
     // One tap: the choices as chips under the cell (the Decide dialog's
     // tiles); ← → move, Enter or a click chooses, Escape or leaving them drops
@@ -349,11 +352,12 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   const range = col.range || (col.id === "interval" ? { min: 0 } : null);
   return (
     <span className="rw-edit-wrap">
-      <input className="rw-edit" autoFocus ref={field} aria-label={label} value={value} onKeyDown={keys} readOnly={busy} aria-busy={busy || undefined}
+      <Edit className="rw-edit" autoFocus ref={field} aria-label={label} value={value} onKeyDown={keys} readOnly={busy} aria-busy={busy || undefined}
              maxLength={count ? FUNCTION_MAX : undefined} title={count ? FUNCTION_NUDGE : col.title || undefined}
              aria-description={count ? `${count.n} of ${count.max} characters. ${FUNCTION_NUDGE}` : refused || undefined}
              aria-invalid={count?.over || refused ? "true" : undefined}
-             type={num ? "number" : col.edit === "date" ? "date" : "text"} inputMode={num ? (range?.integer ? "numeric" : "decimal") : undefined}
+             type={col.edit === "date" ? undefined : num ? "number" : "text"} picker={col.edit === "date" ? false : undefined}
+             inputMode={num ? (range?.integer ? "numeric" : "decimal") : undefined}
              min={num && range?.min != null ? String(range.min) : undefined} max={num && range?.max != null ? String(range.max) : undefined}
              step={num ? (range?.integer ? "1" : "any") : undefined}
              onChange={(e) => { setValue(e.target.value); setRefused(null); }} onBlur={() => commit()} />
