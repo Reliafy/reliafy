@@ -6,6 +6,7 @@
 // conveyor (smoke/seed.js) has a task in a package and measuring points.
 import { test, expect, open, expectHealthy } from "./health.js";
 import { EXPLORER_PANEL_TABS } from "../src/explorerTabs.js";
+import { escapeRegExp } from "./explorer.js";
 
 const NAME = "Depot conveyor (smoke test)";
 const conveyor = async (request) => {
@@ -91,14 +92,14 @@ test("panel tabs overflow: ⋯ N folds what doesn't fit; picking one swaps it in
   const shownAfter = await tabs.getByRole("tab").allTextContents();
   expect(shownAfter.at(-2)).toBe("History");
   expect(shownAfter.length).toBeLessThanOrEqual(shownBefore.length);
-  await expect(tabs.getByRole("tab", { name: /more tabs?:/ })).toHaveAccessibleName(new RegExp(shownBefore.at(-2).replace(/[()]/g, "\\$&")));
+  await expect(tabs.getByRole("tab", { name: /more tabs?:/ })).toHaveAccessibleName(new RegExp(escapeRegExp(shownBefore.at(-2))));
 });
 
 test("panel tabs at 400 px: the row fits with ⋯, nothing scrolls sideways", async ({ page, request }) => {
   const id = await conveyor(request);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, at(id, "&tab=maintenance"));
-  await page.getByRole("treeitem", { name: new RegExp(`^${NAME.replace(/[()]/g, "\\$&")}`) }).first().locator(".tp-nm").click();
+  await page.getByRole("treeitem", { name: new RegExp(`^${escapeRegExp(NAME)}`) }).first().locator(".tp-nm").click();
   const tabs = page.getByRole("tablist", { name: new RegExp("^What to show for") }).first();
   await expect(tabs.getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
   await expect(tabs.getByRole("tab", { name: /more tabs?:/ })).toBeVisible();

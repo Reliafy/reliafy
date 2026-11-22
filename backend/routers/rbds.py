@@ -844,7 +844,7 @@ def expand_subsystems(
     try:
         out = rbd_flatten.expand_saved(session, graph, ctx.read_owners)
     except (rbd_flatten.FlattenError, GraphError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=out)
 
 

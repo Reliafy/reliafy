@@ -1,6 +1,11 @@
 // Shared by the Explorer's smoke specs (Assets › Explorer).
 import { expect } from "@playwright/test";
 
+// Text matched literally inside a RegExp: every special character escaped.
+export function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+}
+
 // The panel about the row picked. On a wide screen its heading (the way up,
 // the name, the actions) and its tabs sit in the slim rows over the tree, the
 // same on both tabs, and its page (the Summary) is the "Details" region beside
@@ -238,7 +243,7 @@ export async function rcmRowMenu(page, rowName, item) {
 export async function pickTab(page, name) {
   const tab = page.getByRole("tab", { name, exact: true });
   if (await tab.isVisible()) return tab.click();
-  await page.getByRole("tab", { name: new RegExp(`more tabs?:.*${name.replace(/[()]/g, "\\$&")}`) }).first().click();
+  await page.getByRole("tab", { name: new RegExp(`more tabs?:.*${escapeRegExp(name)}`) }).first().click();
   await page.getByRole("menu", { name: "More tabs" }).getByRole("menuitem", { name, exact: true }).click();
   return expect(tab).toHaveAttribute("aria-selected", "true");
 }

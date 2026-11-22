@@ -18,6 +18,7 @@ from backend.services import samples as samples_service
 from backend.services import access as access_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import RcmStudy
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/rcm")
@@ -122,7 +123,7 @@ def create_study(
     try:
         study = rcm_service.create_study(session, name, system, description, ctx.write_owner)
     except rcm_service.RcmValidationError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     access_service.stamp_editor(session, "rcm_studies", study.id, ctx)
     return JSONResponse(content=_summary(study, ctx))
 
@@ -209,9 +210,9 @@ def put_tree(
     except rcm_service.StudyNotFound:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
     except rcm_service.RcmValidationError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except access_service.UnreadableReference as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc), "code": "unreadable_reference"})
     except access_service.EditConflict:
         return JSONResponse(status_code=409, content={"detail": access_service.CONFLICT_MSG, "code": "conflict"})
     access_service.stamp_editor(session, "rcm_studies", study_id, ctx)

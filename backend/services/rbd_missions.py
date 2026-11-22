@@ -50,6 +50,7 @@ from typing import Any, Callable, Optional
 from backend.services import covariate_binding as cb
 from backend.services import rbd_phases, rbd_tvc
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 #: The diagram's own mission (``graph["phases"]``) read as one of its missions.
 LEGACY_ID = "mission"
@@ -400,7 +401,7 @@ def gather(graph: dict, inputs_for: Callable[[dict], list]) -> dict:
         try:
             inputs = inputs_for(binding)
         except cb.BindingError as exc:
-            problems.append({"id": nid, "label": label, "problem": str(exc)})
+            problems.append({"id": nid, "label": label, "problem": client_message(exc)})
             continue
         fixed = binding.get("fixed") or {}
         own = data.get("covariate_values") or {}

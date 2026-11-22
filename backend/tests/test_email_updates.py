@@ -3,6 +3,7 @@ sender CLI. Delivery is always faked — nothing here talks to SMTP."""
 
 import pathlib
 import re
+from urllib.parse import urlsplit
 
 import mongomock
 import pytest
@@ -377,7 +378,8 @@ def test_every_site_link_in_an_update_email_is_tagged_without_personal_data(test
     text = msg.get_body(("plain",)).get_content()
     hrefs = [h.replace("&amp;", "&") for h in re.findall(r'href="([^"]+)"', html)]
     urls = hrefs + re.findall(r"https?://\S+", text)
-    site = [u.rstrip(").,") for u in urls if u.startswith("https://reliafy.com")]
+    cleaned = [u.rstrip(").,") for u in urls]
+    site = [u for u in cleaned if urlsplit(u).scheme == "https" and urlsplit(u).hostname == "reliafy.com"]
     assert site
     for url in site:
         if "/unsubscribe" in url:
