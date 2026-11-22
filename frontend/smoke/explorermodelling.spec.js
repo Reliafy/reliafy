@@ -7,6 +7,7 @@
 // table (the plot, the parameters with bounds, the data, what uses it); its ⋯ unlinks it.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
+import { choose, optionLabels } from "./select.js";
 
 const M = "/api/maintenance";
 const SAMPLE = "Bearing life — Weibull (sample)";
@@ -116,9 +117,8 @@ test("update a baseline with a position's one failure, and save it as the positi
   await headPick(page, "Life model", "Fit a life model…");
   const dialog = page.getByRole("region", { name: "Fit a life model" });
   await dialog.getByRole("radio", { name: "With a prior" }).click();
-  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("model");
-  const option = await dialog.locator("option", { hasText: "Bearing life — Weibull" }).first().getAttribute("value");
-  await dialog.getByRole("combobox", { name: "Prior model" }).selectOption(option);
+  await choose(dialog.getByRole("combobox", { name: "Prior", exact: true }), "model");
+  await choose(dialog.getByRole("combobox", { name: "Prior model" }), { label: /Bearing life — Weibull/ });
   // A fit with a prior runs on SurPyval's grid: on a shared CI runner it can still be "Working it
   // out…" after an expect's 10 s (release PR #884), so wait for the answer as saveFit does.
   await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound", { timeout: 60_000 }); // B-life bounds are one-sided (#818)
@@ -443,12 +443,12 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await dialog.getByRole("button", { name: "Fit with a prior instead" }).click();
   await expect(dialog.getByRole("radio", { name: "With a prior" })).toHaveAttribute("aria-checked", "true");
   await expect(dialog.getByRole("alert")).toContainText("no history besides");
-  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("params");
+  await choose(dialog.getByRole("combobox", { name: "Prior", exact: true }), "params");
   await expect(dialog).not.toContainText("no history besides");
   await expect(dialog).toContainText("Give the prior's numbers.");
   await dialog.getByLabel("Characteristic life (alpha)").fill("4");
   await dialog.getByLabel("Shape (beta)").fill("2");
-  await dialog.getByLabel("Unit").selectOption("years");
+  await choose(dialog.getByLabel("Unit"), "years");
   // A fit with a prior runs on SurPyval's grid: on a shared CI runner it can still be "Working it
   // out…" after an expect's 10 s (release PR #884), so wait for the answer as saveFit does.
   await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound", { timeout: 60_000 }); // B-life bounds are one-sided (#818)
@@ -471,7 +471,7 @@ test("a position's row menu on the Modelling tab is two levels, and Enter parame
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Menu pump ${tag}`) });
-  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Rename…", "Focus", "Pin this branch"]);
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Rename…", "Focus here", "Focus", "Pin this branch"]);
   await expect(menu.getByRole("separator")).toHaveCount(1);
   for (const gone of ["New position inside", "Add failure report…", "Log an event…", "Move to…", "Delete…"]) {
     await expect(menu.getByRole("menuitem", { name: gone })).toHaveCount(0);
@@ -532,10 +532,10 @@ test("Fit a life model… through each Data choice on a class of two positions",
   const dialog = page.getByRole("region", { name: "Fit a life model" });
   await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 2 failures and 1 suspension in this position's history");
   await expect(dialog.locator(".fit2-numbers thead")).toContainText("90% confidence bounds");
-  await dialog.getByRole("combobox", { name: "Data" }).selectOption("class");
+  await choose(dialog.getByRole("combobox", { name: "Data" }), "class");
   await expect(dialog).toContainText(`2 positions of ${klass}: 5 failures, 2 suspensions`);
   await expect(dialog.getByRole("status")).toContainText("5 failures and 2 suspensions in the class");
-  await dialog.getByRole("combobox", { name: "Data" }).selectOption("both");
+  await choose(dialog.getByRole("combobox", { name: "Data" }), "both");
   await expect(dialog.getByRole("status")).toContainText("counted as half of its evidence");
   await expect(dialog.locator(".fit2-numbers thead")).toContainText("90% credible interval");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
@@ -598,7 +598,7 @@ test("the fit beside the tree at 1280 px stacks its two parts, neither over the 
   await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 3 failures");
   // The tallest the inputs get: a prior, typed as ranges.
   await dialog.getByRole("radio", { name: "With a prior" }).click();
-  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("around");
+  await choose(dialog.getByRole("combobox", { name: "Prior", exact: true }), "around");
   await expect(dialog.getByRole("group", { name: "Around a value, between two bounds" })).toBeVisible();
   const save = dialog.getByRole("button", { name: "Save as this position's model" });
   const parts = () => dialog.evaluate((el) => {
@@ -675,9 +675,9 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await page.reload();
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("radio", { name: "Plain fit" })).toHaveAttribute("aria-checked", "true");
-  await expect(dialog.getByRole("combobox", { name: "Data" }).locator("option").first()).toHaveText("This position's history (1 failure, 1 suspension)");
+  await expect.poll(async () => (await optionLabels(dialog.getByRole("combobox", { name: "Data" })))[0]).toBe("This position's history (1 failure, 1 suspension)");
   await dialog.getByRole("radio", { name: "With a prior" }).click();
-  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("around");
+  await choose(dialog.getByRole("combobox", { name: "Prior", exact: true }), "around");
   await expect(dialog.getByRole("radiogroup", { name: "How much to trust the prior" })).toHaveCount(0);
   const rows = dialog.getByRole("group", { name: "Around a value, between two bounds" });
   await rows.getByLabel("Characteristic life (alpha) about").fill("400");
@@ -685,7 +685,7 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await rows.getByLabel("Characteristic life (alpha) and").fill("600");
   await rows.getByLabel("Shape (beta) between").fill("1.5");
   await rows.getByLabel("Shape (beta) and").fill("4");
-  await rows.getByLabel("Unit").selectOption("days");
+  await choose(rows.getByLabel("Unit"), "days");
   await expect(dialog.getByRole("status")).toContainText("(as stated)");
   await expect(dialog.locator(".fit2-how")).toContainText("alpha about 400, 90% between 267 and 600 (widened from 300–600 to keep 400 in the middle); beta 90% between 1.5 and 4");
   // A bound the wrong way round is refused in words, before asking.

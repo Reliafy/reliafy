@@ -5,7 +5,7 @@ import { saveErrorText } from "../confirm.js";
 import { filterChoices, linkChoices, linkSectionTitle } from "../explorerRcm.js";
 import { FUNCTION_MAX } from "../rcmWorksheet.js";
 import "./FailureLinks.css";
-import { Checkbox } from "./ui/Controls.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // A functional failure caused by others on its tree, in the Explorer's RCM tab:
 // the two sections of its details panel (Caused by; Causes), each row naming the
@@ -150,7 +150,7 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
   const boxes = () => [...(list.current?.querySelectorAll("input[type=checkbox]:not(:disabled)") || [])];
   const onKeyDown = (e) => {
     if (e.target.closest(".fl-new")) return;
-    if (e.key === "Enter" && !e.target.closest("button, textarea, select")) {
+    if (e.key === "Enter" && !e.target.closest("button, textarea, select, .sel-trigger, .sel-menu")) {
       e.preventDefault();
       submit();
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -261,18 +261,18 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
                }}>
             <h4>New functional failure</h4>
             <label className="fl-f"><span>Position</span>
-              <select className="ctl" value={form.position_id} disabled={busy}
+              <Select value={form.position_id} disabled={busy}
                       onChange={(e) => setForm({ ...form, position_id: e.target.value,
                         function_id: groups.find((g) => g.id === e.target.value)?.functions[0]?.id || "" })}>
                 {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="fl-f"><span>Function</span>
-              <select className="ctl" value={newFunction ? "" : form.function_id} disabled={busy}
+              <Select value={newFunction ? "" : form.function_id} disabled={busy}
                       onChange={(e) => setForm({ ...form, function_id: e.target.value })}>
                 {formGroup?.functions.map((f) => <option key={f.id} value={f.id}>{shorter(f.text, 60)}</option>)}
                 <option value="">New function…</option>
-              </select>
+              </Select>
             </label>
             {newFunction && (
               <label className="fl-f"><span>What must it do?</span>

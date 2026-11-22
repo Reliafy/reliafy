@@ -3037,6 +3037,24 @@ export function rcmFailureFindingInterval(body) {
 export function getFailureModeIntervalInputs(id, taskId = null) {
   return request(`/api/maintenance/failure-modes/${id}/interval-inputs${taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""}`);
 }
+// Optimise… on a task (backend/maintenance/task_optimise.py): how often to do it, for each failure
+// mode it prevents, from that mode's life model. body: failure_mode_id, model_type + model_id, the
+// costs, pf_interval (+ pf_unit, act_time), target_unavailability. Reads only.
+export function optimiseTask(taskId, body = {}) {
+  return postJson(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/optimise`, body);
+}
+// Its "Use every N": the task's interval, the analysis saved as the mode's evidence, a line in its notes.
+export function useTaskOptimise(taskId, body = {}) {
+  return postJson(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/optimise/use`, body);
+}
+// What a task's interval rests on ({rests_on: [{mode, model, analysis, use, moved}]}).
+export function getTaskIntervalBasis(taskId) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/interval-basis`);
+}
+// The tasks whose interval Optimise rests on each model ({tasks: {model id: [...]}}).
+export function getModelTasks(ids) {
+  return request(`/api/maintenance/model-tasks?model_ids=${encodeURIComponent(ids.join(","))}`);
+}
 // The workspace's hourly rates by trade ({rates: [{trade, rate, tasks}]}): they price each task's labour.
 export function listTradeRates() {
   return request("/api/maintenance/trade-rates");

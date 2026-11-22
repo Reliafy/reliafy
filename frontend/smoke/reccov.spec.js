@@ -5,6 +5,7 @@
 // prior, a pipe's rate for the pipe's length. Nothing scrolls the page sideways at 400 px.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 const PUMP = "Motor-driven pump (normally standby)";
@@ -30,7 +31,7 @@ async function pickRecord(page, words, label) {
   const picker = page.getByRole("dialog", { name: "Pick a library record" });
   await expect(picker).toBeVisible();
   // The published source (a library of the user's own, made by another test, would come first).
-  await picker.getByRole("combobox", { name: "Library", exact: true }).selectOption("nrc-inl-2020");
+  await choose(picker.getByRole("combobox", { name: "Library", exact: true }), "nrc-inl-2020");
   await picker.getByRole("combobox", { name: "Search the data library" }).fill(words);
   await picker.getByRole("listbox").getByRole("option", { name: re(label) }).first().click();
   await expect(picker).toHaveCount(0);
@@ -106,7 +107,7 @@ test("records at positions: some covariates fixed there, the rest set in the RBD
   await pickRecord(page, "motor-driven pump fails to run after", RUN);
   await expect(pane).toBeVisible();
   await pane.getByRole("checkbox", { name: "Fix Clock at this position" }).check();
-  await pane.getByLabel("Clock", { exact: true }).selectOption("calendar");
+  await choose(pane.getByLabel("Clock", { exact: true }), "calendar");
   await expect(pane.getByLabel("Running hours a year", { exact: true })).toBeVisible();
   await expect(pane.getByRole("checkbox", { name: "Fix Running hours a year at this position" })).not.toBeChecked();
   await pane.getByRole("button", { name: "Save at this position" }).click();
@@ -125,7 +126,7 @@ test("records at positions: some covariates fixed there, the rest set in the RBD
   const dlg = page.getByRole("dialog", { name: "Covariates for the blocks" });
   await dlg.getByRole("button", { name: "+ Add a value" }).click();
   await dlg.getByLabel("Name of value 1").fill("Running hours a year");
-  await dlg.getByLabel("What value 1 is").selectOption("use");
+  await choose(dlg.getByLabel("What value 1 is"), "use");
   await dlg.getByLabel("Unit of value 1").fill("hours a year");
   await dlg.getByLabel("Value 1", { exact: true }).fill("876");
   await expect(dlg).toContainText("Using 876 from the diagram's Use: Running hours a year");
@@ -148,7 +149,7 @@ test("the Fit dialog's record prior takes the pipe's length", async ({ page, req
   await headPick(page, "Life model", "Fit a life model…");
   const fit = page.getByRole("region", { name: "Fit a life model" });
   await fit.getByRole("radio", { name: "With a prior" }).click();
-  await fit.getByRole("combobox", { name: "Prior", exact: true }).selectOption("library");
+  await choose(fit.getByRole("combobox", { name: "Prior", exact: true }), "library");
   await pickRecord(page, "pipe external leak small service water", PIPE);
   await expect(fit.getByRole("group", { name: "The library record" })).toContainText(PIPE);
   // Its covariates under it: the pipe's length is needed before the prior is anything (never one foot).
@@ -157,7 +158,7 @@ test("the Fit dialog's record prior takes the pipe's length", async ({ page, req
   await expect(fit).toContainText("Give the record's Pipe length.");
   await cov.getByLabel("Pipe length (L)").fill("20000");
   await expect(cov.locator(".cov-out")).toContainText("failures per calendar hour");
-  await fit.getByRole("combobox", { name: "Distribution" }).selectOption("exponential");
+  await choose(fit.getByRole("combobox", { name: "Distribution" }), "exponential");
   await expect(fit.locator("p.ml-lead[role=status]")).toContainText("Pipe length 20000 ft", { timeout: 30_000 });
   await shot(page, "fit-pipe-prior-1440");
   await expectHealthy(page, problems, { label: "a record prior with its covariates" });

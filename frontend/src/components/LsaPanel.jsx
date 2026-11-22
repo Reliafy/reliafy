@@ -39,7 +39,7 @@ import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
 import LoadFailed from "./LoadFailed.jsx";
 import Loading from "./ui/Loading.jsx";
-import { Checkbox, Radio } from "./ui/Controls.jsx";
+import { Checkbox, Radio, Select } from "./ui/Controls.jsx";
 
 // The LSA tab of the Explorer's panel (Assets › Explorer, ?tab=lsa; it was the
 // Packages tab, and ?tab=packages still opens it. Derryn, 8–9 Nov 2026: the
@@ -179,9 +179,9 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
       </p>
       <div className="pk-dialog-row">
         <Field label="Visit day">
-          <select value={weekday} onChange={(e) => setWeekday(e.target.value)}>
+          <Select value={weekday} onChange={(e) => setWeekday(e.target.value)}>
             {WEEKDAYS.map((d) => <option key={d} value={d}>{dayName(d)}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="On time up to (days after)">
           <input type="number" min="0" max="366" step="1" inputMode="numeric" value={tolerance} onChange={(e) => setTolerance(e.target.value)} />
@@ -305,10 +305,10 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone, Fr
       )}
       <Field label="Name" text={name}><input autoFocus value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="e.g. Weekly inspection" /></Field>
       <Field label="Dates">
-        <select value={timing} onChange={(e) => setTiming(e.target.value)}>
+        <Select value={timing} onChange={(e) => setTiming(e.target.value)}>
           <option value="fixed">Set dates</option>
           <option value="from_last_visit">Counted from the last visit</option>
-        </select>
+        </Select>
       </Field>
       <fieldset className="mt-how">
         <legend>How often</legend>
@@ -389,10 +389,10 @@ function AddTasksDialog({ pkg, onClose, onDone }) {
       )}
       <div className="pk-dialog-row">
         <Field label="On">
-          <select value={rule} onChange={(e) => setRule(e.target.value)}>
+          <Select value={rule} onChange={(e) => setRule(e.target.value)}>
             <option value="every">Every visit</option>
             <option value="nth">Every Nth visit</option>
-          </select>
+          </Select>
         </Field>
         {rule === "nth" && <Field label="N"><input type="number" min="2" max="100" step="1" inputMode="numeric" value={nth} onChange={(e) => setNth(e.target.value)} /></Field>}
       </div>
@@ -438,10 +438,10 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
       )}
       <div className="pk-dialog-row">
         <Field label="On">
-          <select value={rule} onChange={(e) => setRule(e.target.value)}>
+          <Select value={rule} onChange={(e) => setRule(e.target.value)}>
             <option value="every">Every visit</option>
             <option value="nth">Every Nth visit</option>
-          </select>
+          </Select>
         </Field>
         {rule === "nth" && <Field label="N"><input type="number" min="2" max="100" step="1" inputMode="numeric" value={nth} onChange={(e) => setNth(e.target.value)} /></Field>}
       </div>

@@ -11,6 +11,7 @@
 // With SMOKE_SHOTS_DIR set, it saves screenshots at 1280 and 400 px.
 import { test, expect, open, postOk } from "./health.js";
 import { pickPlace } from "./explorer.js";
+import { choose, expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -76,7 +77,7 @@ test("a task by use says what it counts in its Interval row, and can change it",
   await field.getByRole("button", { name: "Change the measurement…" }).click();
   const pick = field.getByRole("combobox", { name: "Measurement to count" });
   await expect(pick).toBeVisible();
-  await pick.selectOption(p.h12.id);
+  await choose(pick, p.h12.id);
   // Chosen explicitly now: the last-done reading on it, worked out from the date (the same counter, so 1,600).
   await expect(field.getByRole("radio", { name: /Work it out from the date: about 1,600 hours/ })).toBeChecked();
   await field.getByRole("radio", { name: "Enter it" }).check();
@@ -105,7 +106,7 @@ test("at 400 px, moving RCM whose task counts the old truck's hours asks, and Un
   await expect(ask).toBeVisible();
   await expect(ask).toContainText(`counts Engine hours on Truck 12 ${tag}, which isn't on Truck 14 ${tag}`);
   await expect(ask.getByRole("radio", { name: `Count a measurement on Truck 14 ${tag} instead` })).toBeChecked();
-  await expect(ask.getByRole("combobox", { name: `Measurement for Service ${tag} to count` })).toHaveValue(p.h14.id);
+  await expectChosen(ask.getByRole("combobox", { name: `Measurement for Service ${tag} to count` }), p.h14.id);
   await expect(ask.getByRole("radio", { name: /Work it out from the date: about 5,400 hours/ })).toBeChecked();
   await expect(ask.getByRole("radio", { name: `Keep counting Engine hours on Truck 12 ${tag}` })).toBeVisible();
   await expect(ask.getByRole("radio", { name: "Go by calendar time instead" })).toBeVisible();

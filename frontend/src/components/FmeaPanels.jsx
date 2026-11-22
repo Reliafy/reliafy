@@ -10,6 +10,7 @@ import {
   AP_LABEL, AP_TONE, CLASS_LABEL, RATE_FROM_LABEL, SCORES, SCORE_ENDS, SOURCE_LABEL, STATUS_LABEL, apOf, bandOf, bandWords, cmOf, cmWords, fmt3, rateOf, rateWords, rpnOf,
 } from "../fmea.js";
 import "./FmeaPanels.css";
+import { Select } from "./ui/Controls.jsx";
 
 // The FME(C)A's parts of the Explorer's details panel (RcmWorksheet.jsx
 // Details draws them on a failure mode; AssetExplorer draws the position's):
@@ -289,9 +290,9 @@ export function AssignFailureModal({ row, failures, onClose, onAssign }) {
       </p>
       {failures.length ? (
         <FormField label="Functional failure">
-          <select ref={first} value={to} onChange={(e) => setTo(e.target.value)}>
+          <Select ref={first} value={to} onChange={(e) => setTo(e.target.value)}>
             {failures.map((f) => <option key={f.id} value={f.id}>{f.text}</option>)}
-          </select>
+          </Select>
         </FormField>
       ) : (
         <p className="lib-date">This function has no functional failure yet. Add one first (the row's menu: Add a functional failure…).</p>

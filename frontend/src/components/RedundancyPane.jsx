@@ -5,7 +5,7 @@ import { STANDBY_KINDS, blankDraft, draftBody, draftFrom, draftProblems, setWord
 import { useConfirm } from "./ConfirmProvider.jsx";
 import TablePane from "./TablePane.jsx";
 import "./RedundancyPane.css";
-import { Checkbox, Radio } from "./ui/Controls.jsx";
+import { Checkbox, Radio, Select } from "./ui/Controls.jsx";
 
 // Redundancy inside a position, in the Explorer's table area beside the tree (Derryn, 12 Nov 2026;
 // no modal): the positions inside it that back each other up, as sets. Each set is either "any k of
@@ -160,9 +160,9 @@ export default function RedundancyPane({ position, phone = false, headingRef = n
                 <>
                   <label className="redundancy-field">
                     <span>While it waits</span>
-                    <select value={draft.standby} onChange={set("standby")}>
+                    <Select value={draft.standby} onChange={set("standby")}>
                       {STANDBY_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-                    </select>
+                    </Select>
                     <small className="rim-tquiet">{STANDBY_KINDS.find((k) => k.value === draft.standby)?.help}</small>
                   </label>
                   {draft.standby === "cold" && (
