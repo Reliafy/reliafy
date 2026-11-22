@@ -19,7 +19,7 @@ import MissionSide, { phaseRowChange } from "../components/MissionSide.jsx";
 import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, MissionRollup, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
 import {
   NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
-  parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, withNewPhase, withoutPhase,
+  parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, headRollupText as missionHeadRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
 import { ForecastPane, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, taskPhoneRow, useTreeTasks } from "../components/TaskTreeTable.jsx";
 import { TASK_FORECAST, TASK_OPEN, forecastItem, graftTasks, isTaskRow, openForTasks, rollupText as taskRollup, taskKey, taskRowActions } from "../explorerTasks.js";
@@ -2617,7 +2617,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={pmissions.links ? (
                   <span className="tt-rollup mt-rollup">
-                    <MissionRollup text={missionRollup(display.rows.get(posRow.key) || posRow, true)}
+                    <MissionRollup text={missionHeadRollup(display.rows.get(posRow.key) || posRow)}
                                    onAdd={viewOnly ? null : () => addMission(posRow.key, posRow.ref.name || "(no name)")} />
                   </span>
                 ) : null}

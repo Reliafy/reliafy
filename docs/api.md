@@ -347,6 +347,20 @@ class (`item_class` null with none); with nothing fitted `member` is null and
 `why` says so. `model` is the condition and life model that scores it, null
 with none linked. It is a read for the page, with no tool or CLI twin.
 
+A node and everything below it (the Explorer's Monitoring › Life left on a
+position with positions inside it, or on a place): `GET
+/api/maintenance/condition-below/{id}` answers `{node, today, age_unit,
+horizons, below, positions, members, models, scored, no_model, not_scored,
+note}`. `members` are the positions there and below at any depth with
+condition monitoring (a condition and life model, or a condition point), each
+a row as above plus `subject` (`{id, name, within}`: where it lives) and
+`here` (the node's own); the node's own comes first, then highest risk first.
+Risks are never summed. `within` (the asset opened) keeps it to that asset.
+The Summary's counts: `GET /api/maintenance/rollup/{id}` answers `{node,
+design, here, inside}`, each with `positions`, `items` (fitted), `tasks`,
+`failure_modes`, `models` (not RBDs), `failure_reports` and `open_reports`;
+`within` as above. Both are reads for the page, with no tool or CLI twin.
+
 Missions (the Explorer's Models › Missions): a non-repairable RBD can carry several
 named phased missions over the same blocks, in `graph.missions` (`[{id, name,
 phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,

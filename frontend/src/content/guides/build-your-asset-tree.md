@@ -66,6 +66,17 @@ shows the groupings its positions sit in (a *House*, its *Climate control*),
 even when those groupings have no place of their own. They're shown muted:
 they're there to show where things belong, not things at that place.
 
+## What's here and below
+
+Pick any row, at any level, and its **Summary** says what the row itself is
+(its class, what's fitted, where it is), then **Here and below**: how many
+positions and fitted items sit below it at every depth, and how many tasks,
+failure modes, models and failure reports are on it and below it. Hover over
+a count to see how many are the row's own; choose one to open the tab that
+lists them, each row there saying where it lives. With the Explorer opened on
+one asset, only that asset is counted. Stock isn't added up: a spare held for
+several positions would be counted more than once.
+
 ## Fit the items
 
 Open a position's own page (**Open the full page** in the details' **…**

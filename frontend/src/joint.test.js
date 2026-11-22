@@ -256,3 +256,15 @@ test("the ranking uses the horizon that tells the running units apart, and the w
   assert.equal(fleetAnswer({ horizons, positions: 2, scored: 2, members: [member("A", [0.5, 0.9999, 1]), member("B", [0.8, 0.99999, 1])] }),
     "2 positions · all with risk now · highest: B, 80% in the next 30 days");
 });
+
+test("condition monitoring below a node in one line: counts and the highest, never a sum", async () => {
+  const { belowAnswer } = await import("./joint.js");
+  const horizons = { labels: ["30 days", "90 days", "365 days"] };
+  const row = (name, risk) => ({ position: { name }, scored: true, risk, median_remaining: 100 });
+  assert.equal(belowAnswer(null), "");
+  assert.equal(belowAnswer({ positions: 0, scored: 0, horizons, members: [] }), "0 positions with condition monitoring here and below");
+  assert.equal(
+    belowAnswer({ positions: 3, scored: 2, horizons, members: [row("Pump A1", [0.01, 0.05, 0.4]), row("Pump B1", [0.02, 0.2, 0.9]), { position: { name: "Pump B2" }, scored: false }] }),
+    "3 positions with condition monitoring here and below · 2 with risk now · highest: Pump B1, 20% in the next 90 days",
+  );
+});

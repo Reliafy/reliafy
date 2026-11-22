@@ -401,3 +401,77 @@ def position(m, db, owners, hidden, position_id: str, curves: bool = True) -> di
         out["why"] = ("No item is fitted here, so there is no age or readings to work a risk out from. Fit an item "
                       "to see its risk.")
     return out
+
+
+#: The most positions below a node the Condition monitoring table lists (each one scored).
+MAX_BELOW = MAX_SCORED
+
+
+def _monitored(m, fetch, p: dict, item: dict | None) -> bool:
+    """Whether a position has condition monitoring: a condition and life model that scores it,
+    or a condition measurement point on it or on the item fitted there."""
+    if position_model(m, fetch, p["id"]) is not None:
+        return True
+    return bool(_condition_points(m, p["id"], item["id"] if item else "__none__"))
+
+
+def below(m, db, owners, hidden, node_id: str, within: str | None = None) -> dict:
+    """The Explorer's Condition monitoring tab on a node with positions below it (a position, or a
+    place): every position there with condition monitoring (a condition and life model, or a
+    condition point), each with its risk now and its median life left with its bound, as a class's
+    fleet gives them. The node's own position first, then highest risk first (the table names the
+    stretch it ranks by). Each row says where it lives (``subject``: its name and what it sits
+    in). Risks are never added up: chances of failing don't sum across positions. ``within``: the
+    asset opened (?root=), so nothing from another asset is listed."""
+    ids = m.subtree_ids(node_id, within)
+    node = m.s.node(m.org, node_id)
+    row_for, models, fetch, today, horizons = _scorer(m, db, owners, hidden)
+    classes = item_class_ids(m)
+    found = []
+    beneath = 0
+    for p in m.s.nodes(m.org, "Position"):
+        if p.get("retired") or p["id"] not in ids:
+            continue
+        beneath += p["id"] != node["id"]
+        f = m.current_fitment(p["id"])
+        item = f and next((x for x in m.s.inn(m.org, f["id"], "IN") if x["label"] == "Item"), None)
+        if not _monitored(m, fetch, p, item):
+            continue
+        cls_id = classes.get(item["id"]) if item else None
+        found.append((p, f, item, m.s.node(m.org, cls_id, "ItemClass") if cls_id else None))
+    found.sort(key=lambda x: (x[0]["id"] != node["id"], (x[0].get("name") or "").lower(), x[0]["id"]))
+    rows = []
+    for k, (p, f, item, cls) in enumerate(found):
+        if item is None:
+            doc = position_model(m, fetch, p["id"])
+            row = {"position": _position_brief(m, p), "item": None, "item_class": None, "in_service": None,
+                   "age": None, "model": doc and {"id": doc.id, "name": doc.name}, "point": None,
+                   "last_reading": None, "n_readings": 0, "covariates": {}, "scored": False,
+                   "why": "Nothing is fitted here, so there is no age or readings to work a risk out from."}
+            if doc is not None:
+                models.setdefault(doc.id, {**_model_view(doc), "positions": 0})["positions"] += 1
+        else:
+            row = row_for((p, f, item, cls), score=k < MAX_BELOW, bound=k < MAX_BOUNDED)
+        row["subject"] = {"id": p["id"], "name": p.get("name") or "", "within": m._within(p["id"])}
+        row["here"] = p["id"] == node["id"]
+        rows.append(row)
+    rows.sort(key=lambda r: (not r["here"], not r["scored"], -(r["risk"][1] if r["scored"] else 0.0),
+                             r["model"] is None, r["position"]["name"].lower(), r["position"]["id"]))
+    scored = sum(1 for r in rows if r["scored"])
+    no_model = sum(1 for r in rows if r["model"] is None)
+    notes = []
+    if no_model:
+        notes.append(f"{no_model} of these {'has' if no_model == 1 else 'have'} a condition measurement but no condition "
+                     "and life model. To see risk, link one to the position in its Models › Life models.")
+    if len(rows) > MAX_BOUNDED:
+        notes.append(f"The 90% bounds are worked out for the first {MAX_BOUNDED} positions; open any other "
+                     "for its own.")
+    if len(rows) > MAX_BELOW:
+        notes.append(f"Risk is worked out for the first {MAX_BELOW} positions; open any other for its own.")
+    return {"node": {"id": node["id"], "kind": node["label"].lower(), "name": node.get("name") or ""},
+            "today": today, "age_unit": AGE_UNIT,
+            "horizons": {"labels": horizons["labels"], "values": horizons["values"]},
+            "below": beneath, "positions": len(rows), "members": rows,
+            "models": sorted(models.values(), key=lambda v: v["name"].lower()),
+            "scored": scored, "no_model": no_model, "not_scored": len(rows) - scored - no_model,
+            "note": " ".join(notes) or None}

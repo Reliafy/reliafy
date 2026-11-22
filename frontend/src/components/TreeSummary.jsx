@@ -11,8 +11,9 @@ import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
 import { annualLsa, annualText, nextVisit } from "../lsaTab.js";
 import { explorerHere } from "../products.js";
-import { tabPlace } from "../explorerTabs.js";
-import { getMaintenanceLocation, getOperatingPlan, getPositionCondition } from "../api.js";
+import { tabPlace, tabsFor } from "../explorerTabs.js";
+import { rollupChips } from "../summaryRollup.js";
+import { getMaintenanceLocation, getOperatingPlan, getPositionCondition, getRollup } from "../api.js";
 import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../positionClass.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { hoursWords, planWords } from "../operatingPlan.js";
@@ -88,6 +89,39 @@ function StatusChips({ r, position, version }) {
       {clear && <Chip tone="success">{workManagement ? "✓ Nothing overdue, no open work and no alarms" : "✓ No alarms"}{r.kids.length ? ", here or inside" : ""}</Chip>}
       {!words.length && failed && <Chip>Its risk now couldn't be read: open {tabPlace("condition")} to try again</Chip>}
     </div>
+  );
+}
+
+// Everything here and below (summaryRollup.js), each a chip that opens the tab listing them.
+function Rollup({ r, design }) {
+  const { pathname, search } = useLocation();
+  const root = new URLSearchParams(search).get("root");
+  const wanted = r.type === "pos" || r.type === "loc";
+  const [state, setState] = useState({ key: null, data: null, error: null });
+  const key = `${r.key}:${root || ""}`;
+  useEffect(() => {
+    if (!wanted) return undefined;
+    let live = true;
+    getRollup(r.key, root).then((d) => live && setState({ key, data: d, error: null }),
+      (e) => live && setState({ key, data: null, error: e.message }));
+    return () => { live = false; };
+  }, [key, wanted]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!wanted || state.key !== key) return null;
+  if (state.error) return <p className="td-quiet">The counts below this row didn't load: {state.error} Choose it again to retry.</p>;
+  const chips = rollupChips(state.data, { design: design || state.data?.design });
+  if (!chips.length) return null;
+  const has = new Set(tabsFor(r).map((t) => t.id));
+  return (
+    <Section title="Here and below" tip="Counted at every level below this row, inside the asset open. Pick one to see the list.">
+      <div className="chip-row td-rollup">
+        {chips.map((c) => (c.tab && has.has(c.tab) ? (
+          <Link key={c.id} className="td-status-go" to={explorerHere(pathname, search, { sel: r.key, tab: c.tab })}
+                title={`${c.title}. Open ${tabPlace(c.tab)}`}>
+            <Chip>{c.text}</Chip>
+          </Link>
+        ) : <span key={c.id} title={c.title}><Chip>{c.text}</Chip></span>))}
+      </div>
+    </Section>
   );
 }
 
@@ -557,6 +591,7 @@ export default function TreeSummary({
         <ClampLines className="td-desc" text={position.data.description} what="the description" />
       )}
       {facts || <Facts r={row} display={display} design={design} fittedFrom={row.type === "pos" ? position.data?.fitted : null} />}
+      <Rollup r={row} design={design} />
       {children}
       {row.type === "pos" && design && <BuiltAs state={position} />}
       {row.type === "loc" && <LocationClass r={row} design={design} />}
