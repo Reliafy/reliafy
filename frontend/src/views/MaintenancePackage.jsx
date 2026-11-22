@@ -26,6 +26,7 @@ import { tabPlace } from "../explorerTabs.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { planWords } from "../workManagement.js";
 import "./Maintenance.css";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const unitWord = (n, unit) => (Number(n) === 1 ? String(unit).replace(/s$/, "") : unit);
@@ -368,20 +369,16 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
         {!layer && pkg.subject?.kind === "position" && (
           <fieldset className="pkg-rules pkg-shut">
             <legend>Shutdown</legend>
-            <label className="mt-mode">
-              <input type="checkbox" checked={form.shutdown} onChange={(e) => setForm((f) => ({ ...f, shutdown: e.target.checked }))} />
-              {" "}Each visit is a shutdown: it takes {pkg.subject?.name || "the position"} off-line
-            </label>
+            <Checkbox className="mt-mode" checked={form.shutdown} onChange={(e) => setForm((f) => ({ ...f, shutdown: e.target.checked }))}
+                      label={<>Each visit is a shutdown: it takes {pkg.subject?.name || "the position"} off-line</>} />
             {form.shutdown && (
               <>
                 <div className="pk-dialog-row">
                   <Field label="Off-line for (hours)"><input type="number" min="0" step="any" inputMode="decimal" value={form.shutHours} onChange={set("shutHours")} placeholder="e.g. 72" /></Field>
                   <Field label="Cost each shut (optional)"><input type="number" min="0" step="any" inputMode="decimal" value={form.shutCost} onChange={set("shutCost")} /></Field>
                 </div>
-                <label className="mt-mode">
-                  <input type="checkbox" checked={form.shutIdle} onChange={(e) => setForm((f) => ({ ...f, shutIdle: e.target.checked }))} />
-                  {" "}Items not worked on keep ageing during the shut
-                </label>
+                <Checkbox className="mt-mode" checked={form.shutIdle} onChange={(e) => setForm((f) => ({ ...f, shutIdle: e.target.checked }))}
+                          label="Items not worked on keep ageing during the shut" />
                 <p className="lib-date">Its tasks are the work done at each shut. A repairable RBD on {pkg.subject?.name || "the position"} reads it as a planned outage.</p>
               </>
             )}

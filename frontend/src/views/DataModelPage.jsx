@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import Switch from "../components/ui/Switch.jsx";
 import { Link } from "react-router-dom";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
@@ -184,9 +185,7 @@ function DataModel({ header, live, design }) {
           <input type="search" value={query} placeholder="Find a kind or connection" onChange={(e) => setQuery(e.target.value)}
             onKeyDown={pickSearch} aria-describedby="dm-search-result" />
         </label>
-        <label className="dm-check">
-          <input type="checkbox" checked={showCounts} onChange={(e) => setShowCounts(e.target.checked)} /> Show counts
-        </label>
+        <Switch className="dm-check" checked={showCounts} onChange={setShowCounts} label="Show counts" ariaLabel="Show counts" />
       </div>
       <div id="dm-search-result" className="dm-search-result muted" aria-live="polite">
         {highlight && (highlight.nodes.size || highlight.edges.size

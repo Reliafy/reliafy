@@ -2258,9 +2258,18 @@ select.ctl { padding-right: 30px; }
 /* A checkbox with its label (ui/Controls Checkbox): the whole label is the target. */
 .check { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; padding: var(--space-1) 0;
   font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); cursor: pointer; overflow-wrap: anywhere; }
-.check > input[type="checkbox"] { flex: none; width: var(--icon-md); height: var(--icon-md); margin: 2px 0 0; accent-color: var(--accent); cursor: inherit; }
+.check > input:is([type="checkbox"], [type="radio"]) { flex: none; width: var(--icon-md); height: var(--icon-md); margin: 2px 0 0; accent-color: var(--accent); cursor: inherit; }
 .check:has(> input:disabled) { color: var(--text-disabled); cursor: not-allowed; }
-@media (max-width: 720px) { .check { min-height: var(--control-lg); align-items: center; } .check > input[type="checkbox"] { margin-top: 0; } }
+/* The box alone (a row-select in a table): no row padding; on a phone an invisible
+   40 px target around it, so the row keeps its height. */
+.check.check-bare { display: inline-flex; vertical-align: middle; padding: 0; position: relative; }
+.check.check-bare > input { margin: 0; position: relative; z-index: 1; }
+@media (max-width: 720px) {
+  .check { min-height: var(--control-lg); align-items: center; }
+  .check > input:is([type="checkbox"], [type="radio"]) { margin-top: 0; }
+  .check.check-bare { min-height: 0; }
+  .check.check-bare::after { content: ""; position: absolute; inset: calc((var(--icon-md) - var(--control-lg)) / 2); }
+}
 
 /* Controls joined into one: comparator + value + unit, interval + unit. */
 .ctl-group {
@@ -2432,6 +2441,7 @@ button.switch {
   font-weight: 500;
 }
 button.switch:hover:not(:disabled) { background: none; }
+.switch-label { min-width: 0; text-align: left; white-space: normal; }
 .switch-track {
   position: relative;
   width: 32px;
@@ -8009,6 +8019,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .evidence-group + .evidence-group { margin-top: 8px; }
 .evidence-group-head { margin: 0; font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 500; color: var(--text-secondary); }
 .evidence-option .evidence-name, .evidence-option .evidence-meta { min-width: 0; overflow-wrap: anywhere; }
+/* A shared Radio/Checkbox as the option: its label keeps the name and meta side by side. */
+.evidence-option > .check-label { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); min-width: 0; }
 .evidence-window { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 12px; margin: 0; min-width: 0; }
 .evidence-window-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .evidence-window-row .field { flex: 1 1 10rem; min-width: 0; }
