@@ -369,3 +369,34 @@ def test_sequential_truncated_plan_keeps_the_confidence_asked():
     assert out["summary"].startswith("As run, this test shows the target with 90.2% confidence (90% asked)")
     # Exact: the chance a design at the target passes, by the library's own OC.
     assert out["oc_curve"]["points"][0]["pass_probability"] == pytest.approx(out["consumer_risk"])
+
+
+# ---- A saved sequential test ------------------------------------------------------------
+
+
+def test_a_sequential_rule_is_saved_recomputed_and_reads_its_verdict(client):  # noqa: F811
+    """The agreed rule goes on record before the data comes in, and again with each verdict;
+    the server recomputes it from the inputs (never the client's result)."""
+    body = {"method": "mtbf", "mtbf": 60000, "good_mtbf": 120000, "confidence": 0.9, "producer_risk": 0.1,
+            "unit": "hours"}
+    r = client.post("/api/strategy/analyses", json={"name": "Controller rule", "kind": "sequential_test",
+                                                    "inputs": body})
+    assert r.status_code == 200, r.text
+    saved = r.json()
+    plan = T.sequential_test(**body)
+    assert saved["results"]["max_failures"] == plan["max_failures"]
+    assert saved["results"]["max_time"] == pytest.approx(plan["max_time"])
+    assert saved["headline"].startswith("Sequential test: at most ")
+    assert saved["headline"].endswith(f"hours or {plan['max_failures']} failures")
+    r = client.post("/api/strategy/analyses", json={"name": "Feb verdict", "kind": "sequential_test",
+                                                    "inputs": {**body, "failures_seen": 2, "time_seen": 471168}})
+    assert r.status_code == 200, r.text
+    assert r.json()["results"]["decision"]["verdict"] == "accept"
+    assert r.json()["headline"].startswith("Accept so far · Sequential test")
+    attr = client.post("/api/strategy/analyses", json={"name": "Pass/fail", "kind": "sequential_test", "inputs": {
+        "method": "attribute", "reliability": 0.9, "good_reliability": 0.97, "confidence": 0.9}})
+    assert attr.status_code == 200, attr.text
+    assert "units or" in attr.json()["headline"]
+    bad = client.post("/api/strategy/analyses", json={"name": "Bad", "kind": "sequential_test",
+                                                      "inputs": {"method": "mtbf", "mtbf": 1000}})
+    assert bad.status_code == 422 and "good design" in bad.json()["detail"]
