@@ -21,7 +21,12 @@ One value from a list, as a styled drop-down: a trigger button (`role="combobox"
 
 ## Keyboard
 
-↑ ↓ move, Home and End jump, Enter or Tab chooses, and Escape closes and returns focus to the trigger. Enter, Space or an arrow on the closed trigger opens it. Focus stays on the trigger (or the search box) and `aria-activedescendant` names the row a screen reader should read.
+↑ ↓ move, Home and End jump, Enter or Tab chooses, and Escape closes and returns focus to the trigger. Enter, Space or an arrow on the closed trigger opens it. Escape shuts only the list, never the form or dialog round it. Clicking a row leaves focus on the trigger. Focus stays on the trigger (or the search box) and `aria-activedescendant` names the row a screen reader should read.
+
+## Behaviour
+
+- The open list follows its trigger when a pane or dialog scrolls, and shuts once the trigger is out of sight or on a click outside.
+- A row shown only because the value matches none (a native list shows its first row) isn't ticked, and choosing it still calls `onChange`.
 
 ## When to use it
 
