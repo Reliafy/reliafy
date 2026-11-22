@@ -5,7 +5,7 @@ import {
   EMPTY_MAPPING, columnFacts, guessMapping, statusMeaning, setStatusMeaning, encodeStatus,
   statusSummary, summaryParts, dataStepProblems, isSimplePaste, dataSplit,
   countProblem, setMappingField, flagsLookSwapped, flagNameContradicts,
-  unitIssue, unitSettled, UNITLESS, UNIT_MISSING,
+  unitIssue, unitSettled, UNITLESS, UNIT_MISSING, codeReading, dataStepIssues,
 } from "./lifeData.js";
 
 // A CMMS export: id, hours, a text status, a site.
@@ -279,4 +279,22 @@ test("a unit guessed from the column's name settles the unit, so nothing more is
   const g = guessMapping(inService.columns, columnFacts(inService));
   assert.equal(g.mapping.x, "Hours in service");
   assert.equal(unitIssue(g.unit), null);
+});
+
+test("a 0/1 status column says how it is read, with each code's rows", () => {
+  const values = { 0: 28, 1: 12 };
+  assert.equal(codeReading(values, false), "0 = failed (28 rows) · 1 = still running (12 rows)");
+  // Flipped ("my column uses 1 = failed"): the counts move with it.
+  assert.equal(codeReading(values, true), "1 = failed (12 rows) · 0 = still running (28 rows)");
+  assert.equal(codeReading({ 0: 1 }, false), "0 = failed (1 row) · 1 = still running (0 rows)");
+  assert.equal(codeReading(null, false), null);
+});
+
+test("a fit by failure mode with a range says what to do, for this fit", () => {
+  const facts = { t: { dtype: "float64" }, lo: { dtype: "float64" }, hi: { dtype: "float64" }, m: { dtype: "object" } };
+  const issues = dataStepIssues({ ...EMPTY_MAPPING, x: "t", xl: "lo", xr: "hi", e: "m" }, facts, 10);
+  const mode = issues.find((i) => i.kind === "mode-exact");
+  assert.equal(mode.col, "m");
+  assert.match(mode.text, /also has a range \(xl to xr\)/);
+  assert.match(mode.text, /set the failure mode to none for this fit/);
 });

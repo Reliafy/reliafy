@@ -218,3 +218,38 @@ export function effectsByMode(regression, level = LEVEL_TEXT) {
     }),
   }));
 }
+
+// The incidence curves as a table for "Download CSV": one row per time the
+// curves step, each mode's chance of failing from it by then with its band,
+// then any mode's. The header names the band's level and side, so the file
+// says what its numbers are: [[header…], [row…], …].
+export function incidenceCsv(result) {
+  const c = result?.curves || {};
+  const xs = c.x || [];
+  const names = (result?.causes || []).map((k) => k.name);
+  const level = ciPct(result);
+  const u = result?.unit ? ` (${result.unit})` : "";
+  const band = (what) => [`${what}: lower, ${level} two-sided`, `${what}: upper, ${level} two-sided`];
+  const header = [`Time${u}`];
+  for (const n of names) header.push(`${n}: chance of failing from it`, ...band(n));
+  header.push("Any mode: chance of failing", ...band("Any mode"));
+  const rows = [header];
+  let prev = null;
+  xs.forEach((x, i) => {
+    const cells = [];
+    for (const n of names) cells.push(c.cif?.[n]?.[i] ?? "", c.lower?.[n]?.[i] ?? "", c.upper?.[n]?.[i] ?? "");
+    cells.push(c.all?.[i] ?? "", c.all_lower?.[i] ?? "", c.all_upper?.[i] ?? "");
+    const key = cells.join("|");
+    if (key !== prev) rows.push([x, ...cells]);
+    prev = key;
+  });
+  return rows;
+}
+
+// The time by which 10% of units have failed (B10), from any mode and from
+// each mode, read off the curves as the Calculator's "Time to a chance"
+// does: [{ mode, time, lower, bound, level, top, last }], any mode first.
+export function bLives(result, p = 0.1) {
+  const modes = [ANY_MODE, ...(result?.causes || []).map((k) => k.name)];
+  return modes.map((mode) => ({ mode, ...timeToChance(result, mode, p) }));
+}

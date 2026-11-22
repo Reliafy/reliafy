@@ -16,7 +16,9 @@ export default function ReadingSummary({
   name, reading, source = "saved", use = null, note = null, onChange, onConfirm, confirming = false, readOnly = false,
 }) {
   const parts = readingParts(reading);
-  const guessed = source !== "saved";
+  // "once": changed for this fit only (the dataset keeps its own reading).
+  const once = source === "once";
+  const guessed = source !== "saved" && !once;
   const used = (key) => !use || use.includes(key) || (key === "range" && use.includes("x"));
   return (
     <div className={"reading-summary" + (guessed ? " guessed" : "")} data-wt="reading-summary">
@@ -32,7 +34,13 @@ export default function ReadingSummary({
             </span>
           ))}
         </span>
-        {guessed && <span className="reading-badge" role="status">guessed — check it</span>}
+        {guessed && (
+          <span className="reading-badge" role="status"
+                title="Read from the column names and values, not set by anyone yet: check each role, then press Looks right (or Change)">
+            guessed — check it
+          </span>
+        )}
+        {once && <span className="reading-badge" role="status">this fit only</span>}
         <span className="reading-summary-actions">
           {guessed && onConfirm && !readOnly && (
             <button type="button" className="secondary sm" onClick={onConfirm} disabled={confirming}>
@@ -63,7 +71,7 @@ export function ReadingChange({ name, rd, onDone }) {
       <p className="muted-line" style={{ margin: 0 }}>
         {rd.readOnly
           ? "This dataset isn't yours to change, so this reading is used for this fit only."
-          : "Kept with the dataset: later models use it. Models already made keep the reading they were fitted with."}
+          : "Save keeps it with the dataset: later models use it (models already made keep the reading they were fitted with). Use for this fit only leaves the dataset as it is."}
       </p>
       <ReadingEditor columns={rd.cols.columns} facts={rd.facts} nRows={rd.nRows} reading={rd.draft}
                      onChange={rd.setDraft} disabled={rd.saving} />
@@ -71,6 +79,13 @@ export function ReadingChange({ name, rd, onDone }) {
       <div className="row reading-change-foot" style={{ margin: 0 }}>
         <button type="button" className="secondary" onClick={rd.cancelChange} disabled={rd.saving}>Cancel</button>
         {waiting && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{waiting}</span>}
+        {!rd.readOnly && (
+          <button type="button" className="secondary" onClick={() => { rd.useOnce(rd.draft); onDone?.(); }}
+                  disabled={!!waiting || rd.saving}
+                  title="Fit with this reading without changing the dataset's (one clock of two, or no failure mode, say)">
+            Use for this fit only
+          </button>
+        )}
         <button type="button" onClick={save} disabled={!!waiting || rd.saving}>
           {rd.saving ? "Saving…" : rd.readOnly ? "Use this reading" : "Save the reading"}
         </button>
