@@ -2,7 +2,7 @@ import Plot from "../Plot.jsx";
 import Chip from "../ui/Chip.jsx";
 import { formatNumber } from "../../format.js";
 import { bandPair, dataPoints, fitLine, referenceShape } from "../../plotTheme.js";
-import { bandLevel, medianLowerText, medianText, riskText, riskTone, riskUpperText, sortColumn, sortRiskRows } from "../../joint.js";
+import { bandLevel, medianLowerText, medianText, rankColumn, riskText, riskTone, riskUpperText, sortColumn, sortRiskRows } from "../../joint.js";
 import { PlotCard } from "./ModelLayouts.jsx";
 import ChartPair from "./ChartPair.jsx";
 import "./ModelFrame.css";
@@ -64,13 +64,14 @@ function RiskCells({ row, n = 3 }) {
   });
 }
 
-export { sortColumn };
+export { rankColumn, sortColumn };
 
-// The rows a risk table shows, highest risk first (rows with no risk keep
-// their order, after the rest).
-export function riskOrder(rows, labels) {
+// The rows a risk table shows, highest risk first over the column ``col``
+// (left out, the one rankColumn picks); rows with no risk keep their order,
+// after the rest.
+export function riskOrder(rows, labels, col = null) {
   const scored = (rows || []).filter((r) => r.risk);
-  return [...sortRiskRows(scored, sortColumn(labels)), ...(rows || []).filter((r) => !r.risk)];
+  return [...sortRiskRows(scored, col ?? rankColumn(scored, labels)), ...(rows || []).filter((r) => !r.risk)];
 }
 
 // The table. `rows`: [{id, risk: [..], median_remaining, median_reached}] (a
@@ -79,9 +80,9 @@ export function riskOrder(rows, labels) {
 // num, cell(row)}]); `unit`: the time unit the median life left is in.
 export function RiskTable({
   rows: given, labels = [], unit = "", lead, selected, onPick, live = true, whyNot = null,
-  empty = "No units are still running in the data.",
+  empty = "No units are still running in the data.", sortCol = null,
 }) {
-  const rows = riskOrder(given, labels);
+  const rows = riskOrder(given, labels, sortCol);
   if (!rows.length) return <p className="mf-note">{empty}</p>;
   const columns = lead || [
     { id: "unit", label: "Unit", cell: (r) => r.id },

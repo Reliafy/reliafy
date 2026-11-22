@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { getClassFleet } from "../api.js";
 import { formatNumber } from "../format.js";
 import { fleetAnswer } from "../joint.js";
-import { RiskTable, riskOrder, sortColumn } from "./model/RiskTable.jsx";
+import { RiskTable, rankColumn, riskOrder } from "./model/RiskTable.jsx";
 import PositionRisk from "./PositionRisk.jsx";
 import "./ClassFleet.css";
 
@@ -80,7 +80,7 @@ export default function ClassFleet({ row, version, onSelect, within = null }) {
       <section className="card cf-card" aria-label="Risk now">
         <div className="cf-head">
           <h2 className="cf-title">Risk now</h2>
-          {mine.scored > 0 && <span className="cf-sub">highest chance of failing in the next {labels[sortColumn(labels)]} first</span>}
+          {mine.scored > 0 && <span className="cf-sub">highest chance of failing in the next {labels[rankColumn(rows, labels)]} first</span>}
         </div>
         <div className="maint-scroll">
           <RiskTable rows={rows} labels={labels} unit={mine.age_unit} lead={lead} selected={unitId} onPick={setChosen}
