@@ -66,7 +66,7 @@ html.print-layout .public-page .card { box-shadow: none; }
 /* A model's answer in one plain sentence, for a manager: above the
    figures and bounds (the answer line) and the tabs. */
 .share-plain {
-  margin: 6px 0 2px;
+  margin: var(--space-1-5) 0 var(--space-0-5);
   max-width: 62rem;
   font-size: var(--fs-16);
   line-height: 1.5;
@@ -74,7 +74,7 @@ html.print-layout .public-page .card { box-shadow: none; }
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.report-section .share-plain { margin: 0 0 10px; }
+.report-section .share-plain { margin: 0 0 var(--space-2); }
 
 @media print {
   @page { margin: 14mm 12mm; }
@@ -144,8 +144,8 @@ html.print-layout .public-page .card { box-shadow: none; }
   .public-page .scroll-cue-body > table th,
   .public-page .scroll-cue-body > table td {
     font-size: var(--fs-12) !important;
-    padding-left: 6px !important;
-    padding-right: 6px !important;
+    padding-left: var(--space-1-5) !important;
+    padding-right: var(--space-1-5) !important;
     white-space: normal !important;
   }
   .public-page .report-text p { orphans: 3; widows: 3; }

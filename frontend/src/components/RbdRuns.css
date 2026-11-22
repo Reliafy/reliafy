@@ -5,7 +5,7 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--space-1) var(--space-3);
   font-size: var(--fs-13);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -20,7 +20,7 @@
   text-decoration: underline;
 }
 .rbd-runs-history {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   font-size: var(--fs-13);
 }
 
@@ -49,7 +49,7 @@
 }
 
 .rbd-runs-note {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-13);
 }
@@ -59,7 +59,7 @@
 }
 
 .rbd-runs .card + .card {
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 
 @media (max-width: 640px) {
@@ -78,7 +78,7 @@
 
 /* How long runs are kept: one quiet line under the list. */
 .rbd-runs-kept {
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
   font-size: var(--fs-13);
   color: var(--text-secondary);
 }

@@ -1,24 +1,24 @@
 /* A covariate model's inputs and its rate (CovariateCalculator.jsx). */
-.cov { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem); gap: 1rem; align-items: start; }
+.cov { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem); gap: var(--space-4); align-items: start; }
 .cov.cov-stacked { grid-template-columns: minmax(0, 1fr); }
 .cov-stacked .cov-out { position: static; }
-.cov-inputs { min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
-.cov-group { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.5rem 0.75rem 0.75rem; margin: 0; min-width: 0; }
-.cov-legend { font-weight: 600; padding: 0 0.25rem; }
-.cov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.5rem 0.75rem; }
+.cov-inputs { min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.cov-group { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3) var(--space-3); margin: 0; min-width: 0; }
+.cov-legend { font-weight: 600; padding: 0 var(--space-1); }
+.cov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--space-2) var(--space-3); }
 .cov-field { min-width: 0; }
-.cov-num { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.cov-num { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
 .cov-num input { min-width: 0; flex: 1 1 auto; }
 .cov-unit { color: var(--text-secondary); font-size: var(--fs-14); white-space: nowrap; }
 .cov-warn .field-help { color: var(--warning-text); }
-.cov-out { position: sticky; top: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.75rem; min-width: 0; overflow-wrap: anywhere; }
-.cov-big { font-size: var(--fs-16); margin: 0 0 0.25rem; }
-.cov-sub { margin: 0.25rem 0; color: var(--text-secondary); font-size: var(--fs-14); }
-.cov-head { margin: 0.5rem 0 0.25rem; font-weight: 600; font-size: var(--fs-14); }
-.cov-problems ul, .cov-warnings ul { margin: 0; padding-left: 1.1rem; font-size: var(--fs-14); }
+.cov-out { position: sticky; top: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); min-width: 0; overflow-wrap: anywhere; }
+.cov-big { font-size: var(--fs-16); margin: 0 0 var(--space-1); }
+.cov-sub { margin: var(--space-1) 0; color: var(--text-secondary); font-size: var(--fs-14); }
+.cov-head { margin: var(--space-2) 0 var(--space-1); font-weight: 600; font-size: var(--fs-14); }
+.cov-problems ul, .cov-warnings ul { margin: 0; padding-left: var(--space-4); font-size: var(--fs-14); }
 .cov-warnings { color: var(--warning-text); }
-.cov-modes { list-style: none; margin: 0.5rem 0; padding: 0; font-size: var(--fs-14); }
-.cov-modes li { display: flex; justify-content: space-between; gap: 0.5rem; border-bottom: 1px solid var(--border-subtle); padding: 0.15rem 0; }
+.cov-modes { list-style: none; margin: var(--space-2) 0; padding: 0; font-size: var(--fs-14); }
+.cov-modes li { display: flex; justify-content: space-between; gap: var(--space-2); border-bottom: 1px solid var(--border-subtle); padding: var(--space-0-5) 0; }
 @media (max-width: 760px) {
   .cov { grid-template-columns: minmax(0, 1fr); }
   .cov-out { position: static; }
@@ -27,18 +27,18 @@
 .modal.cov-modal { width: min(64rem, calc(100vw - 32px)); max-width: none; }
 .cov-intro { margin-top: 0; }
 .cov-note { margin-bottom: 0; }
-.cov-what { margin: 0 0 0.5rem; color: var(--text-secondary); font-size: var(--fs-12); }
-.cov-cell { min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.cov-what { margin: 0 0 var(--space-2); color: var(--text-secondary); font-size: var(--fs-12); }
+.cov-cell { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .cov-cell.is-open .cov-num input, .cov-cell.is-open select:disabled { opacity: 0.7; }
-.cov-extra { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; font-size: var(--fs-12); }
-.cov-fix { display: inline-flex; gap: 0.35rem; align-items: center; }
+.cov-extra { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); align-items: center; font-size: var(--fs-12); }
+.cov-fix { display: inline-flex; gap: var(--space-1-5); align-items: center; }
 .cov-role, .cov-map { font-size: var(--fs-12); max-width: 100%; }
-.cov-inputs > .cov-inputs { gap: 0.75rem; }
-.bind { padding: 0.75rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.cov-inputs > .cov-inputs { gap: var(--space-3); }
+.bind { padding: var(--space-3) var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 .bind-sum { margin: 0; font-weight: 600; }
-.bind-foot { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+.bind-foot { display: flex; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; }
 .bcm-table input, .bcm-table select { width: 100%; min-width: 5rem; }
-.bcm-block { border-top: 1px solid var(--border-subtle); margin-top: 1rem; padding-top: 0.5rem; }
-.bound-block { display: flex; flex-direction: column; gap: 0.5rem; }
+.bcm-block { border-top: 1px solid var(--border-subtle); margin-top: var(--space-4); padding-top: var(--space-2); }
+.bound-block { display: flex; flex-direction: column; gap: var(--space-2); }
 .cov-mode-words { display: block; font-size: 0.85em; color: var(--text-secondary); }
-.cov-modes .num { white-space: nowrap; padding-left: 0.5rem; }
+.cov-modes .num { white-space: nowrap; padding-left: var(--space-2); }

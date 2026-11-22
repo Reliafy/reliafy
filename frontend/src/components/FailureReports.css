@@ -11,30 +11,30 @@
 }
 
 /* ---- The list ---------------------------------------------------------- */
-.fr-panel { display: flex; flex-direction: column; gap: 10px; }
-.fr-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.fr-panel { display: flex; flex-direction: column; gap: var(--space-2); }
+.fr-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .fr-counts { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
-.fr-filters { display: flex; flex-direction: column; gap: 8px; }
-.fr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fr-filters { display: flex; flex-direction: column; gap: var(--space-2); }
+.fr-chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 .fr-chips .chip { cursor: pointer; }
 .fr-chips .chip:focus-visible {  }
-.fr-chip-n { margin-left: 4px; opacity: 0.75; font-weight: 400; }
-.fr-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fr-chip-n { margin-left: var(--space-1); opacity: 0.75; font-weight: 400; }
+.fr-controls { display: flex; flex-wrap: wrap; gap: var(--space-1-5); align-items: center; }
 .fr-controls input,
-.fr-controls select { min-width: 0; max-width: 100%; font-size: var(--fs-13); padding: 4px 8px; }
+.fr-controls select { min-width: 0; max-width: 100%; font-size: var(--fs-13); padding: var(--space-1) var(--space-2); }
 .fr-controls input[type="search"] { flex: 1 1 160px; }
-.fr-date { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-13); color: var(--text-secondary); }
+.fr-date { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--fs-13); color: var(--text-secondary); }
 
 .fr-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border-subtle); }
 .fr-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: "label title when" "label sub pills";
-  column-gap: 10px;
-  row-gap: 2px;
+  column-gap: var(--space-2);
+  row-gap: var(--space-0-5);
   width: 100%;
   text-align: left;
-  padding: 8px 6px;
+  padding: var(--space-2) var(--space-1-5);
   border: 0;
   border-bottom: 1px solid var(--border-subtle);
   border-radius: 0;
@@ -49,15 +49,15 @@
 .fr-row:hover { background: var(--bg-subtle); }
 .fr-row:focus-visible { outline-offset: -2px; }
 .fr-label { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-12); color: var(--text-secondary); white-space: nowrap; }
-.fr-row .fr-label { grid-area: label; padding-top: 3px; }
+.fr-row .fr-label { grid-area: label; padding-top: var(--space-1); }
 .fr-title { grid-area: title; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .fr-sub { grid-area: sub; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fr-when { grid-area: when; white-space: nowrap; }
-.fr-pills { grid-area: pills; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; align-items: center; min-width: 0; max-width: 100%; }
+.fr-pills { grid-area: pills; display: flex; flex-wrap: wrap; gap: var(--space-1); justify-content: flex-end; align-items: center; min-width: 0; max-width: 100%; }
 .fr-pills .td-pill { white-space: nowrap; }
 .fr-open-actions { white-space: nowrap; }
-.fr-more { margin: 6px 0 0; }
-.fr-empty p:first-child { margin: 8px 0; font-size: var(--fs-14); }
+.fr-more { margin: var(--space-1-5) 0 0; }
+.fr-empty p:first-child { margin: var(--space-2) 0; font-size: var(--fs-14); }
 .fr-empty .section-empty-more { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); }
 .fr-empty .section-empty-more button.link { font-size: var(--fs-13); }
 
@@ -78,23 +78,23 @@
 .td-pill.act-dropped { color: var(--text-secondary); }
 
 /* ---- One report -------------------------------------------------------- */
-.fr-detail { display: flex; flex-direction: column; gap: 10px; }
+.fr-detail { display: flex; flex-direction: column; gap: var(--space-2); }
 .fr-detail .td-card { margin: 0; }
-.fr-detail-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fr-detail-top { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .fr-back { flex: none; }
 .fr-msg { margin: 0; font-size: var(--fs-13); color: var(--success-text); }
 .fr-msg.error { color: var(--danger-text); font-weight: 600; }
-.fr-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-18); line-height: var(--lh-18); }
+.fr-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-18); line-height: var(--lh-18); }
 .fr-h2 .fr-label { font-size: var(--fs-14); }
 .fr-h2 > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .fr-h2 > span:first-child:focus-visible {  border-radius: var(--radius-sm); }
 
-.fr-steps { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.fr-steps { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
 .fr-step { display: flex; align-items: center; }
-.fr-step + .fr-step::before { content: "›"; color: var(--text-secondary); margin-right: 4px; }
+.fr-step + .fr-step::before { content: "›"; color: var(--text-secondary); margin-right: var(--space-1); }
 .fr-step-btn {
   display: inline-block;
-  padding: 2px 10px;
+  padding: var(--space-0-5) var(--space-3);
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: none;
@@ -112,39 +112,39 @@ button.fr-step-btn:focus-visible {  }
 .fr-signoff { margin: 0; font-size: var(--fs-13); }
 .fr-signoff.td-ok,
 .fr-repeat.td-ok { color: var(--success-text); }
-.fr-card-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.fr-card-h { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .fr-fold { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
 .fr-fold:hover:not(:disabled),
 .fr-fold:active:not(:disabled) { background: none; color: var(--accent-text); box-shadow: none; }
 .fr-fold:focus-visible {  border-radius: var(--radius-sm); }
 .fr-fold-arrow { display: inline-block; width: 1em; color: var(--text-secondary); }
 .fr-card-sum { font-weight: 400; font-size: var(--fs-13); }
-.fr-form { margin-top: 8px; gap: 10px; }
-.fr-form-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.fr-form { margin-top: var(--space-2); gap: var(--space-2); }
+.fr-form-foot { display: flex; justify-content: flex-end; gap: var(--space-2); }
 /* minmax(0, 1fr): a column never grows to its widest control's own width (a select with a long
    option pushed the phone page sideways); the controls fill the column instead. */
-.fr-modal-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.fr-modal-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2); }
 .fr-row-3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
 .fr-modal-row > * { min-width: 0; }
 .fr-modal-row :is(input, select) { min-width: 0; max-width: 100%; }
 .fr-modal-where { margin: 0; }
 .fr-modal-item { margin: 0; }
-.fr-radios { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.fr-radios legend { font-size: var(--fs-13); color: var(--text-secondary); margin-bottom: 4px; padding: 0; }
-.fr-radio { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 28px; }
+.fr-radios { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.fr-radios legend { font-size: var(--fs-13); color: var(--text-secondary); margin-bottom: var(--space-1); padding: 0; }
+.fr-radio { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; min-height: 28px; }
 .fr-radio input { margin: 0; width: auto; flex: none; }
 .fr-whys { border: 0; padding: 0; margin: 0; min-width: 0; }
-.fr-whys legend { font-size: var(--fs-13); color: var(--text-secondary); margin-bottom: 4px; padding: 0; }
-.fr-whys ol { margin: 0 0 6px; padding-left: 1.4em; display: flex; flex-direction: column; gap: 4px; }
-.fr-whys li { display: flex; gap: 6px; align-items: center; }
+.fr-whys legend { font-size: var(--fs-13); color: var(--text-secondary); margin-bottom: var(--space-1); padding: 0; }
+.fr-whys ol { margin: 0 0 var(--space-1-5); padding-left: 1.4em; display: flex; flex-direction: column; gap: var(--space-1); }
+.fr-whys li { display: flex; gap: var(--space-1-5); align-items: center; }
 .fr-whys li input { flex: 1 1 auto; min-width: 0; }
 .fr-whys-read { margin: 0; padding-left: 1.4em; }
-.fr-pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 8px; }
-.fr-repeat { margin: 0 0 8px; font-size: var(--fs-13); }
+.fr-pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 var(--space-2); }
+.fr-repeat { margin: 0 0 var(--space-2); font-size: var(--fs-13); }
 .fr-block { margin: 0; font-size: var(--fs-13); color: var(--danger-text); }
 .fr-action-done td { color: var(--text-secondary); }
 .fr-action-btns { white-space: nowrap; }
-.fr-action-btns button + button { margin-left: 4px; }
+.fr-action-btns button + button { margin-left: var(--space-1); }
 .fr-history li { font-size: var(--fs-13); }
 
 @media (max-width: 720px) {

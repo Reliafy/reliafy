@@ -1,9 +1,9 @@
 /* A position's panel on the RCM tab (RcmPositionPanel.jsx): its functions as rows. */
-.rp-fns { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.rp-fns li { display: flex; align-items: flex-start; gap: 8px; }
+.rp-fns { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-1-5); }
+.rp-fns li { display: flex; align-items: flex-start; gap: var(--space-2); }
 .rp-fn {
-  all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
-  padding: 6px 8px; border-radius: var(--radius-md); cursor: pointer; min-height: 44px;
+  all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-0-5);
+  padding: var(--space-1-5) var(--space-2); border-radius: var(--radius-md); cursor: pointer; min-height: 44px;
 }
 .rp-fn:hover { background: var(--accent-wash); }
 .rp-fn:focus-visible { outline-offset: -2px; }

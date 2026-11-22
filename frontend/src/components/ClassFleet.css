@@ -1,8 +1,8 @@
 /* A class's fleet beside the Explorer's tree (ClassFleet.jsx). */
-.cf { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.cf { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 .cf-answer { margin: 0; font-size: var(--fs-14); color: var(--text); }
-.cf-card { margin: 0; padding: 12px 14px; min-width: 0; }
-.cf-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
+.cf-card { margin: 0; padding: var(--space-3) var(--space-3); min-width: 0; }
+.cf-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin-bottom: var(--space-2); }
 .cf-title { margin: 0; font-size: var(--fs-16); font-weight: 600; }
 .cf-sub { color: var(--mute); font-size: var(--fs-13); }
 .cf .joint-risk { width: 100%; }
@@ -14,13 +14,13 @@
 .cf .joint-risk th { vertical-align: bottom; }
 /* A cell's second line: the tag under the name, the serial under the item, the date under the reading. */
 .cf-under { display: block; font-size: var(--fs-12); color: var(--mute); background: none; padding: 0; }
-.cf-note { margin: 8px 0 0; }
+.cf-note { margin: var(--space-2) 0 0; }
 .cf-pos { white-space: nowrap; text-align: left; }
-.cf .joint-risk th, .cf .joint-risk td { padding-left: 8px; padding-right: 8px; }
+.cf .joint-risk th, .cf .joint-risk td { padding-left: var(--space-2); padding-right: var(--space-2); }
 /* On a phone the risk comes first: the duty and the item are on the position, one tap away. */
 @media (max-width: 640px) {
   .cf .joint-risk .col-duty, .cf .joint-risk .col-item { display: none; }
-  .cf .joint-risk th, .cf .joint-risk td { padding-left: 6px; padding-right: 6px; }
+  .cf .joint-risk th, .cf .joint-risk td { padding-left: var(--space-1-5); padding-right: var(--space-1-5); }
 }
 /* On a node's own table (below): where each position lives, two lines in the cell. */
 .cf-where { display: block; max-width: 260px; min-width: 0; text-decoration: none; }

@@ -2,7 +2,7 @@
 
 /* A product's Summary (ProductSummary.jsx): what was just built. */
 .pp-said {
-  margin: 4px 0 8px;
+  margin: var(--space-1) 0 var(--space-2);
   color: var(--success, var(--accent));
   font-weight: 600;
 }
@@ -12,22 +12,22 @@
   vertical-align: top;
 }
 .pp-links {
-  margin: 8px 0 12px;
-  padding-left: 18px;
+  margin: var(--space-2) 0 var(--space-3);
+  padding-left: var(--space-4);
 }
 .pp-links li + li {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 /* Build an item: the positions it will make, in a box that scrolls. */
 .pp-preview {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 .pp-paths {
   max-height: 220px;
   overflow: auto;
-  margin: 6px 0 0;
-  padding: 8px 8px 8px 24px;
+  margin: var(--space-1-5) 0 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-6);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-size: 0.9em;
@@ -37,7 +37,7 @@
 /* Items: the filters wrap on a narrow screen. */
 .pp-filters {
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .pp-filter select {
   max-width: 220px;
@@ -53,5 +53,5 @@
 /* An item's page: the link to its tree among the header's buttons. */
 .pp-tree-link {
   align-self: center;
-  margin-right: 4px;
+  margin-right: var(--space-1);
 }

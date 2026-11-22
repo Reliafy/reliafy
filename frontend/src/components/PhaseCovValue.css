@@ -1,7 +1,7 @@
 /* A covariate's value in a mission phase (#372): one value or a schedule over the phase. */
-.phase-cov-value { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.phase-cov-value { display: flex; flex-direction: column; gap: var(--space-1-5); min-width: 0; }
 .rbd-phase-cov > .phase-cov-value { flex: 1 1 16rem; }
 .phase-cov-value .rbd-sched { min-width: 0; }
 .phase-cov-value .rbd-sched-expr input { width: 100%; box-sizing: border-box; }
-.phase-cov-value .rbd-sched-presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.phase-cov-value .rbd-sched-presets { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .phase-cov-value > .seg { align-self: flex-start; width: auto; }
