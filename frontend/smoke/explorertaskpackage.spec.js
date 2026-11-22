@@ -53,7 +53,7 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await expect(page.locator(".tp-row.picked")).toHaveCount(2);
   await nameRow(page, `Grease the bearings ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "What it needs…", "Optimise…", "Package…", "Add to package…", "Clear the selection"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Optimise…", "Package…", "Add to package…", "Clear the selection"]);
   await menu.getByRole("menuitem", { name: "Package…", exact: true }).click();
   const pane = page.locator("section.table-pane");
   await expect(pane).toContainText("2 tasks");

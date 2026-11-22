@@ -71,9 +71,9 @@ On the old part's page:
 - **Where used** lists the assemblies whose structure includes it, the positions
   whose parts lists name it, and where items of it are fitted.
 
-For the tasks that call for it as a spare, open each position's **What it needs**
-view. Its **Spares** column shows which tasks name the part. Change the part
-under the task's **Spares**, then check the position's **Parts** list, where the
+For the tasks that call for it as a spare, open each task on the position's
+**Maintenance** tab and its **What it needs** section. Change the part
+under **Spares**, then **Save** the task, then check the position's **Parts** list, where the
 old part's entry has the new part under it. Add the new part as an
 entry, then **remove** the old one.
 

@@ -176,3 +176,8 @@
 .mt-restore-row > .mt-unit { flex: 0 1 8rem; }
 /* A level's forecast in the Explorer's table area (the Maintenance tab's Forecast…). */
 .mt-forecast-pane { padding: var(--space-3) var(--space-4) var(--space-4); overflow: auto; min-height: 0; flex: 1 1 auto; }
+
+/* What it needs, a section of the task panel (TaskNeeds.jsx): its groups sit a step apart, with no rule between them. */
+.mt-needs-sub { margin-top: var(--space-3); }
+.mt-needs .lsa-total { margin: 0; font-weight: 600; }
+.mt-needs .lsa-duration { margin-top: var(--space-2); }

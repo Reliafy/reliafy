@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   createSubjectTask, getMaintenancePosition, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
@@ -20,6 +20,7 @@ import { AGE_NOTE, lengthNote, tooLong } from "../maintenanceText.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
 import TaskTwins from "./TaskTwins.jsx";
+import NeedsSection, { useNeeds } from "./TaskNeeds.jsx";
 import { every } from "../taskOptimise.js";
 import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
 
@@ -100,11 +101,14 @@ function DueBasis({ task }) {
 }
 
 export default function MaintenanceTask({ row, taskId = null, taskName = "", head = null, headingRef = null, uses = null, onBack, onDone,
-  onOptimise = null }) {
+  onOptimise = null, needsOpen = false }) {
   const location = useLocation();
   const confirm = useConfirm();
   const adding = !taskId;
-  const [loaded, setLoaded] = useState({ key: null, task: null, modes: [], error: null });
+  const [loaded, setLoaded] = useState({ key: null, task: null, data: null, modes: [], error: null });
+  // What it needs: a section of the form, folded until asked for (or opened by an address with ?needs=1).
+  const [needsShown, setNeedsShown] = useState(needsOpen);
+  const needsRef = useRef(null);
   const [f, setF] = useState(() => startFrom(null));
   const [rates, setRates] = useState({});
   const [attempt, setAttempt] = useState(0); // Try again after a failed load
@@ -114,22 +118,27 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
     let live = true;
     (async () => {
       try {
-        const task = taskId ? (await getTaskLsa(taskId)).task : null;
+        const data = taskId ? await getTaskLsa(taskId) : null;
+        const task = data ? data.task : null;
         // A position's failure modes, to say which the task prevents.
         const posId = task ? (task.subject?.kind === "position" ? task.subject.id : null) : (row.type === "pos" ? row.key : null);
         const modes = posId ? ((await getMaintenancePosition(posId)).failure_modes || []) : [];
         if (!live) return;
-        setLoaded({ key, task, modes, error: null });
+        setLoaded({ key, task, data, modes, error: null });
         setF(startFrom(task));
         setRates({});
       } catch (e) {
-        if (live) setLoaded({ key, task: null, modes: [], error: e });
+        if (live) setLoaded({ key, task: null, data: null, modes: [], error: e });
       }
     })();
     return () => { live = false; };
   }, [key, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const task = loaded.key === key ? loaded.task : null;
+  const needs = useNeeds(loaded.key === key ? loaded.data : null);
+  useEffect(() => {
+    if (needsOpen && needs.ready) setTimeout(() => needsRef.current?.scrollIntoView({ block: "start" }), 0);
+  }, [needsOpen, needs.ready]);
   const ready = loaded.key === key && !loaded.error;
   const rcm = !!task && fromRcm(task);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
@@ -148,6 +157,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
     const ids = [...f.modes];
     const how = taskBody(f.how, taskAnchor(task, workspaceToday()));
     const fields = { name: f.name.trim(), ...how, outcome: f.outcome || null };
+    const needed = adding ? {} : needs.body();
     if (adding) {
       const made = await createSubjectTask(subject, {
         ...fields, also_interval: how.also_interval || null, rule: how.rule || null, source: f.source, reference: f.reference,
@@ -160,7 +170,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
       return;
     }
     await updateMaintenanceTask(task.id, {
-      ...fields, ...(rcm ? {} : { source: f.source, reference: f.reference }),
+      ...fields, ...needed, ...(rcm ? {} : { source: f.source, reference: f.reference }),
       ...((task.cost?.typed ?? null) !== num(f.cost) ? { cost: num(f.cost) } : {}),
       ...(!task.package && (task.visit_cost ?? null) !== num(f.visitCost) ? { visit_cost: num(f.visitCost) } : {}),
     });
@@ -240,8 +250,10 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   // The next three dates it gives: from when it was last done, else from today.
   const today = workspaceToday();
   const shown = howOftenPreview(f.how, { from: task?.last_done || today, after: !!task?.last_done, anchor: taskAnchor(task, today) });
-  // What it needs (its LSA) opens beside the Maintenance tab's table, in place of this form.
-  const lsaPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "maintenance", mtask: task.id, needs: "1" }) : null;
+  const showNeeds = () => {
+    setNeedsShown(true);
+    setTimeout(() => needsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);
+  };
   const rcmPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "rcm" }) : null;
   const nameNote = lengthNote(f.name, undefined, "say how in its LSA");
   const lsaCost = task?.cost?.lsa?.amount;
@@ -312,7 +324,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
               <strong>{task.cost?.amount != null ? `${money(task.cost.amount)} each time. ` : ""}</strong>
               {costWhere(task.cost)}{" "}
               {f.cost !== "" && lsaCost != null ? `Clear the box to use its LSA's ${money(lsaCost)}. ` : ""}
-              The RCM uses this figure. <Link to={lsaPath}>What it needs (LSA)</Link>
+              The RCM uses this figure. <button type="button" className="link" onClick={showNeeds}>What it needs</button>
             </p>
           )}
           {!adding && f.cost === "" && <RateBoxes trades={missing} rates={rates} onRates={setRates} disabled={send.busy} />}
@@ -327,6 +339,11 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
             <p className="field-help" role="note">Done on {task.package.name}&apos;s visits: a visit&apos;s call-out and setup are set on the package.</p>
           )}
         </Section>
+        {task && needs.ready && (
+          <div ref={needsRef}>
+            <NeedsSection data={loaded.data} needs={needs} open={needsShown} onToggle={() => setNeedsShown((o) => !o)} disabled={send.busy} />
+          </div>
+        )}
         {uses}
         {send.error && <p className="field-error" role="alert">{send.error}</p>}
       </div>

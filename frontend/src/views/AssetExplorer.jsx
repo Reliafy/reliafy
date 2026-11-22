@@ -29,7 +29,7 @@ import {
   useTreeForecast, useTreeTasks,
 } from "../components/TaskTreeTable.jsx";
 import {
-  FC_OPEN, PKG_FORECAST, PKG_OPEN, REF_GO, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_FORECAST, TASK_NEEDS, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE,
+  FC_OPEN, PKG_FORECAST, PKG_OPEN, REF_GO, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE,
   anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem, forecastRowActions, forecastWanted,
   graftTasks, isForecastRow, isMaintRow, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
@@ -1999,13 +1999,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setPanel(true);
     setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
   };
-  // What it needs… on a task: its LSA beside the table, in place of its form (?needs=1).
-  const openNeeds = (r) => {
-    if (!isTaskRow(r)) return;
-    setQuery_((q) => { q.set("mtask", r.ref.task.id); q.set("needs", "1"); for (const k of ["addtask", "rates", "mpkg"]) q.delete(k); });
-    pick(r.key, { go: true });
-    setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
-  };
   // Package the tasks… on a level: the drafts in the table area (the tree kept beside it).
   const openDraft = async (r) => {
     if (!(await leavePane())) return;
@@ -2103,7 +2096,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id === TASK_PACKAGE) return openPackaging("new", r);
       if (id === TASK_ADD_TO) return openPackaging("add", r);
       if (id === TASK_CLEAR) return setTpicked(new Set());
-      if (id === TASK_NEEDS) return openNeeds(r);
       if (id === TASK_DRAFT) return openDraft(r);
       if (id === PKG_OPEN) return openPackageView(r.ref.pkg);
       if (id === PKG_FORECAST || id === FC_OPEN) return openForecastAt(r);
@@ -3107,7 +3099,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {phone && <div className="rw-scrim" onClick={closeTaskSide} aria-hidden="true" />}
       <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} taskName={taskRow ? taskRow.ref.task.name : ""} rates={ratesOn} phone={phone}
                 expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
-                needs={needsOn} onNeeds={(on) => setQuery_((q) => { if (on) q.set("needs", "1"); else q.delete("needs"); })}
+                needs={needsOn}
                 headingRef={detailsHeading} onClose={closeTaskSide}
                 onOptimise={taskRow && !viewOnly ? () => openOptimise(taskRow.ref.task.id, taskRow.ref.position_id) : null}
                 onChanged={() => ptasks.load()}

@@ -5,7 +5,6 @@ import Select from "./Select.jsx";
 import TablePane from "./TablePane.jsx";
 import PositionForecast from "./PositionForecast.jsx";
 import SparesYear from "./SparesYear.jsx";
-import LsaTask from "./LsaTask.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
@@ -160,9 +159,8 @@ export function taskPhoneRow(r, rollup) {
 // `taskName`: the opened task's name from its row, the panel's title until the task has loaded.
 // The head (where it is, Expand or Back to table, Close) is the same as the Models and RCM panels';
 // the task's form draws its own title, body and footer under it, so its Save sits in the footer.
-// `needs`: the task's What it needs (its LSA: labour, tools, spares, consumables, access and method)
-// in place of its form (?needs=1), with a way back to the form (`onNeeds(false)`).
-export function TaskSide({ holder, taskId = null, taskName = "", rates = false, needs = false, onNeeds = null, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged, onOptimise = null }) {
+// `needs`: open the form's What it needs section (?needs=1: an old address, or a link to it).
+export function TaskSide({ holder, taskId = null, taskName = "", rates = false, needs = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged, onOptimise = null }) {
   const title = rates ? "Trade rates" : taskId ? (taskName || "Maintenance task") : "Add a task";
   const head = (
     <div className="rw-panel-head">
@@ -184,17 +182,7 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
              e.stopPropagation();
              if (expanded && onCollapse) onCollapse(); else onClose();
            }}>
-      {needs && taskId ? (
-        <>
-          <div className="rw-panel-top">
-            {head}
-            <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>What it needs</h2>
-          </div>
-          <div className="rw-pbody pk-panel">
-            <LsaTask key={taskId} taskId={taskId} backLabel="← The task" onBack={onNeeds ? () => onNeeds(false) : null} onChanged={onChanged} />
-          </div>
-        </>
-      ) : rates ? (
+      {rates ? (
         <>
           <div className="rw-panel-top">
             {head}
@@ -206,7 +194,7 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
         </>
       ) : holder && (
         <MaintenanceTask key={`${holder.key}:${taskId || "new"}`} row={holder} taskId={taskId} taskName={taskName}
-                         head={head} headingRef={headingRef} onBack={onClose} onDone={onDone} onOptimise={taskId ? onOptimise : null}
+                         head={head} headingRef={headingRef} onBack={onClose} onDone={onDone} onOptimise={taskId ? onOptimise : null} needsOpen={needs}
                          uses={taskId ? <RbdTaskUses taskIds={[taskId]} /> : null} />
       )}
     </aside>

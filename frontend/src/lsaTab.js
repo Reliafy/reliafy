@@ -4,7 +4,7 @@
 // and why; the LSA says how: per task the labour, tools and instruments,
 // spares, consumables, access and method, and the work packages that bundle
 // tasks done on one visit (each visit raises one work order). The logic here;
-// the page is components/LsaPanel.jsx, a task's LSA components/LsaTask.jsx.
+// the page is components/LsaPanel.jsx, a task's LSA components/LsaTask.jsx (the Products LSA tab) and components/TaskNeeds.jsx (the Explorer task panel's What it needs section).
 
 import { toCsv } from "./csv.js";
 import { formatCost } from "./money.js";
