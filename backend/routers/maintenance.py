@@ -1109,6 +1109,71 @@ def failure_mode_interval_inputs(mode_id: str, task_id: str | None = None, sessi
     return _run(go)
 
 
+# ---- Optimise… on a task: how often, from the life model of the modes it prevents ------------
+# (task_optimise.py). Exact calculations, free on every plan, like the task card's calculators.
+
+_OPTIMISE_KEYS = ("failure_mode_id", "model_type", "model_id", "planned_cost", "unplanned_cost", "pf_interval",
+                  "pf_unit", "act_time", "target_unavailability")
+
+
+def _optimise_args(body: dict) -> dict:
+    unknown = sorted(set(body) - set(_OPTIMISE_KEYS))
+    if unknown:
+        from backend.maintenance.task_optimise import OptimiseError
+
+        raise OptimiseError(f"Unknown input: {', '.join(unknown)}. It takes {', '.join(_OPTIMISE_KEYS)}.")
+    args = {k: body.get(k) for k in _OPTIMISE_KEYS if k not in ("model_type", "model_id")}
+    if body.get("model_id"):
+        args["model"] = {"type": body.get("model_type") or "model", "id": body["model_id"]}
+    return args
+
+
+@router.post("/tasks/{task_id}/optimise")
+def optimise_task(task_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """How often to do this task, for each failure mode it prevents, from that mode's life model: the
+    cost-optimal replacement age (a replace or restore task, with its range across the model's 90%
+    parameter bounds), half the P-F interval (a condition check) or the failure-finding interval for a
+    target (a hidden function). model_type + model_id, the costs, pf_interval (+ pf_unit, act_time) or
+    target_unavailability change what it starts from; with failure_mode_id, for that mode only. Reads only."""
+    from backend.maintenance import task_optimise as to
+
+    return _run(lambda: to.optimise(m, session, ctx.read_owners, ctx.hidden, task_id, **_optimise_args(body or {})))
+
+
+@router.post("/tasks/{task_id}/optimise/use")
+def optimise_task_use(task_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                      ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Optimise's "Use every N": the task takes the interval worked out for failure_mode_id (left out when
+    it prevents one), the calculation is saved as a strategy analysis and linked as the mode's evidence,
+    and a line on it goes in the mode's notes. Takes the same inputs as /optimise."""
+    from backend.maintenance import task_optimise as to
+
+    return _run(lambda: to.use(m, session, ctx.read_owners, ctx.hidden, ctx.write_owner, task_id,
+                               **_optimise_args(body or {})))
+
+
+@router.get("/tasks/{task_id}/interval-basis")
+def task_interval_basis(task_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What this task's interval rests on, mode by mode: the Optimise analysis that set it, its model,
+    and whether that model has been refitted since (moved: its optimum may have moved)."""
+    from backend.maintenance import task_optimise as to
+
+    return _run(to.basis, m, session, ctx.read_owners, ctx.hidden, task_id)
+
+
+@router.get("/model-tasks")
+def model_tasks(model_ids: str = "", session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The tasks whose interval Optimise rests on each model (model_ids, comma-separated): {model id:
+    [{task_id, name, interval, unit, failure_mode_id, mode, position_id, analysis_id, moved}]}."""
+    from backend.maintenance import task_optimise as to
+
+    ids = [x for x in model_ids.split(",") if x][:50]
+    return _run(lambda: {"tasks": to.tasks_set_by(m, session, ctx.read_owners, ctx.hidden, ids)})
+
+
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Set when it was last done (a plan input; "none" clears it), and/or change its name, interval or unit, when it next falls due

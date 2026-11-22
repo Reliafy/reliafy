@@ -127,8 +127,11 @@ export function openForTasks(display, key) {
 // asset: the forecast for it and everything inside it, in the table area).
 export const TASK_OPEN = "mtask-open";
 export const TASK_FORECAST = "mtask-forecast";
+// Optimise…: how often to do it, from its failure modes' life models, in the table area.
+export const TASK_OPTIMISE = "mtask-optimise";
 export function taskRowActions() {
-  return [{ id: TASK_OPEN, label: "Open…" }];
+  return [{ id: TASK_OPEN, label: "Open…" },
+    { id: TASK_OPTIMISE, label: "Optimise…", title: "How often to do it, worked out from the life model of the failure modes it prevents" }];
 }
 export function forecastItem(r, { design = false } = {}) {
   if (r?.type !== "pos" || design) return [];

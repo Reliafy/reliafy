@@ -18,6 +18,7 @@ import { predictionPath } from "../predictions.js";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { ACCENT, BAND_FILL } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
+import { optimisePath, setsLine } from "../taskOptimise.js";
 import { explorerHere } from "../products.js";
 import {
   MODEL_COLUMNS, b10Text, boundsLabel, countsText, enteredParams, enteredStart, exponentialLabel, fmt, forText, headline,
@@ -297,7 +298,7 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
         )}
         <section aria-label="Used by">
           <h3 className="ml-h">Used by</h3>
-          {!link.used_by?.decisions?.length && !link.used_by?.rbds?.length ? (
+          {!link.used_by?.decisions?.length && !link.used_by?.rbds?.length && !link.used_by?.tasks?.length ? (
             <p className="rim-tquiet">Nothing links it yet. Link it as a failure mode's evidence on the RCM tab (“Based on:”).</p>
           ) : (
             <ul className="ml-used">
@@ -309,6 +310,13 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
               ))}
               {(link.used_by?.rbds || []).map((x) => (
                 <li key={x.id}><Link to={`/systems/b/${x.id}`}>{x.name}</Link><span className="rw-sum"> · RBD block</span></li>
+              ))}
+              {(link.used_by?.tasks || []).map((x) => (
+                <li key={`t:${x.task_id}`}>
+                  <span className="rw-sum">Sets the interval of </span>
+                  <Link to={optimisePath(x, location)}>{setsLine(x)}</Link>
+                  {x.moved && <span className="rw-sum"> · ! refitted since: re-optimise</span>}
+                </li>
               ))}
             </ul>
           )}

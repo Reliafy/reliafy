@@ -139,6 +139,8 @@
 /* The kind picker (Select.jsx) as a control: the same box, text and weight as the inputs. */
 .mt-form .sel-trigger { font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 400; border-color: var(--border-control); padding: var(--space-1) var(--space-3); }
 .mt-due-basis { display: flex; flex-direction: column; gap: var(--space-1); }
+.mt-rests { display: flex; flex-direction: column; gap: var(--space-1); }
+.mt-rests .mt-moved { color: var(--warning-text); }
 /* Long guidance folded under a short line ("›" turns when open). */
 .mt-more > summary {
   display: inline-flex; align-items: center; gap: var(--space-1); cursor: pointer; list-style: none;
