@@ -163,6 +163,7 @@ Write like an engineer briefing a manager: **the answer first, then the detail.*
 - A thing's own actions go in a `ContextMenu` on right-click, and also behind its ⋯ button, never only on right-click.
 - **A list row's actions are one ⋯ button** (`RowActions` in `LibRows.jsx`, which opens the shared row menu): Open, the row's own actions, then Delete after a line. Never a row of icons, and never a bare delete bin beside Open. A row whose only action is Open keeps a plain Open button.
 - A page's help is one `HelpLink` after its purpose: "Take the tour" or "Read the guide", never "Show me how".
+- **A tree-table row's details open across the table** (Explorer: Models, Measurements, Maintenance tasks): a double-click, or Enter on the focused row, on a wide screen. The tree and its folding stay and the table pane is replaced by the details, which carry a "Back to table" button; Esc does the same, back to the same scroll position and selection. A single click opens the details beside the table as before. On a phone the details already fill the pane. This is the shared `expanded`, `onExpand`, `onCollapse` behaviour of the Explorer's side panels (`ModelSide`, `TaskSide`); a tab that opens a row's details adopts it rather than building its own. The RCM and FME(C)A tabs have it already.
 - Pick a saved value from a few with `ChoiceChips`. Switch a view with `SegmentedControl`, move between panels with `Tabs` (more panels than fit: `Tabs` with `overflow`, the rest under "⋯ N"), and apply a setting at once with `Switch`.
 
 ## Iconography

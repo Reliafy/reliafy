@@ -1811,6 +1811,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (!isTaskRow(r)) return;
     setQuery_((q) => { q.set("mtask", r.ref.task.id); for (const k of ["addtask", "rates"]) q.delete(k); });
     pick(r.key, { go: true });
+    if (!phone) setExpanded(true); // a double-click or Enter: the details across the table
     setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
   };
   const openForecast = (r) => leavePane().then((ok) => ok && openPane("forecast", { id: r.key, name: r.ref.name || "(no name)" }));
@@ -2829,6 +2830,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={closeTaskSide} aria-hidden="true" />}
       <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} rates={ratesOn} phone={phone}
+                expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                 headingRef={detailsHeading} onClose={closeTaskSide}
                 onChanged={() => ptasks.load()}
                 onDone={(text) => {
