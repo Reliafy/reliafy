@@ -20,6 +20,7 @@ import { PointReadingModal } from "../views/MaintenancePosition.jsx";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import "../views/Maintenance.css";
 import "./MeasurementViews.css";
+import Loading from "./ui/Loading.jsx";
 
 // A measuring point, or a sensor channel, open in full inside the Explorer's
 // Measurements tab (?tab=measurements&point=<id> or &channel=<id>): the tree
@@ -167,7 +168,7 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
       </div>
     );
   }
-  if (!point) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<p className="lib-date">Loading…</p></div>;
+  if (!point) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<Loading /></div>;
 
   const today = workspaceToday();
   const state = pageState(point, today);
@@ -344,7 +345,7 @@ export function ChannelPane({ id, onBack, onMenu = null }) {
       </div>
     );
   }
-  if (!ch) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<p className="lib-date">Loading…</p></div>;
+  if (!ch) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<Loading /></div>;
   const meta = ["Sensor channel", ch.unit, ch.tag && `tag ${ch.tag}`, ch.axes?.length > 1 && `axes ${ch.axes.join(", ")}`]
     .filter(Boolean).join(" · ");
   return (

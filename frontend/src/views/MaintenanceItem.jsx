@@ -34,6 +34,7 @@ import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { itemTreePath, productPath } from "../products.js";
 import { DateInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -69,7 +70,7 @@ export default function MaintenanceItem() {
   };
 
   if (error && !item) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Item not found." to={EXPLORER_PATH} label="Open the Explorer" /></div>;
-  if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!item) return <div className="app"><Loading card /></div>;
 
   const plate = Object.entries(item.nameplate || {});
   const where = itemWhere(item, fmtDate);

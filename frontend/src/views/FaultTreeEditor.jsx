@@ -28,6 +28,7 @@ import {
 import { ErrorNotice } from "../components/StorageCap.jsx";
 import "../components/RbdFaultTree.css";
 import "./FaultTree.css";
+import Loading from "../components/ui/Loading.jsx";
 
 const DotsIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
@@ -442,7 +443,7 @@ export default function FaultTreeEditor() {
     return (
       <div className="app">
         <PageHeader crumbs={crumbs} title="Fault tree" />
-        <div className="card empty">Loading…</div>
+        <Loading card />
       </div>
     );
   }

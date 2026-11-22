@@ -15,6 +15,8 @@ import { availabilityPct } from "../components/availabilityPrecision.js";
 import "../components/RbdRuns.css";
 import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const when = (iso) =>
   iso ? formatDateTime(new Date(iso), { year: false }) : "—";
@@ -109,8 +111,8 @@ export default function RbdRunsCompare() {
           <p><Link to={runsPath()}>Open Simulation runs</Link></p>
         </div>
       )}
-      {error && <div className="card error">{error}</div>}
-      {!data && !error && !tooFew && <div className="card empty">Loading…</div>}
+      {error && <LoadFailed what="Couldn't compare the runs." error={error} />}
+      {!data && !error && !tooFew && <Loading card />}
       {data && (
         <div className="card">
           {sum ? (

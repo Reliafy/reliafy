@@ -13,6 +13,7 @@ import { positionsPlanSummary, qtyNumber } from "../maintenanceStructure.js";
 import "./Maintenance.css";
 import { PageTitle } from "../components/usePageTitle.js";
 import { partsPath } from "../redirects.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // One catalogue part (#435): its details and indenture level, its structure (the
 // parts it's made of, expand and collapse), the quantities rolled up, and where it's
@@ -34,7 +35,7 @@ export default function MaintenancePart() {
   useEffect(() => { setMade(null); load(); }, [load]);
 
   if (error && !part) return <div className="app"><LoadFailed header onRetry={() => { setError(null); load(); }} error={error} notFound="Part not found." to={partsPath()} label="See all parts and stock" /></div>;
-  if (!part || !structure || !used) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!part || !structure || !used) return <div className="app"><Loading card /></div>;
 
   const lines = structure.tree.children || [];
   const remove = async (line) => {

@@ -17,6 +17,7 @@ import MaintenancePhotos from "./MaintenancePhotos.jsx";
 import { Field, fmtDate } from "./MaintenanceParts.jsx";
 import NewFailureReportModal from "./NewFailureReportModal.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // One failure report, in the Failure reports tab in place of the list: its
 // stage on the loop (Reported › Investigating › Corrective action › Verifying
@@ -470,7 +471,7 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
     return (
       <div className="fr-detail">
         <button type="button" className="secondary sm fr-back" onClick={onBack}>‹ All reports</button>
-        <p className="lib-date">Loading…</p>
+        <Loading />
       </div>
     );
   }

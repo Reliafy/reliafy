@@ -36,6 +36,8 @@ import "../views/Maintenance.css";
 import "./LsaPanel.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // The LSA tab of the Explorer's panel (Assets › Explorer, ?tab=lsa; it was the
 // Packages tab, and ?tab=packages still opens it. Derryn, 8–9 Nov 2026: the
@@ -183,8 +185,8 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
           <input type="number" min="0" max="366" step="1" inputMode="numeric" value={tolerance} onChange={(e) => setTolerance(e.target.value)} />
         </Field>
       </div>
-      {state.error && <div className="card error">{state.error}</div>}
-      {!data && !state.error && <p className="lib-date">Loading…</p>}
+      {state.error && <LoadFailed what="Couldn't load the proposals." error={state.error} />}
+      {!data && !state.error && <Loading />}
       {data && rows.length === 0 && (
         <p className="lib-date">Nothing to package {where}: every task on the calendar here is in a package already{data.already_in_packages ? ` (${plural(data.already_in_packages, "task")})` : ""}.</p>
       )}
@@ -359,8 +361,8 @@ function AddTasksDialog({ pkg, onClose, onDone }) {
   return (
     <FormModal title={`Add tasks to ${pkg.name}`} submitLabel={picked.size ? `Add ${plural(picked.size, "task")}` : "Add tasks"}
                canSubmit={picked.size > 0 && (rule === "every" || Number(nth) >= 2)} onClose={onClose} onSubmit={submit}>
-      {error && <div className="card error">{error}</div>}
-      {!tasks && !error && <p className="lib-date">Loading…</p>}
+      {error && <LoadFailed what="Couldn't load the tasks." error={error} />}
+      {!tasks && !error && <Loading />}
       {tasks && tasks.length === 0 && <p className="lib-date">Every task at {subject?.name || "its position"} and below is in a package already, by use, or an item&apos;s own.</p>}
       {tasks && tasks.length > 0 && (
         <ul className="pk-pick">
@@ -409,9 +411,9 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
   return (
     <FormModal title={`Add ${plural(tasks.length, "task")} to a package`} submitLabel="Add" pendingLabel="Adding…"
                canSubmit={!!pick && (rule === "every" || Number(nth) >= 2)} onClose={onClose} onSubmit={submit}>
-      {error && <div className="card error">{error}</div>}
+      {error && <LoadFailed what="Couldn't load the packages." error={error} />}
       {tasks.some((t) => t.overdue) && <p className="maint-overdue" role="status">{overdueNote(tasks.filter((t) => t.overdue).length)}</p>}
-      {!list && !error && <p className="lib-date">Loading…</p>}
+      {!list && !error && <Loading />}
       {list && list.length === 0 && <p className="lib-date">No packages on this part of the tree yet: use Package selected… to make one.</p>}
       {list && list.length > 0 && (
         <ul className="pk-pick" role="radiogroup" aria-label="Packages">
@@ -456,8 +458,8 @@ function PackagesHere({ scope, where, onOpen, version }) {
   return (
     <div className="td-tab-page pk-panel rw">
       <p className="lib-date pk-purpose">The work packages {where} and below: tasks done together on one visit{workOrders ? ", each visit one work order" : ""}. To make one, tick tasks in What it needs and package them.</p>
-      {state.error && <div className="card error">Couldn&apos;t load the packages: {state.error}</div>}
-      {!list && !state.error && <div className="card empty">Loading…</div>}
+      {state.error && <LoadFailed what="Couldn't load the packages." error={state.error} />}
+      {!list && !state.error && <Loading card />}
       {list && list.length === 0 && <div className="card empty pk-empty"><p>No packages here yet. Tick the tasks done on the same visit in What it needs, then Package selected….</p></div>}
       {list && list.length > 0 && (
         <div className="maint-scroll">
@@ -510,8 +512,8 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
     }
   };
   const back = <button type="button" className="link pk-back" onClick={onBack}>← All packages here</button>;
-  if (state.error && state.id === id) return <div>{back}<div className="card error">Couldn&apos;t load the package: {state.error}</div></div>;
-  if (!pkg) return <div>{back}<p className="lib-date">Loading…</p></div>;
+  if (state.error && state.id === id) return <div>{back}<LoadFailed what="Couldn't load the package." error={state.error} /></div>;
+  if (!pkg) return <div>{back}<Loading /></div>;
   const live = pkg.status !== "retired";
   const menu = [
     pkg.status === "active" && !pkg.flags?.includes("past_return_date") && { id: "pause", label: "Pause…", onSelect: () => setModal("pause") },
@@ -875,9 +877,9 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
         )}
       </div>
       {said && <p className="lib-date" role="status">{said}</p>}
-      {state.error && <div className="card error">Couldn&apos;t load the tasks: {state.error}</div>}
+      {state.error && <LoadFailed what="Couldn't load the tasks." error={state.error} />}
       {data?.truncated && <p className="lib-date">Showing the first {all.length} of {data.total} tasks: pick a smaller branch to see the rest.</p>}
-      {!shown && !state.error ? <div className="card empty">Loading…</div> : shown && all.length === 0 ? (
+      {!shown && !state.error ? <Loading card /> : shown && all.length === 0 ? (
         <div className="card empty pk-empty">
           <p>{maint ? `No maintenance tasks ${below ? "here or below" : "here"} yet. Add one (from the maker's manual, a regulation or your own practice), or decide the failure modes on the RCM tab: their tasks show here.`
             : design ? "No tasks in the design here or below yet. Decide the failure modes on the RCM tab: their tasks show here, to say what each needs."

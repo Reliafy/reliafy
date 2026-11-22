@@ -19,6 +19,7 @@ import NewChannel from "./SignalChannelForm.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import { tabPlace } from "../explorerTabs.js";
 import "./SignalsPanel.css";
+import Loading from "./ui/Loading.jsx";
 
 const flag = (key, fallback = false) => {
   try {
@@ -107,7 +108,7 @@ function ChannelList({ target, what, onStored, quiet = false, addAsk = 0 }) {
   useEffect(() => { load(); }, [load]);
 
   if (error) return <p className="sg-note sg-bad" role="alert">Couldn't load the signals: {error}</p>;
-  if (!list) return <p className="sg-note">Loading…</p>;
+  if (!list) return <Loading />;
   const channel = list.find((c) => c.id === picked) || list[0];
 
   return (
@@ -359,7 +360,7 @@ export function ChannelView({ summary, all, onChanged, focusBands = false }) {
   }, [range, axis, hasSpectra, summary.id, xUnit]);
 
   if (error) return <p className="sg-note sg-bad" role="alert">Couldn't load this channel: {error}</p>;
-  if (!ch || !axis) return <p className="sg-note">Loading…</p>;
+  if (!ch || !axis) return <Loading />;
 
   const unit = ch.unit;
   const last = index[index.length - 1];

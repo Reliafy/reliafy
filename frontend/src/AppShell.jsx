@@ -99,6 +99,7 @@ import { RolesProvider } from "./RolesProvider.jsx";
 import { MOVED, fillMoved, movedHref, movedTarget } from "./redirects.js";
 import { workManagementOn } from "./workManagement.js";
 import { PACKAGES_PATH } from "./maintenanceOrders.js";
+import Loading from "./components/ui/Loading.jsx";
 
 // The authenticated app shell. This module is code-split: App.jsx
 // lazy-imports it, so the public/marketing pages ship without the app bundle.
@@ -223,7 +224,7 @@ function Shell() {
         />
         <main className="content" id="main-content" tabIndex={-1} key={workspace}>
           <ErrorBoundary>
-          <Suspense fallback={<div className="card empty view-loading">Loading…</div>}>
+          <Suspense fallback={<Loading card />}>
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="/home" element={<HomePage />} />
@@ -371,7 +372,7 @@ function Shell() {
               path="*"
               element={unmatchedRoute(config, extensionsLoaded) === "redirect"
                 ? <Navigate to="/home" replace />
-                : <div className="card empty view-loading">Loading…</div>}
+                : <Loading card />}
             />
           </Routes>
           </Suspense>

@@ -27,6 +27,7 @@ import { ORDERS_LABEL } from "../navigation.js";
 import "./Maintenance.css";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { plainLoadError } from "../components/loadFailed.js";
+import Loading from "../components/ui/Loading.jsx";
 
 const HELP = { guide: "maintenance-work-orders" };
 
@@ -107,7 +108,7 @@ export default function MaintenanceOrders() {
       {data && <TimeZoneNudge zone={data.time_zone} onSet={refresh} />}
       {data === null ? (
         loadError ? <LoadFailed what="Couldn't load your work orders." error={loadError} onRetry={refresh} />
-          : <div className="card empty">Loading…</div>
+          : <Loading card />
       ) : data.tree.length === 0 ? (
         <div className="card empty">
           <h2>Nothing here yet</h2>
