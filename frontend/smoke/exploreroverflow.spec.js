@@ -106,7 +106,7 @@ test("panel tabs at 400 px: the row fits with ⋯, nothing scrolls sideways", as
   expect(sideways).toBeLessThanOrEqual(0);
   // The inner views sit on one line each.
   const group = page.getByRole("radiogroup", { name: "Maintenance: what to show" });
-  await expect(group.getByRole("radio")).toHaveCount(4); // Tasks · What it needs · Packages · Forecast
+  await expect(group.getByRole("radio")).toHaveCount(5); // Tasks · What it needs · Packages · Forecast · Spares
   for (const r of await group.getByRole("radio").all()) {
     await expect(r).toBeVisible();
     await expect.poll(() => r.evaluate((el) => {
