@@ -10,6 +10,7 @@ import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } 
 import "../components/RbdRuns.css";
 import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
+import Loading from "../components/ui/Loading.jsx";
 import { Checkbox } from "../components/ui/Controls.jsx";
 
 const MAX_COMPARE = 6;
@@ -97,7 +98,7 @@ export default function RbdRuns() {
       </div>
 
       {data === null && !error ? (
-        <div className="card empty">Loading…</div>
+        <Loading card />
       ) : runs.length === 0 && !error ? (
         <div className="card empty">
           <h2>No simulation runs yet</h2>

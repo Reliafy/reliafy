@@ -9,6 +9,7 @@ import {
   tableRows, toArrows, VIEWS, WARN,
 } from "../dataModel.js";
 import "./DataModelPage.css";
+import Loading from "../components/ui/Loading.jsx";
 
 // The diagram (and cytoscape.js with it) loads only when it's first shown.
 const DataModelDiagram = lazy(() => import("../components/DataModelDiagram.jsx"));
@@ -67,7 +68,7 @@ export default function DataModelPage() {
   const header = <SectionHeader title="Data model" purpose={INTRO} />;
 
   if (access === null) {
-    return <div className="app">{header}<div className="card empty">Loading…</div></div>;
+    return <div className="app">{header}<Loading card /></div>;
   }
   if (!access) {
     return (
@@ -80,7 +81,7 @@ export default function DataModelPage() {
     );
   }
   if (live.state === "loading" || design.state === "loading") {
-    return <div className="app">{header}<div className="card empty">Loading…</div></div>;
+    return <div className="app">{header}<Loading card /></div>;
   }
   if (live.state !== "ready" && design.state !== "ready") {
     return (

@@ -58,7 +58,7 @@ test("fit a new model from a saved dataset picked in the list", async ({ page, p
   try {
     await open(page, "/models/new");
     await page.getByRole("button", { name: /Fit to data/ }).click();
-    await expect(page.getByRole("tab", { name: "Saved data" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("radio", { name: "Saved data" })).toHaveAttribute("aria-checked", "true");
     await page.getByRole("searchbox", { name: "Search datasets" }).fill("smoke saved");
     await page.getByRole("radio", { name: /Smoke saved lives/ }).click();
     await expect(page.locator('[data-wt="reading-summary"]')).toContainText("c = censored");
@@ -140,7 +140,7 @@ test("repairable, accelerated, degradation and condition-and-life flows share th
   await expect(page.getByRole("combobox", { name: "Stress 1 column" })).toBeVisible();
   // The upload tab still takes a file.
   await open(page, "/models/alt/new");
-  await page.getByRole("tab", { name: "Upload a file" }).click();
+  await page.getByRole("radio", { name: "Upload a file" }).click();
   await expect(page.locator('input[type="file"]')).toHaveCount(1);
 
   await open(page, "/models/degradation");

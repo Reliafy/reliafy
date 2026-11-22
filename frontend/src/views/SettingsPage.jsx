@@ -27,6 +27,7 @@ import {
 import { AUTH_DISABLED } from "../firebase.js";
 import Tabs from "../components/ui/Tabs.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -72,7 +73,7 @@ function PlanCard() {
       {error ? (
         <p className="muted-line">{error}</p>
       ) : !data ? (
-        <p className="muted-line">Loading…</p>
+        <Loading />
       ) : (
         <>
           {mcpOn ? (

@@ -14,6 +14,7 @@ import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import {
   bomFormatText, bomImportSummary, bomIsIndented, levelsIn, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
 } from "../maintenanceStructure.js";
+import Loading from "./ui/Loading.jsx";
 import { Checkbox, Radio } from "./ui/Controls.jsx";
 
 const partLink = (id) => `/asset-register/parts/${id}`;
@@ -207,7 +208,7 @@ export function ComponentModal({ part, line, onClose, onDone }) {
                onSubmit={submit}>
       {!line && (
         <Field label="Part">
-          {catalogue === null ? <span className="lib-date">Loading…</span> : (
+          {catalogue === null ? <Loading inline /> : (
             <select autoFocus value={childId} onChange={(e) => setChildId(e.target.value)}>
               <option value="">Choose…</option>
               {options.map((p) => <option key={p.id} value={p.id}>{p.part_number} {p.name}{p.level ? ` (${p.level})` : ""}</option>)}
@@ -275,7 +276,7 @@ export function LevelsModal({ onClose, onDone }) {
     <FormModal title="Indenture levels" submitLabel="Save" canSubmit={!!rows?.some((r) => r.name.trim())}
                onClose={onClose} onSubmit={submit}>
       <p className="lib-date">Top first. Rename a level and the parts at it follow. A level parts are at can't be removed.</p>
-      {rows === null ? <p className="lib-date">Loading…</p> : (
+      {rows === null ? <Loading /> : (
         <ol className="maint-levels">
           {rows.map((r, i) => (
             <li key={i}>
@@ -383,7 +384,7 @@ export function PositionsFromStructureModal({ structure, onClose, onDone }) {
         Pump unit 2), tagged with the line's references, each with its part as the replacement part. Positions already there
         with the same name are used again.</p>
       <Field label="Under">
-        {positions === null ? <span className="lib-date">Loading…</span>
+        {positions === null ? <Loading inline />
           : <PositionPicker positions={positions} value={parentId} onChange={(v) => { setParentId(v); setPreview(null); }} />}
       </Field>
       <fieldset className="maint-fieldset">

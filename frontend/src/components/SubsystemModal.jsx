@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import { listRbds } from "../api.js";
 import { formatDate } from "../dates.js";
 import { parseTimestamp } from "../instrument.js";
+import Loading from "./ui/Loading.jsx";
 
 // Pick a saved RBD to embed as a sub-system block.
 export default function SubsystemModal({ onClose, onPick }) {
@@ -19,7 +20,7 @@ export default function SubsystemModal({ onClose, onPick }) {
     <Modal title="Select a saved RBD" onClose={onClose}>
       {error && <div className="error">{error}</div>}
       {rbds === null ? (
-        <p className="muted-line">Loading…</p>
+        <Loading />
       ) : rbds.length === 0 ? (
         <p className="muted-line">
           No saved RBDs yet. Build one and use “Save RBD” first.
