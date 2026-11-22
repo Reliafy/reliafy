@@ -21,6 +21,7 @@ import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import "../views/Maintenance.css";
 import "./MeasurementViews.css";
 import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // A measuring point, or a sensor channel, open in full inside the Explorer's
 // Measurements tab (?tab=measurements&point=<id> or &channel=<id>): the tree
@@ -60,11 +61,11 @@ export function LimitsModal({ point, onClose, onDone }) {
                canSubmit={!badAlarm && !badRange} onClose={onClose} onSubmit={submit}>
       {!point.derived && (
         <Field label="What it is">
-          <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Kind">
+          <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Kind">
             {point.kind === "counter" && <option value="counter">Counts use (run hours, cycles, km)</option>}
             <option value="condition">Condition (vibration, temperature, wear)</option>
             <option value="setting">Setting (output %, hours a day, a setpoint)</option>
-          </select>
+          </Select>
         </Field>
       )}
       {kind === "setting" && (

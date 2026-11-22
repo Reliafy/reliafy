@@ -15,7 +15,7 @@ import {
   bomFormatText, bomImportSummary, bomIsIndented, levelsIn, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
 } from "../maintenanceStructure.js";
 import Loading from "./ui/Loading.jsx";
-import { Checkbox, Radio } from "./ui/Controls.jsx";
+import { Checkbox, Radio, Select } from "./ui/Controls.jsx";
 
 const partLink = (id) => `/asset-register/parts/${id}`;
 
@@ -209,10 +209,10 @@ export function ComponentModal({ part, line, onClose, onDone }) {
       {!line && (
         <Field label="Part">
           {catalogue === null ? <Loading inline /> : (
-            <select autoFocus value={childId} onChange={(e) => setChildId(e.target.value)}>
+            <Select autoFocus value={childId} onChange={(e) => setChildId(e.target.value)}>
               <option value="">Choose…</option>
               {options.map((p) => <option key={p.id} value={p.id}>{p.part_number} {p.name}{p.level ? ` (${p.level})` : ""}</option>)}
-            </select>
+            </Select>
           )}
         </Field>
       )}
@@ -242,10 +242,10 @@ export function LevelModal({ part, onClose, onDone }) {
     <FormModal title={`Indenture level of ${part.part_number}`} submitLabel="Save" onClose={onClose}
                onSubmit={async () => onDone(await setPartLevel(part.id, level))}>
       <Field label="Level">
-        <select autoFocus value={level} onChange={(e) => setLevel(e.target.value)}>
+        <Select autoFocus value={level} onChange={(e) => setLevel(e.target.value)}>
           <option value="">None</option>
           {(levels || []).map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
-        </select>
+        </Select>
       </Field>
       <p className="lib-date">Where it sits in a structure: a system, an assembly, a line-replaceable unit… The list is the
         workspace's own: change it from the Parts page.</p>
