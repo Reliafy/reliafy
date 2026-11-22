@@ -407,13 +407,16 @@ def fetcher(db, owners, hidden=frozenset()):
     from backend.services import recurrent as recurrent_service
 
     from backend.services import rbds as rbds_service
+    from backend.services import strategy_store
 
     from backend.maintenance import covariate_positions
     from backend.services import reliability_prediction as prediction_service
 
     getters = {"prediction": prediction_service.get_prediction, "model": models_service.get_model, "recurrent_model": recurrent_service.get_model,
                "degradation_model": degradation_service.get_model, "alt_model": alt_service.get_model,
-               "rbd": rbds_service.get_rbd, "covariate_record": covariate_positions.record_doc}
+               "rbd": rbds_service.get_rbd, "covariate_record": covariate_positions.record_doc,
+               # A saved calculation an RCM decision links (a P-F interval the forecast counts a check by).
+               "strategy_analysis": strategy_store.get_analysis}
     memo: dict = {}
 
     def fetch(model_type, model_id):
