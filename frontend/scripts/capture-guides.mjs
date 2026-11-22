@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { mkdir, stat } from "node:fs/promises";
 import { jointFleet } from "../smoke/seed.js";
+import { choose } from "../smoke/select.js";
 
 const BASE = process.env.BASE_URL || "http://localhost:8000";
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../public/guides/img");
@@ -898,7 +899,7 @@ async function main() {
         const form = page.getByRole("form", { name: "Add a snapshot" });
         await form.getByText(/2,048 samples each/).waitFor({ timeout: 20000 });
         await form.getByLabel(/^Axis names/).fill("X");
-        await form.getByLabel(/^Time taken/).fill("2026-10-30T10:00"); await wait(800);
+        await form.getByLabel("When: day").fill("30/10/2026"); await form.getByLabel("When: time").fill("10:00"); await wait(800);
       } },
     { file: "signals-03-edit-band.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
       skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
@@ -934,7 +935,7 @@ async function main() {
         await wait(500);
         await page.getByLabel(/As of now/).check(); await wait(600);
         const first = page.locator(".rbd-asof-table tbody tr").first();
-        await first.locator("select").selectOption("age");
+        await choose(first.locator(".sel-trigger"), "age");
         await first.locator("input[type=number]").fill("3000");
         await page.getByRole("button", { name: /^Calculate$/ }).click();
         await page.getByRole("button", { name: /^Recalculate$/ }).waitFor({ timeout: 60000 });
@@ -1005,7 +1006,7 @@ async function main() {
       async act(page) {
         await page.locator(".rbd-tabs .tab", { hasText: /^Calculator$/ }).click(); await wait(600);
         await page.locator(".rbd-network-controls input[type=number]").fill("10");
-        await page.getByText(/stay connected/).first().waitFor({ timeout: 30000 }); await wait(2000);
+        await page.getByText(/stay connected\s+for/).first().waitFor({ timeout: 30000 }); await wait(2000);
       } },
     // --- Targets and design (rbd-targets-and-design) ---
     { file: "targets-01-allocate.png", url: `/systems/b/${fx.design?.train}`, settle: 1600,
