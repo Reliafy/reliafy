@@ -285,7 +285,7 @@ function Row({
     tabIndex: pinned ? undefined : focused || tabbable ? 0 : -1,
     style: pinned ? { height, width: phone ? undefined : total } : { top, height, width: phone ? undefined : total },
     onClick: (e) => {
-      if (e.target.closest("input, select, a, button.rsw-todo-btn")) return;
+      if (e.target.closest("input, select, .sel-trigger, .sel-menu, a, button.rsw-todo-btn")) return;
       onPick(r.key, { open: true });
     },
   };

@@ -393,15 +393,16 @@
   background: var(--bg-surface);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.rw-panel select { box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 34px; font-size: var(--fs-14); padding: 6px 30px 6px 10px; line-height: var(--lh-14); }
+.rw-panel select, .rw-panel .sel-trigger { box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 34px; font-size: var(--fs-14); padding: 6px 30px 6px 10px; line-height: var(--lh-14); }
+.rw-panel .sel-trigger { padding-right: 9px; } /* its chevron is inside it */
 .rw-panel :is(input, textarea)::placeholder { color: var(--text-tertiary); }
 :where(.rw-panel) :where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea):hover:not(:focus, [readonly]) { border-color: var(--border-control-hover); }
-.rw-panel :is(input, textarea, select):focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
-.rw-panel :is(input, textarea, select)[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
+.rw-panel :is(input, textarea, select, .sel-trigger):focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.rw-panel :is(input, textarea, select, .sel-trigger)[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
 /* Textareas start at one line and grow with their text (useAutoGrow where
    the browser can't size them itself); no resize handle. */
 :where(.rw-panel) :where(textarea) { resize: none; field-sizing: content; overflow: hidden; display: block; width: 100%; }
-.rw-field select { max-width: 100%; }
+.rw-field select, .rw-field .sel-trigger { max-width: 100%; }
 .rw-fval { font-size: var(--fs-14); overflow-wrap: anywhere; }
 .rw-fhelp { font-size: var(--fs-12); color: var(--text-secondary); }
 /* One error style: 12 px, 500, red, a round "!" before it (so it isn't told
@@ -452,7 +453,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 .rw-legend-h { font-size: var(--fs-14); font-weight: 600; color: var(--text); }
 .rw-limit-row { display: flex; flex-wrap: wrap; gap: 8px 12px; }
 .rw-limit-row > .rw-field { flex: 1 1 120px; min-width: 0; }
-.rw-limit-row select { width: 100%; }
+.rw-limit-row select, .rw-limit-row .sel-trigger { width: 100%; }
 /* What's inside the row, each a link that shows it in the panel. */
 .rw-kids { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
 .rw-kids h3 { margin: 0; font-size: var(--fs-14); }
@@ -460,7 +461,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 .rw-klist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
 .rw-kgo { display: inline-flex; align-items: center; gap: 4px; text-align: left; overflow-wrap: anywhere; min-width: 0; }
 .rw-kgo .rw-ic { flex: none; }
-.rw-panel.sheet :is(input, textarea, select) { font-size: var(--fs-16); } /* no zoom on focus */
+.rw-panel.sheet :is(input, textarea, select, .sel-trigger) { font-size: var(--fs-16); } /* no zoom on focus */
 .rw-panel.sheet button.rw-x { width: 40px; height: 40px; }
 
 /* A failure mode's decision (its Decision section): the decision in words, its
@@ -500,7 +501,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 .rim-trow > .rw-field { flex: 1 1 140px; }
 .rim-trow .rw-fin { display: flex; gap: 6px; }
 .rim-trow input[type="number"] { width: 6.5rem; flex: 1 1 5rem; }
-.rim-trow .rw-fin select { flex: 1 1 auto; }
+.rim-trow .rw-fin select, .rim-trow .rw-fin .sel-trigger { flex: 1 1 auto; }
 .rim-tform-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 @media (max-width: 600px) {
   .rim-tlist li { flex-wrap: wrap; }
@@ -736,7 +737,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 .rw .rw-edit[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-border); }
 .rw-edit-chips { outline: none; }
 /* The limit's comparator: as wide as "between (between)" needs, no wider. */
-.ctl-group > select.ctl.rw-cmp, .rfs-limit .ctl-group > select.ctl { flex: 0 0 6.5rem; width: 6.5rem; }
+.ctl-group > select.ctl.rw-cmp, .rfs-limit .ctl-group > select.ctl, .ctl-group > .sel-trigger.ctl.rw-cmp, .rfs-limit .ctl-group > .sel-trigger.ctl { flex: 0 0 6.5rem; width: 6.5rem; }
 /* Touch targets on a phone: the footer's buttons and the title at 40 px. */
 .rw-panel.sheet .rw-panel-acts button { min-height: 40px; }
 .rw-panel.sheet .rw-title-btn { min-height: 40px; }
@@ -966,12 +967,12 @@ span.rim-tname.rim-r1-body { display: block; }
 .rw-notes-foot { display: flex; align-items: center; gap: 8px; }
 .rw-notes-foot .rw-notes-act { font-size: var(--fs-13); }
 /* A task's kind in the Tasks row and its panel: a small chip that changes it. */
-select.rim-kindchip {
+select.rim-kindchip, .sel-trigger.rim-kindchip {
   appearance: auto; height: 24px; padding: 0 6px; border: 1px solid var(--border-control); border-radius: 999px;
   background: var(--bg-surface); color: inherit; font: inherit; font-size: var(--fs-12); max-width: 100%;
 }
-select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-@media (max-width: 600px) { select.rim-kindchip { height: 32px; } }
+select.rim-kindchip:focus-visible, .sel-trigger.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+@media (max-width: 600px) { select.rim-kindchip, .sel-trigger.rim-kindchip { height: 32px; } }
 /* The Tasks row's list (Derryn, 9 Nov 2026): one line per task, columns aligned across the
    tasks (kind · name · how often · chips) through a subgrid; at phone width a block per task. */
 .rim-tasklist {
@@ -992,19 +993,19 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring)
 .rim-tl-chips { gap: 4px; justify-content: flex-end; flex-wrap: nowrap; }
 .rim-tl-chips .chip { white-space: nowrap; }
 /* The kind: a compact chip-styled picker, no visible border or chevron until hover or focus. */
-select.rim-kindchip, .rim-kindtext {
+select.rim-kindchip, .rim-kindtext, .sel-trigger.rim-kindchip {
   height: 20px; padding: 0 7px; border: 1px solid transparent; border-radius: var(--radius-md);
   background-color: var(--bg-subtle); color: inherit; font: inherit; font-size: var(--fs-12); line-height: var(--lh-12);
 }
-select.rim-kindchip {
+select.rim-kindchip, .sel-trigger.rim-kindchip {
   appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 7px;
   background-repeat: no-repeat; background-position: right 6px center; background-size: 10px 10px;
 }
-select.rim-kindchip:hover, select.rim-kindchip:focus-visible {
+select.rim-kindchip:hover, select.rim-kindchip:focus-visible, .sel-trigger.rim-kindchip:hover, .sel-trigger.rim-kindchip:focus-visible {
   border-color: var(--border); padding-right: 20px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.4'/%3E%3C/svg%3E");
 }
-select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+select.rim-kindchip:focus-visible, .sel-trigger.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .rim-kindtext { display: inline-flex; align-items: center; }
 .rim-tasks-cell button.add-row.rim-addrow { align-self: stretch; width: 100%; min-height: var(--control-md); padding: 0 12px; }
 /* Narrow (a phone, or the details beside the table at 1280 px): a block per task, the name
@@ -1040,7 +1041,7 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus-ring)
   .rim-tl-when { grid-area: when; white-space: normal; }
   .rim-tl-chips { grid-area: chips; justify-content: flex-start; flex-wrap: wrap; }
   .rim-tl-chips:empty { display: none; }
-  select.rim-kindchip, .rim-kindtext { height: 32px; line-height: 30px; }
+  select.rim-kindchip, .rim-kindtext, .sel-trigger.rim-kindchip { height: 32px; line-height: 30px; }
 }
 /* A task's panel in the same "step | choice" grid (Derryn, 9 Nov 2026): one line per row,
    quiet words in the muted colour, the edits where the words are. */

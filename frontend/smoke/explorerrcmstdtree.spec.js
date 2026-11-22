@@ -17,6 +17,7 @@
 // product's RCM, and a function with three standards (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { frameOf, movedBetween } from "./explorer.js";
+import { expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -316,7 +317,7 @@ test("double-click a standard's name: its details across the table, text, limit 
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/checkable-open-1280.png` });
   await expect(dlg.locator(".reads-as")).toHaveText("Reads as: Calcium hardness between 200 and 400 ppm");
   await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Calcium hardness");
-  await expect(dlg.getByRole("combobox", { name: "Comparator" })).toHaveValue("between");
+  await expectChosen(dlg.getByRole("combobox", { name: "Comparator" }), "between");
   await expect(dlg.getByRole("textbox", { name: "Value", exact: true })).toHaveValue("200-400");
   await expect(dlg.getByRole("textbox", { name: "Unit", exact: true })).toHaveValue("ppm");
   await expect(dlg.getByRole("textbox", { name: "Source", exact: true })).toHaveValue("E25 manual");

@@ -13,6 +13,7 @@
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu, phoneTree } from "./explorer.js";
+import { expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -77,7 +78,7 @@ test("LSA: search and sort the tasks below, tick two and package them", async ({
   await bar.getByRole("button", { name: "Package selected…" }).click();
   const dialog = page.getByRole("dialog", { name: "Package 2 tasks" });
   await expect(dialog.getByRole("group", { name: "How often" }).getByRole("spinbutton", { name: "How many" })).toHaveValue("1");
-  await expect(dialog.getByRole("combobox", { name: "Unit" })).toHaveValue("weeks");
+  await expectChosen(dialog.getByRole("combobox", { name: "Unit" }), "weeks");
   await dialog.getByRole("textbox", { name: "Name" }).fill(`Pool weekly ${tag}`);
   await dialog.getByRole("button", { name: "Make package" }).click();
   await expect(dialog).toHaveCount(0);

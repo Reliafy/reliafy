@@ -417,7 +417,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
       if (pressed.current) { pressed.current = false; return; }
-      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin")) return;
+      if (e.target.closest("input, select, .sel-trigger, .sel-menu, a, button.rw-todo-btn, .tt-more, .tp-unpin")) return;
       // Rows picked together (table.multi): Shift-click a range, Ctrl/⌘-click one more or one
       // fewer; neither opens anything. A plain click picks the row alone and goes on as usual.
       if (multi && !pinned && (e.shiftKey || e.ctrlKey || e.metaKey) && !e.target.closest(".tp-chev")) {
@@ -445,7 +445,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
     onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule" || r.type === "mtask") ? (e) => {
-      if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
+      if (e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();
       table.onOpen(r.key);
@@ -453,7 +453,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // Right-click opens the row's menu (the browser's own stays on a field
     // being edited in it, and on a row with no menu).
     onContextMenu: onMenu ? (e) => {
-      if (e.target.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (e.target.closest("input, textarea, select, .sel-trigger, .sel-menu, [contenteditable='true']")) return;
       e.preventDefault();
       // From the keyboard (the Menu key, Shift+F10) there's no pointer: under the row's name.
       const kb = e.button !== 2 || (!e.clientX && !e.clientY);
@@ -684,7 +684,7 @@ export default function TreePane({
     // F is the page's full screen (its own key handler), not a jump to a row.
     if (fullScreenKey && isFullScreenKey(e)) return;
     if (rowMenu && focus != null && itemsFor(focus).length && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))
-        && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
+        && !e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, [contenteditable='true']")) {
       e.preventDefault();
       const row = document.getElementById(`tp-${focus}`);
       if (row) openMenu(focus, cornerOf(row), { keyboard: true });
@@ -695,12 +695,12 @@ export default function TreePane({
     const fr = focus != null ? display.rows.get(focus) : null;
     // Space on a row that's picked with others (table.multi) adds it or takes it out.
     if (fr && table?.multi?.can(fr) && e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey
-        && !e.target.closest("input, select, textarea, button, a, [contenteditable='true']")) {
+        && !e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, button, a, [contenteditable='true']")) {
       e.preventDefault();
       table.multi.onToggle(fr.key);
       return;
     }
-    if (fr?.type === "cause" && rowMenu && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, select, textarea, button, a, [contenteditable='true']")) {
+    if (fr?.type === "cause" && rowMenu && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, button, a, [contenteditable='true']")) {
       const act = e.key === "Enter" || e.key === " " ? "go" : e.key === "Delete" ? "unlink" : null;
       if (act) {
         e.preventDefault();

@@ -150,7 +150,7 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
   const boxes = () => [...(list.current?.querySelectorAll("input[type=checkbox]:not(:disabled)") || [])];
   const onKeyDown = (e) => {
     if (e.target.closest(".fl-new")) return;
-    if (e.key === "Enter" && !e.target.closest("button, textarea, select")) {
+    if (e.key === "Enter" && !e.target.closest("button, textarea, select, .sel-trigger, .sel-menu")) {
       e.preventDefault();
       submit();
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {

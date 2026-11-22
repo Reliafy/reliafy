@@ -7,6 +7,7 @@
 // have to go out and view all the assets and select one at a time"): no "Show every asset", and an
 // Explorer address with no asset in it (the bare address, an old ?all=1 link) lands on Assets.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { optionLabels } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -98,7 +99,7 @@ for (const width of [1440, 400]) {
       // A new top position is at this asset's place, and its places are this asset's.
       await page.getByRole("button", { name: `New position at Anthony ${tag}` }).click();
       const add = page.getByRole("dialog").first();
-      const opts = (await add.locator("option").allTextContents()).join("|");
+      const opts = (await optionLabels(add.getByRole("combobox", { name: /^Location/ }))).join("|");
       for (const name of farmNames(tag)) expect(opts.includes(name), `New position: ${name}`).toBe(false);
       expect(opts.includes(`Kitchen ${tag}`)).toBe(true);
       await add.getByRole("button", { name: "Cancel" }).click();
@@ -106,7 +107,7 @@ for (const width of [1440, 400]) {
       const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Element ${tag}`) });
       await menu.getByRole("menuitem", { name: "Move to…" }).click();
       const move = page.getByRole("dialog", { name: `Move “Element ${tag}”` });
-      const targets = (await move.getByRole("combobox").locator("option").allTextContents()).join("|");
+      const targets = (await optionLabels(move.getByRole("combobox"))).join("|");
       expect(targets.includes(`Hot water ${tag}`)).toBe(true);
       expect(targets.includes(`Bore pump ${tag}`)).toBe(false);
       await move.getByRole("button", { name: "Cancel" }).click();
