@@ -827,6 +827,11 @@ each part of a `dataset_col` split) is added to it as a snapshot, all or
 nothing; the answer's `library` lists what was `added` (entry ids) and what was
 `already` there. Over MCP, `change dataset_upload` takes the same `library_id`.
 
+A log with no item column (one fleet or one system, every row an event) is said
+on purpose: `one_stream: true` on `change dataset_upload` or `change
+dataset_update` (`--one-stream` on `reliafy upload`) tags the dataset Repairable
+as one stream. It is cleared when an item column is named.
+
 The older `/api/library/mine` calls still work for life-model records. Over
 MCP and `/api/v1`: `list kind libraries` (`scope?`), `get kind library` (`id`,
 `entry_id?`) and the `change` actions `library_create`, `library_update` (also
@@ -929,6 +934,7 @@ reliafy fit failures.csv --dist weibull --censor-column status
 reliafy fit failures.csv --dist best --criterion bic   # rank every distribution by BIC (aic, aic_c, bic, neg_ll)
 reliafy push model.json
 reliafy upload bearings.xlsx --name Bearings
+reliafy upload replacements.csv --x-col fleet_hours --one-stream   # no item column: one stream of events
 reliafy import rbd plant.xml
 reliafy import rcm fmea.csv --position POSITION_ID --dry-run   # preview, then again without --dry-run
 reliafy change model_fit_degradation --name "Liner wear" --dataset-id DATASET_ID \

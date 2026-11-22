@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.4 (unreleased)
+
+Needs a server on the same release.
+
+- **One stream of events**: `change dataset_upload` and `change dataset_update` take `one_stream`
+  (`reliafy upload --one-stream`): a log with no item column, every row one stream of events (one
+  system), saved as a Repairable dataset.
+
 ## 0.12.3 (unreleased)
 
 Needs a server on the same release.

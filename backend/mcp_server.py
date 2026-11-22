@@ -3592,6 +3592,7 @@ _RMeanings = Annotated[Optional[dict[str, int]], Field(description=(
     "{\"Failed\": 0, \"Running\": 1}. 0/1 codes need none (c_invert flips a 1 = failed column)."))]
 _RInvert = Annotated[Optional[bool], Field(description="c_col's 0/1 codes use 1 = failed.")]
 _RAllFailed = Annotated[Optional[bool], Field(description="No status column: every row is a failure.")]
+_ROneStream = Annotated[Optional[bool], Field(description="No i column: every row is one stream of events (one system).")]
 _RUnit = Annotated[Optional[str], Field(description="x's unit (hours, cycles, km, any unit).")]
 _RMUnit = Annotated[Optional[str], Field(description="m's unit (mm, %, mm/s…).")]
 _RZUnits = Annotated[Optional[dict[str, str]], Field(description="Units of covariates, {column: unit} (optional).")]
@@ -3601,7 +3602,7 @@ def _reading_given(**kw) -> dict:
     """The reading fields a call named (None left out), in the reading's keys."""
     keys = {"x_col": "x", "xl_col": "xl", "xr_col": "xr", "c_col": "c", "n_col": "n", "tl_col": "tl",
             "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "s_col": "s", "z_cols": "z", "not_used": "not_used",
-            "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "unit": "unit",
+            "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "one_stream": "one_stream", "unit": "unit",
             "m_unit": "m_unit", "z_units": "z_units", "x2_col": "x2", "x2_unit": "x2_unit"}
     return {keys[k]: v for k, v in kw.items() if v is not None}
 
@@ -3632,7 +3633,7 @@ def upload_dataset(
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
     s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
-    all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    all_failed: _RAllFailed = None, one_stream: _ROneStream = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
     library_id: Annotated[Optional[str], Field(max_length=64, description=(
         "Also add every dataset made (each part of a split too) to this library of the user's, as snapshots: "
         "all or nothing."))] = None,
@@ -3669,7 +3670,7 @@ def upload_dataset(
     data = datasets_service.normalize_pasted(text, apply)
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
-                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
+                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed, one_stream=one_stream,
                            unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
     reading = _upload_reading(data, given, split)
     if split:
@@ -9427,7 +9428,7 @@ def update_dataset(
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
     s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
-    all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    all_failed: _RAllFailed = None, one_stream: _ROneStream = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
 ) -> dict[str, Any]:
     """Rename one of the user's own datasets, set its notes, or change its reading (x_col, c_col, …, z_cols:
     later fits use it; models already made keep theirs); never the data, never a sample."""
@@ -9435,7 +9436,7 @@ def update_dataset(
     uid = user["uid"]
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
-                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
+                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed, one_stream=one_stream,
                            unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
     if name is None and notes is None and not given:
         raise ToolError("Nothing to change: give name, notes, or the reading (x_col, c_col, …, z_cols).")

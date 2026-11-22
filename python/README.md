@@ -154,6 +154,7 @@ reliafy fit failures.csv --dist weibull --censor-column status --c-invert
 reliafy fit failures.csv --dist best --criterion bic   # Best fit ranked by aic (default), aic_c, bic or neg_ll
 reliafy push model.json                          # {distribution, params | data, name?, unit?}
 reliafy upload bearings.xlsx --name Bearings
+reliafy upload replacements.csv --x-col fleet_hours --one-stream   # no item column: every row is one stream of events
 reliafy import rbd plant.xml
 reliafy import rcm fmea.csv --position POSITION_ID --dry-run   # an RCM worksheet or task plan, previewed
 reliafy analyse fault_tree --fault-tree-id TREE_ID  # a saved fault tree's top event, cut sets and importance
