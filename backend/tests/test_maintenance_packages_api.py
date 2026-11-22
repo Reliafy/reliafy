@@ -196,3 +196,31 @@ def test_task_table_route(api):
     [row] = got.json()["tasks"]
     assert row["name"] == "Skim" and row["subject"]["name"] == "Pump" and row["package"] is None
     assert api.get(f"{M}/task-table").status_code == 422
+
+
+def test_over_mcp_a_package_by_operating_hours(env):
+    async def flow(client):
+        mower = _ok(await _do(client, "maintenance", "positions.create", name="Mower"))
+        meter = _ok(await _do(client, "maintenance", "measurements.add_point", position_id=mower["id"],
+                              name="Hour meter", kind="counter", unit="hours"))
+        _ok(await _do(client, "maintenance", "measurements.record", point_id=meter["id"], value=0))
+        air = _ok(await _do(client, "maintenance", "tasks.create", position_id=mower["id"], name="Air cleaner",
+                            interval=50, unit="hours"))
+        oil = _ok(await _do(client, "maintenance", "tasks.create", position_id=mower["id"], name="Oil",
+                            interval=100, unit="hours"))
+        made = _ok(await _do(client, "maintenance", "packages.create", name="50 h service", position_id=mower["id"],
+                             every=50, unit="hours", anchor_reading=0,
+                             tasks=[air["id"], {"task_id": oil["id"], "visit_rule": "nth", "every_nth": 2}]))
+        _ok(await _do(client, "maintenance", "positions.update", position_id=mower["id"], operating_plan={
+            "plan": {"background": {"kind": "rate", "amount": 12, "per": "week"}}, "name": "Mowing"}))
+        planned = _ok(await _get(client, "package", made["id"]))
+        return made, planned
+
+    made, planned = _session(env["token"], flow)
+    assert made["cadence"]["unit"] == "hours" and made["cadence"]["by_hours"]["anchor_reading"] == 0
+    # One reading and no operating plan: no dates, so each visit is due at a reading, and it says why.
+    assert [v["due_at"] for v in made["next_visits"][:2]] == ["due at 50 h", "due at 100 h"]
+    assert all(v["on"] is None for v in made["next_visits"]) and "readings" in made["cadence"]["by_hours"]["note"]
+    assert planned["cadence"]["by_hours"]["basis"]["kind"] == "plan"
+    assert [v["hours"] for v in planned["next_visits"][:2]] == [50, 100]
+    assert [v["tasks"] for v in planned["next_visits"][:2]] == [1, 2]

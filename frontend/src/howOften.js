@@ -25,6 +25,9 @@ export const NTH_CHOICES = [[1, "the first"], [2, "the second"], [3, "the third"
 const UNIT_WORDS = { hours: ["operating hour", "operating hours"], km: ["km", "km"] };
 
 export const isCalendar = (unit) => CALENDAR.includes(unit);
+// A package by operating hours, in words under its "How often" (its dates are the server's).
+export const HOURS_PACKAGE_NOTE = "Its visits come each time the hour meter passes another interval, from its reading "
+  + "now; they're dated through the operating plan, else the meter's recent rate.";
 
 // "month" / "3 months"; "operating hours" for hours.
 export function unitWord(unit, n = 2) {
@@ -260,6 +263,8 @@ export function nextDates(form, { from, anchor = null, after = false, count = 3 
 
 // Where package dates start: a fixed cadence from its anchor; counted from the last visit, from today.
 export function packageDates(form, { anchor, today, timing = "fixed", count = 3 }) {
+  // By operating hours: the dates come from the hour meter and the operating plan, on the server.
+  if (form.unit === "hours") return null;
   if (timing !== "fixed") return nextDates({ ...form, pattern: "none" }, { from: today, count });
   const rule = ruleOf(form) || { kind: "every" };
   if (rule.kind !== "every") return ruleDates(rule, anchor || today, today, count);

@@ -581,10 +581,11 @@ PACKAGES: Table = {
     "propose": ("", "position_id location_id weekday", """Drafts grouping the tasks in no package by cadence, area
         and trade, each with a ready create and warnings; weekday: longer cadences as layers on the shortest.
         Saves nothing: show the user."""),
-    "create": ("name", "position_id location_id parent_id timing every unit weekday nth day month anchor tolerance "
-               "tolerance_unit trade notes tasks season shutdown", """A package on exactly one of position_id or location_id, or
-        a layer on parent_id. Timing, cadence and visit rules: maintenance guide topic plan."""),
-    "update": ("package_id", "name timing every unit weekday nth day month clear_pattern anchor tolerance "
+    "create": ("name", "position_id location_id parent_id timing every unit weekday nth day month anchor anchor_reading "
+               "tolerance tolerance_unit trade notes tasks season shutdown", """A package on exactly one of position_id or
+        location_id, or a layer on parent_id; unit hours: by operating hours. Timing, cadence and visit rules: maintenance
+        guide topic plan."""),
+    "update": ("package_id", "name timing every unit weekday nth day month clear_pattern anchor anchor_reading tolerance "
                "tolerance_unit trade notes tasks season shutdown", "Change it; tasks: members' visit rules; season {} clears it; "
                "shutdown: its visits are planned outages ({} clears it)."),
     "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
@@ -2233,7 +2234,12 @@ def register() -> None:
             timing: Annotated[Literal["fixed", "from_last_visit"] | None, Field(description=(
                 "fixed (default): set dates from anchor; from_last_visit: the close date plus the interval."))] = None,
             every: Annotated[int | None, Field(ge=1, description="Every how many units (default 1).")] = None,
-            unit: Literal["days", "weeks", "months", "years"] | None = None,
+            unit: Annotated[Literal["days", "weeks", "months", "years", "hours"] | None, Field(description=(
+                "hours: by operating hours on the position's hours counter (a 50 h service), holding tasks by "
+                "hours; its visits are dated through the operating plan, else the counter's rate."))] = None,
+            anchor_reading: Annotated[float | None, Field(ge=0, description=(
+                "unit hours: the counter reading its visits count from (default the reading on the anchor date)."))]
+            = None,
             weekday: Annotated[Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
                                        "sunday"] | None, Field(description=(
                 "With weeks: on that day; with months and nth: that day of the month (the first Saturday)."))]
@@ -2277,7 +2283,8 @@ def register() -> None:
                 m.check_shutdown(shutdown)  # refused before the package is made
                 made = m.create_package(name, position_id, location_id, parent_id, _d(timing, "fixed"),
                                         _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance,
-                                        tolerance_unit, trade or "", notes or "", tasks, season, month)
+                                        tolerance_unit, trade or "", notes or "", tasks, season, month,
+                                        anchor_reading)
                 return m.set_package_shutdown(made["id"], shutdown) if shutdown else made
             return run(create)
         if action == "update":
@@ -2285,7 +2292,7 @@ def register() -> None:
                 m.check_shutdown(shutdown)
                 out = m.update_package(package_id, name, timing, every, unit, weekday, nth, day,
                                        bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
-                                       ... if season is None else season, month)
+                                       ... if season is None else season, month, anchor_reading)
                 return m.set_package_shutdown(package_id, shutdown) if shutdown is not None else out
             return run(update)
         if action == "add_task":

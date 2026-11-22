@@ -704,6 +704,129 @@ def _url(value) -> str:
     return text
 
 
+class HourCadence:
+    """A work package's visits by operating hours (Nov 2026): every ``every`` hours on its
+    position's hours counter, counted from ``anchor_reading``. Visit 1 is the anchor itself, so
+    with every_nth 2 a task on a 50 h package comes at the anchor plus 100 h, 200 h, ... Each
+    mark is put on a date as a task by use is (``Maintenance._due_from``): the reading that
+    reached it, else through the position's operating plan (anchored on the latest reading),
+    else the counter's recent rate; ``basis`` says which. It answers the same reads as
+    ``schedule.Cadence`` (on_or_after, after, includes, dates, number), so the package code runs
+    on it unchanged, plus ``hours_on`` (a visit's hours). Marks that fall on one day are one
+    visit, numbered by the last of them."""
+
+    MAX_MARKS = 2000
+
+    def __init__(self, m, pkg: dict):
+        info = pkg.get("hours") or {}
+        self.every = float(pkg["every"])
+        self.anchor = date.fromisoformat(pkg["anchor"][:10])
+        self.anchor_reading = float(info.get("anchor_reading") or 0.0)
+        self.first = int(info.get("first_mark", 1))
+        self.counter = m.s.node(m.org, info["counter_id"]) if info.get("counter_id") else None
+        self.readings = _readings(m.s, m.org, self.counter, m.tz) if self.counter else []
+        subject = m._package_subject(pkg)
+        self.mapped = (m._usage_map(subject["id"], self.counter, self.readings)
+                       if subject is not None and self.counter and self.readings else None)
+        self._due_from = m._due_from
+        self.basis = None
+        self.note = None if self.readings else (
+            "needs an hours counter with readings on its position" if self.counter is None else "needs counter readings")
+        self._marks: list[tuple[int, float, date | None]] = []
+
+    def date_of(self, hours: float) -> date | None:
+        """The day the counter reaches ``hours`` (reached, or projected), or None."""
+        if not self.readings:
+            return None
+        counter = {"id": self.counter["id"], "name": self.counter.get("name", ""), "unit": self.counter.get("unit")}
+        out = self._due_from({"last_done_reading": hours}, 0.0, self.readings, self.anchor.isoformat(), counter,
+                             mapped=self.mapped)
+        if out.get("basis") and (self.basis is None or out["basis"].get("kind") != "readings"):
+            self.basis = out["basis"]
+        if out.get("note"):
+            self.note = out["note"]
+        day = out.get("next_due")
+        return date.fromisoformat(day[:10]) if day and day <= LATEST_DAY else None
+
+    def _mark(self, i: int):
+        """The i-th mark from the first (k, hours, day), or None past the last one dated."""
+        while len(self._marks) <= i:
+            if len(self._marks) >= self.MAX_MARKS or (self._marks and self._marks[-1][2] is None):
+                return None
+            k = self.first + len(self._marks)
+            hours = self.anchor_reading + k * self.every
+            self._marks.append((k, hours, self.date_of(hours)))
+        found = self._marks[i]
+        return found if found[2] is not None else None
+
+    def _iter(self):
+        i = 0
+        while True:
+            found = self._mark(i)
+            if found is None:
+                return
+            yield found
+            i += 1
+
+    @staticmethod
+    def _as_date(day) -> date:
+        return day if isinstance(day, date) else date.fromisoformat(str(day)[:10])
+
+    def on_or_after(self, day) -> date | None:
+        day = max(self._as_date(day), self.anchor)
+        return next((d for _, _, d in self._iter() if d >= day), None)
+
+    def after(self, day) -> date | None:
+        return self.on_or_after(self._as_date(day) + timedelta(days=1))
+
+    def includes(self, day) -> bool:
+        day = self._as_date(day)
+        return self.on_or_after(day) == day
+
+    def dates(self, start, end, limit: int = 2000) -> tuple:
+        start, end = max(self._as_date(start), self.anchor), self._as_date(end)
+        out = []
+        for _, _, d in self._iter():
+            if d > end or len(out) >= limit:
+                break
+            if d >= start and (not out or out[-1] != d):
+                out.append(d)
+        return tuple(out)
+
+    def _last_on(self, day):
+        day = self._as_date(day)
+        last = None
+        for mark in self._iter():
+            if mark[2] > day:
+                break
+            last = mark
+        return last
+
+    def number(self, day) -> int:
+        """A visit's number: the anchor is visit 1, each mark after it one more."""
+        last = self._last_on(day)
+        if last is None:
+            return 1 if self.first >= 1 else 0
+        return last[0] + 1
+
+    def hours_on(self, day) -> float | None:
+        """The hours of the visit on ``day`` (its last mark that day), or None."""
+        last = self._last_on(day)
+        return None if last is None or last[2] != self._as_date(day) else last[1]
+
+    def coming_marks(self, count: int) -> list[tuple[int, float]]:
+        """The next ``count`` marks past the latest reading (k, hours), dated or not: what an
+        hours package is due at when nothing puts its hours on dates (no duty, no rate)."""
+        now = float(self.readings[-1]["value"]) if self.readings else self.anchor_reading
+        k = max(self.first, int((now - self.anchor_reading) // self.every) + 1)
+        return [(k + i, self.anchor_reading + (k + i) * self.every) for i in range(count)]
+
+    def reading_on(self, day) -> float | None:
+        """The counter on ``day``: from its readings, else the anchor reading."""
+        found = _reading_at(self.readings, self._as_date(day).isoformat()) if self.readings else None
+        return self.anchor_reading if found is None else float(found)
+
+
 def add_interval(day: str, interval: float, unit: str) -> str | None:
     """``day`` plus ``interval`` calendar units, or None for a unit of use
     (hours, cycles, km), which needs a meter to schedule. None too when the
@@ -2125,7 +2248,9 @@ def _package_created(s: GraphStore, org: str, p: dict) -> None:
         "pattern": p.get("pattern"), "anchor": p["anchor"], "tolerance": p.get("tolerance"),
         "trade": p.get("trade", ""), "notes": p.get("notes", ""), "created": p["on"],
         "members": [dict(t) for t in p.get("tasks") or []], "paused": False, "retired": False,
-    } | ({"season": p["season"]} if p.get("season") else {}))
+    } | ({"season": p["season"]} if p.get("season") else {})
+        # By operating hours (Nov 2026): the counter it goes by and the reading it counts from.
+        | ({"hours": dict(p["hours"])} if p.get("hours") else {}))
     if p.get("parent_id"):
         s.put_edge(org, "LAYERED_ON", p["id"], p["parent_id"])
     elif p.get("position_id"):
@@ -2222,6 +2347,8 @@ def _work_order_package_opened(s: GraphStore, org: str, p: dict) -> None:
     })
     if p.get("trade"):
         s.patch_node(org, p["id"], {"trade": p["trade"]})
+    if p.get("visit_hours") is not None:
+        s.patch_node(org, p["id"], {"visit_hours": p["visit_hours"]})
     s.put_edge(org, "ON", p["id"], _subject_id(p))
     s.put_edge(org, "RAISED_FROM", p["id"], p["package_id"])
     for line in lines:
@@ -9530,6 +9657,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     _LOOKAHEAD_VISITS = 60  # visits read ahead for members' next due dates
     _LOOKAHEAD_DAYS = 400
     _CHECK_LAYER_DATES = 24  # a layer's next dates checked against its parent's
+    _NO_HOURS_LAYERS = ("Layers go on calendar packages. On a package by operating hours, put a longer task on every "
+                        "Nth visit instead (visit_rule nth: every_nth 2 puts a 100 h task on every second 50 h "
+                        "service).")
 
     def _live_package(self, package_id) -> dict:
         pkg = self._get(str(package_id or ""), "WorkPackage")
@@ -9642,8 +9772,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             node_id = parent and parent["id"]
         return None
 
+    def _cadence(self, pkg: dict):
+        """A package's dates: a ``Cadence`` on the calendar, or an ``HourCadence`` (a package
+        by operating hours), the same per read."""
+        if pkg.get("unit") == "hours":
+            memo = self._memo.setdefault("hour_cadence", {})
+            key = (pkg["id"], pkg["every"], pkg["anchor"], repr(pkg.get("hours")), self.today())
+            if key not in memo:
+                memo[key] = HourCadence(self, pkg)
+            return memo[key]
+        return self._calendar_cadence(pkg)
+
     @staticmethod
-    def _cadence(pkg: dict) -> Cadence:
+    def _calendar_cadence(pkg: dict) -> Cadence:
         pattern = pkg.get("pattern") or {}
         return Cadence(pkg["every"], pkg["unit"], pkg["anchor"], weekday=pattern.get("weekday"),
                        nth=pattern.get("nth"), day=pattern.get("day"), month=pattern.get("month"))
@@ -9679,6 +9820,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         owed = task.get("owed_from")
         return bool(owed) and not (task.get("last_done") and task["last_done"] >= owed)
 
+    def _step(self, pkg: dict, day: str | None) -> str | None:
+        """``day`` plus the package's interval: calendar units, or (by operating hours) the day
+        the counter reaches its reading on ``day`` plus the interval (a day later at least)."""
+        if day is None:
+            return None
+        if pkg.get("unit") != "hours":
+            return add_interval(day, pkg["every"], pkg["unit"])
+        cad = self._cadence(pkg)
+        found = cad.date_of(cad.reading_on(day) + cad.every)
+        if found is None:
+            return None
+        return max(found, date.fromisoformat(day[:10]) + timedelta(days=1)).isoformat()
+
     def _next_root_visit(self, root: dict, after: str) -> str | None:
         """The top package's visit after ``after``: the next fixed date, or (counted from
         the last visit) ``after`` plus the interval."""
@@ -9688,7 +9842,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 found = self._cadence(root).after(day)
                 day = found and found.isoformat()
             else:
-                day = add_interval(day, root["every"], root["unit"])
+                day = self._step(root, day)
             if day is None or self._in_season(root, day):
                 return day
         return None
@@ -9770,8 +9924,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for it isn't made up."""
         start = max(root["anchor"], root.get("created") or root["anchor"])
         if root["timing"] == "from_last_visit":
-            return self._into_season(root, start if last is None else
-                                     add_interval(last["closed"], root["every"], root["unit"]))
+            if last is None and root.get("unit") == "hours":
+                found = self._cadence(root).on_or_after(start)
+                return found and found.isoformat()
+            return self._into_season(root, start if last is None else self._step(root, last["closed"]))
         cad = self._cadence(root)
         if last is not None:
             found = cad.after(max(last["closed"], last.get("visit_on") or last["closed"]))
@@ -9844,6 +10000,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         memo[key] = out
         return out
 
+    def _hours_due_at(self, root: dict, count: int) -> list[dict]:
+        """A package by operating hours whose hours can't be put on dates (no operating plan and
+        no counter rate; running_clock's rule: no duty, it stays in hours): its next visits by
+        the reading each is due at ("due at 150 h"), never a made-up date."""
+        out = []
+        for k, hours in self._cadence(root).coming_marks(count):
+            number = k + 1
+            ids = sorted(m["task_id"] for m in root.get("members") or []
+                         if (self.s.node(self.org, m["task_id"]) or {"retired": True}).get("retired") is not True
+                         and (m.get("visit_rule", "every") != "nth" or (number - 1) % int(m.get("every_nth") or 1) == 0))
+            out.append({"on": None, "hours": hours, "due_at": f"due at {hours:,.6g} h", "task_ids": ids})
+        return out
+
     def _package_next_visits(self, root: dict, count: int) -> list[dict]:
         """The top package's visits to come, for its page: the open visit first (its work
         order's tasks, its number and whether it's late), then the next ``count`` visits,
@@ -9856,6 +10025,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         wo = state["open"]
         if wo:
             out.append({"on": wo["visit_on"], "task_ids": sorted(state["on_open"]),
+                        **({"hours": wo.get("visit_hours")} if root["unit"] == "hours" else {}),
                         "open_work_order": {"id": wo["id"], "number": wo["number"], "late": bool(state.get("late"))}})
             day = self._next_root_visit(root, wo.get("covers_to") or wo["visit_on"])
         else:
@@ -9865,9 +10035,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         while day and day <= until and coming < count:
             number = self._visit_number(root, day, state["raised"] + coming)
             ids = {t["id"] for t, _, _ in self._visit_tasks(root, tree, day, number, owed=not wo and coming == 0)}
-            out.append({"on": day, "task_ids": sorted(ids)})
+            out.append({"on": day, "task_ids": sorted(ids)}
+                       | ({"hours": self._cadence(root).hours_on(day)} if root["unit"] == "hours" else {}))
             coming += 1
             day = self._next_root_visit(root, day)
+        if root["unit"] == "hours" and coming == 0 and not wo and self._pause_now(root) is None:
+            out += self._hours_due_at(root, count)
         return [{**v, "tasks": len(v["task_ids"])} for v in out]
 
     def _later_visit(self, root: dict, pkg: dict, member: dict, after: str) -> str | None:
@@ -9881,7 +10054,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 found = cad.after(day)
                 day = found and found.isoformat()
             else:
-                day = add_interval(day, root["every"], root["unit"])
+                day = self._step(root, day)
             if day is None:
                 return None
             if cad is None or (cad.number(day) - 1) % nth == 0:
@@ -9917,7 +10090,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 nxt = self._later_visit(root, pkg, entry["member"], upcoming[-1][0])
         overdue = bool(nxt) and (date.fromisoformat(nxt) + timedelta(days=state["tolerance_days"])).isoformat() \
             < self.today()
-        return {"package": brief, "next_due": nxt, "overdue": overdue, "due_by": "package"}
+        out = {"package": brief, "next_due": nxt, "overdue": overdue, "due_by": "package"}
+        if root.get("unit") == "hours" and nxt is None:
+            # No date to put it on (no duty, no counter rate): due at a reading instead.
+            due = next((v for v in self._hours_due_at(root, 100) if task["id"] in v["task_ids"]), None)
+            if due:
+                out |= {"due_at_reading": due["hours"], "due_at": due["due_at"]}
+        elif root.get("unit") == "hours" and nxt:
+            out["due_at_reading"] = self._cadence(root).hours_on(nxt)
+        return out
 
     # -- making and changing packages --
 
@@ -9936,9 +10117,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         loc = self._located(subject["id"])[0]
         return bool(loc) and loc["id"] in inside
 
-    def _package_task(self, task_id, area: dict, joining: str | None = None) -> dict:
+    def _package_task(self, task_id, area: dict, joining: str | None = None, by_hours: bool = False) -> dict:
         """A live task that can join a package on ``area`` (``joining``: the package it's
-        joining, which may hold it already)."""
+        joining, which may hold it already). ``by_hours``: a package by operating hours, which
+        holds tasks by operating hours (a calendar package holds calendar tasks)."""
         task = self.s.node(self.org, str(task_id or ""), "Task")
         if task is None:
             raise Invalid(f"There's no task with id {task_id} in this workspace.")
@@ -9951,8 +10133,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid(f"{task['name']} is an item's task: it follows the serial number, so it stays on its own.")
         if subject["id"] in self._design_ids():
             raise Invalid(f"{task['name']} is in a product's design: package it on the items built from it.")
-        if not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
-            raise Invalid(f"{task['name']} goes by use: a package goes by the calendar, so it stays on its own.")
+        if by_hours:
+            if _norm_unit(task["unit"]) != "hours":
+                raise Invalid(f"{task['name']} goes by {task['unit']}: a package by operating hours holds tasks by "
+                              "operating hours.")
+        elif not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
+            raise Invalid(f"{task['name']} goes by use: a calendar package holds calendar tasks. Put it in a package "
+                          "by operating hours (unit hours) on its position, or leave it on its own.")
         if task.get("include_positions"):
             raise Invalid(f"{task['name']} is a round (a line for each position at its location): it stays on its own.")
         if not self._in_area(area, subject):
@@ -10023,8 +10210,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid("timing is fixed (on set dates: every Saturday) or from_last_visit (the interval after "
                           "the last visit closed).")
         unit = _norm_unit(unit) or "weeks"
+        if unit == "hours":
+            # By operating hours (Nov 2026): every so many hours on the position's hours counter.
+            n = _interval(every, unit, "package's interval (every)")
+            if not float(n).is_integer():
+                raise Invalid("every is a whole number of operating hours (a 50 h service: 50).")
+            if any(v not in (None, "") for v in (weekday, nth, day, month)):
+                raise Invalid("A package by operating hours has no weekday, nth, day or month: its visits come every "
+                              "so many hours the position runs.")
+            return {"timing": timing, "every": int(n), "unit": "hours", "pattern": None,
+                    "anchor": _day(anchor, "anchor date", self.today())}
         if unit not in CALENDAR_UNITS:
-            raise Invalid("A package's unit is days, weeks, months or years (packages by use aren't built yet).")
+            raise Invalid("A package's unit is days, weeks, months or years, or hours (operating hours, on the "
+                          "position's hours counter).")
         n = _interval(every, unit, "package's interval (every)")
         if not float(n).is_integer():
             raise Invalid("every is a whole number of days, weeks, months or years.")
@@ -10043,6 +10241,24 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                      ("month", cad.month)) if v is not None}
         return {"timing": timing, "every": int(n), "unit": unit, "pattern": pattern or None, "anchor": anchor}
 
+    def _hours_fields(self, area: dict, anchor_day: str, anchor_reading=None) -> dict:
+        """A package by operating hours: the hours counter on its position it goes by, the reading
+        it counts from (default the counter on the anchor date, else 0) and whether the anchor is
+        itself a visit (only when it's still ahead of the counter)."""
+        if area["label"] != "Position":
+            raise Invalid("A package by operating hours goes on a position, by its hours counter: give position_id.")
+        counter = _counter_on(self.s, self.org, area["id"], "hours")
+        if counter is None:
+            raise Invalid(f"{area['name']} has no hours counter: add one (maintenance measurements.add_point, kind "
+                          "counter, unit hours) and record its reading, then make the package.")
+        readings = _readings(self.s, self.org, counter, self.tz)
+        now = _reading_at(readings, anchor_day) if readings else None
+        if now is None:
+            now = float(readings[0]["value"]) if readings else 0.0
+        start = float(now) if anchor_reading in (None, "") else _number(anchor_reading, "anchor reading", 0,
+                                                                          MAX_USE_INTERVAL)
+        return {"counter_id": counter["id"], "anchor_reading": start, "first_mark": 0 if start > now + 1e-9 else 1}
+
     def _check_layer_dates(self, fields: dict, parent: dict, name: str) -> None:
         """A layer visits on its parent's visits: each of its next dates must be one."""
         cad = self._cadence(fields)
@@ -10056,13 +10272,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def create_package(self, name, position_id=None, location_id=None, parent_id=None, timing="fixed", every=1,
                        unit="weeks", weekday=None, nth=None, day=None, anchor=None, tolerance=None,
-                       tolerance_unit=None, trade="", notes="", tasks=None, season=None, month=None) -> dict:
+                       tolerance_unit=None, trade="", notes="", tasks=None, season=None, month=None,
+                       anchor_reading=None) -> dict:
         """A work package: tasks done together on one visit, raising one work order per
         visit. On exactly one of a position (its tasks on it or on positions inside it)
         or a location (tasks at it); a layer (parent_id) is on its parent's. Timing fixed
         (every ``every`` ``unit`` from ``anchor``, on a pattern if given: weekday every so
         many weeks; weekday with nth, or day, every so many months) or from_last_visit.
-        tasks: task ids, or {task_id, visit_rule, every_nth, suppresses}."""
+        tasks: task ids, or {task_id, visit_rule, every_nth, suppresses}. Unit hours: every so
+        many operating hours on the position's hours counter, from ``anchor_reading`` (default
+        its reading on the anchor date), holding tasks by operating hours."""
         name = _text(name, "package's name", required=True)
         given = [(k, v) for k, v in (("Position", position_id), ("Location", location_id)) if v not in (None, "")]
         parent = None
@@ -10072,6 +10291,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                               "out.")
             parent = self._live_package(parent_id)
             chain = self._package_chain(parent)
+            if _norm_unit(unit) == "hours" or chain[-1].get("unit") == "hours":
+                raise Invalid(self._NO_HOURS_LAYERS)
             if len(chain) > self.MAX_LAYER_DEPTH:
                 raise Invalid(f"Layers go at most {self.MAX_LAYER_DEPTH} deep.")
             if chain[-1]["timing"] != "fixed" or timing != "fixed":
@@ -10098,12 +10319,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                       day, anchor, month)
         if parent is not None:
             self._check_layer_dates(fields, parent, name)
+        by_hours = fields["unit"] == "hours"
+        hours = self._hours_fields(area, fields["anchor"], anchor_reading) if by_hours else None
+        if not by_hours and anchor_reading not in (None, ""):
+            raise Invalid("anchor_reading goes with a package by operating hours (unit hours).")
+        if by_hours and season not in (None, "", {}):
+            raise Invalid("A package by operating hours has no season: its visits come as the position runs.")
         members = [self._member_arg(t) for t in _list(tasks, "tasks", self.MAX_PACKAGE_TASKS)]
         ids = [mm["task_id"] for mm in members]
         if len(set(ids)) != len(ids):
             raise Invalid("A task is listed twice.")
         for mm in members:
-            self._package_task(mm["task_id"], area)
+            self._package_task(mm["task_id"], area, by_hours=by_hours)
         self._check_suppresses(members, self._tree_task_ids(parent) | set(ids))
         self._quota("WorkPackage", self.MAX_PACKAGES, what="work packages")
         pid = new_id()
@@ -10113,7 +10340,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         self._emit("package.created", {
             "id": pid, "name": name, **ref, **fields, "trade": _text(trade, "trade"), "notes": _text(notes, "notes"),
             "tasks": members, "on": self.today()} | ({"tolerance": tol} if tol else {})
-            | ({"season": months} if months else {}))
+            | ({"season": months} if months else {}) | ({"hours": hours} if hours else {}))
         self._carry_overdue(pid, late)
         return self.package(pid)
 
@@ -10137,7 +10364,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def update_package(self, package_id: str, name=None, timing=None, every=None, unit=None, weekday=None, nth=None,
                        day=None, clear_pattern=False, anchor=None, tolerance=None, tolerance_unit=None, trade=None,
-                       notes=None, tasks=None, season=..., month=None) -> dict:
+                       notes=None, tasks=None, season=..., month=None, anchor_reading=None) -> dict:
         """Change a package: its name, timing and cadence (a weekday, nth or day replaces
         the pattern; clear_pattern removes it), anchor, tolerance (0 removes it), trade,
         notes, or members' visit rules (tasks: [{task_id, visit_rule, every_nth,
@@ -10155,7 +10382,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             changes["notes"] = _text(notes, "notes")
         timing_given = any(v not in (None, "") for v in (timing, every, unit, weekday, nth, day, anchor, month)) \
             or clear_pattern
-        if timing_given:
+        by_hours = pkg.get("unit") == "hours"
+        if unit not in (None, "") and (_norm_unit(unit) == "hours") != by_hours:
+            raise Invalid("A package goes by the calendar or by operating hours for good: make a new package for the "
+                          "other kind (its tasks can move to it).")
+        if anchor_reading not in (None, "") and not by_hours:
+            raise Invalid("anchor_reading goes with a package by operating hours (unit hours).")
+        if by_hours and season not in (..., None, {}):
+            raise Invalid("A package by operating hours has no season: its visits come as the position runs.")
+        if timing_given or anchor_reading not in (None, ""):
             pattern = dict(pkg.get("pattern") or {})
             if clear_pattern or any(v not in (None, "") for v in (weekday, nth, day, month)):
                 pattern = {k: v for k, v in (("weekday", weekday), ("nth", nth), ("day", day), ("month", month))
@@ -10174,6 +10409,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             for layer in layers:
                 self._check_layer_dates(layer, {**pkg, **fields}, layer["name"])
             changes |= {k: v for k, v in fields.items() if v != pkg.get(k)}
+            if by_hours:
+                area = self._package_subject(pkg)
+                kept = (pkg.get("hours") or {}).get("anchor_reading") if anchor in (None, "") else None
+                hours = self._hours_fields(area, fields["anchor"], anchor_reading if anchor_reading not in (None, "")
+                                           else kept)
+                if hours != pkg.get("hours"):
+                    changes["hours"] = hours
         if tolerance not in (None, ""):
             if parent is not None:
                 raise Invalid("A layer's tasks go on its top package's work orders: set the tolerance there.")
@@ -10206,7 +10448,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid(f"A package holds at most {self.MAX_PACKAGE_TASKS} tasks: add a layer, or another package.")
         member = self._member_arg({"task_id": task_id, "visit_rule": visit_rule, "every_nth": every_nth,
                                    "suppresses": suppresses})
-        task = self._package_task(member["task_id"], self._package_subject(pkg), joining=pkg["id"])
+        task = self._package_task(member["task_id"], self._package_subject(pkg), joining=pkg["id"],
+                                  by_hours=self._package_chain(pkg)[-1].get("unit") == "hours")
         if any(m["task_id"] == task["id"] for m in pkg.get("members") or []):
             raise Invalid(f"{task['name']} is in {pkg['name']} already: change its visit rule with "
                           "maintenance packages.update (tasks).")
@@ -10429,7 +10672,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     "id": wid, "number": self._next_number(), "title": shortened(root["name"])[0], "type": "preventive",
                     "package_id": root["id"], **ref, "due": day, "visit_on": day, "visit_number": number,
                     "notes": "", "on": today, "lines": [self._package_line(t, p) for t, p, _ in found],
-                } | ({"trade": root["trade"]} if root.get("trade") else {}))
+                } | ({"trade": root["trade"]} if root.get("trade") else {})
+                    # By operating hours: the counter reading the visit is for (the 100 h service).
+                    | ({"visit_hours": self._cadence(root).hours_on(day)} if root["unit"] == "hours" else {}))
                 out["work_orders"].append(self.work_order(wid))
                 out["visits"].append({"package": brief, "work_order_id": wid, "visit_on": day, "lines": len(found)})
                 return
@@ -10530,6 +10775,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """A package's cadence in words: "every Saturday", "the first Saturday of every
         3 months", "every 2 weeks after the last visit"."""
         n, unit, pattern = pkg["every"], pkg["unit"], pkg.get("pattern") or {}
+        if unit == "hours":
+            every = f"every {n:g} operating hour{'s' if n != 1 else ''}"
+            return f"{every} after the last visit" if pkg["timing"] == "from_last_visit" else every
         every = f"every {unit[:-1]}" if n == 1 else f"every {n} {unit}"
         months = "every month" if n == 1 else f"every {n} months"
         if pkg["timing"] == "from_last_visit":
@@ -10561,7 +10809,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                "cadence": {"every": pkg["every"], "unit": pkg["unit"], **(pkg.get("pattern") or {}),
                            "anchor": pkg["anchor"], "text": self._cadence_text(pkg),
                            # The same cadence in the shape a task's "how often" rule has (how_often.py).
-                           "rule": how_often.rule_of_package(pkg)},
+                           "rule": None if pkg["unit"] == "hours" else how_often.rule_of_package(pkg)},
                "tolerance": (root.get("tolerance") and {**root["tolerance"],
                                                         "enforced": root["tolerance"]["unit"] == "days"}),
                "trade": pkg.get("trade", ""), "subject": self._subject_brief(subject),
@@ -10570,6 +10818,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                "task_count": len(live), "next_visit": None, "open_work_order": None,
                "season": pkg.get("season") and {**pkg["season"], "text": self._season_text(pkg["season"])},
                "in_season": self._in_season(pkg, self.today()), "pause": None, "flags": []}
+        if pkg["unit"] == "hours":
+            out["cadence"]["by_hours"] = self._hours_view(pkg)
         # A shutdown: its visits take the position (or a set inside it) off-line (shutdowns.py).
         out["shutdown"] = self._shutdown_view(pkg)
         if status == "retired":
@@ -10604,7 +10854,23 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             else:
                 found = cad.on_or_after(state["next_visit"] or self.today())
             out["next_visit"] = found and found.isoformat()
+        if pkg["unit"] == "hours" and out["next_visit"]:
+            out["next_visit_hours"] = self._cadence(pkg).hours_on(out["next_visit"])
         return out
+
+    def _hours_view(self, pkg: dict) -> dict:
+        """A package by operating hours: the counter it goes by, the reading it counts from,
+        the latest reading, and how its visits are put on dates (basis: the readings, the
+        operating plan, or the counter's recent rate)."""
+        cad = self._cadence(pkg)
+        last = cad.readings[-1] if cad.readings else None
+        cad.on_or_after(self.today())  # dates the next visit, so the basis is known
+        return {"counter": cad.counter and {"id": cad.counter["id"], "name": cad.counter.get("name", "")},
+                "anchor_reading": cad.anchor_reading,
+                "reading": last and {"value": last["value"], "on": last["on"][:10]},
+                "basis": cad.basis, "note": cad.note,
+                "text": f"every {cad.every:g} h on {cad.counter.get('name', 'the hours counter') if cad.counter else 'the hours counter'}, "
+                        f"from {cad.anchor_reading:,.6g} h"}
 
     @staticmethod
     def _season_text(season: dict) -> str:
@@ -10673,8 +10939,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     kind = (member or {}).get("outcome") or fm.get("outcome")
             view = self._task_view(task)
             why_not = None
-            if not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
-                why_not = "by use: it goes by its counter"
+            if _norm_unit(task["unit"]) == "hours":
+                why_not = None  # joins a package by operating hours on its position
+            elif not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
+                why_not = "by use: it goes by its counter (only operating hours have packages)"
             elif task.get("include_positions"):
                 why_not = "a round: it stays on its own"
             if subject["id"] in designs:
@@ -11012,7 +11280,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"created": self._create_package_batch(items)}
 
     _BATCH_FIELDS = ("name", "position_id", "location_id", "parent_id", "timing", "every", "unit", "weekday", "nth",
-                     "day", "anchor", "tolerance", "tolerance_unit", "trade", "notes", "tasks", "season")
+                     "day", "anchor", "tolerance", "tolerance_unit", "trade", "notes", "tasks", "season",
+                     "anchor_reading")
 
     def _create_package_batch(self, items: list) -> list[dict]:
         made: dict = {}

@@ -10,14 +10,14 @@ import PositionForecast from "./PositionForecast.jsx";
 import SparesYear from "./SparesYear.jsx";
 import PackageParts from "./PackageParts.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { CALENDAR, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
+import { CALENDAR, HOURS_PACKAGE_NOTE, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
 import Chip from "./ui/Chip.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import { ShowMe } from "./SectionPage.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
-  DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
+  DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, hoursCadenceFor, cellText, countTitle, dayName, daysLate, freeTasks,
   kindText, lateText, lsaColumns, taskOnText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
   renameRow, rollupLines, labourYear, labourYearText, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
   MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money, tasksHere,
@@ -238,7 +238,12 @@ export function overdueNote(n) {
 }
 
 export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) {
-  const start = useMemo(() => cadenceFor(tasks), [tasks]);
+  // Tasks by operating hours make a package by hours (a 50 h service); calendar tasks a calendar one.
+  const byHours = useMemo(() => hoursCadenceFor(tasks), [tasks]);
+  const mixedKinds = !byHours && tasks.some((t) => t.unit === "hours");
+  const start = useMemo(() => byHours || cadenceFor(tasks), [byHours, tasks]);
+  // A new empty package on a position may go by its hour meter too.
+  const units = byHours ? ["hours"] : tasks.length || !scope?.position_id ? CALENDAR : [...CALENDAR, "hours"];
   const trades = [...new Set(tasks.map((t) => t.trade).filter(Boolean))];
   const [name, setName] = useState("");
   const [timing, setTiming] = useState("fixed");
@@ -247,19 +252,22 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
     ...formFromPackage({ cadence: { every: start.every, unit: start.unit } }),
     weekday: dayName(DEFAULT_VISIT_DAY), pattern: start.unit === "weeks" ? "weekday" : start.unit === "months" ? "nth" : "none",
   }));
+  const hours = how.unit === "hours";
   const [trade, setTrade] = useState(trades.length === 1 ? trades[0] : "");
   const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
   const fixed = timing === "fixed";
-  const problem = howOftenProblem(how, { wholeOnly: true });
+  const problem = mixedKinds
+    ? "Tasks by operating hours and calendar tasks go in separate packages: tick one kind."
+    : howOftenProblem(how, { wholeOnly: true });
   const ok = name.trim() && !problem;
   const today = workspaceToday();
   const dates = problem ? null : packageDates(how, { anchor: today, today, timing });
   const submit = async () => {
-    const { clear_pattern: _none, ...cadence } = packageBody(fixed ? how : { ...how, pattern: "none" });
+    const { clear_pattern: _none, ...cadence } = packageBody(fixed && !hours ? how : { ...how, pattern: "none" });
     const body = {
       ...scope, name: name.trim(), timing, ...cadence, trade: trade.trim(),
       ...(tolerance !== "" && Number(tolerance) > 0 ? { tolerance: Math.round(Number(tolerance)), tolerance_unit: "days" } : {}),
-      ...(tasks.length ? { tasks: tasks.map((t) => t.id) } : {}),
+      ...(tasks.length ? { tasks: byHours && Number(how.every) === byHours.every ? byHours.members : tasks.map((t) => t.id) } : {}),
     };
     const made = await createPackage(body);
     onDone(tasks.length ? `Made ${made.name} with ${plural(tasks.length, "task")}.` : `Made ${made.name}. Add its tasks from its ⋯.`, made.id);
@@ -269,7 +277,9 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
                canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
       <p className="lib-date">
         {tasks.length
-          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
+          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{byHours
+            ? " By operating hours: the visit goes by the shortest interval, and a task at a whole multiple of it on every Nth visit (a 100 h task on every second 50 h service)."
+            : start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
           : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
       </p>
       {tasks.some((t) => t.overdue) && (
@@ -286,8 +296,8 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
       </Field>
       <fieldset className="mt-how">
         <legend>How often</legend>
-        <HowOften value={how} onChange={setHow} units={CALENDAR} patterns={fixed} problem={problem} dates={dates}
-                  datesNote={fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+        <HowOften value={how} onChange={setHow} units={units} patterns={fixed && !hours} problem={problem} dates={dates}
+                  datesNote={hours ? HOURS_PACKAGE_NOTE : fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
       </fieldset>
       <div className="pk-dialog-row">
         <Field label="Trade (optional)" text={trade}><input value={trade} maxLength={200} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Fitter" /></Field>

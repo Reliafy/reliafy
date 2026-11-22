@@ -133,6 +133,8 @@ class ShutdownOps:
             chain = self._package_chain(pkg)
             if len(chain) > 1:
                 raise sv.Invalid("A layer visits on its top package's dates: make the top package the shutdown.")
+            if pkg.get("unit") == "hours":
+                raise sv.Invalid("A shutdown is planned on the calendar: a package by operating hours can't be one.")
             subject = self._package_subject(pkg)
             if subject is None or subject["label"] != "Position":
                 raise sv.Invalid("A shutdown is on a position (the plant or line it takes off-line), not a location.")

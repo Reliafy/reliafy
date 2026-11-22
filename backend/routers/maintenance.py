@@ -2826,7 +2826,7 @@ def get_package(package_id: str, m: Maintenance = Depends(maintenance)) -> JSONR
 
 
 _PACKAGE_FIELDS = ("name", "timing", "every", "unit", "weekday", "nth", "day", "anchor", "tolerance", "tolerance_unit",
-                   "trade", "notes", "tasks", "month")
+                   "trade", "notes", "tasks", "month", "anchor_reading")
 
 
 @router.post("/packages")
@@ -2840,7 +2840,7 @@ def create_package(body: dict = Body(...), m: Maintenance = Depends(maintenance_
                                 body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
                                 body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"),
                                 body.get("trade", ""), body.get("notes", ""), body.get("tasks"), body.get("season"),
-                                body.get("month"))
+                                body.get("month"), body.get("anchor_reading"))
         # A shutdown: its visits are planned outages (shutdowns.py).
         return m.set_package_shutdown(made["id"], body["shutdown"]) if body.get("shutdown") else made
     return _run(go)

@@ -398,6 +398,19 @@ export function cadenceFor(tasks) {
   return { every, unit, mixed: count.size > 1 };
 }
 
+// A package by operating hours from tasks by hours: visits at the shortest interval, and each
+// task whose interval is a whole multiple of it on every Nth visit (a 100 h task on every
+// second 50 h service). null when the tasks aren't all by hours.
+export function hoursCadenceFor(tasks) {
+  if (!tasks.length || !tasks.every((t) => t.unit === "hours" && Number(t.interval) > 0)) return null;
+  const every = Math.max(1, Math.round(Math.min(...tasks.map((t) => Number(t.interval)))));
+  const members = tasks.map((t) => {
+    const k = Number(t.interval) / every;
+    return Number.isInteger(k) && k >= 2 && k <= 100 ? { task_id: t.id, visit_rule: "nth", every_nth: k } : t.id;
+  });
+  return { every, unit: "hours", members, mixed: tasks.some((t) => Number(t.interval) % every !== 0) };
+}
+
 // Which of the picked tasks can't join a package (an item's, by use, a round), and why.
 export function cantJoin(tasks) {
   return tasks.filter((t) => t.why_not);

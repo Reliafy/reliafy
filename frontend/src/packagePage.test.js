@@ -121,3 +121,11 @@ test("a package becomes a shutdown, and back", () => {
   assert.deepEqual(editBody(shut, { ...f2, shutHours: "48" }).shutdown, { duration_hours: 48, idle_ageing: true, scope: ["p2"] });
   assert.deepEqual(editBody(shut, { ...f2, shutdown: false }), { shutdown: null });
 });
+
+test("a package by operating hours stays on hours in its edit", async () => {
+  const { unitsFor, PACKAGE_UNITS } = await import("./packagePage.js");
+  const { packageDates } = await import("./howOften.js");
+  assert.deepEqual(unitsFor({ cadence: { unit: "hours" } }), ["hours"]);
+  assert.deepEqual(unitsFor({ cadence: { unit: "weeks" } }), PACKAGE_UNITS);
+  assert.equal(packageDates({ every: "50", unit: "hours", pattern: "none" }, { anchor: "2026-11-22", today: "2026-11-22" }), null);
+});

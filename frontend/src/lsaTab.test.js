@@ -290,3 +290,16 @@ test("cleanSection: an emptied downtime or elapsed time clears (null), not the o
   assert.equal(cleanSection("duration_hours", ""), null);
   assert.equal(cleanSection("duration_hours", "0"), 0);
 });
+
+test("tasks by operating hours make a package by hours, longer ones on every Nth visit", async () => {
+  const { hoursCadenceFor } = await import("./lsaTab.js");
+  const air = { id: "a", unit: "hours", interval: 50 };
+  const oil = { id: "o", unit: "hours", interval: 100 };
+  const odd = { id: "x", unit: "hours", interval: 75 };
+  assert.deepEqual(hoursCadenceFor([oil, air]), {
+    every: 50, unit: "hours", members: [{ task_id: "o", visit_rule: "nth", every_nth: 2 }, "a"], mixed: false });
+  assert.equal(hoursCadenceFor([air, odd]).mixed, true);
+  assert.deepEqual(hoursCadenceFor([air, odd]).members, ["a", "x"]);
+  assert.equal(hoursCadenceFor([air, { id: "w", unit: "weeks", interval: 1 }]), null);
+  assert.equal(hoursCadenceFor([]), null);
+});
