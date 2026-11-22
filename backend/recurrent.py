@@ -621,6 +621,24 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
     return _json_safe(payload)
 
 
+def beyond_data(t: float, data_end) -> dict | None:
+    """A time past the end of the data (``data_end``, the longest record the
+    model was fitted to): ``{data_end, times, note}``, or None when ``t`` is
+    inside the data or there is no data end (a model from parameters). A
+    fitted trend says nothing about what happens after the last record, so an
+    answer out there leans on the trend carrying on."""
+    try:
+        end = float(data_end)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(end) or end <= 0 or not np.isfinite(t) or t <= end:
+        return None
+    times = t / end
+    return {"data_end": end, "times": times,
+            "note": (f"This is {times:.1f}× the longest record in the data ({end:,.0f}). The data stop there, so "
+                     "the answer assumes the fitted trend carries on unchanged past them.")}
+
+
 def end_of_observation(inputs: dict) -> float:
     """The latest time any system was observed: its last event (or end-of-
     test row), or its observation window (``tr``) when that's later."""
@@ -1353,7 +1371,8 @@ def _growth_exponent(model) -> float:
     return float(np.log(b / a) / np.log(2.0)), t_ref
 
 
-def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, horizon=None) -> dict:
+def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, horizon=None,
+                     data_end=None) -> dict:
     """Optimal overhaul interval for a repairable system under minimal repair.
 
     Between overhauls each failure is minimally repaired (cost ``cost_repair``,
@@ -1451,6 +1470,7 @@ def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, ho
     return _json_safe({
         **base,
         "interval_range": spread,
+        "beyond_data": beyond_data(t_star, data_end),
         "optimal": {
             "interval": t_star,
             "cost_rate": g_star,

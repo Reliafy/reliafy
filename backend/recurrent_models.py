@@ -809,12 +809,26 @@ def regression_payload(np_model, live, inputs: dict, Z: np.ndarray, meta: list, 
 # ---- Imperfect repair --------------------------------------------------------
 
 _RESTORATION = {
-    "grp_i": ("q", "Restoration factor q", "kijima"),
-    "grp_ii": ("q", "Restoration factor q", "kijima"),
+    "grp_i": ("q", "Share of age kept q", "kijima"),
+    "grp_ii": ("q", "Share of age kept q", "kijima"),
     "ara": ("rho", "Repair efficiency ρ", "rho"),
     "ari": ("rho", "Repair efficiency ρ", "rho"),
     "g1": ("q", "Gap factor q", "g1"),
 }
+
+
+def restored_range_words(eci, model_id: str) -> str:
+    """A restored share's 90% two-sided range in words, kept inside 0% (as bad
+    as old) to 100% (as good as new): the fitted interval on q or ρ isn't
+    bounded, so it can pass either end, and an end it reaches is named
+    instead of printing an impossible share ("90% two-sided range 0% to 70%,
+    reaching as bad as old")."""
+    lo, hi = min(max(eci[0], 0.0), 1.0), min(max(eci[1], 0.0), 1.0)
+    top = "the most a repair can remove" if model_id == "ari" else "as good as new"
+    old, new = eci[0] <= 0.0, eci[1] >= 1.0
+    reach = (f", from as bad as old to {top}" if old and new else ", reaching as bad as old" if old
+             else f", reaching {top}" if new else "")
+    return f"90% two-sided range {_pct(lo)} to {_pct(hi)}{reach}"
 
 
 def restoration(model_id: str, opts: dict, value: float, ci, method: str = "wald") -> dict:
@@ -866,10 +880,9 @@ def restoration(model_id: str, opts: dict, value: float, ci, method: str = "wald
         text = f"Each repair {verb} about {_pct(max(eff, 0.0))} of {what}"
     short = text + "."
     if eci:
-        lo, hi = max(eci[0], -9.99), min(eci[1], 9.99)
-        text += f" (90% range {_pct(lo)} to {_pct(hi)})"
+        text += f" ({restored_range_words(eci, model_id)})"
     if kind == "kijima":
-        text += f"; q = {value:.3g} in an RBD block's repair quality"
+        text += f"; q = {value:.3g} is the share of the age a repair leaves (1 − the share restored), as an RBD block's repair quality takes it"
     text += "."
     scale = ("0% is a minimal repair (as bad as old)." if model_id == "ari"
              else "100% is as good as new, 0% as bad as old.")
@@ -933,7 +946,7 @@ def repair_verdict(model, model_id: str, rest: dict | None = None) -> dict | Non
     what = rest.get("what") or "the age gained"
     amount = f"Repairs {'remove' if model_id == 'ari' else 'restore'} about {_pct(max(eff, 0.0))} of {what}"
     if eci:
-        amount += f" (90% range {_pct(max(eci[0], -9.99))} to {_pct(min(eci[1], 9.99))})"
+        amount += f" ({restored_range_words(eci, model_id)})"
     if not eci:
         verdict, tail = "unclear", ": this fit gives no interval to judge it by."
     else:

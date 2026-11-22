@@ -20,7 +20,8 @@ const NAMES = {
   duane: { alpha: ["Growth shape α"], b: ["Rate constant b"] },
   hpp: { lambda: ["Failure rate λ", "rate"] },
   cox_lewis: { alpha: ["Log-rate intercept α"], beta: ["Log-linear slope β", "rate"] },
-  renewal: { alpha: ["Scale α", "time"], beta: ["Shape β"], q: ["Restoration factor q"], rho: ["Repair efficiency ρ"] },
+  renewal: { alpha: ["Scale α", "time"], beta: ["Shape β"], q: ["Share of age kept q (a repair restores 1 − q)"],
+    rho: ["Repair efficiency ρ"] },
   g1: { alpha: ["Scale α", "time"], beta: ["Shape β"], q: ["Gap factor q"] },
 };
 
@@ -108,7 +109,7 @@ export function growthReading(r) {
   const sym = growthSymbol(r);
   const est = formatNumber(b.estimate, { sig: 3 });
   let what;
-  if (b.ci && ciText(b.ci)) what = `${sym} ${est} (${ciPct(r)} range ${ciText(b.ci)})`;
+  if (b.ci && ciText(b.ci)) what = `${sym} ${est} (${ciPct(r)} two-sided range ${ciText(b.ci)})`;
   else what = `${sym} ${est}${r.from_params ? " (built from parameters, no range)" : " (this fit gives no range)"}`;
   return { title: "Shape of the failure rate", text: `${what}. ${growthMeaning(r, sym, b.no_trend)}` };
 }
@@ -142,6 +143,57 @@ export const repairTitle = (verdict) => REPAIR[verdict] || "Repair quality";
 
 // A percentage of a fraction, whole numbers: 0.793 → "79%".
 export const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${Math.round(v * 100)}%`);
+
+// A repair's restored share's interval as shown: a share runs from 0% (as bad
+// as old) to 100% (as good as new), so the range is shown inside those ends,
+// and an end the interval reaches (or passes) is named in words. The fit's
+// own interval on q is unbounded, so it can pass either end; the parameter
+// table keeps it as fitted. "0%–70%, reaching as bad as old". null without one.
+export function restoresRange(rest) {
+  const ci = rest?.effectiveness_ci;
+  if (!ci || !Number.isFinite(ci[0]) || !Number.isFinite(ci[1])) return null;
+  const top = rest?.parameter === "rho" && /failure rate/.test(rest?.what || "") ? "the most a repair can remove" : "as good as new";
+  const lo = Math.min(Math.max(ci[0], 0), 1);
+  const hi = Math.min(Math.max(ci[1], 0), 1);
+  const old = ci[0] <= 0;
+  const fresh = ci[1] >= 1;
+  const reach = old && fresh ? `from as bad as old to ${top}` : old ? "reaching as bad as old" : fresh ? `reaching ${top}` : "";
+  return { lo, hi, text: `${pct(lo)}–${pct(hi)}`, reach, words: `${pct(lo)}–${pct(hi)}${reach ? `, ${reach}` : ""}` };
+}
+
+// Which side and method each bound on a repairable model's page is, in
+// words: the parameters' intervals (two-sided), and the MTBF's "≥" (one-sided,
+// the demonstrated MTBF) with its method. [sentences].
+export function boundsWords(r) {
+  const lv = ciPct(r);
+  const out = [];
+  const params = r?.params || [];
+  if (params.some((p) => p.ci)) {
+    out.push(`Parameter intervals are ${lv} two-sided, from the fit's information (Wald; a positive parameter's on the log scale).`);
+    const q = params.find((p) => p.ci && p.ci_method === "lr");
+    if (q) {
+      out.push(`${paramLabel(r, q.name).split(" (")[0]}'s interval is a profile-likelihood one, so it can run past 0 or 1; `
+        + "the restored share beside it is shown between 0% and 100%.");
+    }
+  }
+  const dm = r?.demonstrated_mtbf;
+  if (dm?.lower != null) {
+    const how = dm.method === "crow" ? "Crow's exact method (MIL-HDBK-189C)" : "the Wald (delta) method";
+    out.push(`MTBF now "≥" is a ${Math.round((dm.confidence || 0.9) * 100)}% one-sided lower bound (the demonstrated MTBF), by ${how}; `
+      + `its ${lv} interval is two-sided.`);
+  }
+  return out;
+}
+
+// "This is 1.7× the longest record in the data (11,800 hours): ..." for an
+// answer past the end of the data (the server's ``beyond_data``). ``unit`` in
+// words ("hours").
+export function beyondDataWords(beyond, unit = "") {
+  if (!beyond?.data_end) return null;
+  const end = `${formatNumber(beyond.data_end)}${unit ? ` ${unit}` : ""}`;
+  return `This is ${formatNumber(beyond.times, { sig: 2 })}× the longest record in the data (${end}). The data stop `
+    + "there, so the answer assumes the fitted trend carries on unchanged past them.";
+}
 
 // What the data are: "4 systems, 30 failures".
 export function dataText(r) {
@@ -290,8 +342,8 @@ export function mtbfWords(r) {
   if (r?.mtbf == null || !Number.isFinite(r.mtbf)) return null;
   const dm = r.demonstrated_mtbf;
   const bound = dm?.lower != null
-    ? ` (≥ ${sig3(dm.lower)} at ${Math.round((dm.confidence || 0.9) * 100)}%)`
-    : ciText(r.mtbf_ci) ? ` (${ciPct(r)} ${ciText(r.mtbf_ci)})` : "";
+    ? ` (≥ ${sig3(dm.lower)} at ${Math.round((dm.confidence || 0.9) * 100)}%, one-sided)`
+    : ciText(r.mtbf_ci) ? ` (${ciPct(r)} two-sided ${ciText(r.mtbf_ci)})` : "";
   // A covariate model: each level's MTBF, not a made-up average system.
   const groups = (r.rates_by_group || []).filter((g) => g.mtbf != null);
   if (groups.length) {
@@ -308,7 +360,7 @@ function shapeWords(r) {
   // A small log-linear slope reads per 1,000 (or more) units of time.
   const d = scaledParam(r, { name: b.parameter, value: b.estimate, ci: b.ci });
   const per = d.scale > 1 ? ` per ${d.scale.toLocaleString("en-US")} ${unitWord(r) || "time units"}` : "";
-  return `${growthSymbol(r)} ${formatNumber(d.value, { sig: 3 })}${per}${ciText(d.ci) ? ` (${ciPct(r)} ${ciText(d.ci)})` : ""}`;
+  return `${growthSymbol(r)} ${formatNumber(d.value, { sig: 3 })}${per}${ciText(d.ci) ? ` (${ciPct(r)} two-sided ${ciText(d.ci)})` : ""}`;
 }
 
 // The covariate with the largest effect: "site Inland: failures ×2.2 (1.37–3.40)".
@@ -331,7 +383,8 @@ export function recurrentAnswer(r, { saved = null } = {}) {
     if (rest?.effectiveness != null) {
       const verb = r.model?.id === "ari" ? "remove" : "restore";
       const what = r.model?.id === "ari" ? "of the rise in failure rate" : r.model?.id === "grp_ii" ? "of the age" : "of the age gained";
-      add(`repairs ${verb} ${pct(Math.max(rest.effectiveness, 0))} ${what}${rest.effectiveness_ci ? ` (${ciPct(r)} range ${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])})` : ""}`);
+      const range = restoresRange(rest);
+      add(`repairs ${verb} ${pct(Math.max(rest.effectiveness, 0))} ${what}${range ? ` (${ciPct(r)} two-sided range ${range.words})` : ""}`);
     } else if (rest?.ratio != null) {
       add(`gap ratio ${ratioText(rest.ratio)}${rest.ratio_ci ? ` (${ciPct(r)} ${ciText(rest.ratio_ci)})` : ""}`);
     }
