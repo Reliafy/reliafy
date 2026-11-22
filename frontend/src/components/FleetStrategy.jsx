@@ -105,7 +105,7 @@ function CountsByYear({ forecast, st }) {
               <tr>
                 <th>Year</th>
                 <th className="num">Failures</th>
-                <th className="num">Likely range ({level})</th>
+                <th className="num">Likely range ({level} two-sided)</th>
                 {priced && <th className="num">Cost</th>}
                 {priced && <th className="num">Cost range</th>}
               </tr>
@@ -195,7 +195,7 @@ export default function FleetStrategyCard({ forecast }) {
                 {age && <th className="num">Planned</th>}
                 {age && <th className="num">Parts</th>}
                 {priced && <th className="num">Cost</th>}
-                {priced && <th className="num">Likely range ({level})</th>}
+                {priced && <th className="num">Likely range ({level} two-sided)</th>}
               </tr>
             </thead>
             <tbody>

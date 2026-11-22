@@ -72,6 +72,29 @@ export function scaledParam(r, p) {
   };
 }
 
+// A failure rate in words, per 1,000 (or 10,000…) units of time when it is
+// small, never in scientific notation: 9.821e-4 per hour reads
+// { value: "0.9821", per: "per 1,000 hours" }. ``unit`` is plural ("hours").
+export function rateScale(rate) {
+  const v = Number(rate);
+  let k = 1;
+  if (Number.isFinite(v) && v !== 0) {
+    while (Math.abs(v) * k < 0.1 && k < 1e9) k *= 10;
+    if (k > 1 && k < 1000) k = 1000;
+  }
+  return k;
+}
+
+export function rateWords(rate, unit, sig = 4, k = rateScale(rate)) {
+  const v = Number(rate);
+  const u = String(unit || "").trim();
+  if (rate == null || !Number.isFinite(v)) return { value: "—", per: "", k: 1 };
+  const per = k === 1
+    ? (u ? `per ${u.replace(/s$/, "")}` : "")
+    : `per ${k.toLocaleString("en-US")} ${u || "time units"}`;
+  return { value: formatNumber(v * k, { sig }), per, k };
+}
+
 // Shape first: the reading turns on it. The restoration parameter leads an
 // imperfect-repair model.
 const ORDER = ["q", "rho", "beta", "alpha", "b", "lambda"];

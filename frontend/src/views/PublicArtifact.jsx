@@ -87,7 +87,7 @@ function FleetView({ a }) {
       {f.status === "ok" && (
         <div className="stats">
           <div className="stat"><div className="k">Expected failures</div><div className="v">{fmt(f.expected)}</div></div>
-          <div className="stat"><div className="k">Likely range ({rangeLevelText(f.interval_level ?? "P10–P90")})</div><div className="v sm">{fmt(f.interval?.[0])} – {fmt(f.interval?.[1])}</div></div>
+          <div className="stat"><div className="k">Likely range ({rangeLevelText(f.interval_level ?? "P10–P90")} two-sided)</div><div className="v sm">{fmt(f.interval?.[0])} – {fmt(f.interval?.[1])}</div></div>
           <div className="stat"><div className="k">Horizon</div><div className="v sm">{f.periods} {f.period_label}</div></div>
           <div className="stat"><div className="k">Counting</div><div className="v sm">{f.method === "renewals" ? "with replacement" : "first failures"}</div></div>
         </div>

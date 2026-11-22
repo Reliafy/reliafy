@@ -5,6 +5,7 @@ import Select from "./Select.jsx";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 import { calculateRecurrent, recurrentFromNow } from "../api.js";
+import { rateWords } from "../recurrentResults.js";
 import { LEVEL_TEXT } from "../levels.js";
 import { SERVICE_LEVELS } from "../sparesPlan.js";
 import { constantRateText, countRange, levelOptions, meanRange, runoutText } from "../recurrentStock.js";
@@ -160,6 +161,9 @@ export default function RecurrentCalculator({ r, name = null, modelId = null }) 
     shapes,
   };
   const ut = unit ? unitInText(unit) : "";
+  // A failure rate reads per 1,000 (or more) units of time when small, never as 9.8e-4.
+  const rocof = active === "rocof" && yv != null && Number.isFinite(yv) ? rateWords(yv, ut) : null;
+  const scaled = (ci) => (rocof && Array.isArray(ci) ? ci.map((c) => (c == null ? c : c * rocof.k)) : ci);
 
   return (
     <div className="calc">
@@ -185,12 +189,12 @@ export default function RecurrentCalculator({ r, name = null, modelId = null }) 
             />
             <span>{ut}:</span>
             <span className="calc-answer-value">
-              <b>{fmt(yv)}{active === "mtbf" && yv != null && ut ? ` ${ut}` : ""}</b>
-              {active === "rocof" && yv != null && ut && (
-                <span className="calc-answer-ci"> per {ut.replace(/s$/, "")}</span>
+              <b>{rocof ? rocof.value : fmt(yv)}{active === "mtbf" && yv != null && ut ? ` ${ut}` : ""}</b>
+              {rocof?.per && (
+                <span className="calc-answer-ci"> {rocof.per}</span>
               )}
-              {yv != null && rangeText(yci) && (
-                <span className="calc-answer-ci"> ({LEVEL_TEXT} range {rangeText(yci)})</span>
+              {yv != null && rangeText(scaled(yci)) && (
+                <span className="calc-answer-ci"> ({LEVEL_TEXT} range {rangeText(scaled(yci))})</span>
               )}
               {yv != null && ylower != null && (
                 <span className="calc-answer-ci"> · at least {fmt(ylower)}{ut ? ` ${ut}` : ""} ({LEVEL_TEXT} one-sided)</span>
@@ -232,7 +236,7 @@ export default function RecurrentCalculator({ r, name = null, modelId = null }) 
                   <dl className="rec-window" aria-live="polite">
                     <div><dt>Expected failures</dt><dd>{fmt(sWin?.expected ?? win?.n)} <span className="gof-sub">{(r.n_systems ?? 1) > 1 ? "per system" : ""}</span></dd></div>
                     {sWin && <CountRows res={sWin} unit={ut} perSystem={(r.n_systems ?? 1) > 1} />}
-                    {win && <div><dt>Average failure rate</dt><dd>{fmt(win.rate)}{ut ? <span className="gof-sub"> per {ut.replace(/s$/, "")}</span> : null}</dd></div>}
+                    {win && <div><dt>Average failure rate</dt><dd>{rateWords(win.rate, ut).value}{rateWords(win.rate, ut).per ? <span className="gof-sub"> {rateWords(win.rate, ut).per}</span> : null}</dd></div>}
                     {win && <div><dt>Average MTBF</dt><dd>{win.mtbf != null ? `${fmt(win.mtbf)}${ut ? ` ${ut}` : ""}` : "—"}</dd></div>}
                   </dl>
                   {sWin?.stock && <LevelPicker value={level} onChange={setLevel} />}

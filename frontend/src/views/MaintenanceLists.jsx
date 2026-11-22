@@ -705,7 +705,7 @@ export function ForecastCard({ name, label = name, show = "all", note = null }) 
               <>≈ <b>{formatNumber(data.expected)}</b> failures in the next <b>{horizon}</b> (likely {rangeText(data.interval)}).</>
             ) : data.headline}
             stats={[
-              data.n_forecast > 0 && { label: "Likely range (90%)", value: rangeText(data.interval), hint: "P5–P95, counting replacements that fail again" },
+              data.n_forecast > 0 && { label: "Likely range (90% two-sided)", value: rangeText(data.interval), hint: "P5–P95, counting replacements that fail again" },
               data.n_forecast > 0 && data.periods > 1 && { label: `Average a ${shown}`, value: `≈ ${formatNumber(data.expected / data.periods, { sig: 2 })}` },
               { label: "Positions forecast", value: `${data.n_forecast} of ${data.n_positions}` },
               budget && { label: "Budget", value: `≈ ${money(budget.expected, budget.currency)}`, hint: `likely ${moneyRange(budget.interval, budget.currency)}` },

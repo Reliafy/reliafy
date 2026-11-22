@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatCell, formatNumber, formatPercent, formatWithUnit, singularUnit } from "./format.js";
+import { formatCell, formatChance, formatNumber, formatPercent, formatWithUnit, singularUnit } from "./format.js";
 
 test("formatNumber: three significant figures with separators", () => {
   assert.equal(formatNumber(4573.2), "4,570");
@@ -85,4 +85,12 @@ test("formatReadable: tiny constants as a power of ten", async () => {
   const { formatReadable } = await import("./format.js");
   assert.equal(formatReadable(5.159e-26), "5.16 × 10⁻²⁶");
   assert.equal(formatReadable(1234.5, { sig: 4 }), "1,235");
+});
+
+test("formatChance: never 100% or 0% unless exactly so", () => {
+  assert.equal(formatChance(0.9993), ">99%");
+  assert.equal(formatChance(1), "100%");
+  assert.equal(formatChance(0.004), "<1%");
+  assert.equal(formatChance(0), "0%");
+  assert.equal(formatChance(0.42), "42%");
 });
