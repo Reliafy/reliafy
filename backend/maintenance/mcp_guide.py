@@ -429,7 +429,10 @@ task (it follows the serial number) and a task by use are left out and stay on t
 the user, then packages.create (several at once: maintenance apply). With weekday (saturday), the drafts visit \
 on that day and the longer cadences are layers on the shortest in each area and trade (monthly on the first \
 Saturday): each draft has ref and layer_of, and a layer's create has parent_id '@<ref>', so send the agreed ones \
-as one maintenance apply with each operation's ref set to its draft's, tops first.
+as one maintenance apply with each operation's ref set to its draft's, tops first. A package on a position takes \
+any task on the same asset (never another asset's) and lives where its tasks meet: subject is the deepest position \
+all of them are on or inside, worked out on read, so packages.add_task or remove_task moves it; made_on is where it \
+was made (its hours counter and a shutdown go by that), asset the tree its tasks are all on.
   - create: name; exactly one of position_id (its tasks on it or positions inside it) or location_id (tasks at \
 it); tasks (task ids). A task has one home package: a job needed on two schedules is two tasks.
   - When: timing fixed (default: set dates) or from_last_visit (the close date plus the interval). every + unit \

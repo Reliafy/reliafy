@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addPackageTask, getTaskTable, listPackages } from "../api.js";
+import { addPackageTask, getPositionForecast, getTaskTable, listPackages } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import Select from "./Select.jsx";
 import TablePane from "./TablePane.jsx";
 import PositionForecast from "./PositionForecast.jsx";
+import SparesYear from "./SparesYear.jsx";
+import LsaTask from "./LsaTask.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { fmtDate, useSendOnce } from "./MaintenanceParts.jsx";
-import { AddPackageDialog, overdueNote } from "./LsaPanel.jsx";
+import { AddPackageDialog, PackageTasks, PackageView, overdueNote } from "./LsaPanel.jsx";
 import { latestOnly } from "../explorerMissions.js";
-import { rankPackages, taskCell, visitFor } from "../explorerTasks.js";
+import { FC_LINE_TYPE, FC_TYPE, PKG_REF_TYPE, PKG_TYPE, packageCell, packageWhere, rankPackages, taskCell, visitFor } from "../explorerTasks.js";
 import { cadenceWords, ordinal, packageScope, taskOnText } from "../lsaTab.js";
 import "./LsaPanel.css";
 import "./TaskTreeTable.css";
@@ -25,22 +27,62 @@ export { TASK_COLUMNS, TASK_TREE_HEAD } from "../explorerTasks.js";
 // Every task in the asset opened (`within`: its top row's id), read when the tab is on (and again
 // on `load`): one read, the server's roll-up. The last read asked for is the one shown.
 // `kind`: the top row's type ("pos" or "loc"), so the read names it as a position or a place too.
-export function useTreeTasks({ on, within = null, kind = "pos" }) {
-  const [state, setState] = useState({ tasks: null, truncated: false, total: 0, error: null });
+// `packages`: the work packages on that asset too (listPackages: the ones there or holding a task
+// there), each drawn at the meeting point of its tasks; read again with the tasks.
+export function useTreeTasks({ on, within = null, kind = "pos", packages = false }) {
+  const [state, setState] = useState({ tasks: null, packages: null, truncated: false, total: 0, error: null });
   const asked = useRef(null);
   if (!asked.current) asked.current = latestOnly();
   const load = useCallback(() => {
     if (!within) {
-      setState({ tasks: [], truncated: false, total: 0, error: "Open one asset to see its tasks." });
+      setState({ tasks: [], packages: [], truncated: false, total: 0, error: "Open one asset to see its tasks." });
       return Promise.resolve();
     }
     const latest = asked.current();
-    return getTaskTable({ [kind === "loc" ? "location_id" : "position_id"]: within, within })
-      .then((d) => latest() && setState({ tasks: d.tasks || [], truncated: !!d.truncated, total: d.total || 0, error: null }))
+    const scope = { [kind === "loc" ? "location_id" : "position_id"]: within };
+    // A package list that won't load leaves the tasks shown (their Packaged cells still say).
+    const pkgs = packages ? listPackages(scope).then((d) => d.packages || []).catch(() => null) : Promise.resolve(null);
+    return Promise.all([getTaskTable({ ...scope, within }), pkgs])
+      .then(([d, p]) => latest() && setState({ tasks: d.tasks || [], packages: p, truncated: !!d.truncated, total: d.total || 0, error: null }))
       .catch((e) => latest() && setState((s) => ({ ...s, error: e.message })));
-  }, [within, kind]);
+  }, [within, kind, packages]);
   useEffect(() => { if (on) load(); }, [on, load]);
   return { ...state, load };
+}
+
+// The forecast the Forecast rows read (each task's and package's lines come from it): the level's
+// forecast at `anchors` (the asset's top position: one read for the lot; a place opened, each
+// position the open rows need), read once one is wanted and again on `version`. {fc, error}:
+// the reads merged (their tasks and what was left out; the periods are the same).
+export function useTreeForecast({ on, anchors = [], root = null, version = 0 }) {
+  const [got, setGot] = useState({});
+  // Each read is asked once (the busy mark it sets mustn't cancel it); answers after unmounting are dropped.
+  const asked = useRef(new Set());
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const ids = anchors.filter(Boolean);
+  const want = on ? ids.filter((id) => !asked.current.has(`${id}:${root || ""}:${version}`)) : [];
+  const key = want.join(",");
+  useEffect(() => {
+    if (!key) return;
+    for (const id of key.split(",")) {
+      const k = `${id}:${root || ""}:${version}`;
+      if (asked.current.has(k)) continue;
+      asked.current.add(k);
+      setGot((g) => ({ ...g, [k]: { busy: true } }));
+      getPositionForecast(id, { root, period: "month", periods: 12 })
+        .then((fc) => mounted.current && setGot((g) => ({ ...g, [k]: { fc } })))
+        .catch((e) => mounted.current && setGot((g) => ({ ...g, [k]: { error: e.message } })));
+    }
+  }, [key, root, version]);
+  return useMemo(() => {
+    const parts = ids.map((id) => got[`${id}:${root || ""}:${version}`]).filter(Boolean);
+    if (!parts.length || parts.some((x) => x.busy)) return null;
+    const err = parts.find((x) => x.error);
+    const ok = parts.filter((x) => x.fc).map((x) => x.fc);
+    if (!ok.length) return err ? { error: err.error } : null;
+    return { fc: { ...ok[0], tasks: ok.flatMap((f) => f.tasks || []), not_on_dates: ok.flatMap((f) => f.not_on_dates || []) } };
+  }, [got, ids.join(","), root, version]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 // One cell of a task row (r.ref.task: a task-table row). The Packaged cell is a link to the
@@ -65,8 +107,44 @@ export function TaskCell({ r, col, onPackage = null }) {
   return <span className={col.num ? "ml-num" : "ml-src"} title={c.title || c.text}>{c.text}</span>;
 }
 
+// A package's row (at the meeting point of its tasks): how often, its next visit, what a visit
+// costs, its trade, how many tasks; a reference to one of its tasks: the task's own cells, and
+// where it is in the Packaged column (it's under its own position too).
+export function PackageCell({ r, col }) {
+  if (r.type === PKG_REF_TYPE) {
+    if (col.id === "package") return <span className="ml-src" title={`${r.ref.name} is on ${r.ref.on}: it shows there too`}>On {r.ref.on}</span>;
+    if (col.id === "trade" || col.id === "from" || col.id === "kind") return null;
+    return <TaskCell r={r} col={col} />;
+  }
+  const c = packageCell(r, col.id);
+  if (col.id === "due") return c.text ? <span className="ml-num" title={c.title || undefined}>{fmtDate(c.text)}</span> : <span className="rw-blank">—</span>;
+  if (col.id === "kind") return c.text ? <Chip tone="warning" className="pk-kind">{c.text}</Chip> : <Chip tone="neutral" className="pk-kind" title="Tasks done together on one visit">Package</Chip>;
+  if (!c.text) return c.blank ? <span className="rw-blank" title={c.title || undefined}>{c.blank}</span> : null;
+  return <span className={col.num ? "ml-num" : "ml-src"} title={c.title || c.text}>{c.text}</span>;
+}
+
+// What a Forecast row (and each of its lines) says across the columns.
+export function forecastSpan(r) {
+  if (r.type === FC_TYPE) return r.ref.summary || "";
+  if (r.type === FC_LINE_TYPE) {
+    const l = r.ref.line;
+    return l.tone === "danger" ? <span className="pk-overdue" title={l.title || l.text}>{l.text}</span> : (l.title ? <span title={l.title}>{l.text}</span> : l.text);
+  }
+  return null;
+}
+
 // A row's second line on a phone: a task's interval, next due and cost; a level's roll-up.
 export function taskPhoneRow(r, rollup) {
+  if (r.type === PKG_TYPE) {
+    const due = packageCell(r, "due").text;
+    return { line: [packageCell(r, "interval").text, packageCell(r, "package").text, packageCell(r, "cost").text].filter(Boolean).join(" · "),
+      status: <Chip tone="neutral">{due ? `Next ${fmtDate(due)}` : "Package"}</Chip> };
+  }
+  if (r.type === PKG_REF_TYPE) return { line: `On ${r.ref.on}`, status: null };
+  if (r.type === FC_TYPE || r.type === FC_LINE_TYPE) {
+    const span = forecastSpan(r);
+    return { line: typeof span === "string" ? span : r.ref.line?.text || "", status: null };
+  }
   if (r.type !== "mtask") return { line: rollup || "", status: null };
   const t = r.ref.task;
   const due = taskCell(t, "due");
@@ -82,7 +160,9 @@ export function taskPhoneRow(r, rollup) {
 // `taskName`: the opened task's name from its row, the panel's title until the task has loaded.
 // The head (where it is, Expand or Back to table, Close) is the same as the Models and RCM panels';
 // the task's form draws its own title, body and footer under it, so its Save sits in the footer.
-export function TaskSide({ holder, taskId = null, taskName = "", rates = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged, onOptimise = null }) {
+// `needs`: the task's What it needs (its LSA: labour, tools, spares, consumables, access and method)
+// in place of its form (?needs=1), with a way back to the form (`onNeeds(false)`).
+export function TaskSide({ holder, taskId = null, taskName = "", rates = false, needs = false, onNeeds = null, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged, onOptimise = null }) {
   const title = rates ? "Trade rates" : taskId ? (taskName || "Maintenance task") : "Add a task";
   const head = (
     <div className="rw-panel-head">
@@ -104,7 +184,17 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
              e.stopPropagation();
              if (expanded && onCollapse) onCollapse(); else onClose();
            }}>
-      {rates ? (
+      {needs && taskId ? (
+        <>
+          <div className="rw-panel-top">
+            {head}
+            <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>What it needs</h2>
+          </div>
+          <div className="rw-pbody pk-panel">
+            <LsaTask key={taskId} taskId={taskId} backLabel="← The task" onBack={onNeeds ? () => onNeeds(false) : null} onChanged={onChanged} />
+          </div>
+        </>
+      ) : rates ? (
         <>
           <div className="rw-panel-top">
             {head}
@@ -123,14 +213,61 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
   );
 }
 
-// A level's forecast in the table area (Forecast… on a position on this tab): the same forecast as
-// Maintenance › Forecast, for that position and everything inside it, inside the asset opened.
-export function ForecastPane({ position, root, phone, headingRef, onClose }) {
+// A level's forecast in the table area (Forecast… on a position on this tab, or the Open the full
+// forecast… of a task's or a package's Forecast row): the work, failures and costs to come for that
+// position and everything inside it, inside the asset opened, then its spares for the year (what
+// was the Maintenance tab's Spares view: the parts the failures and tasks there will use, against
+// stock). A place, or a design's row: the spares alone (work and failures are forecast by
+// position; a design has no due dates, its spares are the items built from it or a planned fleet).
+export function ForecastPane({ position, root, design = false, phone, headingRef, onClose }) {
+  const work = position.type !== "loc" && !design;
   return (
-    <TablePane title="Forecast" subject={position.name} phone={phone} headingRef={headingRef} onClose={onClose}
-               closeLabel="Close the forecast">
+    <TablePane title={work ? "Forecast" : "Spares for the year"} subject={position.name} phone={phone} headingRef={headingRef} onClose={onClose}
+               closeLabel={work ? "Close the forecast" : "Close the spares"}>
       <div className="td-tab-page pk-panel rw mt-forecast-pane">
-        <PositionForecast positionId={position.id} name={position.name} root={root || null} />
+        {work && <PositionForecast positionId={position.id} name={position.name} root={root || null} />}
+        <section className="mt-fc-spares" aria-label="Spares for the year">
+          {work && <h3 className="mt-fc-h">Spares for the year</h3>}
+          <SparesYear id={position.id} root={design ? null : root || null} name={position.name} design={design} />
+        </section>
+      </div>
+    </TablePane>
+  );
+}
+
+// A package opened (its row, or a task's Packaged cell): its tasks, visits, what each visit needs
+// and the parts for its next visit, beside the table (?mpkg=). The head is the other panels'.
+export function PackageSide({ id, name = "", where = "", at = null, today, phone, headingRef, onClose, onOpen, onChanged }) {
+  return (
+    <aside className={"rw-panel mt-panel mt-task-panel" + (phone ? " sheet" : "")} aria-label={name || "Work package"}
+           onKeyDown={(e) => {
+             if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select")) return;
+             e.stopPropagation();
+             onClose();
+           }}>
+      <div className="rw-panel-top">
+        <div className="rw-panel-head">
+          <div className="rw-panel-kind" title={where || undefined}>Work package</div>
+          <div className="rw-panel-btns">
+            <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label="Close the package" title="Close (Esc)"><CloseIcon /></button>
+          </div>
+        </div>
+      </div>
+      <div className="rw-pbody pk-panel">
+        <PackageView key={id} id={id} today={today} onOpen={onOpen} onChanged={onChanged} headingRef={headingRef} at={at} where={where} />
+      </div>
+    </aside>
+  );
+}
+
+// Package the tasks… on a level: drafts packages from every task there and below in none, by how
+// often and by trade (what was the LSA tab's), in the table area.
+export function DraftPackagesPane({ holder, phone, headingRef, onClose, onDone }) {
+  return (
+    <TablePane title="Package the tasks" subject={holder.ref?.name || ""} phone={phone} headingRef={headingRef} onClose={onClose}
+               closeLabel="Close package the tasks">
+      <div className="td-tab-page pk-panel rw mt-pkg-pane">
+        <PackageTasks scope={packageScope(holder)} where={`at ${holder.ref?.name || "this level"} and below`} onBack={onClose} onDone={onDone} />
       </div>
     </TablePane>
   );

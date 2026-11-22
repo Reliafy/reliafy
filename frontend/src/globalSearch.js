@@ -115,7 +115,7 @@ export const SYNONYMS = {
   "/changes": ["history", "activity", "audit"],
   "tab:rcm": ["rcm", "failure modes", "functions", "decisions"],
   "tab:fmea": ["fmea", "fmeca", "criticality", "rpn", "failure modes"],
-  "tab:maintenance": ["maintenance tasks", "tasks", "pm"],
+  "tab:maintenance": ["maintenance tasks", "tasks", "pm", "work packages", "packages", "lsa", "logistic support analysis", "consumables", "spares for the year", "maintenance forecast"],
   "tab:reports": ["failures", "defects", "failure reports"],
   "tab:models": ["life models", "modelling", "missions", "mission", "phases"],
   "tab:condition": ["condition monitoring", "risk", "alarms", "remaining life"],

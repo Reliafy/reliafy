@@ -1,11 +1,11 @@
 ---
-title: "Forecast the maintenance plan: the work, failures and cost to come (Maintenance › Forecast)"
+title: "Forecast the maintenance plan: the work, failures and cost to come (Maintenance › Forecast…)"
 task: "What will the plan I have set up do next year: how many tasks and labour hours, how many failures, and what will it cost? And what would change if I changed the plan?"
 category: "Maintenance strategy"
 prerequisites: "Positions with tasks on them and items fitted, and a life model in use on the positions whose failures you want counted. An operating plan for any task counted in running hours."
 order: 30
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Maintenance › Forecast view itself and stays out of the index until Maintenance opens.
+# Maintenance tab's Forecast… pane and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
@@ -17,14 +17,22 @@ again, and read the difference.
 
 ## Forecast at any level
 
-Open **Assets → Explorer**, pick a position, then **Maintenance → Forecast**.
-The forecast is for that position **and everything inside it**, inside the
-asset you opened: nothing above it is used. So the same view gives you one
-pump, a pump station or a whole plant, depending on the row you pick.
+Open **Assets → Explorer**, then the **Maintenance** tab, and choose
+**Forecast…** in a position's **⋯** menu (or the heading's). The forecast is for
+that position **and everything inside it**, inside the asset you opened:
+nothing above it is used. So the same pane gives you one pump, a pump station or
+a whole plant, depending on the row you pick. It opens in the table area with
+the tree still beside it, and the spares for the year follow it. Choose
+**Months**, **Quarters** or **Years** under **By**.
 
-From the **Tasks** view, **Forecast…** in a row's **⋯** menu runs it for that
-level with the tree still beside it. Choose **Months**, **Quarters** or
-**Years** under **By**.
+## One task or one package
+
+Each task and each package in the table has a **Forecast** row under it. Open
+it and its lines say when it's next due (a package: its next visit), how many
+times it comes in each month, the labour, the parts and spares it uses and
+what it costs, with the total over the year. The numbers come from the same
+forecast as the level's. **Open the full forecast…** on that row opens the
+forecast for the level the task or package sits at.
 
 The answer comes first, in a sentence:
 
@@ -148,8 +156,10 @@ answer. A saved side by side of two plans isn't in the app yet.
 ## Packages, a 50 h and a 100 h service
 
 Tasks counted in **operating hours** can be packaged into a visit by hours.
-In the Explorer's **What it needs** view, tick tasks that are counted in
-hours (not mixed with calendar tasks), then **Package selected…**. The visit
+On the Explorer's **Maintenance** tab, select tasks that are counted in
+hours (not mixed with calendar tasks), then **Package…** in their right-click
+menu. The package then shows as a row where its tasks meet: the lowest level
+that all of them sit under. The visit
 goes by the shortest interval, and a task at a whole multiple of it goes on
 every Nth visit. So an oil change due every 50 hours and a gearbox check every
 100 come together: the 50 h service has the oil change, and every second visit

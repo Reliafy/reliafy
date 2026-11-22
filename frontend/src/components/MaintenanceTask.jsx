@@ -240,7 +240,8 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   // The next three dates it gives: from when it was last done, else from today.
   const today = workspaceToday();
   const shown = howOftenPreview(f.how, { from: task?.last_done || today, after: !!task?.last_done, anchor: taskAnchor(task, today) });
-  const lsaPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "lsa", task: task.id }) : null;
+  // What it needs (its LSA) opens beside the Maintenance tab's table, in place of this form.
+  const lsaPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "maintenance", mtask: task.id, needs: "1" }) : null;
   const rcmPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "rcm" }) : null;
   const nameNote = lengthNote(f.name, undefined, "say how in its LSA");
   const lsaCost = task?.cost?.lsa?.amount;

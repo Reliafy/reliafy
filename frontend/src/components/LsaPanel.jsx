@@ -349,14 +349,16 @@ export function RetireDialog({ pkg, onClose, onDone }) {
   );
 }
 
-// Add tasks…: the tasks where the package is (and below) that are in no package.
+// Add tasks…: the tasks on its asset (a location package: at it) that are in no package.
 function AddTasksDialog({ pkg, onClose, onDone }) {
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [rule, setRule] = useState("every");
   const [nth, setNth] = useState("4");
-  const subject = pkg.subject;
+  // A package on a position takes any task on its asset (it then lives where its tasks meet); one
+  // on a location, the tasks at it.
+  const subject = pkg.subject?.kind === "location" ? pkg.subject : pkg.asset || pkg.subject;
   useEffect(() => {
     let live = true;
     const scope = subject?.kind === "location" ? { location_id: subject.id } : { position_id: subject?.id };
@@ -494,7 +496,9 @@ function PackagesHere({ scope, where, onOpen, version }) {
 
 // ---- one package --------------------------------------------------------------------------
 
-function PackageView({ id, today, onBack, onOpen, onChanged }) {
+// `at`: where it's shown (the Maintenance tab: the meeting point of its tasks), in place of the
+// position it was made on; `where`: a line saying why it's there.
+export function PackageView({ id, today, onBack = null, onOpen, onChanged, headingRef = null, at = null, where = "" }) {
   const confirm = useConfirm();
   const [state, setState] = useState({ id: null, pkg: null, error: null });
   const [modal, setModal] = useState(null);
@@ -520,7 +524,7 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
       setSaid(e.message);
     }
   };
-  const back = <button type="button" className="link pk-back" onClick={onBack}>← All packages here</button>;
+  const back = onBack ? <button type="button" className="link pk-back" onClick={onBack}>← All packages here</button> : null;
   if (state.error && state.id === id) return <div>{back}<LoadFailed what="Couldn't load the package." error={state.error} /></div>;
   if (!pkg) return <div>{back}<Loading /></div>;
   const live = pkg.status !== "retired";
@@ -545,10 +549,11 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
       {back}
       <div className="pk-view-head">
         <div>
-          <h3 className="pk-view-name">{pkg.name}</h3>
+          <h3 className="pk-view-name" tabIndex={headingRef ? -1 : undefined} ref={headingRef}>{pkg.name}</h3>
           <p className="lib-date pk-sub">
-            {[cadenceWords(pkg), pkg.parent ? `on ${pkg.parent.name}'s visits` : pkg.subject?.name && `at ${pkg.subject.name}`, pkg.trade, tol].filter(Boolean).join(" · ")}
+            {[cadenceWords(pkg), pkg.parent ? `on ${pkg.parent.name}'s visits` : (at || pkg.subject?.name) && `at ${at || pkg.subject.name}`, pkg.trade, tol].filter(Boolean).join(" · ")}
           </p>
+          {where && <p className="lib-date pk-sub" title="Worked out from where its tasks are: add or take out a task and it moves">{where}</p>}
           <div className="pk-chips"><StatusChips pkg={pkg} today={today} /><WhenCell pkg={pkg} /></div>
         </div>
         {menu.length > 0 && <MoreMenu label={`Actions for ${pkg.name}`} items={menu} />}

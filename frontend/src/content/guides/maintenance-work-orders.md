@@ -107,8 +107,9 @@ on.
 ("every Saturday"), its next visit (or its open visit, marked when late), how
 many tasks it holds and whether it's active or paused. Open one to see its
 tasks, its next visits and its recent work orders. Packages are made from the
-tasks in the Explorer's **Maintenance › What it needs**: tick the tasks, then
-package them.
+tasks on the Explorer's **Maintenance** tab: select the tasks, then **Package…**
+in their right-click menu. There each package shows as a row where its tasks
+meet, with a **Forecast** row under it.
 
 ## When work management is turned off
 

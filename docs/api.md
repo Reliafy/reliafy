@@ -637,7 +637,13 @@ then has a `ref`, `layer_of` and `cadence_text`, and a layer's `create` has
 own routes do the same: `GET /api/maintenance/packages/propose?weekday=`,
 `POST /api/maintenance/packages/batch` (`packages`: the creates, all or
 nothing) and `GET /api/maintenance/packages?position_id=` (those there or
-inside it, or holding a task there). `GET /api/maintenance/task-table?position_id=` (or
+inside it, or holding a task there). A package on a position takes any task on
+the same asset (`packages.add_task`, `POST /api/maintenance/packages/{package_id}/tasks`,
+`reliafy maintenance packages.add_task`; another asset's is refused with the
+reason) and lives where its tasks meet: a package's `subject` is the deepest
+position all its tasks are on or inside, worked out on read, `made_on` the
+position it was made on (its hours counter) and `asset` the tree its tasks are
+on. `GET /api/maintenance/task-table?position_id=` (or
 `location_id=`) is the Explorer's Maintenance › Tasks and What it needs: every task there and on
 everything below it at any depth, one row each, with where it lives (`subject.within`), its failure
 modes, kind, interval, trade, next due and package. `within=` (a position or place: the asset

@@ -20,7 +20,7 @@ import "./Maintenance.css";
 const HELP = { guide: "maintenance-work-orders" };
 // Packages are made where the tasks are: the Explorer's LSA tab (tick tasks, then package them),
 // opened on the tree picked (not whichever tree comes first: another team's asset).
-const LSA_PATH = explorerPath("positions", { tab: "lsa" });
+const LSA_PATH = explorerPath("positions", { tab: "maintenance" });
 const lsaOn = packageTasksOn;
 
 const STATUSES = [
@@ -97,7 +97,7 @@ export default function MaintenancePackages() {
         {rows == null ? null : rows.length === 0 ? (
           <div className="empty">
             <p className="lib-date">
-              {status ? "No packages with that status." : <>No packages yet. Tick tasks in the Explorer's <Link to={LSA_PATH}>{tabPlace("lsa")}</Link> to package them into visits.</>}
+              {status ? "No packages with that status." : <>No packages yet. Pick tasks on the Explorer's <Link to={LSA_PATH}>{tabPlace("maintenance")}</Link> tab and package them into visits.</>}
             </p>
           </div>
         ) : shown.length === 0 ? (
