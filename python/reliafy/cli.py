@@ -427,6 +427,10 @@ def cmd_upload(client: Client, ns) -> int:
 def cmd_import(client: Client, ns) -> int:
     if ns.what == "rbd":
         result = client.import_rbd(ns.file, name=ns.name, format=ns.format)
+    elif ns.what == "rcm":
+        if not ns.position:
+            raise ReliafyError("import rcm needs --position POSITION_ID.")
+        result = client.import_rcm(ns.file, ns.position, sheet=ns.sheet, dry_run=ns.dry_run)
     else:
         result = client.import_excel(ns.file, target=ns.target, sheet=ns.sheet, name=ns.name,
                                      position_id=ns.position)
@@ -688,15 +692,17 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--unit", help="x's unit (hours, cycles, km…).")
     sp.add_argument("--library-id", dest="library_id", metavar="LIBRARY_ID",
                     help="Also add the dataset to this library of yours, as a snapshot.")
-    sp = add("import", cmd_import, "Import a diagram file (rbd) or an .xlsx workbook (excel).")
-    sp.add_argument("what", choices=["rbd", "excel"])
+    sp = add("import", cmd_import, "Import a diagram file (rbd), an .xlsx workbook (excel), or an RCM worksheet "
+                                   "or task plan, CSV or .xlsx, onto a maintenance position (rcm).")
+    sp.add_argument("what", choices=["rbd", "excel", "rcm"])
     sp.add_argument("file")
     sp.add_argument("--name")
     sp.add_argument("--format", help="rbd: blocksim, openpsa, galileo, excel or repyability (default: detected).")
     sp.add_argument("--target", help="excel: dataset, rcm or rbd.")
     sp.add_argument("--sheet")
-    sp.add_argument("--position", help="excel --target rcm: add the worksheet (.xlsx or .csv) to this maintenance "
-                                       "position's RCM (required for --target rcm). Only adds.")
+    sp.add_argument("--position", help="rcm, or excel --target rcm: add the worksheet (.xlsx or .csv) to this "
+                                       "maintenance position's RCM (required). Only adds.")
+    sp.add_argument("--dry-run", dest="dry_run", action="store_true", help="rcm: preview it; nothing written.")
     sp = add("photo", cmd_photo, "Add photos to a maintenance position, item, location or work order; link a "
                                  "photo to another one too, move it, or unlink it.")
     sp.add_argument("verb", choices=["add", "link", "move", "unlink"])

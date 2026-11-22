@@ -90,8 +90,11 @@ NEW_ACTIONS = {
     ("analyse", "rbd_mission"), ("change", "rbd_mission"),
     # Download as Python for every model kind, as the RBD's (Nov 2026).
     ("analyse", "model_export_python"),
+    # Things the app does that agents couldn't (Nov 2026): fit and save a degradation model, add an RCM worksheet
+    # or task plan from CSV, save an optimal-replacement analysis.
+    ("change", "model_fit_degradation"), ("change", "import_rcm"), ("change", "optimal_replacement_save"),
 }
-NEW_HEAVY = {"analyse.fault_tree"}
+NEW_HEAVY = {"analyse.fault_tree", "change.model_fit_degradation", "change.import_rcm"}
 NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
             "list.fault_trees", "get.fault_tree", "analyse.fault_tree",
             # A user library's name, notes and record labels are the user's words.
@@ -180,12 +183,14 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     # publishing libraries (15 Nov 2026).
     libraries = {"change.library_create", "change.library_update", "change.library_add", "change.library_remove"}
     assert mcp_server._LIBRARY_TOOLS == libraries
-    assert {_new_key(k) for k in OLD_PRO_ONLY} | {"analyse.bayes_update"} | libraries == mcp_server.PRO_ONLY_TOOLS
+    # And fitting a degradation model (Nov 2026), Pro like every fit.
+    fits = {"analyse.bayes_update", "change.model_fit_degradation"}
+    assert {_new_key(k) for k in OLD_PRO_ONLY} | fits | libraries == mcp_server.PRO_ONLY_TOOLS
     assert {_new_key(k) for k in OLD_HEAVY} | NEW_HEAVY == mcp_server.HEAVY_TOOLS
     assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
     assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS
     assert {_new_key(k) for k in OLD_TEXT} | NEW_TEXT == mcp_server.TEXT_RESULT_TOOLS
-    assert mcp_server._FIT_TOOLS == {_new_key(k) for k in OLD_PRO_ONLY if "fleet" not in k} | {"analyse.bayes_update"}
+    assert mcp_server._FIT_TOOLS == {_new_key(k) for k in OLD_PRO_ONLY if "fleet" not in k} | fits
 
 
 def test_earlier_names_are_gone(env):
@@ -249,7 +254,9 @@ def test_the_listed_tools_are_small(env):
     (library_add / library_remove renamed, library_use added), after shortening the list intro; 7,987 with
     analyse schedule, after shortening the analyse and list intros again; 7,994 with analyse
     optimal_overhaul_replace, after shortening the change, report_problem and guide intros; 7,985 with
-    list search, after shortening the get and list intros) and
+    list search, after shortening the get and list intros; 7,988 with change model_fit_degradation, import_rcm
+    and optimal_replacement_save, after shortening the get, list, change and report_problem intros and three
+    required lines) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

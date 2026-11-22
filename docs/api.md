@@ -620,7 +620,7 @@ have no MCP twin, on purpose:
 | Call | Does |
 |---|---|
 | `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
-| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `change upload_create` (no other credentials; at most 30 MB). Then import it: `change dataset_upload`, `change import_rbd`, `change import_excel` or `change rbd_upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance attachments.add_document`. |
+| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `change upload_create` (no other credentials; at most 30 MB). Then import it: `change dataset_upload`, `change import_rbd`, `change import_excel`, `change import_rcm` or `change rbd_upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance attachments.add_document`. |
 | `POST /api/v1/maintenance/sync/push` | Sends up to 50 changes a device queued while it had no connection, in the order it made them: the maintenance tool's own work-order and reading actions, each with an id the device made, so one sent twice is recorded once. See [maintenance-sync.md](maintenance-sync.md). Reliafy Maintenance only; `write` scope. |
 | `POST /api/v1/maintenance/sync/photo?op=…` | Sends one queued photo (the image as the body), recorded once however often it is sent. Reliafy Maintenance only; `write` scope. |
 | `POST /api/v1/maintenance/sync/pack` | Everything a device needs to work with no connection, in one answer: the open work orders in full, their list rows and the parts catalogue. Reliafy Maintenance only; `read` scope. |
@@ -858,6 +858,16 @@ fitted to one such dataset; a degradation model reads its measurements. See
 On the command line: `reliafy upload readings.csv --measurements-for
 DATASET_ID`; in Python, `rf.add_measurements(dataset_id, "readings.csv")`.
 
+### Degradation models, RCM worksheets and saved replacement analyses
+
+| Call | Does |
+|---|---|
+| `POST /api/v1/change/model_fit_degradation` | Fits a degradation model (readings drifting to a failure threshold) and saves it, as the app's Degradation fit does: `name`, `dataset_id`, `unit_id_column`, `age_column`, `value_column`, `threshold`; optional `path` (`best` by AICc), `distribution`, `population_method`, `unit`, `measurement_unit`. `dry_run: true` reports without saving. The answer gives each unit's crossing time and B1/B10/B50 with their 90% one-sided lower bounds. Fitting, so Pro. |
+| `POST /api/v1/change/import_rcm` | Adds an RCM / FMEA worksheet or a task plan (one row per failure mode) to a maintenance position's RCM: `position_id` with `csv` (the text) or `upload_id` (a CSV or .xlsx sent to an upload link); `mapping`, `sheet`, `header_row`, `dry_run`. Only adds; with any row in error nothing is written. Reliafy Maintenance only. |
+| `POST /api/v1/change/optimal_replacement_save` | Saves an optimal-replacement analysis, as Strategy > Replacement's Save analysis does: `name`, `planned_cost`, `unplanned_cost` and `model_id` or `distribution_id` + `params` (optional `unit`, `use_per_year`, `units`, `position_id`). The results are worked out again on the server. Every plan. |
+
+`list/models` with `model_type: "degradation"` lists degradation models and `get/model` reads one.
+
 ---
 
 ## Python client and command line
@@ -900,6 +910,9 @@ reliafy fit failures.csv --dist best --criterion bic   # rank every distribution
 reliafy push model.json
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml
+reliafy import rcm fmea.csv --position POSITION_ID --dry-run   # preview, then again without --dry-run
+reliafy change model_fit_degradation --name "Liner wear" --dataset-id DATASET_ID \
+    --unit-id-column pump --age-column hours --value-column thickness_mm --threshold 10
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption "Nameplate"
 reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
 reliafy photo move PHOTO_ID --to POSITION_ID      # only there
