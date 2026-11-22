@@ -303,9 +303,18 @@ def failure_cost_of(m, mode, position, prev: dict, previous, cls: dict) -> dict:
     """What one failure of this mode costs, all in, with where the figure came from: the one saved
     with the last replacement analysis, else the position class's failure cost, else missing (the user
     types it). The one place Optimise reads a failure's cost: when failure modes and classes carry
-    their own failure cost and downtime, read it here first."""
+    their own failure cost and downtime, read it here first.
+
+    The failure mode's own figures come first (failure_costs.py: its repair plus its downtime at the
+    cost of an hour down, any figure it lacks taken from its class), the same figure the forecast
+    charges; then the last analysis's; then the class's alone."""
+    c = m.failure_consequence(position, [mode["id"]])
+    if c["per_failure"] is not None and "the failure mode's" in (c.get("sources") or {}).values():
+        return _source(c["per_failure"], "mode", f"What a failure of this mode costs, all in: {c['text']}.")
     if prev.get("unplanned_cost") is not None:
         return _source(prev["unplanned_cost"], "analysis", f"From “{previous.name}”, saved before.")
+    if c["per_failure"] is not None:
+        return _source(c["per_failure"], "class", f"What a failure costs, all in, from its class: {c['text']}.")
     if cls.get("failure_cost") is not None:
         return _source(cls["failure_cost"], "class", f"What a failure costs in its class, {cls['class']}.")
     return _source(None, "missing", "Enter what a failure costs, all in: the repair, the parts, the downtime "
