@@ -126,7 +126,12 @@ def list_models(db, owner_id, hidden=frozenset(), shared=frozenset()) -> list[Re
 
 
 def get_model(db, model_id: str, owner_id=None) -> RecurrentModelDoc | None:
-    query = {"_id": model_id}
+    """Fetch a repairable model by id. Ids are strings; anything else (a dict from a JSON
+    body, say) matches nothing."""
+    if not isinstance(model_id, str) or not model_id:
+        return None
+    # ``$eq`` keeps the id a value to match, never an operator.
+    query = {"_id": {"$eq": model_id}}
     if owner_id is not None:
         query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(RecurrentModelDoc, db.recurrent_models.find_one(query))

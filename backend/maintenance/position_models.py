@@ -58,6 +58,7 @@ from __future__ import annotations
 import io
 import re
 
+from backend.errors import client_message
 from backend.maintenance.store import GraphStore
 
 #: Where a linked model lives: the saved non-repairable models (also condition and
@@ -860,7 +861,7 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
     try:
         res = rbds_service.analyze_graph(db, graph, owners, at_times=[float(age)] if age else None)
     except Exception as err:  # noqa: BLE001 - a row says why rather than failing the read
-        out["analysis_error"] = str(err)[:300]
+        out["analysis_error"] = client_message(err, where="position RBD analysis")[:300]
         return out
     # A non-repairable diagram has no repair, so its mean is the mean life (time to the
     # system's first failure), never an MTBF; one that can be infinite (a cure fraction, a

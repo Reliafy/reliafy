@@ -34,6 +34,8 @@ import re
 from collections import Counter
 from datetime import date
 
+from backend.errors import client_message
+
 #: The most members scored in one read (each a prediction); the rest are
 #: listed with their age and reading, and the answer says so.
 MAX_SCORED = 200
@@ -315,7 +317,7 @@ def _scorer(m, db, owners, hidden):
                         "risk_upper": joint.risk_upper(pred, h) if bound else None,
                         "life_level": 1 - joint.LIFE_ALPHA}
         except (FitError, ValueError, ArithmeticError) as err:
-            row["why"] = f"The model couldn't work out its risk: {err}"
+            row["why"] = f"The model couldn't work out its risk: {client_message(err)}"
             return row
         if any(v is None for v in risk["risk"]):
             row.pop("unit", None)
