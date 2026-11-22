@@ -158,7 +158,13 @@ test("Add to package…: the packages that fit first, the same interval before t
   const pk = (id, every, unit, on = "st", extra = {}) => ({ id, name: id, cadence: { every, unit }, subject: { id: on, name: on }, status: "active", ...extra });
   const blade = mower[1];
   assert.equal(packageMisfit(pk("cal", 1, "months"), blade, out), "cal goes by the calendar, and Task blade by operating hours: put it in a package by hours on its position.");
-  assert.match(packageMisfit(pk("h", 50, "hours", "p2"), blade, out), /isn't there or inside it/);
+  // A package on a position takes any task on the same asset: on Pump 2, it still fits a task on Pump 1.
+  assert.equal(packageMisfit(pk("h", 50, "hours", "p2"), blade, out), null);
+  // One on a location takes only the tasks at it.
+  assert.match(packageMisfit(pk("h", 50, "hours", "p2", { subject: { id: "p2", name: "p2", kind: "location" } }), blade, out), /isn't there or inside it/);
+  // A task on another asset (another top row) can't join.
+  const two = { ...out, rows: new Map([...out.rows, ["other", { key: "other", type: "pos", parent: null, kids: [], depth: 0, ref: { name: "Other" } }]]) };
+  assert.match(packageMisfit(pk("h", 50, "hours", "other"), blade, two), /another asset/);
   assert.equal(packageMisfit(pk("h", 50, "hours"), blade, out), null);
   assert.deepEqual(visitFor(pk("h", 50, "hours"), mower[0]), { visit_rule: "nth", every_nth: 2 });
   assert.deepEqual(visitFor(pk("h", 50, "hours"), blade), { visit_rule: "every" });

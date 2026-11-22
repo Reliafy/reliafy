@@ -593,7 +593,8 @@ PACKAGES: Table = {
                "tolerance_unit trade notes tasks season shutdown visit_cost", "Change it; tasks: members' visit rules; season {} "
                "clears it; shutdown: its visits are planned outages ({} clears it); visit_cost: each visit's call-out and "
                "setup, besides its tasks (-1 clears it)."),
-    "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
+    "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each; any on "
+                 "its asset: it lives where its tasks meet)."),
     "remove_task": ("package_id task_id", "", "Take a task out: it's raised on its own again."),
     "pause": ("package_id reason", "until full_visit", """Pause it until a date (back by itself then; none:
         open-ended, flagged). Its tasks are held and its open work order frozen."""),

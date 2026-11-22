@@ -1029,8 +1029,14 @@ Nodes and edges:
   created, members ([{task_id, visit_rule, every_nth?, suppresses?}]),
   paused, retired}.
 - `WorkPackage PLANNED_FOR Position` or `WorkPackage PLANNED_AT Location`: what
-  a top package is on. Its tasks are on that position or positions inside it,
-  or at that location (positions located there, or the location itself).
+  a top package was made on. A package on a position takes any task on the same
+  asset (the top of that position tree) and **lives where its tasks meet**: the
+  deepest position all its live tasks (and its layers') are on or inside,
+  worked out on read (`_package_subject`; reads give it as `subject`, the edge
+  as `made_on`, the tree as `asset`), so adding or taking out a task moves it
+  with no event of its own. Its hours counter and a shutdown's outage go by
+  the position it was made on. A package on a location holds the tasks at it
+  (positions located there, or the location itself).
 - `WorkPackage BUNDLES Task`, one per member. A task has at most one home
   package that isn't retired. Items' tasks (they follow the serial number),
   tasks by use and rounds (`include_positions`) stay on their own.
