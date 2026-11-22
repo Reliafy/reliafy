@@ -897,7 +897,7 @@ RCM: Table = {
         the target. A model in a unit of use (cycles, flight hours) answers in it, with a target and no costs.
         save_evidence true, with failure_mode_id (task_id optional): as pf_interval's. With task_id and demand_rate
         but no test_cost, the task's own cost is used (task_cost_used)."""),
-    "optimise_task": ("task_id", "failure_mode_id model_type model_id planned_cost unplanned_cost pf_interval pf_unit "
+    "optimise": ("task_id", "failure_mode_id model_type model_id planned_cost unplanned_cost pf_interval pf_unit "
                                  "act_time target_unavailability use", """The app's Optimise… on a task: how
         often to do it, for each failure mode it prevents, from that mode's life model (the one an earlier
         Optimise used, the decision's evidence or the position's model; model_type model or degradation_model
@@ -3035,7 +3035,7 @@ def register() -> None:
                         use: bool | None = None) -> dict[str, Any]:
         """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding.
         save_evidence (with failure_mode_id; task_id: which of its tasks, else its first of the kind): use the
-        answer as the app's "Use" does (rcm_apply_interval). optimise_task: the app's Optimise… on a task
+        answer as the app's "Use" does (rcm_apply_interval). optimise: the app's Optimise… on a task
         (task_optimise.py)."""
         from backend.mcp_server import _owners
         from backend.services import models as models_service
@@ -3043,7 +3043,7 @@ def register() -> None:
         from backend.services.strategy import StrategyError
 
         m = m_for(ctx)  # Maintenance users only, like the rest of the tool
-        if action == "optimise_task":
+        if action == "optimise":
             from backend.maintenance import task_optimise
             from backend.mcp_server import _require_scope
 
