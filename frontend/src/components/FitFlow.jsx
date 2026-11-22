@@ -491,11 +491,18 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // The age asked about on the Result step: asked again a moment after it's typed.
   const priorAge = prior.age;
   const priorNeed = prior.need;
+  // The refit takes a few seconds, so the boxes say they're working (and why one didn't answer).
+  const [priorAsk, setPriorAsk] = useState({ busy: false, refused: null });
   useEffect(() => {
     if (step !== 4 || !priorResult) return undefined;
     let live = true;
+    setPriorAsk({ busy: true, refused: null });
     const t = setTimeout(() => {
-      askPrior().then((res) => live && !res.refused && setPriorResult(res), () => {});
+      askPrior().then((res) => {
+        if (!live) return;
+        if (res.refused) setPriorAsk({ busy: false, refused: refusalWords(res.refused) });
+        else { setPriorResult(res); setPriorAsk({ busy: false, refused: null }); }
+      }, (err) => live && setPriorAsk({ busy: false, refused: err.message }));
     }, 400);
     return () => { live = false; clearTimeout(t); };
   }, [priorAge, priorNeed]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1084,6 +1091,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                           chart={chart} onChart={setChart} download={name || "Life model"}
                           age={prior.age} onAge={(v) => setP("age", v)}
                           need={prior.need} onNeed={(v) => setP("need", v)}
+                          asking={priorAsk.busy} askRefused={priorAsk.refused}
                           dataWords={file?.name === PASTED ? "the pasted values" : `“${(file?.name || sourceName || "the data").replace(/\.csv$/i, "")}”`} />
             </div>
           ) : (

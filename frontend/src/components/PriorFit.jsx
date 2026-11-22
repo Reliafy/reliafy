@@ -63,7 +63,12 @@ export function PriorFields({ state, set, kind, kinds = null, onKind, trust = tr
           <div ref={pickArea} className="fit2-pick">
             <PickedRecord record={state.recordId ? record || { id: state.recordId } : null} onPick={onPickRecord} />
           </div>
-          {state.recordId && <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p>}
+          {state.recordId ? <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p> : (
+            <p className="fit2-sum">
+              Most library records are rates (per hour, or per demand), not life models: either works. A rate per hour
+              becomes a prior on life; a chance per demand takes how many demands a year first. The B10 then follows.
+            </p>
+          )}
           {state.recordId && record?.kind !== "life" && libCov && <RecordCovariatesField recordId={state.recordId} cov={libCov} idPrefix="fitcov" />}
           {record?.kind !== "life" && (state.distribution === "weibull" || state.distribution === "lognormal") && (
             <div className="fit2-pair">
@@ -140,7 +145,16 @@ export function fitCharts(d, bayes) {
 //   dataWords  where the data came from, for "How it was computed" ("this position's history")
 //   need       a required B10 typed; onNeed (text) => void (a fit with a prior: the chance it is met)
 export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, download, age, onAge, dataWords,
-                             need = "", onNeed = null }) {
+                             need = "", onNeed = null, asking = false, askRefused = null }) {
+  // A refit for a newly typed number takes a few seconds: the box says "Working it out…" meanwhile
+  // (never the answer to the number before), or why it couldn't answer.
+  const typedAge = Number(age) > 0;
+  const typedNeed = Number(need) > 0;
+  const ageNow = asking ? null : d.at_age;
+  const needNow = asking ? null : d.need;
+  const pending = (typed) => typed && (asking
+    ? <span className="rim-tquiet" role="status">Working it out…</span>
+    : askRefused ? <span className="field-error" role="alert">{askRefused}</span> : null);
   const bayes = d.method === "bayes";
   const charts = fitCharts(d, bayes);
   const shownChart = charts.some((c) => c.value === chart) ? chart : "sf";
@@ -195,7 +209,8 @@ export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, downloa
         <label htmlFor="fit2-age">Reliability at</label>
         <TextInput id="fit2-age" inputMode="decimal" value={age} onChange={(e) => onAge(e.target.value)} placeholder="an age" aria-label="Reliability at an age" />
         <span>{u}</span>
-        {d.at_age && (
+        {pending(typedAge)}
+        {ageNow && (
           <span className="fit2-age-r">
             {Math.round(d.at_age.reliability * 1000) / 10}%
             {d.at_age.lower != null && d.at_age.upper != null
@@ -210,11 +225,15 @@ export function FitOutcome({ d, priorKind, unit: u = "", chart, onChart, downloa
           <label htmlFor="fit2-need">Chance B10 is at least</label>
           <TextInput id="fit2-need" inputMode="decimal" value={need} onChange={(e) => onNeed(e.target.value)} placeholder="a required life" aria-label="Required B10 life" />
           <span>{u}</span>
-          {d.need?.chance != null && (
+          {pending(typedNeed)}
+          {needNow?.chance != null && (
             <span className="fit2-age-r">
-              <b>{Math.round(d.need.chance * 100)}%</b>, given the prior and the data
-              {d.b10?.lower != null && d.need.life > d.b10.lower ? " (not yet shown at 90%)" : ""}
+              <b>{Math.round(needNow.chance * 100)}%</b>, given the prior and the data
+              {d.b10?.lower != null && needNow.life > d.b10.lower ? " (not yet shown at 90%)" : ""}
             </span>
+          )}
+          {needNow && needNow.chance == null && (
+            <span className="rim-tquiet" role="status">This fit can&apos;t give that chance: read the B10&apos;s bound above instead.</span>
           )}
         </div>
       )}

@@ -270,7 +270,7 @@ def prior_priors(base: dict, trust: str):
     if base.get("source") == "update":
         return None, ""
     try:
-        return bl.priors_for(base, trust), ""
+        return bl.priors_for(base, trust), bl.belief_note(base)
     except bl.BayesError as err:
         raise _sv().Invalid(str(err)) from None
 
@@ -510,11 +510,18 @@ def around_prior(prior: dict, distribution: str) -> dict:
             key, lo_k, hi_k, about_k = "failure_rate", 1 / hi, 1 / lo, (1 / about if about else None)
         if key in priors:
             raise sv.Invalid("Give the exponential's rate or its mean life, not both.")
-        priors[key] = sp.prior.around(about_k, between=(lo_k, hi_k)) if about_k is not None else sp.prior.between(lo_k, hi_k)
         if about_k is not None:
+            # Centred on the value said ("about"), not the middle of the bounds (bayes_life.about).
+            priors[key], built = bl.about(about_k, lo_k, hi_k, positive=positive)
             params[key] = about_k
-        words.append(f"{label} about {bl.num(about)}, 90% between {bl.num(lo)} and {bl.num(hi)}" if about is not None
-                     else f"{label} 90% between {bl.num(lo)} and {bl.num(hi)}")
+            if name == "mean":
+                built = (1 / built[1], 1 / built[0])
+            wide = bl.widened(lo, hi, built)
+            words.append(f"{label} about {bl.num(about)}, 90% between {bl.num(built[0])} and {bl.num(built[1])}"
+                         + (f" (widened from {bl.num(lo)}–{bl.num(hi)} to keep {bl.num(about)} in the middle)" if wide else ""))
+        else:
+            priors[key] = sp.prior.between(lo_k, hi_k)
+            words.append(f"{label} 90% between {bl.num(lo)} and {bl.num(hi)}")
     if not priors:
         raise sv.Invalid("Give at least one parameter's bounds (the others are left to the data).")
     names = bl.DISTS[dist_id].parameter_names
