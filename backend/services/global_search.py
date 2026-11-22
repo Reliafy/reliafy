@@ -144,6 +144,7 @@ STRATEGY_LABELS = {
     "failure_finding": "Failure finding", "demonstration_test": "Test plan (demonstration test)",
     "on_condition_interval": "Check interval (P-F)", "failure_finding_interval": "Test interval",
     "calendar_replacement": "Shutdown calendar", "overhaul_replace": "Overhaul and replace",
+    "sequential_test": "Test plan (sequential test)",
 }
 
 # (kind, collection, the page a record opens on, what it is in words, extra words to match).

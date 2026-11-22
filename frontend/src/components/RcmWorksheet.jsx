@@ -77,7 +77,7 @@ export function LevelIcon({ type, className = "rw-ic" }) {
 }
 
 export { phoneLine };
-const CHECK_MARK = { contradicted: "✗", unsure: "?", stale: "–", supported: "✓" };
+const CHECK_MARK = { contradicted: "✗", unsure: "?", differs: "!", stale: "–", supported: "✓" };
 
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 

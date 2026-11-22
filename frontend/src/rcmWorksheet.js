@@ -89,6 +89,9 @@ export const STATUS_LABEL = {
   supported: "Supported",
   contradicted: "Contradicted",
   inconclusive: "Inconclusive",
+  // A fixed-interval task under half, or over twice, its cost-optimal interval.
+  shorter_than_evidence: "Shorter than its evidence",
+  longer_than_evidence: "Longer than its evidence",
   unevidenced: "Not linked",
   stale: "Stale link",
   linked: "Linked",
@@ -129,6 +132,10 @@ export function checkLabel(d) {
 // A decision's evidence check worth showing: one with linked evidence (a
 // decision with nothing linked yet, "unevidenced", is quiet: most RCM is done
 // from judgement, and nothing is wrong with it).
+// A fixed-interval task far from its cost-optimal interval, shorter or longer.
+export const INTERVAL_DIFFERS = new Set(["shorter_than_evidence", "longer_than_evidence"]);
+// Evidence checks worth a look (the "Evidence to look at" chip).
+export const TO_LOOK_AT = new Set(["contradicted", "inconclusive", "stale", ...INTERVAL_DIFFERS]);
 export const shownStatus = (s) => (s && s !== "unevidenced" ? s : null);
 const RTF_LABEL = { random: "random", uneconomic: "not economic" };
 
@@ -138,7 +145,7 @@ export const INTERVAL_OUTCOMES = new Set(["on_condition", "fixed_interval", "fai
 
 export const blank = () => ({
   modes: 0, undecided: 0, review: 0, tasks: 0, hidden: 0, safety: 0,
-  supported: 0, contradicted: 0, unsure: 0, stale: 0, unlinked: 0,
+  supported: 0, contradicted: 0, unsure: 0, differs: 0, stale: 0, unlinked: 0,
 });
 
 // Whether what's inside a row is decided, in words: "2 to decide", then (all decided, some
@@ -166,6 +173,8 @@ export function modeCounts(m) {
     contradicted: s === "contradicted" ? 1 : 0,
     // Linked evidence that doesn't settle it (the wrong kind, a unit mismatch...).
     unsure: s === "inconclusive" ? 1 : 0,
+    // A fixed interval far from its cost-optimal one (either way): a fact, not a verdict.
+    differs: INTERVAL_DIFFERS.has(s) ? 1 : 0,
     stale: s === "stale" ? 1 : 0,
     // Nothing linked, or (a combination of tasks) nothing for some of its tasks.
     unlinked: s === "unevidenced" || s === "partly" ? 1 : 0,
@@ -854,6 +863,7 @@ export function checkCounts(r) {
   return [
     { kind: "contradicted", n: s.contradicted, label: "contradicted" },
     { kind: "unsure", n: s.unsure, label: "inconclusive" },
+    { kind: "differs", n: s.differs || 0, label: "interval differs" },
     { kind: "stale", n: s.stale, label: "stale" },
     { kind: "supported", n: s.supported, label: "supported" },
   ].filter((c) => c.n > 0);
@@ -872,7 +882,7 @@ const CONS_RANK = { safety: 0, environmental: 1, operational: 3, non_operational
 // Safety first; a hidden mode just before the evident ones of its category (one with none yet after the serious ones).
 const consRank = (m) => (categoryOf(m) ? CONS_RANK[categoryOf(m)] ?? null : isHidden(m) ? 2 : null) - (isHidden(m) && categoryOf(m) ? 0.5 : 0);
 const OUT_RANK = { on_condition: 0, fixed_interval: 1, failure_finding: 2, rtf: 3, redesign: 4, accept: 5 };
-const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, supported: 4, linked: 5 };
+const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, shorter_than_evidence: 3.5, longer_than_evidence: 3.5, supported: 4, linked: 5 };
 const isMode = (r) => r.type === "mode";
 const isTask = (r) => r.type === "task";
 const d = (r) => r.ref.decision || null;
@@ -945,7 +955,7 @@ export const COLUMNS = [
     title: "Whether the linked analysis backs the decision, checked each time the study opens (a linked report or working isn't checked)",
     text: (r) => (isMode(r) ? checkLabel(d(r)) : checkCounts(r).map((c) => `${c.n} ${c.label}`).join(", ")),
     sort: (r) => (isMode(r) ? STATUS_RANK[d(r)?.status] ?? null
-      : r.sum.contradicted ? 0 : r.sum.stale ? 1 : r.sum.unsure ? 2 : r.sum.supported ? 4 : null),
+      : r.sum.contradicted ? 0 : r.sum.stale ? 1 : r.sum.unsure ? 2 : r.sum.differs ? 3 : r.sum.supported ? 4 : null),
   },
   {
     id: "evidence", label: "Evidence", width: 200, min: 90, on: false,
@@ -1030,8 +1040,8 @@ export const CHIPS = [
   { id: "safety", label: "Safety or environment", test: (r) => isMode(r) && (categoryOf(r.ref) === "safety" || categoryOf(r.ref) === "environmental") },
   { id: "task", label: "Has a task", test: (r) => isMode(r) && hasTask(r.ref) },
   { id: "notask", label: "No task yet", test: (r) => isMode(r) && !hasTask(r.ref) },
-  { id: "check", label: "Evidence to look at", title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
-    test: (r) => isMode(r) && ["contradicted", "inconclusive", "stale"].includes(d(r)?.status) },
+  { id: "check", label: "Evidence to look at", title: "Linked evidence that contradicts the decision, doesn't settle it, sets an interval far from the task's, or has gone (a stale link)",
+    test: (r) => isMode(r) && TO_LOOK_AT.has(d(r)?.status) },
 ];
 
 export function chipCounts(display) {

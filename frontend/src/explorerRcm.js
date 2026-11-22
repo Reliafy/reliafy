@@ -12,6 +12,7 @@
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, decidedWords, decisionCardLines, decisionRows, intervalText,
   isCombination, modeCounts, moreTasks, isHidden, rowText as rcmText, tasksOf, addModeTasks, addTasks, blankTasks,
+  INTERVAL_DIFFERS, TO_LOOK_AT,
 } from "./rcmWorksheet.js";
 import { standardsShown } from "./rcmStandards.js";
 import { withPositionDelete } from "./rcmDelete.js";
@@ -421,8 +422,8 @@ export const RCM_CHIPS = [
   { id: "hidden", label: "Hidden failures", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && isHidden(r.ref) },
   // A linked report or working ("linked") isn't checked, so it's never one to look at.
   { id: "check", label: "Evidence to look at", rcmOnly: true, tab: "rcm",
-    title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
-    test: (r) => isMode(r) && ["contradicted", "inconclusive", "stale"].includes(r.ref.decision?.status) },
+    title: "Linked evidence that contradicts the decision, doesn't settle it, sets an interval far from the task's, or has gone (a stale link)",
+    test: (r) => isMode(r) && TO_LOOK_AT.has(r.ref.decision?.status) },
 ];
 
 // ---- the Evidence check column -------------------------------------------------
@@ -436,7 +437,7 @@ export const RCM_CHIPS = [
 // evidence linked (a model, analysis, report or working, even one that has gone since)?
 export function hasLinkedEvidence(rcm) {
   const linked = (m) => !!m.decision && (!!m.decision.evidence
-    || ["supported", "contradicted", "inconclusive", "stale", "linked"].includes(m.decision.status));
+    || ["supported", "contradicted", "inconclusive", "stale", "linked", ...INTERVAL_DIFFERS].includes(m.decision.status));
   for (const p of rcm?.positions || []) {
     if ((p.unassigned || []).some(linked)) return true;
     for (const fn of p.functions || []) {

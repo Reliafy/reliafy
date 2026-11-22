@@ -236,7 +236,8 @@ export function answerParts(result, { split = null, saved = null } = {}) {
     case "per_demand": {
       const d = r.per_demand || {};
       add(d.p != null && `failure probability ${formatPercent(d.p, { sig: 3 })} per demand`
-        + (d.ci ? ` (${formatPercent(d.ci[0], { sig: 2 })}–${formatPercent(d.ci[1], { sig: 2 })})` : ""));
+        + (d.ci ? ` (${d.method === "exact" ? Math.round((d.confidence ?? 0.95) * 100) : 95}% two-sided `
+          + `${formatPercent(d.ci[0], { sig: 2 })}–${formatPercent(d.ci[1], { sig: 2 })})` : ""));
       // Near 100%, four figures: "99.25%", not "99%".
       add(d.reliability != null && `reliability ${formatNumber(d.reliability * 100, { sig: 4 })}%`);
       add(d.demands != null && `${d.failures} failed in ${Number(d.demands).toLocaleString("en-US")} demands`);

@@ -7,7 +7,7 @@ A small label: 12px sans, sentence case, 6px radius (`radius-md`). Colour only w
 - **neutral** (default) — a kind, a source, a flag ("Sample", "Shared").
 - **accent** — the current or chosen thing ("Current plan", "Suggested").
 - **success** — a good verdict ("Supported", "Healthy"): `success-text` on `success-bg`.
-- **warning** — a caveat ("Simulated", "Unsaved", "Plan replacement"): `warning-text` on `warning-bg`.
+- **warning** — a caveat or a fact worth a look, not a verdict ("Simulated", "Unsaved", "Plan replacement", "Shorter than its evidence"): `warning-text` on `warning-bg`.
 - **danger** — a bad verdict ("Contradicted", "Replace now"): `danger-text` on `danger-bg`.
 
 ## Props

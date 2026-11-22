@@ -95,7 +95,7 @@ test("no mean life where it can be infinite", () => {
 
 test("other kinds answer in their own terms", () => {
   assert.deepEqual(answerParts({ kind: "per_demand", per_demand: { p: 0.0075, ci: [0.00155, 0.0218], reliability: 0.9925,
-    demands: 400, failures: 3 } }), ["failure probability 0.75% per demand (0.16%–2.2%)", "reliability 99.25%", "3 failed in 400 demands"]);
+    demands: 400, failures: 3 } }), ["failure probability 0.75% per demand (95% two-sided 0.16%–2.2%)", "reliability 99.25%", "3 failed in 400 demands"]);
   const joint = answerParts({ kind: "joint", n_items: 40, n_events: 22, n_running: 18, n_readings: 300,
     marker: "vibration", risk: [{ id: "P6", risk: [0.1, 0.92] }], horizons: { labels: ["7 days", "30 days"] }, fit_ok: true });
   assert.deepEqual(joint, ["40 units (22 failed, 18 running)", "300 readings of vibration",

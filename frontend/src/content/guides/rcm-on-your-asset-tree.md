@@ -467,12 +467,16 @@ Each decision's **Evidence check** shows one of these:
 - **Supported** — the evidence agrees with the decision.
 - **Contradicted** — the evidence points the other way. A run-to-failure
   decision linked to a wear-out model is the common case. A task set at less
-  than half the interval its analysis supports reads contradicted too, with
-  both intervals: *set every 25 hours … the evidence supports about 101
-  hours: done about 4 times as often as the evidence needs*. So does a
-  fixed-interval task set at more than twice its cost-optimal interval
-  (*about twice as long as the evidence supports*). Whether the
-  extra work is worth it is your call; the check shows the numbers.
+  than half the interval its calculation supports reads contradicted too,
+  with both intervals.
+- **Shorter than its evidence** or **Longer than its evidence** — a
+  fixed-interval task set at less than half, or more than twice, its
+  cost-optimal interval. The line underneath gives both intervals: *set every
+  25 hours … the cost-optimal interval its evidence supports, about 101
+  hours: done about 4 times as often as the evidence needs*. It's not a
+  verdict: a warranty, a shutdown plan or a safety margin can be good
+  reasons. Whether the difference is worth it is your call; the check shows
+  the numbers.
 - **Inconclusive** — the evidence can't decide it. The line underneath says
   why: the wrong kind of analysis, mismatched units, or a fit with no
   confidence interval.
