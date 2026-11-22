@@ -687,7 +687,7 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await rows.getByLabel("Shape (beta) and").fill("4");
   await rows.getByLabel("Unit").selectOption("days");
   await expect(dialog.getByRole("status")).toContainText("(as stated)");
-  await expect(dialog.locator(".fit2-how")).toContainText("alpha about 400, 90% between 300 and 600; beta 90% between 1.5 and 4");
+  await expect(dialog.locator(".fit2-how")).toContainText("alpha about 400, 90% between 267 and 600 (widened from 300–600 to keep 400 in the middle); beta 90% between 1.5 and 4");
   // A bound the wrong way round is refused in words, before asking.
   await rows.getByLabel("Shape (beta) and").fill("1");
   await expect(dialog).toContainText("For Shape (beta), the low bound must be below the high one.");
