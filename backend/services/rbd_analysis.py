@@ -1005,7 +1005,11 @@ def _ccf_warning(text: str, labels: dict) -> str:
     text = _with_labels(text, labels)
     text = re.sub(r"^Common-cause group \[(.*?)\] \(BetaFactor\(beta=([^,)]+)\)\)",
                   r"Common-cause group (\1; β = \2, probability basis)", text)
-    return re.sub(r"Over a lifetime, split the failure rate: .*$",
+    # RePyability 0.20 names the basis it is about ("(basis='probability', the default)") and says
+    # when a lifetime applies ("Over a lifetime (Q past 0.1, an MTTF, a simulation), ..."): both in
+    # Python, so they go too.
+    text = re.sub(r" \(basis='probability', the default\)", "", text)
+    return re.sub(r"Over a lifetime(?: \([^)]*\))?, split the failure rate: .*$",
                   "For lifetime figures, set the group's basis to rate (Reliafy's default).", text)
 
 

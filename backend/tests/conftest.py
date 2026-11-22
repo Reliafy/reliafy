@@ -62,8 +62,10 @@ def pytest_configure(config):
     # "... removed in the first release on or after ...", RePyability "...
     # will be refused in 0.18", "... will be removed in 0.18" (a function moved
     # to surpyval) and "..., and 0.18 will refuse it" (a renamed attribute),
+    # "From 0.21 this refuses: ..." (a choice it made for the caller, 0.20),
     # all FutureWarnings.
-    library = r".*(will be removed in v?0\.|removed in the first release on or after|will be refused in 0\.|0\.\d+ will refuse it)"
+    library = (r".*(will be removed in v?0\.|removed in the first release on or after|will be refused in 0\.|"
+               r"0\.\d+ will refuse it|From 0\.\d+ this refuses)")
     for category in ("DeprecationWarning", "FutureWarning"):
         config.addinivalue_line("filterwarnings", f"error:{library}:{category}")
 

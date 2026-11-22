@@ -491,18 +491,19 @@ def _comparison(body: dict, result: dict) -> tuple[list[str], list[str]]:
             f"EVENT_PROBABILITY = {px.num(result['event_probability'])}  # chance a unit fails during the study",
             f"RATIO = {px.num(result['allocation_ratio'])}  # new units per old unit",
             "",
-            "events = int(tp.logrank_events(HAZARD_RATIO, POWER, alpha_ci=ALPHA, ratio=RATIO, "
-            "alternative=ALTERNATIVE))",
+            "events = int(tp.logrank_design(HAZARD_RATIO, power=POWER, alpha_ci=ALPHA, ratio=RATIO, "
+            "alternative=ALTERNATIVE).events)",
         ]
         if result["solve_for"] == "sample_size":
-            lines += ["n_new, n_old = (int(v) for v in tp.logrank_sample_size(HAZARD_RATIO, EVENT_PROBABILITY, "
-                      "POWER, alpha_ci=ALPHA, ratio=RATIO, alternative=ALTERNATIVE))"]
+            lines += ["n_new, n_old = (int(v) for v in tp.logrank_design(HAZARD_RATIO, power=POWER, "
+                      "event_probability=EVENT_PROBABILITY, alpha_ci=ALPHA, ratio=RATIO, "
+                      "alternative=ALTERNATIVE).n)"]
         else:
             lines += [f"n_old = {int(result['units_old'])}",
                       "n_new = max(2, int(round(RATIO * n_old)))"]
         lines += [
-            "power = float(tp.logrank_power(HAZARD_RATIO, (n_new, n_old), EVENT_PROBABILITY, alpha_ci=ALPHA, "
-            "alternative=ALTERNATIVE))",
+            "power = float(tp.logrank_design(HAZARD_RATIO, n=(n_new, n_old), event_probability=EVENT_PROBABILITY, "
+            "alpha_ci=ALPHA, alternative=ALTERNATIVE).power)",
             "",
             "print_value('Failures needed in all', events)",
             "print_value('New units', n_new)",
@@ -527,21 +528,24 @@ def _comparison(body: dict, result: dict) -> tuple[list[str], list[str]]:
         lines += [
             f"RATE_RATIO = {px.num(result['rate_ratio'])}  # the rate after over before (0.5 halves it)",
             "# The operating time after the change needed to detect it.",
-            f"need = float(tp.rate_ratio_exposure(RATE_RATIO, RATE_BEFORE, EXPOSURE_BEFORE, POWER, {kw}))",
+            f"need = float(tp.rate_ratio_design(RATE_RATIO, rate=RATE_BEFORE, exposure_before=EXPOSURE_BEFORE, "
+            f"power=POWER, {kw}).value)",
             "print_value('Operating time needed after the change', need if np.isfinite(need) else None, UNIT)",
         ]
     elif solve == "detectable":
         lines += [
             f"EXPOSURE_AFTER = {px.num(result['exposure_after'])}",
             "# The smallest change (rate after over before) this much running can detect.",
-            f"r = float(tp.rate_ratio_detectable(RATE_BEFORE, EXPOSURE_BEFORE, EXPOSURE_AFTER, POWER, {kw}))",
+            f"r = float(tp.rate_ratio_design(rate=RATE_BEFORE, exposure_before=EXPOSURE_BEFORE, "
+            f"exposure_after=EXPOSURE_AFTER, power=POWER, direction='decrease', {kw}).value)",
             "print_value('Smallest detectable rate ratio', r if np.isfinite(r) else None)",
         ]
     else:
         lines += [
             f"RATE_RATIO = {px.num(result['rate_ratio'])}  # the rate after over before (0.5 halves it)",
             f"EXPOSURE_AFTER = {px.num(result['exposure_after'])}",
-            f"power = float(tp.rate_ratio_power(RATE_RATIO, RATE_BEFORE, EXPOSURE_BEFORE, EXPOSURE_AFTER, {kw}))",
+            f"power = float(tp.rate_ratio_design(RATE_RATIO, rate=RATE_BEFORE, exposure_before=EXPOSURE_BEFORE, "
+            f"exposure_after=EXPOSURE_AFTER, {kw}).power)",
             "print_value('Power', power)",
         ]
     return ["The exact conditional test of two Poisson rates (steady failure rates before and after)."], lines

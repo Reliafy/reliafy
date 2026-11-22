@@ -372,14 +372,17 @@ def test_apply_cold_spares_as_a_standby_block():
     assert node["type"] == "standby"
     assert node["data"]["spares"] == 2 and node["data"]["cold"] is True
     assert node["data"]["startProb"] == 0.9
-    # RePyability's design search takes a cold spare's chance as a switch that ends the group when
-    # it fails (allocate_redundancy has only switching_probability); the applied block takes it as
-    # the chance a spare starts (one that fails to start is skipped), so with two spares the diagram
-    # comes out a little higher than the search said.
+    # The search and the applied block take a cold spare's chance alike: the chance it starts when
+    # called, one that fails to start skipped and the next tried (RePyability 0.20's
+    # allocate_redundancy(start_probability=)). With two spares the design found is the diagram
+    # applied, to the digit (before 0.20 the search took it as a switch that ends the group, and
+    # reported less than the diagram gave).
     q = sp.Exponential.from_params([0.002])
     exact = float(StandbyModel([q] * 3, start_probability=0.9).sf(T)) * float(np.exp(-0.004 * T))
     assert r == pytest.approx(exact, rel=1e-6)
-    assert r >= res["design"]["reliability"]
+    assert res["design"]["reliability"] == pytest.approx(r, rel=1e-9)
+    switch_ends = float(StandbyModel([q] * 3, switching_probability=0.9).sf(T)) * float(np.exp(-0.004 * T))
+    assert res["design"]["reliability"] > switch_ends
 
 
 def test_apply_mixed_types_wires_each_type_in_parallel():

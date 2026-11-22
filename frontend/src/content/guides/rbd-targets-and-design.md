@@ -92,7 +92,7 @@ second unit. On a non-repairable diagram the **Design** tab works this out.
 3. In the table, give each block its **Unit cost**, the **Max copies** to
    consider and how many copies **Must work** (2 for a 2-out-of-3).
    **Redundancy** chooses **Active** copies, **Cold standby** (with the
-   chance the switch-over works) or **Best of both**. Untick a block to
+   chance a spare starts when called, as on a standby block) or **Best of both**. Untick a block to
    leave it as drawn. Tick **Weight** or **Volume** to add those limits.
 4. Press **Find design**.
 

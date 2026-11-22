@@ -7,7 +7,7 @@ a quarterly shut dearer, between shuts dearer still, and at a failure dearest.
 RePyability (0.15+) works out the long-run best rule for that: at each
 opportunity, replace the part if it is at least a threshold age, the threshold
 depending on when the next cheaper chance comes
-(``NonRepairable.optimal_calendar_policy``, its use case UC-13), and, for the
+(``NonRepairable.optimal_opportunity_policy``, its use case UC-13), and, for the
 unit in service, whether to replace it now, at a coming shut or later
 (``optimal_next_replacement``, UC-12).
 
@@ -46,7 +46,7 @@ from backend.services.strategy import StrategyError, _model_from_params, fmt_num
 from backend.units import canonical_unit, normalize_unit, unit_in_text
 from backend.fitting import surpyval_extras
 from backend.warn_capture import collect_warnings, ignore_warnings
-from repyability import Calendar, NonRepairable, Opportunity
+from repyability import NonRepairable, Opportunities, Opportunity
 
 #: Model units a date converts to, per day.
 UNITS_PER_DAY = {
@@ -210,15 +210,27 @@ def parse_opportunities(raw: Any, today: date, per_day: float) -> list[dict]:
     return out
 
 
-def build_calendar(specs: list[dict], failure_cost: float, anytime_cost: Optional[float]) -> Calendar:
+def build_calendar(specs: list[dict], anytime_cost: Optional[float]) -> Opportunities:
+    """The shuts as RePyability's record of opportunities (RePyability 0.20):
+    when each comes, and whether a replacement may be made on any other day.
+    It carries no prices: the part brings them (:func:`priced_part`)."""
     opportunities = []
     for s in specs:
         if s["kind"] == "dates":
-            opportunities.append(Opportunity(s["name"], s["cost"], dates=s["times"]))
+            opportunities.append(Opportunity(s["name"], dates=s["times"]))
         else:
-            opportunities.append(Opportunity(s["name"], s["cost"], period=s["period"], offset=s["offset"]))
+            opportunities.append(Opportunity(s["name"], period=s["period"], offset=s["offset"]))
     try:
-        return Calendar(opportunities, failure=failure_cost, anytime=anytime_cost)
+        return Opportunities(opportunities, any_day=anytime_cost is not None)
+    except (TypeError, ValueError) as exc:
+        raise StrategyError(str(exc)) from None
+
+
+def priced_part(model, specs: list[dict], failure_cost: float, anytime_cost: Optional[float]) -> NonRepairable:
+    """The part with its prices: at each shut, on any other day and at a failure."""
+    try:
+        return NonRepairable(model, planned_cost=anytime_cost, unplanned_cost=failure_cost,
+                             opportunity_costs={s["name"]: s["cost"] for s in specs})
     except (TypeError, ValueError) as exc:
         raise StrategyError(str(exc)) from None
 
@@ -278,11 +290,11 @@ def _max_age(extras: Optional[dict], max_age: Optional[float]) -> Optional[float
     return None
 
 
-def _solve(part: NonRepairable, cal: Calendar, *, method: str, max_age, mc_samples: int, seed: int):
+def _solve(part: NonRepairable, cal: Opportunities, *, method: str, max_age, mc_samples: int, seed: int):
     with collect_warnings() as caught:
         try:
-            policy = part.optimal_calendar_policy(cal, max_age=max_age, method=method,
-                                                  mc_samples=mc_samples, seed=seed)
+            policy = part.optimal_opportunity_policy(cal, max_age=max_age, method=method,
+                                                     mc_samples=mc_samples, seed=seed)
         except (ValueError, TypeError, NotImplementedError) as exc:
             raise StrategyError(_library_message(str(exc))) from None
     notes, moved = [], []
@@ -394,7 +406,8 @@ class _Inputs:
         months = DEFAULT_HORIZON_MONTHS if horizon_months in (None, "") else int(
             _number(horizon_months, "horizon_months", strict=True))
         self.horizon_months = min(months, MAX_HORIZON_MONTHS)
-        self.calendar = build_calendar(self.specs, self.failure_cost, self.anytime_cost)
+        self.calendar = build_calendar(self.specs, self.anytime_cost)
+        self.part = priced_part(self.model, self.specs, self.failure_cost, self.anytime_cost)
 
     def model_time(self, d: date) -> float:
         return (d - self.today).days * self.per_day
@@ -407,10 +420,8 @@ class _Inputs:
 
     def policy(self):
         """The policy (cached when exact) and the notes the library gave."""
-        part = NonRepairable(self.model)
-
         def build():
-            return _solve(part, self.calendar, method=self.method, max_age=self.max_age,
+            return _solve(self.part, self.calendar, method=self.method, max_age=self.max_age,
                           mc_samples=self.mc_samples, seed=self.seed or 0)
 
         if self.method == "sampling":
@@ -446,7 +457,7 @@ def _comparisons(inp: _Inputs, policy) -> list[dict]:
             mean = _finite(np.atleast_1d(model.mean())[0])
         except Exception:  # noqa: BLE001
             mean = None
-    part = NonRepairable(model)
+    part = inp.part
     if mean and mean > 0:
         rtf = inp.failure_cost / mean
     else:
@@ -476,7 +487,7 @@ def _comparisons(inp: _Inputs, policy) -> list[dict]:
 def _rule_cost(part, cal, rule: dict, max_age) -> Optional[float]:
     try:
         with ignore_warnings():
-            return _finite(part.calendar_policy_cost(cal, rule, max_age=max_age))
+            return _finite(part.opportunity_policy_cost(cal, rule, max_age=max_age))
     except (ValueError, TypeError, NotImplementedError):
         return None
 
