@@ -9,6 +9,7 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["GET", "/api/me/editor-preferences"], // the RBD builder's autosave, on unless turned off
   // Libraries: making one (reads are public, so only the writes need a sign-in).
   ["POST", "/api/libraries"],
   ["POST", "/api/rbds/standby-route"], // a standby block's route and words (#363)

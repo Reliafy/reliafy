@@ -1,5 +1,6 @@
 // Thin wrappers around the backend endpoints.
 import { loadAuth } from "./firebase.js";
+import { BUILD_HEADER, noteServerBuild } from "./buildCheck.js";
 import { trackEvent } from "./telemetry.js";
 import { mappingFields } from "./lifeData.js";
 import { altFields } from "./altGuess.js";
@@ -62,6 +63,16 @@ function workspaceHeaders() {
     : {};
 }
 
+// Tell the build check which build answered (the server's X-Reliafy-Build header).
+function noted(res) {
+  try {
+    noteServerBuild(res.headers?.get(BUILD_HEADER));
+  } catch {
+    /* never let the check break a request */
+  }
+  return res;
+}
+
 // fetch() with the auth + workspace headers and the same retry/self-heal as
 // every JSON call; resolves to the raw Response (for non-JSON downloads).
 async function authedFetch(url, opts = {}) {
@@ -71,7 +82,7 @@ async function authedFetch(url, opts = {}) {
       ...workspaceHeaders(),
       ...(await authHeaders(forceRefresh)),
     };
-    return fetch(url, { ...opts, headers });
+    return noted(await fetch(url, { ...opts, headers }));
   };
   let res = await send(false);
   // On a 401, the token may have just expired/been revoked — refresh once and
@@ -100,7 +111,7 @@ async function request(url, opts = {}) {
 // headers and no refresh-and-retry on a 401 (which there means "password
 // needed", and on an unlock would spend a second attempt).
 async function publicRequest(url, opts = {}) {
-  return readJson(await fetch(url, opts));
+  return readJson(noted(await fetch(url, opts)));
 }
 
 async function readJson(res) {
@@ -746,15 +757,14 @@ export function getRbd(id) {
   return request(`/api/rbds/${id}`);
 }
 
-export function saveRbd(name, graph, id, expectedUpdatedAt) {
-  return withEvent(
-    request("/api/rbds", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
-    }),
-    "rbd_save"
-  );
+// ``auto``: the builder's autosave, which saves after each change: not counted as a save event.
+export function saveRbd(name, graph, id, expectedUpdatedAt, { auto = false } = {}) {
+  const saving = request("/api/rbds", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
+  });
+  return auto ? saving : withEvent(saving, "rbd_save");
 }
 
 // Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, RePyability JSON, Excel) into
@@ -2436,6 +2446,20 @@ export function unsubscribeEmail(token) {
 
 export function resubscribeEmail(token) {
   return request(emailTokenUrl("resubscribe", token), { method: "POST" });
+}
+
+// How the editors behave for the signed-in user: { autosave: bool } (the RBD builder saves
+// after each change unless it's false).
+export function getEditorPreferences() {
+  return request("/api/me/editor-preferences");
+}
+
+export function setEditorPreferences(prefs) {
+  return request("/api/me/editor-preferences", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prefs),
+  });
 }
 
 // The signed-in user's email preferences: { updates: bool }.
