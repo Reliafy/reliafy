@@ -20,7 +20,9 @@ covariates:
 plus ``c_invert`` / ``c_map`` (what the status values mean), ``all_failed``
 (no status column: every row is a failure, said on purpose), ``one_stream``
 (no item column: every row is an event of one stream, one fleet or one
-system, said on purpose; with neither, each row is its own unit), ``unit`` (x's),
+system, said on purpose; with neither, each row is its own unit), ``record_end``
+(one number: where observation stopped, for repairable data; a fit uses it when none
+is typed, and a column of ends is ``tr``), ``unit`` (x's),
 ``m_unit``, ``x2_unit`` (the second clock's unit: "cycles", "landings"; from its
 column's name when blank), ``z`` (the covariates: every column not used as something else,
 less the ``not_used`` ones), ``z_units`` ({column: unit}, optional) and
@@ -63,8 +65,20 @@ class ReadingError(ValueError):
 
 def empty() -> dict:
     return {**{r: "" for r in ROLES}, "c_invert": False, "c_map": None, "all_failed": False, "one_stream": False,
-            "unit": "",
+            "record_end": None, "unit": "",
             "m_unit": "", "x2_unit": "", "z": [], "z_units": {}, "not_used": []}
+
+
+def _record_end(value) -> float | None:
+    """The end of the record kept on a reading (``None`` when blank), or a
+    :class:`ReadingError` saying what to enter."""
+    from backend.recurrent import parse_record_end
+
+    try:
+        return parse_record_end(value)
+    except Exception:  # noqa: BLE001 - FitError: say it as a reading's
+        raise ReadingError("The end of the record must be a positive number: the time observation stopped, "
+                           "in the same unit as x (for example 216000 fleet hours).") from None
 
 
 def _names(columns) -> list[str]:
@@ -134,6 +148,7 @@ def normalize(raw: dict | None, columns, *, require_x: bool = True, measurement_
         out["c_invert"] = False
     out["all_failed"] = bool(raw.get("all_failed")) and not out["c"]
     out["one_stream"] = bool(raw.get("one_stream")) and not out["i"]
+    out["record_end"] = _record_end(raw.get("record_end"))
     out["unit"] = str(raw.get("unit") or "").strip()[:40]
     out["m_unit"] = str(raw.get("m_unit") or "").strip()[:40] if out["m"] else ""
     out["x2_unit"] = second_clock_unit(out["x2"], raw.get("x2_unit"))
@@ -614,7 +629,7 @@ def merged(base: dict, given: dict) -> dict:
         if role == "c":
             out["c_invert"], out["c_map"] = False, None
     taken = {out[r] for r in ROLES if out.get(r)}
-    for key in ("c_invert", "c_map", "all_failed", "one_stream", "unit", "m_unit", "x2_unit", "z_units"):
+    for key in ("c_invert", "c_map", "all_failed", "one_stream", "record_end", "unit", "m_unit", "x2_unit", "z_units"):
         if key in given:
             out[key] = given[key]
     if "z" in given:
@@ -736,6 +751,8 @@ def summary(reading: dict) -> str:
         parts.append("c: every row failed")
     if reading.get("one_stream") and not reading.get("i"):
         parts.append("i: none, every row is one stream")
+    if reading.get("record_end"):
+        parts.append(f"record ends at {reading['record_end']:g}" + (f" {reading['unit']}" if reading.get("unit") else ""))
     for role in ("n", "tl", "tr", "i", "m", "e", "s", "x2"):
         if reading.get(role):
             unit = f" ({reading['m_unit']})" if role == "m" and reading.get("m_unit") else ""

@@ -3595,6 +3595,9 @@ _RAllFailed = Annotated[Optional[bool], Field(description="No status column: eve
 _ROneStream = Annotated[Optional[bool], Field(description="No i column: every row is one stream of events (one system).")]
 _RUnit = Annotated[Optional[str], Field(description="x's unit (hours, cycles, km, any unit).")]
 _RMUnit = Annotated[Optional[str], Field(description="m's unit (mm, %, mm/s…).")]
+_RRecordEnd = Annotated[Optional[float], Field(gt=0, description=(
+    "Repairable data: where observation stopped, one number in x's unit (216000 fleet hours). Later fits use "
+    "it as the end of test unless they give their own; a column of ends is tr_col."))]
 _RZUnits = Annotated[Optional[dict[str, str]], Field(description="Units of covariates, {column: unit} (optional).")]
 
 
@@ -3603,7 +3606,7 @@ def _reading_given(**kw) -> dict:
     keys = {"x_col": "x", "xl_col": "xl", "xr_col": "xr", "c_col": "c", "n_col": "n", "tl_col": "tl",
             "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "s_col": "s", "z_cols": "z", "not_used": "not_used",
             "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "one_stream": "one_stream", "unit": "unit",
-            "m_unit": "m_unit", "z_units": "z_units", "x2_col": "x2", "x2_unit": "x2_unit"}
+            "m_unit": "m_unit", "z_units": "z_units", "x2_col": "x2", "x2_unit": "x2_unit", "record_end": "record_end"}
     return {keys[k]: v for k, v in kw.items() if v is not None}
 
 
@@ -3634,6 +3637,7 @@ def upload_dataset(
     s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, one_stream: _ROneStream = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    record_end: _RRecordEnd = None,
     library_id: Annotated[Optional[str], Field(max_length=64, description=(
         "Also add every dataset made (each part of a split too) to this library of the user's, as snapshots: "
         "all or nothing."))] = None,
@@ -3671,7 +3675,7 @@ def upload_dataset(
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
                            not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed, one_stream=one_stream,
-                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
+                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit, record_end=record_end)
     reading = _upload_reading(data, given, split)
     if split:
         return _split_upload(db, user, name.strip(), data, split, upload, guess, hint, reading, lib)
@@ -7864,7 +7868,9 @@ def fit_recurrent_model(
     options = {k: v for k, v in (("baseline", baseline), ("m", memory)) if v is not None}
     spec = {"mapping": mapping, "model_id": model, "unit": (unit or "").strip(), **({"options": options} if options else {}),
             **({"windows": recurrent_models.parse_windows(windows)} if windows else {}),
-            **({"record_end": float(observed_to)} if dataset is not None and observed_to is not None else {})}
+            **({"record_end": float(observed_to)} if dataset is not None and observed_to is not None
+               else {"record_end": recurrent_fit.dataset_record_end(dataset)}
+               if dataset is not None and recurrent_fit.dataset_record_end(dataset) is not None else {})}
     if not save:
         payload, _ = recurrent_fit.fit_spec(df, spec)
         out = {"saved": False, "model": payload.get("model"), "family": payload.get("family"),
@@ -9429,6 +9435,7 @@ def update_dataset(
     s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, one_stream: _ROneStream = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    record_end: _RRecordEnd = None,
 ) -> dict[str, Any]:
     """Rename one of the user's own datasets, set its notes, or change its reading (x_col, c_col, …, z_cols:
     later fits use it; models already made keep theirs); never the data, never a sample."""
@@ -9437,7 +9444,7 @@ def update_dataset(
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
                            not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed, one_stream=one_stream,
-                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
+                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit, record_end=record_end)
     if name is None and notes is None and not given:
         raise ToolError("Nothing to change: give name, notes, or the reading (x_col, c_col, …, z_cols).")
     if name is not None or notes is not None:

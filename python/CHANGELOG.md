@@ -4,7 +4,9 @@
 
 Needs a server on the same release.
 
-- **One stream of events**: `change dataset_upload` and `change dataset_update` take `one_stream`
+- **End of record**: `change dataset_upload` and `change dataset_update` take `record_end`
+  (`reliafy upload --record-end 216000`).
+- **One stream of events**: the same two take `one_stream`
   (`reliafy upload --one-stream`): a log with no item column, every row one stream of events (one
   system), saved as a Repairable dataset.
 

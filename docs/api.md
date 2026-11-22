@@ -934,7 +934,7 @@ reliafy fit failures.csv --dist weibull --censor-column status
 reliafy fit failures.csv --dist best --criterion bic   # rank every distribution by BIC (aic, aic_c, bic, neg_ll)
 reliafy push model.json
 reliafy upload bearings.xlsx --name Bearings
-reliafy upload replacements.csv --x-col fleet_hours --one-stream   # no item column: one stream of events
+reliafy upload replacements.csv --x-col fleet_hours --one-stream --record-end 216000   # no item column: one stream of events, record ending at 216000
 reliafy import rbd plant.xml
 reliafy import rcm fmea.csv --position POSITION_ID --dry-run   # preview, then again without --dry-run
 reliafy change model_fit_degradation --name "Liner wear" --dataset-id DATASET_ID \

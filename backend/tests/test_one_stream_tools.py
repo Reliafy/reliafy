@@ -44,12 +44,12 @@ def test_lift_pump_log_is_one_stream_of_48_events_and_fits(env):  # noqa: F811
     text = open(LOG).read()
     r = env.post("/api/v1/change/dataset_upload", {
         "name": "Lift pumps", "csv": text, "x_col": "fleet_hours", "all_failed": True, "one_stream": True,
-        "not_used": ["replacement", "date", "genset", "part", "reason"], "unit": "hours"})
+        "record_end": 216000, "not_used": ["replacement", "date", "genset", "part", "reason"], "unit": "hours"})
     assert r.status_code == 200, r.text
     ds_id = r.json()["id"]
     res = env.client.post("/api/recurrent/fit", data={
         "dataset_id": ds_id, "i": "", "one_stream": "true", "x": "fleet_hours", "unit": "hours",
-        "record_end": "216000", "model": "crow_amsaa"},
+        "model": "crow_amsaa"},
         headers={"Authorization": f"Bearer {env.token['user-a']}"})
     assert res.status_code == 200, res.text
     out = res.json()["results"]
@@ -70,9 +70,9 @@ def test_cli_upload_has_the_one_stream_flag_and_passes_it(monkeypatch, tmp_path)
     monkeypatch.setattr(cli, "render", lambda *a, **k: None)
     parser = cli.builtin_parser()
     assert parser is not None
-    ns = parser.parse_args(["upload", "f.csv", "--x-col", "fleet_hours", "--one-stream"])
+    ns = parser.parse_args(["upload", "f.csv", "--x-col", "fleet_hours", "--one-stream", "--record-end", "216000"])
     assert cli.cmd_upload(Fake(), ns) == 0
-    assert seen["one_stream"] is True and seen["x_col"] == "fleet_hours"
+    assert seen["record_end"] == 216000 and seen["one_stream"] is True and seen["x_col"] == "fleet_hours"
     ns = parser.parse_args(["upload", "f.csv"])
     seen.clear()
     cli.cmd_upload(Fake(), ns)
