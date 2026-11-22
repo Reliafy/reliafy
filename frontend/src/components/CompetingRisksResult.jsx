@@ -89,7 +89,7 @@ function ModesAside({ result, onGroups }) {
             <span className="gk">
               <ModeName name={k.name} i={i} />
               <span className="cr-mode-sub">
-                {pct(k.at?.cif)} of units{k.at?.lower != null && k.at?.upper != null ? ` (${band(k.at.lower, k.at.upper)})` : ""}
+                {pct(k.at?.cif)} of units{k.at?.lower != null && k.at?.upper != null ? ` (${ciPct(result)} two-sided ${band(k.at.lower, k.at.upper)})` : ""}
               </span>
               <span className="cr-mode-sub">
                 {formatNumber(k.failures_by ?? k.failures)} failure{(k.failures_by ?? k.failures) === 1 ? "" : "s"} by then
@@ -105,7 +105,7 @@ function ModesAside({ result, onGroups }) {
             <span className="gk">
               Any mode
               <span className="cr-mode-sub">
-                {pct(any.cif)} of units{any.lower != null && any.upper != null ? ` (${band(any.lower, any.upper)})` : ""}
+                {pct(any.cif)} of units{any.lower != null && any.upper != null ? ` (${ciPct(result)} two-sided ${band(any.lower, any.upper)})` : ""}
               </span>
               <span className="cr-mode-sub">{b10Text(lives[0], unit, ciPct(result))}</span>
             </span>
@@ -318,7 +318,7 @@ function CrCalculator({ result, name, state, setState }) {
       <div className="cr-calc-table">
         <table className="calc-table">
           <thead>
-            <tr><th>Failure mode</th><th>Chance by then</th><th>{ciPct(result)} band</th><th>Share of failures</th></tr>
+            <tr><th>Failure mode</th><th>Chance by then</th><th>{ciPct(result)} band (two-sided)</th><th>Share of failures</th></tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
@@ -674,7 +674,7 @@ function CrDataTab({ result, datasetId }) {
             </div>
             <div className="cr-table-wrap">
               <table className="mini-table cr-table">
-                <thead><tr><th>Mode</th><th>Failures by then</th><th>Share of failures</th><th>Chance</th><th>{ciPct(result)} band</th></tr></thead>
+                <thead><tr><th>Mode</th><th>Failures by then</th><th>Share of failures</th><th>Chance</th><th>{ciPct(result)} band (two-sided)</th></tr></thead>
                 <tbody>
                   {(result.causes || []).map((k, i) => (
                     <tr key={k.name}>

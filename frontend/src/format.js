@@ -42,6 +42,18 @@ export function formatPercent(fraction, { sig = 2 } = {}) {
   return `${formatNumber(p, { sig })}%`;
 }
 
+// A chance as a whole percentage that never overstates certainty: ">99%"
+// when it rounds to 100% but isn't 1, "<1%" when it rounds to 0% but isn't 0.
+export function formatChance(fraction) {
+  if (fraction == null || fraction === "") return MISSING;
+  const v = Number(fraction);
+  if (!Number.isFinite(v)) return MISSING;
+  const r = Math.round(v * 100);
+  if (r >= 100 && v < 1) return ">99%";
+  if (r <= 0 && v > 0) return "<1%";
+  return `${r}%`;
+}
+
 // A target percentage as it was typed: 0.995 → "99.5%", 0.9999 → "99.99%"
 // (formatPercent rounds 99.5 to "100%", which restates the target).
 export function formatTarget(fraction) {

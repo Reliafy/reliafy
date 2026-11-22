@@ -35,7 +35,7 @@ The answer comes first:
 
 Two tiles sit under it:
 
-- **Likely range (90%)** — **36–45**. In nine years out of ten the count falls
+- **Likely range (90% two-sided)** — **36–45**. In nine years out of ten the count falls
   in this range; in one year in twenty it's above 45. The range comes from
   simulating the fleet many times, so it includes the chance in *which* items
   fail and when.

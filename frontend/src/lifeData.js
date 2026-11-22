@@ -642,6 +642,27 @@ export function statusCodesOnly(values) {
 // How a 0/1 status column is read, with each code's rows, failures first:
 // "0 = failed (28 rows) · 1 = still running (12 rows)", or with ``invert``
 // "1 = failed (12 rows) · 0 = still running (28 rows)". Null without values.
+// The reading in effect, counted: "Read as 30 failed · 18 still running" (and
+// how many rows still need a meaning). Null with no rows.
+export function readCounts(rows, mapping) {
+  let failed = 0;
+  let running = 0;
+  let other = 0;
+  let open = 0;
+  for (const v of rows || []) {
+    const m = statusMeaning(v.label, mapping);
+    if (m === 0) failed += v.rows;
+    else if (m === 1) running += v.rows;
+    else if (m == null) open += v.rows;
+    else other += v.rows;
+  }
+  if (!failed && !running && !other && !open) return null;
+  const n = (k) => k.toLocaleString("en-GB");
+  return [`Read as ${n(failed)} failed`, `${n(running)} still running`,
+    other ? `${n(other)} found failed or between two times` : null,
+    open ? `${n(open)} not yet read` : null].filter(Boolean).join(" · ");
+}
+
 export function codeReading(values, invert) {
   const rows = Object.fromEntries(statusValues(values).map((v) => [statusKey(v.label), v.rows]));
   if (!Object.keys(rows).length) return null;

@@ -9,8 +9,10 @@ same way, best first:
 2. word: every word typed starts a word of the record;
 3. inside: every word is somewhere in it;
 4. near: what's left is within a small typo (one letter wrong, missing, extra or
-   swapped; two in a long word) of a word of the record. Codes (words with a digit) and
-   words under four letters are never matched this way: TP-101 isn't GS-101.
+   swapped; two in a long word) of a word of the record that starts with the same letter.
+   Codes (words with a digit) and words under four letters are never matched this way:
+   TP-101 isn't GS-101, and "mower" isn't "lower" or "power". Near spellings are only
+   offered when nothing matches as typed.
 
 Access is the active workspace's, as its list pages have it: its own records, the shared
 samples (in a personal workspace, minus the ones the viewer hid) and items shared with the
@@ -50,8 +52,12 @@ def _near(a: str, b: str) -> bool:
     """Whether ``b`` (or the start of it, for a word still being typed) is within a small
     typo of ``a``: one edit for a word of up to seven letters, two for a longer one; a
     swap of two neighbours counts as one. Words under four letters, and codes (a word with a
-    digit: a tag, a serial, a part number), must match as typed."""
+    digit: a tag, a serial, a part number), must match as typed. The first letter must
+    match (or be swapped with the second): a different first letter is another word
+    ("mower" and "lower"), not a typo."""
     if len(a) < 4 or not b or any(ch.isdigit() for ch in a):
+        return False
+    if a[0] != b[0] and not (len(b) > 1 and a[0] == b[1] and a[1] == b[0]):
         return False
     most = 1 if len(a) <= 7 else 2
     for cand in {b, b[:len(a)], b[:len(a) + 1]}:
@@ -81,8 +87,9 @@ def _distance(a: str, b: str, most: int) -> int:
 class Matcher:
     """The query, and how well a record matches it (:meth:`tier`; None for not at all)."""
 
-    def __init__(self, q):
+    def __init__(self, q, near: bool = True):
         self.q = _norm(q)[:MAX_QUERY]
+        self.near = near
         self.words = [w for w in _SPLIT.split(self.q) if w][:MAX_WORDS]
         self._near: dict[tuple[str, str], bool] = {}
 
@@ -110,7 +117,7 @@ class Matcher:
         missing = [w for w in self.words if w not in text]
         if not missing:
             return 3
-        if all(any(self._is_near(w, t) for t in words) for w in missing):
+        if self.near and all(any(self._is_near(w, t) for t in words) for w in missing):
             return 4
         return None
 
@@ -271,9 +278,18 @@ def search(db, ctx: access.AccessCtx, q, kinds=None, limit: Any = DEFAULT_LIMIT,
     except (TypeError, ValueError):
         raise ValueError("limit is a whole number from 1 to 20.")
     wanted = parse_kinds(kinds)
-    match = Matcher(q)
-    if not match:
+    if not Matcher(q):
         return {"q": "", "groups": [], "took_ms": 0}
+    # As typed first; near spellings only when nothing matches that way, so a real match
+    # never sits beside near-misses ("mower" finding "Lower bathroom").
+    out = _search(db, ctx, Matcher(q, near=False), wanted, limit, maintenance, work_orders)
+    if not out["groups"]:
+        out = _search(db, ctx, Matcher(q), wanted, limit, maintenance, work_orders)
+    out["took_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    return out
+
+
+def _search(db, ctx, match: Matcher, wanted: set, limit: int, maintenance, work_orders: bool) -> dict:
     found: dict[str, list[dict]] = _documents(db, ctx, match, wanted)
     totals: dict[str, int] = {}
     if "library_record" in wanted:
@@ -294,4 +310,4 @@ def search(db, ctx: access.AccessCtx, q, kinds=None, limit: Any = DEFAULT_LIMIT,
         groups.append({"kind": kind, "label": KINDS[kind], "total": totals.get(kind, len(hits)),
                        "results": hits[:limit]})
     groups.sort(key=lambda g: (g["results"][0]["tier"], order.index(g["kind"])))
-    return {"q": match.q, "groups": groups, "took_ms": round((time.perf_counter() - started) * 1000, 1)}
+    return {"q": match.q, "groups": groups}

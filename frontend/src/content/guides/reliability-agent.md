@@ -99,8 +99,12 @@ The agent works inside Reliafy. To drive the same analyses from outside it,
 there are two other routes:
 
 - **Claude, or another AI assistant, through MCP.** Connect it to Reliafy and
-  ask in conversation; it uses your workspace's tools directly. See
-  [Claude (MCP)](/api-docs/mcp).
+  ask in conversation; it uses your workspace's tools directly. Besides fits,
+  diagrams and analyses, the connector can fit and save a **degradation
+  model** from readings that drift to a failure level (`change
+  model_fit_degradation`, Pro), and save an **optimal-replacement analysis**
+  so it's kept under Strategy, as **Save analysis** does in the app (`change
+  optimal_replacement_save`). See [Claude (MCP)](/api-docs/mcp).
 - **Your own scripts.** The API, the `reliafy` command line and the Python
   client run the same tools from a notebook or a nightly job. See
   [use Reliafy from scripts](/guides/use-the-api-and-cli).

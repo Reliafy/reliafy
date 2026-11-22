@@ -193,6 +193,15 @@ def get_live_model(db, model_id: str, owner_id):
                 live = recurrent_fit.get_live(cid)
             except Exception:  # noqa: BLE001 - fall back to a fresh fit
                 live = None
+        if live is not None and getattr(live, "data", None) is None and not (doc.spec or {}).get("params_only"):
+            # A restored model carries its parameters, not its systems' histories: "From now
+            # on", the record's average rate and a fleet forecast of its own systems all start
+            # from those, so a model fitted to data is re-fitted to have them. Its dataset
+            # gone: the restored model, as before.
+            try:
+                live = _refit(db, doc)
+            except ModelNotFound:
+                pass
         if live is None:
             live = _refit(db, doc)
         # The unit is the model's own; one saved before it went into SurPyval takes the saved unit (in memory).

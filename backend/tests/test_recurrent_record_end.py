@@ -117,3 +117,29 @@ def test_api_fit_and_save_keep_the_end_of_test(monkeypatch):
         assert bad.status_code == 422 and "940" in json.dumps(bad.json())
     finally:
         app.dependency_overrides.clear()
+
+
+def test_from_now_works_after_the_saved_model_is_restored(monkeypatch):
+    """A saved model brought back from its stored parameters (a restart, the cache
+    full) has no systems' histories; "From now on" starts from them, so the model is
+    re-fitted to its dataset rather than answering "no event data"."""
+    from backend.auth import get_current_user
+    from backend.services import recurrent as rec_service
+
+    client, app = _client(monkeypatch, mongomock.MongoClient()["reliafy_test"])
+    form = {**MAPPING, "model": "crow_amsaa", "unit": "hours", "record_end": "1000"}
+    try:
+        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A"}
+        r = client.post("/api/recurrent/models", data={**form, "name": "Prototype growth"},
+                        files={"file": ("growth.csv", CSV.read_bytes(), "text/csv")})
+        assert r.status_code == 200, r.text
+        mid = r.json()["id"]
+        first = client.post(f"/api/recurrent/models/{mid}/from-now", json={"horizon": 500})
+        assert first.status_code == 200, first.text
+        rec._STORE.clear()
+        rec_service._LIVE.clear()
+        again = client.post(f"/api/recurrent/models/{mid}/from-now", json={"horizon": 500})
+        assert again.status_code == 200, again.text
+        assert again.json()["expected"] == pytest.approx(first.json()["expected"], rel=1e-9)
+    finally:
+        app.dependency_overrides.clear()

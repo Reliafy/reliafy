@@ -624,7 +624,7 @@ async function main() {
     { file: "fit-01-new.png", url: "/models/new?mode=saved", settle: 1200,
       async act(page) {
         await page.getByRole("radio", { name: /Bearing fatigue test/ }).click();
-        await page.locator(".dsp-reads").waitFor({ timeout: 15000 }); await wait(600);
+        await page.locator(".reading-summary").waitFor({ timeout: 15000 }); await wait(600);
       } },
     // The Data step: the first rows, then x (with its range), c, n, tl, tr and failure mode.
     { file: "fit-04-data-step.png", url: "/models/new?dataset=sample-ds-pumps", settle: 1500 },
@@ -645,7 +645,7 @@ async function main() {
     { file: "req-02-plan.png",
       url: `/strategy/test-planning?b=10&life=500&conf=90&unit=Hours&model=${S.bearings}`, settle: 2500,
       async act(page) {
-        await press(page, /Lower bound 1\.88/);
+        await press(page, /Lower bound \d/);
         await page.getByLabel(/Test length per unit/).fill("2");
         await page.getByLabel(/true reliability|Good design's reliability/).fill("97");
         await page.getByLabel(/Producer's risk/).fill("20");
@@ -777,8 +777,8 @@ async function main() {
     // site (on its Diagnostics tab) ---
     { file: "crisk-01-model-step.png", url: "/models/new?dataset=sample-ds-pump-modes", settle: 1500,
       async act(page) {
-        await chooseOption(page, "Failure mode", /^failure_mode/);
-        await page.getByRole("button", { name: /^Next$/ }).click(); await wait(1200);
+        // A saved dataset's reading already names the failure mode: the page opens on the Model step.
+        await page.getByText(/fitted as competing risks/).waitFor({ timeout: 15000 }); await wait(800);
       } },
     { file: "crisk-02-incidence.png", url: "/models/m/sample-model-pump-modes", settle: 2500 },
     { file: "crisk-03-by-site.png", url: "/models/m/sample-model-pump-modes", settle: 2500,
@@ -917,7 +917,7 @@ async function main() {
     // the risk table, one unit's view, and a unit as an RBD block.
     { file: "cbr-01-new.png", url: "/models/joint/new", settle: 1500,
       async act(page) {
-        await chooseOption(page, "Dataset", /^Pump lives/);
+        await page.getByRole("radio", { name: /^Pump lives/ }).click(); await wait(1500);
         await page.getByLabel("load changes the risk").check();
         await page.getByLabel("load changes the path").check();
         await wait(800);

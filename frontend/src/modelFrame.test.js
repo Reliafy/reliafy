@@ -122,7 +122,7 @@ test("other kinds answer in their own terms", () => {
   // By failure mode: the modes, the leading one at the horizon with its band,
   // any mode with its band, the data.
   const cr = {
-    kind: "competing_risks", unit: "Hours", horizon: 5000, failed: 50, running: 22,
+    kind: "competing_risks", unit: "Hours", horizon: 5000, failed: 50, running: 22, ci_level: 0.9,
     causes: [
       { name: "bearing wear", failures: 29, at: { cif: 0.4, lower: 0.28, upper: 0.52 } },
       { name: "seal leak", failures: 15, at: { cif: 0.21, lower: 0.12, upper: 0.31 } },
@@ -130,7 +130,7 @@ test("other kinds answer in their own terms", () => {
     curves: { x: [0, 5000], all: [0, 0.69], all_lower: [0, 0.57], all_upper: [0, 0.8] },
   };
   assert.deepEqual(answerParts(cr), [
-    "2 failure modes", "bearing wear 40% of units by 5,000 hours (28%–52%)", "any mode 69% (57%–80%)",
+    "2 failure modes", "bearing wear 40% of units by 5,000 hours (90% two-sided 28%–52%)", "any mode 69% (90% two-sided 57%–80%)",
     "50 failed, 22 running",
   ]);
   const crReg = answerParts({ ...cr, regression: { model: "Fine-Gray" } });

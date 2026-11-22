@@ -572,7 +572,7 @@ export default function FleetForecastPage() {
               )
             }
             stats={[
-              range && { label: `Likely range (${rangeLevelText(forecast.interval_level)})`, value: range, hint: rangeHint },
+              range && { label: `Likely range (${rangeLevelText(forecast.interval_level)} two-sided)`, value: range, hint: rangeHint },
               forecast.periods > 1 && {
                 label: `Average a ${periodWord}`,
                 value: `≈ ${formatNumber(forecast.expected / forecast.periods, { sig: 2 })}`,

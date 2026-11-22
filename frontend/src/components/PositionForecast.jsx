@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getPositionForecast } from "../api.js";
+import { formatChance } from "../format.js";
 import {
   besidesRoutine, costRangeText, datesText, dayText, everyText, failuresText, hoursText, moneyText, periodLabel, restsOn, sig,
 } from "../positionForecast.js";
@@ -117,7 +118,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   <td className="num">{fc.totals.planned_cost ? moneyText(fc.totals.planned_cost) : "—"}</td>
                   <td className="num">{failuresText(fc.totals.failures, fc.totals.failures_range)}</td>
                   <td className="num">{costRangeText(fc.totals.failure_cost, fc.totals.cost_range)}</td>
-                  <td>{fc.totals.probability != null ? `${Math.round(fc.totals.probability * 100)}% chance of at least one failure` : ""}</td>
+                  <td>{fc.totals.probability != null ? `${formatChance(fc.totals.probability)} chance of at least one failure` : ""}</td>
                 </tr>
               </tfoot>
             </table>
@@ -149,7 +150,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   {m.placeholder && <span className="fc-flag-word"> · placeholder</span>}
                   <div>{failuresText(m.expected_failures, m.failures_range)} failures expected
                     {m.expected_cost != null ? `, ${costRangeText(m.expected_cost, m.cost_range)}` : ""}
-                    {m.probability != null ? ` · ${Math.round(m.probability * 100)}% chance of at least one` : ""}
+                    {m.probability != null ? ` · ${formatChance(m.probability)} chance of at least one` : ""}
                   </div>
                   <div className="lib-date">{m.rests_on}</div>
                 </li>

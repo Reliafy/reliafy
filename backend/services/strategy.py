@@ -774,6 +774,52 @@ def _difference_tests(spec_a: dict, spec_b: dict, la: str, lb: str) -> dict:
     }
 
 
+def verdict_words(more, cross, la, lb, da, db, unit, early_a: bool = True) -> str:
+    """The comparison's verdict in words, each side named once: "B is more reliable than A
+    across the range. Median life 6,484 vs 4,310 hours." (the medians in the order the
+    sentence names the sides)."""
+    us = f" {unit_in_text(unit)}" if unit else ""
+    first, second, d1, d2 = la, lb, da, db
+    if more == "tie":
+        text = f"{la} and {lb} are effectively the same."
+    elif more in ("a", "b"):
+        if more == "b":
+            first, second, d1, d2 = lb, la, db, da
+        text = f"{first} is more reliable than {second} across the range."
+    else:
+        if not early_a:
+            first, second, d1, d2 = lb, la, db, da
+        text = (
+            f"The reliability curves cross at about {fmt_num(cross)}{us}: "
+            f"{first} is more reliable before it, {second} after."
+            if cross is not None
+            else f"{la} and {lb} cross over the range."
+        )
+        if cross is None:
+            first, second, d1, d2 = la, lb, da, db
+    if d1 and d2:
+        text += f" Median life {fmt_num(d1)} vs {fmt_num(d2)}{us}."
+    return text
+
+
+def compare_headline(results: dict) -> Optional[str]:
+    """A saved comparison's verdict in words from its parts (so a comparison saved before
+    the wording changed reads the same); None when the parts are missing."""
+    v = (results or {}).get("verdict") or {}
+    a, b = (results or {}).get("a") or {}, (results or {}).get("b") or {}
+    if v.get("more_reliable") not in ("a", "b", "tie", "mixed") or not a.get("label") or not b.get("label"):
+        return None
+    early_a = True
+    if v.get("more_reliable") == "mixed" and v.get("crossover_time") is not None:
+        # Which side leads before the crossing: the stored text names it first.
+        text = str(v.get("text") or "")
+        ia, ib = text.find(f": {a['label']} is more"), text.find(f": {b['label']} is more")
+        early_a = not (ib >= 0 and (ia < 0 or ib < ia))
+    return verdict_words(v["more_reliable"], v.get("crossover_time"), a["label"], b["label"],
+                         (a.get("metrics") or {}).get("median"), (b.get("metrics") or {}).get("median"),
+                         results.get("unit"), early_a=early_a)
+
+
 def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     sfa = np.array([np.nan if v is None else v for v in a["sf"]])
     sfb = np.array([np.nan if v is None else v for v in b["sf"]])
@@ -781,7 +827,6 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     valid = np.isfinite(diff)
     g, d = grid[valid], diff[valid]
     la, lb = a["label"], b["label"]
-    us = f" {unit_in_text(unit)}" if unit else ""
     cross = None
 
     # Ignore differences smaller than 1 reliability-point so near-equal regions
@@ -791,11 +836,11 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     nz = np.nonzero(sig)[0]
 
     if nz.size == 0:
-        more, text = "tie", f"{la} and {lb} are effectively the same."
+        more = "tie"
     elif np.all(sig[nz] >= 0):
-        more, text = "a", f"{la} is more reliable than {lb} across the range."
+        more = "a"
     elif np.all(sig[nz] <= 0):
-        more, text = "b", f"{lb} is more reliable than {la} across the range."
+        more = "b"
     else:
         more = "mixed"
         s = np.sign(d)
@@ -807,22 +852,9 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
                 if d[k] != d[k + 1]
                 else float(g[k])
             )
-        early, late = (la, lb) if sig[nz][0] > 0 else (lb, la)
-        text = (
-            f"The reliability curves cross at about {fmt_num(cross)}{us}: "
-            f"{early} is more reliable before it, {late} after."
-            if cross is not None
-            else f"{la} and {lb} cross over the range."
-        )
-
-    # Headline metric: median life (robust for both parametric and KM).
-    da, db = a["metrics"].get("median"), b["metrics"].get("median")
-    if da and db:
-        higher = la if da >= db else lb
-        text += (
-            f" Median life: {la} {fmt_num(da)}{us} vs {lb} {fmt_num(db)}{us} "
-            f"(longer: {higher})."
-        )
+    early_a = bool(nz.size) and bool(sig[nz][0] > 0)
+    text = verdict_words(more, cross, la, lb, a["metrics"].get("median"), b["metrics"].get("median"),
+                         unit, early_a=early_a)
     return {"more_reliable": more, "crossover_time": cross, "text": text}
 
 

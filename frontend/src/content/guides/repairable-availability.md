@@ -33,9 +33,17 @@ ones give you availability — hover the menu for the reminder.)
 The moment you do, the diagram is in availability mode, and **+ Add block** (or a
 right-click on the canvas) offers the blocks a repairable diagram can solve:
 **components**, **junctions**, **voting nodes (MooN)** and **standby groups**,
-whose duty unit and spares are each repaired when they fail. Load-sharing,
-*n*-identical series or parallel blocks and sub-systems aren't offered, so you
-can't build something Reliafy can't solve.
+whose duty unit and spares are each repaired when they fail. It also offers
+**Parallel (two units, 1 of 2)**: two components side by side through a
+junction, where either one keeps the system up and each is repaired on its own.
+On an empty diagram the pair is wired from input to output; with a block
+selected, it goes in series after it.
+
+Load-sharing, *n*-identical series and parallel blocks and sub-systems are shown
+greyed, because a repairable diagram can't solve them yet, so you can't build
+something Reliafy can't solve. The note under the menu says what to use instead:
+for more units side by side, select a block and use **Add alongside**; for *k*
+of *n*, a voting node; for a spare that starts when needed, a standby group.
 
 ![The + Add block menu in repairable mode](/guides/img/availability-03-add.png)
 

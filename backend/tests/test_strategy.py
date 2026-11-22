@@ -34,13 +34,13 @@ def test_optimal_replacement_validates_costs():
 
 def test_compare_two_dominance_and_metrics():
     a = {
-        "label": "A",
+        "label": "Conveyor A",
         "kind": "parametric",
         "distribution_id": "weibull",
         "params": [{"name": "alpha", "value": 80}, {"name": "beta", "value": 2.0}],
     }
     b = {
-        "label": "B",
+        "label": "Conveyor B",
         "kind": "parametric",
         "distribution_id": "weibull",
         "params": [{"name": "alpha", "value": 160}, {"name": "beta", "value": 2.0}],
@@ -49,6 +49,13 @@ def test_compare_two_dominance_and_metrics():
     assert res["verdict"]["more_reliable"] == "b"
     assert len(res["a"]["sf"]) == len(res["time"])
     assert res["b"]["metrics"]["median"] > res["a"]["metrics"]["median"]
+    # Each side named once; the medians in the order the sentence names them.
+    text = res["verdict"]["text"]
+    assert text.count("Conveyor B") == 1 and text.count("Conveyor A") == 1, text
+    assert text.startswith("Conveyor B is more reliable than Conveyor A across the range. Median life 133 vs 66.6 hours")
+    # A comparison saved with the older, longer wording reads the new way in lists.
+    old = {**res, "verdict": {**res["verdict"], "text": "long old text"}}
+    assert st.compare_headline(old) == text
 
 
 def test_compare_two_parametric_vs_nonparametric():

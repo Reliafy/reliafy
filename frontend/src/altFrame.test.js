@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  plotInEnteredUnits,
+  seriesLabel,
   accelerationRows, altAnswerParts, altTabs, compareCheck, defaultUse, distanceCheck, distanceWords,
   failureWords, levelWords, lifeCheck, parseUse, pWords, resolveAltTab, shapeCheck, shapeParam, shapeWords,
 } from "./altFrame.js";
@@ -160,4 +162,19 @@ test("activationEnergy: a × Boltzmann's constant for the thermal models only", 
   assert.ok(Math.abs(ea.value - 0.5995) < 1e-3);
   assert.ok(Math.abs(ea.ci[0] - 0.4309) < 1e-3);
   assert.equal(activationEnergy({ ...r, life_model_id: "inverse_power" }), null);
+});
+
+test("a temperature typed in °C reads in °C on the charts, not kelvin", () => {
+  const stresses = [{ key: "s1", column: "temp_C", label: "Temperature", unit: "K", entered_unit: "°C" }];
+  assert.equal(seriesLabel({ label: "Temperature (K)=387.15", stress: [387.15] }, stresses), "Temperature (°C)=114");
+  const plot = plotInEnteredUnits({ x_label: "Temperature (K)", lines: [{ stress: [373.15, 387.15], life: [1, 2], secondary: null }],
+    points: [{ stress: 387.15, life: 2, secondary: null }], secondary_label: null }, stresses, 0);
+  assert.equal(plot.x_label, "Temperature (°C)");
+  assert.deepEqual(plot.lines[0].stress, [100, 114]);
+  assert.equal(plot.points[0].stress, 114);
+  // In kelvin from the start: as the fit gave it.
+  const k = [{ key: "s1", label: "Temperature", unit: "K" }];
+  assert.equal(seriesLabel({ label: "Temperature (K)=387.15", stress: [387.15] }, k), "Temperature (K)=387.15");
+  const same = { x_label: "Temperature (K)", lines: [] };
+  assert.equal(plotInEnteredUnits(same, k, 0), same);
 });

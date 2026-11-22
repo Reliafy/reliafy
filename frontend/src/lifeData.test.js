@@ -5,7 +5,7 @@ import {
   EMPTY_MAPPING, columnFacts, guessMapping, statusMeaning, setStatusMeaning, encodeStatus,
   statusSummary, summaryParts, dataStepProblems, isSimplePaste, dataSplit,
   countProblem, setMappingField, flagsLookSwapped, flagNameContradicts,
-  unitIssue, unitSettled, UNITLESS, UNIT_MISSING, codeReading, dataStepIssues,
+  unitIssue, unitSettled, UNITLESS, UNIT_MISSING, codeReading, dataStepIssues, readCounts,
 } from "./lifeData.js";
 
 // A CMMS export: id, hours, a text status, a site.
@@ -297,4 +297,11 @@ test("a fit by failure mode with a range says what to do, for this fit", () => {
   assert.equal(mode.col, "m");
   assert.match(mode.text, /also has a range \(xl to xr\)/);
   assert.match(mode.text, /set the failure mode to none for this fit/);
+});
+
+test("readCounts: a word-coded status column counted as it is read", () => {
+  const rows = [{ label: "F", rows: 30 }, { label: "S", rows: 12 }, { label: "R", rows: 6 }, { label: "X", rows: 2 }];
+  const mapping = { c_map: { F: 0, S: 1, R: 1 } };
+  assert.equal(readCounts(rows, mapping), "Read as 30 failed · 18 still running · 2 not yet read");
+  assert.equal(readCounts([], mapping), null);
 });

@@ -135,6 +135,50 @@ export function useForModel(results, values) {
   return n.map((v, j) => toKelvin(v, enteredUnit(ss[j])));
 }
 
+// A life-stress chart (``plot``, along stress ``j``) in the user's units: a
+// temperature given in °C or °F reads in that unit on the axis, the points
+// and the other stress's lines, not in the kelvin the model was fitted in.
+// Unchanged when nothing was converted.
+export function plotInEnteredUnits(plot, stresses, j = 0) {
+  if (!plot) return plot;
+  const ss = stresses || [];
+  const k = 1 - j;
+  const u = enteredUnit(ss[j]);
+  const uo = plot.secondary_label != null ? enteredUnit(ss[k]) : "";
+  if (!u && !uo) return plot;
+  const x = (v) => (u && v != null ? fromKelvin(v, u) : v);
+  const o = (v) => (uo && v != null ? fromKelvin(v, uo) : v);
+  const obs = plot.observations;
+  return {
+    ...plot,
+    x_label: u ? inputStressName(ss[j]) : plot.x_label,
+    secondary_label: uo ? inputStressName(ss[k]) : plot.secondary_label,
+    lines: (plot.lines || []).map((ln) => ({ ...ln, stress: (ln.stress || []).map(x), secondary: o(ln.secondary) })),
+    points: (plot.points || []).map((pt) => ({ ...pt, stress: x(pt.stress), secondary: o(pt.secondary) })),
+    ...(obs ? {
+      observations: {
+        ...obs,
+        ranges: { ...obs.ranges, stress: (obs.ranges?.stress || []).map(x) },
+        failures: { ...obs.failures, stress: (obs.failures?.stress || []).map(x) },
+      },
+    } : {}),
+  };
+}
+
+// A probability-plot series' legend label in the user's units
+// ("Temperature (°C)=114"); the fit's own label when nothing was converted.
+export function seriesLabel(series, stresses) {
+  const ss = stresses || [];
+  const row = series?.stress;
+  if (!Array.isArray(row) || !row.some((_, j) => enteredUnit(ss[j]))) return series?.label;
+  return row.map((v, j) => {
+    const s = ss[j] || {};
+    const u = enteredUnit(s);
+    const name = u ? inputStressName(s) : stressName(s);
+    return `${name}=${formatNumber(fromKelvin(v, u), { sig: 4 })}`;
+  }).join(" · ");
+}
+
 // "40 °C is 313.15 K" for a converted use stress; null when nothing is converted.
 export function kelvinWords(results, values) {
   const ss = results?.stresses || [];

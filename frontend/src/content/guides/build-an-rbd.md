@@ -147,6 +147,27 @@ Fix anything it reports, then switch to the **Calculator** tab and press
 **Calculate**. For the sample pump station (a controller in series with two
 redundant pumps) the MTTF is 849 hours and the B10 life 318 hours.
 
+## Start from today: As of now
+
+By default every block starts new, so the results describe new equipment. For
+a system already in service, tick **As of now** (*from today's ages*) beside
+**Calculate**. A table lists the blocks, each with a **State now**: **New**,
+**Running** with its age (in the diagram's unit), or **Failed**. Press
+**Calculate** and the curves, MTTF, B-lives and importance run from now: the
+remaining life of the system as it stands today.
+
+On a diagram built from the asset tree, each block's age is read from the item
+fitted where it stands, and the source is written under the block's name (its
+hours counter, its duty, or the time since it was fitted). A block with no age
+says why (*No age: this block stands for no position on the tree. Enter its
+age.*), so nothing is quietly taken as new. An age you type yourself is never
+overwritten.
+
+The result says what it assumed, block by block. Blocks still left as **New**
+are named (*Taken as new (no age given): …*), and if every block was left new
+the result says these are the figures for new equipment, not an answer from
+today's ages.
+
 ## Reading the results
 
 You get the system reliability curve over time, the **MTTF**, and system
