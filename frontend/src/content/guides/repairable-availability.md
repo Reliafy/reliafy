@@ -127,8 +127,20 @@ simulating.
 
 ![The validation check: valid, with availability computed without simulation](/guides/img/availability-06-validate.png)
 
-Then switch to **Calculator**, choose the **Window** (a month, a year, five
-years or the long run) and press **Calculate**.
+Then switch to **Calculator**. It asks two questions, each with its own input:
+
+- **Out to (the horizon):** pick a month, a year, five years, the **Long run**, or
+  **Custom** and type a length. The answer is the average availability over that
+  stretch, the failures and downtime expected in it and the uptime, with the
+  long-run figure beside it.
+- **Availability at t:** type one time. The answer says, in words, how likely the
+  system is to be up at that moment (A(t)), with the average from 0 to t and the
+  failures and downtime by t under it.
+
+Times are in the diagram's unit (hours, unless you set another). Press
+**Calculate**. Both answers are exact, worked out from the failure and repair
+models with no simulation, so they carry no sampling range; **What to improve**
+shows how the fitted models' own uncertainty widens them (90% two-sided).
 
 ## Reading the results
 
@@ -176,3 +188,7 @@ The analysis comes from [RePyability](https://github.com/derrynknife/RePyability
 an open-source Python library; its guide to
 [repairable systems](https://derrynknife.github.io/RePyability/guide/repairable/)
 runs the same calculations in code.
+
+To start a diagram from the equipment as it stands today (what is down now, and
+how long each part has run) rather than from new, see [the chance a system lasts
+from the equipment you have today](/guides/rbd-as-it-is-today).

@@ -199,7 +199,7 @@
   outline: none;
 }
 .rw-row.pin { position: relative; background: var(--bg-subtle); border-bottom-color: var(--border); }
-.rw-pins-in .rw-row:last-child { box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14); }
+.rw-pins-in .rw-row:last-child { box-shadow: var(--shadow-md); }
 /* The name cell is sticky and pinned rows cover the rows under them: both
    need an opaque fill, so the hover tint goes over the row's solid colour. */
 .rw-row:hover, .rw-row:hover .rw-name { background: linear-gradient(var(--accent-wash), var(--accent-wash)), var(--bg-surface); }
@@ -412,7 +412,7 @@
 }
 .rw-ferr::before, .rw-panel .tm-err::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: var(--radius-full); background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: var(--radius-full); background: var(--danger); color: var(--text-on-fill); font-size: var(--fs-12); font-weight: 600; line-height: 1;
 }
 .rw-decision { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
 .rw-decision h3 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
@@ -568,7 +568,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 
 .rw-pdfs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .rw-pdf { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: var(--fs-13); }
-.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-on-fill); background: var(--danger); border-radius: var(--radius-sm); padding: 2px 4px; }
+.rw-pdf-mark { flex: none; font-size: var(--fs-12); font-weight: 600; letter-spacing: .03em; color: var(--text-on-fill); background: var(--danger); border-radius: var(--radius-sm); padding: 2px 4px; }
 .rw-pdf-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; flex: 0 1 auto; }
 .rw-pdf-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rw-pdf .ovm { margin-left: auto; }
@@ -731,7 +731,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--text-seconda
 }
 .rw-cell-why::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: var(--radius-full); background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: var(--radius-full); background: var(--danger); color: var(--text-on-fill); font-size: var(--fs-12); font-weight: 600; line-height: 1;
 }
 .rw .rw-edit[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-border); }
 .rw-edit-chips { outline: none; }
@@ -1078,4 +1078,4 @@ button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
 /* Step 3's task costs (RcmModeTasks TaskCosts): read from each task on its position. */
 .rim-costs { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; min-width: 0; }
 .rim-cost { margin: 0; overflow-wrap: anywhere; }
-.rim-cost-changed { font-size: 0.9em; color: var(--warning-text, #8a5a00); }
+.rim-cost-changed { font-size: 0.9em; color: var(--warning-text); }

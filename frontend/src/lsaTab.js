@@ -411,6 +411,67 @@ export function hoursCadenceFor(tasks) {
   return { every, unit: "hours", members, mixed: tasks.some((t) => Number(t.interval) % every !== 0) };
 }
 
+// A task's interval in a package's unit, when it converts exactly (a year is 12 months, a week 7
+// days); null when it doesn't (months against weeks).
+function intervalIn(t, unit) {
+  const n = Number(t.interval);
+  if (!(n > 0) || t.on_event) return null;
+  if (t.unit === unit) return n;
+  if (t.unit === "years" && unit === "months") return n * 12;
+  if (t.unit === "weeks" && unit === "days") return n * 7;
+  if (t.unit === "days" && unit === "weeks" && n % 7 === 0) return n / 7;
+  return null;
+}
+
+// Each task's visits in a new package going every `every` `unit`: a task at a whole multiple of
+// it on every Nth visit (a 100 h oil change on every second 50 h service; a yearly check on every
+// 4th quarterly visit), the rest on every visit. A task id, or {task_id, visit_rule, every_nth}.
+export function packageMembers(tasks, every, unit) {
+  const e = Number(every);
+  return tasks.map((t) => {
+    const n = intervalIn(t, unit);
+    const k = n != null && e > 0 ? n / e : null;
+    return k != null && Number.isInteger(k) && k >= 2 && k <= 100 ? { task_id: t.id, visit_rule: "nth", every_nth: k } : t.id;
+  });
+}
+
+// The visits in words, when the tasks' intervals differ: "On every visit: A, B. On every 2nd
+// visit: C." Empty when every task goes on every visit.
+export function visitPlanText(tasks, every, unit) {
+  const members = packageMembers(tasks, every, unit);
+  if (!members.some((m) => typeof m === "object")) return "";
+  const by = new Map();
+  members.forEach((m, i) => {
+    const k = typeof m === "object" ? m.every_nth : 1;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(tasks[i].name);
+  });
+  return [...by].sort((a, b) => a[0] - b[0])
+    .map(([k, names]) => `On every ${k === 1 ? "" : `${ordinal(k)} `}visit: ${names.join(", ")}.`).join(" ");
+}
+
+// The tasks' intervals, when they differ: "50 h (2 tasks), 100 h (1 task)".
+export function intervalsText(tasks) {
+  const count = new Map();
+  for (const t of tasks) {
+    const key = t.on_event ? "on an event" : t.interval != null ? `${t.interval} ${t.unit === "hours" ? "h" : t.unit}` : "no interval";
+    count.set(key, (count.get(key) || 0) + 1);
+  }
+  if (count.size < 2) return "";
+  return [...count].map(([k, n]) => `${k} (${n} task${n === 1 ? "" : "s"})`).join(", ");
+}
+
+// A new package's name to start from: "50 h service", "Monthly service", "3-monthly service".
+export function packageNameFor(every, unit) {
+  const n = Number(every);
+  if (!(n > 0)) return "";
+  if (unit === "hours") return `${n} h service`;
+  const one = { days: "Daily", weeks: "Weekly", months: "Monthly", years: "Yearly" }[unit];
+  if (n === 1 && one) return `${one} service`;
+  const per = { days: "day", weeks: "weekly", months: "monthly", years: "yearly" }[unit];
+  return per ? `${n}-${per} service` : `Every ${n} ${unit} service`;
+}
+
 // Which of the picked tasks can't join a package (an item's, by use, a round), and why.
 export function cantJoin(tasks) {
   return tasks.filter((t) => t.why_not);

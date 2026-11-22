@@ -153,7 +153,7 @@ export default function App() {
             {/* In both modes: the how-to guides and share pages (/p/:token).
                 With sign-in off (tst, the self-hosted single-user app) a
                 share link must still open the shared page, never the
-                workspace behind it, and "Show me how" must open its guide. */}
+                workspace behind it, and "Read the guide" must open it. */}
             <Route path="/guides" element={<GuidesIndex />} />
             <Route path="/guides/:slug" element={<GuidePage />} />
             <Route

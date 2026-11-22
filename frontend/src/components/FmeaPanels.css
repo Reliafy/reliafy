@@ -38,7 +38,7 @@
 .tt-h .tt-sortbtn:hover { background: var(--accent-wash); color: var(--text); }
 .tt-h .tt-sortbtn:focus-visible { outline-offset: -2px; }
 .tt-h.is-sorted .tt-sortbtn { color: var(--text); }
-.tt-sortarrow { font-size: 10px; }
+.tt-sortarrow { font-size: var(--fs-12); }
 
 /* The criticality matrix: a small grid, the cells toned by the worst action
    priority inside them (the count and its tooltip say it too). */
@@ -57,7 +57,7 @@
 }
 .fm-matrix th[scope="row"] { text-align: right; }
 .fm-matrix .fm-corner { position: relative; min-width: 36px; text-align: left; }
-.fm-matrix .fm-axis-o, .fm-matrix .fm-axis-s { display: block; font-size: 10px; line-height: 1.1; }
+.fm-matrix .fm-axis-o, .fm-matrix .fm-axis-s { display: block; font-size: var(--fs-12); line-height: 1.1; }
 .fm-matrix .fm-axis-s { text-align: right; }
 .fm-matrix td.fm-cell {
   width: 30px;
@@ -70,7 +70,7 @@
   color: var(--text-secondary);
 }
 .fm-matrix td.fm-cell.has { color: var(--text); font-weight: 600; }
-.fm-matrix td.ap-H, .fm-swatch.ap-H { background: var(--danger-bg, rgba(220, 60, 60, 0.18)); border-color: var(--danger, #c0392b); }
+.fm-matrix td.ap-H, .fm-swatch.ap-H { background: var(--danger-bg); border-color: var(--danger); }
 .fm-matrix td.ap-M, .fm-swatch.ap-M { background: var(--warning-bg); border-color: var(--warning-border); }
 .fm-matrix td.ap-L, .fm-swatch.ap-L { background: var(--bg-surface); border-color: var(--border); }
 .fm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 6px 0 0; }

@@ -45,7 +45,7 @@
 }
 .dm-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .dm-key { display: inline-block; flex-shrink: 0; }
-.dm-key-node { width: 12px; height: 12px; border-radius: var(--radius-full); background: #1d4ed8; }
+.dm-key-node { width: 12px; height: 12px; border-radius: var(--radius-full); background: var(--accent); }
 .dm-key-line, .dm-key-dash, .dm-key-warn { width: 26px; height: 0; border-top: 2px solid var(--text-secondary); }
 .dm-key-dash { border-top-style: dashed; border-top-color: var(--text); }
 .dm-key-warn { border-top-width: 3px; }

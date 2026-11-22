@@ -18,6 +18,7 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
   DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, hoursCadenceFor, cellText, countTitle, dayName, daysLate, freeTasks,
+  intervalsText, packageMembers, packageNameFor, visitPlanText,
   kindText, lateText, lsaColumns, taskOnText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
   renameRow, rollupLines, labourYear, labourYearText, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
   MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money, tasksHere,
@@ -238,7 +239,11 @@ export function overdueNote(n) {
     "To do them sooner, raise the visit now from the package's page.";
 }
 
-export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) {
+// `Frame`: the form's frame, a dialog (FormModal) on the LSA tab; the Explorer's Maintenance tab
+// gives its table pane's (TaskTreeTable.jsx PaneForm). `named`: start with a name for it from its
+// interval ("50 h service"). The tasks whose interval is a whole multiple of the one chosen go on
+// every Nth visit (packageMembers), and the form says so whenever the intervals differ.
+export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone, Frame = FormModal, named = false }) {
   // Tasks by operating hours make a package by hours (a 50 h service); calendar tasks a calendar one.
   const byHours = useMemo(() => hoursCadenceFor(tasks), [tasks]);
   const mixedKinds = !byHours && tasks.some((t) => t.unit === "hours");
@@ -246,7 +251,7 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
   // A new empty package on a position may go by its hour meter too.
   const units = byHours ? ["hours"] : tasks.length || !scope?.position_id ? CALENDAR : [...CALENDAR, "hours"];
   const trades = [...new Set(tasks.map((t) => t.trade).filter(Boolean))];
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => (named && tasks.length ? packageNameFor(start.every, start.unit) : ""));
   const [timing, setTiming] = useState("fixed");
   // Weekly visits on the visit day; monthly ones on the first of that weekday.
   const [how, setHow] = useState(() => ({
@@ -258,7 +263,7 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
   const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
   const fixed = timing === "fixed";
   const problem = mixedKinds
-    ? "Tasks by operating hours and calendar tasks go in separate packages: tick one kind."
+    ? "Tasks by operating hours and calendar tasks go in separate packages: choose one kind."
     : howOftenProblem(how, { wholeOnly: true });
   const ok = name.trim() && !problem;
   const today = workspaceToday();
@@ -268,21 +273,28 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
     const body = {
       ...scope, name: name.trim(), timing, ...cadence, trade: trade.trim(),
       ...(tolerance !== "" && Number(tolerance) > 0 ? { tolerance: Math.round(Number(tolerance)), tolerance_unit: "days" } : {}),
-      ...(tasks.length ? { tasks: byHours && Number(how.every) === byHours.every ? byHours.members : tasks.map((t) => t.id) } : {}),
+      ...(tasks.length ? { tasks: packageMembers(tasks, how.every, how.unit) } : {}),
     };
     const made = await createPackage(body);
     onDone(tasks.length ? `Made ${made.name} with ${plural(tasks.length, "task")}.` : `Made ${made.name}. Add its tasks from its ⋯.`, made.id);
   };
+  const differ = intervalsText(tasks);
+  const plan = problem ? "" : visitPlanText(tasks, how.every, how.unit);
   return (
-    <FormModal title={tasks.length ? `Package ${plural(tasks.length, "task")}` : "Add a package"} submitLabel={tasks.length ? "Make package" : "Add package"}
-               canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
+    <Frame title={tasks.length ? `Package ${plural(tasks.length, "task")}` : "Add a package"} submitLabel={tasks.length ? "Make package" : "Add package"}
+           canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
       <p className="lib-date">
         {tasks.length
-          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{byHours
-            ? " By operating hours: the visit goes by the shortest interval, and a task at a whole multiple of it on every Nth visit (a 100 h task on every second 50 h service)."
-            : start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
+          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{byHours && !differ
+            ? " By operating hours: a task at a whole multiple of the interval goes on every Nth visit (a 100 h task on every second 50 h service)." : ""}</>
           : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
       </p>
+      {differ && (
+        <p className="lib-date mt-pk-differ" role="note">
+          Their intervals differ: {differ}. The visit goes by the interval below{byHours ? " (the shortest to start with)" : ""}: a task at a whole
+          multiple of it comes on every Nth visit, and any other task on every visit. {plan}
+        </p>
+      )}
       {tasks.some((t) => t.overdue) && (
         <p className="maint-overdue" role="status">
           {overdueNote(tasks.filter((t) => t.overdue).length)}
@@ -304,7 +316,7 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
         <Field label="Trade (optional)" text={trade}><input value={trade} maxLength={200} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Fitter" /></Field>
         <Field label="On time up to (days after)"><input type="number" min="0" step="1" inputMode="numeric" value={tolerance} onChange={(e) => setTolerance(e.target.value)} /></Field>
       </div>
-    </FormModal>
+    </Frame>
   );
 }
 

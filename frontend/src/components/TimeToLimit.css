@@ -11,7 +11,7 @@
 }
 
 .ttl-warn {
-  color: var(--warning, #b45309);
+  color: var(--warning);
 }
 
 .ttl-progress {

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.12.5 (unreleased)
+
+Needs a server on the same release.
+
+- **Availability at a time**: `analyse rbd` on a repairable diagram takes `times` (the same
+  argument as for a non-repairable one): `exact.at_times` gives, for each time, the availability
+  at that moment, the average availability from 0 to it, and the expected failures and downtime by
+  it, all exact. `t_max` is still the horizon ("out to"). `reliafy tools` and the REST route take
+  `times` too.
+
+## 0.12.4 (unreleased)
+
+Needs a server on the same release.
+
+- **End of record**: `change dataset_upload` and `change dataset_update` take `record_end`
+  (`reliafy upload --record-end 216000`).
+- **One stream of events**: the same two take `one_stream`
+  (`reliafy upload --one-stream`): a log with no item column, every row one stream of events (one
+  system), saved as a Repairable dataset.
+
 ## 0.12.3 (unreleased)
 
 Needs a server on the same release.

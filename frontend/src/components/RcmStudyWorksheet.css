@@ -236,7 +236,7 @@
   outline: none;
 }
 .rsw-row.pin { position: relative; background: var(--bg-subtle); border-bottom-color: var(--border); }
-.rsw-pins-in .rsw-row:last-child { box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14); }
+.rsw-pins-in .rsw-row:last-child { box-shadow: var(--shadow-md); }
 /* The name cell is sticky and pinned rows cover the rows under them: both
    need an opaque fill, so the hover tint goes over the row's solid colour. */
 .rsw-row:hover, .rsw-row:hover .rsw-name { background: linear-gradient(var(--accent-wash), var(--accent-wash)), var(--bg-surface); }
@@ -510,7 +510,7 @@ p.rsw-evidence.rsw-unlinked { margin: 0; display: block; color: var(--text-secon
 
 .rsw-pdfs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .rsw-pdf { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: var(--fs-13); }
-.rsw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: #fff; background: #c0392b; border-radius: var(--radius-sm); padding: 2px 4px; }
+.rsw-pdf-mark { flex: none; font-size: var(--fs-12); font-weight: 600; letter-spacing: .03em; color: var(--text-on-fill); background: var(--danger); border-radius: var(--radius-sm); padding: 2px 4px; }
 .rsw-pdf-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; flex: 0 1 auto; }
 .rsw-pdf-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rsw-pdf .ovm { margin-left: auto; }

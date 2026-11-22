@@ -65,3 +65,9 @@ test("a reading with every row as one stream fits as one system", async () => {
   assert.deepEqual(recurrentFields(out.mapping).find(([k]) => k === "one_stream"), ["one_stream", "true"]);
   assert.equal(recurrentIssues(out.mapping, "", "216000").length, 0);
 });
+
+test("a dataset's own end of record stands in for a typed one", () => {
+  const map = { i: "", one_stream: true, x: "fleet_hours" };
+  assert.equal(recurrentIssues(map, "", "").some((i) => i.row === "tr"), true);
+  assert.equal(recurrentIssues(map, "", "", 216000).some((i) => i.row === "tr"), false);
+});
