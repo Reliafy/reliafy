@@ -222,11 +222,7 @@ export default function AltDiagnostics({ results, modelId, name, use }) {
                    <>
                      {shape?.detail && <p className="muted-line alt-shape-test">{shape.detail}</p>}
                      {shape?.leftOut && <p className="muted-line">{shape.leftOut}</p>}
-                     <p className="muted-line">
-                       An accelerated life model assumes one shape at every stress, so that only the life moves
-                       with stress. Dots: each level fitted alone, with its {ciPct(results, 0.9)} interval. Line
-                       and band: the model's one shape.
-                     </p>
+                     <p className="muted-line">Dots: each level fitted alone, with its {ciPct(results, 0.9)} interval. Line and band: the model's one shape.</p>
                      {noteLines(noteOf(/common-shape/))}
                    </>
                  )}>
