@@ -1,7 +1,8 @@
 /* The Explorer's Maintenance tab (TaskTreeTable.jsx): a task's Packaged link, and Package… and
    Add to package… in the table pane. */
 .mt-pkg-link { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.mt-pkg-pane { display: flex; flex-direction: column; gap: var(--space-3); }
+/* As the forecast's pane (.mt-forecast-pane). */
+.mt-pkg-pane { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--space-4); overflow: auto; min-height: 0; flex: 1 1 auto; }
 .mt-pane-form { display: flex; flex-direction: column; gap: var(--space-3); max-width: 640px; }
 .mt-pane-foot {
   display: flex;

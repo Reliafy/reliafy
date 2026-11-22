@@ -18,14 +18,14 @@ export const isTaskRow = (r) => r?.type === TASK_TYPE;
 export const taskKey = (id) => `MT:${id}`;
 
 export const TASK_COLUMNS = [
-  { id: "interval", label: "Interval", width: 140, title: "How often it's done, or what raises it" },
-  { id: "due", label: "Next due", width: 120, title: "When it's next due (overdue in red)" },
-  { id: "cost", label: "Cost each time", width: 120, num: true, title: "What it costs each time it's done: typed on the task, or from its LSA" },
-  { id: "trade", label: "Trade", width: 110, title: "Who does it" },
+  { id: "interval", label: "Interval", width: 140, min: 112, title: "How often it's done, or what raises it" },
+  { id: "due", label: "Next due", width: 120, min: 108, title: "When it's next due (overdue in red)" },
+  { id: "cost", label: "Cost each time", width: 120, min: 112, num: true, title: "What it costs each time it's done: typed on the task, or from its LSA" },
+  { id: "trade", label: "Trade", width: 110, min: 90, title: "Who does it" },
   // Derryn, 22 Nov 2026: "There should be a 'packaged' column": the package it's in, a link to it.
-  { id: "package", label: "Packaged", width: 170, title: "The work package it's in (click to open it), or blank when it's in none" },
-  { id: "from", label: "From", width: 210, title: "Where it came from: an RCM decision, or added directly (and why)" },
-  { id: "kind", label: "Kind", width: 140, title: "On condition, fixed interval or failure finding; a task raised by an event says which" },
+  { id: "package", label: "Packaged", width: 170, min: 116, title: "The work package it's in (click to open it), or blank when it's in none" },
+  { id: "from", label: "From", width: 210, min: 120, title: "Where it came from: an RCM decision, or added directly (and why)" },
+  { id: "kind", label: "Kind", width: 140, min: 100, title: "On condition, fixed interval or failure finding; a task raised by an event says which" },
 ];
 export const TASK_TREE_HEAD = "Position, and its tasks";
 
