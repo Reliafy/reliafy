@@ -210,14 +210,17 @@ export const TASK_OPTIMISE = "mtask-optimise";
 export const TASK_PACKAGE = "mtask-package";
 export const TASK_ADD_TO = "mtask-add-to";
 export const TASK_CLEAR = "mtask-clear";
+// Select: starts picking rows by tap (a phone has no Shift or Ctrl).
+export const TASK_SELECT = "mtask-select";
 // Package the tasks… on a level: drafts packages from its tasks in none, in the table area.
 export const TASK_DRAFT = "mtask-draft";
 // A task row's menu: Open…, Optimise… (this row's task), then Package… and Add to package… for the tasks selected (the row
 // itself when it isn't one of them), each greyed with the reason when none of them can go.
 // `tasks`: the task-table rows it acts on; `canPackage`: false on a product's design, or view only.
-export function taskRowActions(r, { tasks = null, canPackage = true } = {}) {
+export function taskRowActions(r, { tasks = null, canPackage = true, canSelect = false } = {}) {
   const out = [{ id: TASK_OPEN, label: "Open…" },
     { id: TASK_OPTIMISE, label: "Optimise…", title: "How often to do it, worked out from the life model of the failure modes it prevents" }];
+  if (canSelect) out.push({ id: TASK_SELECT, label: "Select", title: "Pick this task, then tap others to add them" });
   if (!canPackage) return out;
   const list = tasks?.length ? tasks : r?.ref?.task ? [r.ref.task] : [];
   const free = list.filter((t) => !t.why_not && !t.package);
@@ -321,7 +324,7 @@ export function filterWords(filters) {
 
 // ---- selecting tasks -----------------------------------------------------------------------
 // Click picks one task, Shift-click the tasks between it and the last one clicked (as drawn),
-// Ctrl/⌘-click (or its box, or Space) adds or takes one. Only task rows are picked.
+// Ctrl/⌘-click (or Space) adds or takes one. Only task rows are picked.
 export function pickTasks(picked, list, display, key, { shift = false, toggle = false, anchor = null } = {}) {
   if (!isTaskRow(display.rows.get(key))) return { picked: toggle || shift ? picked : new Set(), anchor };
   if (toggle) {

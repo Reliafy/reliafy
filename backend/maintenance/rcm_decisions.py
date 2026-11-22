@@ -1135,8 +1135,11 @@ def _interval_summary(r: dict, decision: dict, longest_days, too_long: str) -> d
     days = _task_days(decision)
     if days is not None and longest_days is not None and days > longest_days * 1.0001:
         return {"status": "contradicted", "summary": f"The task's interval is longer than {too_long}. {r.get('summary') or ''}".strip()}
-    return _far_shorter({"status": "supported", "summary": r.get("summary") or "Interval calculated."},
-                        decision, r.get("interval"), r.get("unit"), "the calculated interval")
+    checked = _far_shorter({"status": "supported", "summary": r.get("summary") or "Interval calculated."},
+                           decision, r.get("interval"), r.get("unit"), "the calculated interval")
+    # Longer than the (net) longest allowed stays contradicted above (it misses failures);
+    # this is only a long interval still inside that limit.
+    return _far_longer(checked, decision, r.get("interval"), r.get("unit"), "the calculated interval")
 
 
 #: A task set at less than this share of the interval its evidence supports is flagged:
@@ -1175,12 +1178,13 @@ INTERVAL_DIFFERS = (SHORTER_THAN_EVIDENCE, LONGER_THAN_EVIDENCE)
 
 
 def _far_shorter(result: dict, decision: dict, interval, evidence_unit, what: str,
-                 status: str = "contradicted") -> dict:
+                 status: str = SHORTER_THAN_EVIDENCE) -> dict:
     """A supported check made plain when the task's interval is far shorter than the
     evidence supports (under :data:`FAR_SHORTER` of it): both intervals, how many
-    times as often the task is done, then what the evidence found. ``status``:
-    contradicted (a calculated interval: the evidence doesn't back the interval set),
-    or shorter_than_evidence (a cost-optimal age). Anything else is returned as it is."""
+    times as often the task is done, then what the evidence found. The status is the
+    neutral amber shorter_than_evidence everywhere (cost-optimal age, P-F and
+    failure-finding intervals): a fact about the interval, not a verdict. Anything else
+    is returned as it is."""
     share = _task_share(decision, interval, evidence_unit)
     if result.get("status") != "supported" or share is None or share >= FAR_SHORTER:
         return result
