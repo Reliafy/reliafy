@@ -16,6 +16,7 @@ import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import { positionOptions } from "../positionPicker.js";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import { Select as FormSelect } from "./ui/Controls.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
 
@@ -77,9 +78,9 @@ export function RoughDateField({ label, value, onChange, max }) {
   return (
     <Field label={label}>
       <div className="maint-row" style={{ marginTop: 0 }}>
-        <select value={precision} aria-label={`${label}: how well it's known`} onChange={(e) => setPrecision(e.target.value)}>
+        <FormSelect value={precision} aria-label={`${label}: how well it's known`} onChange={(e) => setPrecision(e.target.value)}>
           {PRECISIONS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-        </select>
+        </FormSelect>
         {input}
       </div>
     </Field>
@@ -205,9 +206,9 @@ export function DocumentsCard({ title = "Documents", documents, target, onChange
                    placeholder={adding === "pdf" ? "Default: the file name" : "e.g. Owner's manual"}
                    onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
             <Field label="Kind">
-              <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
+              <FormSelect value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
                 {DOCUMENT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-              </select>
+              </FormSelect>
             </Field>
           </div>
           {fileProblem && <p className="maint-overdue" role="alert">{fileProblem}</p>}
@@ -266,10 +267,10 @@ export function PositionPicker({ positions, value, onChange, emptyLabel = "None 
 // A location, by its full path (Site › Area X › Substation 2).
 export function LocationPicker({ locations, value, onChange, emptyLabel = "Choose…" }) {
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
+    <FormSelect value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">{locations === null ? "Loading…" : emptyLabel}</option>
       {locationOptions(locations).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-    </select>
+    </FormSelect>
   );
 }
 
@@ -487,7 +488,7 @@ export function FailureModePicker({ modes = [], aboveModes = [], classModes = []
   const v = value || { choice: "", typed: "" };
   return (
     <>
-      <select value={v.choice} onChange={(e) => onChange({ ...v, choice: e.target.value })}>
+      <FormSelect value={v.choice} onChange={(e) => onChange({ ...v, choice: e.target.value })}>
         <option value="">{noneLabel}</option>
         {modes.length > 0 && (
           <optgroup label="This position's failure modes">
@@ -505,7 +506,7 @@ export function FailureModePicker({ modes = [], aboveModes = [], classModes = []
           </optgroup>
         )}
         <option value="new">Something else (describe it)…</option>
-      </select>
+      </FormSelect>
       {v.choice === "new" && (
         <input autoFocus value={v.typed || ""} placeholder="e.g. Seal leaking" style={{ marginTop: "0.4rem" }}
                onChange={(e) => onChange({ ...v, typed: e.target.value })} />
