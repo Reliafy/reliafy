@@ -73,7 +73,7 @@ maintenance, and a repair crew for every repair. Failures found at once need
 exponential repair times; proof-tested members' repairs may take no time, a
 fixed time or an exponential one (a 1oo2 with a mean repair time of 8 hours,
 say). Where that doesn't hold, the group is left out of every figure rather
-than just some of them, and **Validate** says why. A safety function's PFDavg
+than just some of them, and the check says why. A safety function's PFDavg
 still takes the group in wherever its long-run value can: with proof tests
 that themselves take time, for one, the PFDavg includes the group while the
 other figures leave it out for now.

@@ -746,15 +746,14 @@ export function getRbd(id) {
   return request(`/api/rbds/${id}`);
 }
 
-export function saveRbd(name, graph, id, expectedUpdatedAt) {
-  return withEvent(
-    request("/api/rbds", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
-    }),
-    "rbd_save"
-  );
+// ``auto``: the builder's autosave, which saves after each change: not counted as a save event.
+export function saveRbd(name, graph, id, expectedUpdatedAt, { auto = false } = {}) {
+  const saving = request("/api/rbds", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
+  });
+  return auto ? saving : withEvent(saving, "rbd_save");
 }
 
 // Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, RePyability JSON, Excel) into
@@ -2436,6 +2435,20 @@ export function unsubscribeEmail(token) {
 
 export function resubscribeEmail(token) {
   return request(emailTokenUrl("resubscribe", token), { method: "POST" });
+}
+
+// How the editors behave for the signed-in user: { autosave: bool } (the RBD builder saves
+// after each change unless it's false).
+export function getEditorPreferences() {
+  return request("/api/me/editor-preferences");
+}
+
+export function setEditorPreferences(prefs) {
+  return request("/api/me/editor-preferences", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prefs),
+  });
 }
 
 // The signed-in user's email preferences: { updates: bool }.
