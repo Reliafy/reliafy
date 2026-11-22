@@ -178,7 +178,7 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
   useEffect(() => {
     if (!open || placing) return undefined;
     const onKey = (e) => {
-      if (e.target.closest?.("input, textarea, select")) return;
+      if (e.target.closest?.("input, textarea, select, .sel-trigger, .sel-menu")) return;
       const next = photoStep(openIndex, photos.length, e.key);
       if (next != null) { e.preventDefault(); setOpen(photos[next]); }
     };

@@ -196,8 +196,10 @@ const Select = forwardRef(function Select({
       }
       return;
     }
-    // Escape shuts the list only, not the form or dialog around it (as a native list's does).
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); triggerRef.current?.focus(); }
+    // While open the keys are the list's, as a native list's are: they don't reach the
+    // form, row or dialog round it (Escape shuts the list, not the dialog).
+    e.stopPropagation();
+    if (e.key === "Escape") { e.preventDefault(); setOpen(false); triggerRef.current?.focus(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => step(i, 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => step(i, -1)); }
     else if (e.key === "Home") { e.preventDefault(); setActive(step(-1, 1)); }
@@ -247,6 +249,7 @@ const Select = forwardRef(function Select({
           id={listId}
           className="sel-menu"
           role="listbox"
+          onKeyDown={(e) => e.stopPropagation()}
           style={{
             left: pos.left,
             top: pos.top,
