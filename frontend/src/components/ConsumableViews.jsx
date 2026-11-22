@@ -16,6 +16,7 @@ import "../views/Maintenance.css";
 import "./MeasurementViews.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // Consumables (salt added to the pool; acid; a stabiliser): the Measurements
 // tab's monthly bars, the dialogs to record a use (Record use…: another date,
@@ -155,7 +156,7 @@ export function ConsumablePane({ id, today = workspaceToday(), onBack, onMenu = 
     }) } : null,
   ].filter(Boolean) : []);
   const months = useMemo(() => (c ? monthlyTotals(c.uses, today, 12) : []), [c, today]);
-  if (!state.loaded) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<p className="lib-date">Loading…</p></div>;
+  if (!state.loaded) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<Loading /></div>;
   if (!c) {
     return (
       <div className="td-tab-page mv-view">

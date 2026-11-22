@@ -14,6 +14,7 @@ import { byText, jobStatusLine, runsPath, runtimeVsQuote, statusChip, viaText } 
 import "../components/RbdRuns.css";
 import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import Loading from "../components/ui/Loading.jsx";
 
 const when = (iso) =>
   iso ? formatDateTime(new Date(iso)) : "—";
@@ -22,7 +23,7 @@ const when = (iso) =>
 function precisionText(p) {
   if (!p || p.half_width == null) return "—";
   const d = pctDigits(p.half_width);
-  const half = `±${(p.half_width * 100).toFixed(d)} points (${Math.round((p.confidence || 0.95) * 100)}% interval)`;
+  const half = `±${(p.half_width * 100).toFixed(d)} points (${Math.round((p.confidence || 0.95) * 100)}% two-sided)`;
   if (p.mode === "fixed") return `${half}, from a fixed number of replications`;
   if (p.mode === "quick") return `${half}, a quick estimate`;
   return p.reached ? `${half}, within the precision target` : `${half}; the target wasn't reached within the time budget`;
@@ -92,7 +93,7 @@ export default function RbdRunsDetail() {
     return (
       <div className="app rbd-runs">
         <PageHeader crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
-        {error ? <LoadFailed onRetry={() => setAttempt((n) => n + 1)} error={error} to={runsPath()} label="See all simulation runs" /> : <div className="card empty">Loading…</div>}
+        {error ? <LoadFailed onRetry={() => setAttempt((n) => n + 1)} error={error} to={runsPath()} label="See all simulation runs" /> : <Loading card />}
       </div>
     );
   }

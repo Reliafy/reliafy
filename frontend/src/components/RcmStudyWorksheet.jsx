@@ -13,6 +13,7 @@ import {
 } from "../rcmStudyWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import "./RcmStudyWorksheet.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // The RCM study's worksheet as an outline grid: the study's hierarchy in the
 // first column (function → functional failure → failure mode: indent, arrow,
@@ -529,11 +530,9 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS }) {
       {open && (
         <div className="rsw-pop" role="group" aria-label="Columns to show">
           {COLUMNS.map((c) => (
-            <label key={c.id} className="rsw-pop-item" title={c.title}>
-              <input type="checkbox" checked={cols.includes(c.id)}
-                     onChange={(e) => onCols(e.target.checked ? COLUMNS.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))} />
-              {c.label}{c.sum ? <span className="rsw-sig" title="A parent row counts what's inside it"> Σ</span> : null}
-            </label>
+            <Checkbox key={c.id} className="rsw-pop-item" title={c.title} checked={cols.includes(c.id)}
+                      onChange={(e) => onCols(e.target.checked ? COLUMNS.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))}
+                      label={<>{c.label}{c.sum ? <span className="rsw-sig" title="A parent row counts what's inside it"> Σ</span> : null}</>} />
           ))}
           <button type="button" className="link rsw-pop-reset" onClick={() => onCols(usual, { reset: true })}>Show the usual columns</button>
         </div>

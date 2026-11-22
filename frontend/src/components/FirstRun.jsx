@@ -119,7 +119,7 @@ export function StartHere({ info, sampleModelId = null }) {
       <p className="first-run-more">Planning a test? <Link to="/strategy/test-planning">Test planning</Link> works out how many units to test, and for how long.</p>
       {first && (
         <p className="first-run-more">
-          Show me how, on a sample:{" "}
+          Take a tour, on a sample:{" "}
           <ShowMeHow id="fit">Fit a model</ShowMeHow> ·{" "}
           <ShowMeHow id="replacement">Optimal replacement</ShowMeHow> ·{" "}
           <ShowMeHow id="rbd">Block diagram</ShowMeHow> ·{" "}

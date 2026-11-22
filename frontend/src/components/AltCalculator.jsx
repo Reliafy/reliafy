@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import { bandPair, fitLine } from "../plotTheme.js";
+import { bandPair, fitLine, legendBg } from "../plotTheme.js";
 import { altBounds, cancelRbdJob, evaluateAlt, getRbdJob } from "../api.js";
 import { CANCELLED_TEXT } from "../jobCancel.js";
 import { unitInText } from "./unitText.js";
@@ -11,6 +11,7 @@ import { enteredUnit, fromKelvin, inputStressName, kelvinWords, toKelvin, useFor
 import ProTag from "./ProTag.jsx";
 import ExtrapolationNote from "./ui/ExtrapolationNote.jsx";
 import { formatReadable } from "../format.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -203,7 +204,7 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
     xaxis: { title: { text: unit ? `Time (${unit})` : "Time" } },
     yaxis: { title: { text: FUNCS.find((f) => f.id === active)?.y || "" } },
     showlegend: !!showBand,
-    legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)" },
+    legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: legendBg() },
   }), [active, unit, showBand]);
 
   const m = res?.metrics || {};
@@ -312,10 +313,8 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
             </label>
           ))}
           {inKelvin && <p className="muted alt-use-kelvin">{inKelvin}: the model is fitted in kelvin.</p>}
-          <label className="alt-ref-toggle">
-            <input type="checkbox" checked={st.refOn} onChange={(e) => set({ refOn: e.target.checked })} />
-            <span>Acceleration factor against a reference</span>
-          </label>
+          <Checkbox className="alt-ref-toggle" checked={st.refOn} onChange={(e) => set({ refOn: e.target.checked })}
+                    label="Acceleration factor against a reference" />
           {st.refOn && stresses.map((s, j) => (
             <label key={s.key} className="alt-use-field">
               <span>Reference {inputStressName(s)}</span>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Switch from "../components/ui/Switch.jsx";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
@@ -26,6 +27,7 @@ import {
 import { AUTH_DISABLED } from "../firebase.js";
 import Tabs from "../components/ui/Tabs.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -71,7 +73,7 @@ function PlanCard() {
       {error ? (
         <p className="muted-line">{error}</p>
       ) : !data ? (
-        <p className="muted-line">Loading…</p>
+        <Loading />
       ) : (
         <>
           {mcpOn ? (
@@ -113,8 +115,7 @@ function EmailPreferences() {
     };
   }, []);
 
-  const onToggle = async (e) => {
-    const next = e.target.checked;
+  const onToggle = async (next) => {
     const prev = updates;
     setUpdates(next);
     setError("");
@@ -133,17 +134,14 @@ function EmailPreferences() {
   return (
     <Card style={{ marginTop: "1rem" }}>
       <CardHeader title="Emails" />
-      <label className="set-check">
-        <input
-          type="checkbox"
-          checked={!!updates}
-          onChange={onToggle}
-          disabled={updates === null || saving}
-        />
-        <span>
+      <Switch
+        checked={!!updates}
+        onChange={onToggle}
+        disabled={updates === null || saving}
+        label={<span>
           <b>Product update emails</b> — a short monthly note on what's new, and a couple of getting-started tips when you join.
-        </span>
-      </label>
+        </span>}
+      />
       <p className="muted-line" style={{ marginBottom: 0 }}>
         Emails you trigger yourself, like team invites and shares, aren't affected.
       </p>

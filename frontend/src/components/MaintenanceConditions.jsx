@@ -15,6 +15,8 @@ import {
 } from "../maintenanceConditions.js";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { classesPath } from "../redirects.js";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // ---- on a location, position or item ----------------------------------------------------------
 
@@ -128,7 +130,7 @@ function ConditionModal({ target, view, entry, onClose, onDone }) {
                }))}>
       {!entry && (
         <Field label="Condition">
-          {register === null ? <span className="lib-date">Loading…</span> : register.length === 0 ? (
+          {register === null ? <Loading inline /> : register.length === 0 ? (
             <span className="lib-date">The register is empty: add conditions on the <Link to={classesPath()}>Classes</Link> page first.</span>
           ) : (
             <select autoFocus value={conditionId} onChange={(e) => setConditionId(e.target.value)}>
@@ -202,7 +204,7 @@ export function ConditionsSection() {
           </div>
         </div>
         {error && <div className="card error">{error}</div>}
-        {data === null ? <p className="lib-date">Loading…</p> : empty ? (
+        {data === null ? <Loading /> : empty ? (
           <p className="lib-date">
             Optional. Your own list of what places and equipment are exposed to: Outdoor, Coastal, Seawater, Hazardous
             area › Zone 1, or a value such as Ambient temperature in °C. Set them on locations, positions and items: what's
@@ -259,7 +261,7 @@ function ConditionPanel({ id, data, onChanged, onRetired, onAddChild }) {
     setError(null);
     try { await retireCondition(id); onRetired(); } catch (e) { setError(e.message); }
   };
-  if (!c) return <section className="card">{error ? <div className="card error">{error}</div> : <p className="lib-date">Loading…</p>}</section>;
+  if (!c) return error ? <LoadFailed what="Couldn't load the condition." error={error} onRetry={load} /> : <section className="card"><Loading /></section>;
   return (
     <section className="card">
       <div className="maint-head">

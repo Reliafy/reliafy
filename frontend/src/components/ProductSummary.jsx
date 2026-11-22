@@ -22,6 +22,8 @@ import {
   hoursText, itemPagePath, itemTreePath, itemsBuiltText, productRbds, revText,
 } from "../products.js";
 import "../views/MaintenanceProducts.css";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
 
 const quiet = (text) => <span className="td-quiet">{text}</span>;
 
@@ -66,7 +68,7 @@ function BuiltItems({ product, version, onBuild }) {
     <Section title="Built items" count={rows.length || null} id="built-items"
              action={{ label: "Build an item…", onClick: onBuild }}>
       {error ? <p className="field-error" role="alert">The items didn't load: {error}</p>
-        : !data ? <p className="td-quiet">Loading…</p>
+        : !data ? <Loading inline as="p" />
         : rows.length === 0 ? (
           <p className="td-quiet">No items built yet. Build one for each serial number: it copies this structure into the
             item's own tree, so its fitments, readings and failure reports are its own and roll up here.</p>
@@ -117,7 +119,7 @@ function BillOfMaterials({ product }) {
       {!part ? (
         <p className="td-quiet">This product has no part yet, so it has no bill of materials.</p>
       ) : error ? <p className="field-error" role="alert">The bill of materials didn't load: {error}</p>
-        : !structure ? <p className="td-quiet">Loading…</p>
+        : !structure ? <Loading inline as="p" />
         : empty ? <p className="td-quiet">Nothing inside {part.part_number} yet: add what goes in it on the part's page.</p>
         : (
           <>
@@ -166,7 +168,7 @@ function Analyses({ product }) {
   return (
     <Section title="Analyses of this design" count={rbds?.length || null} id="design-analysis">
       {error && <p className="field-error" role="alert">{error}</p>}
-      {rbds === null ? (!error && <p className="td-quiet">Loading…</p>) : rbds.length === 0 ? (
+      {rbds === null ? (!error && <Loading inline as="p" />) : rbds.length === 0 ? (
         <p className="td-quiet">No RBD of this product yet.</p>
       ) : (
         <ul className="pp-links">
@@ -211,7 +213,7 @@ export default function ProductSummary({ row, version: treeVersion = 0, actions 
     setVersion((v) => v + 1);
   }, []);
   const facts = error ? <p className="field-error" role="alert">The product didn't load: {error}</p>
-    : product ? <ProductFacts product={product} /> : <p className="td-quiet">Loading…</p>;
+    : product ? <ProductFacts product={product} /> : <Loading inline as="p" />;
   return (
     <>
       {/* Build an item… is the Built items section's button here, not a footer one. */}
@@ -244,8 +246,8 @@ export function ProductPartsList({ productId }) {
   useEffect(() => {
     if (part?.id) getPartStructure(part.id).then(setStructure).catch((e) => setError(e.message));
   }, [part?.id, part?.name]);
-  if (productError) return <div className="card error">The product didn't load: {productError}</div>;
-  if (!product) return <div className="card empty">Loading…</div>;
+  if (productError) return <LoadFailed what="Couldn't load the product." error={productError} />;
+  if (!product) return <Loading card />;
   if (!part) {
     return (
       <section className="card empty">
@@ -255,8 +257,8 @@ export function ProductPartsList({ productId }) {
       </section>
     );
   }
-  if (error) return <div className="card error">The parts list didn't load: {error}</div>;
-  if (!structure) return <div className="card empty">Loading…</div>;
+  if (error) return <LoadFailed what="Couldn't load the parts list." error={error} />;
+  if (!structure) return <Loading card />;
   const empty = !(structure.tree?.children || []).length;
   return (
     <>

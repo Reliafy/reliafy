@@ -5,6 +5,8 @@ import { Field, FormModal, PositionPicker } from "./MaintenanceParts.jsx";
 import { ClassPicker } from "./MaintenanceItemClasses.jsx";
 import { PART_ROLES } from "../maintenanceSpares.js";
 import { partsPath } from "../redirects.js";
+import Loading from "./ui/Loading.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // The parts forms, one copy each wherever they're used (Derryn, 9 Nov 2026: "use the same
 // components so a change in one place appears in the other"): New part (the Parts tab; the
@@ -99,7 +101,7 @@ export function PartEntryModal({ p, entry, onClose, onDone, positions = null }) 
       )}
       {!entry && (
         <Field label="Part">
-          {catalogue === null ? <span className="lib-date">Loading…</span> : catalogue.length === 0 ? (
+          {catalogue === null ? <Loading inline /> : catalogue.length === 0 ? (
             <span className="lib-date">The catalogue is empty: add parts on the <Link to={partsPath()}>Parts and stock</Link> page first.</span>
           ) : (
             <select autoFocus value={f.part_id} onChange={set("part_id")} aria-label="Part">
@@ -118,10 +120,8 @@ export function PartEntryModal({ p, entry, onClose, onDone, positions = null }) 
       </Field>
       <Field label="Quantity per job"><input type="number" inputMode="decimal" min="0" step="any" value={f.quantity}
              onChange={set("quantity")} /></Field>
-      <label className="maint-row" style={{ gap: "0.5rem" }}>
-        <input type="checkbox" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })} />
-        Critical spare: keep some in stock
-      </label>
+      <Checkbox className="maint-row" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })}
+                label="Critical spare: keep some in stock" />
       {f.critical && (
         <Field label="Keep at least (blank: one job's worth)"><input type="number" inputMode="decimal" min="0" step="any"
                value={f.min} onChange={set("min")} /></Field>

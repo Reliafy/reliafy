@@ -1,8 +1,6 @@
 import Plot from "./Plot.jsx";
 import Chip from "./ui/Chip.jsx";
-import {
-  COLORWAY, DATA_INK, NEUTRAL_BAND_FILL, band, dataLine, dataPoints, fitLine,
-} from "../plotTheme.js";
+import { COLORWAY, DATA_INK, NEUTRAL_BAND_FILL, band, dataLine, dataPoints, fitLine, legendBg } from "../plotTheme.js";
 import { formatNumber } from "../format.js";
 import { ciText, effectTone, familyOf } from "../recurrentResults.js";
 import { ForestChart } from "./model/Effects.jsx";
@@ -16,7 +14,7 @@ import { ciPct } from "../levels.js";
 // Inside the plot, top left: a mean cumulative function rises from bottom
 // left to top right, so that corner is empty.
 const LEGEND_IN = {
-  orientation: "v", x: 0.015, xanchor: "left", y: 0.985, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)",
+  orientation: "v", x: 0.015, xanchor: "left", y: 0.985, yanchor: "top", bgcolor: legendBg(),
 };
 const MARGIN = { t: 8, r: 12, b: 44 };
 
