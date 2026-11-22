@@ -12,7 +12,13 @@ import {
 } from "../api.js";
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { columnFacts } from "../lifeData.js";
-import { jointIssues, jointMappingsFromReading, jointRequest } from "../joint.js";
+import {
+  JOINT_LINKS, exposureLevel, exposureUnit, jointIssues, jointMappingsFromReading, jointRequest, linkIssue, timeWord,
+} from "../joint.js";
+import ChoiceChips from "../components/ui/ChoiceChips.jsx";
+import Field from "../components/ui/Field.jsx";
+import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
+import { TextInput } from "../components/ui/Controls.jsx";
 import { emptyReading } from "../datasetReading.js";
 import { useDatasetReading } from "../useDatasetReading.js";
 import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
@@ -60,6 +66,8 @@ export default function JointNewPage() {
   const [detail, setDetail] = useState(null); // the dataset's detail (getDataset)
   const [covs, setCovs] = useState([]); // [{name, risk, path}]
   const [path, setPath] = useState("linear");
+  const [link, setLink] = useState("value"); // what of the reading the risk follows
+  const [above, setAbove] = useState(""); // accumulated exposure: count it above this reading level
   const [markerTyped, setMarkerTyped] = useState(null);
   const [measEditing, setMeasEditing] = useState(false);
   const [name, setName] = useState("");
@@ -176,7 +184,7 @@ export default function JointNewPage() {
     const token = runGuard.current.start();
     try {
       const out = await fitJointModel({
-        ...body, name: name.trim(), path_model: path, unit, marker: marker.trim(), marker_unit: markerUnit.trim(),
+        ...body, name: name.trim(), path_model: path, link, exposure_above: exposure.value, unit, marker: marker.trim(), marker_unit: markerUnit.trim(),
         run_token: token,
       });
       if (!runGuard.current.isCurrent(token)) return; // cancelled while it ran
@@ -225,6 +233,11 @@ export default function JointNewPage() {
   );
   const setCov = (i, patch) => setCovs((cur) => cur.map((c, k) => (k === i ? { ...c, ...patch } : c)));
   const pathOpt = (opts?.paths || []).find((p) => p.id === path);
+  const linkOpts = (opts?.links || []).length
+    ? opts.links.map((l) => ({ value: l.id, label: l.name, title: l.description })) : JOINT_LINKS;
+  const linkProblem = linkIssue(link, path, opts?.slope_paths);
+  const linkOpt = linkOpts.find((l) => l.value === link);
+  const exposure = exposureLevel(above, link);
   const unitWord = unit ? unit.toLowerCase() : "the time unit";
 
   return (
@@ -383,6 +396,35 @@ export default function JointNewPage() {
             </label>
           </div>
           {pathOpt?.description && <p className="hint">{pathOpt.description}</p>}
+          <details className="deg-advanced joint-advanced">
+            <summary>Advanced (the defaults are fine)</summary>
+            <div className="dist-field">
+              <span className="dist-label">What the risk follows</span>
+              <ChoiceChips
+                id="joint-link"
+                label="What the risk follows"
+                options={linkOpts}
+                value={link}
+                onChange={(v) => setLink(v || "value")}
+              />
+            </div>
+            {linkProblem
+              ? <p className="xcn-issue" role="alert">{linkProblem}</p>
+              : <p className="hint">{linkOpt?.title} {link === "cumulative"
+                ? `Its effect is per 1 ${exposureUnit(markerUnit, unit)}: one ${timeWord(unit)} spent `
+                  + `1 ${markerUnit || "unit of the reading"} higher.`
+                : link !== "value" && "Its effect is per unit of the reading per one of "
+                  + `${unitWord}, and is learnt from how lives differ between units whose readings rise at different rates.`}</p>}
+            {link === "cumulative" && (
+              <Field label="Count exposure above" optional error={exposure.error}
+                help="Only the reading above this level adds to the total, e.g. a temperature limit. Blank counts from 0.">
+                <InputGroup label="Count exposure above">
+                  <TextInput inputMode="decimal" value={above} onChange={(e) => setAbove(e.target.value)} placeholder="0" />
+                  <Addon>{markerUnit || "reading units"}</Addon>
+                </InputGroup>
+              </Field>
+            )}
+          </details>
           <div className="joint-fields">
             <label className="dist-field">
               <span className="dist-label">What is read</span>
@@ -401,13 +443,14 @@ export default function JointNewPage() {
             )}
             {ready && !editing && issues.length > 0 && (
               <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
-                First settle what the reading lacks: {[...new Set(issues.map((i) => `${i.row} (${i.table === "life" ? "life data" : "measurements"})`))].join(", ")}.
+                {issues[0].text.replace(/\.\s*$/, "")} ({issues[0].table === "life" ? "life data" : "measurements"}: use its
+                Change the reading{issues.length > 1 ? `; ${issues.length - 1} more note${issues.length === 2 ? "" : "s"} above` : ""}).
               </span>
             )}
             <button type="button" className="secondary" disabled={!mapped || !!busy} onClick={onCheck}>
               {busy === "check" ? "Checking…" : "Check data"}
             </button>
-            <button type="button" disabled={!mapped || !name.trim() || !!busy} onClick={onFit}>
+            <button type="button" disabled={!mapped || !name.trim() || !!busy || !!linkProblem || !!exposure.error} onClick={onFit}>
               {busy === "fit" ? "Fitting…" : <>Fit model<ProTag /></>}
             </button>
             {busy === "fit" && (

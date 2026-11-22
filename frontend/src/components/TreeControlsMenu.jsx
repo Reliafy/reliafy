@@ -24,6 +24,9 @@ import { menuMove } from "../treeControls.js";
 //   chips    [{id, label, title, on, mark}]; onChip(id) turns one on or off;
 //            mark {kind, text}: the tree's marker the filter matches, drawn
 //            beside it so the menu is the markers' key too
+//            count: how many it would keep (shown beside it, so turning one on is never a surprise)
+//   floor    {label, value, max, count, onChange(raw)}: a "show only at or above" number under the
+//            filters (the FME(C)A's "RPN at least"), or null; blank turns it off
 //   markNote a line under the filters about the markers, or null
 //   changed  [{id, label}]: what isn't as usual; onReset puts it back
 //   actions  [{id, label, onSelect}]: they close the menu first
@@ -43,7 +46,7 @@ const Tick = ({ on }) => (
 );
 
 export default function TreeControlsMenu({
-  pinned = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [], markNote = null,
+  pinned = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [], markNote = null, floor = null,
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
@@ -129,6 +132,8 @@ export default function TreeControlsMenu({
       close(true);
       return;
     }
+    // In the number box, ← → move the caret, as in any text box.
+    if (e.target?.tagName === "INPUT" && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End")) return;
     if (e.key === "Tab") {
       e.preventDefault();
       close(true);
@@ -191,8 +196,21 @@ export default function TreeControlsMenu({
                     title={c.title} className={"ovm-item tm-item" + (c.on ? " on" : "")} onClick={() => onChip(c.id)}>
               <Tick on={c.on} />{c.label}
               {c.mark && <span className={`tp-mini tm-mark ${c.mark.kind}`} aria-hidden="true">{c.mark.text}</span>}
+              {c.count != null && !c.mark && <span className="tm-n">{c.count.toLocaleString("en-AU")}<span className="sr-only"> {c.count === 1 ? "row" : "rows"}</span></span>}
             </button>
           ))}
+          {floor && (
+            <label className="tm-item tm-floor">
+              <span className="tm-floor-l">{floor.label}</span>
+              <input type="number" inputMode="numeric" min={1} max={floor.max} step={1} data-id="floor" tabIndex={-1}
+                     value={floor.value ?? ""} placeholder="any" aria-describedby={`${id}-floor`}
+                     onChange={(e) => floor.onChange(e.target.value)}
+                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); close(true); } }} />
+              <span className="tm-n" id={`${id}-floor`}>
+                {floor.count != null ? `${floor.count.toLocaleString("en-AU")} ${floor.count === 1 ? "row" : "rows"}` : ""}
+              </span>
+            </label>
+          )}
           {markNote && chips.some((c) => c.mark) && <p className="tm-note">{markNote}</p>}
         </div>
       )}

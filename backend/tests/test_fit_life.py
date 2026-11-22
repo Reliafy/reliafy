@@ -140,12 +140,14 @@ def test_a_prior_around_a_value_between_two_bounds(m, db):
     prior = {"kind": "around", "distribution": "weibull", "unit": "days",
              "params": {"alpha": {"about": 400, "between": [300, 600]}, "beta": {"between": [1.5, 4]}}}
     got = fit_life.fit(m, db, OWNERS, set(), new, data="position", method="bayes", prior=prior)
-    assert got["baseline"]["name"] == "alpha about 400, 90% between 300 and 600; beta 90% between 1.5 and 4"
+    # Centred on the 400 said (not the 424 between 300 and 600), the range widened on the short side to keep it so.
+    assert got["baseline"]["name"] == ("alpha about 400, 90% between 267 and 600 (widened from 300–600 to keep 400 in the "
+                                       "middle); beta 90% between 1.5 and 4")
     assert "(as stated)" in got["words"] and got["interval_label"] == "90% credible interval"
     # The same as SurPyval directly.
     own = m.life_data(new)
     direct = sp.Weibull.fit_bayes(np.array([r["x"] for r in own], float), c=np.array([r["c"] for r in own]),
-                                  priors={"alpha": sp.prior.around(400, between=(300, 600)), "beta": sp.prior.between(1.5, 4)})
+                                  priors={"alpha": sp.prior.NormalOnScale(400 / 1.5, 600), "beta": sp.prior.between(1.5, 4)})
     assert next(p["median"] for p in got["posterior"] if p["name"] == "alpha") == pytest.approx(direct.params[0], rel=0.01)
     # An exponential by its mean life.
     exp = fit_life.fit(m, db, OWNERS, set(), new, method="bayes",
@@ -159,3 +161,34 @@ def test_a_prior_around_a_value_between_two_bounds(m, db):
             fit_life.fit(m, db, OWNERS, set(), new, method="bayes", prior={"kind": "around", "params": bad})
     saved = fit_life.fit(m, db, OWNERS, set(), new, method="bayes", prior=prior, save=True)
     assert saved["role"] == "bayesian"
+
+
+# ---- The unit is the model's own (SurPyval's model.unit) -------------------------------
+
+
+def test_a_position_fit_carries_its_unit_into_surpyval_plain_and_with_a_prior(m, db):
+    from backend.services import bayes_life as bl
+    from backend.services import models as models_service
+
+    new = _plant(m)
+    plain = fit_life.fit(m, db, OWNERS, set(), new, data="class", method="mle", save=True)
+    saved = models_service.get_model(db, plain["model_id"], ORG)
+    assert saved.serialized["model"]["unit"] == "Days" and saved.results["unit"] == "Days"
+    bayes = fit_life.fit(m, db, OWNERS, set(), new, data="both", trust="guide", save=True)
+    doc = models_service.get_model(db, bayes["model_id"], ORG)
+    assert bl.rebuild(doc.spec).unit == "Days"  # the update's model, in the app's spelling
+
+
+def test_the_class_prior_centre_is_fitted_in_the_fit_unit(m, db, monkeypatch):
+    seen = []
+    real = sp.Weibull.fit
+
+    def spy(*args, **kwargs):
+        model = real(*args, **kwargs)
+        seen.append(model.unit)
+        return model
+
+    monkeypatch.setattr(sp.Weibull, "fit", spy)
+    new = _plant(m)
+    fit_life.fit(m, db, OWNERS, set(), new, data="both", trust="guide")
+    assert seen and set(seen) == {"Days"}

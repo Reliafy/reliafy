@@ -34,10 +34,12 @@ export default function RcmHome() {
     return () => { on = false; };
   }, []);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listRcmStudies()
       .then((d) => setStudies(d.studies || []))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -112,6 +114,8 @@ export default function RcmHome() {
       )}
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={studies}
         noun={["study", "studies"]}
         fields={(s) => [s.name, s.system]}

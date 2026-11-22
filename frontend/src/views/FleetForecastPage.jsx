@@ -18,7 +18,7 @@ import ResultSummary, { ResultDetails } from "../components/ui/ResultSummary.jsx
 import { formatNumber, formatPercent } from "../format.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { unitInText } from "../components/unitText.js";
-import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
+import { convertPeriod, itemsWithoutUsage, periodDays, usageInputValue } from "../fleetUsage.js";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
 import FleetSparesCard from "../components/FleetSparesCard.jsx";
 import FleetStrategyCard, { FailureCostField, FleetStrategyFields } from "../components/FleetStrategy.jsx";
@@ -95,6 +95,14 @@ export default function FleetForecastPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [conflict, setConflict] = useState(false);
+  // Items and settings live only on this page until Save & forecast: closing or
+  // reloading the tab with them unsaved asks first (the browser's own prompt).
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const ask = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", ask);
+    return () => window.removeEventListener("beforeunload", ask);
+  }, [dirty]);
   const askText = useAskText();
   // The assumptions line opens into its form (#311); a new forecast starts open.
   const [editing, setEditing] = useState(false);
@@ -103,6 +111,10 @@ export default function FleetForecastPage() {
   // Rows ticked for a change to many at once (indexes into items).
   const [selected, setSelected] = useState(() => new Set());
   const [bulk, setBulk] = useState({ current_use: "", rate: "" });
+  // The last calendar period the numbers are in (months, quarters…): a change
+  // of period converts the usage and counts from it, and says so.
+  const [periodBasis, setPeriodBasis] = useState(null);
+  const [periodNote, setPeriodNote] = useState(null);
   const navigate = useNavigate();
   const runningUnits = useRunningUnits(id, !!fleet && !fleet.read_only && fleet.model_kind !== "alt");
 
@@ -113,6 +125,8 @@ export default function FleetForecastPage() {
         setFleet(f);
         setSettings(f.settings || {});
         setItems(f.items || []);
+        setPeriodBasis(periodDays(f.settings?.period_label ?? "months") ? (f.settings?.period_label ?? "months") : null);
+        setPeriodNote(null);
         setDirty(false);
         setConflict(false);
         setSelected(new Set());
@@ -122,7 +136,7 @@ export default function FleetForecastPage() {
   };
   useEffect(load, [id]);
 
-  if (error && !fleet) return <div className="app"><LoadFailed header error={error} notFound="Forecast not found." to="/forecasts" label="See all forecasts" /></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed header onRetry={() => { setError(null); load(); }} error={error} notFound="Forecast not found." to="/forecasts" label="See all forecasts" /></div>;
   if (!fleet || !settings) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const readOnly = fleet.read_only;
@@ -154,6 +168,27 @@ export default function FleetForecastPage() {
     : [];
 
   const setSetting = (key, value) => { setSettings((s) => ({ ...s, [key]: value })); setDirty(true); };
+  // A new period converts what was typed per period (usage up, counts down) so
+  // the forecast covers the same span at the same usage; a label with no
+  // calendar length ("cycles") is just renamed, and typing passes through
+  // partial words ("quar…") without converting.
+  const setPeriod = (label) => {
+    const converted = periodBasis ? convertPeriod({ ...settings, period_label: label }, items, periodBasis, label) : null;
+    if (converted) {
+      const word = (l) => String(l).trim().replace(/s$/i, "");
+      const rate = converted.settings.default_rate;
+      const u = unit ? ` ${unitInText(unit)}` : "";
+      setSettings(converted.settings);
+      setItems(converted.items);
+      setPeriodNote(Number(settings.default_rate) > 0
+        ? `Converted from ${word(periodBasis)}s: ${formatNumber(settings.default_rate, { sig: 6 })}${u} a ${word(periodBasis)} is ${formatNumber(rate, { sig: 6 })}${u} a ${word(label)}, over ${converted.settings.periods} ${word(label)}${converted.settings.periods === 1 ? "" : "s"}. Item rates, lead time and review interval are converted too.`
+        : `Converted from ${word(periodBasis)}s: horizon ${converted.settings.periods} ${word(label)}${converted.settings.periods === 1 ? "" : "s"}; item rates, lead time and review interval are converted too.`);
+      setDirty(true);
+    } else {
+      setSetting("period_label", label);
+    }
+    if (periodDays(label)) setPeriodBasis(label);
+  };
   const setItem = (idx, key, value) => {
     setItems((xs) => xs.map((it, i) => (i === idx ? { ...it, [key]: value } : it)));
     setDirty(true);
@@ -207,6 +242,7 @@ export default function FleetForecastPage() {
       setFleet(fresh);
       setSettings(fresh.settings || {});
       setItems(fresh.items || []);
+      setPeriodNote(null);
       setDirty(false);
     } catch (err) {
       if (err.code === "conflict") { setError(err.message); setConflict(true); }
@@ -407,10 +443,14 @@ export default function FleetForecastPage() {
             </label>
             <label className="login-field" style={{ width: 130 }}>
               <span>Period</span>
-              <input type="text" value={settings.period_label ?? "months"}
-                     onChange={(e) => setSetting("period_label", e.target.value)} />
+              <input type="text" value={settings.period_label ?? "months"} list="fleet-period-options"
+                     onChange={(e) => setPeriod(e.target.value)} />
+              <datalist id="fleet-period-options">
+                {["days", "weeks", "months", "quarters", "years"].map((p) => <option key={p} value={p} />)}
+              </datalist>
             </label>
           </div>
+          {periodNote && <p className="hint" data-testid="fleet-period-note" style={{ marginBottom: 0 }}>{periodNote}</p>}
           {noUsage > 0 && (
             <p id="fleet-usage-missing" className="hint fleet-alert-warn" style={{ marginBottom: 0 }}>
               Set the usage per {settingsWord}: {noUsage === items.length ? "the items have" : `${noUsage} item${noUsage === 1 ? " has" : "s have"}`} no
@@ -532,14 +572,14 @@ export default function FleetForecastPage() {
               )
             }
             stats={[
-              range && { label: `Likely range (${rangeLevelText(forecast.interval_level)})`, value: range, hint: rangeHint },
+              range && { label: `Likely range (${rangeLevelText(forecast.interval_level)} two-sided)`, value: range, hint: rangeHint },
               forecast.periods > 1 && {
                 label: `Average a ${periodWord}`,
                 value: `≈ ${formatNumber(forecast.expected / forecast.periods, { sig: 2 })}`,
               },
             ]}
           >
-            {dirty ? "Unsaved changes — Save & forecast to update." : repairable ? forecast.units?.text : null}
+            {dirty ? "Unsaved changes — Save & forecast to keep them and update." : repairable ? forecast.units?.text : null}
           </ResultSummary>
           {(forecast.per_period || []).some((v) => v > 0) && (
             <>

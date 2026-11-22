@@ -4,6 +4,7 @@ import { changePackage, getPackage, raisePackageVisit, updatePackage } from "../
 import PageHeader from "../components/ui/PageHeader.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
 import TablePane from "../components/TablePane.jsx";
+import PackageParts from "../components/PackageParts.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
@@ -13,14 +14,17 @@ import { SubjectCell } from "./MaintenanceHome.jsx";
 import usePhone from "../usePhone.js";
 import { rollupLines, visitRuleText } from "../lsaTab.js";
 import HowOften from "../components/HowOften.jsx";
-import { packageDates } from "../howOften.js";
+import { HOURS_PACKAGE_NOTE, packageDates } from "../howOften.js";
 import { PACKAGES_PATH, linesText, packagePath, workOrderPath } from "../maintenanceOrders.js";
 import {
-  PACKAGE_UNITS, editBody, formProblem, initialForm, outcomeText, packageSentence, taskLabel, visitDay,
-  visitTasksText,
+  editBody, formProblem, initialForm, outcomeText, packageSentence, packageWithoutWorkOrders,
+  taskLabel, unitsFor, visitDay, visitTasksText,
 } from "../packagePage.js";
 import { ORDERS_PATH, PACKAGES_LABEL } from "../navigation.js";
 import { subjectPath } from "../maintenanceSubjects.js";
+import { tabPlace } from "../explorerTabs.js";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
+import { planWords } from "../workManagement.js";
 import "./Maintenance.css";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -34,13 +38,17 @@ export default function MaintenancePackage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const phone = usePhone();
-  const [pkg, setPkg] = useState(null);
+  const [rawPkg, setPkg] = useState(null);
+  // Work management off (workManagement.js): a plan of visits for the forecasts; nothing raised or done.
+  const workOrders = useWorkManagementOn();
+  const pkg = packageWithoutWorkOrders(rawPkg, workOrders);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [modal, setModal] = useState(null); // "pause" | "retire"
   const [said, setSaid] = useState(null);
   const today = workspaceToday();
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     setPkg(null);
@@ -48,12 +56,12 @@ export default function MaintenancePackage() {
     setEditing(false);
     getPackage(id).then((p) => live && setPkg(p)).catch((e) => live && setError(e.message));
     return () => { live = false; };
-  }, [id]);
+  }, [id, attempt]);
 
-  if (error && !pkg) {
-    return <div className="app"><LoadFailed header error={error} notFound="Package not found." to={PACKAGES_PATH} label="Back to Packages" /></div>;
+  if (error && !rawPkg) {
+    return <div className="app"><LoadFailed onRetry={() => setAttempt((n) => n + 1)} header error={error} notFound="Package not found." to={PACKAGES_PATH} label="Back to Packages" /></div>;
   }
-  if (!pkg) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!rawPkg) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const changed = (fresh, text) => {
     setModal(null);
@@ -87,7 +95,7 @@ export default function MaintenancePackage() {
     <div className="app">
       <PageTitle name={pkg.name} />
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: ORDERS_PATH }, { label: PACKAGES_LABEL, to: PACKAGES_PATH }]}
+        crumbs={[{ label: "Maintenance", to: workOrders ? ORDERS_PATH : PACKAGES_PATH }, { label: PACKAGES_LABEL, to: PACKAGES_PATH }]}
         title={pkg.name}
         badges={<StatusChips pkg={pkg} today={today} />}
         meta={[pkg.subject && `on ${pkg.subject.name}`, pkg.trade && `needs: ${pkg.trade}`, `${plural(pkg.tasks?.length || 0, "task")}`]
@@ -102,7 +110,8 @@ export default function MaintenancePackage() {
       <div className={"pkg-page" + (editing && !phone ? " is-editing" : "")}>
         <div className="pkg-main">
           <Details pkg={pkg} />
-          <NextVisits pkg={pkg} today={today} onRaise={async () => {
+          {pkg.status !== "retired" && pkg.tasks?.length > 0 && <PackageParts packageId={pkg.id} className="card" />}
+          <NextVisits pkg={pkg} today={today} canRaiseAny={workOrders} onRaise={async () => {
             try {
               const out = await raisePackageVisit(pkg.id);
               setPkg(await getPackage(pkg.id));
@@ -111,8 +120,8 @@ export default function MaintenancePackage() {
               setSaid(e.message);
             }
           }} />
-          <Tasks pkg={pkg} />
-          <WorkOrders pkg={pkg} navigate={navigate} />
+          <Tasks pkg={pkg} workOrders={workOrders} />
+          {workOrders && <WorkOrders pkg={pkg} navigate={navigate} />}
         </div>
         {editing && (
           <EditPane pkg={pkg} phone={phone} onClose={() => setEditing(false)}
@@ -134,7 +143,16 @@ function Details({ pkg }) {
     <section className="card">
       <dl className="maint-dl">
         {pkg.subject && <><dt>On</dt><dd><Link to={subjectPath(pkg.subject)}>{pkg.subject.name}</Link></dd></>}
-        <dt>Timing</dt><dd>{pkg.cadence?.text}{pkg.timing === "from_last_visit" ? "" : " (set dates)"}</dd>
+        <dt>Timing</dt><dd>{pkg.cadence?.text}{pkg.cadence?.unit === "hours" ? "" : pkg.timing === "from_last_visit" ? "" : " (set dates)"}</dd>
+        {pkg.cadence?.by_hours && (
+          <><dt>Hour meter</dt><dd>
+            {pkg.cadence.by_hours.counter?.name || "None"}
+            {pkg.cadence.by_hours.reading ? `: ${Number(pkg.cadence.by_hours.reading.value).toLocaleString("en-GB")} h on ${fmtDate(pkg.cadence.by_hours.reading.on)}` : ""}
+            {` · counted from ${Number(pkg.cadence.by_hours.anchor_reading).toLocaleString("en-GB")} h`}
+            {pkg.cadence.by_hours.basis?.text ? <div className="lib-date">Dates: {pkg.cadence.by_hours.basis.text}</div> : null}
+            {pkg.cadence.by_hours.note ? <div className="lib-date">No dates yet: {pkg.cadence.by_hours.note}.</div> : null}
+          </dd></>
+        )}
         {pkg.tolerance?.amount ? <><dt>On time within</dt><dd>{pkg.tolerance.amount} {unitWord(pkg.tolerance.amount, pkg.tolerance.unit)} after the visit date</dd></> : null}
         {pkg.season?.text && <><dt>Season</dt><dd>{pkg.season.text}</dd></>}
         {pkg.trade && <><dt>Trade</dt><dd>{pkg.trade}</dd></>}
@@ -174,14 +192,14 @@ function Details({ pkg }) {
   );
 }
 
-function NextVisits({ pkg, today, onRaise }) {
+function NextVisits({ pkg, today, onRaise, canRaiseAny = true }) {
   const visits = pkg.next_visits || [];
   const [busy, setBusy] = useState(false);
   // Raise the next visit's work order now, on its own (nothing else that's due).
-  const canRaise = pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order;
+  const canRaise = canRaiseAny && pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order && !!visits[0].on;
   return (
     <section className="card">
-      <div className="maint-head maint-wrap"><h2>{visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2>
+      <div className="maint-head maint-wrap"><h2>{!canRaiseAny ? "Planned visits" : visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2>
         {canRaise && (
           <button type="button" className="secondary sm" disabled={busy}
                   onClick={async () => { setBusy(true); await onRaise(); setBusy(false); }}>
@@ -201,9 +219,11 @@ function NextVisits({ pkg, today, onRaise }) {
           <thead><tr><th>Visit</th><th>Tasks</th><th>What's done</th></tr></thead>
           <tbody>
             {visits.map((v) => (
-              <tr key={v.on} className="maint-plain-row">
+              <tr key={v.on || `h${v.hours}`} className="maint-plain-row">
                 <td className="maint-nowrap">
-                  {visitDay(v.on, today)}
+                  {/* No duty and no meter rate: an hours visit is due at a reading, with no date. */}
+                  {v.on ? visitDay(v.on, today) : v.due_at}
+                  {v.on && v.hours != null && <div className="lib-date">at {Number(v.hours).toLocaleString("en-GB")} h</div>}
                   {v.open_work_order && (
                     <div>
                       <Link to={workOrderPath(v.open_work_order.id)}>#{v.open_work_order.number} open</Link>
@@ -222,14 +242,14 @@ function NextVisits({ pkg, today, onRaise }) {
   );
 }
 
-function Tasks({ pkg }) {
+function Tasks({ pkg, workOrders = true }) {
   const tasks = pkg.tasks || [];
   return (
     <section className="card">
       <div className="maint-head"><h2>Tasks ({tasks.length})</h2></div>
-      {tasks.length === 0 ? <p className="lib-date">No tasks in it yet. Add them from the Explorer&apos;s LSA tab.</p> : (
+      {tasks.length === 0 ? <p className="lib-date">No tasks in it yet. Add them from the Explorer&apos;s {tabPlace("lsa")}.</p> : (
         <div className="maint-scroll"><table className="lib-table">
-          <thead><tr><th>Task</th><th>On</th><th>On which visits</th><th>Interval</th><th>Next due</th><th>Last done</th></tr></thead>
+          <thead><tr><th>Task</th><th>On</th><th>On which visits</th><th>Interval</th><th>{planWords(workOrders).next}</th><th>Last done</th></tr></thead>
           <tbody>
             {tasks.map((t) => (
               <tr key={t.task_id} className="maint-plain-row">
@@ -299,6 +319,7 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
   const fixed = layer || form.timing === "fixed";
   const today = workspaceToday();
   const dates = problem ? null : packageDates(form.how, { anchor: pkg.cadence?.anchor, today, timing: fixed ? "fixed" : "from_last_visit" });
+  const hours = form.how.unit === "hours";
   const save = async (e) => {
     e.preventDefault();
     if (problem || nothing) return;
@@ -326,8 +347,8 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
         )}
         <fieldset className="mt-how">
           <legend>How often</legend>
-          <HowOften value={form.how} onChange={(how) => setForm((f) => ({ ...f, how }))} units={PACKAGE_UNITS} patterns={fixed}
-                    dates={dates} datesNote={fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+          <HowOften value={form.how} onChange={(how) => setForm((f) => ({ ...f, how }))} units={unitsFor(pkg)} patterns={fixed && !hours}
+                    dates={dates} datesNote={hours ? HOURS_PACKAGE_NOTE : fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
         </fieldset>
         {layer ? (
           <p className="lib-date">A layer visits on some of {pkg.parent.name}&apos;s set dates; its on-time window is {pkg.parent.name}&apos;s.</p>

@@ -90,13 +90,17 @@ def _position_names(ctx: AccessCtx):
 @router.get("/rbds")
 def list_rbds(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     """The caller's diagrams (and shared samples). A mission's own RBD carries ``mission``: {name,
-    position_id, position} so the list can show it under its position."""
+    position_id, position} so the list can show it under its position; a diagram built for
+    another (a sub-assembly's, or a mission's copy) carries ``parent_id``, the one it's listed under."""
     shared_by = shares_service.shared_by_map(session, ctx.uid, "rbds") if ctx.is_personal else {}
     rows = rbds_service.list_rbds(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
     positions = _position_names(ctx) if any((r.graph or {}).get("mission_of") for r in rows) else (lambda pid: None)
+    parents = rbds_service.list_parents(rows)
     out = []
     for r in rows:
         row = {**_summary(r, ctx), **({"shared_by": shared_by[r.id]} if r.id in shared_by else {})}
+        if r.id in parents:
+            row["parent_id"] = parents[r.id]
         mission = _mission_of(r.graph or {}, positions)
         if mission:
             row["mission"] = mission
@@ -840,7 +844,7 @@ def expand_subsystems(
     try:
         out = rbd_flatten.expand_saved(session, graph, ctx.read_owners)
     except (rbd_flatten.FlattenError, GraphError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=out)
 
 

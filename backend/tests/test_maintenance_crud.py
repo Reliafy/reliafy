@@ -446,3 +446,17 @@ def test_the_code_before_the_new_events_replays_them_harmlessly(m):
     assert old.node(ORG, loc)["name"] == "Store" and "retired" not in old.node(ORG, loc)
     assert {s["why"] for s in old.skipped()} == {"UnknownEvent in location.retired", "UnknownEvent in item.retired",
                                                 "UnknownEvent in item.restored"}
+
+
+def test_a_position_says_which_asset_it_is_in(m):
+    # The position page's "Open in the Explorer" opens that asset alone (?root=) without reading the
+    # whole register first: the asset is the top place above where it is, else its tree's top.
+    site = m.create_location("Site")["id"]
+    store = m.create_location("Store A", parent_id=site)["id"]
+    plant = m.create_position("Plant", location_id=store)["id"]
+    pump = m.create_position("Pump", parent_id=plant)["id"]
+    assert m.position(pump)["asset"] == site
+    tree = m.create_position("Wattle Flat")["id"]
+    skid = m.create_position("Dosing skid", parent_id=tree)["id"]
+    valve = m.create_position("Valve", parent_id=skid)["id"]
+    assert m.position(valve)["asset"] == tree and m.position(tree)["asset"] == tree

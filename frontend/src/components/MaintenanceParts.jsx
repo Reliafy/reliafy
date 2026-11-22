@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { Link } from "react-router-dom";
 import {
   addMaintenanceDocument, decideProposal, getMaintenanceDocumentBlob, removeMaintenanceDocument,
@@ -12,6 +13,8 @@ import { formatDate } from "../dates.js";
 import { locationOptions } from "../maintenanceLocations.js";
 import { SHORT_TEXT, lengthNote } from "../maintenanceText.js";
 import Modal from "./Modal.jsx";
+import Select from "./Select.jsx";
+import { positionOptions } from "../positionPicker.js";
 
 // Shared pieces for the Reliafy Maintenance pages.
 
@@ -29,10 +32,11 @@ export function fmtDated(iso, precision) {
 export { workspaceToday as today } from "../workspaceDate.js";
 
 // Every position in a tree, depth-first, with its depth (for pickers).
-export function flatten(tree, depth = 0, out = []) {
+// path: the names above it, top first (the position picker's hint); tag: its tag, if any.
+export function flatten(tree, depth = 0, out = [], path = []) {
   for (const node of tree || []) {
-    out.push({ id: node.id, name: node.name, depth });
-    flatten(node.children, depth + 1, out);
+    out.push({ id: node.id, name: node.name, depth, tag: node.tag || "", path });
+    flatten(node.children, depth + 1, out, [...path, node.name]);
   }
   return out;
 }
@@ -246,15 +250,15 @@ export function DocumentsCard({ title = "Documents", documents, target, onChange
   );
 }
 
-// emptyLabel null: one must be chosen (no "None").
-export function PositionPicker({ positions, value, onChange, emptyLabel = "None (top level)", ...rest }) {
+// One position from a tree, by typing (the shared Select with its search box): each
+// by name and tag, with the way down to it under the name (positionPicker.js), so a
+// tree of hundreds is found by a tag, a name or the system it's in. `positions`: from
+// flatten(). emptyLabel null: one must be chosen (no "None").
+export function PositionPicker({ positions, value, onChange, emptyLabel = "None (top level)", "aria-label": ariaLabel }) {
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)} {...rest}>
-      {emptyLabel !== null && <option value="">{emptyLabel}</option>}
-      {positions.map((p) => (
-        <option key={p.id} value={p.id}>{"  ".repeat(p.depth)}{p.name}</option>
-      ))}
-    </select>
+    <Select value={value || ""} onChange={(v) => onChange(v || null)} searchable ariaLabel={ariaLabel}
+            options={positionOptions(positions, emptyLabel)} placeholder={emptyLabel ?? "Choose a position…"}
+            className="position-picker" />
   );
 }
 
@@ -321,6 +325,8 @@ export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onCl
 }
 
 export function DueChip({ task }) {
+  // Work management off (workManagement.js): a plan's next date, never a to-do that's overdue.
+  const workManagement = useWorkManagementOn();
   // Raised by an event, not a date: it waits for it (never overdue).
   if (!task.next_due && task.on_event) {
     return <span className="lib-date" title={task.trigger?.text ? `On event: ${task.trigger.text}` : undefined}>{task.status || "On event"}</span>;
@@ -329,6 +335,7 @@ export function DueChip({ task }) {
     const note = (task.limits || []).map((l) => l.note).find(Boolean);
     return <span className="lib-date">{note || "—"}</span>;
   }
+  if (!workManagement) return <span className="lib-date">{fmtDate(task.next_due)}</span>;
   return (
     <span className={task.overdue ? "maint-overdue" : "lib-date"}
           title={task.overdue_before_package ? "Overdue before it went into its package: it stays overdue until it's done" : undefined}>
@@ -470,10 +477,12 @@ export function NotesCard({ notes, history = [], onAppend, title = "Notes", canA
   );
 }
 
-// How something failed: the position's modes, those seen at like positions
-// (same class), or "something else" typed in. value is { choice, typed } (see
+// How something failed: the position's modes, those analysed on the positions
+// above it (`aboveModes`, [{position: {id, name}, modes}]: a pump set's FME(C)A
+// covers its coupling), those seen at like positions (same class), or
+// "something else" typed in. value is { choice, typed } (see
 // maintenanceModes.js for turning it into request fields).
-export function FailureModePicker({ modes = [], classModes = [], value, onChange, noneLabel = "Not known" }) {
+export function FailureModePicker({ modes = [], aboveModes = [], classModes = [], value, onChange, noneLabel = "Not known" }) {
   const v = value || { choice: "", typed: "" };
   return (
     <>
@@ -484,6 +493,11 @@ export function FailureModePicker({ modes = [], classModes = [], value, onChange
             {modes.map((m) => <option key={m.id} value={`id:${m.id}`}>{m.text}</option>)}
           </optgroup>
         )}
+        {aboveModes.map((g) => (
+          <optgroup key={g.position.id} label={`Analysed on ${g.position.name}`}>
+            {g.modes.map((m) => <option key={m.id} value={`id:${m.id}`}>{m.text}</option>)}
+          </optgroup>
+        ))}
         {classModes.length > 0 && (
           <optgroup label="Seen at like positions">
             {classModes.map((t) => <option key={t} value={`text:${t}`}>{t}</option>)}

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
-import { analyzeRbd, cancelRbdJob, getActiveRbdJob, getRbdJob } from "../api.js";
+import { analyzeRbd, cancelRbdJob, getActiveRbdJob, getRbdJob, validateRbd } from "../api.js";
+import { hasSubsystems, placeholderNote } from "../rbdPlaceholders.js";
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import { graphSignature, resultIsStale } from "../rbdSignature.js";
@@ -12,7 +13,8 @@ import CovariatesModal from "./CovariatesModal.jsx";
 import { covariateWords } from "../rbdTvc.js";
 import BoundCovariatesModal from "./BoundCovariatesModal.jsx";
 import { boundNodes } from "../covariate.js";
-import { getBoundBlocks } from "../api.js";
+import { getBoundBlocks, getRbdAgesNow } from "../api.js";
+import { prefillAges, takenAsNew } from "../rbdAgesNow.js";
 import { BandControls, BandInterval, BandNote, BandTargets, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import RbdCompareDesigns from "./RbdCompareDesigns.jsx";
@@ -35,7 +37,7 @@ import { formatNumber, formatPercent } from "../format.js";
 import { formatDate } from "../dates.js";
 import { hoursPerUnit } from "./rbdModelText.js";
 import { RBD_EVALUATE_AT_EVENT } from "../rbdBuilderOps.js";
-import { answerAtTime, formatProbability, formatReliability, importanceHeading, lifeBoundText } from "../rbdCalcText.js";
+import { answerAtTime, formatProbability, formatReliability, importanceHeading, importanceOutOfDate, lifeBoundText, timeInWords } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import { importanceRows } from "../rbdImportance.js";
 import ProTag from "./ProTag.jsx";
@@ -158,13 +160,18 @@ function ImportanceHelp({ structural }) {
         <dt>Fussell-Vesely</dt>
         <dd>The share of the system's failure probability that involves this block failing.</dd>
         <dt>Risk achievement</dt>
-        <dd>How many times more likely the system is to fail if this block has failed (1 means no change).</dd>
+        <dd>How many times more likely the system is to fail if this block has failed (1 means no change). A block
+          every path needs scores 1 ÷ the system's failure probability, the most any block can: at 90% reliability
+          that is 1 ÷ 0.1 = 10, so several blocks showing exactly 10 is expected, not a cap.</dd>
         <dt>Risk reduction</dt>
         <dd>How many times less likely the system is to fail if this block never failed.</dd>
         <dt>Criticality</dt>
         <dd>The share of system failures this block accounts for.</dd>
         <dt>Improvement potential</dt>
-        <dd>How much the system's reliability would rise if this block never failed.</dd>
+        <dd>How much the system's reliability would rise if this block never failed. To choose what to improve
+          first, read it at the time that matters to you (a mission or a service life): the ranking can change
+          with time. With no time typed, the table opens at the design life (where the system reliability falls
+          to 90%), the one time every diagram has.</dd>
         {structural && (
           <>
             <dt>Structural</dt>
@@ -196,11 +203,15 @@ function AsOfNote({ result, idToLabel }) {
   const parts = Object.entries(result.current_state || {}).map(([id, st]) =>
     st.failed ? `${idToLabel[id] || id} failed` : `${idToLabel[id] || id} running ${fmtLife(st.age)}${unit}`
   );
-  const failed = result.reliability_now === 0;
+  const failed = parts.length > 0 && result.reliability_now === 0;
+  const asNew = takenAsNew(result);
   return (
     <div className={"rbd-asof-note" + (failed ? " is-failed" : "")} role="status">
-      <b>As of now:</b> {parts.join(" · ")}.{" "}
-      {failed
+      <b>As of now:</b> {parts.length ? `${parts.join(" · ")}.` : "every block taken as new."}{" "}
+      {parts.length > 0 && asNew.length > 0 && <>Taken as new (no age given): {asNew.join(", ")}.{" "}</>}
+      {!parts.length
+        ? "No block has an age or a failure set, so these are the figures for new equipment. Set each block's age above (a diagram built from the tree reads them from what's fitted)."
+        : failed
         ? "The system has failed: the failed blocks leave no working path."
         : `Curves, lives and importance run from now (system reliability now ${fmtPctLevel(result.reliability_now ?? 1)}).`}
     </div>
@@ -225,7 +236,7 @@ function JointAgesNote({ result }) {
 // Reliability results (non-repairable RBD): headline MTTF / B-lives, the
 // system + per-node R(t)/F(t) curves, importance measures, and the structural
 // path/cut sets. Also used by the public read-only view.
-export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBandTargets = null }) {
+export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBandTargets = null, onRankAt = null, ranking = false }) {
   const x = result.time;
   const [active, setActive] = useState("sf");
   const unit = result.unit;
@@ -301,6 +312,10 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
   const impHead = importanceHeading(importance, unit);
   // The system's reliability at the time the importances are for.
   const impR = importance.time == null ? null : interp(x, result.system.sf, Number(importance.time));
+  // The table is at one time; the Evaluate box may say another (a time
+  // typed since, or the automatic half-window): say so, with the rerun.
+  const impOff = importanceOutOfDate(importance.time, t);
+  const tWords = impOff ? timeInWords(Number(Number(t).toPrecision(4)), unit) : null;
 
   return (
     <div className="calc">
@@ -318,7 +333,11 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
       {(result.warnings || []).map((w) => (
         <p className="muted-line" key={w}>⚠ {w}</p>
       ))}
-      {now && <AsOfNote result={result} idToLabel={idToLabel} />}
+      {/* Blocks fitted in another unit of the diagram's kind, converted before the analysis. */}
+      {(result.unit_conversions || []).map((c) => (
+        <p className="muted-line" key={`${c.id}-${c.repair}`}>{c.note}</p>
+      ))}
+      {(now || result.as_of_all_new) && <AsOfNote result={result} idToLabel={idToLabel} />}
       <JointAgesNote result={result} />
       <AnswerAtTime result={result} t={t} now={now} survived={cond ? conditionalAge : 0} />
       <DesignLife result={result} />
@@ -384,6 +403,19 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
             {impR != null && <span className="muted"> (system reliability {formatReliability(impR)} there)</span>}
           </div>
           {impHead && <p className="hint rbd-importance-why">{impHead.why.charAt(0).toUpperCase() + impHead.why.slice(1)}. The ranking can change with time.</p>}
+          {impOff && (
+            <div className="rbd-importance-stale" role="status">
+              <span>
+                <span aria-hidden="true">! </span>
+                These are at {impHead ? impHead.at : fmt(importance.time)}, not at the {tWords} in Evaluate at t.
+              </span>
+              {onRankAt && (
+                <button type="button" className="secondary sm" disabled={ranking} onClick={() => onRankAt(Number(t))}>
+                  {ranking ? "Ranking…" : `Rank at ${tWords}`}
+                </button>
+              )}
+            </div>
+          )}
           {/* Scrolls sideways on a phone rather than widening the page,
               as the availability table already does. */}
           <ScrollCue className="rbd-avail-imp-scroll">
@@ -412,7 +444,8 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
                   <td>{fmtImp(importance.fussell_vesely?.[id])}</td>
                   <td>{fmtImp(importance.risk_achievement_worth?.[id])}</td>
                   <td>{fmtImp(importance.risk_reduction_worth?.[id])}</td>
-                  <td>{fmtImp(importance.criticality?.[id])}</td>
+                  {/* A share of the system's failures: a percent, as in the fault tree's table. */}
+                  <td>{formatPercent(importance.criticality?.[id])}</td>
                   <td>{fmtImp(importance.improvement_potential?.[id])}</td>
                   {importance.structural && <td>{fmtImp(importance.structural[id])}</td>}
                 </tr>
@@ -601,6 +634,7 @@ function SifAnswer({ safety }) {
   const optimistic = !!safety.sil_optimistic || noTests || ccfLeftOut;
   const chipTone = !safety.sil ? "danger" : optimistic || safety.sil === 1 ? "warning" : "success";
   const pfd = safety.pfd_avg;
+  const hft = safety.fault_tolerance || null;
   const hasTarget = safety.target_sil != null;
   const tone = hasTarget && !met ? "bad" : optimistic ? "caveat" : hasTarget && met ? "good" : "neutral";
   // Margin to the target's limit, or (no target) to the achieved band's: the
@@ -630,6 +664,7 @@ function SifAnswer({ safety }) {
     },
     margin && { label: "Margin", value: margin },
     pfd > 0 && { label: "Risk reduction", value: <>RRF <b>{formatNumber(1 / pfd)}</b></> },
+    hft && { label: "Fault tolerance (HFT)", value: <HftValue hft={hft} /> },
   ];
   const note = (noTests || ccfLeftOut) && (
     <>
@@ -648,6 +683,29 @@ function SifAnswer({ safety }) {
     </>
   );
   return <AnswerCard tone={tone} rows={rows} note={note} className="rbd-sif-answer" />;
+}
+
+// Hardware fault tolerance (IEC 61508-2): how many dangerous failures each part
+// of the function can take and still trip, read from the diagram (architecture
+// only: no rates, no common cause). Safe failure fraction and the spurious trip
+// rate need each block's safe and detected failure rates, which blocks don't
+// take, so the line says so rather than leaving them out silently.
+function HftValue({ hft }) {
+  const n = (s) => `${s.hft}${s.at_least ? "+" : ""}`;
+  return (
+    <>
+      <b>{n({ hft: hft.function, at_least: hft.at_least })}</b> for the function
+      {hft.subsystems.length > 1 && (
+        <span className="muted">
+          {" "}({hft.subsystems.map((s) => `${s.blocks.join(" + ")}: ${n(s)}`).join(" · ")})
+        </span>
+      )}
+      <div className="muted rbd-hft-note">
+        Failures each part can take and still trip, from the diagram. Safe failure fraction and spurious trip
+        rate need each block&rsquo;s safe and detected failure rates, which the blocks don&rsquo;t take yet.
+      </div>
+    </>
+  );
 }
 
 // A simulated A(t) as drawn: a centred rolling mean over 5% of its
@@ -1103,9 +1161,11 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         {(kpis.length > 0 || windowKpis.length > 0) && <ResultDetailsRows rows={[...kpis, ...windowKpis]} />}
         {/* The method, said once (#313), with the figures it found. */}
         {!needsSim && <p className="rbd-details-p">{methodLine(result, exactOk, hasSim)}</p>}
-        {(result.warnings || []).length > 0 && (
+        {((result.warnings || []).length > 0 || (result.unit_conversions || []).length > 0) && (
           <ul className="rbd-details-notes">
-            {result.warnings.map((w) => <li key={w}>{w}</li>)}
+            {(result.warnings || []).map((w) => <li key={w}>{w}</li>)}
+            {/* Blocks fitted in another unit of the diagram's kind, converted before the analysis. */}
+            {(result.unit_conversions || []).map((c) => <li key={`${c.id}-${c.repair}`}>{c.note}</li>)}
           </ul>
         )}
         {/* Common-cause groups (#226): in every figure here, or left out of them all and why. */}
@@ -1327,7 +1387,7 @@ function AvailabilityUpgrade({ graph, offer = null, capMessage = null, onQuick =
 // "As of now": each block's state now. A repairable block can be down (with
 // how long it has been in repair, #155); a non-repairable one has failed for
 // good (#173). Either can have run some time since new.
-function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
+function AsOfPanel({ blocks, states, onChange, unitLabel, repairable, sources = {}, agesNote = null }) {
   const outMode = repairable ? "down" : "failed";
   return (
     <div className="rbd-asof-panel">
@@ -1338,6 +1398,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
           : "Mark blocks that have failed, or set how long they've been running. Results then run " +
             "from now: the remaining life. Blocks left as New start new."}
       </p>
+      {agesNote && <p className="hint" style={{ margin: 0 }}>{agesNote}</p>}
       <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table rbd-asof-table">
           <thead>
@@ -1355,7 +1416,14 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
               const timed = mode === "age" || (repairable && mode === "down");
               return (
                 <tr key={b.id} className={mode === outMode ? "is-down" : ""}>
-                  <td className="calc-row-label">{b.label}</td>
+                  <td className="calc-row-label">
+                    {b.label}
+                    {sources[b.id] && (
+                      <small className={"rbd-asof-source" + (sources[b.id].missing || sources[b.id].guessed ? " is-caveat" : "")}>
+                        {sources[b.id].text}
+                      </small>
+                    )}
+                  </td>
                   <td>
                     <select
                       value={mode}
@@ -1401,7 +1469,7 @@ const WINDOW_PRESETS = [
 
 export default function RbdCalculator({
   graph, validation, stale: checkStale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
-  onNodeData = null, onConditions = null, onCurrentState = null,
+  onNodeData = null, onConditions = null, onCurrentState = null, onTime = null,
 }) {
   const [result, setResult] = useState(null);
   // The diagram the shown result is for. A result is never shown as current
@@ -1429,6 +1497,11 @@ export default function RbdCalculator({
   // life rather than the from-new range. A typed value always wins.
   const [tMaxAuto, setTMaxAuto] = useState(true);
   const [evalTAuto, setEvalTAuto] = useState(true);
+  // The time the answer is read at, told to the editor so the fault tree opens at it too.
+  useEffect(() => {
+    const t = Number(evalT);
+    onTime?.(evalT !== "" && Number.isFinite(t) && t > 0 ? t : null);
+  }, [evalT]); // eslint-disable-line react-hooks/exhaustive-deps
   const [condAge, setCondAge] = useState(""); // conditional survival age s
   const [covValues, setCovValues] = useState({}); // {nodeId: {covName: value}}
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
@@ -1440,6 +1513,9 @@ export default function RbdCalculator({
   // non-repairable (#173, where a failed block stays failed).
   const [asOf, setAsOf] = useState(false);
   const [blockStates, setBlockStates] = useState({}); // {nodeId: {mode: "new"|"age"|"down"|"failed", value}}
+  // Each block's age from the item fitted at its position (a diagram built from the tree), read
+  // when "As of now" is ticked: {sources: {nodeId: {text, missing?, guessed?}}, note}.
+  const [treeAges, setTreeAges] = useState({ sources: {}, note: null });
   // Non-repairable (#173): the design life, the time R(t) falls to this (%).
   const [targetPct, setTargetPct] = useState("90");
   const [busy, setBusy] = useState(null); // null | "exact" | "simulate": what the running request adds
@@ -1455,9 +1531,24 @@ export default function RbdCalculator({
 
   // Blocks whose non-repairable model is a guessed starting point (the assistant marks
   // them placeholder:true). The numbers run fine; the results just aren't real.
-  const placeholderCount = useMemo(
-    () => (graph.nodes || []).filter((n) => n.data?.model?.placeholder).length,
-    [graph.nodes]
+  // Counted through every sub-system by the server (the diagram's check); until it has checked
+  // a diagram with sub-systems, the count is asked for here (W2: never "1 placeholder" for 27).
+  const [heldTally, setHeldTally] = useState(null); // {sig, held}
+  const withSubs = hasSubsystems(graph);
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  const checked = !!validation?.placeholder_blocks;
+  useEffect(() => {
+    if (!withSubs || checked) return undefined;
+    let live = true;
+    validateRbd(graphRef.current)
+      .then((v) => { if (live) setHeldTally({ sig: graphSig, held: v?.placeholder_blocks || null }); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [withSubs, checked, graphSig]);
+  const phNote = useMemo(
+    () => placeholderNote(graph, validation?.placeholder_blocks || (heldTally?.sig === graphSig ? heldTally.held : null)),
+    [graph, validation, heldTally, graphSig]
   );
 
   // Nodes backed by a proportional-hazards model need covariate values before
@@ -1520,6 +1611,33 @@ export default function RbdCalculator({
     [graph.nodes]
   );
 
+  // "As of now" on a diagram saved from (or linked to) the tree: read each block's age from the
+  // item fitted at its position, fill the blocks not set yet, and say where each came from (or why
+  // a block has none). Without the tree (a hand-drawn diagram, Maintenance off) nothing changes.
+  const stateBlocksRef = useRef(stateBlocks);
+  stateBlocksRef.current = stateBlocks;
+  useEffect(() => {
+    if (!asOf || !rbdId) return undefined;
+    let live = true;
+    getRbdAgesNow(rbdId, graphRef.current)
+      .then((ages) => {
+        if (!live || !ages) return;
+        // The words beside each block don't depend on what the user set; the states do, so they're
+        // filled from the latest states inside the updater (a block the user set keeps its value).
+        const { sources } = prefillAges(ages, stateBlocksRef.current, {});
+        setBlockStates((prev) => prefillAges(ages, stateBlocksRef.current, prev).states);
+        const filled = Object.values(ages.blocks || {}).filter((r) => r.age != null).length;
+        setTreeAges({
+          sources,
+          note: ages.position
+            ? `Ages read from what's fitted on the tree under ${ages.position.name}${filled ? "" : " (none found)"}: change any you know better.`
+            : null,
+        });
+      })
+      .catch(() => { if (live) setTreeAges({ sources: {}, note: null }); });
+    return () => { live = false; };
+  }, [asOf, rbdId, graphSig]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const jointBlocks = useMemo(
     () => (graph.nodes || []).filter((n) => n.data?.model?.kind === "joint").map((n) => n.data?.label || n.id),
     [graph.nodes]
@@ -1555,7 +1673,7 @@ export default function RbdCalculator({
   // "Evaluate at t" (non-repairable); none typed, the backend's default (the
   // 90%-reliability time). An automatic value filled in by a calculation isn't sent.
   const atSent = !graph.repairable && !evalTAuto && evalT !== "" && Number(evalT) > 0 ? Number(evalT) : null;
-  // Download as Python (in the builder's Save menu) uses the same time.
+  // Download as Python (in the builder's ⋯ menu) uses the same time.
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(RBD_EVALUATE_AT_EVENT, { detail: atSent }));
   }, [atSent]);
@@ -1597,7 +1715,9 @@ export default function RbdCalculator({
   // figures of a diagram above the automatic size cap. A plain Calculate of a
   // repairable diagram gets the exact figures (free) and any saved simulation.
   // ``quick`` asks for a free, time-capped simulation (users without Pro, #147).
-  const runCalculation = async (force = false, { simulate = false, exact = false, quick = false } = {}) => {
+  const runCalculation = async (force = false, { simulate = false, exact = false, quick = false, evaluateAt = undefined } = {}) => {
+    // The importance time: the one typed, or (from "Rank at") the one shown.
+    const atUsed = evaluateAt !== undefined ? evaluateAt : atSent;
     setPhase("calculating");
     setBusy(simulate || force || quick ? "simulate" : exact ? "exact" : null);
     setError(null);
@@ -1638,12 +1758,14 @@ export default function RbdCalculator({
                 exact: exact || result?.exact?.status === "ok",
                 runToken: token,
               }
-            : { currentState: now, targetReliability: target, evaluateAt: atSent }),
+            : { currentState: now, targetReliability: target, evaluateAt: atUsed }),
         }
       );
       if (superseded()) return; // cancelled while it ran
       runGuard.current.finish(token);
-      setResult(res);
+      // "As of now" asked with every block left New: the figures are the new-equipment ones, and the
+      // result says so rather than reading as an answer from today's ages.
+      setResult(asOf && !graph.repairable && !res?.current_state ? { ...res, as_of_all_new: true } : res);
       setResultSig(sentSig);
       // The blocks' states the figures are from, for the phased mission beside them.
       if (onCurrentState && !graph.repairable) onCurrentState(res.current_state || null);
@@ -1662,12 +1784,13 @@ export default function RbdCalculator({
           setTMax(Number(limit.toPrecision(4)));
           setTMaxAuto(true);
         }
-        if (evalT === "" || evalTAuto) {
+        // A "Rank at" run made the box's time a typed one: it stays.
+        if (evaluateAt === undefined && (evalT === "" || evalTAuto)) {
           setEvalT(Number((limit / 2).toPrecision(4)));
           setEvalTAuto(true);
         }
       }
-      setCalcSig(JSON.stringify({ t: tSent, s: sInput, cov, band: bandSig, now, target, at: atSent }));
+      setCalcSig(JSON.stringify({ t: tSent, s: sInput, cov, band: bandSig, now, target, at: atUsed }));
       if (!res.job) {
         setPhase("idle");
         setBusy(null);
@@ -1812,7 +1935,7 @@ export default function RbdCalculator({
   }, [rbdId, graph.repairable]);
 
   const setBlockState = (id, patch) =>
-    setBlockStates((prev) => ({ ...prev, [id]: { mode: "new", value: "", ...prev[id], ...patch } }));
+    setBlockStates((prev) => ({ ...prev, [id]: { mode: "new", value: "", ...prev[id], ...patch, fromTree: false } }));
 
   // Nothing to calculate yet (#271): a next step in place of the controls
   // (and of any result from before the blocks went).
@@ -1868,12 +1991,9 @@ export default function RbdCalculator({
 
   return (
     <div className="rbd-calc">
-      {placeholderCount > 0 && (
-        <div className="rbd-placeholder-note" role="status">
-          {placeholderCount === 1
-            ? "1 block uses placeholder parameters"
-            : `${placeholderCount} blocks use placeholder parameters`}
-          {" — results are illustrative until you set real values."}
+      {phNote && (
+        <div className={`rbd-placeholder-note${phNote.mostly ? " is-most" : ""}`} role="status">
+          {phNote.text}
         </div>
       )}
 
@@ -1969,6 +2089,8 @@ export default function RbdCalculator({
             onChange={setBlockState}
             unitLabel={unitLabel}
             repairable={false}
+            sources={treeAges.sources}
+            agesNote={treeAges.note}
           />
           {jointBlocks.length > 0 && (
             <p className="hint" style={{ margin: "4px 0 0" }}>
@@ -2032,6 +2154,8 @@ export default function RbdCalculator({
               onChange={setBlockState}
               unitLabel={unitLabel}
               repairable
+              sources={treeAges.sources}
+              agesNote={treeAges.note}
             />
           )}
           {asOf && action}
@@ -2140,6 +2264,9 @@ export default function RbdCalculator({
           conditionalAge={result.conditional_age || 0}
           name={name}
           onBandTargets={band.on ? (targets) => { setBand((b) => ({ ...b, ...targets })); setBandRerun((n) => n + 1); } : null}
+          // Rank at the time in the box: it becomes a typed time, then the run uses it.
+          onRankAt={(at) => { setEvalTAuto(false); calculate(false, { evaluateAt: at }); }}
+          ranking={phase === "calculating"}
         />
       )}
       {result && !stale && result.kind !== "repairable" && (

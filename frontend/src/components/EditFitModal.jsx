@@ -7,7 +7,7 @@ import XRangeWarning from "./XRangeWarning.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import CoxOptions from "./CoxOptions.jsx";
 import { getDataReading, getDataset, getDistributions, updateModelFit } from "../api.js";
-import { EMPTY_MAPPING, columnFacts, dataStepIssues, dataStepNotes } from "../lifeData.js";
+import { EMPTY_MAPPING, columnFacts, dataStepIssues, dataStepNotes, unitIssue } from "../lifeData.js";
 import { TvcToggle } from "./TvcColumns.jsx";
 import { tvcMapping, tvcProblems } from "../tvcData.js";
 import { frailtyFitOptions, groupProblem, withGroup } from "../moreModels.js";
@@ -50,7 +50,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
         const cols = d.preview_columns || [];
         const f = columnFacts({
           columns: cols, preview: d.preview || [], n_unique: d.n_unique,
-          dtypes: d.dtypes, blanks: d.blanks, values: d.values, whole: d.whole, nonpositive: d.nonpositive,
+          dtypes: d.dtypes, blanks: d.blanks, values: d.values, whole: d.whole, nonpositive: d.nonpositive, low_rows: d.low_rows,
         });
         setColumns(cols);
         setRows((d.preview || []).slice(0, 5));
@@ -67,8 +67,12 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   const selectedOpt = distributions.find((d) => d.id === distribution);
   const groupBlock = groupProblem(selectedOpt, mapping.group);
   // The Data step's checks, in plain words (#291).
-  const issues = !columns ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0).map((text) => ({ col: null, text }))
-    : dataStepIssues(mapping, facts, nRows, unit);
+  // A refit settles its unit too: said by the unit box (x's row) until it has one.
+  const issues = !columns ? [] : [
+    ...(tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0).map((text) => ({ col: null, text }))
+      : dataStepIssues(mapping, facts, nRows, unit)),
+    ...[unitIssue(unit)].filter(Boolean),
+  ];
   const problems = issues.map((i) => i.text);
   // A range (xl to xr) is read row by row on the server, as the refit will read it.
   const [reading, setReading] = useState(null);

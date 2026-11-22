@@ -20,6 +20,9 @@ export default function FfiResult({ result, actions = null, stale = false }) {
   const bound = result.interval_bound;
   const cautious = bound ? formatWithUnit(bound.interval, unit) : null;
   const rough = legacy && result.target_availability < 0.9;
+  // The other answer to "does a test renew the device?", side by side with this one.
+  const other = !legacy && result.other_interval != null ? formatWithUnit(result.other_interval, unit) : null;
+  const otherDiffers = other && Math.abs(result.other_interval - result.interval) > 0.05 * result.interval;
 
   return (
     <>
@@ -29,12 +32,18 @@ export default function FfiResult({ result, actions = null, stale = false }) {
           <>
             Test every <b>≈ {every}</b> to keep average availability at <b>{target}</b>.
             {cautious && <> On the cautious 90% bound of the fit, every <b>{cautious}</b>.</>}
+            {otherDiffers && (result.renewed_at_test
+              ? <> That assumes each test renews the device; if a test leaves it as it was, every <b>{other}</b>.</>
+              : <> That assumes a test leaves a working device as it was; if each test renews it, every <b>{other}</b>.</>)}
           </>
         }
         stats={[
           { label: "Test every", value: `≈ ${every}` },
           cautious && { label: "Cautious end", value: cautious, hint: "90% one-sided" },
-          { label: "MTTF", value: formatWithUnit(result.mttf, unit) },
+          otherDiffers ? {
+            label: result.renewed_at_test ? "If a test doesn't renew it" : "If each test renews it",
+            value: `≈ ${other}`, hint: "the other answer",
+          } : { label: "MTTF", value: formatWithUnit(result.mttf, unit) },
           result.tests_cost_per_year != null && {
             label: "Tests a year", value: formatCost(result.tests_cost_per_year, currency, { sig: 3 }),
             hint: `${formatNumber(result.tests_per_year, { sig: 3 })} tests`,
@@ -45,11 +54,13 @@ export default function FfiResult({ result, actions = null, stale = false }) {
         {!stale && rough && "Below about 90% the approximation is conservative: the true interval can be longer."}
       </ResultSummary>
       {actions && <div className="rs-actions">{actions}</div>}
-      {!stale && (result.warnings || []).map((w) => <p key={w} className="calc-warn">{w}</p>)}
+      {!stale && (result.warnings || []).filter((w) => !(otherDiffers && w.startsWith("If ")))
+        .map((w) => <p key={w} className="calc-warn">{w}</p>)}
 
       <ResultDetails
         rows={legacy ? [] : [
           { label: "Each test", value: result.renewed_at_test ? "renews the device" : "leaves a working device as it was" },
+          otherDiffers && { label: "MTTF", value: formatWithUnit(result.mttf, unit) },
           result.test_duration > 0 && { label: "Off-line per test", value: formatWithUnit(result.test_duration, unit) },
           { label: "Constant-rate shortcut, 2 × (1 − A) × MTTF", value: formatWithUnit(result.shortcut_interval, unit) },
         ]}

@@ -15,11 +15,25 @@ Right-click, the row's ⋯ button (`MoreMenu`), or Shift+F10 / the Menu key on a
   - `items` — a submenu ("Focus ›"). It opens beside the menu on a wide screen, in place under its item on a phone.
   - `checked` (true | false) — a radio in a submenu, ticked with ✓.
   - `separator` — a `border` line between groups; the arrow keys pass over it.
-- `at` — `{x, y}`, the pointer or the corner of what opened it. The menu moves in to stay on screen.
+- `at` — `{x, y}`, the pointer or the corner of what opened it. The menu moves in to stay on screen, at least 8 px from every edge: it is measured at its full width (hidden, top left) before it is placed, so items that wrap near an edge never make it spill off.
 - `label` — the menu's name ("Actions for Feed pump").
 - `anchorId` — the row it belongs to: a scroll that moves the row away closes the menu.
 - `onChoose(id)` — runs after the menu has closed.
 - `onClose()` — puts the focus back on the row.
+
+The same menu lists the tabs folded into a tab row's "⋯ N" (`Tabs` with `overflow`).
+
+## On a list row
+
+Every saved-item list (Data, models, RBDs, fault trees, forecasts, strategy, RCM studies, the registers) ends each row with one ⋯ button: `RowActions` in `components/LibRows.jsx`, which opens this menu through `MoreMenu`.
+
+- Pass `to` (or `onOpen`) for Open, `actions` for the row's own actions (`[{id, label, onSelect, disabled?, reason?}]`; falsy entries are skipped, so `!r.read_only && {…}` works), and `onDelete`.
+- The menu reads: Open, the actions, a line, then "Delete…" (or "Remove from my view" for a shared sample or an item shared with you).
+- A row with Open as its only action keeps a plain Open button rather than a menu of one.
+- The button is named "Actions for <row name>". The row's name stays a link, and a click on the row still opens it.
+- Never put icon buttons (copy, edit, share, a delete bin) in the row itself. A form's own editable rows (a line in a parts list) may keep a single remove button; that's editing the form, not a list row's actions.
+
+The menu's look lives in `index.css` (`.ovm-menu.row-menu`), not with any page, so it is styled wherever it opens.
 
 ## Look
 

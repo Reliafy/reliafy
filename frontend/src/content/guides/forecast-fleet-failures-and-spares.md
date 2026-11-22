@@ -35,7 +35,7 @@ The answer comes first:
 
 Two tiles sit under it:
 
-- **Likely range (90%)** — **36–45**. In nine years out of ten the count falls
+- **Likely range (90% two-sided)** — **36–45**. In nine years out of ten the count falls
   in this range; in one year in twenty it's above 45. The range comes from
   simulating the fleet many times, so it includes the chance in *which* items
   fail and when.
@@ -95,6 +95,26 @@ When items wearing out need more stock in a later period, the answer says so
 ("Hold 2 now, rising to 3 from quarter 2"), and **Stock to hold by month** (or
 quarter) lists each period. **Export spares plan (CSV)** downloads the plan.
 
+### Spares for the year: what to order and buy
+
+With **In stock now** filled in, the card also answers for the whole forecast,
+which is what a budget needs:
+
+- **Needed over the forecast**: about how many parts the items will use, with
+  the likely range (10th to 90th percentile). With a replacement age set (see
+  *Run to failure, or replace at an age?* below), it splits them into failures
+  and planned replacements.
+- **Order now**: the stock to hold less what's in stock now.
+- **Buy over the forecast**: the expected use rounded up, plus the stock to
+  hold, less what's in stock now. The high case puts the 90th percentile in
+  place of the expected use.
+
+For example, four bearings 844 days old (Weibull 1,173 days, shape 1.96), a
+5-day lead time and 2 in stock: about 1.7 needed over 12 months (likely 0–3),
+hold 0, order none now and buy none over the year (high case 1). Reliafy gives
+the quantities. Turn them into money with your own prices: the CSV columns are
+plain numbers, ready for a spreadsheet.
+
 **Export CSV** downloads the forecast for a purchasing system or a budget sheet:
 each item's expected failures and chance of failing, the fleet's expectation and
 its range, and each month's expectation and range.
@@ -102,8 +122,9 @@ its range, and each month's expectation and range.
 ## Build your own forecast
 
 1. On **Forecasts**, press **New forecast**. Give it a name,
-   choose the **Equipment** — **Replaceable** (a life, regression or ALT model)
-   or **Repairable** (a repairable model) — and the **Model**. With a regression
+   say **What happens when one fails** — **Replaced** (a life, regression or
+   ALT model) or **Repaired** (a repairable model) — and choose the **Life
+   model to forecast with**. With a regression
    or ALT model each item is forecast at its own conditions or stress.
 2. Add the units in service, each with its **Current use** (its age in the
    model's time unit). An item can have its **Own rate** if it runs harder or
@@ -124,7 +145,10 @@ its range, and each month's expectation and range.
    To change many items at once, tick them (or tick the header to select all)
    and set their current use or own rate, or remove them.
 3. Set the **Usage per month** for the fleet, the **Horizon** (12) and the
-   **Period** (months, weeks, years…).
+   **Period** (months, weeks, years…). Changing the period converts what you
+   typed: 730 hours a month becomes 2,190 hours a quarter, a 12-month horizon
+   becomes 4 quarters, and the items' own rates, the lead time and the review
+   interval follow, so the forecast covers the same time at the same use.
 4. Press **Save & forecast**.
 
 ![A new forecast: name, equipment type and the model it runs on](/guides/img/fleet-02-new.png)

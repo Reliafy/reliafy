@@ -189,6 +189,14 @@ export function designActions(actions, design, { row = null, viewOnly = null } =
 // Words.
 const n = (count, one, many = `${one}s`) => `${Number(count || 0).toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 export const itemsText = (count) => n(count, "item");
+// The product's "Items built" fact. Items registered as its part without being built from
+// the design aren't "built", so say both rather than a bare "0 items" beside a list of them.
+export function itemsBuiltText(built, ofPart) {
+  const extra = Number(ofPart || 0) - Number(built || 0);
+  if (extra <= 0) return itemsText(built);
+  const more = `${extra.toLocaleString("en-AU")} more ${extra === 1 ? "item" : "items"} of its part`;
+  return `${Number(built || 0).toLocaleString("en-AU")} built from this design · ${more}`;
+}
 export const reportsText = (count) => n(count, "open report");
 
 // "212 hours" (a counter's own unit), or "—" with none.

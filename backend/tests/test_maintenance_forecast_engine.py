@@ -102,7 +102,7 @@ def test_a_stored_rule_round_trips_through_the_librarys_shape(rule):
 def test_a_stored_package_cadence_gives_the_same_dates_as_the_librarys_rule(pkg):
     from backend.maintenance.service import Maintenance as Ms
 
-    cad = Ms._cadence(pkg)
+    cad = Ms._calendar_cadence(pkg)
     rule = how_often.rule_of_package({**pkg, "pattern": pkg["pattern"] or {}})
     lib = schedule.Recurrence.from_dict(how_often.to_library(rule, pkg["anchor"]))
     assert cad.dates(pkg["anchor"], "2029-12-31") == lib.dates(pkg["anchor"], "2029-12-31")

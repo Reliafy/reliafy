@@ -933,6 +933,8 @@ def _candidates(graph: dict, built: tuple) -> list[str]:
 
 PLACEHOLDER_NOTE = ("{names} {have} no model: a placeholder life stands in, so the result is not a real figure "
                     "until {they} {have} one.")
+PARTLY_NOTE = ("{names} rest partly on placeholders inside: the result carries invented lives until they have "
+               "models.")
 WEAKEST_PLACEHOLDER_NOTE = ("The weakest block in each phase is the weakest of the blocks with a model: a block "
                             "with a placeholder isn't ranked.")
 
@@ -952,18 +954,41 @@ def _add_placeholders(out: dict, graph: dict, resolve_subsystem, resolve_model, 
     result); ``blocks``: how many blocks can fail; ``without_placeholders``: the mission with
     every placeholder block never failing ({reliability, unreliability}; None where that can't be
     worked out exactly). Returns the placeholder ids that count."""
+    from backend.services import rbd_placeholders
+
     blocks = _candidates(graph, built)
     out["blocks"] = len(blocks)
-    guessed = [nid for nid in placeholder_ids(graph) if nid in set(blocks)]
+    # Counted through every sub-system (W2): a sub-system whose blocks are all placeholders is a
+    # placeholder itself, never "a block with a model"; one with some is partly placeholders.
+    t = rbd_placeholders.tally(graph, resolve_subsystem)
+    whole = set(placeholder_ids(graph)) | set(rbd_placeholders.all_placeholder_ids(t))
+    partly = set(rbd_placeholders.partly_placeholder_ids(t))
+    guessed = [nid for nid in blocks if nid in whole]
     never = set.intersection(*(set(p.get("not_needed", [])) for p in phases)) if phases else set()
     counted = [nid for nid in guessed if nid not in never]
     out["placeholders"] = [{"id": nid, "label": labels.get(nid, nid)} for nid in counted]
     out["placeholders_left_out"] = [{"id": nid, "label": labels.get(nid, nid)} for nid in guessed if nid in never]
+    partly_needed = [nid for nid in blocks if nid in partly and nid not in never]
+    if partly_needed:
+        out["partly_placeholders"] = [{"id": nid, "label": labels.get(nid, nid),
+                                       "basic": t["by_node"][nid]["basic"],
+                                       "placeholders": t["by_node"][nid]["placeholders"]} for nid in partly_needed]
+    needed = [nid for nid in blocks if nid not in never]
+    basic = sum((t["by_node"].get(nid) or {"basic": 1})["basic"] for nid in needed)
+    guessed_basic = sum((t["by_node"].get(nid) or {"placeholders": 0})["placeholders"] for nid in needed)
+    if guessed_basic:
+        tt = {"basic": basic, "placeholders": guessed_basic, "names": [], "by_node": {
+            nid: t["by_node"][nid] for nid in needed if nid in t["by_node"]}}
+        nested = any((t["by_node"].get(nid) or {}).get("subsystem") for nid in needed)
+        out["placeholder_blocks"] = {"basic": basic, "placeholders": guessed_basic, "nested": nested,
+                                     "mostly": rbd_placeholders.mostly(tt), "words": rbd_placeholders.words(tt)}
     out["without_placeholders"] = None
     if not counted:
         return counted
     # With no block left that has a model, "without them" would be a certain 100%: not a figure.
-    if len(guessed) < len(blocks) and out["method"] == "exact":
+    # Nor while a block still needed rests partly on placeholders inside it: that figure would
+    # still carry invented lives.
+    if len(guessed) < len(blocks) and out["method"] == "exact" and not partly_needed:
         try:
             mission, _, _, _ = build_mission(graph, resolve_subsystem, resolve_model, covariates, phases=phases,
                                              perfect=frozenset(counted), built=built, state=state)
@@ -979,10 +1004,17 @@ def _add_placeholders(out: dict, graph: dict, resolve_subsystem, resolve_model, 
 def placeholder_note(result: dict) -> Optional[str]:
     """The sentence that goes with a result resting on placeholders, or None."""
     names = [p["label"] for p in result.get("placeholders") or []]
-    if not names:
+    partly = [p["label"] for p in result.get("partly_placeholders") or []]
+    held = result.get("placeholder_blocks") or {}
+    if not names and not partly:
         return None
     one = len(names) == 1
-    text = PLACEHOLDER_NOTE.format(names=", ".join(names), have="has" if one else "have", they="it" if one else "they")
+    text = (PLACEHOLDER_NOTE.format(names=", ".join(names), have="has" if one else "have", they="it" if one else "they")
+            if names else "")
+    if partly:
+        text = (text + " " if text else "") + PARTLY_NOTE.format(names=", ".join(partly))
+    if held.get("words") and held.get("nested"):
+        text = f"{held['words'][0].upper()}{held['words'][1:]}. " + text
     without = (result.get("without_placeholders") or {}).get("reliability")
     if without is not None and result.get("reliability") is not None:
         text += f" With {'that block' if one else 'those blocks'} left out, the mission's reliability is {without:.4g}."
@@ -1073,7 +1105,11 @@ def agent_summary(result: dict) -> dict:
         out["notes"].insert(0, result["method_reason"])
     note = placeholder_note(result)
     if note:
-        out["placeholders"] = [p["label"] for p in result["placeholders"]]
+        out["placeholders"] = [p["label"] for p in result.get("placeholders") or []]
+        if result.get("partly_placeholders"):
+            out["partly_placeholders"] = [p["label"] for p in result["partly_placeholders"]]
+        if result.get("placeholder_blocks"):
+            out["placeholder_blocks"] = {k: result["placeholder_blocks"].get(k) for k in ("basic", "placeholders")}
         without = (result.get("without_placeholders") or {}).get("reliability")
         if without is not None and result.get("reliability") is not None:
             out["mission_reliability_without_placeholders"] = without
@@ -1218,7 +1254,7 @@ def _phase_lines(graph: dict, phases: list[dict], unit: str) -> tuple[list[str],
             try:
                 expr, desc = _dist_expr(spec, label, unit)
             except _Missing as exc:
-                model_lines.append(f"# {label} in phase {p['name']}: {exc}")
+                model_lines.append(f"# {label} in phase {p['name']}: {client_message(exc)}")
                 continue
             var = f"MODEL_{j + 1}_{len(model_lines) + 1}"
             model_lines.append(f"{var} = {expr}  # {label[:30]} in {p['name'][:20]}: {desc}"[:200])

@@ -335,6 +335,25 @@ MAINTENANCE_ENABLED = _truthy(os.environ.get("MAINTENANCE_ENABLED"))
 MAINTENANCE_EMAILS = {
     e.strip().lower() for e in (os.environ.get("MAINTENANCE_EMAILS") or "").split(",") if e.strip()
 }
+# Work management (WORK_MANAGEMENT): on by default. Off ("0", "false", "no",
+# "off") keeps Reliafy as reliability software: the tree, RCM and the tasks it
+# gives, maintenance plans as hypothetical plans (tasks, intervals, packages and
+# shutdowns, each task with an optional "last done" that only the simulations
+# read), forecasts and what-ifs, spares, readings, failure reports as data,
+# history import, LSA. Everything about executing work is hidden in the app and
+# refused over REST, MCP and the CLI: work orders (raising, assigning, closing,
+# labour, parts used), package visits, alarms and triggers raising work, the
+# to-do lists of what's due, and a failure report's corrective-action loop.
+# Nothing is deleted: work orders already in the log stay there, hidden, and
+# show again when it's turned back on. MAINTENANCE_WORK_ORDERS is the earlier
+# name, still read when WORK_MANAGEMENT isn't set (deprecated).
+def work_management_from(env) -> bool:
+    """WORK_MANAGEMENT from the environment (else its deprecated name, else on)."""
+    value = env.get("WORK_MANAGEMENT") or env.get("MAINTENANCE_WORK_ORDERS") or "on"
+    return value.strip().lower() not in ("0", "false", "no", "off")
+
+
+WORK_MANAGEMENT = work_management_from(os.environ)
 # Where the event log lives: "mongo" (a collection in the app's database; the
 # graph is rebuilt in memory from it), "sqlite" (one local file holding the
 # log and the graph), or "auto": mongo when a real MongoDB is configured,

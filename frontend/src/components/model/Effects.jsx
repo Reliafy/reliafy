@@ -8,9 +8,10 @@ import { paramView } from "../LifeSummary.jsx";
 import { PlotCard, PlotPanel, ScrollCard } from "./ModelLayouts.jsx";
 import { ACCENT, DATA_INK, logTicks, referenceShape } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
-import { dataWords, effectText, forestRows } from "../../modelFrame.js";
+import { SHARED_SHAPE_NOTE, chartRow, dataWords, effectText, forestRows } from "../../modelFrame.js";
 import { fmtP } from "../RegressionChecks.jsx";
 import { LEVEL_TEXT, ciPct, levelPct } from "../../levels.js";
+import { unitInText } from "../unitText.js";
 
 const sentence = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
@@ -24,9 +25,10 @@ const AXIS_TITLE = {
 
 export function ForestChart({ rows, ratioLabel, name, download }) {
   const additive = rows.some((r) => r.additive);
-  const shown = rows.filter((r) => (additive ? r.value != null : r.ratio != null && r.ratio > 0));
+  const shown = rows.map(chartRow).filter((r) => (additive ? r.value != null : r.ratio != null && r.ratio > 0));
   if (!shown.length) return <p className="muted-line">No covariate effects to chart.</p>;
-  const label = (r) => (r.unit ? `${r.label || r.name} (per ${r.unit})` : r.label || r.name);
+  const across = shown.some((r) => r.across);
+  const label = (r) => (r.across ? r.label : r.unit ? `${r.label || r.name} (per ${r.unit})` : r.label || r.name);
   const point = (r) => (additive ? r.value : r.ratio);
   const hasCi = (r) => r.lo != null && r.hi != null && (additive || (r.lo > 0 && r.hi > 0));
   const trace = {
@@ -64,7 +66,17 @@ export function ForestChart({ rows, ratioLabel, name, download }) {
     yaxis: { type: "category", autorange: "reversed", automargin: true, showgrid: false, ticks: "" },
     shapes: [referenceShape(additive ? { x: 0, line: { dash: "dot" } } : { x: 1, line: { dash: "dot" } })],
   };
-  return <Plot fill data={[trace]} layout={layout} download={download || `${name || "Model"} — effects`} />;
+  return (
+    <>
+      <Plot fill data={[trace]} layout={layout} download={download || `${name || "Model"} — effects`} />
+      {across && (
+        <p className="mf-note">
+          Each number is drawn across its data's range, lowest to highest value, so the effects share one scale.
+          The effect per +1 is in words below.
+        </p>
+      )}
+    </>
+  );
 }
 
 // The effects in words, with the p-value where the fit gives one.
@@ -85,6 +97,37 @@ function EffectWords({ rows, ratioLabel, readings }) {
   );
 }
 
+// Whether the Data tab has a standard error to show for the coefficients.
+const hasStandardErrors = (result) =>
+  (result.coef_table || []).some((r) => r.se != null) || (result.coefficients || []).some((c) => c.se != null);
+
+// Where the only covariate splits the data into groups: are they really
+// different? The log-rank test on the data, and each group's median life.
+export function GroupTest({ test, unit }) {
+  if (!test) return null;
+  const u = unitInText(unit);
+  return (
+    <section className="gof-card mf-flex-none" aria-labelledby="mf-group-test">
+      <div className="gofh"><h3 className="mf-card-title" id="mf-group-test">Do the groups really differ?</h3></div>
+      <p className="mf-note">{test.text}</p>
+      <div className="gofr">
+        <span className="gk">Log-rank test</span>
+        <span className="gv">χ² {formatNumber(test.statistic, { sig: 3 })}, {test.dof} d.f., p {test.p_value < 0.001 ? "" : "= "}{fmtP(test.p_value)}</span>
+      </div>
+      {(test.groups || []).map((g) => (
+        <div className="gofr" key={g.group}>
+          <span className="gk">{test.column} {g.group}</span>
+          <span className="gv-col">
+            <span className="gv">median {g.median != null ? `${formatNumber(g.median)}${u ? ` ${u}` : ""}` : "not reached"}</span>
+            <span className="param-ci">{g.failures} of {g.units} failed</span>
+          </span>
+        </div>
+      ))}
+      <p className="mf-note">{test.method}</p>
+    </section>
+  );
+}
+
 const baseOf = (result) => ({
   ...result, distribution_id: String(result.distribution_id || "").replace(/_(ph|aft|po|ah|frailty)$/, ""),
 });
@@ -101,6 +144,7 @@ function EffectsPanel({ result, split }) {
   const f = result.frailty;
   return (
     <>
+      <GroupTest test={result.group_test} unit={result.unit} />
       <div className="gof-card">
         <div className="gofh">{params.length ? "Baseline (every covariate at 0)" : "Model"}</div>
         {params.map((p) => {
@@ -143,15 +187,11 @@ function EffectsPanel({ result, split }) {
           : result.ratio_label
           ? "A hazard ratio of 2 doubles the failure rate at any moment; 0.5 halves it."
           : "Additive effects: each coefficient adds to the failure rate."}
-        {" "}Every coefficient, with its standard error, is in the Data tab.
+        {" "}{hasStandardErrors(result)
+          ? "Every coefficient, with its standard error and p-value, is in the Data tab."
+          : "Every coefficient, with its interval, is in the Data tab."}
       </p>
-      {params.length > 1 && !result.tvc && (
-        <p className="life-method">
-          One shape for every unit: the covariates stretch or shrink the life, but the way failures spread out
-          with age is the same for every group. If groups may wear out differently, fit each group on its own and
-          compare them.
-        </p>
-      )}
+      {params.length > 1 && !result.tvc && <p className="life-method">{SHARED_SHAPE_NOTE}</p>}
     </>
   );
 }

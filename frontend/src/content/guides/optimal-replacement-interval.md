@@ -25,7 +25,8 @@ Go to **Decisions → Strategy → Optimal replacement**, or, on a saved model's
 wear-out model also offers it when you click its **Failure pattern**). It opens on **Saved
 model** with that model (or the one you used last) chosen and its time unit
 filled in; pick another (a class's model fitted from maintenance records is
-listed too, in days), or choose **Parameters** to type a distribution's
+listed too, in days; so is a saved degradation model, used as its life to the
+wear limit: the distribution of the units' crossing times), or choose **Parameters** to type a distribution's
 parameters together with the **Unit of the model's times** (days, hours, …).
 That unit has no default: the answer is in it, so a model fitted in days must
 say days. Then supply two numbers:
@@ -58,12 +59,16 @@ line to beat.
 
 ![The answer for the bearing model: replace at about 563 hours, saving 52%](/guides/img/replacement-01-result.png)
 
-Three more things sit with the answer:
+Four more things sit with the answer:
 
 - **How sure the age is.** For a model fitted to data, the **Replace at** tile
   shows how far the best age moves when each fitted parameter is set to the ends
   of its 90% bounds. A wide span means the data only loosely pin the age down;
   a cost curve with a flat bottom means it matters little.
+- **A friendlier unit.** When the model's unit is calendar time (hours to
+  years), the best age, its range and the block interval also show in another
+  unit ("580 hours, ≈ 3.45 weeks"). Pick it under **Also in**; the app
+  remembers your choice in this browser.
 - **The saving a year.** Fill in **Use a year, per unit** (the hours, cycles or
   days one unit runs in a year, in the model's unit) and, if you like, **Units
   in the fleet**: the answer adds what the planned changes save a year, per unit
@@ -101,7 +106,7 @@ That's the **Shutdown calendar** mode. On **Decisions → Strategy → Optimal r
 switch the **Replacement mode** from **Age replacement** to
 [Shutdown calendar](/strategy/replacement?mode=calendar), then give it:
 
-- **Non-repairable model** — a saved model, or **Parameters** to type a distribution, and
+- **Life model (non-repairable or degradation)** — a saved model, or **Parameters** to type a distribution, and
   the **Model time unit** (days, weeks, months, …), so the shut dates can be
   turned into model time.
 - **Shuts** — each with what **Replacing at it costs** and when it comes: every

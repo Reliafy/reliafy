@@ -4,6 +4,7 @@ import Logo from "./Logo.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import HelpButton from "./HelpButton.jsx";
+import GlobalSearch from "./GlobalSearch.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { createTeam } from "../api.js";
 import Chip from "./ui/Chip.jsx";
@@ -136,6 +137,7 @@ export default function NavBar({ menuOpen = false, onMenu, menuButtonRef }) {
           <span className="brand-name">Reliafy</span>
         </NavLink>
         <div className="nav-workspace">
+          <GlobalSearch />
           <HelpButton />
           {invites.length > 0 && (
             <Chip

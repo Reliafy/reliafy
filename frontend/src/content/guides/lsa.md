@@ -1,16 +1,16 @@
 ---
-title: "Say what each task needs, and package tasks into visits (the LSA tab)"
+title: "Say what each task needs, and package tasks into visits (Maintenance › What it needs)"
 task: "How do I record the labour, tools, spares and consumables each task needs, and bundle the tasks of an area so each visit raises one work order?"
 category: "Maintenance strategy"
 prerequisites: "A position or location in your asset tree with some tasks on it (from its RCM decisions, or added by hand)."
 order: 27
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# LSA tab itself and stays out of the index until Maintenance opens.
+# Maintenance › What it needs view itself and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
-The **LSA** tab (logistic support analysis) holds the *how* of your
-maintenance. The RCM says what is done and why; the LSA says what each task
+The LSA (logistic support analysis) holds the *how* of your maintenance. In
+the Explorer it's the **What it needs** view of the **Maintenance** tab. The RCM says what is done and why; the LSA says what each task
 needs to be done: who does it and for how long, the tools and instruments, the
 spares and consumables to bring, access and downtime, and the method. It's
 also where tasks are packaged into visits.
@@ -19,7 +19,9 @@ A work package is the tasks done together on one visit: the weekly check of
 the pool, the Saturday walk round the plant room. Each visit raises **one**
 work order with a line per task, instead of one work order per task. The tasks
 keep their instructions, checklists and failure modes; the package only
-decides when they're done.
+decides when they're done. Where work management is turned off, a package is a
+grouping of tasks and dates in a hypothetical plan, which the forecasts use:
+nothing is raised.
 
 A package can have **layers**: a monthly check is the weekly visit plus a few
 more lines on the first Saturday of the month, and a quarterly one adds more
@@ -29,8 +31,8 @@ visit.
 
 ## See the tasks here
 
-Open **Assets → Explorer**, pick a position or a location and choose the
-**LSA** tab. It's a table of every task on that row and everything
+Open **Assets → Explorer**, pick a position or a location, choose the
+**Maintenance** tab and then **What it needs**. It's a table of every task on that row and everything
 inside it, set out like the RCM table, one row per task:
 
 - **Position** — where the task is done;
@@ -48,7 +50,7 @@ from the panel's **More actions (…)** › **Columns…**.
 
 ## Say what a task needs
 
-Click a task (its row or its name) to open its LSA in the tab (**← All tasks
+Click a task (its row or its name) to open its LSA in the view (**← All tasks
 here** goes back). It shows the task's kind, interval, position and the
 failure modes it serves, then a section for each thing it needs. Each section
 saves when you leave it and says **✓ Saved**:
@@ -102,14 +104,23 @@ The bar also adds up what the ticked tasks need: labour hours by trade, the
 tools (each once), the spares to stage and the consumables. So when you
 package a visit, you can see what to bring.
 
-The **Package** column fills in at once. Tasks counted by use (run hours) and
-rounds stay on their own, so their boxes can't be ticked; tasks already in a
-package stay where they are.
+The **Package** column fills in at once. Rounds, and tasks counted on a meter
+other than operating hours (km, cycles), stay on their own, so their boxes
+can't be ticked; tasks already in a package stay where they are.
+
+Tasks counted in **operating hours** make a package by hours, such as a 50 h
+service: tick them together (not with calendar tasks). The visit goes by the
+shortest interval, and a task at a whole multiple of it goes on every Nth
+visit, so a 100 h oil change comes on every second 50 h service. The package
+counts from the position's hour meter reading now, and its page shows each
+visit's hours and the date it's expected, from the operating plan (else the
+meter's recent rate; with neither, the reading it's due at, such as "due at
+150 h"). It needs an hour meter on its position.
 
 To let Reliafy draft the packages for you, right-click the row in the tree (or
 press its **⋯**) and choose **Package the tasks here…**, the first item on
-this tab. **Package the tasks…** in **More actions (…)** does the same for the
-row you're on. The drafts open in the tab, in place of the table (**← All
+this view. **Package the tasks…** in **More actions (…)** does the same for the
+row you're on. The drafts open in the view, in place of the table (**← All
 tasks here** goes back). It groups every task here that isn't in a package by
 how often it's due and by trade: the weekly ones visit on the day you pick,
 and monthly and longer ones become layers on those visits (the first of that
@@ -118,7 +129,11 @@ or none.
 
 ## Look after a package
 
-Click a package's name in the **Package** column to open it in the tab (**← All packages here** goes back to the table). You see its tasks, each with where it
+Click a package's name in the **Package** column to open it in the view (**← All packages here** goes back).
+**Maintenance › Packages** lists every package on that part of the tree and
+below (how often, trade, how many tasks, and whether it's paused); click a
+name there to open it the same way. A product's design has no packages: they
+belong to the built items. You see its tasks, each with where it
 is, its visit rule ("every visit", "every 4th visit"), what it covers and
 **Owed** when it wasn't done on the last visit (it goes on the next one), and
 its layers, and **Each visit needs**: its tasks' labour, tools, spares and
@@ -139,3 +154,7 @@ A task's own **⋯** has **Remove from package…**.
   it to open the package.
 - A position's **Summary** shows **Next visit** under Work when its tasks are
   in a package.
+- A package's own page and its view here list **Parts for the visit**: each part
+  against the stock usable now, and when an order placed today lands. The
+  spares each task uses also count in **Maintenance › Spares**: spares for the
+  year, against stock and lead time.

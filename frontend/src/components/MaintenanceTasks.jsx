@@ -9,6 +9,7 @@ import { subjectPath, taskUnits, whileStoredText } from "../maintenanceSubjects.
 import { AGE_NOTE, TASK_HINT, tooLong } from "../maintenanceText.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import HowOften from "./HowOften.jsx";
+import { LAST_DONE_NOTE, planWords } from "../workManagement.js";
 import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
 
 // What a task's "how often" shows under it: the next dates, from when it was last done (else today).
@@ -18,6 +19,8 @@ function preview(how, task) {
   return { dates: p.dates, datesLead: p.lead, datesAfter: p.after, datesNote: p.note };
 }
 
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
+
 // What a task on each kind of subject is for, under the Add task form.
 const SUBJECT_NOTES = {
   position: "It falls due, raises work orders and counts again from each new item fitted, like a task from an RCM decision.",
@@ -25,12 +28,23 @@ const SUBJECT_NOTES = {
     + "By use, it counts the item's own counter, else the use it has had at each position it was fitted to.",
   location: "It goes by the calendar and raises one work order for the place: a round or an area inspection.",
 };
+// The same with work management off (workManagement.js): a task in a hypothetical plan.
+const PLAN_SUBJECT_NOTES = {
+  position: "It goes in the plan the forecasts use, and counts again from each new item fitted, like a task from an RCM decision.",
+  item: "It follows this item wherever it goes (another position, or a store). "
+    + "By use, it counts the item's own counter, else the use it has had at each position it was fitted to.",
+  location: "It goes by the calendar, for the place: a round or an area inspection.",
+};
 
 // A subject's tasks: what's scheduled on a position, an item or a location, with
 // adding, editing, when each was last done and a work order for it. On a position,
 // the fitted item's own tasks show too (they fall due on their own, and leave with it).
 export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters = [], onChanged, emptyText }) {
   const navigate = useNavigate();
+  // Work management off (workManagement.js): a hypothetical plan, with no work order
+  // column; last done is a plan input, set on its row.
+  const workOrders = useWorkManagementOn();
+  const words = planWords(workOrders);
   const [modal, setModal] = useState(null);
   const [error, setError] = useState(null);
   const done = () => { setModal(null); onChanged(); };
@@ -60,9 +74,9 @@ export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters
         </button>
       </td>
       <td><DueChip task={t} />{t.proposal && <div><span className="maint-badge">change proposed</span></div>}</td>
-      <td>{t.open_work_order
+      {workOrders && <td>{t.open_work_order
         ? <Link to={`/maintenance/work-orders/${t.open_work_order.id}`}>#{t.open_work_order.number}</Link>
-        : <button className="secondary" onClick={() => workOrderFor(t)}>Create</button>}</td>
+        : <button className="secondary" onClick={() => workOrderFor(t)}>Create</button>}</td>}
       <td><button className="crumb-link" onClick={() => setModal({ task: t })}>Edit</button></td>
     </tr>
   ));
@@ -78,10 +92,11 @@ export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters
         <p className="lib-date">{emptyText || "No scheduled tasks yet."}</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
-          <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>Work order</th><th><span className="sr-only">Edit</span></th></tr></thead>
+          <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>{words.next}</th>{workOrders && <th>Work order</th>}<th><span className="sr-only">Edit</span></th></tr></thead>
           <tbody>{rows(tasks, false)}{rows(itemTasks, true)}</tbody>
         </table></div>
       )}
+      {!workOrders && (tasks.length > 0 || itemTasks.length > 0) && <p className="lib-date">{LAST_DONE_NOTE}</p>}
       {modal === "add" && <AddTaskModal subject={subject} modes={modes} counters={counters} onClose={() => setModal(null)} onDone={done} />}
       {modal?.task && <TaskModal task={modal.task} modes={modes} onClose={() => setModal(null)} onDone={done} />}
       {modal?.lastDone && <LastDoneModal task={modal.lastDone} onClose={() => setModal(null)} onDone={done} />}
@@ -91,6 +106,7 @@ export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters
 
 // A scheduled task added by hand: from the maker's manual, a regulation, or practice.
 function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
+  const workOrders = useWorkManagementOn();
   const kind = subject.kind;
   const units = taskUnits(kind);
   const [how, setHow] = useState(() => formFromTask(null));
@@ -135,7 +151,8 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
       {kind === "location" && (
         <label className="maint-row" style={{ gap: "0.5rem" }}>
           <input type="checkbox" checked={f.include_positions} onChange={(e) => setF({ ...f, include_positions: e.target.checked })} />
-          List every position here on its work orders (a walkdown: one line each)
+          {workOrders ? "List every position here on its work orders (a walkdown: one line each)"
+            : "List every position here (a walkdown: one line each)"}
         </label>
       )}
       <Field label="What kind of task">
@@ -165,12 +182,13 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
       <Field label="Instructions (optional)"><textarea rows={3} value={f.instructions} onChange={set("instructions")} /></Field>
       <Field label="Checklist, one step per line (optional)"><textarea rows={3} value={f.checklist} onChange={set("checklist")} /></Field>
       <Field label="Last done (optional)"><input type="date" value={f.last_done} max={today()} onChange={set("last_done")} /></Field>
-      <p className="lib-date">{SUBJECT_NOTES[kind]}</p>
+      <p className="lib-date">{(workOrders ? SUBJECT_NOTES : PLAN_SUBJECT_NOTES)[kind]}</p>
     </FormModal>
   );
 }
 
 function TaskModal({ task, modes = [], onClose, onDone }) {
+  const workOrders = useWorkManagementOn();
   const kind = task.subject?.kind || "position";
   const units = taskUnits(kind);
   const byHand = task.source !== "rcm";
@@ -218,7 +236,7 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
       {kind === "location" && (
         <label className="maint-row" style={{ gap: "0.5rem" }}>
           <input type="checkbox" checked={includePositions} onChange={(e) => setIncludePositions(e.target.checked)} />
-          List every position here on its work orders
+          {workOrders ? "List every position here on its work orders" : "List every position here"}
         </label>
       )}
       <Field label="Who may do it: trade, licence or competency (optional)"><input value={trade}
@@ -226,7 +244,7 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
       <Field label="Instructions (optional)"><textarea rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} /></Field>
       <Field label="Checklist, one step per line (optional)"><textarea rows={4} value={checklist}
              placeholder={"Isolate power\nDrain 10 L\nFit the new anode"} onChange={(e) => setChecklist(e.target.value)} /></Field>
-      <p className="lib-date">Each work order this task raises gets the trade, the instructions and the checklist to tick off.</p>
+      {workOrders && <p className="lib-date">Each work order this task raises gets the trade, the instructions and the checklist to tick off.</p>}
       {byHand && <>
         <Field label="Where it comes from">
           <select value={source} onChange={(e) => setSource(e.target.value)}>
@@ -253,13 +271,21 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
   );
 }
 
+// When a task was last done. With work management off it's a plan input only (the
+// forecasts count from it), and it can be cleared to fall back to the default.
 function LastDoneModal({ task, onClose, onDone }) {
+  const workOrders = useWorkManagementOn();
   const [on, setOn] = useState(task.last_done || today());
   return (
     <FormModal title={`Last done: ${task.name}`} submitLabel="Save" onClose={onClose}
-               onSubmit={async () => onDone(await setTaskLastDone(task.id, on))}>
-      <p className="lib-date">When this was last done, so the next due date counts from then.</p>
-      <Field label="Last done on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
+               onSubmit={async () => onDone(await setTaskLastDone(task.id, on || "none"))}>
+      <p className="lib-date">{workOrders ? "When this was last done, so the next due date counts from then." : LAST_DONE_NOTE}</p>
+      <Field label={workOrders ? "Last done on" : "Last done on (optional)"}>
+        <input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} />
+      </Field>
+      {!workOrders && task.last_done && (
+        <button type="button" className="ghost sm" onClick={() => setOn("")}>Clear it</button>
+      )}
     </FormModal>
   );
 }
@@ -267,6 +293,9 @@ function LastDoneModal({ task, onClose, onDone }) {
 // The work orders on an item or a location, newest first.
 export function WorkOrdersCard({ workOrders, emptyText = "None yet." }) {
   const navigate = useNavigate();
+  // Work management off (workManagement.js): the work orders are kept, only not shown.
+  const shown = useWorkManagementOn();
+  if (!shown) return null;
   return (
     <section className="card">
       <div className="maint-head"><h2>Work orders</h2></div>

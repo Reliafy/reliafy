@@ -32,7 +32,8 @@ A product's page is its design's tree, laid out like the asset tree on
 **Assets**: the tree on the left, the panel about the row you pick on the
 right. A design is not an operated thing, so nothing is done to it: its rows
 have no signals, stock, work or due dates, and no failure report is filed on
-the design itself. Its tabs:
+the design itself. Its tabs (on a narrow screen, the ones that don't fit are
+under **⋯** at the end of the row):
 
 - **Summary**: on the product's own row (the top of the tree), its facts
   (revision, part, positions, items built, open failure reports), then:
@@ -45,25 +46,43 @@ the design itself. Its tabs:
     made of, as designed, with the quantities rolled up (no stock: stock is
     kept for assets). **Change it…** opens the part's page.
   - **Analyses of this design**: the product's RBDs, **Make an RBD from this
-    structure**, and a reliability prediction from its parts list.
+    structure**, and a reliability prediction from its parts list. The RBD's
+    blocks take each position's model in use (or its class's, or its
+    parts-count rate; a part made of others becomes a sub-system), with a
+    placeholder only where there's nothing to go on. Parts that look alike
+    (Pump set 1 and Pump set 2) and aren't marked as backing each other up are
+    asked about first: **Every one needed**, **Fewer will do** or **Duty and
+    standby**. The last two are saved on the tree as a redundancy set.
+- **Maintenance**: the design's maintenance programme. **Tasks** lists every
+  task in the design; **What it needs** shows what each one needs to be done
+  (labour, tools, spares, consumables, method), added up. Its tasks are
+  packaged into visits on the items built from it, not on the design, so a
+  design has no **Packages** or **Forecast**. An item built later carries
+  copies of the tasks with what they need.
 - **RCM** and **FME(C)A**: the design's maintenance programme and its failure
   modes, with everything the RCM on **Assets** has: functions, functional
   failures, failure modes, decisions and their tasks. The items built from it
   carry the programme out.
-- **Failure reports**: on the product's row or any position in its design, the
+- **Models**: the life models on the design's positions (**Life models**) and
+  the missions flown on their RBDs (**Missions**).
+- **Field reports**: on the product's row or any position in its design, the
   reports raised on the items built from it at that position and below, open
   ones first, each with the item's serial. Pick one to open it beside the tree.
   **Report a failure** asks which item (serial) it happened on, then files the
   report on that item's tree. If no items have been built yet, build one first
   with **Build an item…** on the product's Summary.
-- **LSA**: every task in the design with what it needs to be done (labour,
-  tools, spares, consumables, method), added up. Its tasks are packaged into
-  visits on the items built from it, not on the design. An item built later
-  carries copies of the tasks with what they need.
 
 **Delete…** (in the product's row menu in its tree, or the bin on its row in
 Products) deletes the design and everything inside it. Items built from it stay. Its
 history stays, and **Undo** in the message that follows brings it back.
+
+The items built from your products are on **Assets** too: open **Items of your
+products** at the end of the list, or search for a serial. To delete one, choose
+**Delete…** from the **⋯** menu on the item's page. An item still at the top of
+its own tree takes the tree with it. One fitted anywhere else, or with open work
+orders, can't be deleted until you take it out or close them; the dialog says
+which. Nothing is erased: its history stays, and **Restore** on its page brings
+it back with its tree.
 
 ## Physical layout
 

@@ -56,3 +56,27 @@ test("clearSpot: a block added unwired never lands on top of another", () => {
   assert.notDeepEqual(clearSpot([{ id: "c1", position: { x: 0, y: 0 } }], { x: 0, y: 0 }), { x: 0, y: 0 });
   assert.equal(clearSpot(nodes, undefined), undefined);
 });
+
+test("addParallelPair: on an empty diagram, two blocks side by side from Input to Output through a junction", async () => {
+  const { addParallelPair } = await import("./rbdBuilderOps.js");
+  const nodes = [{ id: "in", type: "input", position: { x: 0, y: 0 } }, { id: "out", type: "output", position: { x: 600, y: 0 } }];
+  const a = { id: "c1", type: "component", data: { label: "Pump A" }, position: { x: 0, y: 0 } };
+  const b = { id: "c2", type: "component", data: { label: "Pump B" }, position: { x: 0, y: 0 } };
+  const out = addParallelPair({ nodes, edges: [] }, a, b, { junctionId: "k9" });
+  assert.equal(out.wired, true);
+  const pairs = out.edges.map((e) => `${e.source}>${e.target}`).sort();
+  assert.deepEqual(pairs, ["c1>k9", "c2>k9", "in>c1", "in>c2", "k9>out"]);
+  assert.deepEqual(out.nodes.find((n) => n.id === "k9").data, { n: 1, k: 2 });
+});
+
+test("addParallelPair: with no place to wire them, the pair and its junction land unwired upstream", async () => {
+  const { addParallelPair } = await import("./rbdBuilderOps.js");
+  const nodes = [{ id: "in", type: "input", position: { x: 0, y: 0 } }, { id: "out", type: "output", position: { x: 900, y: 0 } },
+    { id: "x", type: "component", data: {}, position: { x: 300, y: 0 } }];
+  const edges = [{ id: "e1", source: "in", target: "x" }, { id: "e2", source: "x", target: "out" }];
+  const a = { id: "c1", type: "component", data: {}, position: { x: 0, y: 0 } };
+  const b = { id: "c2", type: "component", data: {}, position: { x: 0, y: 0 } };
+  const out = addParallelPair({ nodes, edges }, a, b, { junctionId: "k9", pos: { x: 300, y: 300 } });
+  assert.equal(out.wired, false);
+  assert.deepEqual(out.edges.filter((e) => e.target === "k9").map((e) => e.source).sort(), ["c1", "c2"]);
+});

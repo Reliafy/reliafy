@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, statusMeaning, setStatusMeaning, encodeStatus,
   statusSummary, summaryParts, dataStepProblems, isSimplePaste, dataSplit,
-  countProblem, setMappingField, flagsLookSwapped,
+  countProblem, setMappingField, flagsLookSwapped, flagNameContradicts,
+  unitIssue, unitSettled, UNITLESS, UNIT_MISSING, codeReading, dataStepIssues, readCounts,
 } from "./lifeData.js";
 
 // A CMMS export: id, hours, a text status, a site.
@@ -235,4 +236,72 @@ test("a life chart's axis says Time only for a time unit", async () => {
   assert.equal(valueAxisTitle("Cycles"), "Cycles");
   assert.equal(valueAxisTitle(""), "Time");
   assert.equal(valueAxisTitle("units"), "Time");
+});
+
+test("flagNameContradicts: a column named failed, all 0, read as 0 = failed is said, with the flip", () => {
+  const facts = { hours: { values: null, blanks: 0 }, failed: { values: { 0: 900 }, blanks: 0 } };
+  const m = { ...EMPTY_MAPPING, x: "hours", c: "failed" };
+  const w = flagNameContradicts(m, facts, 900);
+  assert.equal(w.invert, true);
+  assert.deepEqual(w.now, { failed: 900, running: 0, left: 0, interval: 0 });
+  assert.deepEqual(w.flipped, { failed: 0, running: 900, left: 0, interval: 0 });
+  assert.match(w.text, /“failed” sounds like 1 means failed/);
+  assert.match(w.text, /900 failures/);
+  assert.equal(w.action, "Read it as 1 = failed");
+  // Once flipped, the name and the reading agree: nothing to say.
+  assert.equal(flagNameContradicts({ ...m, c_invert: true }, facts, 900), null);
+  // A name that says 1 = still running, read as 1 = failed.
+  const cens = { ...m, c: "censored", c_invert: true };
+  assert.equal(flagNameContradicts(cens, { ...facts, censored: { values: { 0: 3, 1: 5 } } }, 8).invert, false);
+  // A bare "status" doesn't say which way round (flagQuestion asks), nor do words.
+  assert.equal(flagNameContradicts({ ...m, c: "status" }, { ...facts, status: { values: { 0: 3, 1: 5 } } }, 8), null);
+  assert.equal(flagNameContradicts(m, { ...facts, failed: { values: { Yes: 3, No: 5 } } }, 8), null);
+  assert.equal(flagNameContradicts({ ...m, c: "" }, facts, 900), null);
+});
+
+test("a fit's unit is one required choice: a unit, or no unit ticked; blank is neither", () => {
+  for (const u of ["", "  ", null, undefined]) {
+    assert.equal(unitSettled(u), false);
+    assert.deepEqual(unitIssue(u), { col: null, row: "x", text: UNIT_MISSING });
+  }
+  for (const u of ["Hours", "days", UNITLESS, "no unit"]) {
+    assert.equal(unitSettled(u), true);
+    assert.equal(unitIssue(u), null);
+  }
+  assert.equal(UNIT_MISSING, "Say the unit of the times, or tick no unit.");
+});
+
+test("a unit guessed from the column's name settles the unit, so nothing more is asked", () => {
+  const { unit } = guessMapping(PUMPS.columns, facts);
+  assert.equal(unit, "Hours");
+  assert.equal(unitIssue(unit), null);
+  const inService = { ...PUMPS, columns: ["Pump ID", "Hours in service", "Status", "Site"] };
+  const g = guessMapping(inService.columns, columnFacts(inService));
+  assert.equal(g.mapping.x, "Hours in service");
+  assert.equal(unitIssue(g.unit), null);
+});
+
+test("a 0/1 status column says how it is read, with each code's rows", () => {
+  const values = { 0: 28, 1: 12 };
+  assert.equal(codeReading(values, false), "0 = failed (28 rows) · 1 = still running (12 rows)");
+  // Flipped ("my column uses 1 = failed"): the counts move with it.
+  assert.equal(codeReading(values, true), "1 = failed (12 rows) · 0 = still running (28 rows)");
+  assert.equal(codeReading({ 0: 1 }, false), "0 = failed (1 row) · 1 = still running (0 rows)");
+  assert.equal(codeReading(null, false), null);
+});
+
+test("a fit by failure mode with a range says what to do, for this fit", () => {
+  const facts = { t: { dtype: "float64" }, lo: { dtype: "float64" }, hi: { dtype: "float64" }, m: { dtype: "object" } };
+  const issues = dataStepIssues({ ...EMPTY_MAPPING, x: "t", xl: "lo", xr: "hi", e: "m" }, facts, 10);
+  const mode = issues.find((i) => i.kind === "mode-exact");
+  assert.equal(mode.col, "m");
+  assert.match(mode.text, /also has a range \(xl to xr\)/);
+  assert.match(mode.text, /set the failure mode to none for this fit/);
+});
+
+test("readCounts: a word-coded status column counted as it is read", () => {
+  const rows = [{ label: "F", rows: 30 }, { label: "S", rows: 12 }, { label: "R", rows: 6 }, { label: "X", rows: 2 }];
+  const mapping = { c_map: { F: 0, S: 1, R: 1 } };
+  assert.equal(readCounts(rows, mapping), "Read as 30 failed · 18 still running · 2 not yet read");
+  assert.equal(readCounts([], mapping), null);
 });

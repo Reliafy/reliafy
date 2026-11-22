@@ -36,6 +36,9 @@ def _sample(sample_id):
 
 def _run(code, tmp_path, name="diagram.py", n_sims="60", expect_ok=True):
     """Run a generated script; return ``(results, completed_process)``."""
+    from backend.tests.python_scripts import assert_checks_versions_first
+
+    assert_checks_versions_first(code)
     path = tmp_path / name
     path.write_text(code, encoding="utf-8")
     out = tmp_path / (path.stem + ".json")

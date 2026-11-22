@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ComputeWait } from "./StrategyTool.jsx";
 import { Link, useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import Select from "./Select.jsx";
@@ -63,6 +64,8 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
 
   const run = async () => {
     const built = buildRequest({ model, unit, today, shuts, failureCost, anytimeCost, maxAge, method });
+    // From a position: its running hours meet the shut dates at its duty (else all the time).
+    if (built.body && extraInputs?.position_id) built.body = { ...built.body, position_id: extraInputs.position_id };
     setNeedsPro(false);
     setJob(null);
     setCancelNote(null);
@@ -136,7 +139,7 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
   return (
     <div className="strategy-tool">
       <div className="strategy-form cal-form">
-        <ModelPicker key={wanted || ""} label="Non-repairable model" value={model} onChange={pickModel} preferSaved
+        <ModelPicker key={wanted || ""} label="Life model (non-repairable or degradation)" value={model} onChange={pickModel} preferSaved degradationModels
                      wanted={wanted} />
         <div className="strategy-costs">
           <label className="calc-t">
@@ -232,8 +235,13 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
           </div>
         </details>
         <p className="muted-line">
-          Today ({formatDate(today)}) is time 0. Dates become model time at 24 hours, 7 days, an average month
-          (365.25/12 days) or 365.25 days per unit.
+          {result?.clock ? result.convention : (
+            <>
+              Today ({formatDate(today)}) is time 0. Dates become model time at 24 hours, 7 days, an average month
+              (365.25/12 days) or 365.25 days per unit.
+              {extraInputs?.position_id ? " A model in hours runs at this position's duty (all the time where it has none)." : ""}
+            </>
+          )}
         </p>
         <div className="strategy-costs">
           <button onClick={run} disabled={loading}>{loading ? "Computing…" : "Compute"}</button>
@@ -241,6 +249,7 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
         </div>
       </div>
 
+      <ComputeWait running={loading && !job} doing="Working out the best rule over the calendar, exactly" />
       {cancelNote && !loading && <p className="hint" role="status">{cancelNote}</p>}
       {loading && job && (
         <p className="hint" role="status" aria-live="polite">
@@ -318,13 +327,21 @@ function UnitNow({ body, unit }) {
         </label>
         <button className="secondary" onClick={check} disabled={busy}>{busy ? "Checking…" : "Check this unit"}</button>
       </div>
+      <ComputeWait running={busy} doing="Pricing each choice for this unit" />
       {error && <div className="error">{error}</div>}
       {out && (
         <>
           <p className="cal-now-answer"><b>{out.recommendation}</b></p>
+          {/* Said before the table: a net cost below the price reads as an error otherwise. */}
+          <p className="muted-line" data-testid="cal-now-net-note">
+            Net cost = the price (or the failure cost, if it fails first, weighted by that chance), less the value of
+            the time the unit keeps serving, at the calendar's long-run rate of {formatCost(out.cost_per_year, currency)} a
+            year. That credit for the time served is why a net cost can be below the price. Lower is better; compare
+            the rows, not the price.
+          </p>
           <div className="table-scroll">
             <table className="mini-table">
-              <thead><tr><th>Choice</th><th>Price</th><th>Chance it fails first</th><th>Expected cost</th><th>Replacing now beats it from age</th></tr></thead>
+              <thead><tr><th>Choice</th><th>Price</th><th>Chance it fails first</th><th>Net cost (against the long-run rate)</th><th>Replace now instead once older than</th></tr></thead>
               <tbody>
                 {out.choices.map((c, i) => (
                   <tr key={i} className={c === out.best || (c.kind === out.best.kind && c.time === out.best.time) ? "cal-best" : ""}>
@@ -339,11 +356,6 @@ function UnitNow({ body, unit }) {
             </table>
           </div>
           {out.policy_next && <p className="muted-line">{out.policy_next.text}</p>}
-          <p className="muted-line">
-            Each cost is what this unit costs until it's replaced, less the value of the time it serves at the
-            calendar's long-run rate ({formatCost(out.cost_per_year, currency)} a year). Lower is better; only the
-            differences matter.
-          </p>
         </>
       )}
     </section>

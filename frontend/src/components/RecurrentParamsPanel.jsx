@@ -2,6 +2,9 @@ import { useState } from "react";
 import Select from "./Select.jsx";
 import { createRecurrentFromParams } from "../api.js";
 import { ErrorNotice } from "./StorageCap.jsx";
+import Units from "./Units.jsx";
+import { unitSettled } from "../lifeData.js";
+import { whyCantCreate } from "../newModelWhy.js";
 
 // Build a simple recurrent (repairable-system) model from known parameters —
 // no data. For reliability-growth planning and repair-vs-replace decisions
@@ -12,7 +15,7 @@ const MODELS = [
   { value: "duane", label: "Duane" },
 ];
 const MODEL_DESC = {
-  crow_amsaa: "NHPP power law: MCF(t) = (t/α)^β. β < 1 improving, β > 1 deteriorating.",
+  crow_amsaa: "NHPP power law: MCF(t) = (t/α)^β. β below 1: failures come slower over time; above 1, faster.",
   duane: "Duane growth model — a cumulative-MTBF power law.",
 };
 
@@ -28,10 +31,14 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
 
   const na = Number(alpha), nb = Number(beta), nh = Number(horizon);
   const ok = (s, v) => s !== "" && !Number.isNaN(v) && v > 0;
-  const valid = name.trim() && ok(alpha, na) && ok(beta, nb) && ok(horizon, nh) && !busy;
+  // The time unit is one required choice: a unit, or "No unit" ticked.
+  const valid = name.trim() && ok(alpha, na) && ok(beta, nb) && ok(horizon, nh) && unitSettled(unit) && !busy;
+  const missing = [[alpha, na, "α (alpha)"], [beta, nb, "β (beta)"], [horizon, nh, "the horizon"]]
+    .filter(([raw, v]) => !ok(raw, v)).map(([, , label]) => label);
+  const why = busy ? null : whyCantCreate({ name, missing, unit });
   // Known parameters have no interval: β itself against 1 decides (as the server does).
   const growth = ok(beta, nb)
-    ? (nb < 1 ? "improving — failures slowing" : nb > 1 ? "deteriorating — failures accelerating" : "stable — constant rate")
+    ? (nb < 1 ? "failures come slower as time goes on" : nb > 1 ? "failures come faster as time goes on" : "a constant failure rate")
     : null;
 
   const onSave = async () => {
@@ -76,10 +83,10 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
           <span>Horizon (max time)</span>
           <input type="number" step="any" value={horizon} placeholder="e.g. 5000" onChange={(e) => setHorizon(e.target.value)} />
         </label>
-        <label className="login-field" style={{ width: 120 }}>
-          <span>Time unit</span>
-          <input type="text" value={unit} placeholder="e.g. hours" onChange={(e) => setUnit(e.target.value)} />
-        </label>
+      </div>
+
+      <div style={{ marginTop: "0.8rem" }}>
+        <Units value={unit} onChange={setUnit} listId="recurrent-units" />
       </div>
 
       {MODEL_DESC[model] && <p className="muted-line" style={{ margin: "0.6rem 0 0" }}>{MODEL_DESC[model]}</p>}
@@ -87,7 +94,7 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
       <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
-        <span />
+        {why ? <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span> : <span />}
         <div className="row" style={{ margin: 0 }}>
           <button className="secondary" onClick={onBack} disabled={busy}>Back</button>
           <button onClick={onSave} disabled={!valid}>{busy ? "Saving…" : "Save model"}</button>

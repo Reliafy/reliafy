@@ -1,8 +1,14 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import TablePane from "./TablePane.jsx";
+import Field from "./ui/Field.jsx";
+import { TextInput } from "./ui/Controls.jsx";
 import "./ModelTable.css";
 import "./RbdPane.css";
+import RedundancyAsk from "./RedundancyAsk.jsx";
+import { arrangementsFrom, askProblem } from "../redundancyAsk.js";
+import { linkPositionModel } from "../api.js";
+import { plainLoadError } from "./loadFailed.js";
 
 // The builder loads with the pane (React Flow is large), as it does with its own page.
 const RbdEditor = lazy(() => import("./RbdEditor.jsx"));
@@ -48,7 +54,7 @@ export default function RbdPane({ rbdId, position, built = null, onRebuild = nul
             <p>
               {failed.status === 404 || failed.status === 403
                 ? "This RBD isn't there any more: it was deleted, or isn't yours to open. Unlink it from the position, or link another."
-                : `Something stopped the diagram loading: ${failed.message || "an unknown error"}. Try again in a moment.`}
+                : `Something stopped the diagram loading. ${plainLoadError(failed)}`}
             </p>
           </div>
         ) : (
@@ -58,6 +64,68 @@ export default function RbdPane({ rbdId, position, built = null, onRebuild = nul
           </Suspense>
         )}
       </div>
+    </TablePane>
+  );
+}
+
+// The address's RBD for a diagram not built yet (?rbd=new&on=<position>): NewRbdPane, asked first.
+export const NEW_RBD = "new";
+
+// Build from what's inside…: the new diagram's name, asked once in the table pane before anything is
+// saved (it was saved as "<position> (from the tree)" with no name asked). One diagram is built; a
+// part with no model of its own gets a diagram of its own from its parts, named after it and listed
+// under this one on Systems › RBDs.
+//   position {id, name}   kids [{id, name, model}]: the positions inside, each a block
+// Positions inside that look like units of one job and aren't a redundancy set are asked about
+// here too (RedundancyAsk), never assumed to be in series.
+//   onCreate(name, arrangements) a promise (it says what went wrong itself)   onClose()
+export function NewRbdPane({ position, kids = [], phone = false, headingRef = null, onCreate, onClose }) {
+  const [name, setName] = useState(`${position.name} RBD`);
+  const [busy, setBusy] = useState(false);
+  const [tried, setTried] = useState(false);
+  const [sets, setSets] = useState([]);
+  const [answers, setAnswers] = useState({});
+  useEffect(() => {
+    let live = true;
+    linkPositionModel(position.id, { build_rbd: true, check: true })
+      .then((r) => { if (live) setSets(r.ask || []); }).catch(() => {});
+    return () => { live = false; };
+  }, [position.id]);
+  const clean = name.trim().replace(/\s+/g, " ");
+  const why = clean ? null : "Give the diagram a name.";
+  const unanswered = askProblem(sets, answers);
+  const shown = kids.slice(0, 8).map((k) => k.name);
+  const save = async (e) => {
+    e?.preventDefault();
+    setTried(true);
+    if (why || unanswered || busy) return;
+    setBusy(true);
+    try {
+      await onCreate(clean, arrangementsFrom(sets, answers));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <TablePane title="New RBD" subject={position.name} phone={phone} busy={busy} headingRef={headingRef} onClose={onClose}
+               className="rbd-pane rbd-pane-new" closeLabel="Close without building">
+      <form className="rbd-new" onSubmit={save}>
+        <Field label="Name" error={tried ? why : null}
+               help="Saved under this name on Systems › RBDs and on this position's Modelling tab.">
+          <TextInput value={name} maxLength={200} autoFocus disabled={busy} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <p className="rbd-new-what">
+          One block for each of the {kids.length} position{kids.length === 1 ? "" : "s"} inside {position.name}
+          {shown.length ? `: ${shown.join(", ")}${kids.length > shown.length ? ", …" : ""}` : ""}. A part with no model
+          of its own gets a diagram of its own, made from its parts, named after it and listed under this one; a
+          block with nothing to go on is a placeholder, marked as one.
+        </p>
+        <RedundancyAsk sets={sets} answers={answers} onChange={setAnswers} disabled={busy} tried={tried} />
+          <div className="rbd-new-foot">
+          <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" disabled={busy} aria-busy={busy || undefined}>{busy ? "Building…" : "Build the RBD"}</button>
+        </div>
+      </form>
     </TablePane>
   );
 }

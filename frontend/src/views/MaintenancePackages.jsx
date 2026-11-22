@@ -1,24 +1,27 @@
 import { useEffect, useState } from "react";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { Link, useNavigate } from "react-router-dom";
 import { getMaintenanceOverview, listPackages } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import ListSearch from "../components/ListSearch.jsx";
 import Select from "../components/Select.jsx";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
-import { fmtDate } from "../components/MaintenanceParts.jsx";
+import { Proposals, fmtDate } from "../components/MaintenanceParts.jsx";
+import { planWords } from "../workManagement.js";
 import { SubjectCell } from "./MaintenanceHome.jsx";
 import { explorerPath } from "../assetTree.js";
 import {
-  lateText, packageMatches, packagePath, packageStatusText,
+  lateText, packageMatches, packagePath, packageStatusText, packageTasksOn,
 } from "../maintenanceOrders.js";
 import { PACKAGES_LABEL } from "../navigation.js";
+import { tabPlace } from "../explorerTabs.js";
 import "./Maintenance.css";
 
 const HELP = { guide: "maintenance-work-orders" };
 // Packages are made where the tasks are: the Explorer's LSA tab (tick tasks, then package them),
 // opened on the tree picked (not whichever tree comes first: another team's asset).
 const LSA_PATH = explorerPath("positions", { tab: "lsa" });
-const lsaOn = (id) => explorerPath("positions", { tab: "lsa", sel: id });
+const lsaOn = packageTasksOn;
 
 const STATUSES = [
   { value: "", label: "Active and paused" },
@@ -37,10 +40,15 @@ export default function MaintenancePackages() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [roots, setRoots] = useState(null);
+  // The plan changes the records propose (shown on Orders while work management is on).
+  const [proposals, setProposals] = useState([]);
+  const [read, setRead] = useState(0);
   useEffect(() => {
-    getMaintenanceOverview().then((d) => setRoots((d.tree || []).map((n) => ({ id: n.id, name: n.name }))))
-      .catch(() => setRoots([]));
-  }, []);
+    getMaintenanceOverview().then((d) => {
+      setRoots((d.tree || []).map((n) => ({ id: n.id, name: n.name })));
+      setProposals(d.proposals || []);
+    }).catch(() => setRoots([]));
+  }, [read]);
   useEffect(() => {
     let live = true;
     setData(null);
@@ -48,13 +56,17 @@ export default function MaintenancePackages() {
     return () => { live = false; };
   }, [status]);
   const rows = data?.packages;
+  // Work management off (workManagement.js): packages are groupings of tasks and dates
+  // in a hypothetical plan, for the forecasts; nothing is raised or done.
+  const workOrders = useWorkManagementOn();
   const shown = (rows || []).filter((p) => packageMatches(p, query));
   return (
     <div className="app">
       <SectionHeader
         section="maintenance"
         title={PACKAGES_LABEL}
-        purpose="Tasks done together on one visit, with one work order for each visit."
+        purpose={workOrders ? "Tasks done together on one visit, with one work order for each visit."
+          : "Tasks planned together on one visit: groupings and dates the forecasts and simulations use."}
         help={HELP}
         primary={roots && roots.length > 1 ? (
           <Select ariaLabel="Package tasks on" value="" onChange={(id) => id && navigate(lsaOn(id))}
@@ -64,11 +76,12 @@ export default function MaintenancePackages() {
         )}
       />
       {error && <div className="card error">{error}</div>}
+      {!workOrders && <Proposals proposals={proposals} onDecided={() => setRead((n) => n + 1)} />}
       {data && (
         <p className="maint-answer">
           {rows.length === 0 ? "No packages here."
             : `${rows.length} ${rows.length === 1 ? "package" : "packages"}.`
-              + (data.open_work_orders ? ` ${data.open_work_orders} with a visit open${data.late ? `, ${data.late} late` : ""}.` : " No visit open.")}
+              + (!workOrders ? "" : data.open_work_orders ? ` ${data.open_work_orders} with a visit open${data.late ? `, ${data.late} late` : ""}.` : " No visit open.")}
         </p>
       )}
       <section className="card">
@@ -84,14 +97,14 @@ export default function MaintenancePackages() {
         {rows == null ? null : rows.length === 0 ? (
           <div className="empty">
             <p className="lib-date">
-              {status ? "No packages with that status." : <>No packages yet. Tick tasks on the Explorer's <Link to={LSA_PATH}>LSA tab</Link> to package them into visits.</>}
+              {status ? "No packages with that status." : <>No packages yet. Tick tasks in the Explorer's <Link to={LSA_PATH}>{tabPlace("lsa")}</Link> to package them into visits.</>}
             </p>
           </div>
         ) : shown.length === 0 ? (
           <p className="lib-date">No package matches.</p>
         ) : (
           <div className="maint-scroll"><table className="lib-table">
-            <thead><tr><th>Name</th><th>On</th><th>Timing</th><th>Next due</th><th>Tasks</th><th>Status</th></tr></thead>
+            <thead><tr><th>Name</th><th>On</th><th>Timing</th><th>{planWords(workOrders).next}</th><th>Tasks</th><th>Status</th></tr></thead>
             <tbody>
               {shown.map((p) => <PackageRow key={p.id} p={p} navigate={navigate} />)}
             </tbody>

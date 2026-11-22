@@ -7,33 +7,44 @@ import Plot from "./Plot.jsx";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
+import { calendarUnit } from "../friendlyTime.js";
+import { csvFileName } from "../csv.js";
+import { curveCsvRows, paramsCsvRows } from "../modelCsv.js";
+import CsvButton from "./CsvButton.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
 import { AUTO_BOUND, boundOptions, effectiveBound } from "../levels.js";
-import { boundWords, checkTime, perUnit, precisePercent, timeAtValue, timeInWords } from "../lifeResults.js";
+import { STARTING_WORDS, boundWords, checkTime, perUnit, precisePercent, startingTime, timeAtValue, timeInWords } from "../lifeResults.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
+import ExtrapolationNote from "./ui/ExtrapolationNote.jsx";
+import { timeExtrapolation } from "../extrapolation.js";
 import { unitInText } from "./unitText.js";
-import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, requestKey } from "../calcSeries.js";
+import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, nextCombinationValues, requestKey, startNote, startValues } from "../calcSeries.js";
+import { answerFor, exactBound, exactKey, exactTimes, exactValues } from "../calcExact.js";
 import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } from "../rateSpread.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
 // time, conditional age) live in the parent (ResultView) so they survive tab
 // switches — the tab body unmounts when you leave it. This builds the initial
-// state for a set of fitted functions.
-export function initCalcState(functions) {
+// state for a set of fitted functions. ``times`` are the fit's failure times
+// (the probability plot's points): "At a time" starts inside the data.
+export function initCalcState(functions, times = null, bases = {}) {
   const covariates = functions?.covariates || [];
   const hasCov = covariates.length > 0 && !!functions?.evaluate_path;
-  const values = hasCov
-    ? Object.fromEntries(covariates.map((c) => [c.name, c.default]))
-    : null;
-  const x = functions?.curves?.x || [];
-  const mid = x.length ? x[Math.floor(x.length / 2)] : 0;
+  const values = hasCov ? startValues(covariates, bases) : null;
+  const moved = hasCov && covariates.some((c) => String(values[c.name]) !== String(c.default));
+  const start = startingTime(functions?.curves, times);
   return {
-    series: functions ? [{ id: 0, values, curves: functions.curves, error: null }] : [],
+    series: functions ? [{ id: 0, values, curves: functions.curves, error: null, ...(moved ? { stale: true } : {}) }] : [],
     active: "sf",
-    // A round example time (1000, not 996.2): only the starting input.
-    t: x.length ? Number(mid.toPrecision(2)) : 0,
+    // A round time inside the data (310, not 307.4): only the starting input,
+    // and the words beside it say where it came from until it is changed.
+    t: start.t,
+    tStart: start.t,
+    // The B10 read off the stored curves is not this combination's once it starts elsewhere.
+    tFrom: moved && start.from === "b10" ? null : start.from,
     condAge: "", // conditional survival age s
     xMin: "", // blank = auto-range from the data
     xMax: "",
@@ -61,7 +72,10 @@ const MAX_SERIES = 6;
 const B_LIVES = [[99, "B1"], [95, "B5"], [90, "B10"], [50, "B50"]];
 
 // Linear interpolation of y at xq from the (x, y) grid; null y points are
-// treated as gaps. Returns null outside the grid or across a gap.
+// treated as gaps. Returns null outside the grid or across a gap. For drawing
+// only (the conditional curves, a marker): every number shown is the model's
+// own value at the time typed (calcExact.js), except where the model can't be
+// asked, and then it is marked "≈".
 function interp(x, y, xq) {
   if (!x || !y || xq < x[0] || xq > x[x.length - 1]) return null;
   for (let i = 1; i < x.length; i++) {
@@ -139,6 +153,7 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
                 <span>{c.stratum ? `${c.name} (stratum)` : withUnit(c.name, c.unit)}</span>
                 {c.type === "category" ? (
                   <Select
+                    ariaLabel={`${c.name}, combination ${i + 1}`}
                     value={s.values[c.name]}
                     onChange={(v) => onUpdate(s.id, c.name, v)}
                     options={c.options}
@@ -180,7 +195,7 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
 // The covariates as one compact row above the chart: the first combination's
 // values typed in place; with several combinations, each as a chip (its
 // colour and values), edited in the larger view.
-function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, labelOf }) {
+function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, labelOf, note = null }) {
   const multi = series.length > 1;
   const first = series[0];
   return (
@@ -198,7 +213,7 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
         <label className="calc-cov" key={c.name}>
           <span>{c.stratum ? `${c.name} (stratum)` : withUnit(c.name, c.unit)}</span>
           {c.type === "category" ? (
-            <Select value={first.values[c.name]} onChange={(v) => onUpdate(first.id, c.name, v)} options={c.options} />
+            <Select ariaLabel={c.name} value={first.values[c.name]} onChange={(v) => onUpdate(first.id, c.name, v)} options={c.options} />
           ) : (
             <input type="number" step="any" aria-label={withUnit(c.name, c.unit)} value={first.values[c.name]}
                    onChange={(e) => onUpdate(first.id, c.name, e.target.value)} />
@@ -217,9 +232,11 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
         )}
       </span>
       {series.map((s) => s.error && <span className="combo-err" key={s.id}>{s.error}</span>)}
+      {note && <span className="calc-cov-note">{note}</span>}
     </div>
   );
 }
+
 
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
@@ -227,14 +244,13 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
 // chart fills the tab's height (the model page's frame).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
                                      paramLabel = null, fill = false, ciLabel = "90%", ciNote = null,
-                                     credible = false, spread = null }) {
+                                     credible = false, spread = null, bases = {}, dataRange = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
   const hasCov = covariates.length > 0 && !!evaluatePath;
 
-  const defaults = () =>
-    Object.fromEntries(covariates.map((c) => [c.name, c.default]));
+  const defaults = () => startValues(covariates, bases);
 
   // The axes dialog and the covariate combinations' larger view (local UI only).
   const [covModal, setCovModal] = useState(false);
@@ -267,12 +283,21 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // be re-evaluated — the curves and confidence band are recomputed over the
   // new range so the lines extend (or refine) to the chosen limits, not just
   // clip the view.
+  const x = functions.curves.x;
+  // The times as typed, checked: blank is not zero, a negative time is
+  // refused with a message beside its box, and a time may carry a unit ("1
+  // year"), converted to the model's by the app's calendar convention.
+  const example = x.length ? Number(x[Math.floor(x.length / 2)].toPrecision(2)) : null;
+  const tCheck = checkTime(t, { example, unit });
+  const condCheck = checkTime(condInput, { optional: true, unit });
+  const tNum = tCheck.ok ? tCheck.value : null;
+
   const xLoNum = xMin !== "" && !Number.isNaN(Number(xMin)) ? Number(xMin) : null;
   const xHiNum = xMax !== "" && !Number.isNaN(Number(xMax)) ? Number(xMax) : null;
   const manualX = xLoNum != null || xHiNum != null;
   // A time past the end of the curves (they stop at the 99% life) is still answered: the curves are
   // worked out again out to just beyond it, rather than the answer reading "—".
-  const autoHi = manualX ? null : autoRangeEnd(functions, timeMode ? null : Number(t) + (Number(condInput) || 0));
+  const autoHi = manualX ? null : autoRangeEnd(functions, timeMode || tNum == null ? null : tNum + (condCheck.ok ? condCheck.value : 0));
   const effHi = xHiNum ?? autoHi;
   const evalRange = manualX ? { xMin: xLoNum, xMax: xHiNum } : autoHi != null ? { xMin: null, xMax: autoHi } : undefined;
   // The axis now, beside its button: "Auto", or the range that's set.
@@ -369,15 +394,62 @@ export default function Calculator({ functions, unit, params, state, setState, n
   }, [timeMode, lifePath, rValid, ciOk, hasCov, seriesValues, rNum, ciLevel, tarBound]);
   const tarOf = (s) => (tars[s.id]?.key === tarKeyOf(s) ? tars[s.id]?.data?.points?.[0] : null);
 
-  const x = functions.curves.x;
-
-  const cond = condAge === "" ? 0 : Number(condAge);
+  // A survived age typed badly counts as none (its box says why).
+  const cond = timeMode || !condCheck.ok ? 0 : condCheck.value;
   const sLabel = timeInWords(cond, unit);
-  // The time as typed, checked: blank is not zero, and a negative time is
-  // refused with a message beside its box.
-  const tCheck = checkTime(t, { example: x.length ? Number(x[Math.floor(x.length / 2)].toPrecision(2)) : null });
   const view = (curves) => (cond > 0 && curves ? conditionalize(curves, cond) : curves);
   const xMaxView = cond > 0 ? x[x.length - 1] - cond : x[x.length - 1];
+
+  // The answer at exactly the time typed, asked of the model (calcExact.js): each
+  // function's value per series, and the bound on the active one. The grid only
+  // draws: read off it, a steep early curve's value and bound came out wrong.
+  const canAsk = !!evaluatePath;
+  const askTimes = !timeMode && Number.isFinite(cond) && cond >= 0 ? exactTimes(tNum, cond) : null;
+  const exact = state.exact || {};
+  const exactKeyOf = (s) => exactKey(s?.values, tNum, cond);
+  const exactWanted = JSON.stringify(series.map((s) => [s.id, exactKeyOf(s)]));
+  // The key each series waits for: an answer that arrives late, for a time since changed, is dropped.
+  const exactWant = useRef({});
+  useEffect(() => {
+    if (!canAsk || !askTimes) return undefined;
+    const timers = series.map((s) => {
+      const key = exactKeyOf(s);
+      exactWant.current[s.id] = key;
+      const have = exact[s.id];
+      if (have?.key === key && (have.data || have.error)) return null;
+      return setTimeout(() => {
+        const put = (v) => exactWant.current[s.id] === key
+          && setState((st) => ({ ...st, exact: { ...(st.exact || {}), [s.id]: v } }));
+        evaluateAt(evaluatePath, s.values || {}, { at: askTimes })
+          .then((res) => put({ key, data: exactValues(res.curves, cond), error: null }))
+          .catch((err) => put({ key, data: null, error: err.message }));
+      }, 300);
+    });
+    return () => timers.forEach((id) => id && clearTimeout(id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAsk, evaluatePath, exactWanted, timeMode]);
+
+  // The bound at exactly that time (the first series; unconditioned only, as the band).
+  const ptBandKey = `${active}|${ciAlpha}|${bound}|${tNum}|${hasCov ? JSON.stringify(series[0]?.values) : ""}`;
+  const wantPtBand = ciValid && bound !== "none" && ci.bound !== "none" && tNum != null && cond === 0
+    && !timeMode && !!series[0];
+  const ptBand = state.ptBand || {};
+  const ptWant = useRef(null);
+  useEffect(() => {
+    if (!wantPtBand) return undefined;
+    ptWant.current = ptBandKey;
+    if (ptBand.key === ptBandKey && (ptBand.data || ptBand.error)) return undefined;
+    const id = setTimeout(() => {
+      const put = (v) => ptWant.current === ptBandKey && setState((st) => ({ ...st, ptBand: v }));
+      confidenceAt(confidencePath, {
+        on: active, alpha_ci: ciAlpha, bound, ...(hasCov ? { values: series[0].values } : {}),
+      }, { at: [tNum] })
+        .then((res) => put({ key: ptBandKey, data: exactBound(res), error: null }))
+        .catch((err) => put({ key: ptBandKey, data: null, error: err.message }));
+    }, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantPtBand, ptBandKey, confidencePath]);
 
   const baseLabel = FUNCTIONS[active]?.axis || fnLabel(active, meta);
   const activeLabel = cond > 0 ? `${baseLabel} | survived to ${sLabel}` : baseLabel;
@@ -417,6 +489,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [xLoNum, effHi, evaluatePath]);
 
+  // A first combination that starts away from the stored curves (a category at
+  // its base level): work its curves out once.
+  useEffect(() => {
+    const s0 = seriesRef.current[0];
+    if (evaluatePath && s0?.stale && !s0.pending && !s0.error) runEval(s0.id, s0.values);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evaluatePath]);
+
   const updateValue = (id, name, value) => {
     const current = series.find((s) => s.id === id);
     const updated = { ...current.values, [name]: value };
@@ -426,7 +506,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const addSeries = () => {
     if (series.length >= MAX_SERIES) return;
     const id = nextIdRef.current++;
-    const values = { ...(series[series.length - 1]?.values || defaults()) };
+    const values = nextCombinationValues(series, covariates, defaults());
     setSeries((prev) => [...prev, { id, values, curves: null, error: null }]);
     runEval(id, values);  // pending until its curve arrives
   };
@@ -447,6 +527,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const tarPoint = timeMode && lifePath && tar.key === tarKey ? tar.data?.points?.[0] : null;
   // Read off a curve only when it is the curve for the values on screen.
   const current = series.map(curveIsCurrent);
+  // Function ``fn`` of series ``i`` at the time typed: the model's value, or "working", or
+  // (only where the model can't be asked) the drawn curve's, marked approximate.
+  const answerOf = (i, fn) => answerFor(exact[series[i]?.id], exactKeyOf(series[i]), fn, {
+    canAsk: canAsk && !!askTimes,
+    gridValue: () => (current[i] && tNum != null ? interp(views[i]?.x, views[i]?.[fn], tNum) : null),
+  });
+  const shownValue = (a, fn) => (a.value == null ? "—" : `${a.state === "approx" ? "≈ " : ""}${fmtFn(fn, a.value, unit)}`);
+  const answer0 = !timeMode && series[0] ? answerOf(0, active) : null;
   const tarTimes = series.map((s, i) =>
     i === 0 && tarPoint && !multi ? tarPoint.time
       : multi && tarOf(s)?.time != null ? tarOf(s).time
@@ -454,12 +542,35 @@ export default function Calculator({ functions, unit, params, state, setState, n
   );
   // The answer is on its way: say so, rather than show the one before.
   const working = timeMode ? tarTimes[0] == null && rValid && (!!series[0]?.pending || (lifePath && tar.key !== tarKey))
-    : !!series[0]?.pending;
+    : answer0?.state === "working";
   const WORKING = "Working it out…";
 
   // Backend flags impossible reliability (sf > 1 from a negative cumulative
   // hazard — additive-hazards models). Surface it rather than hide it.
   const curveWarning = series.map((s) => s.curves?.warning).find(Boolean);
+
+  // The answer before the first failure or past the oldest age in the data
+  // (dataRange from the fit): said with the shared extrapolation note. A time
+  // found counts with its bound; a time typed counts as the age reached.
+  const extrapolation = (() => {
+    if (!dataRange) return null;
+    let lo = null;
+    let hi = null;
+    if (timeMode) {
+      const ts = tarTimes.filter(Number.isFinite);
+      if (!multi && tarPoint && ci.bound !== "none") {
+        if (Number.isFinite(tarPoint.lower)) ts.push(tarPoint.lower);
+        if (Number.isFinite(tarPoint.upper)) ts.push(tarPoint.upper);
+      }
+      if (!ts.length) return null;
+      lo = Math.min(...ts);
+      hi = Math.max(...ts);
+    } else {
+      if (tNum == null) return null;
+      lo = hi = tNum + (cond > 0 ? cond : 0);
+    }
+    return timeExtrapolation(dataRange, lo, hi, unit ? unitInText(unit) : "");
+  })();
 
   // Confidence band of each series for the active function (raw scale only —
   // it isn't conditionalised, so it's hidden when a survived-age is set).
@@ -473,7 +584,6 @@ export default function Calculator({ functions, unit, params, state, setState, n
     // "we're NaN% sure" or "150% sure" about bounds worked out at another level.
     return ci.bound !== "none" && ciOk && b && b.on === active && cond === 0 ? b : null;
   };
-  const band = series[0] ? bandOf(series[0]) : null;
 
   // Chart: the active function for every series, plus a marker at t.
   const traces = [];
@@ -515,9 +625,9 @@ export default function Calculator({ functions, unit, params, state, setState, n
       if (tarTimes[i] != null) traces.push({ ...pointMarker(color), x: [tarTimes[i]], y: [rNum / 100] });
       return;
     }
-    const y = current[i] ? interp(cv.x, cv[active], Number(t)) : null;
-    if (y != null) {
-      traces.push({ ...pointMarker(color), x: [Number(t)], y: [y] });
+    const y = answerOf(i, active).value;
+    if (y != null && tNum != null) {
+      traces.push({ ...pointMarker(color), x: [tNum], y: [y] });
     }
   });
 
@@ -554,7 +664,20 @@ export default function Calculator({ functions, unit, params, state, setState, n
           ...(rValid ? [referenceShape({ y: rNum / 100, line: { dash: "dot" } })] : []),
           ...(tarTimes[0] != null ? [referenceShape({ x: tarTimes[0], line: { dash: "dot" } })] : []),
         ]
-      : [referenceShape({ x: Number(t), line: { dash: "dot" } })],
+      : tNum != null ? [referenceShape({ x: tNum, line: { dash: "dot" } })] : [],
+  };
+  // "CSV" beside the chart's PNG and SVG: the curve drawn, every function at
+  // full precision, with the bound on the function shown (modelCsv.js).
+  const csvBand = (s) => {
+    const b = bandOf(s);
+    return b && !b.spread ? { fn: active, level: ciLevel, credible, x: b.x, lower: b.lower, upper: b.upper } : null;
+  };
+  const curveCsv = {
+    filename: csvFileName(name || "Model", "curve"),
+    rows: () => curveCsvRows({
+      series: series.map((s, i) => ({ label: labelOf(s), curve: views[i], band: csvBand(s) })).filter((s) => s.curve),
+      unit, given: Number.isFinite(cond) ? cond : 0,
+    }),
   };
   const unitWord = unit ? ` ${unitInText(unit)}` : "";
   const fmtTime = (v) => `${formatNumber(v)}${unitWord}`;
@@ -597,16 +720,19 @@ export default function Calculator({ functions, unit, params, state, setState, n
         {!multi && (
           <span className="calc-answer-value">
             <b aria-live="polite">{working ? WORKING
-              : tCheck.ok && current[0] ? fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)), unit) : "—"}</b>
-            {band && tCheck.ok && current[0] && (() => {
-              // In words (#292): "we're 90% sure it's at least 38%".
-              const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
-              const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
-              if (band.spread) {
+              : tCheck.ok && answer0 ? shownValue(answer0, active) : "—"}</b>
+            {tCheck.ok && !working && answer0?.value != null && (() => {
+              // In words (#292): "we're 90% sure it's at least 38%", at exactly the time typed.
+              if (spreadBand) {
+                const sp = spreadCurves(spread, active, [tNum]);
+                const lo = sp?.lower?.[0];
+                const hi = sp?.upper?.[0];
                 return lo != null && hi != null
                   ? <span className="calc-answer-ci"> — {spreadRangeText(lo, hi, (v) => fmtFn(active, v, unit))}</span> : null;
               }
-              const words = boundWords(ciLevel, band.bound, lo, hi, (v) => fmtFn(active, v, unit));
+              const pb = wantPtBand && ptBand.key === ptBandKey ? ptBand.data : null;
+              if (!pb) return null;
+              const words = boundWords(ciLevel, pb.bound, pb.lower, pb.upper, (v) => fmtFn(active, v, unit));
               return words ? <span className="calc-answer-ci"> — {words}</span> : null;
             })()}
           </span>
@@ -625,6 +751,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
         <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>{tarPoint.lower_note}</p>
       )}
       {curveWarning && <p className="calc-warn">⚠ {curveWarning}</p>}
+      <ExtrapolationNote words={extrapolation} />
       {confidencePath && ci.bound !== "none" && bandError && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
           Couldn't compute {credible ? "credible intervals" : "confidence bounds"}: {bandError}
@@ -632,8 +759,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
       )}
       {confidencePath && cond > 0 && (
         <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>
-          Confidence bounds are shown on the unconditional function only — clear
-          the survived-age to see them.
+          No bound on this answer: given a survived age, the value is a point estimate only. Clear
+          “Given survived to” for the value from new, with its bound.
         </p>
       )}
 
@@ -670,11 +797,13 @@ export default function Calculator({ functions, unit, params, state, setState, n
           </tbody>
         </table>
       ) : multi ? (
+        // Several functions side by side: scrolls inside itself on a phone.
+        <ScrollCue className="calc-multi-scroll">
         <table className="calc-table">
           <thead>
             <tr>
               <th>
-                at t = {t}
+                at t = {tNum != null ? formatNumber(tNum, { sig: 6 }) : "—"}
                 {cond > 0 ? ` | ${sLabel}` : ""}
               </th>
               {meta.map((m) => (
@@ -696,13 +825,18 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </td>
                 {meta.map((m) => (
                   <td key={m.id}>
-                    {s.pending ? "…" : current[i] ? fmtFn(m.id, interp(views[i]?.x, views[i]?.[m.id], Number(t))) : "—"}
+                    {(() => {
+                      const a = answerOf(i, m.id);
+                      if (a.state === "working") return "…";
+                      return a.value == null ? "—" : `${a.state === "approx" ? "≈ " : ""}${fmtFn(m.id, a.value)}`;
+                    })()}
                   </td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
+        </ScrollCue>
       ) : null}
 
       {hasCov && (
@@ -714,9 +848,10 @@ export default function Calculator({ functions, unit, params, state, setState, n
           canAdd={series.length < MAX_SERIES}
           onEdit={() => setCovModal(true)}
           labelOf={labelOf}
+          note={series.length === 1 ? startNote(covariates, series[0]?.values, bases) : null}
         />
       )}
-      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} />
+      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} csv={curveCsv} />
         </div>
 
         <div className="calc-side-rail">
@@ -760,34 +895,43 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </label>
                 <label className="calc-t">
                   <span>{cond > 0 ? "For a further" : "At"}{unit ? ` (${unitInText(unit)})` : ""}</span>
+                  {/* Text, not a number box: a time may carry its unit ("1 year"). */}
                   <input
-                    type="number" inputMode="decimal"
+                    type="text" inputMode="decimal" autoComplete="off" spellCheck={false}
                     aria-label={`${cond > 0 ? "For a further" : "At"} time${unit ? ` (${unitInText(unit)})` : ""}`}
                     value={t}
-                    min={0}
-                    max={evaluatePath ? undefined : xMaxView}
-                    step="any"
                     aria-invalid={!tCheck.ok || undefined}
                     onChange={(e) => setT(e.target.value)}
                   />
-                  {!tCheck.ok && <span className="combo-err" role="alert">{tCheck.message}</span>}
+                  {!tCheck.ok ? <span className="combo-err" role="alert">{tCheck.message}</span>
+                    : tCheck.note ? <span className="calc-t-note">{tCheck.note}</span>
+                    : (() => {
+                      // Where it started (until changed), and that a unit may be typed.
+                      const words = [
+                        state.tFrom && STARTING_WORDS[state.tFrom] && String(t) === String(state.tStart)
+                          ? STARTING_WORDS[state.tFrom] : null,
+                        calendarUnit(unit) ? "A unit works too, e.g. 6 months or 1 year." : null,
+                      ].filter(Boolean);
+                      return words.length ? <span className="calc-t-note">{words.join(" ")}</span> : null;
+                    })()}
                 </label>
                 <label className="calc-t">
                   <span>Given survived to{unit ? ` (${unitInText(unit)})` : ""}</span>
                   <input
-                    type="number" inputMode="decimal"
+                    type="text" inputMode="decimal" autoComplete="off" spellCheck={false}
                     aria-label={`Given survived to${unit ? ` (${unitInText(unit)})` : ""}`}
                     value={condAge}
-                    min={0}
-                    max={x[x.length - 1]}
-                    step="any"
                     placeholder="0"
+                    aria-invalid={!condCheck.ok || undefined}
                     onChange={(e) => setCondAge(e.target.value)}
                   />
+                  {!condCheck.ok ? <span className="combo-err" role="alert">{condCheck.message}</span>
+                    : condCheck.note ? <span className="calc-t-note">{condCheck.note}</span> : null}
                 </label>
                 </>
                 )}
-                {confidencePath && (
+                {/* Given a survived age there is no bound yet, so its controls step aside. */}
+                {confidencePath && cond === 0 && (
                   <>
                     <label className="calc-t">
                       <span>Confidence bound</span>
@@ -821,7 +965,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
             </div>
             {params && params.length > 0 && (
               <div className="calc-rail-card calc-rail-params">
-                <div className="gofh">Parameters</div>
+                <div className="gofh calc-params-h">
+                  Parameters
+                  <CsvButton what="the parameters" filename={csvFileName(name || "Model", "parameters")}
+                             rows={() => paramsCsvRows({
+                               params: params.map((p) => ({ ...p, label: paramLabel ? paramLabel(p) : p.name })),
+                               ciLabel: ciLabel || "90%",
+                             })} />
+                </div>
                 {params.map((p) => (
                   <div className="gofr" key={p.name}>
                     <span className="gk">{paramLabel ? paramLabel(p) : p.name}</span>

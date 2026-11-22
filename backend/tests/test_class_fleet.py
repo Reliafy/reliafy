@@ -117,7 +117,7 @@ def test_members_are_the_positions_whose_item_is_of_the_class_or_inside_it(m, db
     # No model anywhere: a dash for each (no risk keys, no reason) and one note saying how to get risk.
     assert all(r["model"] is None and not r["scored"] and r["why"] is None and "risk" not in r for r in out["members"])
     assert (out["scored"], out["no_model"], out["not_scored"], out["models"]) == (0, 3, 0, [])
-    assert out["note"].startswith("None of these positions has a condition and life model") and "Modelling" in out["note"]
+    assert out["note"].startswith("None of these positions has a condition and life model") and "Models › Life models" in out["note"]
     with pytest.raises(NotFound):
         _fleet(m, db, "no-such-class")
     _same_after_rebuild(m)
@@ -561,6 +561,10 @@ def test_the_fleet_over_rest(client):
     mine = client.get(f"/api/maintenance/positions/{a}/condition")
     assert mine.status_code == 200, mine.text
     assert mine.json()["member"] == one["member"] and mine.json()["model"]["id"] == JOINT
+    # The Summary badge's read (curves=false): the same risk numbers, without the curves.
+    lean = client.get(f"/api/maintenance/positions/{a}/condition", params={"curves": "false"}).json()
+    assert lean["member"]["risk"] == mine.json()["member"]["risk"] and lean["member"]["scored"]
+    assert "unit" not in lean["member"] and lean["horizons"] == mine.json()["horizons"]
     plain = client.get(f"/api/maintenance/positions/{b}/condition").json()
     assert plain["item_class"] is None and plain["model"] is None and plain["member"]["item"]["name"] == "Unclassed"
     assert client.get("/api/maintenance/positions/nope/condition").status_code == 404

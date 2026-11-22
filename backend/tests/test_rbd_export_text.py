@@ -166,11 +166,14 @@ def test_diagram_text_stays_in_docstrings_comments_and_strings(build):
     names |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     assert not any(MARKER in name for name in names)
 
-    # Only the module docstring is a bare expression; everything else at the
+    # Only the module docstring (and the version check's call) is a bare expression; everything else at the
     # top level is an import, a constant, a function or the __main__ guard.
     assert isinstance(tree.body[0], ast.Expr) and isinstance(tree.body[0].value.value, str)
+    # The one bare call is the installed-versions check.
     allowed = (ast.Import, ast.ImportFrom, ast.Assign, ast.FunctionDef, ast.If, ast.Raise)
-    assert all(isinstance(s, allowed) for s in tree.body[1:]), _shape(tree)
+    rest = [s for s in tree.body[1:] if ast.unparse(s) != "_check_versions()"]
+    assert len(rest) == len(tree.body) - 2
+    assert all(isinstance(s, allowed) for s in rest), _shape(tree)
     for s in tree.body:
         if isinstance(s, ast.If):
             assert ast.unparse(s.test) == "__name__ == '__main__'"

@@ -17,7 +17,7 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, UploadFile, Request
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -51,6 +51,7 @@ from backend.routers import maintenance as maintenance_router
 from backend.routers import maintainability as maintainability_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
+from backend.routers import search as search_router
 from backend.routers import rbd_jobs as rbd_jobs_router
 from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
@@ -65,6 +66,7 @@ from backend.routers import rbd_sensitivity as rbd_sensitivity_router
 from backend.routers import rbd_intervals as rbd_intervals_router
 from backend.routers import rbd_block_inputs as rbd_block_inputs_router
 from backend.routers import rbd_measures as rbd_measures_router
+from backend.routers import rbd_repair_availability as rbd_repair_availability_router
 from backend.routers import rbd_missions as rbd_missions_router
 from backend.routers import rbd_tvc as rbd_tvc_router
 from backend.routers import strategy as strategy_router
@@ -227,6 +229,8 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
 
 app.include_router(auth_router.router)
 app.include_router(models_router.router)
+# The one search for everything (the header's search box, ⌘K).
+app.include_router(search_router.router)
 app.include_router(rbds_router.router)
 # Analysis jobs (#146): polling, and the compute service's callback.
 app.include_router(rbd_jobs_router.router)
@@ -244,6 +248,7 @@ app.include_router(rbd_intervals_router.router)
 # A block's model entered as its mean, and its mean and median (#299).
 app.include_router(rbd_block_inputs_router.router)
 app.include_router(rbd_measures_router.router)
+app.include_router(rbd_repair_availability_router.router)
 app.include_router(rbd_missions_router.router)
 app.include_router(rbd_tvc_router.router)
 app.include_router(strategy_router.router)
@@ -355,6 +360,11 @@ def app_config() -> dict:
         "mcp": mcp_switch.enabled(get_db()),
         # Reliafy Maintenance (local only for now).
         "maintenance": bool(config.MAINTENANCE_ENABLED),
+        # Work management (work orders, visits, to-do lists): off keeps Reliafy as
+        # reliability software (WORK_MANAGEMENT). maintenance_work_orders: the earlier
+        # name, the same value, for a page loaded before the rename.
+        "work_management": bool(config.WORK_MANAGEMENT),
+        "maintenance_work_orders": bool(config.WORK_MANAGEMENT),
         # Placeholder menu entries, on a private test site only.
         "menu_preview": bool(config.MENU_PREVIEW),
         # "What do you do?": the roles picker and the menu and Home it shapes.
@@ -640,14 +650,20 @@ def fit_endpoint(
 def evaluate_endpoint(
     model_id: str,
     values: dict = Body(default={}),
+    x_min: float | None = None,
+    x_max: float | None = None,
+    at: list[float] | None = Query(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """Re-evaluate a fitted regression model's functions at covariate values.
+    """Re-evaluate a fitted model's functions at covariate values, over its
+    grid (or ``x_min``..``x_max``), or with ``at`` (repeatable) at exactly
+    those times: the calculator's answer, never read off the plotted grid.
 
     ``model_id`` is an unsaved fit's in-memory id, served only to the account
     that fitted it (saved models have their own routes under /api/models)."""
     try:
-        return JSONResponse(content=evaluate(model_id, values, owner=user["uid"]))
+        return JSONResponse(content=evaluate(model_id, values, x_min=x_min, x_max=x_max,
+                                             owner=user["uid"], at=at))
     except ModelNotFound:
         return JSONResponse(
             status_code=404,
@@ -661,6 +677,9 @@ def evaluate_endpoint(
 def confidence_endpoint(
     model_id: str,
     body: dict = Body(default={}),
+    x_min: float | None = None,
+    x_max: float | None = None,
+    at: list[float] | None = Query(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     """Confidence bounds of a freshly-fitted model's function (configurable
@@ -672,8 +691,11 @@ def confidence_endpoint(
             on=body.get("on", "sf"),
             alpha_ci=float(body.get("alpha_ci", 0.10)),  # 90% two-sided by default
             bound=body.get("bound", "two-sided"),
+            x_min=x_min,
+            x_max=x_max,
             owner=user["uid"],
             values=body.get("values"),
+            at=at,
         ))
     except ModelNotFound:
         return JSONResponse(

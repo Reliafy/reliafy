@@ -25,7 +25,8 @@ marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
 ## Find your way around the RCM tab
 
-Open **Assets → Explorer** and pick the **RCM** tab. The tree of
+Open **Assets → Explorer** and pick the **RCM** tab (on a narrow screen it may be
+under **⋯** at the end of the tabs). The tree of
 positions is the first column, and under each position sit its functions,
 their performance standards, functional failures and failure modes, with the
 RCM's columns beside every row. If your tree is empty, add a position, or
@@ -465,7 +466,17 @@ Each decision's **Evidence check** shows one of these:
 
 - **Supported** — the evidence agrees with the decision.
 - **Contradicted** — the evidence points the other way. A run-to-failure
-  decision linked to a wear-out model is the common case.
+  decision linked to a wear-out model is the common case. A task set at less
+  than half the interval its calculation supports reads contradicted too,
+  with both intervals.
+- **Shorter than its evidence** or **Longer than its evidence** — a
+  fixed-interval task set at less than half, or more than twice, its
+  cost-optimal interval. The line underneath gives both intervals: *set every
+  25 hours … the cost-optimal interval its evidence supports, about 101
+  hours: done about 4 times as often as the evidence needs*. It's not a
+  verdict: a warranty, a shutdown plan or a safety margin can be good
+  reasons. Whether the difference is worth it is your call; the check shows
+  the numbers.
 - **Inconclusive** — the evidence can't decide it. The line underneath says
   why: the wrong kind of analysis, mismatched units, or a fit with no
   confidence interval.
@@ -475,6 +486,11 @@ Each decision's **Evidence check** shows one of these:
   rationale are linked. Nothing is worked out from them, so it never says
   supported or contradicted. Click it to open the report, or the function's
   notes beside the table.
+- **Model linked** — a fitted life model is linked to a fixed-interval (or
+  uneconomic run-to-failure) decision. It shows how the item fails, but not
+  which interval pays: run **Optimal replacement** on it and link the saved
+  analysis to have the interval checked. The picker lists your life models
+  after the saved analyses.
 
 A decision with nothing linked yet shows **Not linked**, quietly: plenty of
 decisions are made from judgement, and linking evidence is optional. Its
@@ -482,6 +498,23 @@ Details offer **Link evidence…** (under **Evidence** in step 3)
 when you're ready. Redesign and accept-risk
 decisions need no evidence, so they show no status unless you link a report
 or a function's notes.
+
+The picker opens on **Found here**: what's on record for the failure mode,
+its position and the position's class, nearest first. That's the life models
+attached there and the class's model, saved analyses run on them, the failure
+history (the position's and the class's pooled one), condition readings and
+failure reports. Search by name, date or failure mode, or pick one kind. A
+model or a saved analysis is checked against the decision. A history,
+readings or a failure report is linked, not checked. Nothing is linked until
+you pick one and save.
+
+To rest the decision on recent lives only, pick a failure history and fill in
+**Only the lives fitted** (from and to). You can also open **Fit a life model
+on part of the history…**: it fits a Weibull to the items that went in between
+those dates and links it. Either way the rationale names the window it rests
+on, such as *only 8 lives fitted since 1 Jan 2022 (2 failed)*. A fit on a
+handful of failures has wide bounds, so read them before you change an
+interval.
 
 The chips beside the position's name, at the top of its panel, count the linked
 statuses for that position (*3 supported, 1 contradicted*), and a function's row counts them for

@@ -119,8 +119,11 @@ def test_from_class_needs_a_class_model(m, db):
     from backend.maintenance import loop
 
     pump = m.create_position("Pump A", position_class="Duty pump")["id"]
-    with pytest.raises(Invalid, match="no fitted model yet"):
+    with pytest.raises(Invalid, match="no fitted life model yet") as refused:
         pm.link_from_class(m, db, OWNERS, set(), pump)
+    # Words for people (where to do it in the app); the tool call kept apart, for an agent.
+    assert "Modelling tab" in str(refused.value) and "maintenance " not in str(refused.value)
+    assert "fit_class_model" in refused.value.agent
     _history(m, pump, [300, 420, 380])
     loop.fit_class_model(m, db, "Duty pump")
     link = pm.link_from_class(m, db, OWNERS, set(), pump)

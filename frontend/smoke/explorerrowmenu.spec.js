@@ -14,6 +14,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
+import { phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -80,7 +81,8 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   menu = await menuOf(page, `Menu heating ${tag}`);
   await menu.getByRole("menuitem", { name: "New position inside" }).click();
   let dialog = page.getByRole("dialog", { name: "New position" });
-  await expect(dialog.getByRole("combobox").first()).toHaveValue(p.heat.id);
+  // Inside is the shared searchable picker: its button names the position picked.
+  await expect(dialog.getByRole("combobox", { name: "Inside", exact: true })).toHaveText(new RegExp(`Menu heating ${tag}`));
   await dialog.getByRole("textbox").first().fill(`Menu heater ${tag}`);
   await dialog.getByRole("button", { name: "Create position" }).click();
   await expect(dialog).toHaveCount(0);
@@ -198,6 +200,7 @@ test("Locations: a location's menu has new inside, rename, move and delete; at 4
   // A phone: the ⋯ button opens the same menu; nothing scrolls sideways.
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
+  await phoneTree(page);
   const more = row(page, `Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / });
   await more.click();
   menu = rowMenu(page, `Menu circulation ${tag}`);
@@ -229,7 +232,8 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   await expect(addRow).toHaveText(`+New position at Menu site ${tag}`);
 
   // LSA: the tree ends at its last row, and a position's menu leads with the tab's own action.
-  await page.getByRole("tab", { name: "LSA" }).click();
+  await page.getByRole("tab", { name: "Maintenance", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Maintenance: what to show" }).getByRole("radio", { name: "What it needs" }).click();
   await expect.poll(() => query(page).get("tab")).toBe("lsa");
   await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
   await expect(addRow).toHaveCount(0);
@@ -271,6 +275,7 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   // A phone: the ⋯ opens the same menu, and the drafts fill the screen without scrolling it sideways.
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&tab=lsa&sel=${p.pool.id}`);
+  await phoneTree(page);
   await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
   await expect(addRow).toHaveCount(0);
   await row(page, `Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / }).click();

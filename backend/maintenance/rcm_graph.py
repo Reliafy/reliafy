@@ -9,24 +9,35 @@ read, never stored.
 from __future__ import annotations
 
 from backend.maintenance import rcm_decisions
+from backend.services import running_clock
 
 
-def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
+def resolve(db, worksheet: dict, owner_id, hidden=frozenset(), m=None) -> dict:
     """``worksheet`` (Maintenance.rcm_worksheet or rcm_all) with each decision's
     evidence status, and a rollup per position and for the whole of it (as a
     study's). A position's rollup counts its own failure modes and those of every
     position inside it (a closed row on the RCM tab still says what's inside);
     its ``own`` holds its own modes' counts alone. Each rollup also has
     undecided, needs_review (decided against the rules) and state (the status
-    chip: empty, to_decide, needs_review or all_decided)."""
+    chip: empty, to_decide, needs_review or all_decided).
+
+    With ``m`` (the reader's Maintenance), each failure mode also says which failure
+    rate its criticality uses (``rate_from``, :func:`with_rate`): the one typed on it
+    (an override), else the position's own (its parts count or model in use), and
+    each position its ``rate``; a position's FME(C)A summary is worked out again from
+    them."""
     fetch = rcm_decisions.evidence_fetcher(db, owner_id, hidden)
     total = rcm_decisions.blank_rollup()
     positions = []
     owns = []
+    rates = _rates(m, db, owner_id, hidden, worksheet["positions"]) if m is not None else {}
     for p in worksheet["positions"]:
         rollup = rcm_decisions.blank_rollup()
+        rate = rates.get(p["id"])
 
         def mode_out(mode: dict) -> dict:
+            if m is not None:
+                mode = with_rate(mode, rate)
             rollup["modes"] += 1
             decision = mode.get("decision")
             if not decision:
@@ -34,7 +45,10 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
             rollup["decided"] += 1
             if mode.get("needs_review"):
                 rollup["needs_review"] += 1
-            resolved = rcm_decisions.resolve_decision(decision, fetch)
+            # On the reader's graph, running hours meet the task's calendar interval at the
+            # position's duty (else all the time): running_clock.
+            clock = running_clock.for_position(m, p["id"]) if m is not None else None
+            resolved = rcm_decisions.resolve_decision(decision, fetch, clock)
             changes = cost_changes(mode, decision, fetch)
             if changes:
                 resolved = {**resolved, "cost_changed": changes}
@@ -51,7 +65,16 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
         for k, v in rollup.items():
             total[k] += v
         owns.append(rollup)
-        positions.append({**p, "functions": functions, "unassigned": unassigned})
+        row = {**p, "functions": functions, "unassigned": unassigned}
+        if m is not None:
+            from backend.maintenance import fmea
+
+            views = [md for fn in functions for ff in fn["failures"] for md in ff["modes"]] + \
+                [md for fn in functions for md in fn.get("modes") or []] + unassigned
+            row["rate"] = rate
+            if "fmea" in p:
+                row["fmea"] = fmea.position_summary(views)
+        positions.append(row)
     whole = [dict(r) for r in owns]
     at = {p["id"]: i for i, p in enumerate(positions)}
     for i, p in enumerate(positions):
@@ -61,6 +84,57 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
     for i, p in enumerate(positions):
         p["rollup"] = {**rcm_decisions.finish_rollup(whole[i]), "own": rcm_decisions.finish_rollup(owns[i])}
     return {**worksheet, "positions": positions, "rollup": rcm_decisions.finish_rollup(total)}
+
+
+def _rates(m, db, owner_id, hidden, rows) -> dict:
+    """{position id: its failure rate (position_rates.position_rate) or None}, for the positions
+    with failure modes."""
+    from backend.maintenance import position_models, position_rates
+
+    fetch = position_models.fetcher(db, owner_id, hidden)
+    out = {}
+    for p in rows:
+        has = p.get("unassigned") or any(fn.get("modes") or any(ff.get("modes") for ff in fn.get("failures") or [])
+                                         for fn in p.get("functions") or [])
+        if not has:
+            continue
+        try:
+            out[p["id"]] = position_rates.position_rate(m, db, owner_id, p["id"], fetch)
+        except Exception:  # noqa: BLE001 - a rate that can't be read leaves the typed ones as they are
+            out[p["id"]] = None
+    return out
+
+
+_PER_HOUR = {"hour": 1.0, "day": 24.0, "week": 168.0, "month": 730.5, "year": 8766.0, "minute": 1 / 60}
+
+
+def with_rate(mode: dict, rate: dict | None) -> dict:
+    """A failure mode with ``rate_from``: the failure rate its criticality uses and where it came
+    from. A rate typed on the mode is kept, as an override, with the position's beside it
+    (``position_rate``); with none typed, the position's rate (in the mode's time unit, hours
+    unless set) is used and Cm worked out from it. Nothing is stored."""
+    from backend.maintenance import fmea
+    from backend.units import normalize_unit
+
+    unit_text = mode.get("time_unit") or "hours"
+    per = _PER_HOUR.get(normalize_unit(unit_text) or "")
+    theirs = rate["per_hour"] * per if rate is not None and per is not None else None
+    if mode.get("failure_rate") is not None:
+        out = {"source": "typed", "value": mode["failure_rate"], "time_unit": unit_text}
+        if theirs is not None:
+            out.update({"position_rate": theirs, "position_source": rate["source"], "text": rate["text"]})
+        return {**mode, "rate_from": out}
+    if theirs is None:
+        if rate is not None and per is None:
+            # The position has a rate, per hour, but the mode's time unit isn't one it can be put in
+            # ("flights"): no Cm rather than a wrong one, and the way to get one.
+            return {**mode, "cm_note": f"The position's rate is per hour and this mode's time unit, "
+                                       f"\"{unit_text}\", isn't a unit of time it can be turned into: "
+                                       f"type a rate per {unit_text} on the mode, or set its time unit to hours."}
+        return mode
+    cm = fmea.mode_criticality(mode.get("loss_probability"), mode.get("mode_ratio"), theirs, mode.get("operating_time"))
+    return {**mode, "cm": cm, "rate_from": {"source": rate["source"], "value": theirs, "time_unit": unit_text,
+                                            "text": rate["text"]}}
 
 
 def _listed_above(positions: list[dict], i: int, parents, at: dict) -> list[int]:
@@ -88,13 +162,20 @@ def _listed_above(positions: list[dict], i: int, parents, at: dict) -> list[int]
     return out
 
 
-def mode_status(db, mode: dict, owner_id, hidden=frozenset()) -> dict:
-    """One failure mode (Maintenance.rcm_mode) with its evidence status."""
+def mode_status(db, mode: dict, owner_id, hidden=frozenset(), m=None, position_id=None) -> dict:
+    """One failure mode (Maintenance.rcm_mode) with its evidence status; with ``m`` and its
+    ``position_id``, checked at that position's duty (running_clock)."""
     decision = mode.get("decision")
     if not decision:
         return mode
     fetch = rcm_decisions.evidence_fetcher(db, owner_id, hidden)
-    resolved = rcm_decisions.resolve_decision(decision, fetch)
+    if m is not None and not position_id and mode.get("id"):
+        try:
+            position_id = m._live_mode(mode["id"])[1]["id"]
+        except Exception:  # noqa: BLE001 - a mode off any position: checked as off one
+            position_id = None
+    clock = running_clock.for_position(m, position_id) if m is not None and position_id else None
+    resolved = rcm_decisions.resolve_decision(decision, fetch, clock)
     changes = cost_changes(mode, decision, fetch)
     return {**mode, "decision": {**decision, **resolved, **({"cost_changed": changes} if changes else {})}}
 
@@ -139,7 +220,7 @@ def evidence_refs(decision) -> list[tuple[str, str]]:
 # What an RCM still needs, as short lists (an agent's "which modes have no
 # task?", the RCM tab's chips): from a resolved worksheet (resolve above).
 GAPS_LIMIT = 200
-_CHECK = ("contradicted", "inconclusive", "stale")
+_CHECK = ("contradicted", "inconclusive", "stale", *rcm_decisions.INTERVAL_DIFFERS)
 
 
 def gaps(sheet: dict, limit: int = GAPS_LIMIT) -> dict:

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse, Response
 
 from backend import config
 from backend.db import get_session
@@ -118,7 +119,9 @@ def _measurements_detail(dataset) -> dict | None:
     }
 
 
-def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
+def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0, last_mapping: dict | None = None) -> dict:
+    # ``last_mapping``: the newest model's reading of the columns, so the count
+    # ("900 units · 900 failed") is the one the fit wizard shows.
     return {
         "id": dataset.id,
         "name": dataset.name,
@@ -127,7 +130,7 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
         "n_columns": len(dataset.columns or []),
         "n_models": n_models,
         "checksum": dataset.checksum,
-        **datasets_service.dataset_tags(dataset),
+        **datasets_service.dataset_tags(dataset, last_mapping),
         "measurements": _measurements_summary(dataset),
         "created_at": dataset.created_at.isoformat(),
         "is_sample": samples_service.is_sample(dataset.owner_id),
@@ -147,7 +150,8 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     # a direct share of the dataset doesn't show those either.
     public = access_service.is_public_link(ctx)
     models = [] if public else datasets_service.models_for_dataset(session, dataset.id, ctx.read_owners, ctx.hidden)
-    summary = _dataset_summary(dataset, ctx, n_models=len(models))
+    last = _last_mapping(models, dataset.columns)
+    summary = _dataset_summary(dataset, ctx, n_models=len(models), last_mapping=last)
     try:
         preview = datasets_service.preview_rows(dataset, distinct=True)
     except Exception as exc:  # pragma: no cover - defensive
@@ -167,7 +171,6 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
             session, dataset.id, ctx.read_owners, ctx.hidden))
         if d["collection"] != "models"
     ]
-    last = _last_mapping(models, dataset.columns)
     try:
         reading, reading_source = dataset_reading.for_dataset(dataset, last, preview if preview.get("dtypes") else None)
     except Exception as exc:  # pragma: no cover - defensive
@@ -192,6 +195,7 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "values": preview.get("values"),
         "whole": preview.get("whole"),
         "nonpositive": preview.get("nonpositive"),
+        "low_rows": preview.get("low_rows"),
         # Wholly blank rows, skipped by every fit (n_rows still counts them).
         "blank_rows": preview.get("blank_rows", 0),
         "models": [_model_summary(m, ctx) for m in models],
@@ -214,9 +218,11 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
     # Models of every kind fitted to each dataset ("Used by N models").
     counts = datasets_service.dependent_counts(session, ctx.read_owners, ctx.hidden)
     datasets = datasets_service.list_datasets(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
+    # Each dataset's count read as its page reads it (the newest model's mapping when it keeps no reading).
+    lasts = datasets_service.last_mappings(session, ctx.read_owners, datasets, ctx.hidden)
     return {
         "datasets": [
-            {**_dataset_summary(d, ctx, n_models=counts.get(d.id, 0)),
+            {**_dataset_summary(d, ctx, n_models=counts.get(d.id, 0), last_mapping=lasts.get(d.id)),
              **({"shared_by": shared_by[d.id]} if d.id in shared_by else {})}
             for d in datasets
         ]
@@ -361,17 +367,14 @@ def upload_dataset(
     if (dataset_col or "").strip():
         return _split_upload(session, ctx, contents, dataset_col, (name or "").strip()
                              or datasets_service.default_name(file.filename), chosen, lib)
-    # Free-plan cap (new datasets only — re-uploading an existing file is fine).
+    # Free-plan cap (new datasets only — re-uploading the same file, name and reading is fine).
+    name = (name or "").strip() or datasets_service.default_name(file.filename)
     denied = _creation_denied(session, ctx, "datasets")
-    if denied is not None:
-        digest = storage.checksum(contents)
-        if session.datasets.find_one({"checksum": digest, "owner_id": ctx.write_owner}) is None:
-            return denied
+    if denied is not None and datasets_service.find_reusable(
+            session, ctx.write_owner, storage.checksum(contents), name, chosen) is None:
+        return denied
     try:
-        dataset, reused = datasets_service.create_or_reuse(
-            session, (name or "").strip() or datasets_service.default_name(file.filename), contents,
-            ctx.write_owner, reading=chosen,
-        )
+        dataset, reused = datasets_service.create_or_reuse(session, name, contents, ctx.write_owner, reading=chosen)
     except (FitError, dataset_reading.ReadingError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
@@ -450,16 +453,14 @@ def paste_dataset(
     if isinstance(lib, JSONResponse):
         return lib
     csv_bytes, guess, hint = read
-    # Free-plan cap (skipped when the identical data already exists).
+    # Free-plan cap (skipped when the same data, name and reading already exist).
+    name = (name or "").strip() or "Pasted data"
     denied = _creation_denied(session, ctx, "datasets")
-    if denied is not None:
-        digest = storage.checksum(csv_bytes)
-        if session.datasets.find_one({"checksum": digest, "owner_id": ctx.write_owner}) is None:
-            return denied
+    if denied is not None and datasets_service.find_reusable(
+            session, ctx.write_owner, storage.checksum(csv_bytes), name, reading) is None:
+        return denied
     try:
-        dataset, reused = datasets_service.create_or_reuse(
-            session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner, reading=reading,
-        )
+        dataset, reused = datasets_service.create_or_reuse(session, name, csv_bytes, ctx.write_owner, reading=reading)
     except (FitError, dataset_reading.ReadingError) as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
@@ -499,7 +500,7 @@ def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
     try:
-        wanted = datasets_service.count_new_parts(session, contents, column, ctx.write_owner)
+        wanted = datasets_service.count_new_parts(session, contents, column, ctx.write_owner, source, reading)
         room = (None if not ctx.is_personal or billing_service.is_admin_user(ctx.user)
                 else billing_service.room_left(session, ctx.uid, "datasets"))
         if room is not None and room < wanted:
@@ -522,13 +523,17 @@ def _split_upload(session, ctx: AccessCtx, contents: bytes, column: str, source:
 
 
 def _created(dataset, reused: bool, session, ctx: AccessCtx, guess: int = 1, hint: str | None = None) -> dict:
-    """A create's response: the dataset, plus ``reused`` when identical data
-    was already saved (the existing dataset came back, under its own name),
-    the guessed header row and, when a first row of numbers was kept as data
-    because ``no_header`` was left blank, a one-line ``hint`` saying so."""
+    """A create's response: the dataset, plus ``reused`` when the same data
+    was already saved under this name and reading (that dataset came back),
+    or ``same_rows_as`` ({id, name}) when a new dataset was made although the
+    owner has these exact rows under another name or reading; the guessed
+    header row and, when a first row of numbers was kept as data because
+    ``no_header`` was left blank, a one-line ``hint`` saying so."""
+    twin = None if reused else datasets_service.same_rows_as(session, dataset)
     return {
         **_dataset_detail(dataset, session, ctx),
         **({"reused": True} if reused else {}),
+        **({"same_rows_as": twin} if twin else {}),
         "header_guess": guess,
         **({"hint": hint} if hint else {}),
     }
@@ -602,6 +607,46 @@ def get_dataset(
     if dataset is None or dataset.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
+
+
+@router.get("/datasets/{dataset_id}/csv")
+def download_dataset_csv(
+    dataset_id: str,
+    part: str = Query("life", pattern="^(life|measurements)$"),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> Response:
+    """The dataset's rows as saved, as a CSV file (the dataset page's Download
+    CSV). ``part=measurements`` gives the readings part when the dataset has
+    one; otherwise the one table it holds."""
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    measured = part == "measurements" and dataset.measurements is not None
+    body = bytes(dataset.measurements.data if measured else dataset.data)
+    name = datasets_service.csv_filename(dataset.name, "measurements" if measured else None)
+    ascii_name = name.encode("ascii", "ignore").decode().replace('"', "") or "dataset.csv"
+    return Response(content=body, media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
+        "Cache-Control": "no-store",
+    })
+
+
+@router.get("/datasets/{dataset_id}/rows")
+def dataset_rows(
+    dataset_id: str,
+    part: str = Query("life", pattern="^(life|measurements)$"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=1000),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A window of the dataset's rows (the dataset page's "Show all rows"):
+    ``limit`` rows from ``offset``, with the table's columns and row count."""
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    return JSONResponse(content=datasets_service.rows_window(dataset, part, offset, limit))
 
 
 @router.delete("/datasets/{dataset_id}")
@@ -1250,9 +1295,13 @@ def evaluate_model(
     values: dict = Body(default={}),
     x_min: float | None = None,
     x_max: float | None = None,
+    at: list[float] | None = Query(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
+    """A saved model's functions at covariate ``values`` over its grid (or
+    ``x_min``..``x_max``), or with ``at`` (repeatable) at exactly those times:
+    the calculator's answer, never read off the plotted grid."""
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
@@ -1260,7 +1309,7 @@ def evaluate_model(
         return JSONResponse(
             content=models_service.evaluate(
                 session, model_id, values, [*ctx.read_owners, model.owner_id],
-                x_min=x_min, x_max=x_max,
+                x_min=x_min, x_max=x_max, at=at,
             )
         )
     except models_service.ModelNotFound:
@@ -1275,11 +1324,13 @@ def confidence_model(
     params: dict = Body(default={}),
     x_min: float | None = None,
     x_max: float | None = None,
+    at: list[float] | None = Query(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Confidence bounds of a saved model's reliability function, at a
-    configurable significance level and bound (two-sided / lower / upper)."""
+    configurable significance level and bound (two-sided / lower / upper),
+    over its grid or with ``at`` at exactly those times."""
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
@@ -1287,7 +1338,7 @@ def confidence_model(
         return JSONResponse(
             content=models_service.confidence(
                 session, model_id, params, [*ctx.read_owners, model.owner_id],
-                x_min=x_min, x_max=x_max,
+                x_min=x_min, x_max=x_max, at=at,
             )
         )
     except models_service.ModelNotFound:

@@ -199,12 +199,14 @@ def _saved_block_graph(model_id):
             "edges": [{"source": "input", "target": "p"}, {"source": "p", "target": "output"}]}
 
 
-def test_unit_mismatch_warns_on_create_and_analyze(samples):
+def test_a_same_kind_unit_is_converted_on_create_and_analyze(samples):
     created = _ok(_call(samples.token[A], "change", {"action": "rbd_create",
         "name": "Mixed units", "unit": "Hours", **_saved_block_graph(PUMPS)}))
-    assert any("fitted in months" in w and "unit is hours" in w and "Pump" in w for w in created["warnings"])
+    # Months and hours are the same kind of unit: converted (and said so), not warned about.
+    assert not any("fitted in months" in w for w in created.get("warnings") or [])
     out = _ok(_call(samples.token[A], "analyse", {"action": "rbd", "rbd_id": created["id"]}))
-    assert any("months" in w for w in out["warnings"])
+    assert any("fitted in months, shown in hours" in n and "Pump" in n for n in out["unit_conversions"])
+    assert not any("not converted" in w for w in out.get("warnings") or [])
 
     same = _ok(_call(samples.token[A], "change", {"action": "rbd_create",
         "name": "Same units", "unit": "Months", **_saved_block_graph(PUMPS)}))
@@ -695,7 +697,9 @@ def test_optimal_overhaul_gets_the_shape_treatment(env):
     out = _ok(_call(env.token[A], "analyse", {"action": "optimal_overhaul", "model_id": weak.id, **costs}))
     assert out["optimal"] and out["shape_uncertainty"]["beta_ci"][0] < 1
     assert out["shape_uncertainty"]["at_beta_lower"]["pays"] is False
-    assert "includes 1" in out["uncertainty_note"] and "tentative" in out["uncertainty_note"]
+    # States the fact (the interval includes 1, so a constant rate fits) and leaves the call to the analyst.
+    note = out["uncertainty_note"]
+    assert "includes 1" in note and "constant failure rate" in note and "analyst decide" in note
 
     # A model saved before intervals were stored gets one from a refit, kept on the model.
     params = [{k: v for k, v in p.items() if k != "ci"} for p in clear.results["params"]]

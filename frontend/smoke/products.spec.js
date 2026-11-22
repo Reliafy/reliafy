@@ -85,8 +85,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.getByRole("tab", { name: "RCM" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Parts", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
-    // A product has its own Failure reports tab: the reports on the items built from it.
-    await expect(page.getByRole("tab", { name: "Failure reports" })).toHaveCount(1);
+    // A product has its own Field reports tab: the reports on the items built from it (in the row
+    // or folded into "⋯ N", whose name lists it).
+    await expect(page.getByRole("tab", { name: /Field reports/ })).toHaveCount(1);
     await expect(page.getByRole("tab", { name: "Signals" })).toHaveCount(0);
     // The product's facts, in place of an asset's (nothing fitted, no location, no work).
     const facts = page.getByRole("region", { name: "Facts", exact: true });
@@ -247,7 +248,10 @@ test("Assets leaves the products' designs and items' trees out", async ({ page, 
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     // The Explorer is always one asset: each place's tree leaves them out too.
-    await open(page, `/asset-register/explorer?arrange=positions&root=${places.places[0].id}`);
+    // A place with positions in it (other tests add empty places, in any order).
+    const withTree = places.places.find((pl) => (pl.positions || 0) > 0);
+    expect(withTree, "a place with positions in it").toBeTruthy();
+    await open(page, `/asset-register/explorer?arrange=positions&root=${withTree.id}`);
     await expect(page.getByRole("treeitem").first()).toBeVisible();
     await expect(page.getByRole("treeitem", { name: NAME })).toHaveCount(0);
     await open(page, "/asset-register");
@@ -268,6 +272,8 @@ test("Assets offers no ready-made product", async ({ page, problems }) => {
   await expect(page.getByRole("button", { name: /Survey quadcopter|sample truck/ })).toHaveCount(0);
   await page.route("**/api/maintenance/places", (route) => route.fulfill({
     json: { places: [], not_placed: { positions: 0, items: 0, position_ids: [] }, horizon_days: 30 } }));
+  // Items built from products are listed on Assets too: none here, whatever other tests built.
+  await page.route("**/api/maintenance/items/of-products*", (route) => route.fulfill({ json: { items: [] } }));
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     await open(page, "/asset-register");
@@ -351,9 +357,10 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     if (width < 600) {
       await page.getByRole("treeitem", { name: /^Smoke test depot\b/ }).click();
     }
-    // A location has Summary, RCM, FME(C)A, Failure reports and Measurements; not Parts and stock or Classes.
+    // A location has Summary, Maintenance, Monitoring, RCM, FME(C)A and History; not Parts and stock
+    // or Classes. History is in the row or folded into "⋯ N" (whose name lists it).
     await expect(page.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("tab", { name: "Failure reports" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /History/ }).first()).toBeVisible();
     await expect(page.getByRole("tab", { name: "Parts and stock" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
     await shot(page, `${width}-tabs-without-parts-classes`);

@@ -118,6 +118,7 @@
   --accent-subtle: var(--blue-100);
   --accent-wash: var(--blue-50);
   --accent-border: var(--blue-300);
+  --focus-ink: var(--blue-600);
   --success: var(--green-600);
   --success-text: var(--green-700);
   --success-bg: var(--green-50);
@@ -184,6 +185,7 @@
   --accent-subtle: #1d2c4e;
   --accent-wash: #1c2029;
   --accent-border: #395ba1;
+  --focus-ink: var(--blue-400);
   --success: var(--green-600);
   --success-text: var(--green-400);
   --success-bg: #1a291b;

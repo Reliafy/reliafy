@@ -50,6 +50,7 @@ from typing import Any, Callable, Optional
 from backend.services import covariate_binding as cb
 from backend.services import rbd_phases, rbd_tvc
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 #: The diagram's own mission (``graph["phases"]``) read as one of its missions.
 LEGACY_ID = "mission"
@@ -117,16 +118,19 @@ def carry(graph: dict, out: dict) -> None:
 
 
 def mission_of(graph: dict) -> Optional[dict]:
-    """The position a mission's own RBD belongs to ({position_id}, and built_in_series true when its
-    blocks were put in series from the tree, which doesn't say what's redundant), or None for any
-    other diagram."""
+    """The position a mission's own RBD belongs to ({position_id}, built_in_series true when its
+    blocks were put in series from the tree, which doesn't say what's redundant, and from_rbd: the
+    diagram it was copied from), or None for any other diagram."""
     raw = (graph or {}).get("mission_of")
     if not isinstance(raw, dict):
         return None
     pid = str(raw.get("position_id") or "").strip()
     if not pid:
         return None
-    return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {})}
+    # from_rbd: the position's diagram it was started from (a copy), so the RBD list shows it under that one.
+    src = str(raw.get("from_rbd") or "").strip()
+    return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {}),
+            **({"from_rbd": src[:80]} if src else {})}
 
 
 def all_in_series(graph: dict) -> bool:
@@ -327,6 +331,8 @@ def summary(graph: dict, mission: dict, results: Optional[dict] = None) -> dict:
         if got.get("placeholders"):  # the blocks it rests on a placeholder for, and the figure without them
             out["result"]["placeholders"] = list(got["placeholders"])
             out["result"]["without_placeholders"] = got.get("without_placeholders")
+        if got.get("placeholder_blocks"):
+            out["result"]["placeholder_blocks"] = dict(got["placeholder_blocks"])
     return out
 
 
@@ -338,6 +344,8 @@ def result_record(graph: dict, phases: list, result: dict) -> dict:
     if result.get("placeholders"):
         out["placeholders"] = [p["label"] for p in result["placeholders"]]
         out["without_placeholders"] = (result.get("without_placeholders") or {}).get("reliability")
+    if result.get("placeholder_blocks"):
+        out["placeholder_blocks"] = {k: result["placeholder_blocks"].get(k) for k in ("basic", "placeholders", "nested", "mostly")}
     # Each phase's own: the chance of getting through it once started, and the mission's at its end
     # (for the Explorer's phase rows and their details).
     out["phases"] = [{"name": p.get("name"), "waiting": bool(p.get("waiting")),
@@ -393,7 +401,7 @@ def gather(graph: dict, inputs_for: Callable[[dict], list]) -> dict:
         try:
             inputs = inputs_for(binding)
         except cb.BindingError as exc:
-            problems.append({"id": nid, "label": label, "problem": str(exc)})
+            problems.append({"id": nid, "label": label, "problem": client_message(exc)})
             continue
         fixed = binding.get("fixed") or {}
         own = data.get("covariate_values") or {}
@@ -749,7 +757,12 @@ def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callab
     feeding: dict = {}
     for e in (graph or {}).get("edges") or []:
         feeding[e.get("target")] = feeding.get(e.get("target"), 0) + 1
-    guessed = set(rbd_phases.placeholder_ids(graph or {}))
+    from backend.services import rbd_placeholders
+    from backend.services import rbds as rbds_service
+
+    # A sub-system whose blocks are all placeholders is a placeholder too (W2).
+    held = rbd_placeholders.tally(graph or {}, rbds_service.resolvers(db, owner_id)[0])
+    guessed = set(rbd_phases.placeholder_ids(graph or {})) | set(rbd_placeholders.all_placeholder_ids(held))
     blocks = [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or n.get("id"),
                "placeholder": n.get("id") in guessed}
               for n in nodes if n.get("type") not in ("input", "output", "knode")

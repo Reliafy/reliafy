@@ -8,7 +8,7 @@ import { costLabel, prefixCurrency, workspaceCurrency } from "../money.js";
 import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import SparesWhatIf from "./SparesWhatIf.jsx";
-import { SERVICE_LEVELS, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskText, risingText, saveText, useText } from "../sparesPlan.js";
+import { SERVICE_LEVELS, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskText, risingText, saveText, useText, yearText } from "../sparesPlan.js";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const fileName = (name) => `${String(name).replace(/[^\w\- ]+/g, "").trim() || "fleet"} — spares plan.csv`;
@@ -85,6 +85,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
               },
             ]}
           />
+          {answer.year && <YearAnswer year={answer.year} />}
           <SparesWhatIf curve={answer.risk_curve} over={over} initial={answer.hold} idPrefix="fleet" />
           <details>
             <summary className="lib-date">Stock to hold by {label.replace(/s$/i, "")}</summary>
@@ -105,6 +106,28 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
           <p className="rs-note">{answer.basis} {answer.repairable ? "One site: every unit sent for repair comes back." : ""}</p>
         </>
       )}
+    </div>
+  );
+}
+
+// The answer for the whole forecast (spares for the year): the demand, what to
+// order now and what to buy over it, with the rule it follows. Prices stay in
+// your own budget: this gives the quantities.
+function YearAnswer({ year }) {
+  const rows = [
+    ["Needed over the forecast", yearText(year)],
+    year.order_now != null && ["Order now", formatNumber(year.order_now)],
+    year.buy != null && ["Buy over the forecast", `${formatNumber(year.buy)} (high case ${formatNumber(year.buy_high_case)})`],
+  ].filter(Boolean);
+  return (
+    <div className="maint-scroll" data-testid="fleet-spares-year">
+      <table className="mini-table">
+        <tbody>
+          {rows.map(([k, v]) => <tr key={k}><th scope="row">{k}</th><td>{v}</td></tr>)}
+        </tbody>
+      </table>
+      {year.buy == null && year.order_now == null && <p className="hint">Enter what’s in stock now to see what to order and buy.</p>}
+      <p className="hint">{year.rule} The high case uses the 90th percentile of the demand.</p>
     </div>
   );
 }

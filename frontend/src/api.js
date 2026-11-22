@@ -288,6 +288,8 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
       extras: extras || null,
       use_per_year: more.use_per_year ?? null,
       units: more.units ?? null,
+      // From a position (the Explorer's Strategy pane): running hours on the calendar at its duty.
+      ...(more.position_id ? { position_id: more.position_id } : {}),
     }),
   });
 }
@@ -316,10 +318,12 @@ export function calendarNext(body) {
 // from the result payload (functions.evaluate_path) and differs for unsaved
 // (in-memory) vs saved (re-fit) models.
 // Optional { xMin, xMax } recompute the curves over a custom x-axis range.
-function rangeQuery({ xMin, xMax } = {}) {
+// ``at``: exact times to evaluate at instead of the grid (the Calculator's answer).
+function rangeQuery({ xMin, xMax, at } = {}) {
   const q = [];
   if (xMin != null) q.push(`x_min=${xMin}`);
   if (xMax != null) q.push(`x_max=${xMax}`);
+  for (const t of at || []) q.push(`at=${encodeURIComponent(t)}`);
   return q.length ? `?${q.join("&")}` : "";
 }
 
@@ -518,6 +522,14 @@ export function getDataset(id) {
   return request(`/api/datasets/${id}`);
 }
 
+// A window of a dataset's rows (the dataset page's "Show all rows"): ``limit``
+// rows from ``offset`` (0-based), with the table's columns and row count.
+export function getDatasetRows(id, { part = "life", offset = 0, limit = 200 } = {}) {
+  const q = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  if (part === "measurements") q.set("part", "measurements");
+  return request(`/api/datasets/${encodeURIComponent(id)}/rows?${q}`);
+}
+
 // Split a dataset by a column and compare the groups (log-rank, RMST, Gray's).
 // ``body`` = { time_column, group_column, censor_column?, count_column?,
 // cause_column?, c_invert?, groups?, reference?, tau?, unit? }.
@@ -529,7 +541,8 @@ export function compareGroups(datasetId, body) {
   });
 }
 
-// Upload a CSV as a standalone dataset (deduped by content on the server).
+// Upload a CSV as a standalone dataset. The same rows under the same name and reading come back as
+// the saved dataset (``reused``); otherwise a new one is made (``same_rows_as`` names a look-alike).
 // An Excel workbook works too: ``excel`` = { sheet, headerRow } picks the
 // sheet and header row (headerRow 0 = none), converted to CSV server-side.
 // ``noHeader``: true / false says whether the first row is data; null lets
@@ -1351,6 +1364,16 @@ export function rbdPhases(graph, currentState = null) {
   });
 }
 
+// Availability with repairs for any diagram (non-repairable included): {graph, rbdId, repairs
+// ({block id: mean time to repair}, hours where the clock is a time), period (diagram unit)}.
+export function rbdRepairAvailability({ graph, rbdId = null, repairs = null, period = null }) {
+  return request("/api/rbds/repair-availability", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, rbd_id: rbdId, repairs: repairs || null, period: period ?? null }),
+  });
+}
+
 // A network's two-terminal reliability (#160) at ``t`` (null = where it's
 // about 90%), with ``tMax`` the curve's end (null = automatic).
 export function rbdNetwork(graph, t = null, tMax = null) {
@@ -1420,7 +1443,7 @@ export function getRecurrentOptions() {
   return request("/api/recurrent/options");
 }
 
-function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows } = {}) {
+function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows, recordEnd, systems } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -1432,6 +1455,10 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name, options, w
   if (options?.baseline) form.append("baseline", options.baseline);
   if (options?.m != null && options.m !== "") form.append("m", String(options.m));
   if (windows && String(windows).trim()) form.append("windows", windows);
+  // One end of test for every system with no end of record of its own.
+  if (recordEnd != null && String(recordEnd).trim()) form.append("record_end", String(recordEnd).trim());
+  // Only these systems, fitted by themselves (none: every system).
+  (systems || []).forEach((sid) => form.append("systems", sid));
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;
@@ -1480,21 +1507,21 @@ export function predictRecurrent(id, horizon) {
 
 // The Calculator's values with their 90% bounds at t (and over [start, t]);
 // ``profile`` the covariate values of a covariate model. Read-only.
-export function calculateRecurrent(id, { t, start = null, profile = null } = {}) {
+export function calculateRecurrent(id, { t, start = null, profile = null, serviceLevel = null } = {}) {
   return request(`/api/recurrent/models/${id}/calculate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ t, start, profile }),
+    body: JSON.stringify({ t, start, profile, service_level: serviceLevel }),
   });
 }
 
 // The fleet's failures over the next ``horizon`` from where each of the
 // model's systems is now, with a 90% range. Read-only.
-export function recurrentFromNow(id, horizon) {
+export function recurrentFromNow(id, horizon, serviceLevel = null) {
   return request(`/api/recurrent/models/${id}/from-now`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ horizon }),
+    body: JSON.stringify({ horizon, service_level: serviceLevel }),
   });
 }
 
@@ -1535,7 +1562,7 @@ export function getAltOptions() {
   return request("/api/alt/options");
 }
 
-function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, unit, name } = {}) {
+function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, unit, name, useStress } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -1546,6 +1573,8 @@ function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, un
   if (distribution) form.append("distribution", distribution);
   if (lifeModel) form.append("life_model", lifeModel);
   if (unit) form.append("unit", unit);
+  // The use stress typed on the Model step (the user's units): the saved model opens at it.
+  if (Array.isArray(useStress) && useStress.length) form.append("use_stress", JSON.stringify(useStress.map(Number)));
   return form;
 }
 
@@ -1573,6 +1602,15 @@ export function renameAltModel(id, name) {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
+  });
+}
+
+// Keep the use stress entered on a saved model's page (the user's units; null forgets it).
+export function saveAltUseStress(id, useStress) {
+  return request(`/api/alt/models/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ use_stress: useStress }),
   });
 }
 
@@ -1742,6 +1780,7 @@ export function failureFinding(distributionId, params, targetAvailability, unit,
       test_duration: more.test_duration ?? null,
       test_cost: more.test_cost ?? null,
       renewed_at_test: more.renewed_at_test ?? true,
+      ...(more.position_id ? { position_id: more.position_id } : {}),
     }),
   });
 }
@@ -1873,6 +1912,15 @@ export function searchLibrary({ q, source, equipmentType, failureMode, kind, pag
 // the decision dialog offers, with the evidence each outcome expects.
 export function getRcmOptions() {
   return request("/api/maintenance/rcm/options");
+}
+// What a decision on a position (for a failure mode) could link as its evidence, best first
+// (backend/maintenance/rcm_evidence.py): {position, mode, class, kinds, candidates, total}.
+export function listEvidenceCandidates(positionId, modeId = null, { q = "", kind = "" } = {}) {
+  const p = new URLSearchParams({ position_id: positionId });
+  if (modeId) p.set("mode_id", modeId);
+  if (q) p.set("q", q);
+  if (kind) p.set("kind", kind);
+  return request(`/api/maintenance/rcm/evidence-candidates?${p.toString()}`);
 }
 
 // ---- RCM studies: stand-alone worksheets (/maintenance/rcm). They share no
@@ -2141,6 +2189,13 @@ async function downloadFile(url, fallbackName, opts = {}, fetcher = authedFetch)
   // Give the browser a moment to start the download before revoking.
   setTimeout(() => URL.revokeObjectURL(href), 1000);
   return name;
+}
+
+// "Download CSV" on the dataset page: the rows as saved (every row, not the
+// preview). ``part`` "measurements" gives the readings part when there is one.
+export function downloadDatasetCsv(id, part = "life", name = "dataset") {
+  const q = part === "measurements" ? "?part=measurements" : "";
+  return downloadFile(`/api/datasets/${encodeURIComponent(id)}/csv${q}`, `${name || "dataset"}.csv`);
 }
 
 export const PYTHON_EXPORT_TIP =
@@ -2568,6 +2623,36 @@ export function createMaintenanceItem(body) {
 // (the locations it carries) instead of the places you look after.
 export function listMaintenanceLocations(of = null) {
   return request(`/api/maintenance/locations${of ? `?of=${encodeURIComponent(of)}` : ""}`);
+}
+
+// What's inside the assets, for the Assets list's search: positions by name or tag,
+// items by name, serial or part number, each with the asset it's at (site).
+export function searchAssets(q, { signal } = {}) {
+  return request(`/api/maintenance/search?q=${encodeURIComponent(q)}`, signal ? { signal } : undefined);
+}
+
+// The one search for everything (the header's search, ⌘K): each kind's best matches the viewer
+// can open in the active workspace, grouped by kind ({q, groups: [{kind, label, total, results}]}).
+export function searchEverything(q, { kinds = null, limit = 5, signal } = {}) {
+  const query = new URLSearchParams({ q, limit: String(limit) });
+  if (kinds) query.set("kinds", kinds.join(","));
+  return request(`/api/search?${query}`, signal ? { signal } : undefined);
+}
+
+// Every item of a product (built from one, or of a product's part), with where it is.
+export function listItemsOfProducts() {
+  return request("/api/maintenance/items/of-products");
+}
+
+// Delete an item: dryRun (the default) says what would go, or why it can't. The item is
+// retired, its history kept; a built item at the top of its tree takes the tree too.
+export function deleteMaintenanceItem(id, { dryRun = true } = {}) {
+  return postJson(`/api/maintenance/items/${encodeURIComponent(id)}/delete`, { dry_run: dryRun });
+}
+
+// Undo an item's delete (with the tree that went with it).
+export function undeleteMaintenanceItem(id) {
+  return postJson(`/api/maintenance/items/${encodeURIComponent(id)}/undelete`, {});
 }
 
 // The assets: the top-level places with what each holds, and the positions at none.
@@ -3109,8 +3194,9 @@ export function getRedundancyInside(positionId) {
 export function getPositionImpact(id) {
   return request(`/api/maintenance/positions/${id}/impact`);
 }
-export function generatePositionRbd(id) {
-  return postJson(`/api/maintenance/positions/${id}/rbd`, {});
+// body: {check: true} for what to ask first ({ask}); {arrangements} with the answers.
+export function generatePositionRbd(id, body = {}) {
+  return postJson(`/api/maintenance/positions/${id}/rbd`, body);
 }
 
 export function setWorkStatus(id, status, note = "") {
@@ -3410,8 +3496,9 @@ export function getClassFleet(id, within = null) {
 // One position's risk now: its row as a class's fleet gives it, with its curves when it is scored
 // (`member`, null with nothing fitted: `why`), and the condition and life model that scores it
 // (`model`, null with none linked). Whatever its item's class.
-export function getPositionCondition(id) {
-  return request(`/api/maintenance/positions/${encodeURIComponent(id)}/condition`);
+// ``curves`` false: the numbers alone (the Summary's status badge), not the charts' curves.
+export function getPositionCondition(id, { curves = true } = {}) {
+  return request(`/api/maintenance/positions/${encodeURIComponent(id)}/condition${curves ? "" : "?curves=false"}`);
 }
 export function createItemClass(body) {
   return postJson("/api/maintenance/item-classes", body);
@@ -3745,6 +3832,11 @@ export function linkPositionModel(positionId, body) {
 export function getRbdTreePlan(rbdId, graph) {
   return postJson("/api/maintenance/rbd-tree-plan", { rbd_id: rbdId, ...(graph ? { graph } : {}) });
 }
+// Each block's age now from the item fitted at the position it stands for (the Calculator's "As of
+// now"): {position, unit, blocks: {id: {age, basis, note, item} | {reason}}, unlinked}.
+export function getRbdAgesNow(rbdId, graph) {
+  return postJson("/api/maintenance/rbd-ages-now", { rbd_id: rbdId, ...(graph ? { graph } : {}) });
+}
 // The repairable RBDs whose plans read these tasks: {uses: [{rbd, block, task, used, last, outdated}]}.
 export function getRbdPlanUses(taskIds) {
   return request(`/api/maintenance/rbd-plan-uses?task_ids=${encodeURIComponent((taskIds || []).join(","))}`);
@@ -3983,4 +4075,39 @@ export function fitAtRate(path, body) {
 export function setPositionModelUsageRate(linkId, usageRate) {
   return request(`/api/maintenance/position-models/${linkId}/usage-rate`, { method: "PUT",
     body: JSON.stringify({ usage_rate: usageRate }), headers: { "Content-Type": "application/json" } });
+}
+
+// Spares for the year (Nov 2026): every part a failure or a task uses in a scope (id: a position
+// and what's inside it, within root; a location; a class; a product: its items, or fleetSize new
+// ones when none is built), one row each. Also over MCP: maintenance get.spares_year.
+function sparesYearQuery({ id, root, months, serviceLevel, fleetSize, hoursPerDay, leaveOut } = {}) {
+  const q = new URLSearchParams();
+  if (id) q.set("id", id);
+  if (root) q.set("root", root);
+  if (months) q.set("months", String(months));
+  if (serviceLevel) q.set("service_level", serviceLevel);
+  if (fleetSize) q.set("fleet_size", String(fleetSize));
+  if (hoursPerDay) q.set("hours_per_day", String(hoursPerDay));
+  if (leaveOut?.length) q.set("leave_out", leaveOut.join(","));
+  return q;
+}
+export function getSparesYear(opts = {}) {
+  return request(`/api/maintenance/spares-year?${sparesYearQuery(opts)}`);
+}
+export async function getSparesYearCsv(opts = {}) {
+  const q = sparesYearQuery(opts);
+  q.set("format", "csv");
+  const res = await authedFetch(`/api/maintenance/spares-year?${q}`);
+  if (!res.ok) throw new Error(`The export failed (${res.status}). Try again.`);
+  return res.blob();
+}
+// A package's next visit: its parts against usable stock and lead time; leaveOut: task ids off the visit.
+export function getPackageParts(packageId, { leaveOut } = {}) {
+  const q = new URLSearchParams();
+  if (leaveOut?.length) q.set("leave_out", leaveOut.join(","));
+  return request(`/api/maintenance/packages/${packageId}/parts?${q}`);
+}
+// A stock count: {location_id, counted, on, by?, reason?}: what was on the shelf on the day counted.
+export function countMaintenanceStock(partId, body) {
+  return postJson(`/api/maintenance/parts/${partId}/count`, body);
 }

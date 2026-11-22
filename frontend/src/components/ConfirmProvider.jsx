@@ -4,6 +4,7 @@ import { portalHost } from "../fullScreen.js";
 import { buttonClass } from "./ui/Button.jsx";
 import { normaliseConfirm, normalisePrompt, saveErrorText } from "../confirm.js";
 import { SHORT_TEXT, charCount } from "../maintenanceText.js";
+import { useBackdropClose } from "./backdropClose.js";
 
 // The app's own confirm dialog (replaces window.confirm and window.prompt).
 // Mounted once near the root; any component asks with
@@ -89,6 +90,9 @@ function ConfirmDialog({ request, onAnswer }) {
     answered.current = true;
     onAnswer(asking ? null : false);
   }, [onAnswer, asking]);
+  // The backdrop cancels only when the press and the release are both on it (a drag that
+  // began in the box, selecting its text, and ended outside must not).
+  const backdrop = useBackdropClose(cancel);
   // A box with a soft limit (a function's text): its counter.
   const limit = asking ? request.limit : null;
   const count = limit ? charCount(text, { max: limit.max, before: limit.before }) : null;
@@ -156,9 +160,7 @@ function ConfirmDialog({ request, onAnswer }) {
   };
 
   return createPortal(
-    <div className="overlay confirm-overlay"
-         // Not the second click of a double-click on the button that opened it.
-         onClick={(e) => { if (e.detail < 2) cancel(); }}>
+    <div className="overlay confirm-overlay" {...backdrop}>
       <form
         ref={box}
         className="modal modal-sm confirm-dialog"

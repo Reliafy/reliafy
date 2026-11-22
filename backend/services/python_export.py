@@ -86,7 +86,69 @@ def header(title: str, what: str, *, notes: Iterable[str] = (), unit: str = "",
     else:
         lines.append(f'    pip install "surpyval=={v["surpyval"]}"')
     lines += ["    python this_file.py", '"""', ""]
-    return lines
+    return lines + version_check(needs_repyability=needs_repyability, versions=v)
+
+
+def version_check(*, needs_repyability: bool = False, versions: Optional[dict] = None) -> list[str]:
+    """The lines every downloaded script runs first, before any import of
+    SurPyval or RePyability: they read the installed versions and, when one is
+    missing or older than the version the script was made with, stop with a
+    message that says exactly what to install. Without it an older SurPyval
+    fails part-way through with an error about an unknown argument (``unit=``
+    needs SurPyval 0.28), which doesn't say the version is the cause.
+
+    ``versions`` overrides :func:`versions` (the RBD and joint exports pass
+    the ones they print in their header)."""
+    v = versions_or_detected(versions)
+    needed = {"surpyval": v["surpyval"]}
+    if needs_repyability:
+        needed["repyability"] = v["repyability"]
+    pairs = ", ".join(f"{name!r}: {str(least)!r}" for name, least in needed.items())
+    # Short lines: the scripts keep to 79 columns.
+    return [
+        "",
+        "# Check the installed libraries first: an older version stops",
+        "# part-way through with an error that doesn't say what's wrong.",
+        "def _check_versions():",
+        "    import re",
+        "    import sys",
+        "    from importlib.metadata import PackageNotFoundError, version",
+        "",
+        *(["    needed = {" + pairs + "}"] if len(pairs) < 64 else
+          ["    needed = {", *(f"        {p}," for p in pairs.split(", ")), "    }"]),
+        "",
+        "    def as_numbers(text):",
+        "        parts = str(text).split(\".\")[:3]",
+        "        return tuple(int(re.match(r\"\\d*\", p).group() or 0) for p in parts)",
+        "",
+        "    problems = []",
+        "    for name, least in needed.items():",
+        "        try:",
+        "            have = version(name)",
+        "        except PackageNotFoundError:",
+        "            problems.append(name + \" isn't installed\")",
+        "            continue",
+        "        if as_numbers(have) < as_numbers(least):",
+        "            problems.append(name + \" \" + have + \" is installed\")",
+        "    if problems:",
+        "        wanted = \" and \".join(",
+        "            n + \" \" + v + \" or later\" for n, v in needed.items())",
+        "        command = \" \".join(",
+        "            '\"' + n + \">=\" + v + '\"' for n, v in needed.items())",
+        "        sys.exit(\"This script needs \" + wanted",
+        "                 + \" (\" + \"; \".join(problems) + \").\\n\"",
+        "                 + \"Install with:\\n    pip install \" + command)",
+        "",
+        "",
+        "_check_versions()",
+        "",
+    ]
+
+
+def versions_or_detected(given: Optional[dict] = None) -> dict:
+    """``given`` with any missing version filled in from :func:`versions`."""
+    detected = versions()
+    return {k: (given or {}).get(k) or detected[k] for k in ("surpyval", "repyability")}
 
 
 def _wrap(text: str, width: int = 78, prefix: str = "") -> list[str]:

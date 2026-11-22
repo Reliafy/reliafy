@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { answerAtTime, formatProbability, formatReliability, oneIn, timeInWords } from "./rbdCalcText.js";
+import { answerAtTime, formatProbability, formatReliability, oneIn, timeInWords, importanceOutOfDate } from "./rbdCalcText.js";
 
 test("a reliability near 1 keeps the digits that show its gap to 1", () => {
   assert.equal(formatReliability(0.99994), "0.99994");
@@ -59,4 +59,16 @@ test("the importance heading says which time it ranks at", async () => {
   assert.match(given.why, /Evaluate at t/);
   assert.match(importanceHeading({ time: 1727.09, time_basis: "reliability_90" }, "Hours").why, /falls to 90%/);
   assert.equal(importanceHeading({}, "Hours"), null);
+});
+
+test("the importance table is out of date when Evaluate at t says another time", () => {
+  // Ranked where reliability falls to 90%; the box holds the automatic half-window.
+  assert.equal(importanceOutOfDate(3398.6, 11940), true);
+  // A time typed as the table shows it (four figures) is the same time.
+  assert.equal(importanceOutOfDate(3398.6, 3399), false);
+  assert.equal(importanceOutOfDate(6000, "6000"), false);
+  // Nothing to compare.
+  assert.equal(importanceOutOfDate(null, 6000), false);
+  assert.equal(importanceOutOfDate(6000, null), false);
+  assert.equal(importanceOutOfDate(6000, ""), false);
 });

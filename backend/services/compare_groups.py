@@ -185,8 +185,6 @@ def prepare(
         cause = np.array([_label(v) for v in df[cause_column]], dtype=object)
 
     x, c, n, labels = x[keep], c[keep].astype(int), n[keep], labels[keep]
-    if (x < 0).any():
-        raise CompareGroupsError("Times must not be negative.")
     if cause is not None:
         # The failure-mode column sets the status as the competing-risks fit
         # reads it: with no status column a blank mode is a unit still
@@ -197,6 +195,14 @@ def prepare(
         except FailureModeError as exc:
             raise CompareGroupsError(str(exc)) from exc
         cause = np.array(modes, dtype=object)
+    # A time below 0, or a failure at 0, named by its row in the data (rows
+    # left out above are skipped), as every life fit names them.
+    full_x, full_c = np.full(keep.size, np.nan), np.ones(keep.size)
+    full_x[keep], full_c[keep] = x, c
+    refused = fitting.nonparametric_range_message({"x": full_x, "c": full_c}, "Kaplan-Meier",
+                                                  what="a comparison of groups", ranges=False)
+    if refused:
+        raise CompareGroupsError(refused)
     out = {"x": x, "c": c, "n": n, "group": labels, "dropped": dropped}
     if cause is not None:
         out["cause"] = cause
@@ -372,9 +378,13 @@ def compare_groups(
 
     longest = {g: float(np.max(x[lab == g])) for g in order}
     horizon = min(longest.values())
+    # The group whose data ends first sets the longest window every curve has data for.
+    ends_first = min(longest, key=longest.get)
     notes: list[str] = []
+    tau_source = "given"
     if tau is None:
         tau = horizon
+        tau_source = "auto"
     else:
         tau = float(tau)
         if not np.isfinite(tau) or tau <= 0:
@@ -386,6 +396,7 @@ def compare_groups(
                 f"({fmt_num(horizon)}), so it was capped there: beyond it that group's curve has no data, "
                 "and its average life would be extrapolated.")
             tau = horizon
+            tau_source = "capped"
     if tau <= 0:
         raise CompareGroupsError("Every time in one group is 0: there is no window to average life over.")
 
@@ -442,6 +453,10 @@ def compare_groups(
         "groups": summaries,
         "reference": reference,
         "tau": float(tau),
+        # How the window was set: "auto" (none given), "given", or "capped" (a longer one cut to the
+        # data), and the group whose data ends first (it sets the longest window there is data for).
+        "tau_source": tau_source,
+        "tau_group": ends_first,
         "alpha": ALPHA,
         "ci_level": round(1.0 - CI_ALPHA, 6),
         "logrank": primary,

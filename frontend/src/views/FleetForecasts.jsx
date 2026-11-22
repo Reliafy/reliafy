@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
+import ChoiceChips from "../components/ui/ChoiceChips.jsx";
 import Select from "../components/Select.jsx";
 import { listFleets, createFleet, deleteFleet, getFleet, listModels, listAltModels, listRecurrentModels } from "../api.js";
 import { CardHeader } from "../components/ui/Card.jsx";
@@ -110,10 +111,12 @@ export default function FleetForecasts() {
     setTicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-MAX_COMPARE)));
   };
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listFleets()
       .then((d) => setFleets(d.fleets || []))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -191,6 +194,19 @@ export default function FleetForecasts() {
   };
 
   const confirm = useConfirm();
+  // Escape, ×, the overlay or Cancel with a name typed asks first, so a stray
+  // Escape doesn't lose it; with nothing typed it just closes.
+  const closeCreate = async () => {
+    if (name.trim() && !(await confirm({
+      title: "Discard this new forecast?",
+      body: `"${name.trim()}" isn't created yet.`,
+      confirmLabel: "Discard",
+      cancelLabel: "Keep editing",
+    }))) return;
+    setName("");
+    setModelId("");
+    setModalOpen(false);
+  };
   const onDelete = async (f) => {
     if (!(await confirm(deleteOrRemoveConfirm(f, "forecast", { name: itemName(f) })))) return;
     try {
@@ -242,6 +258,8 @@ export default function FleetForecasts() {
         <FleetCompare ids={ticked} onClear={() => { setComparing(false); setTicked([]); }} />
       )}
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={fleets}
         noun={["forecast", "forecasts"]}
         help={HELP}
@@ -284,10 +302,10 @@ export default function FleetForecasts() {
         <Modal
           title="New failure forecast"
           locked={creating}
-          onClose={() => setModalOpen(false)}
+          onClose={closeCreate}
           footer={
             <>
-              <button className="secondary" onClick={() => setModalOpen(false)} disabled={creating}>
+              <button className="secondary" onClick={closeCreate} disabled={creating}>
                 Cancel
               </button>
               <button onClick={onCreate} disabled={creating || !name.trim() || !modelId}>
@@ -309,21 +327,20 @@ export default function FleetForecasts() {
                 onKeyDown={(e) => e.key === "Enter" && onCreate()}
               />
             </label>
-            <label className="login-field">
-              <span>Equipment</span>
-              <Select
+            <div className="login-field">
+              <span>What happens when one fails</span>
+              <ChoiceChips
+                label="What happens when one fails"
                 value={modelKind}
-                onChange={(v) => { setModelKind(v); setModelId(""); }}
+                onChange={(v) => { if (v) { setModelKind(v); setModelId(""); } }}
                 options={[
-                  { value: "life", label: "Replaceable — a life, regression or ALT model",
-                    hint: "Failures until each item is replaced (first failures, or with replacement)." },
-                  { value: "recurrent", label: "Repairable — a model of repeat failures",
-                    hint: "Each item is repaired and fails again: every repeat failure counted." },
+                  { value: "life", label: "Replaced", title: "Failures until each item is replaced (a life, regression or ALT model)." },
+                  { value: "recurrent", label: "Repaired", title: "Each item is repaired and fails again: every repeat failure counted (a repairable model)." },
                 ]}
               />
-            </label>
+            </div>
             <label className="login-field">
-              <span>{modelKind === "recurrent" ? "Repairable model" : "Model"}</span>
+              <span>{modelKind === "recurrent" ? "Repairable model to forecast with" : "Life model to forecast with"}</span>
               <Select
                 value={modelId}
                 onChange={setModelId}

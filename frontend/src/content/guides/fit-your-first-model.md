@@ -56,9 +56,30 @@ recent work, with **Start here** cards while your workspace is new. Your data
 goes in once, as a dataset, and the dataset remembers how its columns are read.
 Every model you build from it then asks nothing about columns.
 
+To find anything later, use **Search…** in the top bar, or press **⌘K**
+(**Ctrl K** on Windows) on any page. One box finds your data, models, diagrams
+and saved analyses by name or tag, the app's pages and tabs, and these guides,
+with small typos forgiven. Use the arrow keys to move and Enter to open.
+
 Upload it under [Data](/data) → **New dataset**: drop a CSV or Excel file (for
 a workbook, choose the sheet and the header row), or **Paste or type the
 data**. Reliafy shows the first rows, then asks once how the columns are read.
+Each column's name carries a small tag (text, integer, number, date): the way
+Reliafy read it. A column of times tagged *text* is the sign to look at the
+file: a value like `14,010` with a thousands separator, or a stray letter, is
+read as text, so clean it in your spreadsheet first, or hand it to the agent.
+A saved dataset's page previews its first rows; **Show all rows** opens the whole
+table, numbered from 1, a couple of hundred at a time, to find a single value
+(a time ten times the others, say) before you fit.
+
+The dataset's **Life data** tab also shows how its columns are read, in one
+line (*How “Bearings” is read: x = Age (hours) · c = Status*). If it's wrong,
+press **Change** beside it, fix the selectors and press **Save the reading**:
+later models use the new reading, models already made keep the one they were
+fitted with, and the rows themselves never change. You don't need to delete
+the dataset and upload it again. A reading Reliafy guessed says *guessed —
+check it*, with **Looks right** to keep it. Samples and datasets shared with
+you for viewing show the line without **Change**.
 
 ### How the columns are read
 
@@ -151,8 +172,10 @@ Go to **Modelling → Models → Non-repairable**, press **New model** and choos
   column.
 - **Upload a file** takes a CSV or Excel file.
 
-Pasted values and a new file are saved as a dataset first, through the same
-**New dataset** screen, so they're read the same way; then the fit goes on.
+Pasted values are saved as a dataset straight away and the fit goes on to the
+**Model** step, where you choose their time unit: the paste already says which
+column is the time and which the status. A new file is saved as a dataset
+first, through the same **New dataset** screen, so it's read the same way.
 
 ![The new-model flow: pick a saved dataset, see its first rows and how its columns are read](/guides/img/fit-01-new.png)
 
@@ -163,6 +186,13 @@ doesn't use are shown quieter. **Change** opens the same selectors as the
 upload: what you keep there is saved with the dataset and used by every later
 model. Models already made keep the reading they were fitted with, so a refit
 gives the same answer.
+
+To try a different reading without changing the dataset, press **Use for this
+fit only** instead of **Save the reading**. That suits a fit on one clock of
+two, or every failure fitted as one with the failure mode set to none. The line
+then shows *this fit only*, and the dataset keeps its own reading for every
+other model. A sample, or a dataset shared with you for viewing, can't be
+changed, so a change there is always for this fit only.
 
 ![The Model step: how the dataset's columns are read, in one line, with Change](/guides/img/fit-04-data-step.png)
 
@@ -220,6 +250,15 @@ units then move that prior.
    or *Only a starting point* (about 60%).
 3. Press **Fit with the prior**.
 
+A belief you type, such as a B10 *about* 6,000 hours that would surprise you
+under 4,000 or over 8,000, is centred on the value you gave: the prior's B10 is
+6,000 hours, not a point between the two surprise values. Beliefs like this
+are even in proportion, and these two aren't: 6,000 is 1.5 times 4,000, but
+8,000 is only 1.33 times 6,000. So the prior's 90% range is widened on the
+short side, to 4,000 to 9,000 hours, keeping both surprise values inside it,
+and a note on the result says so. A value **Around a value, between two
+bounds** is centred on the value you typed in the same way.
+
 The result says what moved and how far. The chart shows the prior as a dashed
 line under the fitted curve, with its 90% credible band. The table puts the
 prior's numbers beside the fitted ones. A credible interval means there's a 90%
@@ -254,6 +293,10 @@ The panel beside the probability plot has:
 
 The **Model characteristics** tab has the mean life (MTTF) and the B-lives (B1,
 B5, B10 and B50), each with its lower bound at one confidence you choose.
+When the model's unit is hours, days, weeks, months or years, each answer also
+shows in a friendlier unit ("9,730 days, ≈ 26.6 years"): pick it under **Also
+in**, or pick the model's own unit to hide it. The model, its inputs and its
+plots stay in the data's unit.
 **Diagnostics** asks whether you can trust the fit: the fitted curve over the
 data's own estimate, a P-P plot of where the failures fell against where the
 model expects them, the ranking of every other distribution on the same data,
@@ -281,7 +324,13 @@ number worth understanding**:
 - **β > 1** — wear-out. Risk rises with age, and preventive replacement starts
   to make sense.
 
-That single parameter often changes the maintenance decision more than anything
+**α, the scale**, says how long lives are: it is the *characteristic life*, the
+age by which about 63% of units have failed, whatever β is. Double α and every
+life doubles; the shape stays the same. For the bearings, about 63% have failed
+by 1,440 hours. **What do these mean?** beside the parameters says the same for
+your own fit, in words, with your numbers.
+
+That single parameter, β, often changes the maintenance decision more than anything
 else on the page, which is why the panel spells it out. The bearings' whole
 interval sits above 1, so the **Failure pattern** row reads *Wear-out*, and
 clicking it says *β is above 1 at 90% confidence*.
@@ -289,8 +338,16 @@ clicking it says *β is above 1 at 90% confidence*.
 The **Calculator** tab lets you ask the model direct questions: reliability (or
 any other function) at a given time, or, with **Time at reliability**, the time
 by which a given fraction will have failed — the B-lives, with **B1**, **B5**,
-**B10** and **B50** one click each. Every answer comes with a confidence bound,
-stated in words. The
+**B10** and **B50** one click each. **At a time** starts at the middle failure
+time in the data. A time can carry its unit: *1 year* on a model in hours is
+8,766 hours (a year is 365.25 days, running all the time). Every answer comes
+with a confidence bound, stated in words.
+
+An answer outside the data carries a note. Ask about a time before the first
+failure in the data, or past the oldest age seen, and the Calculator says so,
+for example *30,000 hours is past the oldest age in the data (12,400 hours)*.
+The answer then comes from the fitted curve's shape alone, not from failures
+seen there: treat it as a rough guide, and quote it with that caveat. The
 [B-lives and confidence bounds](/guides/b-lives-and-confidence-bounds) guide
 reads them in detail.
 
@@ -335,11 +392,22 @@ mode's share, and the constant rate an RBD block would use.
 
 A model you fit is in no library until you put it there. Open a saved model
 and choose **Add to library…** from its ⋯ menu (or, in the Explorer's
-Modelling tab, **Life model › Add to library…** for a position's life model).
+**Models › Life models**, **Life model › Add to library…** for a position's life model).
 The library keeps a copy as it is now; a later refit doesn't change it. You can
 share a library with other workspaces or publish it: the
 [Build and share a library](/guides/build-and-share-a-library) guide covers
 it all.
+
+## Take the numbers to a spreadsheet
+
+Every table and curve on the model page downloads as a CSV file, at full precision rather than the
+rounded figures on screen, with the units and the bounds' confidence in the column names:
+
+- **CSV** beside the Calculator chart's PNG and SVG buttons: the curve it draws, with time, reliability,
+  probability of failure, hazard rate, cumulative hazard and density, plus the bound you chose.
+- **CSV** in the heading of the **Parameters** card and the **B-lives** card (on **Model characteristics**).
+
+A dataset's own rows download from **⋯ → Download CSV** on its page, exactly as saved.
 
 ## Run it yourself in Python
 

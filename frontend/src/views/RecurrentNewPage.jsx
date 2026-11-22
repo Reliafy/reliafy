@@ -4,6 +4,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
+import Field from "../components/ui/Field.jsx";
+import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
+import { TextInput } from "../components/ui/Controls.jsx";
 import RefLink from "../components/RefLink.jsx";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
@@ -14,7 +17,7 @@ import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
 import { recurrentAnswer } from "../recurrentResults.js";
 import {
-  readingWithRecurrentMapping, recurrentIssues, recurrentMappingFromReading, recurrentWithCovariates,
+  readingWithRecurrentMapping, recordEndIssue, recurrentIssues, recurrentMappingFromReading, recurrentWithCovariates,
   savedRecurrentMapping,
 } from "../recurrentMapping.js";
 import { codedStatusNote } from "../readingCodes.js";
@@ -23,11 +26,15 @@ import {
   getRecurrentOptions,
   listDatasets,
   getDataset,
+  getDatasetRows,
+  getRecurrentModel,
   fitRecurrent,
   saveRecurrentModel,
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import { ErrorNotice } from "../components/StorageCap.jsx";
+import Chip from "../components/ui/Chip.jsx";
+import { guessCostColumns, systemIds, toggleSystem } from "../recurrentSystems.js";
 
 // The model families (#65): minimal repair (Poisson processes), covariates on
 // the repair rate, and imperfect repair.
@@ -50,10 +57,10 @@ const MEMORY = [
 
 // Short blurbs under the model dropdown (keyed by recurrent model id).
 const MODEL_DESC = {
-  crow_amsaa: "NHPP power-law (Crow-AMSAA) — the standard reliability-growth model. β < 1 improving, β > 1 worsening.",
+  crow_amsaa: "NHPP power-law (Crow-AMSAA) — the standard reliability-growth model. β below 1: failures come slower over time; above 1, faster.",
   duane: "Duane growth model — a log–log fit of cumulative MTBF against cumulative time.",
   hpp: "Homogeneous Poisson — a constant failure rate with no trend; the null model.",
-  cox_lewis: "Cox-Lewis log-linear NHPP — the rate changes by a fixed proportion per unit time. β > 0 worsening, β < 0 improving.",
+  cox_lewis: "Cox-Lewis log-linear NHPP — the rate changes by a fixed proportion per unit time. β above 0: failures come faster over time; below 0, slower.",
 };
 
 const STEPS = ["Source", "Model", "Result"];
@@ -84,6 +91,15 @@ export default function RecurrentNewPage() {
   // Observation gaps: window columns (ws, we) or windows typed in (#65).
   const [gaps, setGaps] = useState({ ws: "", we: "" });
   const [windows, setWindows] = useState("");
+  // When the test ended (one number for every system with no end of record
+  // of its own); blank: each system ends at its last failure.
+  const [recordEnd, setRecordEnd] = useState("");
+  // Which systems: every one (the fleet), or only some, fitted by themselves.
+  const [someOnly, setSomeOnly] = useState(false);
+  const [systems, setSystems] = useState([]);
+  const [allSystems, setAllSystems] = useState(null); // the dataset's system ids, once read
+  // Each failure's downtime (hours) and cost columns, for the per-system totals.
+  const [costs, setCosts] = useState({ downtime: "", cost: "" });
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -107,7 +123,7 @@ export default function RecurrentNewPage() {
   // read its columns starts from that model's columns.
   const rd = useDatasetReading(detail);
   const kept = useMemo(
-    () => (detail && rd.source !== "saved" && !detail.reading_kept ? savedRecurrentMapping(detail.last_recurrent_mapping, rd.cols?.columns) : null),
+    () => (detail && rd.source === "guessed" && !detail.reading_kept ? savedRecurrentMapping(detail.last_recurrent_mapping, rd.cols?.columns) : null),
     [detail, rd.source, rd.cols],
   );
   const reading = useMemo(
@@ -133,8 +149,12 @@ export default function RecurrentNewPage() {
   const map = useMemo(() => {
     if (!derived) return { i: "", x: "" };
     const m = family === "regression" ? recurrentWithCovariates(derived.mapping, reading) : derived.mapping;
-    return { ...m, ...(gaps.ws ? { ws: gaps.ws } : {}), ...(gaps.we ? { we: gaps.we } : {}) };
-  }, [derived, family, reading, gaps]);
+    return {
+      ...m, ...(gaps.ws ? { ws: gaps.ws } : {}), ...(gaps.we ? { we: gaps.we } : {}),
+      ...(costs.downtime ? { downtime: costs.downtime } : {}), ...(costs.cost ? { cost: costs.cost } : {}),
+    };
+  }, [derived, family, reading, gaps, costs]);
+  const chosen = someOnly ? systems : [];
   // Proportional intensity needs covariates; gaps only the Poisson processes.
   const hasWindows = !!(map.ws && map.we) || !!windows.trim();
   const modelBlock = family === "regression" && !(map.z || []).length
@@ -169,7 +189,13 @@ export default function RecurrentNewPage() {
       setDetail(full);
       setGaps({ ws: "", we: "" });
       setWindows("");
+      setRecordEnd("");
+      setSomeOnly(false);
+      setSystems([]);
+      setAllSystems(null);
+      setCosts({ downtime: "", cost: "" });
       setStep(2);
+      return full;
     } catch (err) {
       setError(err);
     } finally {
@@ -181,14 +207,67 @@ export default function RecurrentNewPage() {
   // dataset, at the Model step.
   const [params] = useSearchParams();
   const startDataset = params.get("dataset");
+  // ?from=<model id>&system=<id>… (a repairable model's "Fit alone") starts
+  // on that model's data and settings, with only those systems chosen.
+  const startFrom = params.get("from");
   const started = useRef(false);
   useEffect(() => {
-    if (!startDataset || started.current) return;
+    if ((!startDataset && !startFrom) || started.current) return;
     started.current = true;
     setMode("data");
-    pickDataset({ id: startDataset, name: "" });
+    if (!startFrom) {
+      pickDataset({ id: startDataset, name: "" });
+      return;
+    }
+    const wanted = params.getAll("system");
+    getRecurrentModel(startFrom).then(async (src) => {
+      if (!src?.dataset_id) throw new Error("That model has no data to fit again: it was made from parameters.");
+      const full = await pickDataset({ id: src.dataset_id, name: "" });
+      if (!full) return;
+      const spec = src.spec || {};
+      if (spec.model_id) setModel(spec.model_id);
+      if (spec.options) setOptions(spec.options);
+      if (spec.record_end != null) setRecordEnd(String(spec.record_end));
+      if (spec.windows && typeof spec.windows === "object") {
+        setWindows(Object.entries(spec.windows).flatMap(([sid, spans]) => (spans || []).map(([a, b]) => `${sid}, ${a}, ${b}`)).join("\n"));
+      }
+      const m = spec.mapping || {};
+      setCosts({ downtime: m.downtime || "", cost: m.cost || "" });
+      setSomeOnly(true);
+      setSystems(wanted.length ? wanted : spec.systems || []);
+    }).catch((err) => setError(err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDataset]);
+  }, [startDataset, startFrom]);
+
+  // The dataset's system ids, read when "Only some" is chosen (every row, a
+  // page at a time).
+  useEffect(() => {
+    if (!someOnly || !datasetId || !map.i || allSystems) return;
+    let gone = false;
+    (async () => {
+      const ids = new Set();
+      for (let offset = 0, pages = 0; pages < 50; pages += 1) {
+        const w = await getDatasetRows(datasetId, { offset, limit: 1000 });
+        systemIds(w.columns, w.rows, map.i).forEach((sid) => ids.add(sid));
+        offset += (w.rows || []).length;
+        if (!(w.rows || []).length || offset >= (w.n_rows || 0)) break;
+      }
+      if (!gone) setAllSystems([...ids].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
+    })().catch((err) => { if (!gone) setError(err); });
+    return () => { gone = true; };
+  }, [someOnly, datasetId, map.i, allSystems]);
+
+  // First guesses for the downtime and cost columns, once per dataset.
+  const guessedFor = useRef(null);
+  useEffect(() => {
+    const cols = rd.cols?.columns;
+    if (!datasetId || !cols || guessedFor.current === datasetId) return;
+    guessedFor.current = datasetId;
+    if (startFrom) return; // the model's own columns
+    const used = ["i", "x", "c", "n", "tl", "tr", "mode", "ws", "we"].map((k) => map[k]).filter(Boolean);
+    setCosts(guessCostColumns(cols, used));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasetId, rd.cols]);
 
   const onDrop = (e) => {
     e.preventDefault();
@@ -199,12 +278,19 @@ export default function RecurrentNewPage() {
   // What the reading lacks for this model (no i), else the fit's own checks
   // on its columns; the missing end of record is said without stopping it.
   const missing = derived?.missing || null;
-  const mapIssues = missing ? [] : recurrentIssues(map, windows);
+  // A typed end of test stands in for an end-of-record column, so it's
+  // offered only when none is mapped.
+  const askEnd = !map.tr;
+  const endTyped = askEnd ? recordEnd : "";
+  const endIssue = recordEndIssue(endTyped);
+  const mapIssues = missing ? [] : recurrentIssues(map, windows, endTyped);
   const blocking = mapIssues.filter((i) => !i.note);
   const readingValid = !!derived && !missing && blocking.length === 0;
   const fitBlock = !readingValid
     ? "First fix how the columns are read: Change the reading."
     : rd.editing ? "First save or cancel the change to the reading."
+    : endIssue ? "First fix when the test ended, or leave it empty."
+    : someOnly && !systems.length ? "Pick the systems to fit, or choose Every system."
     : modelBlock;
 
   const onFit = async () => {
@@ -212,10 +298,11 @@ export default function RecurrentNewPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fitRecurrent(null, { datasetId, mapping: map, model, unit, options, windows });
+      const res = await fitRecurrent(null, { datasetId, mapping: map, model, unit, options, windows, recordEnd: endTyped, systems: chosen });
       setResult(res);
       const src = (sourceName || "dataset").replace(/\.csv$/i, "");
-      setName(`${res.results?.model?.name || modelName} — ${src}`);
+      const only = chosen.length ? ` (${chosen.length === 1 ? chosen[0] : `${chosen.length} systems`})` : "";
+      setName(`${res.results?.model?.name || modelName} — ${src}${only}`);
       setStep(3);
     } catch (err) {
       setError(err);
@@ -230,7 +317,8 @@ export default function RecurrentNewPage() {
     setError(null);
     try {
       const saved = await saveRecurrentModel(name.trim(), null, {
-        datasetId: result.dataset_id || datasetId, mapping: map, model, unit, options, windows,
+        datasetId: result.dataset_id || datasetId, mapping: map, model, unit, options, windows, recordEnd: endTyped,
+        systems: chosen,
       });
       navigate(`/models/recurrent/${saved.id}`);
     } catch (err) {
@@ -418,6 +506,44 @@ export default function RecurrentNewPage() {
             )}
             {!missing && !rd.editing && (
               <>
+            {askEnd && (
+              <div style={{ width: 360, maxWidth: "100%" }}>
+              <Field label="When did the test end?" optional error={endIssue} as="fieldset"
+                     help="The time the test or record stopped, for every system without an end of record of its own. Leave it empty if it stopped at the last failure.">
+                <InputGroup label="When the test ended, and its unit">
+                  <TextInput type="number" inputMode="decimal" min="0" step="any" value={recordEnd}
+                             onChange={(e) => setRecordEnd(e.target.value)} aria-label="When the test ended"
+                             placeholder="e.g. 1000" />
+                  {unit && <Addon>{String(unit).toLowerCase()}</Addon>}
+                </InputGroup>
+              </Field>
+              </div>
+            )}
+            <Field label="Which systems" as="fieldset"
+                   help="Every system fits one model to the whole fleet. Only some fits the chosen systems by themselves, for example one that fails more than the rest.">
+              <SegmentedControl label="Which systems" value={someOnly ? "some" : "all"}
+                                onChange={(v) => setSomeOnly(v === "some")}
+                                options={[{ value: "all", label: "Every system" }, { value: "some", label: "Only some" }]}
+                                style={{ alignSelf: "flex-start", maxWidth: "100%" }} />
+              {someOnly && (
+                allSystems == null ? <p className="muted-line" style={{ margin: 0 }}>Reading the systems…</p> : (
+                  <span className="chip-row" role="group" aria-label="Systems to fit">
+                    {allSystems.map((sid) => (
+                      <Chip key={sid} tone={systems.includes(sid) ? "accent" : "neutral"}
+                            onClick={() => setSystems((cur) => toggleSystem(cur, sid))} aria-pressed={systems.includes(sid)}
+                            title={systems.includes(sid) ? `Leave ${sid} out` : `Fit ${sid}`}>
+                        {systems.includes(sid) ? "✓ " : "+ "}{sid}
+                      </Chip>
+                    ))}
+                  </span>
+                )
+              )}
+              {someOnly && allSystems != null && (
+                <p className="muted-line" style={{ margin: 0 }}>
+                  {systems.length ? `${systems.length} of ${allSystems.length} systems chosen.` : "None chosen yet."}
+                </p>
+              )}
+            </Field>
             <p className="muted-line">Choose how repairs work, then the model to fit to the fleet's event history.</p>
             <SegmentedControl options={FAMILIES} value={family} onChange={pickFamily} label="Kind of model"
                               style={{ alignSelf: "flex-start", maxWidth: "100%" }} />
@@ -462,6 +588,25 @@ export default function RecurrentNewPage() {
                 </div>
               </ResultDetails>
             )}
+            <ResultDetails summary="Downtime and cost (optional)" open={!!(costs.downtime || costs.cost)}>
+              <p className="muted-line" style={{ margin: 0 }}>
+                Columns with each failure's hours stopped and its cost: the Data tab then totals them for each system.
+              </p>
+              <div className="row" style={{ gap: 12, flexWrap: "wrap", margin: 0 }}>
+                <div className="dist-field" style={{ width: 220, maxWidth: "100%" }}>
+                  <span className="dist-label">Downtime (hours)</span>
+                  <Select value={costs.downtime} onChange={(v) => setCosts((c) => ({ ...c, downtime: v }))}
+                          ariaLabel="Downtime column"
+                          options={[{ value: "", label: "None" }, ...(rd.cols?.columns || [])]} />
+                </div>
+                <div className="dist-field" style={{ width: 220, maxWidth: "100%" }}>
+                  <span className="dist-label">Cost</span>
+                  <Select value={costs.cost} onChange={(v) => setCosts((c) => ({ ...c, cost: v }))}
+                          ariaLabel="Cost column"
+                          options={[{ value: "", label: "None" }, ...(rd.cols?.columns || [])]} />
+                </div>
+              </div>
+            </ResultDetails>
             <ResultDetails summary="Gaps in the records (optional)" open={!!(gaps.ws || gaps.we) || !!windows.trim()}>
               <RecurrentMore columns={rd.cols?.columns || []} mapping={{ ...map, ...gaps }} covariates={false}
                              onChange={(m) => setGaps({ ws: m.ws || "", we: m.we || "" })}

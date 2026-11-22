@@ -79,7 +79,7 @@ export function UseAsModelDialog({ record, onClose }) {
   };
   const blocked = !isLife(record) && (!cov.ready || cov.missing.length > 0);
   return (
-    <Modal title="Use as a model" onClose={onClose} locked={busy} trapFocus className="cov-modal"
+    <Modal title="Use as a model" onClose={onClose} locked={busy} className="cov-modal"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -168,7 +168,7 @@ export function UseAsPriorDialog({ record, onClose }) {
     }
   };
   return (
-    <Modal title="Use as a prior" onClose={onClose} locked={busy} trapFocus className="cov-modal"
+    <Modal title="Use as a prior" onClose={onClose} locked={busy} className="cov-modal"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -257,7 +257,7 @@ function LibraryForm({ library, onClose, onDone }) {
     }
   };
   return (
-    <Modal title={library ? "Edit library" : "New library"} onClose={onClose} locked={busy} trapFocus
+    <Modal title={library ? "Edit library" : "New library"} onClose={onClose} locked={busy}
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -269,7 +269,7 @@ function LibraryForm({ library, onClose, onDone }) {
       {!library && (
         <p className="rw-fhelp">
           A library holds copies of your datasets and models, to keep, share with other workspaces or publish. Add to it
-          from a dataset’s or model’s ⋯ menu: <strong>Add to library…</strong>.
+          with <strong>Add to library…</strong> on a dataset’s page or in a model’s ⋯ menu.
         </p>
       )}
       <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} maxLength={120} autoFocus /></Field>
@@ -291,7 +291,8 @@ function LibraryForm({ library, onClose, onDone }) {
 // Add to library…: a copy of a dataset or a model (any kind: fitted, from parameters, from a handbook
 // or a prior) as it is now, into one of your libraries or a new one made here. Nothing is ever added
 // automatically (Derryn, 9 Nov 2026). ``collection``: the model's ("models", "recurrent_models",
-// "alt_models"); a dataset passes ``datasetId`` instead of ``modelId``.
+// "alt_models"); a dataset passes ``datasetId`` instead of ``modelId``, and ``models``: the models
+// fitted to it (datasetModelsForLibrary), listed as ticked choices to go in with it.
 export function AddToLibraryDialog({ onClose, ...props }) {
   // Adding to a library is Pro: without it, Add to library… opens the upgrade prompt instead.
   const locked = useLibrariesLocked();
@@ -299,7 +300,8 @@ export function AddToLibraryDialog({ onClose, ...props }) {
   return <AddToLibrary onClose={onClose} {...props} />;
 }
 
-function AddToLibrary({ modelId = null, modelName = "", collection = "models", datasetId = null, datasetName = "", onClose, onDone }) {
+function AddToLibrary({ modelId = null, modelName = "", collection = "models", datasetId = null, datasetName = "", models = [], onClose, onDone }) {
+  const [withModels, setWithModels] = useState(() => new Set(models.map((m) => m.id)));
   const [libs, setLibs] = useState(null);
   const [libraryId, setLibraryId] = useState("");
   const [newName, setNewName] = useState("");
@@ -330,8 +332,18 @@ function AddToLibrary({ modelId = null, modelName = "", collection = "models", d
         setLibraryId(lib.id);
       }
       const out = await addLibraryEntry(lib.id, datasetId ? { dataset_id: datasetId } : { model_id: modelId, collection });
+      // The dataset's models the user left ticked go in after it; one already there is said, not fatal.
+      const added = [], notAdded = [];
+      for (const m of datasetId ? models.filter((x) => withModels.has(x.id)) : []) {
+        try {
+          await addLibraryEntry(lib.id, { model_id: m.id, collection: m.collection });
+          added.push(m.name);
+        } catch (e) {
+          notAdded.push(`${m.name}: ${e.message || "not added"}`);
+        }
+      }
       setBusy(false);
-      setDone({ library: out.library || lib, entry: out.entry });
+      setDone({ library: out.library || lib, entry: out.entry, added, notAdded });
       if (onDone) onDone(out, lib);
     } catch (e) {
       setBusy(false);
@@ -340,7 +352,7 @@ function AddToLibrary({ modelId = null, modelName = "", collection = "models", d
   };
   const ready = making ? newName.trim() : libraryId;
   return (
-    <Modal title="Add to library" onClose={onClose} locked={busy} trapFocus
+    <Modal title="Add to library" onClose={onClose} locked={busy}
            footer={done ? <button type="button" onClick={onClose}>Done</button> : (
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
@@ -351,9 +363,11 @@ function AddToLibrary({ modelId = null, modelName = "", collection = "models", d
            )}>
       {done ? (
         <p role="status">
-          Added <strong>{done.entry?.name || name}</strong> to{" "}
+          Added <strong>{done.entry?.name || name}</strong>
+          {done.added?.length > 0 && <> and {done.added.length === 1 ? "its model" : `${done.added.length} of its models`}</>} to{" "}
           <Link to={libraryPath(done.library.id)} onClick={onClose}>{done.library.name}</Link>.
           {done.entry?.id && <>{" "}<Link to={entryPath(done.library.id, done.entry.id)} onClick={onClose}>Open the entry</Link>.</>}
+          {done.notAdded?.length > 0 && <span className="field-error"> Not added: {done.notAdded.join("; ")}</span>}
         </p>
       ) : (
         <>
@@ -374,6 +388,21 @@ function AddToLibrary({ modelId = null, modelName = "", collection = "models", d
               <TextInput aria-label="New library's description" placeholder="What it holds (one line)" value={newDescription}
                          onChange={(e) => setNewDescription(e.target.value)} maxLength={300} />
             </div>
+          )}
+          {datasetId && models.length > 0 && (
+            <Field as="fieldset" className="lib-model-pick" label="With its models" help="Each ticked model goes in as its own entry, so the next project gets the fit as well as the data.">
+              {models.map((m) => (
+                <label key={m.id} className="lib-model-choice">
+                  <input type="checkbox" checked={withModels.has(m.id)} disabled={busy}
+                         onChange={(e) => setWithModels((cur) => {
+                           const next = new Set(cur);
+                           if (e.target.checked) next.add(m.id); else next.delete(m.id);
+                           return next;
+                         })} />
+                  {" "}{m.name}
+                </label>
+              ))}
+            </Field>
           )}
         </>
       )}

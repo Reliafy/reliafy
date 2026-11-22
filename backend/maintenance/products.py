@@ -499,6 +499,12 @@ class ProductOps:
         return {"id": part["id"], "part_number": part.get("part_number") or "", "name": part.get("name") or ""} \
             if part else None
 
+    def _count_of_part(self, part_id) -> int:
+        """How many items are of the product's part: built from the design or
+        registered another way (so a product with none built can still say how
+        many of its part exist)."""
+        return len(self._items_of_part(part_id)) if part_id else 0
+
     def _product_row(self, node: dict) -> dict:
         design = node.get("design") or {}
         tops = [p for p in self._built_tops(node["id"]) if not p.get("retired")]
@@ -507,7 +513,8 @@ class ProductOps:
             "part": self._part_view(design.get("part_id")), "rev": design.get("rev", ""),
             "declared_on": design.get("on"), "retired": bool(node.get("retired")),
             "positions": sum(1 for p in self._tree_positions(node["id"]) if not p.get("retired")),
-            "items_built": len(tops), "open_reports": sum(self._open_reports_in(t["id"]) for t in tops),
+            "items_built": len(tops), "items_of_part": self._count_of_part(design.get("part_id")),
+            "open_reports": sum(self._open_reports_in(t["id"]) for t in tops),
             "sample": is_sample(node), "template": template_of(node),
         }
 

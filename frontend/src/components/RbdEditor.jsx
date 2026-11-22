@@ -57,11 +57,12 @@ import Chip from "./ui/Chip.jsx";
 import Switch from "./ui/Switch.jsx";
 import { formatPercent } from "../format.js";
 import {
-  RBD_EVALUATE_AT_EVENT, STEP_Y, allInstant, bridgeEdges, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
+  RBD_EVALUATE_AT_EVENT, STEP_Y, addParallelPair, allInstant, bridgeEdges, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
 } from "../rbdBuilderOps.js";
 // Phased missions and undirected networks (#160).
 import RbdPhasesModal from "./RbdPhasesModal.jsx";
 import RbdPhasesResult from "./RbdPhasesResult.jsx";
+import RbdRepairAvailability from "./RbdRepairAvailability.jsx";
 import RbdNetworkPanel, { NetworkOnlyNote } from "./RbdNetworkPanel.jsx";
 import { MISSION_KEYS, missionFields, undirectedEdges } from "../rbdMission.js";
 import { graphWithModel, plainName } from "../modelNext.js";
@@ -358,7 +359,7 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
 // Shared samples are stored with a "(sample)" suffix; the header says so with a chip.
 export const SAMPLE_SUFFIX = /\s*\(sample\)\s*$/i;
 
-function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMeta, onTab, onDirty, addModel = null, onModelAdded, onLoadError }) {
+function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMeta, onTab, onDirty, onDraft = null, addModel = null, onModelAdded, onLoadError }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -400,6 +401,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // The diagram's Use and Environment values, which blocks with covariates left open at their
   // positions take (covariate_binding.py): [{name, role, unit, value}].
   const [conditions, setConditions] = useState([]);
+  // The Calculator's "Evaluate at t" (null until it has one): the fault tree opens at the same time.
+  const [calcTime, setCalcTime] = useState(null);
   const network = !!mission.network;
   // Carried with the diagram wherever the costs are (save, validate, analyse).
   const costsField = useMemo(
@@ -630,6 +633,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     [tracked, rebasing, saveGraph, savedSnap]
   );
   useEffect(() => { onDirty?.(dirty); }, [onDirty, dirty]);
+  // An unsaved diagram's canvas, for the page to keep over a reload (views/RbdBuilder.jsx).
+  useEffect(() => {
+    // Only once it differs from what was opened: an untouched starter isn't "your edits".
+    if (onDraft && !savedRbdId && rbdDirty({ rebasing, graph: saveGraph, savedSnap })) onDraft(saveGraph);
+  }, [onDraft, savedRbdId, saveGraph, rebasing, savedSnap]);
   const saveStatus = useMemo(() => {
     if (!full && !embedded) return null;
     return rbdSaveStatus({ savedId: savedRbdId, readOnly: savedRbdReadOnly, dirty });
@@ -1475,6 +1483,26 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     );
   }, [nodes, edges, repairable, network, newId, setNodes, setEdges, fitWhenMeasured]);
 
+  // "+ Add block > Parallel" on a repairable diagram: a block for n identical units can't go there
+  // (each unit is repaired on its own), so two components side by side through a junction, each
+  // its own block to give a failure and repair model.
+  const addPairFromMenu = useCallback(() => {
+    const instant = repairable && allInstant(nodes) ? { instant_repair: true } : {};
+    const i = idRef.current;
+    idRef.current += 2;
+    const mk = (k) => ({ id: `c${i + k}`, type: "component", data: { label: `Component ${i + k}`, model: null, ...instant },
+      position: { x: 0, y: 0 }, ...HORIZONTAL });
+    const a = mk(0);
+    const b = mk(1);
+    const out = addParallelPair({ nodes, edges }, a, b, { junctionId: newId("knode"), look: EDGE_OPTIONS, pos: centrePos() });
+    setNodes(out.nodes);
+    setEdges(out.edges.map((e) => (e.type ? e : { ...EDGE_OPTIONS, ...e })));
+    fitWhenMeasured([a, b]);
+    setConnectHint(out.wired
+      ? `Added ${a.data.label} and ${b.data.label} side by side (1 of 2 needed). Give each its failure and repair.`
+      : `Added ${a.data.label} and ${b.data.label} side by side, joined at a junction (1 of 2 needed). Connect what feeds them and what the junction feeds.`);
+  }, [nodes, edges, repairable, newId, centrePos, setNodes, setEdges, fitWhenMeasured]);
+
   // "+ Add block > Component": on a new diagram (only Input and Output) the
   // first block is wired Input → block → Output and selected, so "add after"
   // and "add alongside" build on a connected diagram; otherwise it lands in
@@ -1630,16 +1658,27 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           Voting node (MooN)…
         </button>
         <button className="ovm-item" onClick={() => addBlock("standby", centrePos())}>Standby group</button>
+        {repairable && (
+          <button className="ovm-item" onClick={addPairFromMenu}
+                  title="Two components side by side through a junction: either one keeps the system up. Each is repaired on its own">
+            Parallel (two units, 1 of 2)
+          </button>
+        )}
         {/* On a repairable diagram these are shown greyed, with why, rather than vanishing. */}
         {[["loadshare", "Load-sharing"], ["series", "Series (n identical)"], ["parallel", "Parallel (n identical)"],
-          ["subsystem", "Sub-system"]].map(([kind, text]) => (
+          ["subsystem", "Sub-system"]].filter(([kind]) => !(repairable && kind === "parallel")).map(([kind, text]) => (
           <button key={kind} className="ovm-item" disabled={repairable}
-                  title={repairable ? "Not on repairable diagrams yet: use components, a standby group or a voting node" : undefined}
+                  title={repairable ? REPAIRABLE_GREYED : undefined}
                   onClick={() => addBlock(kind, centrePos())}>
             {text}
           </button>
         ))}
-        {repairable && <p className="rbd-menu-note">Greyed: not on repairable diagrams yet.</p>}
+        {repairable && (
+          <p className="rbd-menu-note">
+            Greyed: not on repairable diagrams yet. For more units side by side, select a block and use Add alongside;
+            for k of n, a voting node; for a spare that starts when needed, a standby group.
+          </p>
+        )}
       </ToolbarMenu>
       <div className="rbd-toolbar-row rbd-tb-settings">
         <label className="rbd-unit-field">
@@ -1735,34 +1774,20 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           validating={validating}
           onValidate={runValidate}
         />
-        {/* Save saves in one click; the arrow beside it holds Save as new and the downloads. */}
-        <div className="rbd-save-split">
-          <button type="button" className="secondary sm rbd-save-main" onClick={quickSave}>
-            {savedRbdId && !savedRbdReadOnly && savedRbdName.trim() ? "Save" : "Save…"}
-          </button>
-        <ToolbarMenu label="" title="Save as new, or download the saved diagram" aria="More ways to save"
-                     className="rbd-save-more">
-          {savedRbdId && (
-            <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
-          )}
-          <button
-            className="ovm-item"
-            onClick={exportPython}
-            disabled={!savedRbdId || !!exporting}
-            title={savedRbdId ? PYTHON_EXPORT_TIP : "Save the diagram first"}
-          >
-            {exporting === "python" ? "Preparing…" : "Download as Python"}
-          </button>
-          <button
-            className="ovm-item"
-            onClick={() => exportAs("json")}
-            disabled={!savedRbdId || !!exporting}
-            title={savedRbdId ? JSON_EXPORT_TIP : "Save the diagram first"}
-          >
-            {exporting === "json" ? "Preparing…" : "Download as RePyability JSON"}
-          </button>
-        </ToolbarMenu>
-        </div>
+        {/* Save saves in one click; once saved, the arrow beside it holds Save as new.
+            The downloads are in the ⋯ menu. */}
+        {savedRbdId ? (
+          <div className="rbd-save-split">
+            <button type="button" className="secondary sm rbd-save-main" onClick={quickSave}>
+              {!savedRbdReadOnly && savedRbdName.trim() ? "Save" : "Save…"}
+            </button>
+            <ToolbarMenu label="" title="Save as new" aria="More ways to save" className="rbd-save-more">
+              <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
+            </ToolbarMenu>
+          </div>
+        ) : (
+          <button type="button" className="secondary sm" onClick={quickSave}>Save…</button>
+        )}
         <ToolbarMenu label={<MoreIcon />} title="More" aria="More diagram settings" caret={false}>
           {/* On a phone the toolbar's settings live here (#301). */}
           <div className="rbd-ovm-settings">
@@ -1845,6 +1870,24 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           >
             Safety function…{repairable && policies.safety_function ? " ✓" : ""}
           </button>
+          {/* The saved diagram as a script or a RePyability file. Shown before
+              it's saved too, greyed, with the reason under it. */}
+          {[
+            ["python", "Download as Python", PYTHON_EXPORT_TIP],
+            ["json", "Download as RePyability JSON", JSON_EXPORT_TIP],
+          ].map(([kind, label, tip]) => (
+            <button
+              key={kind}
+              className="ovm-item"
+              onClick={() => exportAs(kind)}
+              disabled={!savedRbdId || !!exporting}
+              aria-describedby={savedRbdId ? undefined : `rbd-dl-why-${kind}`}
+              title={savedRbdId ? tip : undefined}
+            >
+              {exporting === kind ? "Preparing…" : label}
+              {!savedRbdId && <span id={`rbd-dl-why-${kind}`} className="ovm-why">Save first</span>}
+            </button>
+          ))}
           {pane?.fullPath && (
             <Link className="ovm-item" to={pane.fullPath} onClick={(e) => pane.onOpenFull?.(e, pane.fullPath)}>Open full page</Link>
           )}
@@ -2365,6 +2408,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: applyBlockExtras(n.data, updates[n.id]) } : n)))
         }
         onConditions={setConditions}
+        onTime={setCalcTime}
       />
       )}
       <RbdPhasesResult
@@ -2373,6 +2417,13 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         name={savedRbdName}
         onEdit={savedRbdReadOnly ? null : () => setModal("phases")}
         currentState={repairable ? null : asOfState}
+      />
+      <RbdRepairAvailability
+        graph={{ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        rbdId={savedRbdId}
+        active={tab === "calc"}
+        onNodeData={savedRbdReadOnly ? null : (updates) =>
+          setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: applyBlockExtras(n.data, updates[n.id]) } : n)))}
       />
     </div>
     <div
@@ -2387,6 +2438,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         active={tab === "tree"}
         name={savedRbdName}
         onBuild={toBuilder}
+        calcTime={calcTime}
       />
       )}
     </div>
@@ -2457,8 +2509,13 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
 //              the address's ?tab= alone
 //   onSaved(id)      saved (a new id after Save as new, or a first save)
 //   onMeta({id, name, readOnly})   onTab(tab)   onDirty(changed since opened or saved)
+//   onDraft(graph)   an unsaved diagram's canvas as it changes (the page keeps it over a reload)
 //   onLoadError(err) the diagram couldn't be opened (not there, not yours, offline)
 //   addModel, onModelAdded   a model's "Add to an RBD" (#294), on the page
+// Why a block is greyed on a repairable diagram, and what to use instead.
+const REPAIRABLE_GREYED = "Not on repairable diagrams yet: each unit is repaired on its own, so draw each as a component "
+  + "(Parallel, or select a block and Add alongside), use a voting node for k of n, or a standby group for a spare";
+
 export default function RbdEditor({ embedded = false, ...props }) {
   return (
     <div className={embedded ? "rbd-wrap rbd-wrap-embedded" : "card rbd-wrap"}>

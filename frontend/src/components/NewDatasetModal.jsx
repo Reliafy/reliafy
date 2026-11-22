@@ -11,7 +11,7 @@ import { useDatasetSplit } from "./DatasetSplit.jsx";
 import { sourceStem } from "../datasetSplit.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import DatasetPartInput, { EMPTY_PART, PART_WORDS, partHasData, submitPart } from "./DatasetPartInput.jsx";
-import { fileStem, firstRowIsData, parsePreview } from "../datasetGuess.js";
+import { dtypeLabel, fileStem, firstRowIsData, parsePreview } from "../datasetGuess.js";
 import ReadingEditor, { readingWaiting } from "./ReadingEditor.jsx";
 import { useUploadReading } from "../useUploadReading.js";
 import { emptyReading, readingPayload, withoutColumn } from "../datasetReading.js";
@@ -40,6 +40,17 @@ const listLen = (s) => {
 // One labelled comma-separated value list for a survival field. When
 // ``broadcast`` is set, a single value is treated as applying to every row.
 // ``bad`` (its count doesn't match the times') shows the count in red.
+// The preview as the server read the file: the same columns, cells and types
+// the dataset will be saved with, each column's type (text, integer, number,
+// date) under its name so a text column stands out before the reading below
+// says why. null until that read is in (the caller shows its own parse then).
+function serverPreview(up) {
+  const cols = up?.cols;
+  if (!cols?.columns?.length || !cols.preview?.length) return null;
+  const types = Object.fromEntries(cols.columns.map((c) => [c, dtypeLabel(up.facts?.[c]?.dtype)]));
+  return <PreviewTable columns={cols.columns} rows={cols.preview.slice(0, 5)} types={types} />;
+}
+
 function ListField({ f, v, onChange, disabled, placeholder, broadcast, bad }) {
   const n = disabled ? 0 : listLen(v || "");
   const count = n === 0 ? "" : broadcast && n === 1 ? "all rows" : `${n} value${n === 1 ? "" : "s"}`;
@@ -422,8 +433,7 @@ export default function NewDatasetModal({
                          onChange={(e) => setName(e.target.value)} />
                 </label>
               )}
-              {filePreview ? <PreviewTable columns={filePreview.columns} rows={filePreview.preview} />
-                : up.cols ? <PreviewTable columns={up.cols.columns} rows={(up.cols.preview || []).slice(0, 5)} /> : null}
+              {serverPreview(up) || (filePreview ? <PreviewTable columns={filePreview.columns} rows={filePreview.preview} /> : null)}
               {picked.text != null && noHeaderBox(false)}
               {split.picker}
               {split.summary}
@@ -468,7 +478,7 @@ export default function NewDatasetModal({
               {preview ? (
                 <div>
                   <div className="ds-section-h">Preview · {preview.nRows} row{preview.nRows === 1 ? "" : "s"} · {preview.nCols} column{preview.nCols === 1 ? "" : "s"}</div>
-                  <PreviewTable columns={preview.columns} rows={preview.preview} />
+                  {serverPreview(up) || <PreviewTable columns={preview.columns} rows={preview.preview} />}
                   {preview.nCols === 1 && <p className="hint">Only one column detected — separate columns with commas or tabs.</p>}
                 </div>
               ) : text.trim() ? <p className="hint">Add a header row and at least one data row.</p> : null}

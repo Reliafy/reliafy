@@ -1,5 +1,8 @@
 import ColumnMapper from "./ColumnMapper.jsx";
-import { ROLES, readingIssues, setRole, toggleZ, withZ, zLine, notUsedReason } from "../datasetReading.js";
+import { dataStepNotes } from "../lifeData.js";
+import {
+  ROLES, lifeMapping, readingIssues, readingNotes, readingWaiting, setRole, toggleZ, withZ, zLine, notUsedReason,
+} from "../datasetReading.js";
 import { READING_MAIN, READING_MORE } from "../datasetReading.js";
 import { defaultSecondUnit } from "../twoClocks.js";
 
@@ -19,15 +22,28 @@ import { defaultSecondUnit } from "../twoClocks.js";
 // a table of readings needs none): readingIssues says why beside the selector.
 export default function ReadingEditor({ columns, facts, nRows, reading, onChange, disabled = false }) {
   const issues = readingIssues(reading, facts, nRows);
+  // A 0 in x, named (a failure there can't be fitted). Readings (m) start at 0 as a matter of course.
+  const notes = [...(reading.x && !reading.m ? dataStepNotes(lifeMapping(reading), facts) : []), ...readingNotes(reading)];
   const update = (fn) => onChange((cur) => fn(cur || reading));
   const range = !!(reading.xl || reading.xr);
-  const cMissing = !reading.c && !range && !reading.m;
+  // A failure-mode column with no status column says it itself: a blank mode is a unit still running.
+  const cMissing = !reading.c && !range && !reading.m && !reading.e;
 
   const failedTick = (cMissing || reading.all_failed) && (
     <label className="xcn-tick" key="all-failed">
       <input type="checkbox" checked={!!reading.all_failed} disabled={disabled}
              onChange={(e) => { const on = e.target.checked; update((cur) => ({ ...cur, all_failed: on })); }} />
       No status column: every row failed
+    </label>
+  );
+
+  // No item column: each row is its own unit, unless every row is one stream
+  // of events (one fleet's replacements, one system's failures), said here.
+  const streamTick = !reading.i && !reading.m && (
+    <label className="xcn-tick" key="one-stream">
+      <input type="checkbox" checked={!!reading.one_stream} disabled={disabled}
+             onChange={(e) => { const on = e.target.checked; update((cur) => ({ ...cur, one_stream: on })); }} />
+      No item column: every row is one stream of events (one fleet or one system)
     </label>
   );
 
@@ -70,11 +86,13 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
           x2: "optional: a second measure of use, e.g. starts, cycles, landings, shots, km",
         }}
         none={{
-          x: "— pick a column —", c: range ? "— none: read from the values —" : "— pick a column —",
+          x: "— pick a column —",
+          c: range ? "— none: read from the values —" : reading.e ? "— none: a blank failure mode is still running —" : "— pick a column —",
           i: "— none —", m: "— none —", e: "— none —", s: "— none —", x2: "— none —",
         }}
         issues={issues}
-        asides={{ c: failedTick ? [failedTick] : [] }}
+        notes={notes}
+        asides={{ c: failedTick ? [failedTick] : [], i: streamTick ? [streamTick] : [] }}
       />
       <section className="reading-z" aria-label="Covariates (Z)">
         <div className="reading-z-head">
@@ -113,10 +131,5 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
   );
 }
 
-// Why Save waits, in one line, or null when the reading is complete.
-export function readingWaiting(reading, facts, nRows) {
-  const issues = readingIssues(reading, facts, nRows);
-  if (!issues.length) return null;
-  const rows = [...new Set(issues.map((i) => (i.row === "xl" || i.row === "xr" ? "x" : i.row || "x")))];
-  return `First settle the note${issues.length === 1 ? "" : "s"} beside ${rows.map((r) => (r === "e" ? "failure mode" : r === "x2" ? "second clock" : r)).join(", ")}.`;
-}
+// Why Save waits, in one line (datasetReading.js).
+export { readingWaiting };

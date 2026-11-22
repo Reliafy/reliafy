@@ -34,6 +34,8 @@ import re
 from collections import Counter
 from datetime import date
 
+from backend.errors import client_message
+
 #: The most members scored in one read (each a prediction); the rest are
 #: listed with their age and reading, and the answer says so.
 MAX_SCORED = 200
@@ -315,7 +317,7 @@ def _scorer(m, db, owners, hidden):
                         "risk_upper": joint.risk_upper(pred, h) if bound else None,
                         "life_level": 1 - joint.LIFE_ALPHA}
         except (FitError, ValueError, ArithmeticError) as err:
-            row["why"] = f"The model couldn't work out its risk: {err}"
+            row["why"] = f"The model couldn't work out its risk: {client_message(err)}"
             return row
         if any(v is None for v in risk["risk"]):
             row.pop("unit", None)
@@ -370,8 +372,8 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
     if no_model:
         which = ("None of these positions has a" if no_model == len(rows) else
                  f"{no_model} of these positions {'has' if no_model == 1 else 'have'} no")
-        notes.append(f"{which} condition and life model. To see risk, link one to the position on its Modelling "
-                     "tab.")
+        notes.append(f"{which} condition and life model. To see risk, link one to the position in its "
+                     "Models › Life models.")
     if len(rows) > MAX_BOUNDED:
         notes.append(f"The 90% bounds (each chance at most, median life left at least) are worked out for the "
                      f"first {MAX_BOUNDED} members by name; open any other for its own.")
@@ -381,7 +383,7 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
     return out
 
 
-def position(m, db, owners, hidden, position_id: str) -> dict:
+def position(m, db, owners, hidden, position_id: str, curves: bool = True) -> dict:
     """One position's risk now (the Explorer's Condition monitoring tab on a
     position): ``member`` is its row as a class's fleet gives it, with its
     curves when it is scored, whatever its item's class (``item_class`` None
@@ -393,7 +395,7 @@ def position(m, db, owners, hidden, position_id: str) -> dict:
     out = {"position": _position_brief(m, p),
            "item_class": m._class_brief(member[3]) if member else None, "today": today, "age_unit": AGE_UNIT,
            "horizons": {"labels": horizons["labels"], "values": horizons["values"]},
-           "member": row_for(member, with_curves=True) if member else None,
+           "member": row_for(member, with_curves=curves) if member else None,
            "model": doc and _model_view(doc), "why": None}
     if member is None:
         out["why"] = ("No item is fitted here, so there is no age or readings to work a risk out from. Fit an item "

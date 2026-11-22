@@ -313,6 +313,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/rbds/fault-tree", "rbd_fault_tree"),
     ("POST", "/api/rbds/allocate", "rbd_allocate"),
     ("POST", "/api/rbds/production", "rbd_production"),
+    ("POST", "/api/rbds/repair-availability", "rbd_repair_availability"),
     # Outage logs: an RBD's observed history (issue #159)
     ("POST", "/api/rbds/{id}/outage-logs/preview", "outage_log_preview"),
     ("POST", "/api/rbds/{id}/outage-logs", "outage_log_upload"),

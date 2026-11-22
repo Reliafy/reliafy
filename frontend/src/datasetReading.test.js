@@ -11,7 +11,7 @@ import { FAMILY_SHEETS } from "./dataStepFamilySheets.js";
 import { columnFacts, mappingFields, startingMapping } from "./lifeData.js";
 import {
   datasetReading, emptyReading, fitFromReading, guessReading, itemRows, missingFor, notUsedReason, readingIssues,
-  readingParts, readingPayload, readingText, setRole, toggleZ, withoutColumn, zLine,
+  readingNotes, readingParts, readingPayload, readingText, readingWaiting, setRole, toggleZ, withoutColumn, zLine,
 } from "./datasetReading.js";
 
 const CASES = JSON.parse(readFileSync(new URL("./readingGuessCases.json", import.meta.url), "utf8"));
@@ -88,7 +88,11 @@ test("x and c are required, each said beside its selector", () => {
   const f = columnFacts(PLANT);
   const none = { ...emptyReading() };
   assert.deepEqual(readingIssues(none, f, 40).map((i) => i.row), ["x"]);
-  const noC = { ...guess(PLANT), c: "", c_map: null };
+  // A failure-mode column with no status column says it itself (a blank mode is still running).
+  const modesOnly = { ...guess(PLANT), c: "", c_map: null };
+  assert.deepEqual(readingIssues(modesOnly, f, 40), []);
+  assert.match(readingText(modesOnly), /c = none: a blank failure mode is still running/);
+  const noC = { ...modesOnly, e: "" };
   const issues = readingIssues(noC, f, 40);
   assert.deepEqual(issues.map((i) => i.row), ["c"]);
   assert.match(issues[0].text, /every row failed/);
@@ -195,4 +199,93 @@ test("the x line doesn't repeat a unit the column name already carries", () => {
   const x = (r) => readingParts({ ...emptyReading(), ...r }).find((p) => p.key === "x").value;
   assert.equal(x({ x: "Age", unit: "Hours" }), "Age (hours)");
   assert.equal(x({ x: "Age (h)", unit: "Hours" }), "Age (h)");
+});
+
+test("pasted values carry their own reading: no columns to ask about", async () => {
+  const { pastedReading } = await import("./datasetReading.js");
+  const { parsePastedValues } = await import("./lifeData.js");
+  const two = pastedReading(parsePastedValues("1200 0\n1850 0\n2000 1\n"));
+  assert.equal(two.x, "time");
+  assert.equal(two.c, "censored");
+  assert.equal(two.c_invert, false);
+  assert.equal(two.all_failed, false);
+  assert.equal(two.unit, "");
+  const one = pastedReading(parsePastedValues("1200\n1850\n2000\n"));
+  assert.equal(one.x, "time");
+  assert.equal(one.c, "");
+  assert.equal(one.all_failed, true);
+});
+
+// A status column of words, one of them not yet given a meaning.
+const LIVES = {
+  columns: ["Controller", "Hours", "Status"],
+  preview: [["Site 01-1", 10152, "Running"], ["Site 02-1", 10152, "Running"]],
+  n_rows: 63, dtypes: ["object", "int64", "object"], blanks: [0, 0, 0],
+  values: [null, null, { Running: 60, Failed: 2, "Removed - wiring fault": 1 }],
+  n_unique: [63, 20, 3], whole: [null, true, null],
+};
+
+test("Save waits with the note itself, beside the selector it sits by", () => {
+  const f = columnFacts(LIVES);
+  const r = guessReading(LIVES.columns, f, LIVES.n_rows);
+  const issues = readingIssues(r, f, LIVES.n_rows);
+  assert.deepEqual(issues.map((i) => i.row), ["c"]);
+  // Not "the note beside x": the status column's own note, named in full.
+  assert.equal(readingWaiting(r, f, LIVES.n_rows),
+    "Say whether “Removed - wiring fault” means failed or still running (beside c).");
+  const settled = { ...r, c_map: { ...r.c_map, "Removed - wiring fault": 1 } };
+  assert.equal(readingWaiting(settled, f, LIVES.n_rows), null);
+  // Two notes: the first, and how many more.
+  assert.match(readingWaiting({ ...r, x: "", all_failed: false }, f, LIVES.n_rows), /^Pick x: .* \(beside x\)\.$/);
+});
+
+// Inspection data (a range on some rows) with a failure-mode column.
+const RETURNS = {
+  columns: ["serial", "age_months", "last_ok_months", "found_failed_months", "status", "mode"],
+  preview: [["PC2-10001", 28, null, null, "Running", null], ["PC2-10002", null, 6, 12, "Failed", "solder"]],
+  n_rows: 600, dtypes: ["object", "float64", "float64", "float64", "object", "object"], blanks: [0, 20, 580, 580, 0, 501],
+  values: [null, null, null, null, { Running: 501, Failed: 99 }, { solder: 60, capacitor: 39 }],
+  n_unique: [600, 50, 10, 10, 2, 2], whole: [null, true, true, true, null, null],
+};
+
+test("a dataset keeps failure modes beside ranges: a note, not a block", () => {
+  const f = columnFacts(RETURNS);
+  const r = { ...emptyReading(), x: "age_months", xl: "last_ok_months", xr: "found_failed_months", c: "status",
+    c_map: { Running: 1, Failed: 0 }, e: "mode", unit: "Months" };
+  assert.deepEqual(readingIssues(r, f, RETURNS.n_rows), []);
+  assert.equal(readingWaiting(r, f, RETURNS.n_rows), null);
+  assert.equal(readingNotes(r).length, 1);
+  assert.equal(readingNotes(r)[0].row, "e");
+  assert.deepEqual(readingNotes({ ...r, xl: "", xr: "" }), []);
+});
+
+// A replacement log of one fleet: a date, the fleet's hours, the set it was
+// on (a few values), the part and the reason. The date is never the item.
+const FLEET_LOG = {
+  columns: ["replacement", "date", "fleet_hours", "genset", "part", "reason"],
+  n_rows: 48,
+  preview: [[1, "2023-12-01", 191, "GS-09", "FLP-20 fuel lift pump", "failed in service"]],
+  dtypes: ["int64", "str", "int64", "str", "str", "str"],
+  n_unique: [48, 47, 48, 12, 1, 1],
+  blanks: [0, 0, 0, 0, 0, 0],
+  values: [null, null, null, { "GS-01": 4, "GS-02": 4, "GS-09": 5 }, { "FLP-20 fuel lift pump": 48 },
+    { "failed in service": 48 }],
+  whole: [true, null, true, null, null, null],
+};
+
+test("a date column is never guessed as the item", () => {
+  const r = guess(FLEET_LOG);
+  assert.equal(r.x, "fleet_hours");
+  assert.equal(r.i, "");
+  assert.ok(r.not_used.includes("date"));
+});
+
+test("every row as one stream: said on purpose, cleared by picking an item", () => {
+  const facts = columnFacts(FLEET_LOG);
+  const r = { ...guess(FLEET_LOG), one_stream: true };
+  assert.equal(missingFor("repairable", r), null);
+  assert.match(missingFor("repairable", { ...r, one_stream: false }), /one stream/);
+  assert.deepEqual(readingParts(r).find((p) => p.key === "i"), { key: "i", label: "i", value: "none: every row is one stream" });
+  assert.equal(setRole(r, "i", "genset", facts, FLEET_LOG.n_rows).one_stream, false);
+  assert.equal(readingPayload(r).one_stream, true);
 });

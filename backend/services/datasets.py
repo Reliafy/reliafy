@@ -130,39 +130,98 @@ def resolve_no_header(file_bytes: bytes, no_header: bool | None) -> tuple[bool, 
 def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: bool = False) -> Dataset:
     """Persist a CSV (content-addressed) and return the Dataset.
 
-    Datasets are de-duplicated by checksum *per owner* so saving several models
-    from the same upload reuses one dataset, while different users keep their
-    own isolated copies. ``no_header`` treats the file as having no header row:
-    generic ``col N`` names are added so the first data row isn't lost.
+    For data the app saves alongside a model (the model keeps its own
+    mapping): identical data the owner already has comes back as it is,
+    whatever its name, so saving several models from the same rows keeps one
+    dataset. A dataset the user names (an upload, a paste, the API) goes
+    through :func:`create_or_reuse`, which never drops their name or reading.
+    ``no_header`` treats the file as having no header row: generic ``col N``
+    names are added so the first data row isn't lost.
     """
-    return create_or_reuse(db, name, file_bytes, owner_id, no_header=no_header)[0]
+    check_size(file_bytes)
+    if no_header:
+        file_bytes = apply_generic_header(file_bytes)
+    existing = db.datasets.find_one({"checksum": storage.checksum(file_bytes), "owner_id": owner_id})
+    if existing is not None:
+        return from_doc(Dataset, existing)
+    return _insert(db, name, file_bytes, owner_id, None)
+
+
+def _same_name(a: str | None, b: str | None) -> bool:
+    return (a or "").strip().lower() == (b or "").strip().lower()
+
+
+def _without_guess(reading: dict | None) -> dict:
+    return {k: v for k, v in (reading or {}).items() if k != "guessed"}
+
+
+def find_reusable(db, owner_id: str, digest: str, name: str, reading: dict | None = None,
+                  keep_reading: bool = False) -> dict | None:
+    """The owner's saved dataset an upload of these exact rows may reuse, or
+    None (a new dataset is made). Reused only when nothing the user chose
+    would be dropped: the same name (case aside), and either no reading
+    given, a guess while the saved one has its own (``keep_reading``), no
+    saved reading yet, or the very same reading. The same rows under another
+    name or read another way are a dataset of their own: an old dataset's
+    name or reading never stands in for the user's."""
+    docs = [d for d in db.datasets.find({"checksum": digest, "owner_id": owner_id}) if _same_name(d.get("name"), name)]
+    if not docs:
+        return None
+    want = None
+    if reading is not None:
+        try:
+            want = _without_guess(_checked_reading(reading, docs[0].get("columns") or []))
+        except Exception:  # noqa: BLE001 - a reading that doesn't fit is refused when the dataset is made
+            return None
+    for doc in docs:
+        saved = doc.get("reading")
+        if want is None or not saved or (keep_reading and saved) or _without_guess(saved) == want:
+            return doc
+    return None
 
 
 def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
                     no_header: bool = False, reading: dict | None = None,
                     keep_reading: bool = False) -> tuple[Dataset, bool]:
-    """``create_dataset``, also saying whether identical data already existed
-    (``True``: the existing dataset, under its own name, came back) — so the
-    app can tell the user rather than silently dropping the new name.
+    """Save a dataset the user named, also saying whether it was reused
+    (``True``: the user already had these rows under this name and reading,
+    so that dataset came back; see :func:`find_reusable`). Otherwise a new
+    dataset is made with the user's name and reading, even when the same rows
+    are saved under another name (:func:`same_rows_as` finds that one, so
+    the app can say so). A reused dataset is never re-read another way.
 
     ``reading``: how the columns are read (dataset_reading.normalize checks
-    it against the columns first; ReadingError when it doesn't fit). Identical
-    data already saved takes it too, unless ``keep_reading`` and it has one of
-    its own (a guess never replaces a reading someone chose)."""
-    from backend.services import dataset_reading
-
+    it against the columns first; ReadingError when it doesn't fit). A reused
+    dataset with no reading of its own takes it; ``keep_reading``: the
+    reading is a guess, which never replaces a reading someone chose."""
     check_size(file_bytes)
     if no_header:
         file_bytes = apply_generic_header(file_bytes)
 
     digest = storage.checksum(file_bytes)
-    existing = db.datasets.find_one({"checksum": digest, "owner_id": owner_id})
+    existing = find_reusable(db, owner_id, digest, name, reading, keep_reading)
     if existing is not None:
         ds = from_doc(Dataset, existing)
-        if reading is not None and not (keep_reading and ds.reading):
+        if reading is not None and not ds.reading:
             ds = set_reading(db, ds, reading, owner_id)
         return ds, True
+    return _insert(db, name, file_bytes, owner_id, reading, digest), False
 
+
+def same_rows_as(db, dataset: Dataset) -> dict | None:
+    """Another dataset of the owner's with exactly these rows (the newest), as
+    ``{id, name}``, or None: a new dataset says "you already have these rows
+    as …" rather than leaving two look-alikes unexplained."""
+    if not dataset.checksum:
+        return None
+    doc = next(iter(db.datasets.find(
+        {"checksum": dataset.checksum, "owner_id": dataset.owner_id, "_id": {"$ne": dataset.id}},
+        {"name": 1}).sort("created_at", -1).limit(1)), None)
+    return {"id": doc["_id"], "name": doc.get("name") or ""} if doc else None
+
+
+def _insert(db, name: str, file_bytes: bytes, owner_id: str, reading: dict | None,
+            digest: str | None = None) -> Dataset:
     df = read_dataframe(file_bytes)
     columns = [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns]
     if reading is not None:
@@ -172,14 +231,14 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
         id=uuid.uuid4().hex,
         name=name,
         owner_id=owner_id,
-        checksum=digest,
+        checksum=digest or storage.checksum(file_bytes),
         n_rows=int(df.shape[0]),
         columns=columns,
         data=file_bytes,
         reading=reading,
     )
     db.datasets.insert_one(to_doc(dataset))
-    return dataset, False
+    return dataset
 
 
 def _checked_reading(reading: dict, columns, measurement_columns=None) -> dict:
@@ -273,34 +332,60 @@ def split_names(values: list[str], taken: set[str], source: str) -> list[str]:
     return out
 
 
+def _split_reusable(db, owner_id: str, value: str, data: bytes, source: str,
+                    reading: dict | None, keep_reading: bool) -> dict | None:
+    """A split part the owner already has: the same rows under the part's
+    name (the value, or "<value> – <source>" when the value was taken) and
+    the same reading (``find_reusable``), so splitting a sheet again adds
+    nothing."""
+    digest = storage.checksum(data)
+    for name in dict.fromkeys([value[:200], f"{value} – {source}"[:200] if source else value[:200]]):
+        doc = find_reusable(db, owner_id, digest, name, reading, keep_reading)
+        if doc is not None:
+            return doc
+    return None
+
+
 def create_split(db, file_bytes: bytes, column: str, owner_id: str,
                  source: str, reading: dict | None = None,
                  keep_reading: bool = False) -> tuple[list[tuple[Dataset, bool]], int]:
     """Save one dataset per value of ``column`` (``split_by_column``), named by
     ``split_names`` against the owner's datasets: ``([(dataset, reused), ...],
     blank_rows)``. ``reading``: the one reading every part is kept with (the
-    split column, left out of each part, left out of it too). Identical data
-    already saved comes back as it is (``reused``), with the reading."""
+    split column, left out of each part, left out of it too). A part already
+    saved under its name with this reading comes back as it is (``reused``)."""
     from backend.services import dataset_reading
 
     parts, blank = split_by_column(file_bytes, column)
     if reading is not None:
         reading = dataset_reading.drop_column(reading, str(column).strip())
+    found = [_split_reusable(db, owner_id, v, data, source, reading, keep_reading) for v, data in parts]
     taken = {d.get("name") or "" for d in db.datasets.find({"owner_id": owner_id}, {"name": 1})}
-    names = split_names([v for v, _ in parts], taken, source)
+    names = iter(split_names([v for (v, _), doc in zip(parts, found) if doc is None], taken, source))
     out = []
-    for (_, data), name in zip(parts, names):
-        ds, reused = create_or_reuse(db, name, data, owner_id, reading=reading, keep_reading=keep_reading)
-        out.append((ds, reused))
+    for (_, data), doc in zip(parts, found):
+        if doc is not None:
+            ds = from_doc(Dataset, doc)
+            if reading is not None and not ds.reading:
+                ds = set_reading(db, ds, reading, owner_id)
+            out.append((ds, True))
+        else:
+            out.append((_insert(db, next(names), data, owner_id, reading), False))
     return out, blank
 
 
-def count_new_parts(db, file_bytes: bytes, column: str, owner_id: str) -> int:
-    """How many of a split's parts would be new datasets (identical data the
-    owner already has is reused and doesn't count against a cap)."""
+def count_new_parts(db, file_bytes: bytes, column: str, owner_id: str, source: str = "",
+                    reading: dict | None = None, keep_reading: bool = False) -> int:
+    """How many of a split's parts would be new datasets (a part the owner
+    already has under its name and reading is reused and doesn't count
+    against a cap)."""
+    from backend.services import dataset_reading
+
     parts, _ = split_by_column(file_bytes, column)
-    return sum(1 for _, data in parts
-               if db.datasets.find_one({"checksum": storage.checksum(data), "owner_id": owner_id}) is None)
+    if reading is not None:
+        reading = dataset_reading.drop_column(reading, str(column).strip())
+    return sum(1 for v, data in parts
+               if _split_reusable(db, owner_id, v, data, source, reading, keep_reading) is None)
 
 
 def preview_frame(db, owner_id, dataset_id: str | None, file_bytes: bytes | None) -> tuple[pd.DataFrame, str | None]:
@@ -411,6 +496,28 @@ def preview_rows(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dic
     """Column names + a small sample of rows for the dataset detail view
     (``distinct``: with each column's distinct-value count, see preview)."""
     return _preview(bytes(dataset.data), rows, distinct=distinct)
+
+
+def rows_window(dataset: Dataset, part: str = "life", offset: int = 0, limit: int = 200) -> dict:
+    """A window of the dataset's rows, for the dataset page's "Show all rows":
+    the columns, ``limit`` rows from ``offset`` (0-based) and the table's
+    ``n_rows``, cells as the preview gives them (blank as None). ``part``
+    "measurements" reads the readings part when the dataset has one, else the
+    one table it holds."""
+    measured = part == "measurements" and dataset.measurements is not None
+    df = read_dataframe(bytes(dataset.measurements.data if measured else dataset.data))
+    offset = max(0, int(offset))
+    chunk = df.iloc[offset:offset + max(1, int(limit))]
+    rows = chunk.astype(object).where(pd.notna(chunk), None).values.tolist()
+    return {"columns": [str(c) for c in df.columns], "rows": rows, "n_rows": int(df.shape[0]),
+            "offset": offset, "limit": int(limit), "part": "measurements" if measured else "life"}
+
+
+def csv_filename(name: str | None, part: str | None = None) -> str:
+    """A download name for a dataset's table: its name with characters a file
+    name can't hold removed, plus the part ("measurements") when there is one."""
+    stem = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "", name or "").strip().rstrip(".") or "dataset"
+    return f"{stem} {part}.csv" if part else f"{stem}.csv"
 
 
 def preview_measurements(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dict | None:
@@ -635,6 +742,35 @@ def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -
     ]
 
 
+def last_mappings(db, owner_id, datasets, hidden=frozenset()) -> dict[str, dict]:
+    """``{dataset_id: last_mapping}`` for the ``datasets`` with no saved
+    reading: how the newest model fitted from each read its columns
+    (``dataset_reading.last_model_mapping``), in one query, so the Data list
+    counts failures the way the dataset's page and the fit wizard do."""
+    from types import SimpleNamespace
+
+    from backend.services import dataset_reading  # local: it imports this module
+
+    wanted = {d.id: d for d in datasets if not isinstance(getattr(d, "reading", None), dict) or not d.reading}
+    if not wanted:
+        return {}
+    by_dataset: dict[str, list] = {}
+    for m in db.models.find(
+        {"dataset_id": {"$in": list(wanted)}, "owner_id": {"$in": access.owner_in(owner_id)}},
+        {"dataset_id": 1, "spec.mapping": 1, "spec.options": 1, "spec.unit": 1, "name": 1, "created_at": 1},
+    ).sort("created_at", -1):
+        if m["_id"] in hidden:
+            continue
+        by_dataset.setdefault(m["dataset_id"], []).append(
+            SimpleNamespace(spec=m.get("spec") or {}, results={}, name=m.get("name")))
+    out = {}
+    for ds_id, models in by_dataset.items():
+        last = dataset_reading.last_model_mapping(models, wanted[ds_id].columns)
+        if last:
+            out[ds_id] = last
+    return out
+
+
 # Every saved model kind that keeps a reference to the dataset it was fitted
 # to, and refits from it (life and regression models, ALT, recurrent and
 # degradation models).
@@ -741,7 +877,8 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
         for t in numeric:
             sub = df.loc[col.index, [t]].assign(_g=col)
             steps = sub.groupby("_g")[t].diff().dropna()
-            if steps.empty or not (steps > 0).all():
+            # Ties (two events at one value) don't break a rising history.
+            if steps.empty or not (steps >= 0).all() or float((steps > 0).mean()) < 0.8:
                 continue
             # A time grid shared by the units reads as measurements over time.
             seen_in = sub.groupby(t)["_g"].nunique()
@@ -904,18 +1041,49 @@ def _reading_roles(df: pd.DataFrame, reading: dict | None) -> dict | None:
     return roles
 
 
-def detect_tags(df: pd.DataFrame, reading: dict | None = None) -> dict:
+def detect_tags(df: pd.DataFrame, reading: dict | None = None, count_reading: dict | None = None) -> dict:
     """``{"tags": [...], "use_for": [...]}`` for a dataset's columns.
 
     ``reading``: the dataset's saved reading (which column is which, and what
     the status values mean). When it names the life columns, the tags and the
     summary read the table the way a fit from it does: its item, time and
     status columns, its c_invert / c_map and its count column, rather than a
-    guess from the column names. Only its columns are looked at."""
+    guess from the column names. Only its columns are looked at.
+
+    ``count_reading``: with no saved reading, how the newest model fitted
+    from the dataset read its columns (``count_reading_of``). The tags are
+    still guessed, but the count ("900 units · 900 failed") is read its way,
+    so the list, the dataset's page and the fit wizard count the failures
+    once, by the same rule."""
     df = df.dropna(how="all")  # a blank row in a sheet is no unit (the fit skips it too)
     roles = _reading_roles(df, reading)
     if roles is not None:
         return _detect_with_reading(df, reading, roles)
+    out = _detect_guessed(df)
+    count_roles = _reading_roles(df, count_reading)
+    if count_roles is not None:
+        out["summary"] = _reading_summary(df, count_reading, count_roles, out["tags"])
+    return out
+
+
+def count_reading_of(last_mapping: dict | None) -> dict | None:
+    """A reading for the count from the newest model's mapping
+    (``dataset_reading.last_model_mapping``): its columns and how it read the
+    status column (c_invert / c_map). None without one."""
+    if not last_mapping:
+        return None
+    mapping = last_mapping.get("mapping") or {}
+    if not (mapping.get("x") or mapping.get("xl")):
+        return None
+    opts = last_mapping.get("options") or {}
+    return {**{r: mapping.get(r) or "" for r in ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e")},
+            "c_invert": bool(opts.get("c_invert")), "c_map": opts.get("c_map") or None,
+            # Fits read a mapping with no status column as every row failed.
+            "all_failed": not (mapping.get("c") or mapping.get("xl"))}
+
+
+def _detect_guessed(df: pd.DataFrame) -> dict:
+    """``detect_tags`` from the columns alone (no saved reading)."""
     tags: set[str] = set()
     unit = _unit_column(df)
     censor = _censor_column(df)
@@ -989,6 +1157,14 @@ def detect_tags(df: pd.DataFrame, reading: dict | None = None) -> dict:
 
 def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
     """``detect_tags`` for a table with a saved reading (see there)."""
+    stream = bool(reading.get("one_stream")) and not roles["i"] and not roles["m"]
+    if stream:
+        # Every row is an event of one stream (one fleet, one system): the
+        # fit's own copy gets a one-value item column; the data is unchanged.
+        from backend.recurrent import ONE_STREAM_COLUMN, ONE_STREAM_NAME
+
+        df = df.assign(**{ONE_STREAM_COLUMN: ONE_STREAM_NAME})
+        roles = {**roles, "i": ONE_STREAM_COLUMN}
     unit = roles["i"] or None
     times = [roles["x"]] if roles["x"] else [roles["xl"], roles["xr"]]
     interval = bool(roles["xl"])
@@ -1001,15 +1177,27 @@ def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
     # rows. Ages since each part was fitted (one life per row) don't, nor does
     # inspection data (a range per row is one life found failed or passed).
     repeat = False
-    start_stop = bool(roles["tl"] and roles["tr"])
+    start_stop = bool(roles["tl"] and roles["tr"]) or _periods(df, unit, roles)
     if unit and not interval and not roles["m"] and not start_stop:
         rows = df[[unit, roles["x"]]].dropna()
         steps = rows.groupby(unit)[roles["x"]].diff().dropna()
-        repeat = bool(len(steps)) and bool((steps > 0).all())
+        # Two failures logged at the same value (a tie, or one entered twice)
+        # are still repeat failures of that unit: the time never goes back.
+        repeat = bool(len(steps)) and bool((steps >= 0).all()) and float((steps > 0).mean()) >= 0.8
+    repeat = repeat or stream  # said on purpose, in whatever order the rows are
     if repeat:
         tags.add("Repairable")
     elif roles["c"] or reading.get("all_failed") or not roles["m"]:
         tags.add("Non-repairable")
+    if start_stop and unit and reading.get("z"):
+        # Start and stop rows whose covariates change along a unit's rows
+        # ("Covariates" stays only for those that don't).
+        z = [c for c in reading.get("z") or [] if c in df.columns]
+        varies = [bool((df.groupby(unit)[c].nunique(dropna=True) > 1).any()) for c in z]
+        if any(varies):
+            tags.add("Time-varying covariates")
+            if all(varies):
+                tags.discard("Covariates")
     covs = "Covariates" in tags
     use_for: list[str] = []
     if roles["m"]:
@@ -1025,14 +1213,57 @@ def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
         use_for.append("Non-repairable model" + (" with covariates" if covs else ""))
         use_for.append("Condition and life model (once measurements are added)")
     out_tags = [t for t in TAGS if t in tags]
-    return {"tags": out_tags, "use_for": use_for, "summary": _reading_summary(df, reading, roles, out_tags),
+    summary = _periods_summary(df, reading, roles) if start_stop and unit and not repeat else None
+    return {"tags": out_tags, "use_for": use_for,
+            "summary": summary or _reading_summary(df, reading, roles, out_tags),
             "time_unit": _time_unit(times)}
+
+
+def _periods_summary(df: pd.DataFrame, reading: dict, roles: dict) -> str | None:
+    """The count for start and stop rows: each unit is one life, split into
+    stretches, so "80 motors · 55 failed" (its status column read with its
+    meanings), not one life per row. None when the status can't be read."""
+    unit = roles["i"]
+    noun = _noun(_id_column(df, unit))
+    n_units = int(df[unit].nunique(dropna=True))
+    units = f"{n_units:,} {_plural(noun, n_units)}"
+    c = roles["c"]
+    if not c:
+        return units
+    plain = {**reading, "xl": "", "xr": "", "tl": "", "tr": "", "x": roles["x"] or roles["xr"]}
+    codes = reading_codes(df, plain, {**roles, "xl": "", "xr": "", "tl": "", "tr": "", "x": plain["x"]})
+    if codes is None:
+        return None
+    failed = int((codes == 0).sum())
+    return f"{units} · {failed:,} failed"
+
+
+def _periods(df: pd.DataFrame, unit: str | None, roles: dict) -> bool:
+    """Whether a reading's rows are stretches of each unit's one life (start
+    and stop rows), not repeat failures: each row starts (tl, or xl of a
+    range) where the unit's previous row stopped (x, or xr), on most rows."""
+    if not unit or roles["m"]:
+        return False
+    start, stop = (roles["tl"], roles["x"]) if roles["tl"] and roles["x"] else (
+        (roles["xl"], roles["xr"]) if roles["xl"] and roles["xr"] and not roles["x"] else ("", ""))
+    if not start:
+        return False
+    try:
+        rows = df[[unit, start, stop]].dropna(subset=[unit])
+        lo = pd.to_numeric(rows[start], errors="coerce")
+        hi = pd.to_numeric(rows[stop], errors="coerce")
+    except (KeyError, TypeError):
+        return False
+    previous = hi.groupby(rows[unit]).shift(1)
+    follows = previous.notna() & lo.notna()
+    return int(follows.sum()) >= 2 and float((lo[follows] == previous[follows]).mean()) >= 0.8
 
 
 def reading_codes(df: pd.DataFrame, reading: dict, roles: dict | None = None) -> pd.Series | None:
     """Each row's censor code (0 failed, 1 still running, -1, 2) as a fit from
     the dataset's reading reads it: its status column with c_map or c_invert,
-    "every row failed", and an xl/xr range read as inspection data. None when
+    a failure-mode column's blanks as still running when there is no status
+    column, "every row failed", and an xl/xr range read as inspection data. None when
     the reading doesn't say which rows failed, or a row can't be read."""
     from backend import fitting  # local: only the summary needs it
 
@@ -1055,6 +1286,13 @@ def reading_codes(df: pd.DataFrame, reading: dict, roles: dict | None = None) ->
                 codes = pd.to_numeric(df[c], errors="coerce")
             if codes.isna().any():
                 return None
+        elif roles["e"] and not roles["xl"]:
+            # No status column beside a failure-mode one: a blank mode is a
+            # unit still running, as the fit by failure mode and the fit
+            # step's count read it (compare_groups.statuses_from_modes).
+            from backend.services.compare_groups import _label
+
+            codes = pd.Series([1 if _label(v) is None else 0 for v in df[roles["e"]].tolist()], index=df.index)
         elif reading.get("all_failed"):
             codes = pd.Series(0, index=df.index)
         if roles["xl"]:
@@ -1071,6 +1309,7 @@ def reading_codes(df: pd.DataFrame, reading: dict, roles: dict | None = None) ->
             got = read.get("c")
             codes = pd.Series(list(got) if got is not None else [0 if a == b else 2 for a, b in zip(lo, hi)],
                               index=frame.index)
+            codes = _first_look(codes, lo)
     except FitError:
         return None
     return codes
@@ -1081,7 +1320,9 @@ def _reading_summary(df: pd.DataFrame, reading: dict, roles: dict, tags: list[st
     failed", "10 avs · 19 lives · 9 failed between inspections",
     "10 trucks · 71 failures", "30 bearings · 193 readings"."""
     unit = roles["i"] or None
-    noun = _noun(_id_column(df, unit))
+    from backend.recurrent import ONE_STREAM_COLUMN
+
+    noun = "stream" if unit == ONE_STREAM_COLUMN else _noun(_id_column(df, unit))
     n_units = int(df[unit].nunique(dropna=True)) if unit else len(df)
     units = f"{n_units:,} {_plural(noun, n_units)}"
     if "Measurements" in tags:
@@ -1113,11 +1354,8 @@ def _reading_summary(df: pd.DataFrame, reading: dict, roles: dict, tags: list[st
         parts = [f"{lives:,} {_plural(noun, lives)}"]
     if codes is None:
         return " · ".join(parts)
-    failed, ranged = count(codes == 0), count(codes.isin((-1, 2)))
-    if failed or not ranged:
-        parts.append(f"{failed:,} failed")
-    if ranged:
-        parts.append(f"{ranged:,} failed between inspections")
+    failed, interval, left = count(codes == 0), count(codes == 2), count(codes == -1)
+    parts += _failed_parts(failed, interval, left)
     return " · ".join(parts)
 
 
@@ -1373,6 +1611,7 @@ def life_counts(df: pd.DataFrame, censor: str | None = None, times: list[str] | 
             return None
         lo, hi = read["xl"], read["xr"]
         codes = pd.Series(read["c"] if "c" in read else [0 if a == b else 2 for a, b in zip(lo, hi)], index=df.index)
+        codes = _first_look(codes, lo)
     if codes is None:
         modes = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])
                  and _MODE_NAME_RE.search(_name_words(c)) and 0 < df[c].isna().sum() < n_rows]
@@ -1393,7 +1632,31 @@ def life_counts(df: pd.DataFrame, censor: str | None = None, times: list[str] | 
         return int(round(float(weights[mask].sum())))
 
     return {"units": count(codes.notna()), "failed": count(codes == 0), "ranged": count(codes.isin((-1, 2))),
-            "running": count(codes == 1)}
+            "interval": count(codes == 2), "left": count(codes == -1), "running": count(codes == 1)}
+
+
+def _first_look(codes: pd.Series, lo) -> pd.Series:
+    """A window that opens at zero is a failure found at the first look (left
+    censored), as the fit step counts it (``fitting``'s summary): so the
+    dataset's count and the fit's agree."""
+    lo = np.asarray(lo, dtype=float)
+    if len(lo) != len(codes):
+        return codes
+    return codes.where(~((codes == 2) & (lo <= 0)), -1)
+
+
+def _failed_parts(failed: int, interval: int, left: int) -> list[str]:
+    """The failure counts of a summary, worded as the fit step words them: a
+    unit found failed at its first inspection didn't fail *between* two
+    inspections, so it is counted on its own."""
+    parts = []
+    if failed or not (interval or left):
+        parts.append(f"{failed:,} failed")
+    if interval:
+        parts.append(f"{interval:,} failed between inspections")
+    if left:
+        parts.append(f"{left:,} found failed at the first inspection")
+    return parts
 
 
 def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[str],
@@ -1425,15 +1688,13 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
         return f"{units} · all failed" if "Non-repairable" in tags and not unsure else units
     units = f"{counts['units']:,} {_plural(noun, counts['units'])}"
     parts = [units]
-    if counts["failed"] or not counts["ranged"]:
-        parts.append(f"{counts['failed']:,} failed")
-    if counts["ranged"]:
-        parts.append(f"{counts['ranged']:,} failed between inspections")
+    parts += _failed_parts(counts["failed"], counts["interval"], counts["left"])
     return " · ".join(parts)
 
 
 _TAG_CACHE: dict[str, dict] = {}
-_READING_KEYS = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "c_invert", "c_map", "all_failed", "unit")
+_READING_KEYS = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "c_invert", "c_map", "all_failed", "one_stream",
+                 "unit")
 
 
 def with_reading_covariates(detected: dict, z: list[str]) -> dict:
@@ -1461,22 +1722,28 @@ def with_reading_covariates(detected: dict, z: list[str]) -> dict:
     return {**detected, "tags": [t for t in TAGS if t in tags], "use_for": use_for}
 
 
-def dataset_tags(dataset: Dataset) -> dict:
+def dataset_tags(dataset: Dataset, last_mapping: dict | None = None) -> dict:
     """``detect_tags`` for a saved dataset (with its measurements part folded
     in), cached by its content (datasets are content-addressed, so the
-    checksums name the tables)."""
+    checksums name the tables). ``last_mapping``: how the newest model fitted
+    from it read its columns (``dataset_reading.last_model_mapping``); with no
+    saved reading, the count is read that way, as the dataset's page and the
+    fit wizard read it."""
     part = dataset.measurements
     reading = dataset.reading if isinstance(dataset.reading, dict) else None
+    count_reading = None if reading else count_reading_of(last_mapping)
     z = None if reading is None else sorted(str(c) for c in reading.get("z") or [])
     # The reading decides how the rows are counted (which column says failed,
     # and which way round), so a changed reading is a new entry.
     read_key = "" if reading is None else json.dumps(
         {k: reading.get(k) for k in (*_READING_KEYS, "z")}, sort_keys=True, default=str)
+    if count_reading is not None:
+        read_key = "count:" + json.dumps(count_reading, sort_keys=True, default=str)
     key = ((dataset.checksum or dataset.id) + (f"|{part.checksum}" if part is not None else "")
            + ("" if z is None else "|z:" + "\x1f".join(z)) + ("" if not read_key else "|r:" + read_key))
     if key not in _TAG_CACHE:
         try:
-            out = detect_tags(load_dataframe(dataset), reading)
+            out = detect_tags(load_dataframe(dataset), reading, count_reading)
             if z is not None:
                 out = with_reading_covariates(out, z)
             if part is not None:
@@ -1492,7 +1759,29 @@ def dataset_tags(dataset: Dataset) -> dict:
             _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": "", "time_unit": None}
         if len(_TAG_CACHE) > 5000:
             _TAG_CACHE.pop(next(iter(_TAG_CACHE)))
-    return _TAG_CACHE[key]
+    out = _TAG_CACHE[key]
+    if not out.get("time_unit"):
+        # The columns don't name a unit ("time"), but the unit typed for the data
+        # (its saved reading) or for the newest fit of it does: show that one.
+        typed = typed_time_unit((reading or {}).get("unit") or (last_mapping or {}).get("unit"))
+        if typed:
+            out = {**out, "time_unit": typed}
+    return out
+
+
+def typed_time_unit(unit) -> str | None:
+    """A unit someone typed ("Hours", "operating hours", "cycles"), in the
+    singular form the dataset's ``time_unit`` uses ("hour", "cycle"), or None
+    for none or "No unit". A unit of time is named the way the column guess
+    names it; anything else keeps its own word, lower case."""
+    text = str(unit or "").strip()
+    if not text or text.lower() in ("units", "unitless", "no unit"):
+        return None
+    known = _time_unit([text])
+    if known:
+        return known
+    word = text.lower()
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
 
 
 def profile(dataset: Dataset) -> dict:

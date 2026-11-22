@@ -199,14 +199,37 @@ def test_an_interval_with_no_unit_is_checked_in_the_tasks_unit(m, db):
     mode = m.add_failure_mode(pid, "Bearing fatigue", functional_failure_id=ff["id"])
     decision = {"outcome": "fixed_interval", "interval": 580,
                 "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"}}
-    m.decide_failure_mode(mode["id"], "operational", decision)
+    # 24 days (576 h, near the analysis's optimum): 580 days would be far longer than it supports.
+    m.decide_failure_mode(mode["id"], "operational", {**decision, "interval": 24})
     graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners)
     [got] = graph["positions"][0]["functions"][0]["failures"][0]["modes"]
     assert got["decision"]["interval_unit"] == "days"
-    assert got["decision"]["status"] == "inconclusive" and "Unit mismatch" in got["decision"]["reason"]
+    # Days and the analysis's hours are both time: checked after conversion, not a mismatch.
+    assert got["decision"]["status"] == "supported" and "converted at 1 day = 24 hours" in got["decision"]["summary"]
     # In the analysis's unit the decision is supported.
     m.decide_failure_mode(mode["id"], decision={**decision, "interval_unit": "hours"})
     graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners)
     [got] = graph["positions"][0]["functions"][0]["failures"][0]["modes"]
     assert got["decision"]["status"] == "supported" and graph["rollup"]["supported"] == 1
     _rebuilds_the_same(m)
+
+
+def test_an_interval_far_from_its_cost_optimum_is_counted_amber_not_contradicted(m, db):
+    """A fixed-interval task at over twice its cost-optimal age reads
+    longer_than_evidence: counted in its own rollup bucket (not contradicted) and
+    listed as evidence to look at, its summary giving both intervals."""
+    from backend.services.samples import SAMPLE_OWNER
+
+    owners = [ORG, SAMPLE_OWNER]
+    pid = m.create_position("Bearing")["id"]
+    ff = m.add_functional_failure(m.add_function(pid, "Turn")["id"], "Seized")
+    mode = m.add_failure_mode(pid, "Bearing fatigue", functional_failure_id=ff["id"])
+    m.decide_failure_mode(mode["id"], "operational", {
+        "outcome": "fixed_interval", "interval": 580, "interval_unit": "days",
+        "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"}})
+    graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners)
+    [got] = graph["positions"][0]["functions"][0]["failures"][0]["modes"]
+    assert got["decision"]["status"] == "longer_than_evidence"
+    assert "far longer than the cost-optimal interval" in got["decision"]["summary"]
+    assert graph["rollup"]["longer_than_evidence"] == 1 and graph["rollup"]["contradicted"] == 0
+    assert [r["id"] for r in rcm_graph.gaps(graph)["evidence_to_check"]] == [mode["id"]]

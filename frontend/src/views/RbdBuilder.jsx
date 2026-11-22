@@ -6,7 +6,9 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { safetyStarter } from "../rbdSafetyStarter.js";
+import { clearDraft, draftKey, readDraft, writeDraft } from "../rbdDraft.js";
 import { RBDS_LABEL, RBDS_PATH } from "../navigation.js";
+import { plainLoadError } from "../components/loadFailed.js";
 
 // Design › Systems › an RBD (/systems/b/:id, /systems/b for a new one): the page around the RBD
 // editor. The editor itself (components/RbdEditor.jsx) is the one the Explorer's table area shows
@@ -24,7 +26,15 @@ export default function RbdBuilder() {
     // A fresh copy each time the starter is opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [starterKind, location.key]);
-  const imported = id ? null : location.state?.imported || starter;
+  const opened = id ? null : location.state?.imported || starter;
+  // An unsaved starter or import keeps its edits in this tab over a reload (rbdDraft.js); a
+  // reload keeps location.key, so the same entry finds them.
+  const keepKey = opened ? draftKey(location.key) : null;
+  const imported = useMemo(() => {
+    const draft = readDraft(keepKey);
+    return draft && opened ? { ...opened, graph: draft.graph, restored: true } : opened;
+  }, [opened, keepKey]);
+  const onDraft = useCallback((graph) => writeDraft(keepKey, graph), [keepKey]);
   const [notesHidden, setNotesHidden] = useState(false);
   // A model's "Add to an RBD" (#294): its block, added once; the route's
   // state is dropped so a reload doesn't add it again.
@@ -61,15 +71,18 @@ export default function RbdBuilder() {
         <PageTitle name={loadError.missing ? "Diagram not found" : "Couldn't open this diagram"} />
         <PageHeader crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
                     title={loadError.missing ? "Diagram not found" : "Couldn't open this diagram"} />
-        <div className="card" role="alert">
+        <div className="card load-failed" role="alert">
           <p style={{ marginTop: 0 }}>
             {loadError.missing
               ? "There's no diagram at this address. It may have been deleted, or the link may be mistyped."
-              : `Something stopped the diagram loading: ${loadError.message || "an unknown error"}. Try again in a moment.`}
+              : `Something stopped the diagram loading. ${plainLoadError(loadError)}`}
           </p>
           <p style={{ marginBottom: 0 }}>
             <Link to={RBDS_PATH}>See your RBDs</Link> · <Link to="/systems/b">Start a new diagram</Link>
           </p>
+          {!loadError.missing && (
+            <button type="button" className="secondary load-failed-retry" onClick={() => setLoadError(null)}>Try again</button>
+          )}
         </div>
       </div>
     );
@@ -97,13 +110,16 @@ export default function RbdBuilder() {
         <div className="card note rbd-import-note">
           {imported.starter ? (
             <p>
-              <b>A starter safety function</b> — not saved yet. Calculate it as it is, or rename the blocks and set
-              each one’s λDU and proof test to your loop’s, then Save.
+              <b>A starter safety function</b> — not saved yet.{" "}
+              {imported.restored
+                ? "Your edits are back from before the reload; they stay in this browser tab until you Save."
+                : "Calculate it as it is, or rename the blocks and set each one’s λDU and proof test to your loop’s, then Save. Edits stay in this browser tab until you Save."}
               {" "}<button className="link" onClick={() => setNotesHidden(true)}>Dismiss</button>
             </p>
           ) : (
             <p>
               <b>Imported from {imported.source_format || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
+              {imported.restored ? " Your edits are back from before the reload." : ""}
               {" "}<button className="link" onClick={() => setNotesHidden(true)}>Dismiss</button>
             </p>
           )}
@@ -138,7 +154,9 @@ export default function RbdBuilder() {
         key={`builder-${keys.gen}`}
         rbdId={id}
         imported={imported}
+        onDraft={keepKey ? onDraft : null}
         onSaved={(savedId) => {
+          clearDraft(keepKey);
           keyRef.current.savedId = savedId;
           // Saved: the "added as a block — not saved yet" note no longer holds.
           setAdded(null);

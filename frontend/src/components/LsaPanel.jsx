@@ -2,22 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addPackageTask, changePackage, createPackage, createPackages, getPackage, getTaskTable, listPackages, proposePackages,
-  removePackageTask,
+  listTradeRates, removePackageTask,
 } from "../api.js";
 import { Field, FormModal, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import HowOften from "./HowOften.jsx";
 import PositionForecast from "./PositionForecast.jsx";
+import SparesYear from "./SparesYear.jsx";
+import PackageParts from "./PackageParts.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { CALENDAR, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
+import { CALENDAR, HOURS_PACKAGE_NOTE, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
 import Chip from "./ui/Chip.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import { ShowMe } from "./SectionPage.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
-  DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
+  DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, hoursCadenceFor, cellText, countTitle, dayName, daysLate, freeTasks,
   kindText, lateText, lsaColumns, taskOnText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
-  renameRow, rollupLines, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
+  renameRow, rollupLines, labourYear, labourYearText, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
   MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money, tasksHere,
 } from "../lsaTab.js";
 import { saveText } from "../sparesPlan.js";
@@ -26,12 +28,13 @@ import LsaTask from "./LsaTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import { PlusIcon } from "./LibRows.jsx";
-import { isDesignRow } from "../explorerTabs.js";
+import { EXPLORER_PANEL_TABS, isDesignRow } from "../explorerTabs.js";
 import { ColumnChooser } from "./RcmWorksheet.jsx";
 import "./RcmWorksheet.css";
 import "./Outline.css";
 import "../views/Maintenance.css";
 import "./LsaPanel.css";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 
 // The LSA tab of the Explorer's panel (Assets › Explorer, ?tab=lsa; it was the
 // Packages tab, and ?tab=packages still opens it. Derryn, 8–9 Nov 2026: the
@@ -80,8 +83,8 @@ function useOpenParam(name) {
 }
 
 // What a set of tasks needs together, as label: text lines.
-export function Rollup({ rollup, title, empty = null }) {
-  const lines = rollupLines(rollup);
+export function Rollup({ rollup, title, empty = null, labourLabel = "Labour", extra = [] }) {
+  const lines = [...rollupLines(rollup, labourLabel), ...extra.filter((l) => l.text)];
   if (!lines.length) return empty;
   return (
     <div className="lsa-rollup" role="group" aria-label={title}>
@@ -115,7 +118,9 @@ export function StatusChips({ pkg, today }) {
 }
 
 function WhenCell({ pkg }) {
-  const wo = pkg.open_work_order;
+  // Work management off (workManagement.js): the next planned visit only.
+  const workOrders = useWorkManagementOn();
+  const wo = workOrders ? pkg.open_work_order : null;
   return (
     <span className="pk-when">
       {wo ? (
@@ -233,7 +238,12 @@ export function overdueNote(n) {
 }
 
 export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) {
-  const start = useMemo(() => cadenceFor(tasks), [tasks]);
+  // Tasks by operating hours make a package by hours (a 50 h service); calendar tasks a calendar one.
+  const byHours = useMemo(() => hoursCadenceFor(tasks), [tasks]);
+  const mixedKinds = !byHours && tasks.some((t) => t.unit === "hours");
+  const start = useMemo(() => byHours || cadenceFor(tasks), [byHours, tasks]);
+  // A new empty package on a position may go by its hour meter too.
+  const units = byHours ? ["hours"] : tasks.length || !scope?.position_id ? CALENDAR : [...CALENDAR, "hours"];
   const trades = [...new Set(tasks.map((t) => t.trade).filter(Boolean))];
   const [name, setName] = useState("");
   const [timing, setTiming] = useState("fixed");
@@ -242,19 +252,22 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
     ...formFromPackage({ cadence: { every: start.every, unit: start.unit } }),
     weekday: dayName(DEFAULT_VISIT_DAY), pattern: start.unit === "weeks" ? "weekday" : start.unit === "months" ? "nth" : "none",
   }));
+  const hours = how.unit === "hours";
   const [trade, setTrade] = useState(trades.length === 1 ? trades[0] : "");
   const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
   const fixed = timing === "fixed";
-  const problem = howOftenProblem(how, { wholeOnly: true });
+  const problem = mixedKinds
+    ? "Tasks by operating hours and calendar tasks go in separate packages: tick one kind."
+    : howOftenProblem(how, { wholeOnly: true });
   const ok = name.trim() && !problem;
   const today = workspaceToday();
   const dates = problem ? null : packageDates(how, { anchor: today, today, timing });
   const submit = async () => {
-    const { clear_pattern: _none, ...cadence } = packageBody(fixed ? how : { ...how, pattern: "none" });
+    const { clear_pattern: _none, ...cadence } = packageBody(fixed && !hours ? how : { ...how, pattern: "none" });
     const body = {
       ...scope, name: name.trim(), timing, ...cadence, trade: trade.trim(),
       ...(tolerance !== "" && Number(tolerance) > 0 ? { tolerance: Math.round(Number(tolerance)), tolerance_unit: "days" } : {}),
-      ...(tasks.length ? { tasks: tasks.map((t) => t.id) } : {}),
+      ...(tasks.length ? { tasks: byHours && Number(how.every) === byHours.every ? byHours.members : tasks.map((t) => t.id) } : {}),
     };
     const made = await createPackage(body);
     onDone(tasks.length ? `Made ${made.name} with ${plural(tasks.length, "task")}.` : `Made ${made.name}. Add its tasks from its ⋯.`, made.id);
@@ -264,7 +277,9 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
                canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
       <p className="lib-date">
         {tasks.length
-          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
+          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{byHours
+            ? " By operating hours: the visit goes by the shortest interval, and a task at a whole multiple of it on every Nth visit (a 100 h task on every second 50 h service)."
+            : start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
           : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
       </p>
       {tasks.some((t) => t.overdue) && (
@@ -281,8 +296,8 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
       </Field>
       <fieldset className="mt-how">
         <legend>How often</legend>
-        <HowOften value={how} onChange={setHow} units={CALENDAR} patterns={fixed} problem={problem} dates={dates}
-                  datesNote={fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+        <HowOften value={how} onChange={setHow} units={units} patterns={fixed && !hours} problem={problem} dates={dates}
+                  datesNote={hours ? HOURS_PACKAGE_NOTE : fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
       </fieldset>
       <div className="pk-dialog-row">
         <Field label="Trade (optional)" text={trade}><input value={trade} maxLength={200} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Fitter" /></Field>
@@ -422,6 +437,49 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
   );
 }
 
+// ---- the packages here (panel tabs: Maintenance › Packages) -------------------------------
+
+// The work packages on this part of the tree (tasks done together on one visit): name, how often,
+// trade, how many tasks and whether it's paused. A name opens the package in the tab (?package=),
+// its back link coming here again. Packages are made from the What it needs view (tick tasks).
+function PackagesHere({ scope, where, onOpen, version }) {
+  const workOrders = useWorkManagementOn();
+  const [state, setState] = useState({ data: null, error: null });
+  useEffect(() => {
+    let live = true;
+    listPackages(scope).then((d) => live && setState({ data: d.packages.filter((p) => p.status !== "retired"), error: null }))
+      .catch((e) => live && setState({ data: null, error: e.message }));
+    return () => { live = false; };
+  }, [scope, version]);
+  const list = state.data;
+  return (
+    <div className="td-tab-page pk-panel rw">
+      <p className="lib-date pk-purpose">The work packages {where} and below: tasks done together on one visit{workOrders ? ", each visit one work order" : ""}. To make one, tick tasks in What it needs and package them.</p>
+      {state.error && <div className="card error">Couldn&apos;t load the packages: {state.error}</div>}
+      {!list && !state.error && <div className="card empty">Loading…</div>}
+      {list && list.length === 0 && <div className="card empty pk-empty"><p>No packages here yet. Tick the tasks done on the same visit in What it needs, then Package selected….</p></div>}
+      {list && list.length > 0 && (
+        <div className="maint-scroll">
+          <table className="lib-table pk-here">
+            <thead><tr><th>Package</th><th>How often</th><th>Trade</th><th>Tasks</th><th>Status</th></tr></thead>
+            <tbody>
+              {list.map((p) => (
+                <tr key={p.id}>
+                  <td><button type="button" className="link" onClick={() => onOpen(p.id)}>{p.parent ? "↳ " : ""}{p.name}</button></td>
+                  <td>{cadenceWords(p)}</td>
+                  <td>{p.trade || "—"}</td>
+                  <td>{p.task_count}</td>
+                  <td>{p.status === "paused" ? "Paused" : "Active"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- one package --------------------------------------------------------------------------
 
 function PackageView({ id, today, onBack, onOpen, onChanged }) {
@@ -520,6 +578,7 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
       )}
       <Rollup rollup={pkg.rollup} title="Each visit needs"
               empty={pkg.tasks.length ? <p className="lib-date">No labour, tools or spares set on its tasks yet: open a task on the table to add them.</p> : null} />
+      {live && pkg.tasks.length > 0 && <PackageParts packageId={pkg.id} />}
       {pkg.next_visits?.length > 0 && (
         <p className="lib-date">Next visits: {pkg.next_visits.map((v) => `${fmtDate(v.on)} (${plural(v.tasks, "task")})`).join(", ")}</p>
       )}
@@ -622,6 +681,7 @@ const TICK_W = 36;
 // opening as its own pane (?mtask=, MaintenanceTask.jsx) rather than its LSA. "Trade rates…" in the
 // heading's "…" (?rates=1) prices every task's labour.
 export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" }) {
+  const workManagementHere = useWorkManagementOn();
   const maint = variant === "maintenance";
   const open = useOpenParam("package");
   const taskOpen = useOpenParam(maint ? "mtask" : "task");
@@ -648,6 +708,13 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const [said, setSaid] = useState(null);
   const [version, setVersion] = useState(0);
   const [cols, setColsState] = useState(() => readCols(variant));
+  // The trade rates, to price the labour a year (none: hours only).
+  const [rates, setRates] = useState([]);
+  useEffect(() => {
+    let live = true;
+    listTradeRates().then((d) => live && setRates(d.rates || [])).catch(() => {});
+    return () => { live = false; };
+  }, [version]);
   const [colsOpen, setColsOpen] = useState(false);
   const [query, setQuery] = useState(tq.q);
   const key = `${row.key}:${version}`;
@@ -673,7 +740,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const design = isDesignRow(row);
   // No ticks or packaging bar: a design's (packaged on the built items) and the Maintenance tab's.
   const plain = design || maint;
-  const offered = lsaColumns({ design });
+  const offered = lsaColumns({ design, workManagement: workManagementHere });
   // The row's own tasks alone are all on it: no Position column.
   const chosenCols = offered.filter((c) => cols.includes(c.id) && (below || c.id !== "position"));
   const columns = maint ? maintenanceOrder(chosenCols) : chosenCols;
@@ -740,7 +807,21 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       </div>
     );
   }
-  const viewSwitch = forecastable ? (
+  // Spares for the year (?mview=spares): every part a failure or a task uses here and inside it
+  // (SparesYear.jsx), inside the asset opened (?root=); on a design, the items built from it.
+  if (!maint && EXPLORER_PANEL_TABS && viewParam.open === "spares") {
+    return (
+      <div className="td-tab-page pk-panel rw">
+        <SparesYear id={row.key} root={design ? null : search.get("root") || null} name={row.ref?.name || ""} design={design} />
+      </div>
+    );
+  }
+  // With the panel tabs the panel's header switches the views (Tasks · What it needs · Packages ·
+  // Forecast · Spares), so the body draws no switch of its own.
+  if (!maint && !design && EXPLORER_PANEL_TABS && viewParam.open === "packages") {
+    return <PackagesHere scope={scope} where={where} onOpen={open.setOpen} version={version} />;
+  }
+  const viewSwitch = forecastable && !EXPLORER_PANEL_TABS ? (
     <SegmentedControl size="sm" className="mt-view" label="Show" value={forecastOn ? "forecast" : "tasks"}
                       onChange={(v) => viewParam.setOpen(v === "forecast" ? "forecast" : null)}
                       options={[{ value: "tasks", label: "Tasks" }, { value: "forecast", label: "Forecast", title: "The work, failures and costs to come here and inside it, by month" }]} />
@@ -858,7 +939,8 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       {design && shown?.length > 0 && (
         <div className="pk-actions pk-design-foot" role="region" aria-label="What the tasks need">
           <span className="pk-actions-n">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>
-          <Rollup rollup={lsaRollup(shown)} title="Together they need"
+          <Rollup rollup={lsaRollup(shown)} title="Together they need" labourLabel="Labour per visit (each task once)"
+                  extra={[{ label: "Labour a year", text: labourYearText(labourYear(shown, rates)) }]}
                   empty={<span className="lib-date">No labour, tools or spares set yet: open a task to add them.</span>} />
         </div>
       )}
@@ -876,7 +958,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                   title={free.length ? undefined : "They're all in a package already"}>Package selected…</button>
           <button type="button" className="link" disabled={!free.length} onClick={() => setModal("add-to")}>Add to a package…</button>
           <button type="button" className="link" onClick={() => setPicked(new Set())}>Clear</button>
-          <Rollup rollup={lsaRollup(chosen)} title="To bring" />
+          <Rollup rollup={lsaRollup(chosen)} title="To bring" labourLabel="Labour per visit" />
           {inOne.length > 0 && <span className="lib-date pk-actions-note">{plural(inOne.length, "task")} already in a package stay{inOne.length === 1 ? "s" : ""} there.</span>}
         </div>
       )}

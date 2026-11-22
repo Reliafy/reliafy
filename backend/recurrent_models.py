@@ -26,7 +26,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from backend.fitting import FitError, _json_safe
+from backend.fitting import FitError, _json_safe, surpyval_unit
 from backend.services.method_labels import note_fit
 from backend.units import canonical_unit
 from surpyval.recurrent import (
@@ -490,8 +490,8 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
         return {"causes": [], "reason": "Only one cause in the data: the MCF by cause is the MCF."}
     try:
         with ignore_warnings(), np.errstate(all="ignore"):
-            mcf = CauseSpecificMCF.fit(x, i=i, c=c, e=e, **kw)
-            para = CauseSpecificNHPP.fit(x, i=i, c=c, e=e, dist=CrowAMSAA, **kw)
+            mcf = CauseSpecificMCF.fit(x, i=i, c=c, e=e, **kw, unit=surpyval_unit(unit))
+            para = CauseSpecificNHPP.fit(x, i=i, c=c, e=e, dist=CrowAMSAA, **kw, unit=surpyval_unit(unit))
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's reason, keep the rest of the fit
         return {"causes": [], "reason": f"Couldn't fit by cause: {client_message(exc)}"}
     total = int(counts.sum())
@@ -557,12 +557,12 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str, unit: str = "", gof_test
     try:
         # An unverified maximum (UserWarning) is reported in the payload.
         with ignore_warnings(RuntimeWarning, UserWarning), np.errstate(all="ignore"):
-            np_model = note_fit(NonParametricCounting.fit(**np_inputs))
+            np_model = note_fit(NonParametricCounting.fit(**np_inputs, unit=surpyval_unit(unit)))
             if family(model_id) == "regression":
                 Z, names, meta = covariates(df, mapping, keep)
-                live = note_fit(_fit_regression(inputs, Z, names, opts))
+                live = note_fit(_fit_regression(inputs, Z, names, opts, unit=unit))
             else:
-                live = note_fit(_fit_renewal(model_id, inputs, opts))
+                live = note_fit(_fit_renewal(model_id, inputs, opts, unit=unit))
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
@@ -577,16 +577,18 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str, unit: str = "", gof_test
     return payload, live
 
 
-def _fit_regression(inputs: dict, Z: np.ndarray, names: list, opts: dict):
+def _fit_regression(inputs: dict, Z: np.ndarray, names: list, opts: dict, unit: str | None = None):
     ins, src = observed(inputs)
     frame = pd.DataFrame(np.asarray(Z)[src], columns=names)
     kw = {k: ins[k] for k in ("i", "c", "n", "tl") if ins.get(k) is not None}
+    kw["unit"] = surpyval_unit(unit)
     return ProportionalIntensityNHPP.fit(ins["x"], frame, baseline=BASELINES[opts["baseline"]], **kw)
 
 
-def _fit_renewal(model_id: str, inputs: dict, opts: dict):
+def _fit_renewal(model_id: str, inputs: dict, opts: dict, unit: str | None = None):
     ins = with_end_rows(inputs)
     kw = {k: ins[k] for k in ("i", "c", "n", "tl") if ins.get(k) is not None}
+    kw["unit"] = surpyval_unit(unit)
     if model_id == "grp_i":
         return GeneralizedRenewal.fit(ins["x"], kijima="i", **kw)
     if model_id == "grp_ii":
@@ -807,12 +809,26 @@ def regression_payload(np_model, live, inputs: dict, Z: np.ndarray, meta: list, 
 # ---- Imperfect repair --------------------------------------------------------
 
 _RESTORATION = {
-    "grp_i": ("q", "Restoration factor q", "kijima"),
-    "grp_ii": ("q", "Restoration factor q", "kijima"),
+    "grp_i": ("q", "Share of age kept q", "kijima"),
+    "grp_ii": ("q", "Share of age kept q", "kijima"),
     "ara": ("rho", "Repair efficiency ρ", "rho"),
     "ari": ("rho", "Repair efficiency ρ", "rho"),
     "g1": ("q", "Gap factor q", "g1"),
 }
+
+
+def restored_range_words(eci, model_id: str) -> str:
+    """A restored share's 90% two-sided range in words, kept inside 0% (as bad
+    as old) to 100% (as good as new): the fitted interval on q or ρ isn't
+    bounded, so it can pass either end, and an end it reaches is named
+    instead of printing an impossible share ("90% two-sided range 0% to 70%,
+    reaching as bad as old")."""
+    lo, hi = min(max(eci[0], 0.0), 1.0), min(max(eci[1], 0.0), 1.0)
+    top = "the most a repair can remove" if model_id == "ari" else "as good as new"
+    old, new = eci[0] <= 0.0, eci[1] >= 1.0
+    reach = (f", from as bad as old to {top}" if old and new else ", reaching as bad as old" if old
+             else f", reaching {top}" if new else "")
+    return f"90% two-sided range {_pct(lo)} to {_pct(hi)}{reach}"
 
 
 def restoration(model_id: str, opts: dict, value: float, ci, method: str = "wald") -> dict:
@@ -833,7 +849,7 @@ def restoration(model_id: str, opts: dict, value: float, ci, method: str = "wald
         if rci:
             text += f" (90% range {rci[0]:.2f}× to {rci[1]:.2f}×)"
         text += f": the gap {trend} with every repair"
-        text += " (deterioration)." if ratio < 1 else " (improvement)." if ratio > 1 else "."
+        text += "."
         out.update({"effectiveness": None, "ratio": ratio, "ratio_ci": rci, "sentence": text, "short": short,
                     "scale": "Below 1, failures come closer together; above 1, further apart."})
         return out
@@ -864,10 +880,9 @@ def restoration(model_id: str, opts: dict, value: float, ci, method: str = "wald
         text = f"Each repair {verb} about {_pct(max(eff, 0.0))} of {what}"
     short = text + "."
     if eci:
-        lo, hi = max(eci[0], -9.99), min(eci[1], 9.99)
-        text += f" (90% range {_pct(lo)} to {_pct(hi)})"
+        text += f" ({restored_range_words(eci, model_id)})"
     if kind == "kijima":
-        text += f"; q = {value:.3g} in an RBD block's repair quality"
+        text += f"; q = {value:.3g} is the share of the age a repair leaves (1 − the share restored), as an RBD block's repair quality takes it"
     text += "."
     scale = ("0% is a minimal repair (as bad as old)." if model_id == "ari"
              else "100% is as good as new, 0% as bad as old.")
@@ -931,7 +946,7 @@ def repair_verdict(model, model_id: str, rest: dict | None = None) -> dict | Non
     what = rest.get("what") or "the age gained"
     amount = f"Repairs {'remove' if model_id == 'ari' else 'restore'} about {_pct(max(eff, 0.0))} of {what}"
     if eci:
-        amount += f" (90% range {_pct(max(eci[0], -9.99))} to {_pct(min(eci[1], 9.99))})"
+        amount += f" ({restored_range_words(eci, model_id)})"
     if not eci:
         verdict, tail = "unclear", ": this fit gives no interval to judge it by."
     else:

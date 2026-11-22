@@ -1,7 +1,7 @@
 // Run with: node --test src/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, requestKey } from "./calcSeries.js";
+import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, nextCombinationValues, requestKey, startNote, startValues } from "./calcSeries.js";
 
 const DEFAULT = { temp_C: 79.375, load: 0.7 };
 const start = [{ id: 0, values: DEFAULT, curves: { at: "default" }, error: null }];
@@ -67,4 +67,32 @@ test("a time past the end of the curves widens them to a round number beyond it"
   assert.equal(autoRangeEnd(fns, null), null);
   // No way to work the curves out again: nothing to widen.
   assert.equal(autoRangeEnd({ curves: fns.curves }, 3000), null);
+});
+
+test("Compare another moves a category to a level not yet shown", () => {
+  const cov = [{ name: "design", type: "category", options: ["A", "B", "C"] }, { name: "load", type: "number" }];
+  const one = [{ id: 0, values: { design: "A", load: 1 } }];
+  assert.deepEqual(nextCombinationValues(one, cov), { design: "B", load: 1 });
+  const two = [...one, { id: 1, values: { design: "B", load: 1 } }];
+  assert.deepEqual(nextCombinationValues(two, cov), { design: "C", load: 1 });
+  // Every level shown already: a copy of the last, to edit.
+  const all = [...two, { id: 2, values: { design: "C", load: 2 } }];
+  assert.deepEqual(nextCombinationValues(all, cov), { design: "C", load: 2 });
+  // Numbers only: a copy; nothing yet: the defaults.
+  assert.deepEqual(nextCombinationValues(one, [{ name: "load", type: "number" }]), { design: "A", load: 1 });
+  assert.deepEqual(nextCombinationValues([], cov, { design: "A", load: 0 }), { design: "A", load: 0 });
+});
+
+test("a category starts at its base level, numbers at their means", () => {
+  const cov = [
+    { name: "site", type: "category", options: ["East", "North", "South"], default: "North" },
+    { name: "load_kN", type: "number", default: 9.074 },
+  ];
+  const v = startValues(cov, { site: "East" });
+  assert.deepEqual(v, { site: "East", load_kN: 9.074 });
+  // No base known (an older model): the stored default, as before.
+  assert.deepEqual(startValues(cov, {}), { site: "North", load_kN: 9.074 });
+  assert.match(startNote(cov, v, { site: "East" }), /data mean; site at East: the base level the Effects compare against/);
+  // Changed by hand: nothing to say.
+  assert.equal(startNote(cov, { ...v, site: "South" }, { site: "East" }), null);
 });

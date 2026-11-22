@@ -287,3 +287,19 @@ export function csvFileName(name) {
   const slug = String(name || "prediction").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return `${slug || "prediction"}-parts-count.csv`;
 }
+
+// A saved prediction's rate as a model the forecasts can use (spares sizing):
+// a constant failure rate in hours, named so it says where it came from. Null
+// when the prediction has no rate (no part has one yet).
+export function predictionAsModel(doc) {
+  const perHour = Number(doc?.results?.failure_rate_per_hour);
+  if (!(perHour > 0)) return null;
+  const perMillion = formatNumber(perHour * 1e6, { sig: 3 });
+  const name = String(doc?.name || "Prediction").trim();
+  return {
+    name: `${name} (predicted, ${perMillion} per million h)`.slice(0, 200),
+    distribution: "exponential",
+    params: [{ name: "failure_rate", value: perHour }],
+    unit: "Hours",
+  };
+}

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { dismissRolesOffer, getMaintenanceAccess, getMyRoles, setMyRoles } from "./api.js";
-import { useAppConfig } from "./ConfigProvider.jsx";
+import { useAppConfig, useWorkManagementOn } from "./ConfigProvider.jsx";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
 import { buildMenu, crumbsFor, liveEntries, rolesInUse } from "./navigation.js";
 
@@ -55,6 +55,7 @@ export function RolesProvider({ children }) {
   const {
     reliability_agent: agentEnabled, maintenance: maintenanceEnabled, menu_preview: previewOn, menu_roles: rolesOn,
   } = useAppConfig();
+  const workOrders = useWorkManagementOn();
   // Reliafy Maintenance is for its operators only: the same check its pages make.
   // Graph access (the Data model page) comes with the same answer.
   const [maintenanceAllowed, setMaintenanceAllowed] = useState(false);
@@ -88,6 +89,7 @@ export function RolesProvider({ children }) {
       maintenance: !!(maintenanceEnabled && maintenanceAllowed), agent: !!agentEnabled, preview: !!previewOn,
       risk: !!(uses.risk || previewOn),
       graph: !!(maintenanceEnabled && graphAllowed),
+      work_orders: !!(maintenanceEnabled && maintenanceAllowed && workOrders),
     };
     const inUse = rolesInUse(state, !!rolesOn);
     return {
@@ -96,7 +98,7 @@ export function RolesProvider({ children }) {
       menu: buildMenu({ roles: inUse.roles, has }),
     };
   }, [state, saveRoles, dismissOffer, noteUse, uses, maintenanceEnabled, maintenanceAllowed, graphAllowed, agentEnabled,
-    previewOn, rolesOn]);
+    previewOn, rolesOn, workOrders]);
   return <RolesContext.Provider value={value}>{children}</RolesContext.Provider>;
 }
 

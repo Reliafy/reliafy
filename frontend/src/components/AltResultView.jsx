@@ -8,7 +8,7 @@ import { PlotCard, PlotPanel } from "./model/ModelLayouts.jsx";
 import AltLifeStress from "./alt/AltLifeStress.jsx";
 import AltDiagnostics from "./alt/AltDiagnostics.jsx";
 import AltData from "./alt/AltData.jsx";
-import { altTabs, defaultUse, resolveAltTab, shapeParam, useForModel } from "../altFrame.js";
+import { altTabs, defaultUse, resolveAltTab, seriesLabel, shapeParam, useForModel } from "../altFrame.js";
 import { formatNumber } from "../format.js";
 import "./alt/AltFrame.css";
 
@@ -25,10 +25,13 @@ import "./alt/AltFrame.css";
 // for the whole page: Life-stress, the Calculator and Diagnostics share it.
 // ``tab`` / ``onTab``: the open tab (a page keeps it in its address).
 // ``onUseStress``: told the use stress (in the model's units) once the user
-// enters one, so the page's "Plan the next test" carries it.
+// enters one, so the page's "Plan the next test" carries it. ``onUseTyped``:
+// told it as typed (the user's units), so the page can keep it with the model.
+// ``initialUse``: the use stress to open at (the wizard's Model step, or the
+// one kept with the saved model), as typed.
 export default function AltResultView({ results, modelId = null, name = null, datasetId = null,
                                         tab: wanted = undefined, onTab = null, onUseStress = null,
-                                        initialUse = null }) {
+                                        initialUse = null, onUseTyped = null }) {
   const r = results || {};
   const tabs = altTabs(r, { saved: !!modelId });
   const [own, setOwn] = useState(() => resolveAltTab(tabs, wanted));
@@ -36,18 +39,22 @@ export default function AltResultView({ results, modelId = null, name = null, da
   const setTab = (id) => { setOwn(id); onTab?.(id); };
 
   // The use stress (as typed), and whether it is still the default.
-  // ``initialUse``: the use stress typed on the wizard's Model step, as entered.
   const startUse = () => (initialUse ? initialUse.map(String) : defaultUse(r).map(String));
   const [use, setUseRaw] = useState(startUse);
-  const [edited, setEdited] = useState(false);
-  const setUse = (next) => { setUseRaw(next); setEdited(true); onUseStress?.(useForModel(r, next)); };
+  // A use stress the user gave (on the Model step or kept with the model) isn't the default.
+  const [edited, setEdited] = useState(!!initialUse);
+  const setUse = (next) => {
+    setUseRaw(next); setEdited(true);
+    onUseStress?.(useForModel(r, next));
+    onUseTyped?.(next);
+  };
   const [calc, setCalc] = useState(() => initAltCalc(r));
   const [prev, setPrev] = useState(r);
   if (r !== prev) {
     // Another fit in place (the wizard): start again from its defaults.
     setPrev(r);
     setUseRaw(startUse());
-    setEdited(false);
+    setEdited(!!initialUse);
     setCalc(initAltCalc(r));
   }
 
@@ -86,7 +93,9 @@ function ProbabilityTab({ results, name }) {
   const r = results;
   const prob = r.probability_plot || {};
   const traces = [];
-  (prob.series || []).forEach((s, i) => {
+  (prob.series || []).forEach((raw, i) => {
+    // The legend in the user's units ("Temperature (°C)=114"), not kelvin.
+    const s = { ...raw, label: seriesLabel(raw, r.stresses) };
     const color = COLORWAY[i % COLORWAY.length];
     if (s.line) {
       traces.push({

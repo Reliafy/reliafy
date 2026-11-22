@@ -37,6 +37,10 @@ export const WALKTHROUGHS = {
         text: "The answer: a shape β above 1 means failures rise with age; name the model and save it to use in Strategy and Forecasts.",
         wait: 15000,
       },
+      {
+        target: '[data-wt="fit-back"]',
+        text: "To fit your own data, press Back until you reach the first step, then choose Upload a file (or Paste failure times).",
+      },
     ],
   },
   replacement: {

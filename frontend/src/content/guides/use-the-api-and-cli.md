@@ -124,6 +124,30 @@ rf.call("analyse", "optimal_replacement", distribution_id="weibull",
         planned_cost=1000, unplanned_cost=8000)
 ```
 
+Two actions save what the app saves. `optimal_replacement_save` keeps an
+optimal-replacement analysis under Strategy, as **Save analysis** does (the
+server works the results out again from the inputs), and
+`model_fit_degradation` fits readings that drift to a failure level and saves
+the degradation model (Pro):
+
+```python
+rf.call("change", "optimal_replacement_save", name="Pump bearings", model_id="…",
+        planned_cost=200, unplanned_cost=1500)
+rf.call("change", "model_fit_degradation", name="Liner wear", dataset_id="…",
+        unit_id_column="pump", age_column="hours", value_column="thickness_mm",
+        threshold=10)
+```
+
+The answer to the degradation fit gives the path chosen (with the others ranked
+by AICc), each unit's crossing time, and B1, B10 and B50 with their 90%
+one-sided lower bounds. Add `dry_run=True` to see the fit without saving it.
+From the command line it's the same action:
+
+```bash
+reliafy change model_fit_degradation --name "Liner wear" --dataset-id DATASET_ID \
+    --unit-id-column pump --age-column hours --value-column thickness_mm --threshold 10
+```
+
 A refused call raises `reliafy.ReliafyError` with Reliafy's reason in plain
 words. If you fit with [SurPyval](https://github.com/derrynknife/SurPyval) in
 your own code, `reliafy.push(model, name=...)` saves that fit, data and all.

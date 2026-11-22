@@ -4,10 +4,11 @@ import Plot from "./Plot.jsx";
 import { getJointUnit, predictJointUnit } from "../api.js";
 import { formatNumber } from "../format.js";
 import { bandPair, fitLine } from "../plotTheme.js";
-import { medianText, paramGroups, parseReadings, readingsText, riskBoundNote, sortRiskRows } from "../joint.js";
+import { jointLinkWords, medianText, paramGroups, parseReadings, readingsText, riskBoundNote, sortRiskRows } from "../joint.js";
 import { ModelTabs } from "./model/ModelFrame.jsx";
 import { PlotCard, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
-import { RiskTable, SurvivalChart, UnitCharts, UnitSummary, sortColumn } from "./model/RiskTable.jsx";
+import { RiskTable, SurvivalChart, UnitCharts, UnitSummary, rankColumn } from "./model/RiskTable.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { JointEffects } from "./model/Effects.jsx";
 import { JointDiagnostics } from "./model/Diagnostics.jsx";
 import { modelTabs, resolveTab } from "../modelFrame.js";
@@ -105,12 +106,22 @@ function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
     return () => { live = false; };
   }, [modelId, unitId]);
   const shown = view && view.unit_id === unitId ? view : null;
+  // The horizon the table ranks by: the one that tells the units apart best (rankColumn), or the
+  // one chosen. The words above the table name it.
+  const labels = results.horizons?.labels || [];
+  const [picked, setPicked] = useState(null);
+  const col = picked != null && picked < labels.length ? picked : rankColumn(results.risk, labels);
   return (
     <div className={"detail-panel mf-joint-risk" + (shown ? "" : " mf-joint-risk-table")}>
       <div className="mf-joint-risk-top">
         <ScrollCard title="Running units' risk"
-                    sub={`highest chance of failing in the next ${(results.horizons?.labels || [])[sortColumn(results.horizons?.labels)] || "stretch"} first`}>
-          <RiskTable rows={results.risk} labels={results.horizons?.labels || []} unit={results.unit || ""}
+                    sub={`highest chance of failing in the next ${labels[col] || "stretch"} first; ties, shortest median life left first`}>
+          {labels.length > 1 && (
+            <SegmentedControl size="sm" label="Rank by the chance of failing in the next" showLabel value={String(col)}
+                              onChange={(v) => setPicked(Number(v))}
+                              options={labels.map((l, i) => ({ value: String(i), label: l }))} />
+          )}
+          <RiskTable rows={results.risk} labels={labels} unit={results.unit || ""} sortCol={col}
                      selected={unitId} onPick={onUnitId} live={!!modelId} />
         </ScrollCard>
         <section className="mf-joint-risk-words" id="joint-unit-view" aria-label="A unit's updating prediction">
@@ -235,11 +246,16 @@ function JointData({ results }) {
           </section>
           <section className="gof-card mf-flex-none">
             <div className="gofh">How it was fitted</div>
+            <div className="gofr"><span className="gk">What the risk follows</span><span className="gv">{r.link_label || "Level"}</span></div>
+            {r.exposure_above != null && (
+              <div className="gofr"><span className="gk">Exposure counted above</span><span className="gv">{formatNumber(r.exposure_above)}{r.marker_unit ? ` ${r.marker_unit}` : ""}</span></div>
+            )}
             <p className="mf-note">
               The reading follows a {r.path_label?.toLowerCase()} path ({r.path_formula}) for each unit, with the units'
-              paths spread about the mean; the failure risk is Weibull, raised or lowered by the reading's current value
+              paths spread about the mean; the failure risk is Weibull, raised or lowered by {jointLinkWords(r.link)}
               and the covariates.
             </p>
+            {r.exposure_text && <p className="mf-note">{r.exposure_text}</p>}
             {(r.covariates || []).length > 0 && (
               <p className="mf-note">Covariates: {r.covariates.join(", ")}.</p>
             )}
@@ -259,7 +275,7 @@ export default function JointResultView({ results, modelId, name, tab: wanted = 
   const [own, setOwn] = useState(() => resolveTab(tabs, wanted));
   const tab = resolveTab(tabs, wanted !== undefined && onTab ? wanted : own);
   const setTab = (id) => { setOwn(id); onTab?.(id); };
-  const [unitId, setUnitId] = useState(() => sortRiskRows(r.risk, sortColumn(r.horizons?.labels))[0]?.id || "");
+  const [unitId, setUnitId] = useState(() => sortRiskRows((r.risk || []).filter((x) => x.risk), rankColumn(r.risk, r.horizons?.labels))[0]?.id || "");
   const covNames = useMemo(() => r.covariates || [], [r.covariates]);
   const [entered, setEntered] = useState(() => ({
     age: "", readings: "", covariates: Object.fromEntries(covNames.map((c) => [c, String(r.typical_covariates?.[c] ?? "")])),

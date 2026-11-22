@@ -26,7 +26,7 @@ from collections import OrderedDict
 import numpy as np
 import pandas as pd
 
-from backend.fitting import FitError, _json_safe
+from backend.fitting import FitError, _json_safe, surpyval_unit
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval.recurrent import CoxLewis, CrowAMSAA, Duane, HPP, NonParametricCounting
@@ -188,16 +188,87 @@ def all_models() -> list[dict]:
 
 
 def fit_spec(df: pd.DataFrame, spec: dict, gof_test: bool = True) -> tuple[dict, str]:
-    """:func:`fit` from a saved model's spec (mapping, model, unit, options
-    and observation windows)."""
+    """:func:`fit` from a saved model's spec (mapping, model, unit, options,
+    observation windows and the end of test, ``record_end``)."""
     return fit(df, spec.get("mapping", {}), model_id=spec.get("model_id", "crow_amsaa"),
                unit=spec.get("unit", ""), gof_test=gof_test, options=spec.get("options"),
-               windows=spec.get("windows"))
+               windows=spec.get("windows"), record_end=spec.get("record_end"), systems=spec.get("systems"))
+
+
+RECORD_END_COLUMN = "__record_end__"  # the column a typed end of test becomes
+#: The item column "every row is one stream" becomes, and the stream's name.
+ONE_STREAM_COLUMN = "__one_stream__"
+ONE_STREAM_NAME = "All rows"
+
+
+def one_stream(df: pd.DataFrame, mapping: dict) -> tuple[pd.DataFrame, dict]:
+    """A mapping with no item column that says every row is one stream of
+    events (``one_stream``: one fleet's replacements against fleet hours, one
+    system's failures) as a fit takes it: one system, named "All rows". The
+    dataset itself is never changed; this frame is the fit's own copy."""
+    if not mapping.get("one_stream") or mapping.get("i"):
+        return df, mapping
+    return df.assign(**{ONE_STREAM_COLUMN: ONE_STREAM_NAME}), {**mapping, "i": ONE_STREAM_COLUMN}
+
+
+def parse_record_end(value) -> float | None:
+    """A typed end of test as a number (``None`` when blank), or a
+    :class:`FitError` saying what to enter."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise FitError("The end of test must be a number: the time the test stopped, in the same unit as the "
+                       "failure times.") from None
+    if not np.isfinite(v) or v <= 0:
+        raise FitError("The end of test must be a positive number: the time the test stopped.")
+    return v
+
+
+def with_record_end(df: pd.DataFrame, mapping: dict, record_end) -> tuple[pd.DataFrame, dict]:
+    """``(df, mapping)`` with one typed end of test (``record_end``) as each
+    system's end of record: it fills an end-of-record column (``tr``) where
+    that is blank, or becomes that column when none is mapped. A system whose
+    own ``c = 1`` row or end-of-record value says where it ends keeps it.
+    A test can't end before a failure it saw, so an end before a system's
+    last failure is refused."""
+    end = parse_record_end(record_end)
+    if end is None:
+        return df, mapping
+    for key in ("i", "x"):
+        if not mapping.get(key) or mapping[key] not in df.columns:
+            return df, mapping  # build_inputs says what's missing
+    x = pd.to_numeric(df[mapping["x"]], errors="coerce")
+    i = df[mapping["i"]].astype(str)
+    own = pd.Series(np.nan, index=df.index)
+    tr_col = mapping.get("tr") or mapping.get("t")
+    if tr_col and tr_col in df.columns:
+        own = pd.to_numeric(df[tr_col], errors="coerce")
+    closed = pd.Series(False, index=df.index)
+    if mapping.get("c") and mapping["c"] in df.columns:
+        flags = pd.to_numeric(df[mapping["c"]], errors="coerce")
+        closed = i.isin(set(i[flags == 1]))
+    open_rows = closed.eq(False) & own.isna() & x.notna()
+    if open_rows.any():
+        last = x[open_rows].groupby(i[open_rows]).max()
+        late = last[last > end]
+        if len(late):
+            sys_id, t = str(late.index[0]), float(late.iloc[0])
+            raise FitError(f"The test is said to end at {end:g}, but {sys_id} has a failure later, at {t:g}. "
+                           "Enter the time the test stopped (at or after its last failure), or leave it empty "
+                           "if the test stopped at the last failure.")
+    out = df.copy()
+    out[RECORD_END_COLUMN] = own.where(own.notna(), end)
+    m = {k: v for k, v in mapping.items() if k != "t"}
+    m["tr"] = RECORD_END_COLUMN
+    return out, m
 
 
 @hides_solver_names
 def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str = "",
-        gof_test: bool = True, options: dict | None = None, windows=None) -> tuple[dict, str]:
+        gof_test: bool = True, options: dict | None = None, windows=None,
+        record_end=None, systems=None) -> tuple[dict, str]:
     """Fit the recurrent model and build the JSON-safe results payload.
 
     Returns ``(payload, cache_id)`` addressing the live parametric model.
@@ -206,9 +277,18 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     settings (a baseline, a memory) and ``windows`` each system's observation
     windows, entered by hand ({system: [[start, end], ...]} or text); window
     columns come in the mapping (``ws`` / ``we``). A cause column (``mode``)
-    adds the MCF of each cause (#65).
+    adds the MCF of each cause (#65). ``record_end`` is one end of test for
+    every system with no end of record of its own (:func:`with_record_end`).
+    ``systems`` fits only those systems (one, or a chosen set) by themselves
+    (:func:`backend.recurrent_systems.only_systems`); empty fits every system.
     """
     from backend import recurrent_models as extra
+    from backend import recurrent_systems as per
+
+    df, mapping = one_stream(df, mapping)
+    given = mapping
+    df, chosen = per.only_systems(df, mapping, systems)
+    df, mapping = with_record_end(df, mapping, record_end)
 
     if model_id in extra.EXTRA_MODELS:
         windows = extra.windows_from(df, mapping, windows) if (windows or mapping.get("ws")) else None
@@ -216,6 +296,8 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
                                   windows=windows)
         _add_marks(payload, df, mapping)
         _record_end_note(payload, df, mapping, windows)
+        _termination(payload, given, record_end)
+        _per_system(payload, df, mapping, windows, chosen)
         return payload, store_live(live)
     if model_id not in MODELS:
         choices = MODEL_CHOICES + list(extra.EXTRA_MODELS)
@@ -232,8 +314,8 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
 
     try:
         with np.errstate(all="ignore"):
-            np_model = note_fit(NonParametricCounting.fit(**np_inputs))
-            para = note_fit(_fit_nhpp(model_id, inputs))
+            np_model = note_fit(NonParametricCounting.fit(**np_inputs, unit=surpyval_unit(unit)))
+            para = note_fit(_fit_nhpp(model_id, inputs, unit))
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
@@ -244,12 +326,52 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
         payload["windows"] = gaps
     _add_marks(payload, df, mapping, inputs=None if gaps else inputs)
     _record_end_note(payload, df, mapping, windows)
+    _termination(payload, given, record_end)
+    _per_system(payload, df, mapping, windows, chosen)
     return payload, store_live(para)
 
 
-RECORD_END_NOTE = ("No end of record is mapped, so each system's record is taken to end at its last failure. That "
-                   "makes failures look closer together at the end than they were: map the column that says how "
-                   "far each system's records go (End of record) for a fair trend and MTBF.")
+def _per_system(payload: dict, df: pd.DataFrame, mapping: dict, windows, chosen: dict | None) -> None:
+    """System by system: which systems the fit covers (``subset``, when only
+    some), where each system's record ends (``termination.ends``, on a
+    time-terminated fit without windows) and each system's downtime and cost
+    (``system_costs``, when those columns are mapped)."""
+    from backend import recurrent_systems as per
+
+    if chosen:
+        payload["subset"] = chosen
+    term = payload.get("termination")
+    if term and term.get("kind") == "time" and not (windows or mapping.get("ws")):
+        try:
+            ends = per.record_ends(build_inputs(df, mapping))
+        except FitError:
+            ends = None
+        if ends:
+            term["ends"] = _json_safe(ends)
+    costs = per.system_costs(df, mapping, chosen)
+    if costs:
+        payload["system_costs"] = _json_safe(costs)
+
+
+RECORD_END_NOTE = ("No end of record is given, so each system's record is taken to end at its last failure "
+                   "(failure-terminated). That makes failures look closer together at the end than they were if "
+                   "the test ran on: enter when the test ended, or map the column that says how far each "
+                   "system's records go (End of record), for a fair trend and MTBF.")
+
+
+def _termination(payload: dict, mapping: dict, record_end) -> None:
+    """How the record ends, said on every result: ``time`` (an end of test
+    or end of record was given; ``end`` is the latest) or ``failure`` (each
+    system ends at its last failure). ``source`` is what gave it: ``value``
+    (a typed end of test), else ``data`` (a column, ``c = 1`` rows or
+    observation windows)."""
+    failure = any(w.get("id") == "no_record_end" for w in payload.get("warnings") or [])
+    end = payload.get("end_of_observation")
+    out = {"kind": "failure" if failure else "time", "end": end}
+    if not failure:
+        typed = record_end is not None and not (mapping.get("tr") or mapping.get("t"))
+        out["source"] = "value" if typed else "data"
+    payload["termination"] = _json_safe(out)
 
 
 def _record_end_note(payload: dict, df: pd.DataFrame, mapping: dict, windows=None) -> None:
@@ -266,7 +388,7 @@ def _record_end_note(payload: dict, df: pd.DataFrame, mapping: dict, windows=Non
     payload.setdefault("warnings", []).append({"id": "no_record_end", "text": RECORD_END_NOTE})
 
 
-def _fit_nhpp(model_id: str, inputs: dict):
+def _fit_nhpp(model_id: str, inputs: dict, unit: str | None = None):
     """Fit a Poisson-process model. A Crow-AMSAA search that doesn't reach a
     verified maximum (it can wander off from its default start when systems
     are watched for different lengths) is started again from the same fit to
@@ -278,16 +400,17 @@ def _fit_nhpp(model_id: str, inputs: dict):
 
     fitter = MODELS[model_id]["fitter"]
     inputs = observed(inputs)[0]
+    u = surpyval_unit(unit)  # the model's unit; the rescaled search below has none
     if model_id == "duane":
-        para = fitter.fit(**inputs)
+        para = fitter.fit(**inputs, unit=u)
         if duane_needs_twin():
             _attach_crow_twin(para, inputs)
         return para
     if model_id != "crow_amsaa":
-        return fitter.fit(**inputs)
+        return fitter.fit(**inputs, unit=u)
     with ignore_warnings(UserWarning):
         # an unverified maximum is retried below
-        para = fitter.fit(**inputs)
+        para = fitter.fit(**inputs, unit=u)
     if getattr(para, "maximum", "verified") == "verified":
         return para
     scale = float(np.max(inputs["x"])) if np.size(inputs["x"]) else 0.0
@@ -304,7 +427,7 @@ def _fit_nhpp(model_id: str, inputs: dict):
         alpha, beta = (float(v) for v in np.asarray(unit_fit.params, dtype=float))
         if not (np.isfinite(alpha) and np.isfinite(beta)):
             return para
-        retry = fitter.fit(**inputs, init=[alpha * scale, beta])
+        retry = fitter.fit(**inputs, init=[alpha * scale, beta], unit=u)
     except Exception:  # noqa: BLE001 - keep the first fit
         return para
     return retry if -retry.neg_ll() >= -para.neg_ll() or not np.all(np.isfinite(para.params)) else para
@@ -462,7 +585,9 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
 
     # Parametric fit + fitted MCF over a smooth grid to the last observation.
     params_arr = np.asarray(para.params, dtype=float)
-    t_hi = float(np.max(x)) if x.size else 1.0
+    # To the end of observation (a test that ran on past its last failure:
+    # the curve reaches "now").
+    t_hi = max(float(np.max(x)) if x.size else 1.0, end_of_observation(inputs))
     grid = np.linspace(0.0, t_hi, 200)
     with np.errstate(all="ignore"):
         fitted = np.asarray(para.mcf(grid), dtype=float)
@@ -508,6 +633,24 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
         "system_residuals": system_residuals(para) if n_systems > 1 else None,
     }
     return _json_safe(payload)
+
+
+def beyond_data(t: float, data_end) -> dict | None:
+    """A time past the end of the data (``data_end``, the longest record the
+    model was fitted to): ``{data_end, times, note}``, or None when ``t`` is
+    inside the data or there is no data end (a model from parameters). A
+    fitted trend says nothing about what happens after the last record, so an
+    answer out there leans on the trend carrying on."""
+    try:
+        end = float(data_end)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(end) or end <= 0 or not np.isfinite(t) or t <= end:
+        return None
+    times = t / end
+    return {"data_end": end, "times": times,
+            "note": (f"This is {times:.1f}× the longest record in the data ({end:,.0f}). The data stop there, so "
+                     "the answer assumes the fitted trend carries on unchanged past them.")}
 
 
 def end_of_observation(inputs: dict) -> float:
@@ -763,7 +906,7 @@ def fit_from_params(model_id: str, params: list, horizon: float, unit: str = "")
             raise FitError("Both parameters must be positive.")
         native = [shape, scale ** (-shape)]
     try:
-        para = fitter.from_params(native)
+        para = fitter.from_params(native, unit=surpyval_unit(unit))
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
         raise FitError(str(exc)) from exc
     return _params_payload(para, model_id, native, horizon, unit), store_live(para)
@@ -848,6 +991,7 @@ def projection_inputs(df: pd.DataFrame, mapping: dict, test_end=None) -> dict:
     end-of-test row (``c = 1``). The end of the test comes from the data's
     own ``c = 1`` rows, else its observation window (``tr``), else
     ``test_end`` — the time every system's test stopped."""
+    df, mapping = one_stream(df, mapping)
     for key in ("i", "x", "mode"):
         col = mapping.get(key)
         if not col:
@@ -1242,7 +1386,8 @@ def _growth_exponent(model) -> float:
     return float(np.log(b / a) / np.log(2.0)), t_ref
 
 
-def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, horizon=None) -> dict:
+def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, horizon=None,
+                     data_end=None) -> dict:
     """Optimal overhaul interval for a repairable system under minimal repair.
 
     Between overhauls each failure is minimally repaired (cost ``cost_repair``,
@@ -1340,6 +1485,7 @@ def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, ho
     return _json_safe({
         **base,
         "interval_range": spread,
+        "beyond_data": beyond_data(t_star, data_end),
         "optimal": {
             "interval": t_star,
             "cost_rate": g_star,

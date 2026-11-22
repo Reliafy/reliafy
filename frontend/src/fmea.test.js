@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   AP_LABEL, apOf, bandOf, bandWords, byCriticality, cmOf, cmWords, crOf, fmt3, matrixOf, readFmeaOptions, rpnOf, score,
 } from "./fmea.js";
+import * as fmeaRate from "./fmea.js";
 
 // The action priority table as the server sends it in /rcm/options (its own
 // writing of the public AIAG-VDA 2019 rule): the bands, and the answer per
@@ -139,4 +140,19 @@ test("modes ranked by Cm, highest first, those without one left out", () => {
   ]);
   assert.deepEqual(ranked.map((m) => m.id), ["b", "a"]);
   assert.ok(Math.abs(ranked[0].cm - 0.004) < 1e-12);
+});
+
+test("the failure rate a mode uses: typed (an override), else the position's, and where it came from", () => {
+  const { rateOf, rateWords } = fmeaRate;
+  const fromParts = { failure_rate: null, mode_ratio: 0.5, loss_probability: 1, operating_time: 150,
+    rate_from: { source: "parts count", value: 3e-5, time_unit: "hours", text: "From the parts count: 30 per million hours (Brushless motor 2210)" } };
+  assert.equal(rateOf(fromParts), 3e-5);
+  assert.equal(rateWords(fromParts),
+    "Uses the position's rate: 0.00003 /hours. From the parts count: 30 per million hours (Brushless motor 2210) Type a rate to override it.");
+  assert.equal(cmWords(fromParts), "1 × 0.5 × 0.00003 /hours × 150 hours = 0.00225");
+  const typed = { ...fromParts, failure_rate: 8e-5, rate_from: { source: "typed", value: 8e-5, position_rate: 3e-5, position_source: "parts count" } };
+  assert.equal(rateOf(typed), 8e-5);
+  assert.equal(rateWords(typed), "Typed here, overriding the position's 0.00003 /hours (parts count). Clear it to use the position's.");
+  assert.equal(rateWords({ failure_rate: 1e-4 }), null);
+  assert.equal(rateOf({}), null);
 });

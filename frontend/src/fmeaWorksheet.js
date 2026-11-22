@@ -14,11 +14,20 @@
 // the RCM's).
 
 import {
-  AP_LABEL, CLASS_LABEL, SOURCE_LABEL, STATUS_LABEL, cmOf, fmt3, rpnOf, score,
+  AP_LABEL, CLASS_LABEL, RATE_FROM_LABEL, SOURCE_LABEL, STATUS_LABEL, cmOf, criticalityOf, criticalityText, criticalityTip, fmt3, rateOf,
+  rpnOf, score,
 } from "./fmea.js";
 import { COLUMN as RCM_COLUMN, blank as rcmBlank, checkValue as rcmCheckValue, modeCounts } from "./rcmWorksheet.js";
 
 const isMode = (r) => r.type === "mode";
+// The Rate source cell: the label typed on a mode with a rate of its own; else where the
+// position's rate it uses came from ("Parts count").
+export function rateSourceText(m) {
+  const typed = m.failure_rate !== "" && m.failure_rate != null;
+  if (!typed && m.rate_from && m.rate_from.source !== "typed") return RATE_FROM_LABEL[m.rate_from.source] || "";
+  const label = SOURCE_LABEL[m.rate_source] || "";
+  return typed && m.rate_from?.position_rate != null ? `${label || "Typed"} (override)` : label;
+}
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 
 // ---- counts -----------------------------------------------------------------------
@@ -31,7 +40,7 @@ export const hasActionOpen = (m) => !!String(m?.action || "").trim() && m?.actio
 
 export function fmeaCounts(m) {
   const rpn = m.rpn ?? rpnOf(m.severity, m.occurrence, m.detection);
-  const cm = m.cm ?? cmOf(m);
+  const cm = m.cm ?? cmOf({ ...m, failure_rate: rateOf(m) });
   return {
     scored: rpn != null ? 1 : 0,
     high: m.ap === "H" ? 1 : 0,
@@ -137,6 +146,17 @@ export const COLUMNS = [
     text: (r) => (isMode(r) ? AP_LABEL[r.ref.ap] || "" : apSummary(r.sum)),
     sort: (r) => (isMode(r) ? AP_RANK[r.ref.ap] ?? null : r.sum.high ? 3 : r.sum.medium ? 2 : r.sum.low ? 1 : null),
   },
+  {
+    // Mode criticality (MIL-STD-1629A): β × α × λ × t, with the operating time it's for; "–" and
+    // the reason (its tooltip) when a figure is missing: never a made-up number.
+    id: "cm", label: "Criticality (Cm)", width: 140, min: 100, on: true, align: "num",
+    title: "Mode criticality, Cm = β × α × λ × t: the expected failures of this mode over the operating time that end in "
+      + "the loss its severity class names. λ is the rate typed on the mode, else the position's own. A parent row: Cr, the sum over the modes inside it",
+    text: (r) => (isMode(r) ? criticalityText(r.ref) : r.sum.with_cm ? fmt3(r.sum.cr) : ""),
+    tip: (r) => (isMode(r) ? criticalityTip(r.ref)
+      : r.sum.with_cm ? `Cr: the sum of Cm over the ${r.sum.with_cm === 1 ? "1 failure mode" : `${r.sum.with_cm} failure modes`} inside with one` : undefined),
+    sort: (r) => (isMode(r) ? criticalityOf(r.ref).cm ?? null : r.sum.with_cm ? r.sum.cr : null),
+  },
   textCol("action", "Recommended action", 170, 100, "What should be done about it"),
   textCol("action_owner", "Owner", 100, 70, "Who the action is with"),
   {
@@ -147,22 +167,24 @@ export const COLUMNS = [
   },
   { ...choiceCol("action_status", "Status", 100, 84, "Open, In progress or Done", STATUS_LABEL), on: true,
     text: (r) => (isMode(r) ? STATUS_LABEL[r.ref.action_status] || "" : r.sum.action_open ? `${r.sum.action_open} open` : "") },
-  // Off by default: the RCM's own columns, then the criticality figures.
+  // Off by default: the RCM's own columns, then the figures behind the criticality.
   { ...RCM_COLUMN.consequence, on: false, rcm: true },
   { ...RCM_COLUMN.decision, on: false, rcm: true },
   { ...RCM_COLUMN.task, on: false, rcm: true },
-  numCol("failure_rate", "Failure rate", 100, 80, "λ: failures per unit of time (the time unit column)", { min: 0 }),
+  {
+    // Typed on the mode (an override), else the position's own rate, shown as such (W3).
+    ...numCol("failure_rate", "Failure rate", 100, 80, "λ: failures per unit of time (the time unit column). Blank: the position's own rate (its parts count or model in use)", { min: 0 }),
+    text: (r) => (isMode(r) ? fmt3(rateOf(r.ref)) : ""),
+    sort: (r) => (isMode(r) && rateOf(r.ref) != null ? Number(rateOf(r.ref)) : null),
+  },
   textCol("time_unit", "Time unit", 84, 70, "The unit the failure rate and operating time are in (hours unless set)", false),
-  choiceCol("rate_source", "Rate source", 110, 90, "Where the failure rate came from", SOURCE_LABEL),
+  {
+    ...choiceCol("rate_source", "Rate source", 110, 90, "Where the failure rate came from: typed on the mode, or the position's parts count or model", SOURCE_LABEL),
+    text: (r) => (isMode(r) ? rateSourceText(r.ref) : ""),
+  },
   numCol("mode_ratio", "Mode ratio (α)", 100, 84, "The share of the item's failures that are this mode, 0 to 1", { min: 0, max: 1 }),
   numCol("loss_probability", "Loss probability (β)", 120, 96, "The chance the mode's effect is the loss named by the severity class, 0 to 1", { min: 0, max: 1 }),
   numCol("operating_time", "Operating time (t)", 120, 96, "The time the criticality is figured over, in the time unit", { min: 0, exclusiveMin: true }),
-  {
-    id: "cm", label: "Mode criticality (Cm)", width: 130, min: 100, on: false, align: "num",
-    title: "β × α × λ × t (a parent row: Cr, the sum over the modes inside it)",
-    text: (r) => (isMode(r) ? fmt3(r.ref.cm ?? cmOf(r.ref)) : r.sum.with_cm ? fmt3(r.sum.cr) : ""),
-    sort: (r) => (isMode(r) ? r.ref.cm ?? cmOf(r.ref) : r.sum.with_cm ? r.sum.cr : null),
-  },
   choiceCol("severity_class", "Severity class", 110, 90, "I Catastrophic, II Critical, III Marginal, IV Minor", CLASS_LABEL),
 ];
 export const COLUMN = Object.fromEntries(COLUMNS.map((c) => [c.id, c]));
@@ -178,13 +200,14 @@ export const FIELDS = new Set(["severity", "occurrence", "detection", "cause", "
 // The usual columns follow the window's width, so the scores and the action
 // priority stay in view beside the tree without scrolling sideways: a wide
 // window (1700 px and up) shows the whole preset; a laptop (under 1400 px)
-// keeps the cause, the end effect, S, O, D, RPN, AP and the action; between
-// the two, the local and next higher effects and the owner wait in the
-// Columns menu. A set chosen there is kept whatever the width.
+// keeps the cause, the end effect, S, O, D, RPN, AP, the criticality and the
+// action; between the two, the local and next higher effects, the detection
+// method and the owner wait in the Columns menu (so the criticality is in view
+// beside AP). A set chosen there is kept whatever the width.
 export const NARROW_TABLE = 1400;
 export const WIDE_TABLE = 1700;
-const MEDIUM_OFF = ["effect_local", "effect_next", "action_owner"];
-const NARROW_OFF = [...MEDIUM_OFF, "detection_method", "action_due", "action_status"];
+const MEDIUM_OFF = ["effect_local", "effect_next", "detection_method", "action_owner"];
+const NARROW_OFF = [...MEDIUM_OFF, "action_due", "action_status"];
 export function usualCols({ narrow = false, wide = false } = {}) {
   const off = wide ? [] : narrow ? NARROW_OFF : MEDIUM_OFF;
   return DEFAULT_COLUMNS.filter((id) => !off.includes(id));
@@ -243,8 +266,44 @@ export const CHIPS = [
 ];
 export const CHIP_IDS = CHIPS.map((c) => c.id);
 
+// How many failure modes each of the tab's filters would keep, for the counts beside them in the
+// tree's ⋯ menu (so turning one on is never a surprise): {chip id: n}.
+export function chipCounts(display) {
+  const out = Object.fromEntries(CHIPS.map((c) => [c.id, 0]));
+  for (const r of display?.rows?.values() || []) {
+    if (!isMode(r)) continue;
+    for (const c of CHIPS) if (c.test(r)) out[c.id] += 1;
+  }
+  return out;
+}
+
+// ---- the RPN filter -------------------------------------------------------------------
+// "RPN at least …": the failure modes whose RPN is that value or more (a mode not fully scored
+// has none, so it's left out), with the way down to each; the rows stay in the tree's order.
+// A whole number from 1 to 1,000, or null (blank or anything else: no filter).
+export const RPN_MAX = 1000;
+export function rpnMinOf(raw) {
+  if (raw === "" || raw == null) return null;
+  const v = Number(raw);
+  return Number.isInteger(v) && v >= 1 && v <= RPN_MAX ? v : null;
+}
+export function rpnAtLeast(min) {
+  const v = rpnMinOf(min);
+  if (v == null) return null;
+  return (r) => isMode(r) && (rpnOfRow(r) ?? -1) >= v;
+}
+// How many failure modes an RPN floor keeps.
+export function rpnCount(display, min) {
+  const test = rpnAtLeast(min);
+  if (!test) return null;
+  let n = 0;
+  for (const r of display?.rows?.values() || []) if (test(r)) n += 1;
+  return n;
+}
+export const rpnLabel = (min) => `RPN ${min} or more`;
+
 // ---- the phone's second line --------------------------------------------------------
-// A failure mode: "S 9 · O 4 · D 6 · RPN 216 · High · Open"; a function or
+// A failure mode: "S 9 · O 4 · D 6 · RPN 216 · High · Cm 0.004 · Open"; a function or
 // position: "3 of 5 scored · 2 high · 1 medium".
 export function phoneLine(r) {
   const s = r.sum || blankSums();
@@ -252,7 +311,9 @@ export function phoneLine(r) {
   const m = r.ref;
   const sc = ["severity", "occurrence", "detection"].filter((k) => score(m[k]) != null).map((k) => `${k[0].toUpperCase()} ${score(m[k])}`);
   const rpn = rpnOfRow(r);
-  return [...sc, rpn != null ? `RPN ${rpn}` : sc.length ? "not fully scored" : "Not scored", AP_LABEL[m.ap], STATUS_LABEL[m.action_status]].filter(Boolean).join(" · ");
+  const cm = criticalityOf(m).cm;
+  return [...sc, rpn != null ? `RPN ${rpn}` : sc.length ? "not fully scored" : "Not scored", AP_LABEL[m.ap], cm != null ? `Cm ${fmt3(cm)}` : null,
+    STATUS_LABEL[m.action_status]].filter(Boolean).join(" · ");
 }
 
 // ---- a cell's value -------------------------------------------------------------------

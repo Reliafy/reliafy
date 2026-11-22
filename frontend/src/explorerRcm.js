@@ -11,7 +11,8 @@
 
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, decidedWords, decisionCardLines, decisionRows, intervalText,
-  isCombination, modeCounts, moreTasks, isHidden, rowText as rcmText, tasksOf,
+  isCombination, modeCounts, moreTasks, isHidden, rowText as rcmText, tasksOf, addModeTasks, addTasks, blankTasks,
+  INTERVAL_DIFFERS, TO_LOOK_AT,
 } from "./rcmWorksheet.js";
 import { standardsShown } from "./rcmStandards.js";
 import { withPositionDelete } from "./rcmDelete.js";
@@ -77,9 +78,13 @@ export function graftRcm(display, rcm) {
     const p = byPos.get(r.key);
     const keys = [];
     const rsum = rcmBlank();
+    // The position's own tasks, each once (the Task cell's count; rollUpPositions takes in those inside).
+    const own = { tk: blankTasks() };
     const add = (key, type, ref, parent, depth) => {
       if (rows.has(key)) return null;
       const row = { key, type, ref, parent, kids: [], depth, own: noStatus(), sum: noStatus(), rsum: rcmBlank() };
+      // The tasks inside it, each once (a linked cause's chain is read without: it counts its failure modes).
+      if (type !== "mode" && type !== "task" && type !== "cause") row.tk = blankTasks();
       rows.set(key, row);
       if (parent === r.key) keys.push(key);
       else rows.get(parent).kids.push(key);
@@ -100,8 +105,10 @@ export function graftRcm(display, rcm) {
       for (let up = parent; up != null && up !== r.key; up = rows.get(up).parent) {
         const u = rows.get(up);
         for (const k of Object.keys(row.rsum)) u.rsum[k] += row.rsum[k];
+        addModeTasks(u, m);
       }
       for (const k of Object.keys(row.rsum)) rsum[k] += row.rsum[k];
+      addModeTasks(own, m);
     };
     const d = r.depth;
     for (const fn of p?.functions || []) {
@@ -182,6 +189,7 @@ export function graftRcm(display, rcm) {
     r.kids = [...keys, ...r.kids];
     r.rcmKids = keys.length;
     r.rsum = rsum;
+    r.tk = own.tk;
   }
   rollUpPositions(rows);
   return out;
@@ -194,6 +202,9 @@ export function graftRcm(display, rcm) {
 export function rollUpPositions(rows) {
   const pos = [...rows.values()].filter((r) => r.type === "pos");
   for (const r of pos) r.ownSum = { ...(r.rsum || rcmBlank()) };
+  // The tasks, each once: a task serving failure modes on several positions counts once above them.
+  const ownTk = new Map(pos.map((r) => [r.key, r.tk || null]));
+  for (const r of pos) if (r.tk) { const tk = blankTasks(); addTasks(tk, r.tk); r.tk = tk; }
   for (const r of pos) {
     const own = r.ownSum;
     if (!own.modes) continue;
@@ -202,6 +213,7 @@ export function rollUpPositions(rows) {
       seen.add(up.key);
       if (!up.rsum) up.rsum = rcmBlank();
       for (const k of Object.keys(own)) up.rsum[k] = (up.rsum[k] || 0) + own[k];
+      if (ownTk.get(r.key)) addTasks(up.tk || (up.tk = blankTasks()), ownTk.get(r.key));
     }
   }
   return rows;
@@ -410,8 +422,8 @@ export const RCM_CHIPS = [
   { id: "hidden", label: "Hidden failures", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && isHidden(r.ref) },
   // A linked report or working ("linked") isn't checked, so it's never one to look at.
   { id: "check", label: "Evidence to look at", rcmOnly: true, tab: "rcm",
-    title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
-    test: (r) => isMode(r) && ["contradicted", "inconclusive", "stale"].includes(r.ref.decision?.status) },
+    title: "Linked evidence that contradicts the decision, doesn't settle it, sets an interval far from the task's, or has gone (a stale link)",
+    test: (r) => isMode(r) && TO_LOOK_AT.has(r.ref.decision?.status) },
 ];
 
 // ---- the Evidence check column -------------------------------------------------
@@ -425,7 +437,7 @@ export const RCM_CHIPS = [
 // evidence linked (a model, analysis, report or working, even one that has gone since)?
 export function hasLinkedEvidence(rcm) {
   const linked = (m) => !!m.decision && (!!m.decision.evidence
-    || ["supported", "contradicted", "inconclusive", "stale", "linked"].includes(m.decision.status));
+    || ["supported", "contradicted", "inconclusive", "stale", "linked", ...INTERVAL_DIFFERS].includes(m.decision.status));
   for (const p of rcm?.positions || []) {
     if ((p.unassigned || []).some(linked)) return true;
     for (const fn of p.functions || []) {

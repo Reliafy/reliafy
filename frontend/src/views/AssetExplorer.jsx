@@ -5,7 +5,7 @@ import {
   MEAS_TABLE_COLS, MEAS_TREE_HEAD, MeasCell, MeasDialogs, MeasSide, measPhoneRow, measRowActions, retireMeasurement, useTreeMeasurements,
 } from "../components/MeasurementTable.jsx";
 import { graftMeasurements, isMeasRow, measAddActions, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
-import { measurementsCsv } from "../measurementsTable.js";
+import { measColumns as measColumnsFor, measurementsCsv } from "../measurementsTable.js";
 import {
   LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, NewRbdModal, ParamsModal, RbdLinkModal, modelPhoneRow, modelRowActions,
   unlinkModel, useTreeModels,
@@ -13,7 +13,7 @@ import {
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import { FitPane } from "../components/FitLifeModel.jsx";
 import PredictionPane from "../components/PredictionPane.jsx";
-import RbdPane from "../components/RbdPane.jsx";
+import RbdPane, { NEW_RBD, NewRbdPane } from "../components/RbdPane.jsx";
 import MissionPane, { NewMissionPane } from "../components/MissionPane.jsx";
 import MissionSide, { phaseRowChange } from "../components/MissionSide.jsx";
 import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, MissionRollup, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
@@ -74,7 +74,7 @@ import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs, tasksOf } from "../
 import { failuresOn as fmeaFailuresOn, graftFmea, positionSummary, rowActions as fmeaRowActions } from "../explorerFmea.js";
 import {
   CHIP_IDS as FMEA_CHIP_IDS, COLUMN as FMEA_COLUMN, COLUMNS as FMEA_COLUMNS, TREE_HEAD as FMEA_TREE_HEAD, WIDE_TABLE, checkValue as checkFmeaValue,
-  loadPrefs as loadFmeaPrefs, nextSort, phoneLine as fmeaPhoneLine, savePrefs as saveFmeaPrefs, scoredWords, siblingOrder as fmeaOrder,
+  RPN_MAX, chipCounts as fmeaChipCounts, loadPrefs as loadFmeaPrefs, nextSort, phoneLine as fmeaPhoneLine, rpnAtLeast, rpnCount, rpnLabel, rpnMinOf, savePrefs as saveFmeaPrefs, scoredWords, siblingOrder as fmeaOrder,
   tableCols as fmeaTableCols, usualCols as fmeaUsualCols, withTableCols as withFmeaCols,
 } from "../fmeaWorksheet.js";
 import { readFmeaOptions } from "../fmea.js";
@@ -85,7 +85,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { addressTab, isDesignRow, rowKind, shownTab, tabCarried, tabForArrangement, tabsFor } from "../explorerTabs.js";
+import { EXPLORER_PANEL_TABS, addressTab, tabPlace, isDesignRow, rowKind, shownTab, tabCarried, tabForArrangement, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -94,7 +94,7 @@ import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
   ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, arrivalNamed, arrivalRoot, assetOf, assetOfId, opensAsset, rcmPositionOf, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth, treeColumnWidth,
-  filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
+  filterOpen, flatten, levelSet, loadTreeState, panelRow, saveTreeState,
 } from "../assetTree.js";
 import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
@@ -115,7 +115,9 @@ import {
 } from "../products.js";
 import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
+import LoadFailed from "../components/LoadFailed.jsx";
 import "./AssetExplorer.css";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { classFields, classKey } from "../positionClass.js";
 
 // The new-position (or new-location) dialog opened from the tree's last row:
@@ -217,6 +219,8 @@ const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_ne
 // the address's name for its tabs (?view= on a product's page). `heading`: the
 // picked row's heading level (1 where the tree is the page, as a product's is).
 export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null }) {
+  // Work management off (workManagement.js): an event logged raises nothing.
+  const workOrders = useWorkManagementOn();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -300,6 +304,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [collapsed, setCollapsed] = useState(saved.collapsed);
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState([]);
+  // The FME(C)A tab's "RPN at least" (as typed; a whole number 1 to 1,000 filters, blank doesn't).
+  const [rpnRaw, setRpnRaw] = useState("");
   // The level each arrangement was last opened to from the ⋯ menu (null once
   // rows are opened or closed one by one; the usual level before any).
   const [levelBy, setLevelBy] = useState({});
@@ -586,9 +592,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const t = setTimeout(() => setPinNote(null), 8000);
     return () => clearTimeout(t);
   }, [pinNote]);
-  const filter = useMemo(() => (data ? computeFilter(display, {
-    query, chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
-  }) : null), [data, display, query, chips, notPlaced]);
+  // How many failure modes each FME(C)A filter keeps (beside it in the ⋯ menu).
+  const fmeaChipCount = useMemo(() => (fmeaOn ? fmeaChipCounts(display) : null), [fmeaOn, display]);
+  // The FME(C)A's RPN floor: only failure modes at or above it, the tree's order kept.
+  const rpnMin = fmeaOn ? rpnMinOf(rpnRaw) : null;
+  const filter = useMemo(() => {
+    if (!data) return null;
+    const placed = notPlaced ? (r) => r.type === "pos" && !r.ref.location : null;
+    const floor = rpnAtLeast(rpnMin);
+    const extra = placed && floor ? (r) => placed(r) && floor(r) : placed || floor;
+    return computeFilter(display, { query, chips, extra });
+  }, [data, display, query, chips, notPlaced, rpnMin]);
   useEffect(() => setFopen(filter ? filterOpen(filter) : null), [filter]);
   const defaultOpen = useMemo(() => levelSet(whole, 2), [whole]);
   const baseOpen = openBy[mode] || defaultOpen;
@@ -638,6 +652,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     pending.current = selParam;
     if (display.rows.has(selParam)) reveal(selParam);
   }, [selParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  // On a phone, a link that names a row (?sel=: from Home, Orders, a work order) opens that row's
+  // details, as a tap on it does, once its asset's tree is in: not the bare tree with the row
+  // highlighted. Once per visit, as a new entry, so Back still comes to the tree. Not the asset's
+  // own top row (opening an asset from the Assets list names it): that opens on its tree.
+  const arrivedDetail = useRef(false);
+  useEffect(() => {
+    if (arrivedDetail.current || !phone || !data || !selParam || selParam === root) return;
+    if (location.state?.treeDetail || tableOn || !display.rows.has(selParam)) return;
+    arrivedDetail.current = true;
+    navigate(location.pathname + location.search, { state: { ...(location.state || {}), treeDetail: selParam } });
+  }, [phone, data, display, selParam, tableOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With a tab open beyond Summary, the address follows the row picked
   // (?sel=), once the tree is in, so a link opens on it with that tab. A class
@@ -787,8 +812,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     return () => clearTimeout(t);
   }, [rcmOn, selIsPos, selPos, version]);
 
-  const setTab = (t) => {
-    if (t === tab) return;
+  // `view`: the ?mview= of a panel tab's inner view (explorerTabs.js PANEL_TABS: Maintenance's
+  // Packages and Forecast); null or left out, none. The same tab with another view changes only that.
+  const setTab = (t, { view = null } = {}) => {
+    if (t === tab) {
+      if (EXPLORER_PANEL_TABS && (params.get("mview") || null) !== view) {
+        setQuery_((q) => {
+          if (view) q.set("mview", view);
+          else q.delete("mview");
+          // A package or task open in the view left goes with it.
+          for (const k of ["package", "task", "packaging", "mtask", "addtask", "rates"]) q.delete(k);
+        });
+      }
+      return;
+    }
     setEditing(null);
     const toTable = t === "rcm" || t === "fmea" || t === "measurements" || t === "models" || t === "missions";
     if (!toTable) {
@@ -802,6 +839,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (t !== "rcm") setChips((c) => c.filter((x) => !["undecided", "hidden", "check"].includes(x)));
     if (t !== "fmea") setChips((c) => c.filter((x) => !FMEA_CHIP_IDS.includes(x)));
     if (t !== "fmea") setFsort(null);
+    if (t !== "fmea") setRpnRaw("");
     if (t !== "models") setChips((c) => c.filter((x) => x !== "stale"));
     if (toTable && tab !== "summary" && focusRow?.type === "pos") setPanel(false);
     let keep = null;
@@ -812,6 +850,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setQuery_((q) => {
       if (t === "summary") q.delete(tabKey);
       else q.set(tabKey, t);
+      if (EXPLORER_PANEL_TABS) {
+        if (view) q.set("mview", view);
+        else q.delete("mview");
+      }
       if (toTable) q.set("arrange", "positions");
       // The report open in the Failure reports tab goes with the tab.
       if (t !== "reports") q.delete("report");
@@ -977,7 +1019,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // Merge into another asset… (the asset's top row, or ?merge=1 from the Assets list's row menu): in the
   // table area on the Summary tab, the address saying so, so a reload keeps it open.
   const openMerge = () => {
-    setQuery_((q) => { q.set("merge", "1"); q.delete(tabKey); });
+    setQuery_((q) => { q.set("merge", "1"); q.delete(tabKey); q.delete("mview"); });
     setTimeout(() => mergeHeading.current?.focus({ preventScroll: true }), 0);
   };
   const closeMerge = () => setQuery_((q) => q.delete("merge"));
@@ -1038,9 +1080,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // and links it here; it then opens in the table area. A position has one built diagram: where
   // it has one already, Build opens that one (here when its rows are read, else by the backend,
   // which answers `existing`), so using the menu again never leaves a second. The Modelling and
-  // Missions tabs both build through here.
+  // Missions tabs both build through here. A new one is named first, once, in the table pane
+  // (NewRbdPane: `name` undefined opens it), and nothing is saved until it's named.
   const building = useRef(false);
-  const buildRbd = async (position, link = null) => {
+  const buildRbd = async (position, link = null, name = undefined, arrangements = null) => {
     if (building.current) return;
     const had = link ? null : builtRbdLink(pmodels.links, position.id);
     if (had) return openRbd(position, had.model_id);
@@ -1049,11 +1092,18 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       say(`There are no positions inside ${position.name} to make blocks from.`, "error");
       return;
     }
+    if (!link && name === undefined) {
+      if (!(await leavePane())) return;
+      openPane("rbd", position, { rbd: NEW_RBD });
+      return;
+    }
     if (!(await leavePane())) return;
     building.current = true;
     say(`${link ? "Rebuilding" : "Building"} an RBD from what's inside ${position.name}…`);
     try {
-      const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}) });
+      const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}),
+                                                          ...(name ? { name } : {}),
+                                                          ...(arrangements?.length ? { arrangements } : {}) });
       say(made.existing ? `Opened ${made.name}: ${position.name} already has an RBD built from what's inside.`
         : `${link ? "Rebuilt" : "Built"} ${made.name}.`);
       pmodels.load();
@@ -2063,11 +2113,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const level = levelShown(levelBy, mode);
   const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.rcmOnly || tableOn));
   // A pin on the whole tree's one top row shows everything: not a change.
+  // The RPN floor counts as one more filter on (the ⋯ badge, Reset, the status line).
+  const floorOn = rpnMin != null ? [{ id: "rpn", label: rpnLabel(rpnMin) }] : [];
   const changed = changedFromUsual({
-    level, chips: chipsOn, pinned: !!pinKey && !pinCoversAll(whole, pinKey),
+    level, chips: [...chipsOn, ...floorOn], pinned: !!pinKey && !pinCoversAll(whole, pinKey),
   });
   const resetView = () => {
     setChips([]);
+    setRpnRaw("");
     if (pinKey || (level !== DEFAULT_LEVEL && typeof level === "number")) {
       setLevelBy((l) => ({ ...l, [mode]: DEFAULT_LEVEL }));
       setOpenBy((o) => ({ ...o, [mode]: levelSet(whole, DEFAULT_LEVEL) }));
@@ -2166,7 +2219,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const raised = out.work_orders_raised || [];
     say(raised.length
       ? `Logged ${out.event.event_type}: raised ${raised.map((w) => `#${w.number}`).join(", ")}.`
-      : `Logged ${out.event.event_type}. No task here is waiting for it, or its work order is open already.`, "ok", { fade: !raised.length });
+      : workOrders ? `Logged ${out.event.event_type}. No task here is waiting for it, or its work order is open already.`
+        : `Logged ${out.event.event_type}. It's kept in the history, as data.`, "ok", { fade: !raised.length });
   };
   const reportFiled = (view) => {
     const select = reportFor?.select || view.position?.id;
@@ -2199,10 +2253,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <p>Reliafy Maintenance (positions, locations and work orders) isn't on for this account yet.</p>
     </div>
   ) : error ? (
-    <div className="card error td-error">
-      <p>The tree didn't load: {error.text} Your data is safe; check your connection and try again.</p>
-      <button type="button" className="secondary" onClick={load}>Try again</button>
-    </div>
+    <LoadFailed className="td-error" onRetry={load} what="Couldn't load the tree." error={error.text} />
   ) : !data ? (
     <div className="card empty">Loading…</div>
   ) : nothing ? (
@@ -2235,7 +2286,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const paneEmpty = !data ? (error?.gone ? "That asset isn't here." : error?.notAllowed ? "Not on for this account." : error ? "Couldn't load the tree." : "Loading the tree…")
     : filter && notPlaced && !query.trim() && !chips.length ? "Every position is at a location."
     : filter ? (
-      <>Nothing matches{query.trim() ? ` “${query.trim()}”` : ""}. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); }}>Clear the filter</button></>
+      <>Nothing matches{query.trim() ? ` “${query.trim()}”` : ""}. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); setRpnRaw(""); }}>Clear the filter</button></>
     ) : nothing ? `${EMPTY[mode]?.[0] || "No positions yet"}.` : "Nothing here.";
 
   const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
@@ -2248,7 +2299,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     : rcmOn && !filter
     ? (rcmError ? `The ${what} didn't load: ${rcmError}` : "")
     : filter
-    ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
+    ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly([...chipsOn, ...floorOn].map((c) => c.label))].filter(Boolean).join(" · ")
     : "";
 
   // The Explorer is always one asset (?root=), so there's nothing to say about that; only the
@@ -2261,8 +2312,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   );
 
   // The panel shows the row from the whole tree, so its way up is the whole path.
-  const row = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
-  const posRow = selPos != null ? display.rows.get(selPos) : null;
+  // A via row (a position above a place's positions, assetTree.js VIA) is shown as the position it
+  // is (panelRow): its heading, its tab bar and every tab a position has. `treeRow`: the row as
+  // the tree has it, for the row's own actions (none on a via row, as in its row menu).
+  const treeRow = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
+  const row = panelRow(treeRow);
+  const posRow = selPos != null ? panelRow(display.rows.get(selPos)) : null;
   // ?fit_prior=<library record> (the Library page's Use as a prior…): the fit opens in the table
   // area on the position picked with that record as the prior; with none picked, the tab says to pick one.
   const fitPrior = params.get("fit_prior");
@@ -2302,7 +2357,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   for (const c of cols) widths[c.id] = prefsW[c.id] ?? c.width;
   // The Measurements tab's table: the tree, then Kind, Latest, State, Trend,
   // Next due and Record; a position's roll-up across them.
-  const mcols = wideDetails ? [] : MEAS_TABLE_COLS.filter((c) => measCols.includes(c.id));
+  const mcols = wideDetails ? [] : measColumnsFor(MEAS_TABLE_COLS, workOrders).filter((c) => measCols.includes(c.id));
   const mwidths = Object.fromEntries(mcols.map((c) => [c.id, c.width]));
   const measTable = {
     cols: mcols, widths: mwidths, treeW: shownWidth, total: shownWidth + mcols.reduce((t, c) => t + c.width, 0), expanded: wideDetails,
@@ -2435,7 +2490,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     ...(isMeasRow(focusRow) && panel ? tabMenu || [] : []),
   ].filter(Boolean) : [];
   const measColumns = measOn && colsOpen && !phone && (
-    <ColumnChooser open cols={measCols} usual={MEAS_TABLE_COLS.map((c) => c.id)} columns={MEAS_TABLE_COLS}
+    <ColumnChooser open cols={measCols} usual={MEAS_TABLE_COLS.map((c) => c.id)} columns={measColumnsFor(MEAS_TABLE_COLS, workOrders)}
                    onCols={(next) => setMeasCols(next)} onClose={() => setColsOpen(false)} returnFocus={moreButton} />
   );
   // The Modelling tab's "…": attach a model to the position picked (fit from its history, a
@@ -2490,7 +2545,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null}
                 message={message?.fade ? msg : null} />
   );
-  const tabsRow = tableOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
+  // On a tree-table tab the tabs are for the position picked; any other row that has the tab on
+  // show (an item on the Measurements tab) keeps them too, so picking a row never takes them away.
+  const tabsRow = tableOn ? (posRow && (posRow.type === "pos" || tabsFor(posRow).some((t) => t.id === tab)) ? posRow : null) : summaryRow;
   const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "cause" && focusRow.type !== "nofail" ? cellRow(focusRow) : null;
   // The FME(C)A tab with a position picked: its criticality matrix beside the table.
@@ -2573,8 +2630,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // picked), so they don't read as tabs for the tree itself.
   const phoneTabs = phone && posRow && tabsFor(posRow).length > 1 && (
     <div className="tp-tabs-wrap">
-      <p className="tp-tabs-for">For <strong>{posRow.ref.name || "(no name)"}</strong></p>
-      <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} className="tp-tabs" wholeTabs />
+      {/* Its name opens its details, as a tap on its row does. */}
+      <p className="tp-tabs-for">For{" "}
+        <button type="button" className="link tp-tabs-for-name" onClick={() => pick(posRow.key, { go: true })}
+                title={`Open ${posRow.ref.name || "this row"}'s details`}>
+          <strong>{posRow.ref.name || "(no name)"}</strong>
+        </button>
+      </p>
+      {EXPLORER_PANEL_TABS
+        ? <HeaderTabs row={posRow} tab={tab} onTab={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} idPrefix="tp" className="tp-tabs" />
+        : <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} className="tp-tabs" wholeTabs />}
     </div>
   );
   // A row picked in the panel (a crumb, a row in "Directly inside").
@@ -2614,7 +2679,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
                     tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={root} structure={structure}
                     menu={tabMenu || []} onMenu={setTabMenu}
-                    actions={summaryActionsOf(data && !nothing ? row : null)} />
+                    actions={summaryActionsOf(data && !nothing ? treeRow : null)} />
       )}
     </section>
   );
@@ -2667,7 +2732,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   } : null;
   const predictLink = seed ? seed.link : panePosition ? predictionOf(panePosition.id) : null;
   const fitAt = panePosition ? fitPreset(seed, paneAt.from, pmodels.links) : null;
-  const paneSide = !panePosition ? null : paneKind === "rbd" ? (
+  const paneSide = !panePosition ? null : paneKind === "rbd" && paneAt.rbd === NEW_RBD ? (
+    <div className="rw tt-side">
+      <NewRbdPane position={panePosition} kids={insideOf(panePosition.id)} phone={phone} headingRef={paneHeading}
+                  onClose={() => closePane()} onCreate={(name, arrangements) => buildRbd(panePosition, null, name, arrangements)} />
+    </div>
+  ) : paneKind === "rbd" ? (
     <div className="rw tt-side">
       <RbdPane key={`${paneAt.rbd}:${seed?.n || 0}`} rbdId={paneAt.rbd} position={panePosition} built={seed?.built || null}
                onRebuild={seed?.start?.rebuild && seed.link && !viewOnly ? () => buildRbd(panePosition, seed.link) : null}
@@ -2822,6 +2892,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onQuery={setQuery}
         chips={chips}
         onChips={setChips}
+        chipCounts={fmeaOn ? fmeaChipCount : null}
+        floor={fmeaOn ? {
+          label: "RPN at least", value: rpnRaw, max: RPN_MAX, count: rpnMin != null ? rpnCount(display, rpnMin) : null,
+          onChange: setRpnRaw,
+        } : null}
         design={designScope}
         mode={mode}
         onMode={onMode}
@@ -2885,9 +2960,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
-        arrangeLocked={measOn ? "Measurements hang under their positions, so the Measurements tab shows the positions tree"
-          : modelsOn ? "Models hang under their positions, so the Modelling tab shows the positions tree"
-          : missionsOn ? "Missions belong to positions, so the Missions tab shows the positions tree"
+        arrangeLocked={measOn ? `Measurements hang under their positions, so ${tabPlace("measurements")} shows the positions tree`
+          : modelsOn ? `Models hang under their positions, so ${tabPlace("models")} shows the positions tree`
+          : missionsOn ? `Missions belong to positions, so ${tabPlace("missions")} shows the positions tree`
           : rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
       {phone && (mergeSide || sheetSide || (paneSide ? null : summary))}
@@ -3080,7 +3155,7 @@ function rollupOf(rcm, positionId, whole = null) {
   const server = (rcm.positions || []).find((p) => p.id === positionId)?.rollup;
   if (server) return server;
   const s = whole?.rows?.get(positionId)?.rsum;
-  return s ? { supported: s.supported || 0, contradicted: s.contradicted || 0, inconclusive: s.unsure || 0, stale: s.stale || 0 } : null;
+  return s ? { supported: s.supported || 0, contradicted: s.contradicted || 0, inconclusive: s.unsure || 0, stale: s.stale || 0, shorter_than_evidence: s.differs || 0 } : null;
 }
 
 // Is the window narrower than NARROW_TABLE (fewer usual columns in the RCM

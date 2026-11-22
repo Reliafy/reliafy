@@ -53,11 +53,22 @@ def test_default_name_drops_the_extension(client):
 
 def test_identical_data_is_reported_as_reused(client):
     first = _upload(client, name="Pumps").json()
-    again = _upload(client, name="Pumps again").json()
+    again = _upload(client, name="Pumps").json()
     assert again["id"] == first["id"] and again["reused"] is True
-    assert again["name"] == "Pumps"  # the existing name stands; the app offers the new one
-    pasted = client.post("/api/datasets/paste", json={"name": "Other", "content": PUMP}).json()
-    assert pasted["id"] == first["id"] and pasted["reused"] is True
+    pasted = client.post("/api/datasets/paste", json={"name": "pumps", "content": PUMP}).json()
+    assert pasted["id"] == first["id"] and pasted["reused"] is True  # the name, case aside
+
+
+def test_the_same_rows_under_a_new_name_are_a_new_dataset_that_says_so(client):
+    """The user's typed name is never dropped for an older dataset's: the
+    same rows saved as "Pumps again" make a dataset of that name, and the
+    answer names the one they already had."""
+    first = _upload(client, name="Pumps").json()
+    again = _upload(client, name="Pumps again").json()
+    assert again["id"] != first["id"] and "reused" not in again
+    assert again["name"] == "Pumps again"
+    assert again["same_rows_as"] == {"id": first["id"], "name": "Pumps"}
+    assert client.get(f"/api/datasets/{first['id']}").json()["name"] == "Pumps"
 
 
 def test_rename(client):

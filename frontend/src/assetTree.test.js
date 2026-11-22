@@ -5,6 +5,7 @@ import {
   ARRANGEMENTS, CHIPS, CHIP_MARK, chipsFor, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, TREE_ROW_MARKERS, pinnedRows, saveTreeState,
   classKey, scopedArrangeQuery, scopedArrangements, statusWords, structuralRow, viaKey, windowOf,
+  riskWord, scheduleFix, summaryStatus,
 } from "./assetTree.js";
 import { scopeHasClasses, scopeTree } from "./products.js";
 import { addressTab } from "./explorerTabs.js";
@@ -48,7 +49,7 @@ test("arranged by positions: natural order, carried positions under their item's
 test("roll-ups: a row's own status plus everything inside it", () => {
   const d = buildDisplay(DATA, "positions");
   const house = d.rows.get("house");
-  assert.deepEqual({ ...house.sum }, { overdue: 3, open_work: 1, alarms: 1, open_reports: 0, next_due: "2026-01-01", positions: 4, empty: 1, not_analysed: 0 });
+  assert.deepEqual({ ...house.sum }, { overdue: 3, open_work: 1, alarms: 1, open_reports: 0, unscheduled: 0, next_due: "2026-01-01", positions: 4, empty: 1, not_analysed: 0 });
   assert.equal(house.own.overdue, 0);
   assert.equal(insideWords(house), "4 positions · 1 empty");
   assert.deepEqual(markersOf(house).map((m) => [m.kind, m.text, m.label]), [
@@ -711,10 +712,12 @@ test("a place by positions: its positions under the way up to them, the way up m
   assert.deepEqual(names(d, d.rows.get(viaKey("vehicles")).kids), ["Bicycle", "Family Car"]);
   assert.deepEqual(names(d, d.rows.get("pool").kids), ["Pool pump", "Lights"]);
   assert.deepEqual(d.rows.get(viaKey("lights")).kids, ["light"]);
-  // Every position once, keyed by its own id; the ancestors are never position rows.
+  // Every position once, keyed by its own id; the ancestors are never position rows in the tree,
+  // and are keyed by their own ids too (a link to one, ?sel=house, finds it).
   assert.equal([...d.rows.values()].filter((r) => r.type === "pos").length, PLACE.positions.length);
   assert.equal(d.positions, PLACE.positions.length);
-  assert.equal(d.rows.has("house"), false);
+  assert.equal(viaKey("house"), "house");
+  assert.equal(house.ref.id, "house");
   assert.equal(d.rows.get(viaKey("house")).depth, 0);
   assert.equal(d.rows.get("ac").depth, 2);
   // Roll-ups count the positions inside it, nothing of its own.
@@ -726,13 +729,63 @@ test("a place by positions: its positions under the way up to them, the way up m
 
 test("a place by locations or classes leaves the way up out", () => {
   const byLoc = buildDisplay(PLACE, "locations");
-  assert.equal([...byLoc.rows.keys()].some((k) => k.startsWith("via:")), false);
+  assert.equal([...byLoc.rows.values()].some((r) => r.ref?.via === true), false);
   assert.deepEqual(byLoc.rows.get("garage").kids, ["bike", "car"]);
   const byCls = buildDisplay({ ...PLACE, classes: [] }, "classes");
-  assert.equal([...byCls.rows.keys()].some((k) => k.startsWith("via:")), false);
+  assert.equal([...byCls.rows.values()].some((r) => r.ref?.via === true), false);
 });
 
 test("a via with no ancestor sent (another asset's parent): the position stays a top", () => {
   const d = buildDisplay({ positions: [{ id: "g", name: "Gauge", parent_id: null, via: "pump" }], ancestors: [] }, "positions");
   assert.deepEqual(d.roots, ["g"]);
+});
+
+// Before Nov 2026 the Summary badge said a green "Nothing
+// overdue…" beside a 66% risk in 90 days, and beside tasks that can't be scheduled.
+const pump = (status = {}) => buildDisplay({ positions: [{ id: "p101", name: "Pump 1", parent_id: null, status }],
+  locations: [] }, "positions").rows.get("p101");
+const READ = (risk) => ({ model: { id: "m1" }, horizons: { labels: ["30 days", "90 days", "365 days"] },
+  member: { scored: true, risk } });
+
+test("the badge goes amber on risk now, at the Condition monitoring tab's own high and medium", () => {
+  assert.deepEqual(riskWord(READ([0.3, 0.66, 0.9])), { kind: "risk", level: "high", text: "High risk: 66% in 90 days" });
+  assert.equal(riskWord(READ([0.02, 0.15, 0.4])).text, "Medium risk: 15% in 90 days");
+  assert.equal(riskWord(READ([0.01, 0.05, 0.2])), null);
+  // Not scored, or no model: nothing to say.
+  assert.equal(riskWord({ model: null, member: null }), null);
+  assert.equal(riskWord({ model: { id: "m" }, member: { scored: false } }), null);
+  const st = summaryStatus(pump(), { risk: READ([0.3, 0.66, 0.9]), riskAsked: true });
+  assert.deepEqual(st.words.map((w) => [w.kind, w.text]), [["risk", "High risk: 66% in 90 days"]]);
+  assert.equal(st.clear, false);
+});
+
+test("the badge counts tasks that can't be scheduled, with what would fix them", () => {
+  const tasks = [
+    ...Array.from({ length: 5 }, (_, i) => ({ id: `t${i}`, next_due: null, limits: [{ next_due: null, note: "needs a hours counter on the position" }] })),
+    { id: "t9", next_due: "2026-12-01", limits: [{ next_due: "2026-12-01" }] },
+  ];
+  assert.equal(scheduleFix(tasks), "add an hours counter");
+  assert.equal(scheduleFix([{ limits: [{ note: "needs counter readings" }] }]), "record its counter readings");
+  assert.equal(scheduleFix([{ limits: [{ note: "needs a km counter on the position" }] }]), "add a km counter");
+  // Two different fixes: no one fix to name.
+  assert.equal(scheduleFix([{ limits: [{ note: "needs counter readings" }] }, { limits: [{ note: "needs a km counter" }] }]), null);
+  const st = summaryStatus(pump({ unscheduled: 5 }), { risk: null, riskAsked: false, tasks });
+  assert.deepEqual(st.words.map((w) => [w.kind, w.text]), [["unscheduled", "5 tasks can't be scheduled yet: add an hours counter"]]);
+  assert.equal(st.clear, false);
+  // Inside a parent, counted as inside.
+  const d = buildDisplay({ positions: [{ id: "a", name: "A", parent_id: null }, { id: "b", name: "B", parent_id: "a", status: { unscheduled: 2 } }],
+    locations: [] }, "positions");
+  assert.deepEqual(statusWords(d.rows.get("a")).map((w) => w.text), ["2 tasks inside can't be scheduled yet"]);
+});
+
+test("the green 'nothing overdue' shows only once the risk has answered and nothing applies", () => {
+  assert.equal(summaryStatus(pump(), { risk: undefined, riskAsked: true }).clear, false);
+  const failed = summaryStatus(pump(), { risk: null, riskAsked: true });
+  assert.equal(failed.clear, false);
+  assert.equal(failed.failed, true);
+  assert.equal(summaryStatus(pump(), { risk: READ([0.01, 0.02, 0.05]), riskAsked: true }).clear, true);
+  assert.equal(summaryStatus(pump(), { risk: { model: null, member: null }, riskAsked: true }).clear, true);
+  // A row whose risk isn't asked for (a location): as before.
+  assert.equal(summaryStatus(pump(), {}).clear, true);
+  assert.equal(summaryStatus(pump({ overdue: 1 }), {}).clear, false);
 });

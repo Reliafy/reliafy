@@ -4,12 +4,19 @@ import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Chip from "./ui/Chip.jsx";
 import ModelNextSteps, { ReplacementLink } from "./ModelNextSteps.jsx";
 import { openGuide } from "./HelpButton.jsx";
+import { paramMeaning } from "../paramMeaning.js";
 import { formatNumber } from "../format.js";
 import { bestFitSentence, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
 import { PARAMS, extraParamView, paramLabel } from "../paramLabels.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import { ciPct } from "../levels.js";
+import { useFriendlyUnit } from "./FriendlyUnit.jsx";
+import { friendlyText } from "../friendlyTime.js";
+import CsvButton from "./CsvButton.jsx";
+import { csvFileName } from "../csv.js";
+import { paramsCsvRows } from "../modelCsv.js";
+import { intervalLevel } from "../modelFrame.js";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
@@ -60,15 +67,28 @@ const HOW_CI = "90% intervals (two-sided). A positive parameter's interval is ta
 // What the fit says, as a short title and one line: the failure pattern when
 // the shape says one (Weibull, exponential), otherwise the median life.
 // ``label`` and ``short`` are the panel row that opens it ("Failure pattern ·
-// Wear-out", "Median life · 1,240 hours").
-export function verdict(result) {
-  const v = verdictText(result);
+// Wear-out", "Median life · 1,240 hours"). ``friendly`` (friendlyTime.js):
+// a calendar unit to show the life in as well ("9,730 days (≈ 26.6 years)").
+export function verdict(result, friendly = null) {
+  const v = verdictText(result, friendly);
   if (!v) return null;
   return { label: "Failure pattern", short: v.title, ...v };
 }
 
-function verdictText(result) {
+// The headline life of a fit, in its own unit: the median (B50), or for an
+// exponential the mean.
+export function headlineLife(result) {
+  const rate = (result.params || []).find((p) => p.name === "failure_rate")?.value;
+  if (distId(result) === "exponential" && rate) return 1 / rate;
+  return result.life?.b_lives?.find((b) => b.label === "B50")?.value ?? lifeFromCurve(result, 0.5);
+}
+
+function verdictText(result, friendly) {
   const id = distId(result);
+  const also = (v) => {
+    const t = friendlyText(v, result.unit, friendly);
+    return t ? ` (${t})` : "";
+  };
   const unit = result.unit ? ` ${unitInText(result.unit)}` : "";
   const byName = Object.fromEntries((result.params || []).map((p) => [p.name, p]));
   if (id === "weibull" && byName.beta) {
@@ -98,7 +118,7 @@ function verdictText(result) {
   if (id === "exponential" && byName.failure_rate) {
     return {
       title: "Random failures",
-      text: <>A constant failure rate: mean life <b>{formatNumber(1 / byName.failure_rate.value)}{unit}</b>.</>,
+      text: <>A constant failure rate: mean life <b>{formatNumber(1 / byName.failure_rate.value)}{unit}{also(1 / byName.failure_rate.value)}</b>.</>,
     };
   }
   // B50 from the fit when it carries its B-lives (#288); else off the curve.
@@ -106,14 +126,14 @@ function verdictText(result) {
   if (median != null && id === "lognormal") {
     // μ and σ are on log time (#292): say what they mean in time.
     return {
-      title: "Median life", label: "Median life", short: `${formatNumber(median)}${unit}`,
-      text: <><b>{formatNumber(median)}{unit}</b> (e<sup>μ</sup>): half have failed by then. μ and σ are the
+      title: "Median life", label: "Median life", short: `${formatNumber(median)}${unit}${also(median)}`,
+      text: <><b>{formatNumber(median)}{unit}{also(median)}</b> (e<sup>μ</sup>): half have failed by then. μ and σ are the
         mean and spread of log(time), not of time.</>,
     };
   }
   if (median != null) {
-    return { title: "Median life", label: "Median life", short: `${formatNumber(median)}${unit}`,
-             text: <><b>{formatNumber(median)}{unit}</b>: half have failed by then.</> };
+    return { title: "Median life", label: "Median life", short: `${formatNumber(median)}${unit}${also(median)}`,
+             text: <><b>{formatNumber(median)}{unit}{also(median)}</b>: half have failed by then.</> };
   }
   return null;
 }
@@ -226,9 +246,10 @@ function CompareDistributions({ result, compare, onPick }) {
 // Fit statistics row instead of a dialog; ``showUse`` false leaves "Use this
 // model" to the page's header.
 export default function LifeAside({ result, split = null, bestFit = false, compare = null, onPick = null,
-                                   modelId = null, onUse = null, onStats = null, showUse = true }) {
+                                   modelId = null, onUse = null, onStats = null, showUse = true, name = "" }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const [readingOpen, setReadingOpen] = useState(false);
+  const [meaningOpen, setMeaningOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
   const id = distId(result);
   // Shape before scale: the reading turns on the shape.
@@ -237,7 +258,10 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
     order ? order.indexOf(a.name) - order.indexOf(b.name) : 0
   );
   const data = dataText(result, split);
-  const reading = verdict(result);
+  // "What do these mean?": each parameter in plain words, read for this fit (paramMeaning.js).
+  const meanings = params.map((p) => paramMeaning(id, p.name, p.value, result.unit)).filter(Boolean);
+  const friendly = useFriendlyUnit(result.unit, headlineLife(result));
+  const reading = verdict(result, friendly);
   // Maximum likelihood goes without saying; another method is named.
   // A Bayesian update says so above its parameters already.
   const method = result.options?.how && result.options.how !== "MLE" && result.method !== "bayesian_update" ? result.options.how : null;
@@ -258,10 +282,35 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
         ) : (
           <div className="gofh life-card-head">
             <span>Parameters</span>
-            {/* #292: the guide to reading a fit, in the help drawer. */}
-            <button type="button" className="link life-help" onClick={() => openGuide("fit-your-first-model")}>
-              What do these mean?
-            </button>
+            <span className="life-head-actions">
+              {/* #292: the guide to reading a fit, in the help drawer. */}
+              <button type="button" className="link life-help" aria-expanded={meanings.length ? meaningOpen : undefined}
+                      onClick={() => (meanings.length ? setMeaningOpen((o) => !o) : openGuide("fit-your-first-model"))}>
+                {meaningOpen ? "Hide what these mean" : "What do these mean?"}
+              </button>
+              {params.length > 0 && (
+                <CsvButton what="the parameters" filename={csvFileName(name || result.distribution, "parameters")}
+                           rows={() => paramsCsvRows({
+                             params: [
+                               ...params.map((p) => ({ ...p, label: paramView(result, p).label })),
+                               ...(result.extra_params || []).map((p) => ({
+                                 ...p, label: extraParamView(p.name, p.value, result.unit, formatNumber).label,
+                               })),
+                             ],
+                             ciLabel: intervalLevel(result).label,
+                           })} />
+              )}
+            </span>
+          </div>
+        )}
+        {meaningOpen && meanings.length > 0 && (
+          <div className="life-meanings">
+            <dl>
+              {meanings.map((m) => (
+                <div key={m.name}><dt>{m.name}</dt><dd>{m.text}</dd></div>
+              ))}
+            </dl>
+            <button type="button" className="link" onClick={() => openGuide("fit-your-first-model")}>Read the guide to reading a fit</button>
           </div>
         )}
         {result.method === "bayesian_update" && result.bayes?.label && (

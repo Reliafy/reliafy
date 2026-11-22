@@ -289,7 +289,7 @@ export function TreeCanvas({ result, name, active }) {
           id: n.key, type: "event", position: { x, y },
           data: {
             event: n.event,
-            tip: `${fullLabel(n.event)}\nP = ${fmtP(n.event.probability)} · criticality ${fmtPct(imp.criticality)} · Birnbaum ${fmtX(imp.birnbaum)}`,
+            tip: `${fullLabel(n.event)}\nP = ${fmtP(n.event.probability)} · criticality ${formatPercent(imp.criticality)} · Birnbaum ${fmtX(imp.birnbaum)}`,
           },
         });
       } else {
@@ -508,7 +508,7 @@ function CommonCause({ result }) {
 }
 
 const IMP_COLS = [
-  { key: "criticality", label: "Criticality", fmt: fmtPct,
+  { key: "criticality", label: "Criticality", fmt: formatPercent,
     help: "Share of the top event this event accounts for: Birnbaum × P(event) ÷ P(top)." },
   { key: "birnbaum", label: "Birnbaum", fmt: fmtX,
     help: "How much the top event probability rises per unit rise in this event's probability." },
@@ -572,12 +572,16 @@ export function ImportanceTable({ result }) {
   );
 }
 
-export default function RbdFaultTree({ graph, validation, stale, active, name, onBuild }) {
+// `calcTime`: the Calculator's "Evaluate at t" (null until it has one). With nothing typed here the
+// tree is worked out at that time, the one the user is working at; with neither, at the design point
+// (system reliability about 90%), and it says so.
+export default function RbdFaultTree({ graph, validation, stale, active, name, onBuild, calcTime = null }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | loading | error
   const [error, setError] = useState(null);
-  const [tInput, setTInput] = useState(""); // blank = the calculator's importance time
+  const [tInput, setTInput] = useState(""); // blank = the Calculator's time (else the design point)
   const [fetchedSig, setFetchedSig] = useState(null);
+  const [fetchedT, setFetchedT] = useState(undefined);
 
   // Nothing to draw yet (#271): an empty state, and no request.
   const gap = useMemo(() => diagramGap(graph), [graph]);
@@ -592,11 +596,15 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
     [graph]
   );
 
+  // The time a blank box stands for: the Calculator's, else none (the server's design point).
+  const fallbackT = !graph.repairable && calcTime != null && calcTime > 0 ? calcTime : null;
   const load = async (t) => {
     setPhase("loading");
     setError(null);
+    const at = t === "" || t == null ? fallbackT : Number(t);
+    setFetchedT(t === "" || t == null ? fallbackT : undefined);
     try {
-      const res = await rbdFaultTree(graph, t === "" || t == null ? null : Number(t));
+      const res = await rbdFaultTree(graph, at);
       setResult(res);
       setFetchedSig(sig);
       setPhase("idle");
@@ -609,10 +617,12 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
   };
 
   // Build the tree when the tab is shown and the diagram has changed since.
+  // With nothing typed here, the Calculator's time moving (or arriving) moves the tree with it.
   useEffect(() => {
-    if (active && canCalculate && fetchedSig !== sig && phase !== "loading") load(tInput);
+    const moved = tInput === "" && fetchedT !== undefined && fetchedT !== fallbackT;
+    if (active && canCalculate && (fetchedSig !== sig || moved) && phase !== "loading") load(tInput);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, canCalculate, sig, phase]);
+  }, [active, canCalculate, sig, phase, fallbackT]);
 
   const availability = result?.kind === "availability";
   const tDirty = result && !availability && tInput !== "" && Number(tInput) !== result.t;
@@ -645,7 +655,7 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
                   type="number" inputMode="decimal"
                   min="0"
                   step="any"
-                  placeholder={result?.t_default != null ? timeText(result.t_default) : "auto"}
+                  placeholder={fallbackT != null ? timeText(fallbackT) : result?.t_default != null ? timeText(result.t_default) : "auto"}
                   value={tInput}
                   onChange={(e) => setTInput(e.target.value)}
                 />
@@ -661,7 +671,7 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
                     setTInput("");
                     load("");
                   }}
-                  title="Evaluate at the calculator's design point again"
+                  title={fallbackT != null ? "Evaluate at the Calculator's time again" : "Evaluate at the design point again"}
                 >
                   Reset
                 </button>
@@ -703,8 +713,10 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
             {result.n_events === 1 ? "" : "s"}
             {availability
               ? ", each a block's long-run unavailability"
+              : fallbackT != null && result.t === fallbackT
+              ? ", at the Calculator's time"
               : result.t === result.t_default
-              ? ", at the calculator's design point (system reliability about 90%)"
+              ? ", at the design point (system reliability about 90%): set a time in the Calculator, or type one here"
               : ""}
             .
             <span

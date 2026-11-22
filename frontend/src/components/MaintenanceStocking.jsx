@@ -9,6 +9,7 @@ import SparesWhatIf from "./SparesWhatIf.jsx";
 import { formatNumber } from "../format.js";
 import { money, periodLabels } from "../maintenanceForecast.js";
 import { SERVICE_LEVELS, levelText, overText, riskText, saveText, stockingCsv, windowText } from "../sparesPlan.js";
+import { orderLines, splitText } from "../sparesYear.js";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const num = (v) => (blank(v) ? null : Number(v));
@@ -91,13 +92,14 @@ export function ClassStocking({ data, name, serviceLevel, reviewDays, onOptions,
       </div>
       {meta.error ? <div className="card error">{meta.error}</div> : (
         <div className="maint-scroll"><table className="lib-table">
-          <thead><tr><th>Part</th><th>Hold</th><th>Reorder at</th><th>Usable now</th><th>Chance it runs out</th><th>Covers</th><th /></tr></thead>
+          <thead><tr><th>Part</th><th>Hold</th><th>Reorder at</th><th>Usable now</th><th>Chance it runs out</th><th>Order</th><th>Covers</th><th /></tr></thead>
           <tbody>
             {rows.map((s) => {
               const st = s.stocking;
               return (
                 <tr key={s.part.id} title={st.summary}>
-                  <td>{s.part.part_number} {s.part.name}</td>
+                  <td>{s.part.part_number} {s.part.name}
+                    {s.planned_expected > 0 && <div className="lib-date">{splitText({ mean: s.expected, failures: s.failures_expected, planned: s.planned_expected })} over the forecast</div>}</td>
                   <td><b>{formatNumber(st.hold)}</b>
                     {st.hold_cost != null && <span className="lib-date"> ({money(st.hold_cost)})</span>}</td>
                   <td>{st.reorder_at == null ? <span className="lib-date">repair each</span>
@@ -106,6 +108,7 @@ export function ClassStocking({ data, name, serviceLevel, reviewDays, onOptions,
                     {st.below_reorder && <span className="maint-overdue"> {st.repairable ? "short" : "reorder now"}</span>}</td>
                   <td className={st.risk_at_stock > 1 - st.service_level + 1e-9 ? "maint-overdue" : undefined}>
                     {riskText(st.risk_at_stock)}</td>
+                  <td>{orderLines(st).length ? orderLines(st).map((l) => <div key={l}>{l}</div>) : <span className="lib-date">—</span>}</td>
                   <td className="lib-date">{windowText(st)} at {levelText(st.service_level)}</td>
                   <td><button className="secondary sm" onClick={() => setEditing(s)}
                               aria-label={`Stock levels for ${s.part.part_number}`}>Set</button></td>

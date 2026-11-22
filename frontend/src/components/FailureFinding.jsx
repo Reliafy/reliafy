@@ -8,6 +8,8 @@ import { failureFindingMissing, strategyUnit } from "../strategyTools.js";
 import { failureFinding } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
 import PercentField from "./PercentField.jsx";
+import Field from "./ui/Field.jsx";
+import ChoiceChips from "./ui/ChoiceChips.jsx";
 import StrategyUnit from "./StrategyUnit.jsx";
 import { readPercents } from "../percentForms.js";
 import { percentApiMessage } from "../percent.js";
@@ -74,7 +76,8 @@ export default function FailureFinding({ modelId = null, target = null, extraInp
       const body = { ...current, ...savedInputs(model) };
       const res = await failureFinding(
         body.distribution_id, body.params, body.target_availability, body.unit, body.extras,
-        { test_duration: body.test_duration, test_cost: body.test_cost, renewed_at_test: body.renewed_at_test },
+        { test_duration: body.test_duration, test_cost: body.test_cost, renewed_at_test: body.renewed_at_test,
+          position_id: extraInputs?.position_id },
       );
       setResult(res);
       setInputs(body);
@@ -102,7 +105,7 @@ export default function FailureFinding({ modelId = null, target = null, extraInp
           <StrategyUnit model={model} unit={unit} onUnit={setUnit} />
           <label className="calc-t">
             <span>Each test takes{u ? ` (${u})` : ""}</span>
-            <input type="number" inputMode="decimal" min="0" step="any" value={duration} placeholder="no time"
+            <input type="number" inputMode="decimal" min="0" step="any" value={duration} placeholder="0 (on-line test)"
                    onChange={(e) => setDuration(e.target.value)} />
           </label>
           <label className="calc-t">
@@ -110,10 +113,16 @@ export default function FailureFinding({ modelId = null, target = null, extraInp
             <input type="number" inputMode="decimal" min="0" step="any" value={testCost} placeholder="optional"
                    onChange={(e) => setTestCost(e.target.value)} />
           </label>
-          <label className="calc-check">
-            <input type="checkbox" checked={renewed} onChange={(e) => setRenewed(e.target.checked)} />
-            <span>Each test renews the device (overhauled or replaced)</span>
-          </label>
+          {/* Asked, not a pre-ticked box: the answer can move by a factor of 3 (both are shown with the result). */}
+          <Field label="Does a test overhaul or replace the device?"
+                 help="Changes the interval; the result shows the answer both ways.">
+            <ChoiceChips label="Does a test overhaul or replace the device?" value={renewed ? "yes" : "no"}
+                         onChange={(v) => v && setRenewed(v === "yes")}
+                         options={[
+                           { value: "yes", label: "Yes, renewed at each test" },
+                           { value: "no", label: "No, a working device is left as it was" },
+                         ]} />
+          </Field>
           <button onClick={run} disabled={!canRun || loading}
                   aria-describedby={missing ? "ffi-why" : undefined}>
             {loading ? "Computing…" : "Compute"}
@@ -124,6 +133,9 @@ export default function FailureFinding({ modelId = null, target = null, extraInp
 
       {error && <div className="error">{error}</div>}
 
+      {result?.calendar && (
+        <p className="hint" data-testid="ffi-calendar">On the calendar: {result.calendar.note.replace(/\.$/, "")}.</p>
+      )}
       {result && (
         <FfiResult
           result={result}

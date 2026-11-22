@@ -432,7 +432,9 @@ def test_no_places_means_no_assets_and_every_position_is_not_placed(m):
     pid = m.create_position("Pump")["id"]
     assert m.places() == {"places": [], "horizon_days": 30, "not_placed": {
         "positions": 1, "items": 0, "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None,
+        "late": {"work_orders_late": 0, "tasks_overdue_without_work_order": 0},
         "position_ids": [pid],
         # With no location it's an asset all the same: the top of its own tree.
         "roots": [{"id": pid, "name": "Pump", "tag": "", "description": "", "positions": 1, "items": 0,
-                   "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None}]}}
+                   "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None,
+                   "late": {"work_orders_late": 0, "tasks_overdue_without_work_order": 0}}]}}

@@ -411,7 +411,8 @@ def calendar_request(inputs: dict) -> dict:
 
 
 _CALENDAR_KEYS = ("distribution_id", "params", "extras", "unit", "today", "opportunities", "failure_cost",
-                  "anytime_cost", "max_age", "method", "mc_samples", "seed", "horizon_months")
+                  "anytime_cost", "max_age", "method", "mc_samples", "seed", "horizon_months", "hours_per_day",
+                  "clock")
 
 
 def run_calendar(request: dict) -> dict:

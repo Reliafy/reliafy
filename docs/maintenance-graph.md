@@ -1161,7 +1161,7 @@ visits is a layer on it (checked with the same rule as a layer being made); one
 that doesn't (monthly on a fortnightly package) is a top of its own. A layer's
 create names its top as `parent_id: "@<ref>"`, so the drafts run as one
 `maintenance apply`, or through the app's `create_packages` (all or nothing,
-rehearsed first on a scratch copy of the graph). The Explorer's LSA tab
+rehearsed first on a scratch copy of the graph). The Explorer's Maintenance › What it needs
 uses both, and `packages(position_id | location_id)` for its list.
 
 Not built yet: tolerance in hours, packages by use, shutdown packages, review
@@ -1196,12 +1196,33 @@ how. Each task carries its LSA record: what doing it needs.
 - **Rollups.** `Maintenance.lsa_rollup(tasks)` adds a set up: labour hours by
   trade (a line with no trade takes its task's), tools once each (the most any
   task needs), spares and consumables summed, permits. A package's read and
-  each row of `packages()` carry it as `rollup`; the Explorer's LSA tab shows it
+  each row of `packages()` carry it as `rollup`; the Explorer's Maintenance › What it needs shows it
   for the tasks ticked, and a position's Summary gives annual labour (hours ×
   365.25 ÷ the interval in days; tasks raised by an event or by use are left
   out and counted).
 - **Copies.** Copying a position copies its tasks' records, less the tools'
   `point_id` (the copy has no points yet).
+
+## Stock counts and spares for the year
+
+- **A dated count.** `stock.counted {part_id, location_id, counted, delta, on,
+  by, reason, was}` records what was on the shelf on the day it was counted.
+  The service works out `delta` (the count less what the system held that
+  day, so anything received or issued after the count still stands) and the
+  projector applies it like `stock.adjusted`, keeping the latest count on the
+  stock node as `counted {on, quantity, by}`. A part read carries each store's
+  `counted` and the part's `counted_on` (the oldest store's last count; none
+  while a store holding it was never counted) and `counted_days_ago`.
+  `Maintenance.count_stock_sheet` takes a whole sheet, all rows checked first.
+- **Spares for the year** (`backend/maintenance/spares_year.py`, engine in
+  `backend/services/spares_year.py`): one row per part a failure or a task
+  uses in a scope (a position and what's inside it, a location, a class, a
+  product's items or a planned fleet, the workspace). Demand is the failures
+  (a renewal simulation from each item's age) plus the planned jobs falling
+  due (package visits, a shutdown's `older_than` deciding each job on the
+  item's age then; other tasks on RePyability's due dates), and a
+  fixed-interval task renews the item. Reads only; nothing is stored. The
+  class forecast's spares and its headline failures come from the same runs.
 
 ## A task's cost each time
 
@@ -1260,7 +1281,7 @@ work order (the seasonal change-over) and the history should say so.
   and whether a value was taken at it. `readings_taken` lists what was;
   `readings_by_task` counts them per task ("Readings: 2 of 3 recorded").
 
-## Life models on positions (the Modelling tab)
+## Life models on positions (the Models tab's Life models)
 
 A position (a functional location, or a position of a product's design) can
 carry the life models that describe it: a Weibull fitted to its own history,

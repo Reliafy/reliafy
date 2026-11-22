@@ -90,6 +90,16 @@ export function lifeBoundText(interval, level) {
   return null;
 }
 
+// Is the importance table at a different time from the one in "Evaluate at
+// t"? Compared at the four figures both are shown to, so a time typed as
+// shown never counts as different.
+export function importanceOutOfDate(impTime, evalT) {
+  const a = Number(impTime);
+  const b = Number(evalT);
+  if (impTime == null || evalT == null || evalT === "" || !Number.isFinite(a) || !Number.isFinite(b) || b <= 0) return false;
+  return Number(a.toPrecision(4)) !== Number(b.toPrecision(4));
+}
+
 // The importance table's heading: the time it's at, and why that time —
 // the "Evaluate at t" asked for, or (none typed) where the system
 // reliability falls to 90%.

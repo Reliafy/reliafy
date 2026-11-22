@@ -17,7 +17,7 @@ import surpyval
 from backend import recurrent as recurrent_fit
 from backend.services import access
 from backend.db import from_doc, to_doc
-from backend.fitting import FitError
+from backend.fitting import FitError, stamp_unit
 from backend.schema import RecurrentModelDoc
 from backend.units import canonical_unit
 from backend.services import datasets as datasets_service
@@ -126,7 +126,12 @@ def list_models(db, owner_id, hidden=frozenset(), shared=frozenset()) -> list[Re
 
 
 def get_model(db, model_id: str, owner_id=None) -> RecurrentModelDoc | None:
-    query = {"_id": model_id}
+    """Fetch a repairable model by id. Ids are strings; anything else (a dict from a JSON
+    body, say) matches nothing."""
+    if not isinstance(model_id, str) or not model_id:
+        return None
+    # ``$eq`` keeps the id a value to match, never an operator.
+    query = {"_id": {"$eq": model_id}}
     if owner_id is not None:
         query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(RecurrentModelDoc, db.recurrent_models.find_one(query))
@@ -190,10 +195,22 @@ def get_live_model(db, model_id: str, owner_id):
             try:
                 cid = recurrent_fit.restore_live(doc.serialized)
                 _remember_live(doc.id, cid)
-                return recurrent_fit.get_live(cid)
+                live = recurrent_fit.get_live(cid)
             except Exception:  # noqa: BLE001 - fall back to a fresh fit
+                live = None
+        if live is not None and getattr(live, "data", None) is None and not (doc.spec or {}).get("params_only"):
+            # A restored model carries its parameters, not its systems' histories: "From now
+            # on", the record's average rate and a fleet forecast of its own systems all start
+            # from those, so a model fitted to data is re-fitted to have them. Its dataset
+            # gone: the restored model, as before.
+            try:
+                live = _refit(db, doc)
+            except ModelNotFound:
                 pass
-        live = _refit(db, doc)
+        if live is None:
+            live = _refit(db, doc)
+        # The unit is the model's own; one saved before it went into SurPyval takes the saved unit (in memory).
+        stamp_unit(live, (doc.results or {}).get("unit") or (doc.spec or {}).get("unit"))
     return live
 
 

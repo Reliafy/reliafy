@@ -82,6 +82,44 @@ def list_rbds(db, owner_id: str | list[str], hidden=frozenset(), shared=frozense
     ]
 
 
+#: How a block built by "Build from what's inside" before blocks were marked names its sub-diagram.
+_BUILT_SUB_SOURCE = "Its own RBD, built from"
+
+
+def list_parents(rows: list[Rbd]) -> dict[str, str]:
+    """For the RBD list: diagram id -> the diagram it's listed under, among ``rows``.
+
+    A sub-diagram Build from what's inside made for a sub-assembly (its block marked
+    ``sub_diagram``, or, built before that, said so in its ``model_source``) goes under the diagram
+    whose block it is; a mission's own RBD copied from a position's diagram (``mission_of.from_rbd``)
+    under that one. Diagrams linked as blocks by hand stay top-level. Never a loop."""
+    from backend.services import rbd_missions
+
+    ids = {r.id for r in rows}
+    parent: dict[str, str] = {}
+    for r in rows:
+        for n in (r.graph or {}).get("nodes") or []:
+            data = (n.get("data") if isinstance(n, dict) else None) or {}
+            ref = data.get("rbd") if isinstance(data.get("rbd"), dict) else {}
+            sub = str(ref.get("id") or "")
+            built = data.get("sub_diagram") is True or str(data.get("model_source") or "").startswith(_BUILT_SUB_SOURCE)
+            if sub and built and sub in ids and sub != r.id:
+                parent.setdefault(sub, r.id)
+        owner = rbd_missions.mission_of(r.graph or {}) or {}
+        src = owner.get("from_rbd")
+        if src and src in ids and src != r.id:
+            parent.setdefault(r.id, src)
+    looped = set()  # a loop (A under B under A) leaves every diagram in it at the top
+    for rid in parent:
+        seen, at = [rid], parent.get(rid)
+        while at is not None and at not in seen:
+            seen.append(at)
+            at = parent.get(at)
+        if at is not None:
+            looped.update(seen[seen.index(at):])
+    return {k: v for k, v in parent.items() if k not in looped}
+
+
 def get_rbd(db, rbd_id: str, owner_id: str | list[str]) -> Rbd | None:
     """Fetch an RBD by id. Shared sample RBDs are visible to every owner."""
     return from_doc(
@@ -348,10 +386,22 @@ def validate_graph(db, graph: dict, owner_id: str) -> dict:
     from backend.services import rbd_network, rbd_phases
 
     if rbd_network.is_network(graph):
-        return rbd_network.validate(graph, resolve_subsystem=resolve_subsystem)
+        return _with_placeholders(rbd_network.validate(graph, resolve_subsystem=resolve_subsystem), graph,
+                                  resolve_subsystem)
     out = rbd_analysis.validate_graph(graph, resolve_subsystem=resolve_subsystem)
     extra = rbd_phases.validation_warnings(graph)
-    return {**out, "warnings": [*(out.get("warnings") or []), *extra]} if extra else out
+    out = {**out, "warnings": [*(out.get("warnings") or []), *extra]} if extra else out
+    return _with_placeholders(out, graph, resolve_subsystem)
+
+
+def _with_placeholders(check: dict, graph: dict, resolve_subsystem) -> dict:
+    """A check plus ``placeholder_blocks`` (rbd_placeholders.summary: the basic blocks, at any
+    depth, that are placeholders) where there are any, so the Calculator counts the blocks inside
+    sub-systems too."""
+    from backend.services import rbd_placeholders
+
+    held = rbd_placeholders.summary(rbd_placeholders.tally(graph, resolve_subsystem))
+    return {**check, "placeholder_blocks": held} if held else check
 
 
 def with_series_hints(check: dict, graph: dict) -> dict:

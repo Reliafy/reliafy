@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, markersOf, rowText } from "./assetTree.js";
 import { positionOf } from "./explorerRcm.js";
 import {
-  MODEL_CHIPS, rangeBound, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
+  MODEL_CHIPS, rangeBound, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, forText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
   isLifeModelLink, lifeModelOf, builtRbdLink,
   opensInPane, enteredParams, enteredStart, exponentialLabel, implausibleExponential,
@@ -313,4 +313,26 @@ test("Strategy is optional: a model row has a Strategy item only once one is sav
   // The Stale chip never picks it.
   const f = computeFilter(g, { query: "", chips: ["stale"] });
   assert.ok(!f.match.has("S:a"));
+});
+
+test("an RBD row counts its placeholders through every sub-system; a parts count says what it leaves out", () => {
+  assert.equal(countsText({ counts: { blocks: 6, placeholders: 27, basic_blocks: 27, nested: true } }),
+    "6 blocks; 27 of 27 basic blocks are placeholders");
+  assert.equal(countsText({ counts: { blocks: 2, placeholders: 1, basic_blocks: 2, nested: false } }), "2 blocks, 1 placeholder");
+  const pred = { kind: "Prediction (parts count)", numbers: [{ id: "mtbf", value: 5768.2, text: "5,770 hours" }],
+    covers: { short: "electronics only: 3 lines left out", words: "Electronics only: 3 lines left out (Airframe kit; Battery pack; Propeller ×4)" } };
+  assert.equal(headline(pred), "MTBF 5,770 hours · electronics only: 3 lines left out");
+  assert.equal(forText({ model: pred }), "the failures of what it counted. Electronics only: 3 lines left out (Airframe kit; Battery pack; Propeller ×4)");
+  assert.equal(forText({ model: { numbers: [] } }), "All failures of this position");
+});
+
+test("enteredOfModel: only a model saved from parameters can have them edited on its page", async () => {
+  const { enteredOfModel } = await import("./explorerModels.js");
+  const typed = { id: "m", kind: "distribution", dataset_id: "", distribution_id: "weibull",
+    spec: { params_only: true, unit: "Hours" }, results: { params: [{ name: "alpha", value: 30000 }, { name: "beta", value: 1.5 }] } };
+  assert.deepEqual(enteredOfModel(typed), { distribution: "weibull", unit: "Hours", params: { alpha: 30000, beta: 1.5 } });
+  assert.equal(enteredOfModel({ ...typed, dataset_id: "d1" }), null);
+  assert.equal(enteredOfModel({ ...typed, read_only: true }), null);
+  assert.equal(enteredOfModel({ ...typed, spec: { ...typed.spec, per_demand: true } }), null);
+  assert.equal(enteredOfModel({ ...typed, distribution_id: "loglogistic" }), null);
 });

@@ -5,6 +5,7 @@
 // dialog's rules and the request it sends; the arithmetic is the server's (fit_life.py).
 
 import { baselineOf } from "./bayesUpdate.js";
+import { formatNumber } from "./format.js";
 
 export const DATA_CHOICES = [
   { value: "position", label: "This position's history" },
@@ -186,11 +187,34 @@ export function libraryPriorWords(distribution, record = null) {
     return `A snapshot of a saved ${record.family || ""} model: the fit is in its family and unit, each parameter about its value`
       + (bounded ? ", between the record's bounds." : ", within about 30% (the record has no bounds).");
   }
+  const lead = rateWords(record);
   if (distribution === "weibull" || distribution === "lognormal") {
-    return "The record gives a failure rate: for this distribution it's a prior on the mean life (one over the rate), "
-      + `with the ${distribution === "weibull" ? "shape" : "spread"} between the bounds below (0.5 to 5 if left empty).`;
+    return `${lead}The record gives a failure rate: for this distribution it's a prior on the mean life (one over the rate), `
+      + `with the ${distribution === "weibull" ? "shape" : "spread"} between the bounds below (0.5 to 5 if left empty). `
+      + "The B10 and the other lives follow from the two.";
   }
-  return "On an exponential the record's distribution is the prior exactly (conjugate: worked out in closed form).";
+  const conjugate = !record || (record.kind === "rate" && /^gamma/i.test(String(record.distribution || "")));
+  return lead + (conjugate
+    ? "On an exponential the record's distribution is the prior exactly (conjugate: worked out in closed form)."
+    : "On an exponential the record's rate, 90% between its 5% and 95% values, is the prior on the failure rate.")
+    + " The B10 follows from it.";
+}
+
+// What a rate record's numbers mean as a life, so its scale can be checked before it's used: a
+// chance per demand needs the demands a year to become a rate; a rate per hour is said as the mean
+// life it implies ("3.47e-8 per hour is a mean life of about 2.88e7 hours, 3,290 years").
+export function rateWords(record) {
+  if (!record || record.kind === "life") return "";
+  if (record.kind === "per_demand") {
+    return "The record is a chance of failing per demand, not a life: give how many demands a year below and it "
+      + "becomes a failure rate (per calendar hour), then a prior on life. ";
+  }
+  const rate = Number(record.mean);
+  if (!(rate > 0) || !/hour/i.test(String(record.units || ""))) return "";
+  const hours = 1 / rate;
+  const clock = /calendar/i.test(String(record.units)) ? " (calendar)" : /running|operat/i.test(String(record.units)) ? " (running)" : "";
+  return `Its mean rate, ${formatNumber(rate)} per hour${clock}, is a mean life of about ${formatNumber(hours)} hours `
+    + `(${formatNumber(hours / 8766)} years): check that's the scale you expect for this part. `;
 }
 
 // The form as it opens: `start` (what the opener chose for it: Refit…, a library record from

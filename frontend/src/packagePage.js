@@ -8,6 +8,8 @@ import { CALENDAR, formFromPackage, howOftenProblem, packageBody } from "./howOf
 
 // A package's cadence is edited with the shared "How often" control (HowOften.jsx).
 export const PACKAGE_UNITS = CALENDAR;
+// The units a package's edit offers: it stays on the calendar, or on operating hours, for good.
+export const unitsFor = (pkg) => (pkg?.cadence?.unit === "hours" ? ["hours"] : PACKAGE_UNITS);
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -16,6 +18,16 @@ export function visitDay(iso, today = null) {
   if (!iso) return "";
   const sameYear = !!today && String(today).slice(0, 4) === String(iso).slice(0, 4);
   return formatDate(String(iso).slice(0, 10), { weekday: true, year: !sameYear }) || String(iso);
+}
+
+// A package as its page shows it with work management turned off (workManagement.js): a
+// plan of visits, with no open or recent work orders (kept, only hidden). On: as it came.
+export function packageWithoutWorkOrders(pkg, workOrders = true) {
+  if (workOrders || !pkg) return pkg;
+  return {
+    ...pkg, open_work_order: null, work_orders: [],
+    next_visits: (pkg.next_visits || []).map((v) => ({ ...v, open_work_order: null })),
+  };
 }
 
 // The page's first line, the answer first: "Every Saturday, next visit Sat 14 Nov; 1 visit late".

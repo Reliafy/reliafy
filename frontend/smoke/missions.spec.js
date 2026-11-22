@@ -45,7 +45,8 @@ test("missions: a product's mission by phase, its covariates with the blocks the
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=missions`);
-  await expect(page.getByRole("tab", { name: "Missions" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Models", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("radiogroup", { name: "Models: what to show" }).getByRole("radio", { name: "Missions" })).toHaveAttribute("aria-checked", "true");
   const mission = nameRow(page, `Corridor inspection ${tag}`);
   await expect(mission).toBeVisible();
   await expect(mission).toContainText("2 phases: Take-off, Survey");
@@ -302,7 +303,8 @@ test("missions: a mission resting on placeholders says so, and can leave them ou
   await open(page, `/asset-register/explorer?arrange=positions&sel=${set.id}&tab=missions&mission=${made.rbd.id}:mission&on=${set.id}`);
   const pane = page.getByRole("region", { name: "Mission" });
   const answer = pane.locator(".mission-answer");
-  await expect(answer).toContainText("Not a real figure yet: 3 of 5 blocks have no model", { timeout: 30_000 });
+  // Most of the blocks are placeholders (3 of 5): the answer says most of it rests on invented lives.
+  await expect(answer).toContainText("Not a real figure: 3 of 5 blocks have no model, so most of this answer rests on invented lives", { timeout: 30_000 });
   await expect(answer).toContainText("With placeholders");
   await expect(answer).toContainText("Without them");
   const note = pane.getByRole("note", { name: "Blocks with no model" });

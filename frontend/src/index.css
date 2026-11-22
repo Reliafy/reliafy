@@ -46,6 +46,16 @@ body {
 :where(a):hover, :where(a):focus-visible { text-decoration: underline; text-underline-offset: 2px; }
 .guide-prose a, .ref-prose a { text-decoration: underline; text-underline-offset: 2px; }
 
+/* One focus ring (design system › Focus): every keyboard focus stop shows the
+   same 2px accent ring, 2px clear of the control. Drawn as an outline, so it
+   never fights a component's own box-shadow and no control falls back to the
+   browser's ring. Don't write another focus style: where an outer ring would be
+   clipped (a row in a scroller, a tab, a joined group) set only
+   `outline-offset: -2px` on that element's :focus-visible. Mouse focus shows
+   nothing; text fields keep their accent border and ring on any focus. */
+:focus-visible { outline: 2px solid var(--focus-ink); outline-offset: 2px; }
+:focus:not(:focus-visible) { outline: none; }
+
 /* Three weights only (400, 500, 600): bold elements use the 600 face. */
 b,
 strong,
@@ -58,6 +68,10 @@ h5,
 h6 {
   font-weight: 600;
 }
+/* A heading with no size of its own stays on the type scale (the browser's
+   h3 is 18.72px). No weight, so every class rule still wins. */
+:where(h3) { font-size: var(--fs-16); line-height: var(--lh-16); }
+:where(h4, h5, h6) { font-size: var(--fs-14); line-height: var(--lh-14); }
 
 /* Top navigation bar */
 .navbar {
@@ -613,12 +627,6 @@ h6 {
   margin: 0.05rem 0 0.2rem 0.7rem;
 }
 
-.side-item:focus-visible,
-.side-subitem:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
 /* Strategy tools */
 .strategy-actions {
   display: flex;
@@ -1042,7 +1050,7 @@ h6 {
   padding: var(--space-1) var(--space-2);
 }
 /* Room above the chips that overhang the bottom edge, so no line sits under them. */
-.rbd-comp:has(> .rbd-chips) { padding-bottom: var(--space-4); }
+.rbd-comp:has(> .rbd-chips), .rbd-block:has(> .rbd-chips) { padding-bottom: var(--space-4); }
 
 .react-flow__node.selected .rbd-comp {
   border-color: var(--accent);
@@ -1479,6 +1487,12 @@ h6 {
   color: var(--warning-text);
   font-size: var(--fs-13);
 }
+/* Most of the answer rests on placeholders: a bad verdict, not a caveat (W2). */
+.rbd-placeholder-note.is-most {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
 
 /* Availability (repairable) is a paid feature: upgrade card + saved-result note. */
 .rbd-upgrade { margin: 4px 0 12px; }
@@ -1691,7 +1705,7 @@ h6 {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   background: var(--bg-surface);
   border-radius: var(--radius-md);
   padding: 8px 11px;
@@ -1732,6 +1746,11 @@ h6 {
   background: transparent;
   border: none;
   box-shadow: none;
+  /* Saved-item tables scroll inside their own container, at every width: a
+     table wider than its card (one long cell) never pushes the page sideways.
+     Row menus open at screen coordinates (MoreMenu), so this doesn't clip them. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .lib-table {
@@ -1760,6 +1779,11 @@ h6 {
 .lib-row:hover td {
   background: var(--accent-wash);
 }
+
+/* A row listed under another (Systems › RBDs: a part's diagram under the one it was built for),
+   indented a step per level, marked ↳. */
+.lib-row-under td:first-child { padding-left: calc(14px + var(--under, 1) * var(--space-6)); }
+.lib-row-under td:first-child .lib-name::before { content: "↳"; margin-right: var(--space-2); color: var(--text-tertiary); }
 
 .lib-row td {
   padding: 15px 14px;
@@ -2315,6 +2339,29 @@ button.more-btn svg { width: 16px; height: 16px; }
   button.psec-tip { width: 28px; height: 28px; }
 }
 
+/* Touch (design system: control-lg on a phone). At phone width (usePhone's
+   720px) every control is at least 40px tall, and icon-only buttons 40px
+   wide, so a finger finds it. Written at no weight (:where), so a control that
+   sets its own size on purpose (a 20px "?" disc, a tree twisty) keeps it. */
+@media (max-width: 720px) {
+  :where(button:not(.link), a.btn, .ctl, select, [role="tab"], .seg-btn, .tablebar .search,
+         .side-item, .side-subitem,
+         input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"])) {
+    min-height: var(--control-lg);
+  }
+  .lib-acts .act, button.ds-more, button.plot-dl-btn { min-width: var(--control-lg); min-height: var(--control-lg); }
+  /* A row's name link: the whole cell height is the target, not its line of text. */
+  a.lib-link { display: inline-flex; align-items: center; min-height: var(--control-lg); }
+  a.lib-name { min-height: var(--control-lg); }
+  .side-subitem { display: flex; align-items: center; }
+  /* 16px text in anything you type into, so iOS doesn't zoom on every tap. The
+     one !important here: no field on a phone may sit under 16px, whatever its
+     own rule says. */
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), select, textarea) {
+    font-size: var(--fs-16) !important;
+  }
+}
+
 /* Chip (#310; components/ui/Chip.jsx): 12px sans, sentence case, 6px
    radius; colour only when it means something. */
 .chip {
@@ -2845,6 +2892,20 @@ h1 .chip,
   flex-direction: column;
 }
 
+/* A stat's interval or bound sits under its number (the label comes first,
+   by order), never above the label where it reads as the card before's. */
+.params .stat .param-ci {
+  order: 3;
+}
+
+/* Per-demand: the one-sided figure in a sentence, above the cards. */
+.pd-answer {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  color: var(--text);
+}
+
 /* Detail panel: plot + goodness-of-fit aside (Instrument). */
 .detail-panel {
   display: flex;
@@ -2967,6 +3028,12 @@ h1 .chip,
 .detail-panel .life-help { font-size: var(--fs-12); font-weight: 400; }
 /* A card's heading with a control or a note at its right, and rows of a
    value with its bound (a recurrent model's MTBF, a failure mode's share). */
+/* "What do these mean?": the parameters in plain words, folded open under the heading. */
+.life-meanings { padding: var(--space-2) var(--space-3) var(--space-3); border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-13); line-height: var(--lh-13); }
+.life-meanings dl { margin: 0 0 var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.life-meanings dt { font-weight: 600; }
+.life-meanings dd { margin: 0; color: var(--text-secondary); }
 .detail-panel .life-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 8px; padding-bottom: 7px; }
 .detail-panel .life-card-head .gof-sub { margin-left: 6px; }
 .detail-panel .gofr.life-row { display: grid; grid-template-columns: 1fr auto minmax(4.4em, auto); gap: 10px; padding-top: 4px; padding-bottom: 4px; }
@@ -2980,7 +3047,7 @@ h1 .chip,
   border-radius: 0; text-align: left; color: inherit; font: inherit; font-size: var(--fs-13); cursor: pointer; }
 .detail-panel .gofr.rec-cause-row:last-child { border-bottom: none; }
 .detail-panel .gofr.rec-cause-row:hover { background: var(--accent-wash); }
-.detail-panel .gofr.rec-cause-row:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+.detail-panel .gofr.rec-cause-row:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); }
 .detail-panel .gofr.rec-cause-row.on { background: var(--accent-subtle); }
 .detail-panel .gofr.rec-cause-row.on .gk { color: var(--text); font-weight: 500; }
 .rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 8px; vertical-align: 1px; }
@@ -3271,6 +3338,42 @@ h1 .chip,
   color: var(--accent-text);
   border-bottom-color: var(--accent);
   font-weight: 600;
+}
+
+/* Tabs with overflow (ui/Tabs.jsx `overflow`): one row that never scrolls; the tabs that don't
+   fit fold into a last "⋯ N" tab. The row takes the width it's given; a hidden copy measures. */
+.tabs-strip.tabs-fit {
+  position: relative;
+  min-width: 0;
+}
+.tabs-fit > .tabs {
+  overflow: hidden;
+  min-width: 0;
+}
+.tabs-fit .tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-inset);
+}
+.tab.tab-more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+}
+.tab.tab-more.open {
+  color: var(--text);
+}
+.tabs-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 0.25rem;
+  width: max-content;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* Sideways-scroll cue (ui/ScrollCue.jsx, #301): a strip with more content past
@@ -4224,9 +4327,10 @@ h1 .chip,
   outline-offset: -1px;
 }
 
-/* The active segment's outline would hide the browser's focus ring. */
+/* The active segment's own outline would replace the focus ring: restate the
+   one ring (inset, as the segments are joined). */
 .seg-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ink);
   outline-offset: -2px;
 }
 
@@ -4234,6 +4338,11 @@ h1 .chip,
   min-height: calc(var(--control-sm) - 2px);
   padding: 0 var(--space-3);
   font-size: var(--fs-13);
+}
+/* Touch: a segment is 40px on a phone, like every control (the touch block
+   above can't reach these sizes, set here). */
+@media (max-width: 720px) {
+  .seg-btn, .seg-sm .seg-btn { min-height: var(--control-lg); }
 }
 
 /* A labelled control: the label sits above, like a form field's. */
@@ -4267,6 +4376,13 @@ h1 .chip,
   font-size: var(--fs-14);
   font-family: inherit;
   width: 160px;
+}
+
+/* Beside a Calculator time: where it started, or what "1 year" became. */
+.calc-t-note {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: 1.35;
 }
 
 .calc-t input:focus {
@@ -7153,7 +7269,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-14);
   line-height: var(--lh-14);
 }
-.chat-input textarea:focus { outline: none; border-color: var(--accent); }
+.chat-input textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .chat-send {
   flex-shrink: 0;
   width: 38px;
@@ -7264,6 +7380,24 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-13);
   line-height: var(--lh-13);
 }
+
+/* The fit wizard's warning when a status column's name ("failed") and its
+   reading (0 = failed) disagree, with the one-click flip beside it. */
+.fit-flag-warn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+}
+.fit-flag-warn > span { flex: 1 1 16rem; min-width: 0; }
 
 /* ---- Landing pricing ------------------------------------------------------ */
 .landing-pricing {
@@ -7635,6 +7769,32 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .ovm-item:hover:not(:disabled) { background: var(--accent-subtle); color: var(--accent-text); }
 .ovm-item.danger { color: var(--danger-text); }
 .ovm-item.danger:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger-text); }
+/* A row's menu (RowMenu, MoreMenu, every list's ⋯): the app's menu look
+   (.ovm-menu), placed at the pointer. Shared, so it lives here, not with a page. */
+.ovm-menu.row-menu {
+  max-width: calc(100vw - 16px);
+  position: fixed;
+  right: auto;
+  z-index: 95; /* over the details sheet on a phone (90), under dialogs (100) */
+  min-width: 200px;
+}
+.row-menu .ovm-item { white-space: normal; }
+.row-menu .ovm-item:focus-visible { outline-offset: -2px; background: var(--accent-subtle); color: var(--accent-text); }
+.row-menu .ovm-item.danger:focus-visible { background: var(--danger-bg); color: var(--danger-text); }
+/* An item that can't be used now: greyed, with the reason under it. */
+.row-menu .ovm-item.off { flex-direction: column; align-items: flex-start; gap: 0; color: var(--text-tertiary); cursor: not-allowed; }
+.row-menu .ovm-item.off:hover, .row-menu .ovm-item.off:focus-visible { background: var(--bg-subtle, transparent); color: var(--text-secondary); }
+/* A submenu (Focus ›): its item has the arrow at its end; beside the menu
+   on a wide screen, in place under its item on a phone. The arrow is drawn,
+   not text (no alt text: the item's name stays "Focus"). */
+.row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: 12px; }
+.row-menu-sep { height: 1px; margin: 4px 8px; background: var(--border, #e9ebee); }
+.row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--text-secondary); }
+.row-menu-parent.inline::after { content: "▸" / ""; }
+.row-menu-parent.inline.open::after { content: "▾" / ""; }
+.row-menu .ovm-item.row-menu-parent.open { background: var(--accent-subtle); color: var(--accent-text); }
+.ovm-menu.row-submenu { z-index: 96; min-width: 190px; }
+.row-menu-inline { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; }
 
 /* ---- RCM: study tree, decision flow, evidence -------------------------- */
 .head-actions { display: inline-flex; flex-wrap: wrap; gap: 0.6rem; align-items: stretch; }
@@ -7807,6 +7967,26 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .evidence-option input { flex: none; align-self: center; }
 .evidence-name { font-weight: 500; }
 .evidence-meta { font-size: var(--fs-12); color: var(--text-secondary); }
+/* Found here (EvidencePicker): search and kind side by side (stacked on a phone), the
+   candidates grouped by where each is from, a history's window and a fit on part of it. */
+.evidence-found { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.evidence-found-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 14rem); gap: 8px; align-items: end; }
+.evidence-found-bar .field { min-width: 0; }
+.evidence-found .evidence-picker { max-height: 280px; gap: 4px; }
+.evidence-group { display: flex; flex-direction: column; gap: 6px; }
+.evidence-group + .evidence-group { margin-top: 8px; }
+.evidence-group-head { margin: 0; font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 500; color: var(--text-secondary); }
+.evidence-option .evidence-name, .evidence-option .evidence-meta { min-width: 0; overflow-wrap: anywhere; }
+.evidence-window { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 12px; margin: 0; min-width: 0; }
+.evidence-window-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.evidence-window-row .field { flex: 1 1 10rem; min-width: 0; }
+.evidence-fit > summary { cursor: pointer; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--accent-text); }
+.evidence-fit-body { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; align-items: flex-start; }
+.evidence-fit-body .evidence-window-row { align-self: stretch; }
+.rw-evwindow { color: var(--text-secondary); }
+@media (max-width: 720px) {
+  .evidence-found-bar { grid-template-columns: minmax(0, 1fr); }
+}
 
 .rcm-form { display: flex; flex-direction: column; gap: 14px; }
 .login-field textarea {
@@ -8127,6 +8307,9 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .sel-option-main { display: flex; flex-direction: column; min-width: 0; }
 .sel-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-option-hint { font-size: var(--fs-12); color: var(--text-secondary); }
+/* A long list (a tree of positions) never runs off a phone's screen; the position picker fills its field. */
+.sel-menu { max-width: calc(100vw - 32px); }
+.sel-trigger.position-picker { width: 100%; }
 .sel-group {
   padding: 8px 12px 4px;
   font-size: var(--fs-12);
@@ -8549,6 +8732,9 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-avail-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: var(--radius-md); }
 .rbd-avail-bar-pct { text-align: right; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .rbd-avail-imp { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* The calculator's table of functions at t for several combinations (Calculator.jsx). */
+.calc-multi-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.calc-multi-scroll .calc-table { margin-bottom: 0; }
 .rbd-avail-imp-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
 .rbd-avail-imp-scroll .calc-table { margin-bottom: 0; min-width: 560px; }
 .rbd-avail-imp-scroll .calc-table th { white-space: nowrap; cursor: help; }
@@ -8574,6 +8760,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-asof-sub { display: block; font-size: var(--fs-12); color: var(--text-secondary); }
 .rbd-asof-panel { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
 .rbd-asof-table { margin-bottom: 0; }
+.rbd-asof-source { display: block; max-width: 280px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); white-space: normal; }
+.rbd-asof-source.is-caveat { color: var(--warning-text); }
 .rbd-asof-table select, .rbd-asof-table input {
   background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 3px 6px; font: inherit; font-size: var(--fs-13);
@@ -8771,6 +8959,11 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .help-filter.tablebar { margin: 0; padding: 12px 20px; border-bottom: 1px solid var(--border); }
 .help-filter .search { flex: 1; width: auto; min-width: 0; }
 .help-filter .search.live input { flex: 1; width: auto; min-width: 0; }
+/* The public /guides page's filter box (GuidesIndex.jsx). */
+.guides-filter.tablebar { margin: 0 0 var(--space-6); }
+.guides-filter .search { flex: 1; width: auto; max-width: 420px; min-width: 0; }
+.guides-filter .search.live input { flex: 1; width: auto; min-width: 0; }
+.guides-none { color: var(--text-secondary); }
 .help-none { margin: 0; padding: 10px 12px; font-size: var(--fs-14); color: var(--text-secondary); }
 /* Help trigger in the top bar + inline "how do I…" links */
 .nav-help-btn {
@@ -9157,7 +9350,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
   font-size: var(--fs-12); font-weight: 600; color: var(--accent-text); text-transform: none;
 }
 .rbd-range-toggle:hover:not(:disabled), .rbd-range-toggle:focus { text-decoration: underline; background: none; outline: none; box-shadow: none; }
-.rbd-range-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rbd-range-toggle:focus-visible {  }
 .rbd-range-inputs { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); }
 .rbd-cost-field .rbd-range-inputs input { width: 66px; padding-left: 8px; padding-right: 6px; -moz-appearance: textfield; appearance: textfield; }
 .rbd-range-inputs input::-webkit-outer-spin-button,
@@ -9195,6 +9388,8 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .rbd-answer-rows { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .rbd-answer-rows > div { display: grid; grid-template-columns: 136px 1fr; gap: var(--space-3); align-items: baseline; }
 .rbd-answer-rows dt { font-size: var(--fs-13); color: var(--text-secondary); }
+.rbd-answer-rows .muted { color: var(--text-secondary); }
+.rbd-hft-note { margin-top: var(--space-1); font-size: var(--fs-13); line-height: var(--lh-13); }
 .rbd-answer-rows dd { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); min-width: 0; }
 .rbd-answer-rows dd b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .rbd-answer-big { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
@@ -9512,11 +9707,6 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   .ds-aside {
     width: auto;
   }
-  /* Saved-item tables scroll inside their own container. */
-  .lib {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
   /* ...and keep only the name, the key detail and Delete: a tap on the row
      opens it, and a long detail chip wraps rather than pushing Delete off. */
   .lib-table .lib-opt,
@@ -9652,7 +9842,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 }
 .detail-panel .gofr.gofr-link .gv { color: var(--accent-text); }
 .detail-panel .gofr.gofr-link:hover { background: var(--accent-wash); }
-.detail-panel .gofr.gofr-link:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+.detail-panel .gofr.gofr-link:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); }
 
 /* ---- RBD builder usability (#289, #298, #299) --------------------------- */
 /* A block's name at the top of its dialog, and renamed in place on the canvas. */
@@ -9817,6 +10007,15 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 .home-none { margin: 0; padding: 14px 16px; font-size: var(--fs-14); color: var(--text-secondary); }
 .home-none a { color: var(--accent-text); font-weight: 500; text-decoration: none; }
 .home-none a:hover, .home-none a:focus-visible { text-decoration: underline; }
+/* Needs attention's count of late work, above its rows (the words Orders and Assets use). */
+.home-late { color: var(--text); font-weight: 500; border-bottom: 1px solid var(--border-subtle); }
+/* A list that couldn't be read (LoadFailed): the error card in place of the rows. */
+.home-list .load-failed { margin: 0; }
+/* LoadFailed's "Try again", under the reason. */
+.load-failed .load-failed-retry { margin-top: var(--space-3); }
+@media (max-width: 720px) {
+  .load-failed .load-failed-retry { min-height: var(--control-lg); }
+}
 .home .start-compact { margin-top: 28px; }
 /* With only a little work saved, the ways to start sit first, under the title. */
 .home .home-start-first .start-compact { margin-top: 16px; }
@@ -9869,6 +10068,9 @@ button.help-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .ds-unit-pick { display: flex; flex-direction: column; gap: 6px; }
 .ds-unitless { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); color: var(--text-secondary); min-height: 32px; }
+/* Add to library…: a dataset's models, each a ticked choice on its own line. */
+.lib-model-pick { margin-top: var(--space-3); }
+.lib-model-choice { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-md); font-size: var(--fs-14); line-height: var(--lh-20); }
 /* A Pro-only action, marked for users without Pro (ProTag.jsx). */
 .pro-tag {
   display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
@@ -9919,6 +10121,10 @@ main.content:focus { outline: none; }
 .rbd-compare-chosen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-13); }
 .rbd-compare-chosen li { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
 .rbd-importance-why { margin: 2px 0 6px; }
+/* The importance table is at another time than "Evaluate at t": a caveat, with the rerun beside it. */
+.rbd-importance-stale { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md); background: var(--warning-bg); color: var(--warning-text); font-size: var(--fs-13); line-height: var(--lh-13); }
 
 /* Bulk items on a fleet forecast (FleetItemsImport.jsx): a pane in the Items card. */
 .fleet-import { margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg);
@@ -9973,7 +10179,7 @@ main.content:focus { outline: none; }
   background: var(--bg-surface);
   color: var(--text);
 }
-.sel-search:focus { outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
+.sel-search:focus { outline: none; box-shadow: var(--focus-ring-inset); }
 .sel-none { margin: 0; padding: 7px 10px; font-size: var(--fs-13); color: var(--text-secondary); }
 
 /* Forecast › Spares › stock to hold by period: numbers right-aligned under
@@ -10090,3 +10296,34 @@ main.content:focus { outline: none; }
   .tc-life:not(.tc-compact) .rs-stats .stat { flex: 1 1 40%; }
 }
 .tc-source { margin: 0; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
+
+/* The unit of a model's times where it is typed (Units.jsx): the box and its
+   "No unit" tick on one line, wrapping on a phone. */
+.unit-field-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.unit-field-row .ctl { width: 15rem; max-width: 100%; }
+/* Compare two models: the saved models' unit, shown rather than asked. */
+.compare-unit-fixed { color: var(--text); font-size: var(--fs-14); line-height: var(--lh-14); padding: var(--space-2) 0; }
+/* A life answer in a friendlier calendar unit as well as the model's own
+   (friendlyTime.js): a quiet second line under the value, and the switch that
+   picks the unit with its convention. */
+.friendly-unit { display: block; font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 400; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.friendly-unit-switch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-4); max-width: 100%; }
+.friendly-unit-label { font-size: var(--fs-13); line-height: var(--lh-13); font-weight: 500; color: var(--text-secondary); }
+.friendly-unit-switch .seg { max-width: 100%; overflow-x: auto; }
+.friendly-unit-note { flex-basis: 100%; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-tertiary); }
+.detail-panel .model-chars-friendly { margin: 0; padding: 0 16px 12px; }
+@media (max-width: 720px) {
+  .friendly-unit-switch .seg-btn { min-height: 40px; }
+}
+
+/* A greyed menu item's reason, under its label ("Save first"). */
+.ovm-item:has(> .ovm-why) { display: flex; flex-direction: column; align-items: flex-start; }
+.ovm-item .ovm-why { display: block; margin-top: 2px; font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); white-space: normal; line-height: var(--lh-12); }
+
+/* "Download CSV" on a card (CsvButton): the chart download buttons' look, at
+   the right of the card's heading. */
+.csv-btn { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px; margin-left: auto; flex: none; }
+.csv-btn > svg { width: 14px; height: 14px; }
+.life-head-actions { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.life-head-actions .csv-btn { margin-left: 0; }
+.calc-params-h { display: flex; align-items: center; gap: 8px; }

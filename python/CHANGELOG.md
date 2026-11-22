@@ -1,9 +1,47 @@
 # Changelog
 
-## 0.12.2 (unreleased)
+## 0.12.3 (unreleased)
 
 Needs a server on the same release.
 
+- **Degradation models**: `change model_fit_degradation` fits readings that drift to a failure
+  threshold and saves the model, as the app's Degradation fit does: `name`, `dataset_id`,
+  `unit_id_column`, `age_column`, `value_column` and `threshold`, with optional `path` (`best` by
+  AICc, or one by name), `distribution`, `population_method`, `unit`, `measurement_unit`;
+  `dry_run=true` fits and reports without saving. The answer gives the path chosen, each unit's
+  crossing time and B1/B10/B50 with their 90% one-sided lower bounds. Fitting, so Pro.
+  `list models` takes `model_type` `degradation`, and `get model` reads one.
+- **RCM worksheets and task plans from CSV**: `change import_rcm` adds an RCM / FMEA worksheet or
+  a task plan (one row per failure mode) to a maintenance position's RCM from CSV text (`csv`) or
+  an uploaded CSV or .xlsx (`upload_id`), with `mapping`, `sheet`, `header_row` and `dry_run` as
+  `change import_excel` target `rcm` takes them. `reliafy import rcm FILE --position ID
+  [--dry-run]` and `Client.import_rcm` send a file.
+- **Saved replacement analyses**: `change optimal_replacement_save` saves an optimal-replacement
+  analysis (Strategy > Replacement's Save analysis) from `name`, `planned_cost`, `unplanned_cost`
+  and `model_id` or `distribution_id` + `params` (optional `unit`, `use_per_year`, `units`,
+  `position_id`). Its results are worked out afresh on the server, as in the app. Every plan.
+- The REST twins (`POST /api/v1/change/model_fit_degradation`, `/change/import_rcm`,
+  `/change/optimal_replacement_save`) and the CLI (`reliafy change …`) take them too.
+
+## 0.12.2
+
+Needs a server on the same release.
+
+- **One search for everything**: `list search` (`q`, optional `kinds` and `limit`) finds what you can
+  open by name, tag, serial or part number, small typos tolerated: data, models, diagrams, fault
+  trees, saved analyses, reports, libraries and their records, and for Reliafy Maintenance users
+  the assets, positions, items, parts, products and work orders. Grouped by kind, best match first,
+  each with a context line and its address in the app. The REST twin (`POST /api/v1/list/search`)
+  and the CLI (`reliafy list search --q …`) take it too.
+- **What a condition and life model's risk follows**: `analyse fit_joint` and
+  `change model_fit_joint` take `link`: `value` (the reading's level, the default), `slope` (how
+  fast it is moving, whatever its level) or `value_slope` (both). A rate-of-change link needs a
+  linear, exponential or quadratic path. The answer gives `link`, and a `slope_effect` hazard ratio
+  per 1 reading unit per time unit. The REST twins and the CLI take it too.
+- **Accumulated exposure**: `link` also takes `cumulative`: the risk follows the reading's total so
+  far (the area under its path since new), with a `cumulative_effect` hazard ratio per 1 reading
+  unit × time unit. `exposure_above` (with `cumulative` only) counts the exposure above a level
+  instead of from 0; the answer gives it back.
 - **Overhaul and replace**: `analyse optimal_overhaul_replace` finds "overhaul every X, replace
   after N overhauls" for a repairable unit, from a saved minimal-repair recurrent model
   (`model_id`) or `form` + `params`, with `cost_repair`, `cost_overhaul`, `cost_replace` and

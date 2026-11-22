@@ -76,19 +76,49 @@ from_dataset_id to copy another dataset's table in). A dataset whose one table h
 once per unit, a reading on every row) works as it is, or change dataset_split makes the two parts. Ages are since \
 new, in one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates \
 change how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
+link: what of the reading the risk follows: value (its level, the default), slope (how fast it is moving: \
+"at the same reading, is a climbing unit worse than a steady one?"; linear, exponential or quadratic path), \
+value_slope (both) or cumulative (its total so far, the area under its path since new: "does the dose so far \
+matter?"; exposure_above counts only the reading above a level, e.g. above a temperature limit); compare links on \
+the same data by aic (lower is better). A slope effect is per 1 reading unit per time unit, a cumulative effect per \
+1 reading unit x time unit (a day at 1 mm/s higher): say both units. \
 analyse fit_joint reports; change model_fit_joint saves. The fit runs on the calculation service (8-40 s): \
 it may come back as a job (get kind job). Quote each hazard ratio with its 90% CI, as its text says.
 - A running unit's risk: analyse predict_joint (unit_id, or age_now + readings + unit_covariates): \
 survival over the horizons with bounds, and the median remaining life. Never quote a mean life for these \
 units: a reading that levels off can leave a chance of never failing, so the mean can be infinite; "not \
-reached" means the median is beyond any finite age."""),
+reached" means the median is beyond any finite age.
+- Degradation (readings that drift to a failure level, no failures needed: wear, crack length, a coating's \
+thickness): change model_fit_degradation (Pro) with a dataset of readings (dataset_id; one row per reading: \
+unit_id_column, age_column since new, value_column) and threshold, the level that counts as failed (rising or \
+falling to it; ask, never assume). path best picks the path by AICc. dry_run=true reports without saving. Back: \
+each unit's crossing time (extrapolated along its path; censored: its path never reaches the level), the life distribution of those times and B1/B10/B50 with \
+lower_90, the 90% one-sided lower bound to plan with; quote both, with the unit. list kind models (model_type degradation) \
+and get kind model read saved ones."""),
 
     "units": ("Time units for data, models and diagrams.", """\
 Units.
 - A model's parameters and every time given to or returned by it are in the model's time unit; a diagram's in \
 the diagram's unit (change rbd_create unit; change rbd_edit set unit relabels, never rescales). Always state the unit with a \
 number, and ask the user when unsure: never assume hours.
-- A saved model used on a diagram block must be in the diagram's unit; analyses warn when they differ.
+- The unit is the model's own: pass unit when fitting or saving from params; it is kept on the model (and its \
+Download as Python) and every model read returns it. Any text works ("landings"); blank means unknown.
+- A saved model on a diagram block in another unit of the same kind (days on an hours diagram; km and miles) is \
+converted to the diagram's unit before the analysis (24 hours a day, 7 days a week, 365.25/12 days a month, \
+365.25 days a year): the result's unit_conversions says which blocks. Units of different kinds (cycles on an \
+hours diagram) and blank units aren't converted; analyses warn about those.
+- The same rule wherever a saved model meets another clock: a calculator given model_id and a unit of the same \
+kind (a model in days, unit=months) converts the model and answers in that unit (unit_conversion says so); \
+RCM evidence in another time unit is read in the task interval's unit; a class model by use in km proposes for \
+a task in miles.
+- At a position, running hours (hours, operating, running or flight hours) meet a calendar interval at its \
+duty: its operating plan's hours a day over the year ahead (its own or the one above it), else all the time, \
+24 h a day. That covers RCM evidence, class proposals, forecasts, the spares for the year and a Strategy \
+calculation run from a position (calendar on the answer; position_id on analyse optimal_replacement, \
+failure_finding_interval, calendar_replacement and calendar_next_replacement), and the task card's P-F and \
+failure-finding calculators. Each says which way it went ("1,000 h ≈ 125 days at this position's duty (8 h a \
+day)"). A model in km or cycles meets the calendar only at a duty with a rate in it (plan.meters: 400 km a \
+day); otherwise it's refused, saying so. Off a position, plain hours are calendar hours; cycles and km don't convert.
 - Rates: an exponential failure_rate is per unit time (1/MTBF). An MTBF or MTTR can be given as a block's mean \
 (with its shape, e.g. weibull {beta}) instead of params.
 - Imported diagram files that state no unit come back with unit_warning: ask, then pass time_unit (or change \
@@ -135,13 +165,13 @@ Repairable systems: many failures per system.
 inline times + systems (censored: 0 failure, 1 end of observation; or observed_to) or a dataset. Minimal \
 repair: crow_amsaa (default), duane, hpp, cox_lewis; covariates on the repair rate: pi_nhpp; imperfect repair: \
 grp_i / grp_ii, ara, ari, g1. windows give observation gaps; causes add each cause's growth. Fitting is Pro.
-- get kind model on one: the growth verdict with β's 90% interval, ROCOF and MTBF with bounds, the \
+- get kind model on one: the growth shape β with its 90% interval and what it means (no verdict), ROCOF and MTBF with bounds, the \
 demonstrated MTBF's lower bound, trend and goodness-of-fit tests, and (imperfect repair) the repair \
 effectiveness and each system's next failure.
 - analyse next_failure: at a system's age, the chance of a failure within given times and the \
 time to the next one. analyse growth_projection: the MTBF a growth test reaches once its fixes \
 are in (BD modes with fix-effectiveness factors).
-- analyse optimal_overhaul: the overhaul interval for a deteriorating system (minimal-repair model, β > 1).
+- analyse optimal_overhaul: the overhaul interval for a system whose failure rate rises (minimal-repair model, β > 1).
 - analyse optimal_overhaul_replace: overhaul every X, replace after N overhauls (guide strategy)."""),
 
     "rbds": ("Building and editing reliability block diagrams: the structure rules.", """\
@@ -157,7 +187,7 @@ point, give different values per class, set placeholder=true on every guessed mo
 output}; two parallel blocks fan out from the node before and join at the node after; "2 of 3": three blocks \
 into one knode (n=2). Stages form: stages in series, each with components in parallel (k_of_n voting).
 - Block models: inline distribution_id + params, a mean (MTBF/MTTR) with its shape, a mixture, or a saved \
-model (saved_model_id; same time unit).
+model (saved_model_id; one in another time unit is converted to the diagram's, see guide units).
 - Standby as plants run it: k units running, spares cold (dormancy 0), warm (0-1: ageing at that share while \
 waiting) or hot (1), startProb the chance a spare starts (one that doesn't is skipped). Units may differ: \
 standbyModel for every spare, runningModels / spareModels (lists, null = the default) for single units, up to \
@@ -310,6 +340,12 @@ discount_rate); capacities the production availability. The Monte-Carlo simulati
 only where a figure needs it unless simulate=true. A saved result is served when one matches. When a response \
 says figures are simulation-only (e.g. one crew for wear-out lives), say so; offer rbd_export_python to run it \
 locally. summary_only gives the headline figures.
+- rbd with_repairs, any diagram (non-repairable, a mission's, one built from the tree): its availability with \
+every block repaired after it fails, in the long run and over period (default the mission, else a year), with \
+drivers (each block's share of the downtime) and answer. Each block's mean time to repair is repair_times \
+({node: hours}), else its own repair model, the outage history or its position's maintainability prediction \
+(repairs[].source); blocks with none are in needs and nothing is worked out — ask the user, never invent one. \
+achieved adds the positions' planned work where there is any. Exact, free, no bound.
 - Jobs: a long simulation or calculation returns a job_id: call get kind job every few seconds until done. \
 rbd_quote_simulation says how long one should take before anything runs; list kind rbd_runs / get kind rbd_run read \
 past simulations.
@@ -382,6 +418,9 @@ are exact and free; sampling (Pro) is for calendars whose cycle is very long, wi
 - analyse next_replacement: the same calendar plus the age of the unit in service today: replace it now, at the \
 coming shuts (the next, the one after, and on), between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
 (from that age replacing now beats waiting).
+- To keep a replacement answer (as the app's Save analysis does, e.g. as evidence for an RCM decision): change \
+optimal_replacement_save with a name and the same inputs; the server works the results out again. Saved \
+analyses show under Strategy in the app.
 - With a saved Weibull (or Crow-AMSAA) model fitted to data, shape_uncertainty gives the answer at each end of \
 the shape's 90% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
 (for a protective function, the shorter interval is the safe side).
@@ -423,12 +462,12 @@ refused attempt.
 RePyability JSON); any other file of up to a few hundred KB (an .xlsx, a BlockSim project) goes through this \
 connection with change upload_send_part (base64 parts 0, 1, 2… into the same upload_id, last=true with sha256 on the \
 final one; not counted against the Free allowance), then import as usual (an FMEA / RCM worksheet goes onto a \
-position's RCM with change import_excel target rcm and position_id). Anything larger: ask the user to upload it in the app (create's \
+position's RCM with change import_rcm position_id; as CSV text it can go in its csv argument instead). Anything larger: ask the user to upload it in the app (create's \
 fallback says where).
 4. get kind upload shows a workbook's sheets, columns and a guessed mapping, or a diagram file's diagrams.
 5. Import with the upload_id: change import_rbd (diagrams; save=false previews with edges and cut sets; only \
-picks diagrams by name; time_unit when the file states none), change import_excel (target dataset, rcm with a position_id, or \
-rbd_template), change dataset_upload, or change rbd_upload_outage_log.
+picks diagrams by name; time_unit when the file states none), change import_excel (target dataset or \
+rbd_template), change import_rcm (an RCM worksheet or task plan, CSV or .xlsx, onto a position), change dataset_upload, or change rbd_upload_outage_log.
 Relay the import notes: they say what was approximated. Blocks imported without a non-repairable model (needs_model) \
 need one before analysis: ask the user, don't invent values."""),
 

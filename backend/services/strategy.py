@@ -17,7 +17,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
+from backend.fitting import DISTRIBUTIONS, FitError, nonparametric_range_message, param_values, surpyval_extras
+from backend.services import model_units
 from backend.units import unit_in_text, with_unit
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
@@ -550,16 +551,23 @@ def _eval_side(spec: dict, grid: np.ndarray) -> dict:
     """Evaluate one side of a comparison (parametric model or KM of raw data)."""
     label = spec.get("label") or "Model"
     if spec.get("kind") == "nonparametric":
-        x = np.asarray(spec.get("x") or [], dtype=float)
-        x = x[np.isfinite(x)]
+        raw = np.asarray(spec.get("x") or [], dtype=float)
+        c = spec.get("c")
+        c = None if c is None else np.asarray(c, dtype=float)
+        # A time below 0, or a failure at 0, named by its place in the data:
+        # the Kaplan-Meier curve would otherwise give a life below 0.
+        same = c is not None and c.size == raw.size
+        refused = nonparametric_range_message({"x": raw, "c": c if same else None}, "Kaplan-Meier", ranges=False)
+        if refused:
+            raise StrategyError(f"{label}: {refused}")
+        x = raw[np.isfinite(raw)]
         if x.size == 0:
             raise StrategyError(f"{label}: no usable data values.")
         fit_kwargs: dict = {"x": x}
-        c = spec.get("c")
-        if c is not None:
-            c = np.asarray(c, dtype=float)
-            if c.size == x.size:
-                fit_kwargs["c"] = c.astype(int)
+        if same:
+            fit_kwargs["c"] = c[np.isfinite(raw)].astype(int)
+        elif c is not None and c.size == x.size:
+            fit_kwargs["c"] = c.astype(int)
         try:
             km = KaplanMeier.fit(**fit_kwargs)
         except Exception as exc:
@@ -599,19 +607,42 @@ def compare_two(spec_a: dict, spec_b: dict, unit: Optional[str] = None) -> dict:
     more reliable. Each side is a parametric model (distribution + params) or a
     non-parametric Kaplan-Meier fit of raw data (``x`` with optional ``c``).
     """
+    # A side's model in another unit of the same kind as the comparison's (B in months, the
+    # comparison in days) is converted to it, never compared as if its months were days. The
+    # comparison's unit is the one asked for, else side A's, else side B's.
+    target = (unit or "").strip() or str(spec_a.get("unit") or "").strip() or str(spec_b.get("unit") or "").strip()
+    spec_a, conv_a = _side_in_unit(spec_a, target)
+    spec_b, conv_b = _side_in_unit(spec_b, target)
     his = [h for h in (_side_hi(spec_a), _side_hi(spec_b)) if h]
     hi = max(his) if his else 1.0
     grid = np.linspace(0.0, hi, _GRID_POINTS)
     a = _eval_side(spec_a, grid)
     b = _eval_side(spec_b, grid)
-    return {
-        "unit": (unit or "").strip(),
+    out = {
+        "unit": target,
         "time": grid.tolist(),
         "a": a,
         "b": b,
-        "verdict": _reliability_verdict(grid, a, b, unit),
+        "verdict": _reliability_verdict(grid, a, b, target),
         "tests": _difference_tests(spec_a, spec_b, a["label"], b["label"]),
     }
+    notes = [f"{side['label']}: {model_units.used_note(conv, 'comparison')}."
+             for side, conv in ((a, conv_a), (b, conv_b)) if conv is not None]
+    if notes:
+        out["unit_conversions"] = notes
+        out["factors"] = {k: conv["factor"] for k, conv in (("a", conv_a), ("b", conv_b)) if conv is not None}
+    return out
+
+
+def _side_in_unit(spec: dict, unit: str) -> tuple[dict, Optional[dict]]:
+    """A comparison side's parametric model in ``unit`` when its own ``unit`` converts to it."""
+    if spec.get("kind") == "nonparametric" or not spec.get("unit") or not unit:
+        return spec, None
+    params, extras, conv = model_units.convert_spec(spec.get("distribution_id"), spec.get("params") or [],
+                                                    spec.get("extras"), spec.get("unit"), unit)
+    if conv is None:
+        return spec, None
+    return {**spec, "params": params, "extras": extras, "unit": conv["to"]}, conv
 
 
 def with_life_bounds(result: dict, bounds: dict) -> dict:
@@ -743,6 +774,52 @@ def _difference_tests(spec_a: dict, spec_b: dict, la: str, lb: str) -> dict:
     }
 
 
+def verdict_words(more, cross, la, lb, da, db, unit, early_a: bool = True) -> str:
+    """The comparison's verdict in words, each side named once: "B is more reliable than A
+    across the range. Median life 6,484 vs 4,310 hours." (the medians in the order the
+    sentence names the sides)."""
+    us = f" {unit_in_text(unit)}" if unit else ""
+    first, second, d1, d2 = la, lb, da, db
+    if more == "tie":
+        text = f"{la} and {lb} are effectively the same."
+    elif more in ("a", "b"):
+        if more == "b":
+            first, second, d1, d2 = lb, la, db, da
+        text = f"{first} is more reliable than {second} across the range."
+    else:
+        if not early_a:
+            first, second, d1, d2 = lb, la, db, da
+        text = (
+            f"The reliability curves cross at about {fmt_num(cross)}{us}: "
+            f"{first} is more reliable before it, {second} after."
+            if cross is not None
+            else f"{la} and {lb} cross over the range."
+        )
+        if cross is None:
+            first, second, d1, d2 = la, lb, da, db
+    if d1 and d2:
+        text += f" Median life {fmt_num(d1)} vs {fmt_num(d2)}{us}."
+    return text
+
+
+def compare_headline(results: dict) -> Optional[str]:
+    """A saved comparison's verdict in words from its parts (so a comparison saved before
+    the wording changed reads the same); None when the parts are missing."""
+    v = (results or {}).get("verdict") or {}
+    a, b = (results or {}).get("a") or {}, (results or {}).get("b") or {}
+    if v.get("more_reliable") not in ("a", "b", "tie", "mixed") or not a.get("label") or not b.get("label"):
+        return None
+    early_a = True
+    if v.get("more_reliable") == "mixed" and v.get("crossover_time") is not None:
+        # Which side leads before the crossing: the stored text names it first.
+        text = str(v.get("text") or "")
+        ia, ib = text.find(f": {a['label']} is more"), text.find(f": {b['label']} is more")
+        early_a = not (ib >= 0 and (ia < 0 or ib < ia))
+    return verdict_words(v["more_reliable"], v.get("crossover_time"), a["label"], b["label"],
+                         (a.get("metrics") or {}).get("median"), (b.get("metrics") or {}).get("median"),
+                         results.get("unit"), early_a=early_a)
+
+
 def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     sfa = np.array([np.nan if v is None else v for v in a["sf"]])
     sfb = np.array([np.nan if v is None else v for v in b["sf"]])
@@ -750,7 +827,6 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     valid = np.isfinite(diff)
     g, d = grid[valid], diff[valid]
     la, lb = a["label"], b["label"]
-    us = f" {unit_in_text(unit)}" if unit else ""
     cross = None
 
     # Ignore differences smaller than 1 reliability-point so near-equal regions
@@ -760,11 +836,11 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     nz = np.nonzero(sig)[0]
 
     if nz.size == 0:
-        more, text = "tie", f"{la} and {lb} are effectively the same."
+        more = "tie"
     elif np.all(sig[nz] >= 0):
-        more, text = "a", f"{la} is more reliable than {lb} across the range."
+        more = "a"
     elif np.all(sig[nz] <= 0):
-        more, text = "b", f"{lb} is more reliable than {la} across the range."
+        more = "b"
     else:
         more = "mixed"
         s = np.sign(d)
@@ -776,22 +852,9 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
                 if d[k] != d[k + 1]
                 else float(g[k])
             )
-        early, late = (la, lb) if sig[nz][0] > 0 else (lb, la)
-        text = (
-            f"The reliability curves cross at about {fmt_num(cross)}{us}: "
-            f"{early} is more reliable before it, {late} after."
-            if cross is not None
-            else f"{la} and {lb} cross over the range."
-        )
-
-    # Headline metric: median life (robust for both parametric and KM).
-    da, db = a["metrics"].get("median"), b["metrics"].get("median")
-    if da and db:
-        higher = la if da >= db else lb
-        text += (
-            f" Median life: {la} {fmt_num(da)}{us} vs {lb} {fmt_num(db)}{us} "
-            f"(longer: {higher})."
-        )
+    early_a = bool(nz.size) and bool(sig[nz][0] > 0)
+    text = verdict_words(more, cross, la, lb, a["metrics"].get("median"), b["metrics"].get("median"),
+                         unit, early_a=early_a)
     return {"more_reliable": more, "crossover_time": cross, "text": text}
 
 

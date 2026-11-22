@@ -12,11 +12,6 @@ import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "build-a-fault-tree" };
 
-const PencilIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-  </svg>
-);
 const ImportIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
@@ -34,8 +29,10 @@ export default function FaultTreeHome() {
   const confirm = useConfirm();
   const askText = useAskText();
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
-    listFaultTrees().then((d) => setTrees(d.fault_trees)).catch((e) => setError(e.message));
+    setLoadError(null);
+    listFaultTrees().then((d) => setTrees(d.fault_trees)).catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -65,6 +62,17 @@ export default function FaultTreeHome() {
     if (!(await confirm(deleteOrRemoveConfirm(t, "fault tree", { name: itemName(t) })))) return;
     try {
       await deleteFaultTree(t.id);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const onRename = async (t) => {
+    const name = changedText(await askText(renamePrompt({ kind: "fault tree", name: t.name })), t.name);
+    if (!name) return;
+    try {
+      await renameFaultTree(t.id, name);
       refresh();
     } catch (err) {
       setError(err.message);
@@ -119,6 +127,8 @@ export default function FaultTreeHome() {
       )}
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={trees}
         noun={["fault tree", "fault trees"]}
         help={HELP}
@@ -150,23 +160,9 @@ export default function FaultTreeHome() {
             <td className="lib-n lib-opt">{t.n_gates}</td>
             <td className="lib-n lib-opt">{t.n_events}</td>
             <td className="lib-date lib-opt">{relativeTime(t.updated_at || t.created_at)}</td>
-            <RowActions item={t} to={pathOf(t.id)} onDelete={() => onDelete(t)}>
-              {!t.read_only && (
-                <button className="act" title="Rename" aria-label="Rename" onClick={async (e) => {
-                  e.stopPropagation();
-                  const name = changedText(await askText(renamePrompt({ kind: "fault tree", name: t.name })), t.name);
-                  if (!name) return;
-                  try {
-                    await renameFaultTree(t.id, name);
-                    refresh();
-                  } catch (err) {
-                    setError(err.message);
-                  }
-                }}>
-                  <PencilIcon />
-                </button>
-              )}
-            </RowActions>
+            <RowActions item={t} to={pathOf(t.id)} onDelete={() => onDelete(t)} actions={[
+              !t.read_only && { id: "rename", label: "Rename…", onSelect: () => onRename(t) },
+            ]} />
           </tr>
         )}
       />

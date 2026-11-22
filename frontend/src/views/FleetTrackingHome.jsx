@@ -5,6 +5,7 @@ import Select from "../components/Select.jsx";
 import { listTrackedFleets, createTrackedFleet, deleteTrackedFleet, listDegradationModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import Button from "../components/ui/Button.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { unitInText } from "../components/unitText.js";
@@ -52,19 +53,25 @@ export default function FleetTrackingHome() {
   const [pickedId, setPickedId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
+  // Opened from a model page's "Track items": that model ({id, name}), so the list shows only its
+  // fleets and the new-fleet dialog says what tracking is (items in service, not the fitted units).
+  const [fromModel, setFromModel] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listTrackedFleets()
       .then((d) => {
         setFleets(d.fleets || []);
         // A workspace with fleets of its own uses Risk: show it in the menu.
         if ((d.fleets || []).some((f) => !f.is_sample)) noteUse("risk");
       })
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, [noteUse]);
   useEffect(() => refresh(), [refresh]);
 
-  const openCreate = async (presetModel = null) => {
+  const openCreate = async (presetModel = null, { fromPage = false } = {}) => {
+    setFromModel(fromPage && presetModel?.id ? presetModel : null);
     setName(presetModel?.name ? `${presetModel.name} — fleet` : "");
     setPickedId(presetModel?.id || "");
     setCreateError(null);
@@ -112,11 +119,10 @@ export default function FleetTrackingHome() {
     setParams({}, { replace: true });
     const on = fleets.filter((f) => f.model_id === wantedModel && !f.is_sample);
     if (on.length === 1) { navigate(`/risk/${on[0].id}`); return; }
-    if (on.length === 0) {
-      listDegradationModels()
-        .then(({ models: all }) => openCreate((all || []).find((m) => m.id === wantedModel) || { id: wantedModel }))
-        .catch(() => openCreate({ id: wantedModel }));
-    }
+    if (on.length > 1) { setFromModel({ id: wantedModel, name: on[0].model_name }); return; }
+    listDegradationModels()
+      .then(({ models: all }) => openCreate((all || []).find((m) => m.id === wantedModel) || { id: wantedModel }, { fromPage: true }))
+      .catch(() => openCreate({ id: wantedModel }, { fromPage: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantedModel, fleets]);
 
@@ -135,9 +141,21 @@ export default function FleetTrackingHome() {
 
       {error && <div className="card error">{error}</div>}
       <WatchedBandsNote />
+      {fromModel && (
+        <p className="muted-line">
+          Showing only the fleets tracked against{" "}
+          <Link to={`/models/degradation/${encodeURIComponent(fromModel.id)}`} className="evidence-link">
+            {fromModel.name || "this model"}
+          </Link>
+          .{" "}
+          <Button variant="link" onClick={() => setFromModel(null)}>Show every fleet</Button>
+        </p>
+      )}
 
       <SectionList
-        rows={fleets}
+        loadError={loadError}
+        onRetry={refresh}
+        rows={fromModel && fleets ? fleets.filter((f) => f.model_id === fromModel.id) : fleets}
         noun={["tracked fleet", "tracked fleets"]}
         fields={(f) => [f.name, f.model_name]}
         help={HELP}
@@ -221,6 +239,18 @@ export default function FleetTrackingHome() {
                 }))}
               />
             </label>
+            {fromModel && (
+              <p className="muted-line">
+                Nothing is tracked against this model yet. A fleet holds the items in service now, with their
+                latest readings; the units the model was fitted on, each with the time it reaches the threshold,
+                are under Crossing times on{" "}
+                <Link to={`/models/degradation/${encodeURIComponent(fromModel.id)}?tab=data`} className="evidence-link"
+                      onClick={() => setModalOpen(false)}>
+                  the model's Data tab
+                </Link>
+                .
+              </p>
+            )}
             <p className="muted-line">
               One model can back any number of fleets. Don't have a model yet?{" "}
               <Link to="/models/degradation" className="evidence-link" onClick={() => setModalOpen(false)}>

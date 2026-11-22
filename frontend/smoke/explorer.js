@@ -1,6 +1,11 @@
 // Shared by the Explorer's smoke specs (Assets › Explorer).
 import { expect } from "@playwright/test";
 
+// Text matched literally inside a RegExp: every special character escaped.
+export function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+}
+
 // The panel about the row picked. On a wide screen its heading (the way up,
 // the name, the actions) and its tabs sit in the slim rows over the tree, the
 // same on both tabs, and its page (the Summary) is the "Details" region beside
@@ -230,4 +235,26 @@ export async function rcmRowMenu(page, rowName, item) {
   const grid = page.getByRole("treegrid", { name: /and their (RCM|FME\(C\)A)/ });
   await grid.getByRole("row", { name: new RegExp(`^${rowName}`) }).locator(".tt-tree, .tt-l1").first().click({ button: "right" });
   await page.getByRole("menu", { name: new RegExp(`^Actions for ${rowName}`) }).getByRole("menuitem", { name: item, exact: true }).click();
+}
+
+// Pick a panel tab by its name (explorerTabs.js PANEL_TABS), as a person would: the tab itself when
+// it shows, else from the row's last tab "⋯ N" (a narrow panel folds the tabs that don't fit into
+// it; its accessible name lists them, so a plain name match could hit it instead of the tab).
+export async function pickTab(page, name) {
+  const tab = page.getByRole("tab", { name, exact: true });
+  if (await tab.isVisible()) return tab.click();
+  await page.getByRole("tab", { name: new RegExp(`more tabs?:.*${escapeRegExp(name)}`) }).first().click();
+  await page.getByRole("menu", { name: "More tabs" }).getByRole("menuitem", { name, exact: true }).click();
+  return expect(tab).toHaveAttribute("aria-selected", "true");
+}
+
+// On a phone, a link that names a row (?sel=) opens that row's details, its own screen; a test
+// about the tree goes back to it (‹ Back), where the row is still picked.
+export async function phoneTree(page) {
+  const back = page.locator(".td-back");
+  await back.first().waitFor({ state: "visible", timeout: 4_000 }).catch(() => {});
+  if (await back.count()) {
+    await back.first().click();
+    await expect(back).toHaveCount(0);
+  }
 }

@@ -16,7 +16,7 @@
 // (backend/tests/test_spa_routes.py) all read it.
 //
 import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
-import { ORDERS_PATH } from "./maintenanceOrders.js";
+import { ORDERS_PATH, PACKAGES_PATH } from "./maintenanceOrders.js";
 
 // A `:name` in `to` takes the value of the same `:name` in `path`.
 //
@@ -173,4 +173,12 @@ export function movedHref(to, search = "", hash = "") {
   const old = new URLSearchParams(search);
   for (const [k, v] of old) if (!q.has(k)) q.append(k, v);
   return `${path}?${q}${hash}`;
+}
+
+// Where an earlier address lands in this deployment: its row's `to`, except that
+// with work management turned off (workManagement.js) Maintenance's own address opens
+// on Packages, its landing page then, rather than on Orders.
+export function movedTarget(row, { workOrders = true } = {}) {
+  if (!workOrders && row.to === ORDERS_PATH) return PACKAGES_PATH;
+  return row.to;
 }

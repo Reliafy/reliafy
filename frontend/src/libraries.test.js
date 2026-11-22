@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addWorkspaceId, countsText, dataLine, entryAnchor, entryPath, entryTags, filterEntries, groupLibraries, libraryMatches,
+  addWorkspaceId, countsText, dataLine, datasetModelsForLibrary, entryAnchor, entryPath, entryTags, filterEntries, groupLibraries, libraryMatches,
   libraryPath, modelBasis, modelHeadline, previewRowsText, publicLibraryId, sharingProblems, showsPublicLibrary, usedLinks, visibilityBody,
 } from "./libraries.js";
 
@@ -42,7 +42,8 @@ test("the cards' counts and the three sections", () => {
 const DATA = { id: "L:1", type: "data", name: "Bearing lives", tags: ["Non-repairable"],
   data: { n_rows: 20, reading_summary: "x = Age (hours) · c = Status" } };
 const FITTED = { id: "L:2", type: "model", name: "Bearing Weibull", tags: ["Non-repairable"],
-  model: { distribution: "Weibull", unit: "hours", headline: { text: "B10 1,230 hours (90% lower bound 980 hours)" },
+  model: { distribution: "Weibull", unit: "hours", headline: { label: "B10", value: 1234.4, lower: 978.6, confidence: 0.9, unit: "hours",
+    text: "B10 1,234 hours (90% lower bound 978.6 hours)" },
     fitted_on: { entry_id: "L:1", name: "Bearing lives" }, basis_text: "Fitted to data (12 failures, 8 running)" } };
 const PARAMS = { id: "L:3", type: "model", name: "Valve rate", tags: ["Non-repairable"],
   model: { distribution: "Exponential", unit: "hours", headline: null, fitted_on: null, basis_text: "From parameters" } };
@@ -61,7 +62,11 @@ test("entries filter by kind, tag and words", () => {
 });
 
 test("a model's headline, and where it came from: fitted on a dataset in the library, or its basis in words", () => {
-  assert.equal(modelHeadline(FITTED.model), "B10 1,230 hours (90% lower bound 980 hours)");
+  // The model page's rounding and words, whatever the stored sentence says.
+  assert.equal(modelHeadline(FITTED.model), "B10 1,230 hours (≥ 979 at 90%)");
+  assert.equal(modelHeadline({ headline: { label: "B10", value: 6322, lower: null, confidence: 0.9, unit: "hours" } }),
+    "B10 6,320 hours (no confidence bound: not fitted to data)");
+  assert.equal(modelHeadline({ headline: { text: "B10 5 days (no confidence bound)" } }), "B10 5 days (no confidence bound)");
   assert.equal(modelHeadline(PARAMS.model), "Exponential, in hours");
   assert.deepEqual(modelBasis(FITTED.model), { fittedOn: { entry_id: "L:1", name: "Bearing lives" } });
   // Not fitted on data: its basis, never a gap or a warning.
@@ -118,6 +123,8 @@ test("one dataset saved: its page is told it was reused and which library it wen
   const library = { id: "L", name: "Pumps", added: ["L:1"], already: [] };
   assert.deepEqual(createdState({ id: "d1", library }), { state: { library } });
   assert.deepEqual(createdState({ id: "d1", reused: true }, "Bearings"), { state: { reused: true, name: "Bearings" } });
+  const twin = { id: "d0", name: "Bearings (old)" };
+  assert.deepEqual(createdState({ id: "d1", same_rows_as: twin }), { state: { sameRows: twin } });
 });
 
 test("an entry's preview line matches what the table shows", () => {
@@ -125,4 +132,20 @@ test("an entry's preview line matches what the table shows", () => {
   assert.equal(previewRowsText(4, 4), "4 rows.");
   assert.equal(previewRowsText(14, 14), "14 rows: scroll the table to see them all.");
   assert.equal(previewRowsText(50, 120), "The first 50 of 120 rows: scroll the table to see them.");
+});
+
+test("a dataset's Add to library offers the models fitted to it that a library can hold", () => {
+  const ds = {
+    models: [{ id: "w", name: "Weibull", kind: "life" }, { id: "j", name: "Joint", kind: "joint" }],
+    other_models: [
+      { id: "r", name: "Crow-AMSAA", collection: "recurrent_models" },
+      { id: "d", name: "Wear", collection: "degradation_models" },
+      { id: "s", name: "Sample ALT", collection: "alt_models", is_sample: true },
+    ],
+  };
+  assert.deepEqual(datasetModelsForLibrary(ds), [
+    { id: "w", name: "Weibull", collection: "models" },
+    { id: "r", name: "Crow-AMSAA", collection: "recurrent_models" },
+  ]);
+  assert.deepEqual(datasetModelsForLibrary(null), []);
 });

@@ -22,10 +22,12 @@ export default function DegradationHome() {
   const fromData = params.get("dataset");
   const [error, setError] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listDegradationModels()
       .then((d) => setModels(d.models))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -61,6 +63,8 @@ export default function DegradationHome() {
       <StorageCapNotice kind="degradation_models" one="degradation model" many="degradation models" refreshKey={models} />
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         rows={models}
         noun={["model", "models"]}
         fields={(m) => [m.name, m.path_model]}

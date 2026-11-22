@@ -114,7 +114,7 @@
 .tp .tp-arrange button.tp-arrange-btn:first-child { border-left: none; }
 .tp .tp-arrange button.tp-arrange-btn:hover:not(.on):not([aria-disabled="true"]) { background: var(--accent-wash); color: var(--text); }
 .tp .tp-arrange button.tp-arrange-btn.on { background: var(--accent-subtle); color: var(--accent-text); font-weight: 600; }
-.tp .tp-arrange button.tp-arrange-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.tp .tp-arrange button.tp-arrange-btn:focus-visible { outline-offset: -2px; }
 .tp-arrange.is-off { opacity: 0.55; }
 /* The icons stand in for the labels where the tree pane is narrow (below). */
 .tp-arrange-ico { display: none; flex: none; }
@@ -157,7 +157,7 @@
   white-space: nowrap;
 }
 .tp button.tp-addrow:hover:not(:disabled) { background: var(--accent-wash); color: var(--accent-text); }
-.tp button.tp-addrow:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tp button.tp-addrow:focus-visible { outline-offset: -2px; }
 .tp button.tp-addrow:disabled { opacity: 0.55; cursor: default; }
 .tp-addrow-plus { flex: none; width: 14px; text-align: center; font-size: 15px; line-height: 1; }
 .tp-addrow-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -238,7 +238,8 @@
 }
 
 .tp-row:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  outline: none;
+  box-shadow: var(--focus-ring-inset);
 }
 
 .tp-row.pin {
@@ -322,7 +323,7 @@
   padding: 0 4px;
   border-radius: 9px;
   border: 1px solid transparent;
-  font-size: 11px;
+  font-size: var(--fs-12);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -1054,29 +1055,7 @@ button.rw-cklink {
   text-overflow: ellipsis;
 }
 
-/* A row's menu: the app's menu look (.ovm-menu), placed at the pointer. */
-.ovm-menu.row-menu {
-  position: fixed;
-  right: auto;
-  z-index: 95; /* over the details sheet on a phone (90), under dialogs (100) */
-  min-width: 200px;
-}
-.row-menu .ovm-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-subtle); color: var(--accent-text); }
-.row-menu .ovm-item.danger:focus-visible { background: var(--danger-bg); color: var(--danger-text); }
-/* An item that can't be used now: greyed, with the reason under it. */
-.row-menu .ovm-item.off { flex-direction: column; align-items: flex-start; gap: 0; color: var(--text-tertiary); cursor: not-allowed; }
-.row-menu .ovm-item.off:hover, .row-menu .ovm-item.off:focus-visible { background: var(--bg-subtle, transparent); color: var(--text-secondary); }
-/* A submenu (Focus ›): its item has the arrow at its end; beside the menu
-   on a wide screen, in place under its item on a phone. The arrow is drawn,
-   not text (no alt text: the item's name stays "Focus"). */
-.row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: 12px; }
-.row-menu-sep { height: 1px; margin: 4px 8px; background: var(--border, #e9ebee); }
-.row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--text-secondary); }
-.row-menu-parent.inline::after { content: "▸" / ""; }
-.row-menu-parent.inline.open::after { content: "▾" / ""; }
-.row-menu .ovm-item.row-menu-parent.open { background: var(--accent-subtle); color: var(--accent-text); }
-.ovm-menu.row-submenu { z-index: 96; min-width: 190px; }
-.row-menu-inline { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; }
+/* The row menu's look (RowMenu) is shared: it lives in index.css. */
 .row-menu .ovm-item.row-menu-radio { display: flex; align-items: center; gap: 6px; }
 .row-menu-tick { display: inline-block; width: 1em; color: var(--accent-text); }
 .row-menu-why { display: block; max-width: 260px; margin-top: 2px; font-size: var(--fs-12); color: var(--text-secondary); white-space: normal; line-height: var(--lh-12); }
@@ -1099,7 +1078,7 @@ button.rw-cklink {
   border-radius: 999px;
   background: var(--accent);
   color: var(--text-on-fill);
-  font-size: 11px;
+  font-size: var(--fs-12);
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 0 0 2px var(--bg-surface);
@@ -1171,7 +1150,7 @@ button.rw-cklink {
 .tm-foot { display: flex; gap: 4px; }
 .tm-menu .tm-reset { flex: 1 1 auto; min-width: 0; color: var(--accent-text); font-weight: 600; }
 .tm-menu .tm-done { flex: none; width: auto; margin-left: auto; justify-content: center; font-weight: 600; }
-.tm-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tm-menu button:focus-visible { outline-offset: -2px; }
 .tm-menu button.tm-seg-btn:focus-visible { outline-offset: -3px; }
 @media (max-width: 720px), (hover: none) {
   .tm-menu button.tm-seg-btn, .tm-menu .tm-item { min-height: 40px; }
@@ -1419,7 +1398,7 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   border-radius: 6px; margin: 0 4px; color: var(--text); min-width: 0;
 }
 .rcm-mt-row:hover { background: var(--accent-wash); }
-.rcm-mt-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rcm-mt-row:focus-visible { outline-offset: -2px; }
 .rcm-mt-row.picked { background: var(--accent-subtle); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
 .rcm-mt-row.no { color: var(--text-disabled); cursor: default; }
 .rcm-mt-row.no:hover { background: none; }
@@ -1437,6 +1416,11 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
 /* The markers' key: each Show only filter in the tree's ⋯ menu with the
    marker it matches, at its end. */
 .tm-menu .tm-item .tm-mark { margin-left: auto; }
+/* A Show only filter's count, and the "RPN at least" number under the filters. */
+.tm-menu .tm-item .tm-n { margin-left: auto; padding-left: 8px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tm-menu .tm-floor { padding: 0 6px 0 30px; cursor: default; }
+.tm-menu .tm-floor-l { white-space: nowrap; }
+.tm-menu .tm-floor input { width: 72px; height: var(--control-sm); font-variant-numeric: tabular-nums; }
 
 /* A phone: the tabs over the tree name the row they're for. */
 .tp-tabs-wrap { min-width: 0; }
@@ -1449,3 +1433,26 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
   text-overflow: ellipsis;
 }
 .tp-tabs-for strong { color: var(--text); font-weight: 600; }
+.tp-tabs-for-name { font: inherit; padding: 0; border: 0; background: none; color: inherit; text-decoration: underline;
+  text-decoration-color: var(--border-control); text-underline-offset: 2px; cursor: pointer; }
+
+/* The panel's tabs (TreeDetail HeaderTabs, EXPLORER_PANEL_TABS): the flat row with "⋯ N" (the
+   shared Tabs with overflow) taking the width it's given, then the tab's inner views under it. */
+.ptabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ptabs > .tabs-strip.tt-tabs { flex: none; min-height: 40px; }
+.ptabs > .tabs-strip.tp-tabs { margin: 2px 0 0; }
+.tabs-fit > .tabs { flex: 1 1 auto; }
+.ptabs-views { align-self: flex-start; margin: var(--space-2) 0; }
+@media (max-width: 560px) {
+  /* A phone: the inner views share the width in equal parts, one line each. */
+  .ptabs-views { align-self: stretch; display: flex; }
+  /* Five views (Maintenance: Tasks · What it needs · Packages · Forecast · Spares) don't fit 400 px: each
+     takes its label's width and the row scrolls inside itself, never the page, rather than clipping one. */
+  .ptabs-views { overflow-x: auto; }
+  .ptabs-views .seg-btn { flex: 1 0 auto; text-align: center; justify-content: center; white-space: nowrap; padding-left: var(--space-2); padding-right: var(--space-2); }
+}

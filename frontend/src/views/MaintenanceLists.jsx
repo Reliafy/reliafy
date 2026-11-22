@@ -14,6 +14,7 @@ import {
   getMaintenanceOverview,
   getPositionClasses,
   adjustMaintenanceStock,
+  countMaintenanceStock,
   getSparesCover,
   listMaintenanceParts,
   setMaintenanceReorder,
@@ -26,7 +27,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, Field, FormModal, LifeTable, Proposals, flatten, fmtDate,
+  DocumentsCard, Field, FormModal, LifeTable, Proposals, flatten, fmtDate, today as workspaceToday,
 } from "../components/MaintenanceParts.jsx";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
@@ -35,6 +36,7 @@ import { countsText, inheritedText } from "../maintenanceLocations.js";
 import { ASSETS_LIST_PATH, openWorkPath } from "../maintenanceAssets.js";
 import { subjectBadge } from "../maintenanceSubjects.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import {
   ItemClassesSection, KindFilters, PartKindModal, useKinds,
 } from "../components/MaintenanceItemClasses.jsx";
@@ -58,6 +60,7 @@ import { isNotFound } from "../components/loadFailed.js";
 import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { NewPartModal } from "../components/PartForms.jsx";
 import { partsInBranch } from "../explorerTabs.js";
+import { countIsOld, countedText } from "../sparesYear.js";
 import { itemTreePath, productPath } from "../products.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
@@ -138,6 +141,7 @@ export function NewLocationModal({ locations, parentId = null, asset = false, de
 }
 
 export function MaintenanceLocation() {
+  const workOrders = useWorkManagementOn();
   const { id } = useParams();
   const navigate = useNavigate();
   const [loc, setLoc] = useState(null);
@@ -158,7 +162,7 @@ export function MaintenanceLocation() {
   // positions: adding one here is its main action, and the new position is at this place.
   const canHoldPositions = !!loc && !loc.design_of && !loc.carried_by;
   const addPosition = () => setModal("position");
-  if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={ASSETS_LIST_PATH} label="Go to Assets" /></div>;
+  if (error && !loc) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Location not found." to={ASSETS_LIST_PATH} label="Go to Assets" /></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
   // (positions, items there now and the place itself), not only the positions'.
@@ -206,7 +210,7 @@ export function MaintenanceLocation() {
           ))}</ul>
         </section>
       )}
-      {!loc.design_of && <OpenWorkHere loc={loc} />}
+      {!loc.design_of && workOrders && <OpenWorkHere loc={loc} />}
       <LocationPositions loc={loc} onAdd={canHoldPositions ? addPosition : null} />
       {!loc.design_of && <section className="card">
         <div className="maint-head"><h2>Items placed here</h2></div>
@@ -226,7 +230,8 @@ export function MaintenanceLocation() {
       </section>}
       {!loc.design_of && <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
                  emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
-                   + "building or area check: it raises one work order here, and can list every position here to check."} />}
+                   + (workOrders ? "building or area check: it raises one work order here, and can list every position here to check."
+                     : "building or area check, in the plan for this place.")} />}
       {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
       <ConditionsCard target={{ id: loc.id, name: loc.name, kind: "Location" }} view={loc} onChanged={refresh} />
       <MaintenancePhotos targetId={loc.id} targetKind="Location" targetName={loc.name} photos={loc.photos} onChanged={refresh} />
@@ -288,6 +293,7 @@ function OpenWorkHere({ loc }) {
 // The positions at a location (set on them or inherited, here or inside it), by the
 // system each belongs to, with what's fitted to each.
 function LocationPositions({ loc, onAdd = null }) {
+  const workOrders = useWorkManagementOn();
   return (
     <section className="card">
       <div className="maint-head">
@@ -310,7 +316,7 @@ function LocationPositions({ loc, onAdd = null }) {
             <span className="lib-date"> · {g.count} here</span>
           </h3>
           <div className="maint-scroll"><table className="lib-table">
-            <thead><tr><th>Position</th><th>Where</th><th>Fitted</th><th>Work</th></tr></thead>
+            <thead><tr><th>Position</th><th>Where</th><th>Fitted</th>{workOrders && <th>Work</th>}</tr></thead>
             <tbody>
               {g.positions.map((r) => (
                 <tr key={r.id}>
@@ -320,7 +326,7 @@ function LocationPositions({ loc, onAdd = null }) {
                     {r.direct ? "set here" : inheritedText({ inherited: true, inherited_from: r.inherited_from })}
                   </td>
                   <td>{r.item ? <Link to={`/asset-register/items/${r.item.id}`}>{r.item.name}</Link> : <span className="lib-date">nothing fitted</span>}</td>
-                  <td>{r.open_work_orders > 0 ? <span className="maint-badge">{r.open_work_orders} open</span> : <span className="lib-date">—</span>}</td>
+                  {workOrders && <td>{r.open_work_orders > 0 ? <span className="maint-badge">{r.open_work_orders} open</span> : <span className="lib-date">—</span>}</td>}
                 </tr>
               ))}
             </tbody>
@@ -651,8 +657,11 @@ function EconomicsCard({ name, label = name, modelUnit = "days" }) {
 }
 
 // The class's failure forecast from the register (#407): the answer first, then
-// the periods, the positions most at risk, the spares and the budget.
-function ForecastCard({ name, label = name }) {
+// the periods, the positions most at risk, the spares and the budget. `show`
+// "spares": the spares and their stock levels alone (an item class's Spares tab
+// in the Explorer), with `note` (what the demand counts) under the heading.
+export function ForecastCard({ name, label = name, show = "all", note = null }) {
+  const sparesOnly = show === "spares";
   const [period, setPeriod] = useState("month");
   const [periods, setPeriods] = useState(12);
   const [data, setData] = useState(null);
@@ -675,7 +684,8 @@ function ForecastCard({ name, label = name }) {
   const budget = data?.budget;
   return (
     <section className="card" data-testid="class-forecast">
-      <div className="maint-head"><h2>{label}: failure forecast</h2></div>
+      <div className="maint-head"><h2>{label}: {sparesOnly ? "spares" : "failure forecast"}</h2></div>
+      {note && <p className="lib-date">{note}</p>}
       <div className="maint-row" style={{ marginTop: 0 }}>
         <span className="lib-date">Next</span>
         <input type="number" inputMode="numeric" min="1" max={most} value={periods} style={{ width: "4.5rem" }}
@@ -688,14 +698,14 @@ function ForecastCard({ name, label = name }) {
       </div>
       {error && <div className="card error">{error}</div>}
       {data === null && !error && <p className="lib-date">Working it out…</p>}
-      {data && (
+      {data && !sparesOnly && (
         <>
           <ResultSummary
             sentence={data.n_forecast ? (
               <>≈ <b>{formatNumber(data.expected)}</b> failures in the next <b>{horizon}</b> (likely {rangeText(data.interval)}).</>
             ) : data.headline}
             stats={[
-              data.n_forecast > 0 && { label: "Likely range (90%)", value: rangeText(data.interval), hint: "P5–P95, counting replacements that fail again" },
+              data.n_forecast > 0 && { label: "Likely range (90% two-sided)", value: rangeText(data.interval), hint: "P5–P95, counting replacements that fail again" },
               data.n_forecast > 0 && data.periods > 1 && { label: `Average a ${shown}`, value: `≈ ${formatNumber(data.expected / data.periods, { sig: 2 })}` },
               { label: "Positions forecast", value: `${data.n_forecast} of ${data.n_positions}` },
               budget && { label: "Budget", value: `≈ ${money(budget.expected, budget.currency)}`, hint: `likely ${moneyRange(budget.interval, budget.currency)}` },
@@ -758,8 +768,11 @@ function ForecastCard({ name, label = name }) {
             <p className="lib-date">Not forecast: {data.not_forecast.slice(0, 12).map((s) => `${s.position.name} (${s.reason})`).join("; ")}
               {data.n_not_forecast > 12 ? `; and ${data.n_not_forecast - 12} more` : ""}.</p>
           )}
-
-          <h3 className="maint-sub">Spares</h3>
+        </>
+      )}
+      {data && (
+        <>
+          {!sparesOnly && <h3 className="maint-sub">Spares</h3>}
           {data.spares.length === 0 ? (
             <p className="lib-date">No replacement part or critical spare on these positions’ parts lists.</p>
           ) : (
@@ -783,7 +796,10 @@ function ForecastCard({ name, label = name }) {
           )}
           <ClassStocking data={data} name={name} serviceLevel={stocking.serviceLevel} reviewDays={stocking.reviewDays}
                          onOptions={(o) => setStocking((s) => ({ ...s, ...o }))} onChanged={load} />
-
+        </>
+      )}
+      {data && !sparesOnly && (
+        <>
           <h3 className="maint-sub">Budget</h3>
           {!budget ? (
             <p className="lib-date">Set the class’s costs above (a failure, a planned replacement) to see what this costs.</p>
@@ -884,7 +900,9 @@ export function PartsPanel({ branch, scopeName = "", all = false, onAll, design 
                   {!design && (
                     <>
                       <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}
-                        {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}</td>
+                        {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}
+                        {(pt.on_hand > 0 || pt.counted_on) && (
+                          <div className={countIsOld(pt, workspaceToday()) ? "maint-overdue" : "lib-date"}>{countedText(pt, workspaceToday())}</div>)}</td>
                       <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
                     </>
                   )}
@@ -993,15 +1011,27 @@ function SparesCoverCard({ parts }) {
   );
 }
 
-function StockModal({ part, locations, onClose, onDone }) {
+// A part's stock at a location: receive or issue, or record a count (what was on the shelf on the
+// day it was counted: anything booked after that day still stands), and its reorder point.
+export function StockModal({ part, locations, onClose, onDone }) {
   const [loc, setLoc] = useState(part.stock[0]?.location.id || "");
+  const [mode, setMode] = useState("move");
   const [qty, setQty] = useState("");
+  const [on, setOn] = useState("");
+  const [by, setBy] = useState("");
   const [reorder, setReorder] = useState("");
+  const counting = mode === "count";
+  const here = part.stock.find((st) => st.location.id === loc);
   return (
     <FormModal title={`Stock: ${part.part_number}`} submitLabel="Save" canSubmit={!!loc && (qty !== "" || reorder !== "")}
                onClose={onClose}
                onSubmit={async () => {
-                 if (qty !== "") await adjustMaintenanceStock(part.id, { location_id: loc, delta: Number(qty), reason: Number(qty) > 0 ? "received" : "issued" });
+                 if (qty !== "" && counting) {
+                   await countMaintenanceStock(part.id, { location_id: loc, counted: Number(qty), on: on || null, by });
+                 } else if (qty !== "") {
+                   await adjustMaintenanceStock(part.id, { location_id: loc, delta: Number(qty), on: on || null,
+                     reason: Number(qty) > 0 ? "received" : "issued" });
+                 }
                  if (reorder !== "") await setMaintenanceReorder(part.id, { location_id: loc, reorder_point: Number(reorder) });
                  onDone();
                }}>
@@ -1011,7 +1041,28 @@ function StockModal({ part, locations, onClose, onDone }) {
           {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
         </select>
       </Field>
-      <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
+      <SegmentedControl label="What happened" value={mode} onChange={(v) => { setMode(v); setQty(""); }}
+                        options={[{ value: "move", label: "Received or issued" }, { value: "count", label: "Counted" }]} />
+      {counting ? (
+        <>
+          <Field label="On the shelf when counted">
+            <input type="number" inputMode="decimal" min="0" step="any" value={qty} placeholder="e.g. 2" onChange={(e) => setQty(e.target.value)} />
+          </Field>
+          <Field label="Counted on">
+            <input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} />
+          </Field>
+          <Field label="Counted by (optional)"><input value={by} maxLength={120} onChange={(e) => setBy(e.target.value)} /></Field>
+          <p className="lib-date">
+            {here?.counted ? `Last counted ${here.counted.quantity} on ${here.counted.on}. ` : "Not counted here before. "}
+            Anything received or issued after the count date still stands.
+          </p>
+        </>
+      ) : (
+        <>
+          <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
+          <Field label="On (default today)"><input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
+        </>
+      )}
       <Field label="Reorder at (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={reorder} onChange={(e) => setReorder(e.target.value)} /></Field>
     </FormModal>
   );

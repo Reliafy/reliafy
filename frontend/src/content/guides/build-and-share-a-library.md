@@ -43,11 +43,13 @@ entries listed.
 
 ## Add data and models
 
-Open a dataset or a model and choose **Add to library…** from its ⋯ menu. It
-works for any dataset and any kind of model: non-repairable, repairable and
-accelerated life; fitted to data, entered from parameters, taken from a handbook
-or built as a prior. Pick one of your libraries, or make a new one in the same
-step.
+Open a dataset and choose **Add to library…** beside its main action, or open a
+model and choose it from the model's ⋯ menu. It works for any dataset and any
+kind of model: non-repairable, repairable and accelerated life; fitted to data,
+entered from parameters, taken from a handbook or built as a prior. Pick one of
+your libraries, or make a new one in the same step. From a dataset, the models
+fitted to it are listed and ticked, so the fit goes in with the data; untick any
+you want to leave out.
 
 The library keeps a copy as it is now. Later edits to the dataset or model in
 your workspace don't change the copy, so a library stays what you checked. When

@@ -196,10 +196,18 @@ test("a product's design locations have the design's tabs: no Failure reports, S
   assert.deepEqual(tabsFor(designPos).map((t) => t.id), shown(["summary", "rcm", "fmea", "maintenance", "reports", "parts", "classes", "models", "missions", "lsa"]));
 });
 
-test("an item class has one tab, Condition monitoring, and opens on it", () => {
+test("an item class has Condition monitoring, Forecast and Spares, and opens on Condition monitoring", () => {
   const cls = { type: "cls", ref: { id: "c1", name: "Pumps" } };
   const tabs = tabsFor(cls);
-  assert.deepEqual(tabs.map((t) => t.id), ["condition"]);
+  assert.deepEqual(tabs.map((t) => t.id), ["condition", "forecast", "spares"]);
+  assert.deepEqual(tabs.slice(1).map((t) => t.label), ["Forecast", "Spares"]);
+  // Only a class has them: never a position, item, place or a design's row.
+  for (const r of [pos, item, loc, { type: "group" }, { type: "pos", ref: { in_design: true } }]) {
+    assert.ok(!tabsFor(r).some((t) => t.id === "forecast" || t.id === "spares"));
+  }
+  assert.equal(shownTab("forecast", cls), "forecast");
+  assert.equal(shownTab("spares", pos), "summary");
+  assert.equal(addressTab("spares", { arrange: "classes", sel: "cls:pump" }), "spares");
   assert.equal(tabs[0].label, "Condition monitoring");
   assert.equal(tabs[0].title, "Each position of this class with its risk now, highest first");
   // The address names it (?tab=condition).
@@ -252,7 +260,7 @@ test("a position on an asset has Condition monitoring too: the same tab as a cla
 });
 
 test("the tab bar: two tabs or more, or one that isn't Summary", () => {
-  assert.ok(hasTabBar({ type: "cls", ref: {} })); // one tab, Condition monitoring
+  assert.ok(hasTabBar({ type: "cls", ref: {} })); // Condition monitoring, Forecast, Spares
   assert.ok(hasTabBar(pos));
   assert.ok(hasTabBar(item));
   assert.ok(!hasTabBar({ type: "group" })); // Summary alone
@@ -265,8 +273,12 @@ test("Condition monitoring comes along when the tree's arrangement changes: posi
     assert.equal(tabForArrangement("reports", m), "reports");
     assert.equal(tabForArrangement("summary", m), "summary");
   }
-  // No tab is a class's alone now, so none is left behind off Classes.
-  assert.ok(!TABS.some((t) => t.kinds.every((k) => k === "cls")));
+  // A class's own tabs (Forecast, Spares) are left behind off Classes: no other row has them.
+  for (const m of ["positions", "locations"]) {
+    assert.equal(tabForArrangement("forecast", m), "summary");
+    assert.equal(tabForArrangement("spares", m), "summary");
+  }
+  assert.equal(tabForArrangement("forecast", "classes"), "forecast");
 });
 
 test("walking on from a class keeps its Condition monitoring on a position, when the address names no tab", () => {
@@ -295,6 +307,117 @@ test("an address with a class picked by Classes opens on the class's tab, whatev
   assert.equal(addressTab("nonsense"), "summary");
 });
 
+// ---- Plain tabs with an overflow (prototype) --------------------------------------------------
+import {
+  EXPLORER_PANEL_TABS, PANEL_TABS, panelTabsFor, panelView, tabPlace, viewTarget,
+} from "./explorerTabs.js";
+
+const shape = (tabs) => tabs.map((t) => [t.id, t.views.map((v) => v.id)]);
+const labels = (tabs) => tabs.map((t) => t.label);
+const asset = { type: "pos", ref: { name: "Pump" } };
+const product = { type: "pos", ref: { design: { rev: "A" } } };
+
+test("the panel tabs are on in this branch and every view is a tab that exists", () => {
+  assert.equal(EXPLORER_PANEL_TABS, true);
+  const ids = new Set(TABS.map((t) => t.id));
+  for (const p of PANEL_TABS) for (const v of p.views) assert.ok(ids.has(v.tab), v.tab);
+  // Ordered by use; the order never changes.
+  assert.deepEqual(PANEL_TABS.map((p) => p.id), ["summary", "maintenance", "monitoring", "rcm", "fmea", "models", "history"]);
+});
+
+test("an asset's position: seven tabs by use, Maintenance, Monitoring and Models with inner views", () => {
+  assert.deepEqual(labels(panelTabsFor(asset)), ["Summary", "Maintenance", "Monitoring", "RCM", "FME(C)A", "Models", "History"]);
+  assert.deepEqual(shape(panelTabsFor(asset)), [
+    ["summary", ["summary"]],
+    ["maintenance", ["tasks", "needs", "packages", "forecast", "spares"]],
+    ["monitoring", ["readings", "risk"]],
+    ["rcm", ["rcm"]], ["fmea", ["fmea"]],
+    ["models", ["life", "missions"]],
+    ["history", ["reports"]],
+  ]);
+  // Forecast is real now (no MENU_PREVIEW needed), a position's only.
+  const m = panelTabsFor(asset).find((t) => t.id === "maintenance");
+  assert.equal(m.views[3].label, "Forecast");
+  assert.doesNotMatch(m.views[3].title, /preview|made-up/);
+  // Monitoring's risk view is "Life left"; Models' first view "Life models".
+  const mon = panelTabsFor(asset).find((t) => t.id === "monitoring");
+  assert.deepEqual(mon.views.map((v) => v.label), ["Readings", "Life left"]);
+  assert.deepEqual(panelTabsFor(asset).find((t) => t.id === "models").views.map((v) => v.label), ["Life models", "Missions"]);
+  // Inner-view labels are short (one line each at 400 px).
+  for (const t of panelTabsFor(asset).filter((x) => x.views.length > 1)) for (const v of t.views) assert.ok(v.label.length <= 13, v.label);
+});
+
+test("a product's design position: six tabs, no Monitoring, no Packages; its History is Field reports", () => {
+  const tabs = panelTabsFor(product);
+  assert.deepEqual(labels(tabs), ["Summary", "Maintenance", "RCM", "FME(C)A", "Models", "Field reports"]);
+  assert.deepEqual(tabs.find((t) => t.id === "maintenance").views.map((v) => v.id), ["tasks", "needs", "spares"]); // Spares: the items built from it, or a planned fleet
+  assert.match(tabs.find((t) => t.id === "history").title, /items built from this product/);
+  // A position inside the design too.
+  assert.deepEqual(labels(panelTabsFor({ type: "pos", ref: { in_design: true } })), labels(tabs));
+  // A design location has no History at all.
+  assert.deepEqual(labels(panelTabsFor({ type: "loc", ref: { design_of: "d", in_design: true } })), ["Summary", "Maintenance", "RCM", "FME(C)A"]);
+});
+
+test("locations, items, classes and headings have only the tabs their kind has, in the same order", () => {
+  assert.deepEqual(labels(panelTabsFor(loc)), ["Summary", "Maintenance", "Monitoring", "RCM", "FME(C)A", "History"]);
+  assert.deepEqual(panelTabsFor(loc).find((t) => t.id === "monitoring").views.map((v) => v.id), ["readings"]);
+  assert.deepEqual(labels(panelTabsFor(item)), ["Summary", "Monitoring", "History"]);
+  // A class: Monitoring on the risk view, then its Forecast and Spares, each a tab of its own.
+  const cls = { type: "cls" };
+  assert.deepEqual(shape(panelTabsFor(cls)), [["monitoring", ["risk"]], ["forecast", ["forecast"]], ["spares", ["spares"]]]);
+  assert.deepEqual(panelView("summary", cls), { tab: "monitoring", view: "risk" });
+  assert.deepEqual(panelTabsFor({ type: "group" }).map((t) => t.id), ["summary"]);
+});
+
+test("old addresses open their tab and inner view", () => {
+  const at = (value, mview = null, opts = {}) => panelView(tabParam(value), asset, { mview, ...opts });
+  assert.deepEqual(at("rcm"), { tab: "rcm", view: "rcm" });
+  assert.deepEqual(at("fmea"), { tab: "fmea", view: "fmea" });
+  assert.deepEqual(at("models"), { tab: "models", view: "life" });
+  assert.deepEqual(at("missions"), { tab: "models", view: "missions" });
+  assert.deepEqual(at("maintenance"), { tab: "maintenance", view: "tasks" });
+  assert.deepEqual(at("lsa"), { tab: "maintenance", view: "needs" });
+  assert.deepEqual(at("packages"), { tab: "maintenance", view: "needs" });
+  assert.deepEqual(at("measurements"), { tab: "monitoring", view: "readings" });
+  assert.deepEqual(at("condition"), { tab: "monitoring", view: "risk" });
+  assert.deepEqual(at("reports"), { tab: "history", view: "reports" });
+  assert.deepEqual(at(null), { tab: "summary", view: "summary" });
+  assert.deepEqual(panelView("reports", product), { tab: "history", view: "reports" });
+  // The inner views that need an mview.
+  assert.deepEqual(at("lsa", "packages"), { tab: "maintenance", view: "packages" });
+  assert.deepEqual(at("maintenance", "forecast"), { tab: "maintenance", view: "forecast" });
+  // A location has no Forecast (it falls back to Tasks); on a design Packages falls back to What it needs.
+  assert.deepEqual(panelView("maintenance", loc, { mview: "forecast" }), { tab: "maintenance", view: "tasks" });
+  assert.deepEqual(panelView("maintenance", product, { mview: "forecast" }), { tab: "maintenance", view: "tasks" });
+  assert.deepEqual(panelView("lsa", product, { mview: "packages" }), { tab: "maintenance", view: "needs" });
+  // A tab a row hasn't shows Summary.
+  assert.deepEqual(panelView("condition", product), { tab: "summary", view: "summary" });
+});
+
+test("a tab or view picked names the address tab and mview to open", () => {
+  assert.deepEqual(viewTarget(asset, "maintenance"), { tab: "maintenance", mview: null });
+  assert.deepEqual(viewTarget(asset, "maintenance", "needs"), { tab: "lsa", mview: null });
+  assert.deepEqual(viewTarget(asset, "maintenance", "packages"), { tab: "lsa", mview: "packages" });
+  assert.deepEqual(viewTarget(asset, "monitoring"), { tab: "measurements", mview: null });
+  assert.deepEqual(viewTarget(asset, "monitoring", "risk"), { tab: "condition", mview: null });
+  assert.deepEqual(viewTarget(asset, "models"), { tab: "models", mview: null });
+  assert.deepEqual(viewTarget(asset, "models", "missions"), { tab: "missions", mview: null });
+  assert.deepEqual(viewTarget(asset, "history"), { tab: "reports", mview: null });
+  // A class's Monitoring opens its one view.
+  assert.deepEqual(viewTarget({ type: "cls" }, "monitoring"), { tab: "condition", mview: null });
+  assert.equal(viewTarget(item, "rcm"), null);
+});
+
+test("text that sends you to a tab names it as the row shows it", () => {
+  assert.equal(tabPlace("models"), "Models › Life models");
+  assert.equal(tabPlace("missions"), "Models › Missions");
+  assert.equal(tabPlace("lsa"), "Maintenance › What it needs");
+  assert.equal(tabPlace("measurements"), "Monitoring › Readings");
+  assert.equal(tabPlace("condition"), "Monitoring › Life left");
+  assert.equal(tabPlace("rcm"), "RCM");
+  assert.equal(tabPlace("reports"), "History");
+});
+
 test("positions built from a product's design count under their design position, whatever their text", () => {
   const rows = new Map([
     ["a", { key: "a", type: "pos", ref: { position_class: "Motor", class_key: "design:m1", class_label: "UAV › Motor 1" }, kids: [] }],
@@ -306,4 +429,60 @@ test("positions built from a product's design count under their design position,
     { position_class: "Motor", class_key: "Motor", here: 1 },
     { position_class: "UAV › Motor 1", class_key: "design:m1", here: 2 },
   ]);
+});
+
+// ---- Tabs at every level of the tree (Derryn, 21 Nov 2026) ------------------------------------
+// A place opened by Positions shows the positions above its own (House > Outdoor & grounds) as
+// via rows. Picking one took the tab bar away (a group: Summary alone). It's a position: the
+// panel shows it with every tab a position has, each reading what's there and below it.
+import { buildDisplay, panelRow, isViaRow } from "./assetTree.js";
+
+const PLACE_TREE = {
+  positions: [
+    { id: "pool", name: "Swimming Pool", parent_id: null, via: "outdoor", location_id: "yard" },
+    { id: "pump", name: "Pool pump", parent_id: "pool", location_id: "yard" },
+    { id: "stray", name: "Stray", parent_id: null, carried_by: { id: "it1", name: "Loose item" } },
+  ],
+  ancestors: [
+    { id: "house", name: "House", parent_id: null },
+    { id: "outdoor", name: "Outdoor & grounds", parent_id: "house" },
+  ],
+};
+
+test("a position above a place's positions (a via row) has a position's whole tab bar", () => {
+  const d = buildDisplay(PLACE_TREE, "positions");
+  for (const id of ["house", "outdoor"]) {
+    const tree = d.rows.get(id);
+    assert.ok(isViaRow(tree), id);
+    assert.equal(hasTabBar(tree), false); // as the tree has it: a muted group
+    const row = panelRow(tree);
+    assert.equal(row.type, "pos");
+    assert.equal(row.key, id); // its own id: the tabs read the position's own records
+    assert.equal(rowKind(row), "Position");
+    assert.equal(hasTabBar(row), true);
+    assert.deepEqual(labels(panelTabsFor(row)), labels(panelTabsFor(asset)));
+    assert.deepEqual(tabsFor(row).map((t) => t.id), tabsFor({ type: "pos", ref: {} }).map((t) => t.id));
+    // On the RCM tab (or any tree-table tab), picking it keeps that tab.
+    for (const t of ["rcm", "fmea", "maintenance", "lsa", "measurements", "models", "missions", "reports", "condition"]) {
+      assert.equal(shownTab(t, row), t, `${id} ${t}`);
+    }
+    // The same object each time, so a body reading on the row doesn't read again.
+    assert.equal(panelRow(tree), row);
+  }
+});
+
+test("every other row is itself in the panel; a group made for the arrangement keeps Summary alone", () => {
+  const d = buildDisplay(PLACE_TREE, "positions");
+  const pool = d.rows.get("pool");
+  assert.equal(panelRow(pool), pool);
+  assert.equal(hasTabBar(pool), true);
+  const loose = d.rows.get("G:loose");
+  assert.equal(loose.type, "group");
+  assert.equal(isViaRow(loose), false);
+  assert.equal(panelRow(loose), loose);
+  assert.equal(hasTabBar(loose), false);
+  assert.equal(shownTab("rcm", loose), "summary");
+  assert.equal(panelRow(null), null);
+  // An item: Summary, Monitoring › Readings and History.
+  assert.equal(hasTabBar(d.rows.get("it1")), true);
 });

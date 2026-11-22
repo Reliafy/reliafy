@@ -4,6 +4,8 @@ import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
+import { ParamsModal } from "../components/ModelTable.jsx";
+import { enteredOfModel } from "../explorerModels.js";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
@@ -22,6 +24,7 @@ import { answerParts, modelTabs } from "../modelFrame.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import LoadFailed from "../components/LoadFailed.jsx";
 
 const CRUMBS = [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
 
@@ -36,12 +39,16 @@ export default function ModelPage() {
   // Not on this list (404): ModelNotFound looks in the others.
   const [missing, setMissing] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editingParams, setEditingParams] = useState(false);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useTabParam();
+  const [loadError, setLoadError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     setModel(null);
     setError(null);
+    setLoadError(null);
     setMissing(false);
     getModel(id)
       .then((m) => {
@@ -52,8 +59,8 @@ export default function ModelPage() {
         // The Strategy tools start on the model used last (#294).
         rememberModel(m.id);
       })
-      .catch((err) => (err.status === 404 ? setMissing(true) : setError(err.message)));
-  }, [id, navigate]);
+      .catch((err) => (err.status === 404 ? setMissing(true) : setLoadError(err)));
+  }, [id, navigate, attempt]);
 
   const confirm = useConfirm();
   const askText = useAskText();
@@ -76,6 +83,9 @@ export default function ModelPage() {
   // Any model can be added to a library of the user's (a copy of it now), whatever its kind: fitted,
   // from parameters, from a handbook or a prior. Never added automatically.
   const canAddToLibrary = !!model;
+  // A model saved from parameters alone: its numbers can be changed in place (same id, so every
+  // RBD block, position and library "Update from the original" takes them).
+  const entered = enteredOfModel(model);
   const results = model?.results;
   const split = results?.split || null;
   const title = model ? itemName(model) : "Model";
@@ -109,6 +119,7 @@ export default function ModelPage() {
           <DownloadPythonItem download={() => downloadModelPython("life", model.id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           {canEdit && <button className="ovm-item" onClick={() => setEditing(true)}>Edit fit</button>}
+          {entered && <button className="ovm-item" onClick={() => setEditingParams(true)}>Edit parameters</button>}
           {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
@@ -137,8 +148,20 @@ export default function ModelPage() {
           />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="life" />
+        : loadError ? <LoadFailed what="Couldn't open this model." error={loadError} to="/models" label="See all your models"
+                                  onRetry={() => setAttempt((n) => n + 1)} />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       {editModal}
+      {editingParams && entered && (
+        <ParamsModal
+          link={{ model_id: model.id, model: { name: model.name, entered } }}
+          onClose={() => setEditingParams(false)}
+          onDone={async () => {
+            setEditingParams(false);
+            try { setModel(await getModel(model.id)); } catch (e) { setError(e.message); }
+          }}
+        />
+      )}
       {adding && model && <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} collection="models" onClose={() => setAdding(false)} />}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>

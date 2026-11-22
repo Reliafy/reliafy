@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  plotInEnteredUnits,
+  seriesLabel,
   accelerationRows, altAnswerParts, altTabs, compareCheck, defaultUse, distanceCheck, distanceWords,
   failureWords, levelWords, lifeCheck, parseUse, pWords, resolveAltTab, shapeCheck, shapeParam, shapeWords,
 } from "./altFrame.js";
@@ -39,7 +41,7 @@ test("tabs: old ids and names open the tab that holds them now", () => {
 test("answer line: the model, its shape, the life across the levels, the data", () => {
   assert.deepEqual(altAnswerParts(FLUID, { saved: "saved 1 min ago" }), [
     "Inverse power law model (Weibull)",
-    "β 0.777 (90% 0.63–0.959)",
+    "β 0.777 (90% two-sided 0.63–0.959)",
     "life 18.4–1,950 minutes across 2 tested levels",
     "70 failed, 6 still running",
     "saved 1 min ago",
@@ -115,8 +117,8 @@ test("diagnostics in words", () => {
 });
 
 test("the shape's interval says its level: 90% by the rule, a fit's own level where it carries one", () => {
-  assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.9 })[1], "β 0.777 (90% 0.63–0.959)");
-  assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.95 })[1], "β 0.777 (95% 0.63–0.959)");
+  assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.9 })[1], "β 0.777 (90% two-sided 0.63–0.959)");
+  assert.equal(altAnswerParts({ ...FLUID, ci_level: 0.95 })[1], "β 0.777 (95% two-sided 0.63–0.959)");
 });
 
 test("a temperature given in °C is shown and entered in °C, asked in kelvin", async () => {
@@ -144,8 +146,35 @@ test("useRangeWarning: says when the use stress is far from the tested ones", as
   const r = { stresses: [{ label: "Voltage", unit: "kV" }], levels: [{ stress: [30] }, { stress: [33] }, { stress: [36] }] };
   const w = useRangeWarning(r, [20], { value: 10990 });
   assert.match(w, /^20 kV is well below the tested 30–36 kV \(an acceleration factor of 10,990×\)/);
-  assert.equal(useRangeWarning(r, [27]), null);
+  // Outside at all is an extrapolation; inside is not.
+  assert.match(useRangeWarning(r, [27]), /^27 kV is below the tested 30–36 kV\. The life here rests on/);
+  assert.equal(useRangeWarning(r, [33]), null);
+  assert.equal(useRangeWarning(r, [36]), null);
   // A temperature entered in °C reads back in °C.
   const t = { stresses: [{ label: "Temperature", entered_unit: "°C" }], levels: [{ stress: [378.15] }, { stress: [418.15] }] };
   assert.match(useRangeWarning(t, [313.15]), /^40 °C is well below the tested 105–145 °C/);
+});
+
+test("activationEnergy: a × Boltzmann's constant for the thermal models only", async () => {
+  const { activationEnergy } = await import("./altFrame.js");
+  const r = { life_model_id: "arrhenius", coefficients: [{ name: "a", value: 6957, ci: [5000, 9000] }, { name: "b", value: 8.39e-5 }] };
+  const ea = activationEnergy(r);
+  assert.ok(Math.abs(ea.value - 0.5995) < 1e-3);
+  assert.ok(Math.abs(ea.ci[0] - 0.4309) < 1e-3);
+  assert.equal(activationEnergy({ ...r, life_model_id: "inverse_power" }), null);
+});
+
+test("a temperature typed in °C reads in °C on the charts, not kelvin", () => {
+  const stresses = [{ key: "s1", column: "temp_C", label: "Temperature", unit: "K", entered_unit: "°C" }];
+  assert.equal(seriesLabel({ label: "Temperature (K)=387.15", stress: [387.15] }, stresses), "Temperature (°C)=114");
+  const plot = plotInEnteredUnits({ x_label: "Temperature (K)", lines: [{ stress: [373.15, 387.15], life: [1, 2], secondary: null }],
+    points: [{ stress: 387.15, life: 2, secondary: null }], secondary_label: null }, stresses, 0);
+  assert.equal(plot.x_label, "Temperature (°C)");
+  assert.deepEqual(plot.lines[0].stress, [100, 114]);
+  assert.equal(plot.points[0].stress, 114);
+  // In kelvin from the start: as the fit gave it.
+  const k = [{ key: "s1", label: "Temperature", unit: "K" }];
+  assert.equal(seriesLabel({ label: "Temperature (K)=387.15", stress: [387.15] }, k), "Temperature (K)=387.15");
+  const same = { x_label: "Temperature (K)", lines: [] };
+  assert.equal(plotInEnteredUnits(same, k, 0), same);
 });

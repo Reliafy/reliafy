@@ -323,12 +323,19 @@ def test_a_mission_starts_from_the_positions_own_rbd_wired_as_it_is(m, db, repai
     """Redundancy stays redundancy: a mission on a station whose RBD has its pumps in parallel is
     flown on that wiring, never rebuilt from the tree in series (which understated the station)."""
     plant = _station(m, db)
-    _parallel_station_rbd(m, db, plant, repairable)
+    src = _parallel_station_rbd(m, db, plant, repairable)
     made = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Summer")
     assert made["built_from"] == "copy" and made["series_warning"] is None
     assert made["notes"][0].startswith("Started from a copy of Pump station (from the tree), wired as it is")
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
-    assert graph["mission_of"] == {"position_id": plant} and not graph.get("repairable") and "costs" not in graph
+    # It says which diagram it was copied from, so the RBD list shows it under that one.
+    assert graph["mission_of"] == {"position_id": plant, "from_rbd": src} and not graph.get("repairable") \
+        and "costs" not in graph
+    from backend.schema import Rbd
+    from backend.services import rbds as rbds_service
+
+    rows = [rbds_service.from_doc(Rbd, d) for d in db.rbds.find({"_id": {"$in": [src, made["rbd"]["id"]]}})]
+    assert rbds_service.list_parents(rows) == {made["rbd"]["id"]: src}
     for n in graph["nodes"]:
         assert not {"repair", "duty", "tree_settings"} & set(n.get("data") or {})
     g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Run", "duration": 500}])

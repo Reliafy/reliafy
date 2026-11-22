@@ -17,7 +17,11 @@ export default function AltHome() {
   const [models, setModels] = useState(null);
   const [error, setError] = useState(null);
 
-  const refresh = () => listAltModels().then((r) => setModels(r.models)).catch(() => setModels([]));
+  const [loadError, setLoadError] = useState(null);
+  const refresh = () => {
+    setLoadError(null);
+    listAltModels().then((r) => setModels(r.models)).catch(setLoadError);
+  };
   useEffect(() => { refresh(); }, []);
 
   const confirm = useConfirm();
@@ -48,6 +52,8 @@ export default function AltHome() {
       <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={models} />
 
       <AltLibrary
+        loadError={loadError}
+        onRetry={refresh}
         models={models}
         hrefFor={(id) => `/models/alt/${id}`}
         onDelete={onDelete}

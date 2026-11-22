@@ -11,7 +11,7 @@
 // "Tree"), which share the server and expect their rows near the top.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
-import { details, reveal } from "./explorer.js";
+import { details, reveal, pickTab, phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -241,6 +241,7 @@ test("at 400 px: the pinned row carries the pin and an easy-to-tap ✕; the row'
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
+  await phoneTree(page);
   const treeTop = (await page.locator(".tp-scroll").boundingBox()).y;
   const more = row(page, `Works line A ${tag}`).getByRole("button", { name: /^Actions for / });
   await expect(more).toHaveCSS("opacity", "1");
@@ -261,7 +262,7 @@ test("at 400 px: the pinned row carries the pin and an easy-to-tap ✕; the row'
   await expect(row(page, `Works plant ${tag}`)).toHaveCount(0);
   await shot(page, "4-phone-400px-pinned");
   // The RCM tab: the same on its two-line rows.
-  await page.getByRole("tab", { name: "RCM" }).click();
+  await pickTab(page, "RCM");
   const trow = page.getByRole("row", { name: new RegExp(`^Pinned: Works line A ${tag}`) });
   await expect(trow.getByRole("button", { name: "Show everything" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);

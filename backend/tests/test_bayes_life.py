@@ -87,13 +87,15 @@ def test_a_b10_belief_is_a_baseline_too():
                                                  "shape": {"low": 1.2, "high": 4}, "unit": "hours"})
     _, result, _ = bl.update(base, "guide", [])
     b10 = next(p for p in result["prior"] if p["name"] == "B10")
-    assert b10["lower"] == pytest.approx(3000, rel=0.05) and b10["upper"] == pytest.approx(8000, rel=0.05)
+    # Centred on the 5,000 said; the range as wide as the wider side (5,000 / 3,000), so 3,000 to 8,333.
+    assert b10["median"] == pytest.approx(5000, rel=0.02)
+    assert b10["lower"] == pytest.approx(3000, rel=0.05) and b10["upper"] == pytest.approx(8333, rel=0.05)
     # A belief has no numbers of its own: the prior's medians stand in, so the result draws its curve
     # and says how far the data moved it, with the numbers.
     assert result["baseline"]["params_from"] == "prior"
     assert result["baseline"]["params"]["beta"] == pytest.approx(2.19, rel=0.02)
     _, moved, _ = bl.update(base, "guide", bl.given_rows([1400, 1900, 800, 800], [0, 0, 1, 1]))
-    assert moved["moved"].startswith("2 failures at 1,400 and 1,900 hours pulled the characteristic life from the prior's 14,0")
+    assert moved["moved"].startswith("2 failures at 1,400 and 1,900 hours pulled the characteristic life from the prior's 14,")
     assert "gave the belief its numbers" not in moved["words"]
     assert moved["curves"]["baseline_sf"][0] == pytest.approx(1) and len(moved["curves"]["baseline_hf"]) == bl.GRID
 
@@ -258,3 +260,23 @@ def test_the_fit_result_gives_the_same_one_sided_b10_bound_as_the_saved_page(db)
     assert b10["lower"] == pytest.approx(page_b10["lower"], rel=1e-6)
     assert mean["lower"] == pytest.approx(saved["mttf"]["lower"], rel=1e-6)
     assert f"at least {bl.num(b10['lower'])} hours (90% one-sided credible bound)" in result["words"]
+
+
+def test_a_b10_belief_is_centred_on_the_b10_said():
+    """"B10 about 6,000 h, surprised under 4,000 or over 8,000": the prior's B10 is 6,000, not the
+    5,657 between the surprise values (SurPyval's around() centres on the interval). Its 90% range is
+    as wide as the wider side, so both surprise values are inside (4,000 to 9,000), and the result
+    says so in words."""
+    from backend.maintenance import fit_life
+
+    base = bl.baseline_from(None, OWNERS, set(), {"b10": {"value": 6000, "low": 4000, "high": 8000},
+                                                 "shape": {"low": 1.5, "high": 2.5}, "unit": "hours"})
+    table = {p["name"]: p for p in bl.prior_table("weibull", bl.priors_for(base, "guide"))}
+    assert table["B10"]["median"] == pytest.approx(6000, rel=0.015)
+    assert table["B10"]["lower"] == pytest.approx(4000, rel=0.03) and table["B10"]["upper"] == pytest.approx(9000, rel=0.03)
+    note = fit_life.prior_priors(base, "guide")[1]
+    assert "centred on your 6,000 hours" in note and "4,000 to 9,000 hours" in note
+    # Stated evenly (12,000 between 8,000 and 18,000: 1.5 times either way), nothing is widened or said.
+    even = bl.baseline_from(None, OWNERS, set(), {"b10": {"value": 12000, "low": 8000, "high": 18000}, "unit": "hours"})
+    assert bl.belief_note(even) == ""
+    assert bl.about(12000, 8000, 18000)[1] == pytest.approx((8000, 18000))

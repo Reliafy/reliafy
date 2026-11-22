@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { getAppConfig } from "./api.js";
 import { DEFAULT_CONFIG, settledConfig } from "./appConfig.js";
+import { workManagementOn } from "./workManagement.js";
 
 // Deployment capabilities, fetched once from the public /api/config endpoint
 // (defaults and the `loaded` flag: appConfig.js).
@@ -29,4 +30,9 @@ export function ConfigProvider({ children }) {
 
 export function useAppConfig() {
   return useContext(ConfigContext);
+}
+
+// Whether this deployment has work management (on unless turned off: workManagement.js).
+export function useWorkManagementOn() {
+  return workManagementOn(useContext(ConfigContext));
 }

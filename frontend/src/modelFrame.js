@@ -11,7 +11,7 @@ import { formatNumber, formatPercent } from "./format.js";
 import { hasMeanLife, meanLifeAnswer } from "./meanLife.js";
 import { unitInText } from "./components/unitText.js";
 import { anyAt } from "./competingRisks.js";
-import { riskText } from "./joint.js";
+import { rankColumn, riskText, sortRiskRows } from "./joint.js";
 import { LEVEL_TEXT, ciLevelOf, ciPct, levelPct } from "./levels.js";
 
 export const TAB_LABELS = {
@@ -217,6 +217,14 @@ function strongestEffect(result) {
   return `${top.label || top.name}: ${result.ratio_label || "ratio"} ${formatNumber(top.ratio)}${per}${ci}`;
 }
 
+// A regression on one grouping column also carries the log-rank test of
+// whether the groups differ: "groups differ: log-rank p = 0.018".
+export function groupTestWords(g) {
+  if (!g || g.p_value == null) return null;
+  const p = g.p_value < 0.001 ? "p < 0.001" : `p = ${formatNumber(g.p_value, { sig: 2 })}`;
+  return `${g.significant ? "groups differ" : "no clear difference between groups"}: log-rank ${p}`;
+}
+
 // The three or four numbers that answer "what does this model say?", as
 // short phrases for the line under the model's name. ``saved`` (a phrase,
 // e.g. "saved 3 min ago") ends it.
@@ -228,7 +236,8 @@ export function answerParts(result, { split = null, saved = null } = {}) {
     case "per_demand": {
       const d = r.per_demand || {};
       add(d.p != null && `failure probability ${formatPercent(d.p, { sig: 3 })} per demand`
-        + (d.ci ? ` (${formatPercent(d.ci[0], { sig: 2 })}–${formatPercent(d.ci[1], { sig: 2 })})` : ""));
+        + (d.ci ? ` (${d.method === "exact" ? Math.round((d.confidence ?? 0.95) * 100) : 95}% two-sided `
+          + `${formatPercent(d.ci[0], { sig: 2 })}–${formatPercent(d.ci[1], { sig: 2 })})` : ""));
       // Near 100%, four figures: "99.25%", not "99%".
       add(d.reliability != null && `reliability ${formatNumber(d.reliability * 100, { sig: 4 })}%`);
       add(d.demands != null && `${d.failures} failed in ${Number(d.demands).toLocaleString("en-US")} demands`);
@@ -246,10 +255,13 @@ export function answerParts(result, { split = null, saved = null } = {}) {
     case "joint": {
       add(r.n_items != null && `${r.n_items} units (${r.n_events} failed, ${r.n_running} running)`);
       add(r.n_readings != null && `${Number(r.n_readings).toLocaleString("en-US")} readings of ${r.marker || "the reading"}`);
-      const top = (r.risk || [])[0];
-      const mid = r.horizons?.labels?.[1];
-      // The Risk now table's words: "> 99.9%", never "100%".
-      if (top && mid) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[1])} in the next ${mid}`);
+      add(r.link && r.link !== "value" && `risk follows its ${String(r.link_label || "rate of change").toLowerCase()}`);
+      // The horizon and order the Risk now table ranks by (rankColumn), in its words: "> 99.9%", never "100%".
+      const labels = r.horizons?.labels || [];
+      const scored = (r.risk || []).filter((x) => x.risk);
+      const col = rankColumn(scored, labels);
+      const top = sortRiskRows(scored, col)[0];
+      if (top && labels[col]) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[col])} in the next ${labels[col]}`);
       add(r.fit_ok === false && "fit not verified");
       break;
     }
@@ -261,12 +273,12 @@ export function answerParts(result, { split = null, saved = null } = {}) {
       const when = r.horizon != null ? withUnit(r.horizon, r.unit) : null;
       if (top?.at?.cif != null && when) {
         const ci = top.at.lower != null && top.at.upper != null
-          ? ` (${formatPercent(top.at.lower)}–${formatPercent(top.at.upper)})` : "";
+          ? ` (${ciPct(r)} two-sided ${formatPercent(top.at.lower)}–${formatPercent(top.at.upper)})` : "";
         add(`${top.name} ${formatPercent(top.at.cif)} of units by ${when}${ci}`);
         const any = anyAt(r, r.horizon);
         if (causes.length > 1 && any.cif != null) {
           const anyCi = any.lower != null && any.upper != null
-            ? ` (${formatPercent(any.lower)}–${formatPercent(any.upper)})` : "";
+            ? ` (${ciPct(r)} two-sided ${formatPercent(any.lower)}–${formatPercent(any.upper)})` : "";
           add(`any mode ${formatPercent(any.cif)}${anyCi}`);
         }
       }
@@ -278,6 +290,7 @@ export function answerParts(result, { split = null, saved = null } = {}) {
     case "regression": {
       add(r.tvc ? `${r.distribution}, covariates changing over time` : r.distribution);
       add(strongestEffect(r));
+      add(groupTestWords(r.group_test));
       const c = r.validation?.available ? r.validation.concordance : null;
       add(c && `ranking ${formatNumber(c.value, { sig: 2 })} (Harrell's C)`);
       add(r.tvc ? `${r.tvc.items ?? "?"} items, ${r.tvc.failures ?? "?"} failures` : dataWords(r, split));
@@ -396,8 +409,9 @@ export function forestRows(result) {
   const level = ciPct(r);
   if (r.kind === "joint") {
     return (r.hazard_ratios || []).map((h) => ({
-      name: h.kind === "marker" ? r.marker || h.name : h.name, ratio: h.hr, lo: h.lower, hi: h.upper,
-      unit: h.kind === "marker" ? r.marker_unit || "" : "", text: h.text, level,
+      // A rate-of-change effect carries its own label and unit ("mm/s per day").
+      name: h.label || (h.kind === "marker" ? r.marker || h.name : h.name), ratio: h.hr, lo: h.lower, hi: h.upper,
+      unit: h.unit ?? (h.kind === "marker" ? r.marker_unit || "" : ""), text: h.text, level,
     }));
   }
   const table = Object.fromEntries((r.coef_table || []).filter((t) => t.part === "coefficients").map((t) => [t.name, t]));
@@ -406,7 +420,7 @@ export function forestRows(result) {
   const fields = Object.fromEntries((r.functions?.covariates || []).map((f) => [f.name, f]));
   return (r.coefficients || []).map((c) => {
     const ci = c.ci || table[c.name]?.ci || null;
-    const p = table[c.name]?.p ?? null;
+    const p = table[c.name]?.p ?? c.p ?? null;
     const unit = c.covariate_unit || r.covariate_units?.[c.name] || "";
     const term = termName(c.name);
     const base = term.categorical ? bases[term.variable] ?? null : null;
@@ -422,6 +436,31 @@ export function forestRows(result) {
       ? [f.min, f.max] : null;
     return { name: c.name, label, ratio, lo: ends[0], hi: ends[1], unit, p, level, base, range };
   });
+}
+
+// A parametric regression (Weibull PH, Lognormal AFT…) shares one shape across
+// every unit; said wherever its life figures are, because a B10 at one group
+// then differs from a fit to that group alone.
+export const SHARED_SHAPE_NOTE = "One shape for every unit: the covariates stretch or shrink the life, but the way "
+  + "failures spread out with age is the same for every group. So a B-life here can differ from a fit to one group "
+  + "on its own. If groups may wear out differently, fit each group on its own and compare them.";
+export const sharesShape = (result) => (result?.params || []).length > 1 && !result?.tvc && result?.kind === "regression";
+
+// A forest row as the chart draws it. A number with a data range is drawn
+// across that range (lowest to highest value), not per +1, so every covariate
+// sits on one scale: per +1 °C (×1.15) beside per +1 of a 0.5-to-0.9 ratio
+// (×205) put the first on the line at 1, as if it did nothing. Categories and
+// rows without a range are drawn as they are. The per-unit figures stay in words.
+export function chartRow(row) {
+  if (!row || row.additive || !row.range || !(row.ratio > 0)) return { ...row, across: false };
+  const span = row.range[1] - row.range[0];
+  if (!(span > 0)) return { ...row, across: false };
+  const pow = (v) => (v != null && v > 0 ? v ** span : null);
+  const ends = [pow(row.lo), pow(row.hi)];
+  return {
+    ...row, ratio: row.ratio ** span, lo: ends[0], hi: ends[1], across: true,
+    label: `${row.label || row.name} (${formatNumber(row.range[0])} to ${formatNumber(row.range[1])}${row.unit ? ` ${row.unit}` : ""})`,
+  };
 }
 
 // One effect in words: "Each +1 °C in temp_C multiplies the failure rate by

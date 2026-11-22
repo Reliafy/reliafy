@@ -5,6 +5,7 @@
 
 import { formatNumber, formatPercent, singularUnit } from "./format.js";
 import { unitInText } from "./components/unitText.js";
+import { calendarUnit, convertTime } from "./friendlyTime.js";
 
 // ΔAIC below 2: the data can't tell the two apart (Burnham and Anderson).
 export const ABOUT_AS_GOOD = 2;
@@ -159,9 +160,29 @@ export function perUnit(unit) {
   return u ? `per ${singularUnit(u)}` : "";
 }
 
-// A typed time, checked as typed. { ok, value, message }: a blank optional
-// box is ok with value 0; anything refused says what to type instead.
-export function checkTime(text, { optional = false, example = null } = {}) {
+// A number, optionally followed by a unit: "1500", "1,500 hours", "1 year", "2.5e3 h".
+const TIME_TEXT = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*([a-z][a-z .]*?)?\.?$/i;
+
+// The app's calendar convention (friendlyTime.js), in words, for the larger
+// of two calendar units: what "1 year = 8,766 hours" counted.
+const CONVENTION_WORDS = {
+  days: "24 hours a day",
+  weeks: "7 days a week",
+  months: "365.25 / 12 days a month",
+  years: "365.25 days a year",
+};
+const CAL_ORDER = ["hours", "days", "weeks", "months", "years"];
+
+const sameWord = (a, b) => singularUnit(String(a ?? "").trim().toLowerCase())
+  === singularUnit(String(b ?? "").trim().toLowerCase());
+
+// A time typed in a box, checked: blank is not zero, a negative time is
+// refused, and every refusal says what to type. ``unit`` (the model's time
+// unit) lets the time carry a unit of its own: "1 year" on a model in hours
+// is 8,766 hours by the app's calendar convention (``note`` says so), "500
+// cycles" on a model in cycles is 500. A calendar unit on a model whose unit
+// isn't calendar time (or has none) can't be converted, and says so.
+export function checkTime(text, { optional = false, example = null, unit = null } = {}) {
   const raw = String(text ?? "").trim().replace(/,/g, "");
   const eg = example != null && Number.isFinite(Number(example)) && Number(example) > 0
     ? `, e.g. ${Number(example).toLocaleString("en-US", { maximumFractionDigits: 6 })}` : "";
@@ -169,15 +190,64 @@ export function checkTime(text, { optional = false, example = null } = {}) {
     return optional ? { ok: true, value: 0, message: null }
       : { ok: false, value: null, message: `Enter a time${eg}.` };
   }
-  const v = Number(raw);
+  const m = TIME_TEXT.exec(raw);
+  const v = m ? Number(m[1]) : NaN;
   if (!Number.isFinite(v)) return { ok: false, value: null, message: `Enter a number${eg}.` };
   if (v < 0) {
     return { ok: false, value: null,
              message: optional ? "Time can't be negative. Enter 0 or more, or leave this empty."
                : "Time can't be negative. Enter 0 or more." };
   }
-  return { ok: true, value: v, message: null };
+  const typed = (m[2] || "").trim();
+  if (!typed) return { ok: true, value: v, message: null };
+  const model = unitInText(unit);
+  const modelCal = calendarUnit(unit);
+  const typedCal = calendarUnit(typed);
+  if (model && (sameWord(typed, model) || (modelCal && typedCal === modelCal))) {
+    return { ok: true, value: v, message: null };
+  }
+  if (modelCal && typedCal) {
+    const value = convertTime(v, typedCal, modelCal);
+    const bigger = CAL_ORDER.indexOf(typedCal) > CAL_ORDER.indexOf(modelCal) ? typedCal : modelCal;
+    const typedWords = `${formatNumber(v, { sig: 6 })} ${v === 1 ? singularUnit(typedCal) : typedCal}`;
+    return { ok: true, value, message: null,
+             note: `${typedWords} = ${formatNumber(value, { sig: 4 })} ${model}, counting ${CONVENTION_WORDS[bigger]}.` };
+  }
+  if (modelCal) {
+    return { ok: false, value: null,
+             message: `Enter a number of ${model}, or a time in hours, days, weeks, months or years.` };
+  }
+  if (!model) {
+    return { ok: false, value: null,
+             message: "This model has no time unit, so a time with a unit can't be converted. Enter a number." };
+  }
+  return { ok: false, value: null,
+           message: `This model's times are in ${model}, which can't be converted from ${typed}. Enter a number of ${model}.` };
 }
+
+// Where the Calculator's "At a time" starts: a time inside the data, rounded
+// (310, not 307.4). The middle failure time when the fit carries its failures
+// (``times``), else the B10 life read off the reliability curve, else the
+// middle of the curve's grid. ``from`` says which, for the words beside it.
+export function startingTime(curves, times) {
+  const round = (v) => Number(Number(v).toPrecision(2));
+  const fails = (times || []).map(Number).filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  if (fails.length) {
+    const k = Math.floor(fails.length / 2);
+    const median = fails.length % 2 ? fails[k] : (fails[k - 1] + fails[k]) / 2;
+    return { t: round(median), from: "median" };
+  }
+  const b10 = timeAtValue(curves?.x, curves?.sf, 0.9);
+  if (b10 != null && b10 > 0) return { t: round(b10), from: "b10" };
+  const x = curves?.x || [];
+  return { t: x.length ? round(x[Math.floor(x.length / 2)]) : 0, from: "grid" };
+}
+
+// The words beside the starting time, until it is changed.
+export const STARTING_WORDS = {
+  median: "Starts at the middle failure time in the data.",
+  b10: "Starts at the B10 life (reliability 90%).",
+};
 
 // Which way "good" runs for each function: reliability (and density, which
 // has no cautious side) keep the side as chosen; failure probability, hazard

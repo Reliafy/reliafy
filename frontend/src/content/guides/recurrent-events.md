@@ -37,7 +37,11 @@ asks no column questions: it shows that reading in one line at the top of the
 **Model** step, with **Change** to read the columns differently. The key columns are **i** (*which item each
 row belongs to*: this is what groups events into per-machine histories) and
 **x** (*the value at each failure, counted from new*: hours, cycles or
-kilometres from that system's start, not a calendar date). **c** (a failure, 0,
+kilometres from that system's start, not a calendar date). With no item
+column, because every row is an event of one stream (one fleet's replacements
+against cumulative fleet hours, one system's failures), tick **No item column:
+every row is one stream of events** under i: it fits as one system, with no
+column to add. The dataset page shows the same reading, with **Change**. **c** (a failure, 0,
 or the end of the record, 1), **n** (how many failures the row stands for) and
 **tl** (start of record) are there if your data has them. There is no range
 (xl to xr): a repairable fit takes each failure's own value.
@@ -46,9 +50,14 @@ You should also give each system's **tr** (*end of record: observed only up to
 this value*) — how long you watched
 it, whether or not it failed again. Without it the analysis
 can't tell the difference between a machine that stopped failing and a machine
-you stopped watching, and it will quietly conclude your fleet is improving.
+you stopped watching, and it will quietly read the gap as a fleet whose failures are slowing.
 The upload guesses it from names like "observed to", "records end" or "end
-of record", and the Model step says so while the reading has none. A dataset
+of record", and the Model step says so while the reading has none. With no
+such column, enter the time in **When did the test end?** on the Model step:
+one value for every system (a growth test on one prototype that ran to 1,000
+hours, say). Leave it empty only if the test stopped at the last failure. The
+result says which it is: *time-terminated at 1,000 hours*, or
+*failure-terminated: ended at the last failure*. A dataset
 saved before it kept a reading starts from the columns and unit its last
 repairable model used. With no **i** in the reading, the Model step says so and
 offers **Change the reading** instead of fitting.
@@ -98,30 +107,27 @@ want the calculator — handy for growth planning before you have data.
 ## Reading the result
 
 A saved model opens on its page: the name, then one line with the answer (the
-verdict, the growth shape β with its interval, the MTBF now and the data),
+model, the growth shape β with its interval, the MTBF now and the data),
 then tabs. Each tab fits the screen.
 
 **Failures over time** is the heart of it: the **mean cumulative function
 (MCF)**, cumulative failures per system against time, with the observed steps
-and the fitted curve. Its *shape* is the finding. Curving upward means failures
-are accelerating; flattening means they're slowing; a straight line means a
+and the fitted curve. Its *shape* is the evidence. Curving upward means failures
+are coming faster; flattening means they're coming slower; a straight line means a
 steady rate.
 
 ![The mean cumulative function: observed steps against the fitted curve](/guides/img/recurrent-02-mcf.png)
 
 The number that formalises this is **β**:
 
-- **β < 1** — improving. Failures are getting rarer. Reliability growth is real.
-- **β = 1** — stable. A constant rate; repairs are restoring the system to
-  roughly where it was.
-- **β > 1** — deteriorating. Failures are accelerating. The system is wearing out
-  faster than repairs restore it, and there's usually a decision waiting at the
-  end of that trend.
+- **β below 1** — failures come slower as time goes on.
+- **β = 1** — a constant rate.
+- **β above 1** — failures come faster as time goes on.
 
-β comes with its **90% confidence interval**, and the verdict is read from the
-interval rather than the point estimate: *deteriorating* only when the whole
-interval is above 1, *improving* only when it's all below, and *stable* when it
-includes 1 — the data can't tell the trend from a constant rate.
+β comes with its **90% range** (confidence interval). Reliafy shows both and
+doesn't judge them: a range that includes 1 is consistent with a constant rate,
+and one wholly on one side of 1 points that way. What it means for the system is
+your call.
 
 The panel beside the chart gives the **failure rate** (ROCOF, the rate of
 occurrence of failures) and the instantaneous **MTBF** at the end of
@@ -129,12 +135,12 @@ observation — the honest MTBF for a repairable system, which is a *current*
 rate rather than a lifetime average. For a growth test it also gives the
 **demonstrated MTBF** as a 90% lower bound ("MTBF ≥ X at 90%"), using Crow's
 exact bounds from MIL-HDBK-189C when the test design allows. Below them, the
-verdict in words.
+evidence in words, with what β means.
 
 When the data names each failure's cause, the switch under the chart changes
 **All failures** to **By cause**: the MCF of each cause, with the 90% band of the
 one you pick, and each cause's own growth shape β. Often one failure mode is
-accelerating while the rest are steady.
+coming faster while the rest are steady.
 
 **Effects** (covariate models only) gives each covariate's effect as a rate
 ratio, charted with its 90% interval and in words: "at site Inland, failures
@@ -144,7 +150,7 @@ out no effect.
 
 **Imperfect repair** leads with the repair effectiveness in words — "each repair
 restores about 79% of the age gained since the last repair", with 100% as good
-as new and 0% as bad as old — and its 90% range. The verdict follows that range:
+as new and 0% as bad as old — and its 90% range. The wording follows that range:
 "as bad as old" or "as good as new" only when the range reaches it, "partial
 repair" when it rules both out, and "can't rule out as bad as old" when the range
 reaches it but the estimate is well inside. The restoration factor q is shown too
@@ -156,16 +162,18 @@ takes.
 The **Diagnostics** tab holds the checks, each titled with its question:
 
 - **Is the failure rate changing?** The Laplace and MIL-HDBK-189C **trend
-  tests** tell you whether the trend is statistically significant or whether
-  you're reading noise. Worth checking before you take a deteriorating verdict
-  to a capital-expenditure meeting. On a constant-rate model (HPP) a trend is a
-  problem: fit Crow-AMSAA instead.
+  tests** give each test's statistic and p-value (how often a pattern this
+  strong arises by chance with no trend), so you can judge whether you're
+  reading noise. If you fitted a constant-rate model (HPP), compare it with
+  Crow-AMSAA by AIC.
 - **Is reliability growing?** The **Duane plot**: the cumulative MTBF against
-  time on log scales. Rising is growth.
+  time on log scales, with its slope and the growth shape β.
 - **Do the failure times follow the model?** A **Cramér-von Mises** test of the
   fitted model against the event times.
 - **Does any system fail more than the model expects?** Each system's failures
-  against what the model expects over its own window — your bad actors.
+  against what the model expects over its own window: the counts and the
+  chance of that many or more. It doesn't say whether any system stands out;
+  that's your call.
 - **Is repair as good as new, or as bad as old?** (imperfect repair) The repair
   test.
 
@@ -183,9 +191,15 @@ the average rate and MTBF across it. Each figure on a saved model has its 90%
 range (the MTBF also its 90% lower bound). An imperfect-repair model is simulated,
 beyond the data too; a covariate model is read at the values you choose (a site,
 a duty). **From now on** gives the fleet's failures over the next stretch from
-where each system is now, with a range that allows for chance and for the fit's
-own uncertainty. That's the number that sizes a spares order or a maintenance
-budget.
+where each system is now. Both give the 90% range of **how many** failures
+there will be (chance and the fit's own uncertainty: the range to plan spares
+from), and beside it the narrower range of the expected number (the fit's
+uncertainty alone). **Stock to hold** is the smallest stock with at least the
+chance of not running out you pick (90% unless you choose another), with the
+chance of running out at that stock and at one fewer; and **At the record's
+average rate** shows the same stretch on the whole record's average, the way a
+store ordering on the average would see it. That sizes a spares order or a
+maintenance budget; the dollars stay with you.
 
 ## Plan ahead
 

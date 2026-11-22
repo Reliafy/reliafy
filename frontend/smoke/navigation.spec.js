@@ -23,8 +23,11 @@ const shown = (page) => mainMenu(page).locator(":scope > .side-group .side-item"
 const moreButton = (page) => mainMenu(page).getByRole("button", { name: "More" });
 
 let agentOn = false;
+let workOrdersOff = false;
 test.beforeAll(async ({ request }) => {
-  agentOn = Boolean((await (await request.get("/api/config")).json()).reliability_agent);
+  const served = await (await request.get("/api/config")).json();
+  agentOn = Boolean(served.reliability_agent);
+  workOrdersOff = served.work_management === false;
 });
 test.afterAll(async ({ request }) => {
   await setRoles(request, []);
@@ -170,6 +173,8 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
 });
 
 test("switching roles in Settings: technician, then every role, then none", async ({ page, problems }) => {
+  // It walks Maintenance › Orders: with work management off (SMOKE_WORK_MANAGEMENT=off) there's no Orders entry.
+  test.skip(workOrdersOff, "work management is turned off");
   await open(page, "/settings");
   const card = page.locator(".card", { has: page.getByRole("heading", { name: "What do you do?" }) });
   await card.getByRole("checkbox", { name: "Technician" }).check();
@@ -233,7 +238,9 @@ for (const [role, heading] of Object.entries(LEADS)) {
   test(`Home leads with the ${role}'s cards`, async ({ page, request, problems }) => {
     await setRoles(request, [role]);
     await open(page, "/home");
-    await expect(page.locator(".home-slot h2").first()).toHaveText(heading);
+    // With work management off the to-do cards (planner, technician) are the plan and its risk.
+    const want = workOrdersOff && (role === "technician" || role === "planner") ? "Maintenance plan and risk" : heading;
+    await expect(page.locator(".home-slot h2").first()).toHaveText(want);
     await expectHealthy(page, problems, { label: `${role} home` });
   });
 }
@@ -263,10 +270,10 @@ test("Home for a user with no data, every role's cards", async ({ page, request,
   await open(page, "/home");
   for (const text of [
     "No models of your own yet.", "No datasets of your own yet.", "No block diagrams of your own yet.",
-    "Nothing due in the next 30 days.", "No open work orders.", "Every critical spare is stocked.",
-    "No fleets of your own yet.",
+    ...(workOrdersOff ? [] : ["Nothing due in the next 30 days.", "No open work orders."]),
+    "Every critical spare is stocked.", "No fleets of your own yet.",
   ]) {
-    await expect(page.getByText(text)).toBeVisible();
+    await expect(page.getByText(text).first()).toBeVisible();
   }
   await expect(page.getByRole("heading", { name: "Targets and what's waiting" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Start here" })).toBeVisible();
@@ -296,7 +303,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
   await page.keyboard.press("Tab");
   await expect(mainMenu(page).getByRole("link", { name: "Maintenance" })).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/maintenance\/work-orders$/);
+  await expect(page).toHaveURL(workOrdersOff ? /\/maintenance\/packages$/ : /\/maintenance\/work-orders$/);
   // More opens and closes from the keyboard.
   await moreButton(page).focus();
   await page.keyboard.press("Enter");

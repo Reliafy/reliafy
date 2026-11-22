@@ -2,9 +2,9 @@ import Select from "./Select.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import StatusMeanings from "./StatusMeanings.jsx";
 import { COMMON_UNITS } from "./Units.jsx";
-import { guessUnit } from "../datasetGuess.js";
+import { flagHeaderMeaning, guessUnit } from "../datasetGuess.js";
 import {
-  UNITLESS, countProblem, isUnitless, issueRow, lateEntryWords, setMappingField, statusCodesOnly, unitColumnWords,
+  UNITLESS, codeReading, countProblem, isUnitless, issueRow, lateEntryWords, setMappingField, statusCodesOnly, unitColumnWords,
 } from "../lifeData.js";
 import { TVC_STATUS } from "./TvcColumns.jsx";
 
@@ -154,9 +154,16 @@ export default function ColumnMapper({
     if (!cCol || !codesOnly || !invertible) {
       return cCol && showMeanings && !codesOnly ? null : <span className="xcn-words">{codeWords}</span>;
     }
+    // The reading in effect, with each code's rows (so a flipped column shows
+    // in the counts), and a nudge when the header doesn't say which way round.
+    const read = codeReading(facts[cCol]?.values, !!mapping.c_invert);
+    const unsure = flagHeaderMeaning(cCol) === null;
     return (
       <>
-        <span className="xcn-words">{codeWords}</span>
+        <span className="xcn-words" role="status">
+          {read || (mapping.c_invert ? "1 = failed, 0 = running" : codeWords)}
+          {unsure && <> · “{cCol}” doesn&apos;t say which way round: check the counts</>}
+        </span>
         <label className="xcn-tick">
           <input type="checkbox" checked={!!mapping.c_invert}
                  onChange={(e) => onChange({ ...mapping, c_invert: e.target.checked, c_map: null }, { meanings: true })} />
@@ -170,7 +177,7 @@ export default function ColumnMapper({
     if (!cCol || codesOnly || !showMeanings || !facts[cCol]) return null;
     return (
       <div className="xcn-sub">
-        <span className="xcn-words">0 = failed, 1 = running. Read as:</span>
+        <span className="xcn-words">How each value is read:</span>
         <StatusMeanings compact column={cCol} values={facts[cCol]?.values} blanks={facts[cCol]?.blanks || 0}
                         mapping={mapping} onChange={(m) => onChange(m, { meanings: true })} />
       </div>

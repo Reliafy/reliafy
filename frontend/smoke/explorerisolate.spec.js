@@ -11,6 +11,7 @@
 // The names start "Works" so they sort after the other specs' plants ("Rcm",
 // "Tree"), which share the server and expect their rows near the top.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
+import { pickTab } from "./explorer.js";
 import { test, expect, open, expectHealthy } from "./health.js";
 
 const M = "/api/maintenance";
@@ -193,7 +194,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   await page.getByRole("tab", { name: "Summary" }).click();
   await expect(page.getByRole("tree", { name: "Positions" })).toBeVisible();
   expect((await box(page.locator(".tp-scroll"))).y).toBe(frame.tree.y);
-  await page.getByRole("tab", { name: "RCM" }).click();
+  await pickTab(page, "RCM");
   await expect(table).toBeVisible();
   expect((await box(page.locator(".tp-scroll"))).y).toBe(frame.tree.y);
   await expectHealthy(page, problems, { label: "isolate on the RCM tab", root: ".tx" });
@@ -264,7 +265,7 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await shot(page, "v2-6-phone-400px-isolated");
   // The RCM tab: the phone's menus keep the moves (no dragging here).
-  await page.getByRole("tab", { name: "RCM" }).click();
+  await pickTab(page, "RCM");
   const fnRow = page.getByRole("row", { name: new RegExp(`^Function: Pump water ${tag}`) });
   await expect(fnRow).toBeVisible(); // its pump was opened 2 levels below the line
   await fnRow.getByRole("button", { name: /^Actions for / }).click();

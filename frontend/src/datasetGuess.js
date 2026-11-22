@@ -83,12 +83,22 @@ export function guessSplit(columns, { distinct = {}, exclude = [], splitBy = nul
 
 // First guesses for Compare groups: time, split, censor (and whether to
 // invert it) and unit.
-export function guessCompareColumns(columns, { distinct = {}, splitBy = null } = {}) {
+// The time column: the dataset's own reading (its x) when it names one; else a
+// numeric column named like a time ("hours", "Run hours", "cycles"); only then
+// the first numeric column. Why: a numeric covariate ("duty_pct") before the
+// time column was once read as the time, which gave a wrong comparison.
+// ``exclude``: columns never guessed as the time or the split (the status column
+// and the failure mode, which say what happened to a unit, not which group it is in).
+export function guessCompareColumns(columns, { distinct = {}, splitBy = null, x = "", exclude = [] } = {}) {
   const names = columns.map((c) => c.name);
   const censor = columns.find((c) => CENSOR_RE.test(c.name) && isNumeric(c.dtype))?.name || "";
-  const time =
-    columns.find((c) => isNumeric(c.dtype) && c.name !== censor && c.name !== splitBy)?.name || names[0] || "";
-  const group = guessSplit(columns, { distinct, splitBy, exclude: [time, censor] });
+  const candidates = columns.filter((c) => isNumeric(c.dtype) && c.name !== censor && c.name !== splitBy
+    && !exclude.includes(c.name));
+  const named = (c) => (UNIT_RE.test(c.name) || TIME_WORDS.test(words(c.name)) || !!guessUnit(c.name))
+    && !ID_WORDS.test(words(c.name));
+  const time = (x && x !== splitBy && names.includes(x) ? x : "")
+    || candidates.find(named)?.name || candidates[0]?.name || names[0] || "";
+  const group = guessSplit(columns, { distinct, splitBy, exclude: [time, censor, ...exclude] });
   return {
     time,
     group,
@@ -282,6 +292,15 @@ export function likelyStatusColumns(columns) {
   };
 }
 
+// A dataset's size line in two: the first two facts ("40 valves · 15 failed")
+// stay on one short line, the breakdown after them ("23 failed between
+// inspections · 2 found failed at the first inspection") goes on a second line
+// the column can wrap, so one long summary never stretches the list.
+export function sizeLines(summary) {
+  const parts = String(summary || "").split(" · ").filter(Boolean);
+  return { head: parts.slice(0, 2).join(" · "), rest: parts.slice(2).join(" · ") };
+}
+
 // A pandas dtype in plain words, for a preview's column heads.
 export function dtypeLabel(dtype) {
   const d = String(dtype || "");
@@ -303,9 +322,33 @@ export function nameSaysDistribution(name, distribution) {
 // authoritative parse. ``noHeader``: the first row is data (col 1, col 2, …).
 function sniff(text) {
   const first = text.split(/\r?\n/).find((l) => l.trim()) || "";
-  const counts = { "\t": (first.match(/\t/g) || []).length, ",": (first.match(/,/g) || []).length, ";": (first.match(/;/g) || []).length };
+  // A delimiter inside quotes ("14,010") isn't one: count only the ones outside.
+  const outside = first.replace(/"(?:[^"]|"")*"/g, "");
+  const counts = { "\t": (outside.match(/\t/g) || []).length, ",": (outside.match(/,/g) || []).length, ";": (outside.match(/;/g) || []).length };
   const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
   return best[1] > 0 ? best[0] : ",";
+}
+
+// One line split on the delimiter the way a CSV reader does: a cell in double
+// quotes keeps its delimiters ("14,010" is one cell) and "" inside it is a
+// quote. The preview shows what the server will read, so it must not tear
+// quoted cells apart.
+export function splitCells(line, delim = ",") {
+  const cells = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
+      } else cell += ch;
+    } else if (ch === '"' && cell === "") quoted = true;
+    else if (ch === delim) { cells.push(cell); cell = ""; }
+    else cell += ch;
+  }
+  cells.push(cell);
+  return cells.map((c) => c.trim());
 }
 // Does the first row look like data rather than column names (#434)? True
 // when every cell is a number ("300,544966.3125"): the file was saved without
@@ -334,7 +377,7 @@ export function parsePreview(text, { rows = 5, noHeader = false } = {}) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < (noHeader ? 1 : 2)) return null;
   const d = sniff(text);
-  const split = (l) => l.split(d).map((c) => c.trim());
+  const split = (l) => splitCells(l, d);
   const nCols = split(lines[0]).length;
   const columns = noHeader ? Array.from({ length: nCols }, (_, i) => `col ${i + 1}`) : split(lines[0]);
   const data = noHeader ? lines : lines.slice(1);

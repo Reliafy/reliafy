@@ -159,10 +159,73 @@ export function fmt3(x) {
 // The Cm line for a mode with the figures that make it (the details and the
 // matrix's table): "1.0 × 0.6 × 2e-5 /h × 100 h = 0.0012".
 export function cmWords(m) {
-  const cm = m?.cm ?? cmOf(m);
+  const cm = m?.cm ?? cmOf({ ...m, failure_rate: rateOf(m) });
   if (cm == null) return "";
   const u = m.time_unit || "hours";
-  return `${fmt3(m.loss_probability)} × ${fmt3(m.mode_ratio)} × ${fmt3(m.failure_rate)} /${u} × ${fmt3(m.operating_time)} ${u} = ${fmt3(cm)}`;
+  return `${fmt3(m.loss_probability)} × ${fmt3(m.mode_ratio)} × ${fmt3(rateOf(m))} /${u} × ${fmt3(m.operating_time)} ${u} = ${fmt3(cm)}`;
+}
+
+// ---- the worksheet's Criticality column -------------------------------------------
+// A mode's Cm as the worksheet shows it: the number and the operating time it's
+// for, or why there isn't one (never a made-up number). {cm, t, unit} or {why}.
+const blank = (x) => x === "" || x == null || !Number.isFinite(Number(x));
+
+export function criticalityOf(m) {
+  if (!m) return { why: "" };
+  const rate = rateOf(m);
+  const cm = m.cm ?? cmOf({ ...m, failure_rate: rate });
+  const unit = m.time_unit || "hours";
+  if (cm != null) return { cm, t: Number(m.operating_time), unit };
+  const missing = [
+    blank(rate) ? "a failure rate (λ)" : null,
+    blank(m.mode_ratio) ? "the mode ratio (α)" : null,
+    blank(m.loss_probability) ? "the loss probability (β)" : null,
+    blank(m.operating_time) ? "the operating time (t)" : null,
+  ].filter(Boolean);
+  const list = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}` : missing[0];
+  // The server says when the position has a rate it can't put in this mode's time unit.
+  const note = m.cm_note ? ` ${m.cm_note}` : blank(rate)
+    ? " Type a rate on the mode, or give the position a parts count or a constant-rate model in use." : "";
+  return { why: `No criticality: needs ${list || "every figure"}.${note}` };
+}
+
+// The cell's words: "0.0012 in 100 hours", or "–" when there's no Cm.
+export function criticalityText(m) {
+  const c = criticalityOf(m);
+  return c.cm == null ? "–" : `${fmt3(c.cm)} in ${fmt3(c.t)} ${c.unit}`;
+}
+
+// The cell's tooltip: the working, in words, or why there's no number.
+export function criticalityTip(m) {
+  const c = criticalityOf(m);
+  if (c.cm == null) return c.why;
+  return `Cm = β × α × λ × t = ${cmWords(m)}: the expected number of this failure mode's failures in ${fmt3(c.t)} ${c.unit} `
+    + "of operation that end in the loss its severity class names.";
+}
+
+// ---- where the failure rate comes from (W3) ---------------------------------------
+// The server says which rate a mode's Cm uses (`rate_from`: {source, value, time_unit,
+// text, position_rate?}): one typed on the mode is the analyst's override; with none
+// typed, the position's own (its parts count or its model in use), so one part has one
+// rate on every tab.
+export const RATE_FROM_LABEL = { typed: "Typed", "parts count": "Parts count", "fitted model": "Fitted model", "assigned model": "Assigned model" };
+
+// The rate Cm uses: typed, else the position's.
+export function rateOf(m) {
+  if (m?.failure_rate !== "" && m?.failure_rate != null) return m.failure_rate;
+  return m?.rate_from && m.rate_from.source !== "typed" ? m.rate_from.value : null;
+}
+
+// Where it came from, in words (null when the server said nothing).
+export function rateWords(m) {
+  const r = m?.rate_from;
+  const u = m?.time_unit || "hours";
+  if (m?.failure_rate !== "" && m?.failure_rate != null) {
+    if (r?.position_rate == null) return null;
+    return `Typed here, overriding the position's ${fmt3(r.position_rate)} /${u} (${(RATE_FROM_LABEL[r.position_source] || "its own rate").toLowerCase()}). Clear it to use the position's.`;
+  }
+  if (!r || r.source === "typed") return null;
+  return `Uses the position's rate: ${fmt3(r.value)} /${u}. ${r.text || ""} Type a rate to override it.`.replace(/\s+/g, " ").trim();
 }
 
 // ---- the criticality matrix (a position's details) ------------------------------

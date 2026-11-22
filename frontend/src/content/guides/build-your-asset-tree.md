@@ -34,6 +34,16 @@ that asset alone: its tree, search, tabs and pickers show nothing from any
 other asset. The **Explorer** always shows one asset. To look at another, go
 back to **Assets** and choose it there.
 
+To find something without knowing which asset it's in, type in the search box
+on **Assets**: an asset's name, a position's name or tag (P-101), or an item's
+name or serial. Under the assets that match, it lists the positions and items
+that match, each with the asset it's at. Choose one to open its page.
+
+From any page, the search in the top bar (or **⌘K**, **Ctrl K** on Windows)
+finds the same and more: parts by part number, products, places, work orders,
+and your data, models and diagrams. A position or an item opens in the
+**Explorer** on its own asset, with it picked.
+
 To see two assets together, merge one into the other. Choose **Merge into
 another asset…** from the asset's **⋯** on the **Assets** page (or from its top
 row's menu in the Explorer). Pick the asset it joins and where in that asset's
@@ -62,7 +72,9 @@ Open a position's own page (**Open the full page** in the details' **…**
 menu); **Fit an item** there records what's fitted and when. **Open
 in the Explorer** takes you back to the tree.
 Replacing it later is done by closing a work order, so the old item's life (and
-whether it failed) goes into the position's history.
+whether it failed) goes into the position's history. Where work management is
+turned off, a replacement goes in as history: remove the old item (saying how
+it ended, with the failure mode if it failed), then fit the new one.
 
 ## Import or export your tree
 
@@ -102,7 +114,7 @@ Locations and Classes sheets.
 
 ## Where to go next
 
-- The Explorer's **Modelling** tab: life models on positions.
+- The Explorer's **Models** tab (**Life models**): life models on positions.
 - The Explorer's **RCM** tab: decide what to do about each way a position can
   fail.
 - **Maintenance → Orders**: the work raised on your positions.

@@ -59,10 +59,13 @@ import { explorerPath } from "../assetTree.js";
 import { ASSETS_LIST_PATH } from "../maintenanceAssets.js";
 import { partsPath } from "../redirects.js";
 import { classLabel, isDesignClass } from "../positionClass.js";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
 export default function MaintenancePosition() {
+  // Work management off (workManagement.js): no work orders here; history comes from fitments.
+  const workOrders = useWorkManagementOn();
   const { id } = useParams();
   const navigate = useNavigate();
   const [p, setP] = useState(null);
@@ -80,7 +83,7 @@ export default function MaintenancePosition() {
     setModal("child");
   };
 
-  if (error && !p) return <div className="app"><LoadFailed header error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
+  if (error && !p) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
   if (!p) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (
@@ -101,11 +104,11 @@ export default function MaintenancePosition() {
         actions={
           <>
             {/* Back to the tree, this position picked (its tabs: RCM, Modelling, Failure reports…). */}
-            <button className="secondary" onClick={() => navigate(explorerPath("positions", { sel: p.id }))}>Open in the Explorer</button>
+            <button className="secondary" onClick={() => navigate(explorerPath("positions", { root: p.asset || null, sel: p.id }))}>Open in the Explorer</button>
             <button className="secondary" onClick={openChild}><PlusIcon /> Position inside</button>
           </>
         }
-        primary={<button onClick={() => setModal("wo")}>New work order</button>}
+        primary={workOrders ? <button onClick={() => setModal("wo")}>New work order</button> : null}
       >
         {/* A long description folds to three lines, with Show all: the actions stay near the top. */}
         {p.description && <ClampLines text={p.description} lines={3} what="the description" className="ph-desc" />}
@@ -192,7 +195,7 @@ export default function MaintenancePosition() {
 
       <ConnectionsCard p={p} onChanged={refresh} />
 
-      <section className="card">
+      {workOrders && <section className="card">
         <div className="maint-head"><h2>Work orders</h2></div>
         {p.work_orders.length === 0 ? (
           <p className="lib-date">None yet.</p>
@@ -211,7 +214,7 @@ export default function MaintenancePosition() {
             </tbody>
           </table></div>
         )}
-      </section>
+      </section>}
 
       <section className="card">
         <div className="maint-head">
@@ -314,6 +317,7 @@ function FitModal({ positionId, onClose, onDone }) {
 }
 
 function RemoveModal({ position, onClose, onDone }) {
+  const workOrders = useWorkManagementOn();
   const [on, setOn] = useState(roughDate(today()));
   const [reason, setReason] = useState("planned");
   const [mode, setMode] = useState(null);
@@ -324,7 +328,8 @@ function RemoveModal({ position, onClose, onDone }) {
                onSubmit={async () => onDone(await removeMaintenanceItem(position.id, {
                  on: onText, to_precision: on.precision, reason, ...(reason === "failure" ? failureModeBody(mode) : {}),
                }))}>
-      <p className="lib-date">For corrections and moves. Work done on it belongs on a work order.</p>
+      <p className="lib-date">{workOrders ? "For corrections and moves. Work done on it belongs on a work order."
+        : "Its history: when it came out and how it ended (a failure, with its mode, is life data)."}</p>
       <RoughDateField label="Removed on" value={on} onChange={setOn} />
       <Field label="Why">
         <select value={reason} onChange={(e) => setReason(e.target.value)}>
@@ -747,6 +752,7 @@ function Sparkline({ point }) {
 // What's measured on a position or an item (target: {kind, id}), with its latest
 // readings: counters for tasks by use, condition with alarm limits.
 export function MeasurementsCard({ measurements, target, onChanged }) {
+  const workOrders = useWorkManagementOn();
   const [modal, setModal] = useState(null);
   return (
     <section className="card">
@@ -779,7 +785,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
                     : c.kind === "setting" ? "holds until changed" : <>
                       {[c.alarm_above != null && `above ${c.alarm_above}`, c.alarm_below != null && `below ${c.alarm_below}`].filter(Boolean).join(", ") || "no limits"}
                       {c.projected_alarm && <div>reaches it about {fmtDate(c.projected_alarm)}</div>}
-                      {c.alarm_work_order && <div><Link to={`/maintenance/work-orders/${c.alarm_work_order.id}`}>#{c.alarm_work_order.number} open</Link></div>}
+                      {workOrders && c.alarm_work_order && <div><Link to={`/maintenance/work-orders/${c.alarm_work_order.id}`}>#{c.alarm_work_order.number} open</Link></div>}
                     </>}
                 </td>
                 <td>{c.source === "manual" && (
@@ -803,6 +809,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
 
 // `kind`: the kind it starts as ("setting" from Add a setting…).
 export function PointModal({ target, kind = "condition", onClose, onDone }) {
+  const workOrders = useWorkManagementOn();
   const [f, setF] = useState({ name: "", kind, unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "",
     range_min: "", range_max: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -831,7 +838,7 @@ export function PointModal({ target, kind = "condition", onClose, onDone }) {
         </select></Field>
       ) : setting ? (
         <>
-          <p className="lib-date">A value someone sets. It holds until the next change: no alarm, never due. A work order can record each change.</p>
+          <p className="lib-date">A value someone sets. It holds until the next change: no alarm, never due.{workOrders ? " A work order can record each change." : ""}</p>
           <Field label="Unit"><input value={f.unit} placeholder="e.g. %, h/day, °C" onChange={set("unit")} /></Field>
           <Field label="Lowest allowed (optional)"><input type="number" step="any" value={f.range_min} onChange={set("range_min")} /></Field>
           <Field label="Highest allowed (optional)"><input type="number" step="any" value={f.range_max} onChange={set("range_max")} /></Field>

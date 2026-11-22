@@ -73,6 +73,23 @@ export function inputRows(kind, inputs, currency = "$") {
     (i.opportunities || []).forEach((s, k) => add(k === 0 ? "Shuts" : "", shutText(s, currency)));
     add("Failure (unplanned) cost", blank(i.failure_cost) ? null : formatCost(i.failure_cost, currency));
     add("Replacing between shuts costs", blank(i.anytime_cost) ? "not allowed" : formatCost(i.anytime_cost, currency));
+  } else if (kind === "sequential_test") {
+    const pct = (v) => (blank(v) ? null : `${formatNumber(v * 100, { sig: 4 })}%`);
+    if (i.method === "attribute") {
+      add("Test type", "Pass/fail (failures against units)");
+      add("Reliability to demonstrate", pct(i.reliability));
+      add("A good design's reliability", pct(i.good_reliability));
+    } else {
+      add("Test type", "MTBF (failures against test time)");
+      add("MTBF to demonstrate", withUnit(i.mtbf, unit));
+      add("A good design's MTBF", withUnit(i.good_mtbf, unit));
+    }
+    add("Confidence", pct(i.confidence));
+    add("Producer's risk", pct(i.producer_risk));
+    add("Failures so far", blank(i.failures_seen) ? null : formatNumber(i.failures_seen));
+    // A count kept as entered (a record of the test), not rounded to 4 figures.
+    add("Total test time so far", blank(i.time_seen) ? null : `${formatNumber(i.time_seen, { sig: 9 })}${unit ? ` ${unit}` : ""}`);
+    add("Units tested so far", blank(i.units_seen) ? null : formatNumber(i.units_seen, { sig: 7 }));
   }
   return rows;
 }

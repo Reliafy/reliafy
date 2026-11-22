@@ -104,8 +104,9 @@ class _Exporter:
     """Collects the blocks that can't be exported and the sub-system
     diagrams that were nested."""
 
-    def __init__(self, resolve_model, resolve_subsystem):
+    def __init__(self, resolve_model, resolve_subsystem, unit=None):
         self.resolve_model = resolve_model
+        self.unit = unit  # the diagram's: a block fitted in another unit of its kind is converted to it
         self.resolve_subsystem = resolve_subsystem
         self.problems: list[str] = []
         self.subsystems: dict[str, dict] = {}
@@ -114,15 +115,26 @@ class _Exporter:
     # -- non-repairable models ------------------------------------------------------
     def spec(self, model: Optional[dict]) -> Optional[dict]:
         """A model spec with a saved model's parameters filled in (the
-        block's own snapshot wins, as in the analysis)."""
-        return rbd_export._effective_spec(model, self.resolve_model)
+        block's own snapshot wins, as in the analysis), converted to the
+        diagram's unit when it was fitted in another of the same kind (its
+        parameters, as the analysis converts them)."""
+        from backend.services import model_units
+
+        spec = rbd_export._effective_spec(model, self.resolve_model)
+        return model_units.convert_model(spec, self.unit)[0]
 
     def dist(self, model: Optional[dict], label: str):
         """A frozen SurPyval distribution for a block's model, or
         :class:`_Missing`. A saved Bayesian update is its posterior
         predictive (refitted from its history and prior), as the analysis
         takes it, which RePyability's JSON holds whole."""
+        from backend.services import model_units
+
         recipe = rbd_export.bayes_recipe(model, self.resolve_model)
+        if recipe is not None and model_units.convertible_kind(model) and \
+                model_units.conversion(model, self.unit) is not None:
+            raise _Missing(f"“{label}” uses a Bayesian update fitted in another unit, which RePyability's JSON "
+                           "can't hold converted (Download as Python writes it)")
         if recipe is not None:
             from repyability import PosteriorPredictive
 
@@ -138,6 +150,9 @@ class _Exporter:
             raise _Missing(f"“{label}” uses {_UNSUPPORTED[kind]}")
         if spec.get("_unresolved"):
             raise _Missing(f"“{label}” uses a saved model that couldn't be read")
+        if model_units.needs_wrap(spec):
+            raise _Missing(f"“{label}” uses a model fitted in another unit with no parameter rule for the change, "
+                           "which RePyability's JSON can't hold converted (Download as Python writes it)")
         try:
             return ra._build_distribution(spec, label, None, None)
         except ra.AnalysisError as exc:
@@ -359,7 +374,7 @@ def core(graph: dict, resolve_model: Optional[Callable] = None,
 
 
 def _core(graph: dict, resolve_model, resolve_subsystem) -> tuple[dict, dict, "_Exporter"]:
-    ex = _Exporter(resolve_model, resolve_subsystem)
+    ex = _Exporter(resolve_model, resolve_subsystem, (graph or {}).get("unit"))
     from backend.services import rbd_network
 
     try:

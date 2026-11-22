@@ -17,6 +17,7 @@ export const STRATEGY_TOOLS = {
   overhaulReplace: { kind: "overhaul_replace", noun: "overhaul-and-replace analyses", help: { guide: "overhaul-and-replace" } },
   failureFinding: { kind: "failure_finding", noun: "failure-finding analyses", help: { guide: "failure-finding-interval" } },
   testPlanning: { kind: "demonstration_test", noun: "demonstration test plans", help: { guide: "check-a-requirement-and-plan-a-test" } },
+  sequential: { kind: "sequential_test", noun: "sequential test plans", help: { guide: "check-a-requirement-and-plan-a-test" } },
   accelerated: { kind: "demonstration_test", noun: "demonstration test plans", help: { guide: "accelerated-life-testing" } },
 };
 
@@ -69,4 +70,12 @@ export function failureFindingMissing({ model, availability, availCheck, unit, s
   if (blank(String(availability ?? "").trim())) return "Enter a target availability.";
   if (availCheck && availCheck.state !== "ok") return "Check the target availability.";
   return unitMissing(model, unit);
+}
+
+// The line under a long exact compute: what it's doing, how long so far,
+// and (past 20 s) that it's still going and can be cancelled.
+export function computeWaitText(doing, secs) {
+  const took = secs < 60 ? `${secs} s` : `${Math.floor(secs / 60)} min ${secs % 60} s`;
+  const tail = secs >= 20 ? " A busy server or a long calendar can take a minute or two; Cancel stops it." : "";
+  return `${doing}: ${took} so far.${tail}`;
 }

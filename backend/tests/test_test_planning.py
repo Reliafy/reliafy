@@ -4,6 +4,7 @@ simulation check's Pro gate and job; and the MCP actions."""
 from __future__ import annotations
 
 import json
+import re
 
 import numpy as np
 import pytest
@@ -168,7 +169,41 @@ def test_accelerated_check_of_your_own_test():
 def test_accelerated_warns_when_failures_are_few():
     out = T.accelerated_test(mode="check", life_params={"a": 6694, "b": 2e-5}, shape=2, use_stress=323,
                              stresses=[333, 393], units_at=[10, 10], censor_time=300)
-    assert out["warnings"] and "fewer than 3 failures" in out["warnings"][0]
+    assert any("fewer than 3 failures" in w for w in out["warnings"])
+
+
+# The planning values of a capacitor's Arrhenius-Weibull fit: B10 at 40 °C is about 136,500 hours.
+CAPACITOR = dict(mode="check", life_params={"a": 6957, "b": 8.39e-5}, shape=2.236, censor_time=1000, unit="hours")
+
+
+def test_accelerated_too_wide_to_quote_is_said_in_words():
+    # 20 units at 100 °C expect about 0.1 failures, so the slope rests on 145 °C alone: the
+    # precision factor is about 1,020 (an independent Fisher-information check gives 1,017).
+    out = T.accelerated_test(**CAPACITOR, use_stress=313.15, stresses=[373.15, 418.15], units_at=[20, 20],
+                             stress_unit="K")
+    assert out["precision"] == pytest.approx(1017, rel=0.01)
+    assert re.search(r"factor of 1,0\d\d at 90% confidence \(two-sided\)", out["summary"])
+    assert "e+03" not in out["summary"]
+    assert "too wide to quote" in out["summary"]
+    assert any("can't say much" in w and "(373 K) expects 0.1 failures" in w for w in out["warnings"])
+
+
+def test_accelerated_temperatures_in_celsius_are_worked_in_kelvin():
+    k = T.accelerated_test(**CAPACITOR, use_stress=313.15, stresses=[373.15, 418.15], units_at=[20, 20],
+                           stress_unit="K")
+    c = T.accelerated_test(**CAPACITOR, use_stress=40, stresses=[100, 145], units_at=[20, 20], stress_unit="°C")
+    assert c["precision"] == pytest.approx(k["precision"])
+    assert [r["stress"] for r in c["rows"]] == pytest.approx([100, 145])
+    assert "(40 °C: 136,500 hours" in c["summary"] and "20 at 100 °C" in c["summary"]
+    plan = T.accelerated_test(life_params={"a": 6957, "b": 8.39e-5}, shape=2.236, censor_time=1000, units=40,
+                              use_stress=40, high_stress=145, stress_unit="C")
+    assert max(r["stress"] for r in plan["rows"]) == pytest.approx(145)
+    # The simulation check rebuilds the same plan from the °C answer.
+    _, sim_plan = T._plan_for("accelerated", dict(CAPACITOR, use_stress=40, stresses=[100, 145], units_at=[20, 20],
+                                                  stress_unit="°C"))
+    assert sim_plan.precision == pytest.approx(k["precision"])
+    with pytest.raises(StrategyError, match="kelvin"):
+        T.accelerated_test(**CAPACITOR, use_stress=-300, stresses=[373.15, 418.15], units_at=[20, 20], stress_unit="K")
 
 
 @pytest.mark.parametrize("kwargs, message", [
@@ -369,3 +404,34 @@ def test_sequential_truncated_plan_keeps_the_confidence_asked():
     assert out["summary"].startswith("As run, this test shows the target with 90.2% confidence (90% asked)")
     # Exact: the chance a design at the target passes, by the library's own OC.
     assert out["oc_curve"]["points"][0]["pass_probability"] == pytest.approx(out["consumer_risk"])
+
+
+# ---- A saved sequential test ------------------------------------------------------------
+
+
+def test_a_sequential_rule_is_saved_recomputed_and_reads_its_verdict(client):  # noqa: F811
+    """The agreed rule goes on record before the data comes in, and again with each verdict;
+    the server recomputes it from the inputs (never the client's result)."""
+    body = {"method": "mtbf", "mtbf": 60000, "good_mtbf": 120000, "confidence": 0.9, "producer_risk": 0.1,
+            "unit": "hours"}
+    r = client.post("/api/strategy/analyses", json={"name": "Controller rule", "kind": "sequential_test",
+                                                    "inputs": body})
+    assert r.status_code == 200, r.text
+    saved = r.json()
+    plan = T.sequential_test(**body)
+    assert saved["results"]["max_failures"] == plan["max_failures"]
+    assert saved["results"]["max_time"] == pytest.approx(plan["max_time"])
+    assert saved["headline"].startswith("Sequential test: at most ")
+    assert saved["headline"].endswith(f"hours or {plan['max_failures']} failures")
+    r = client.post("/api/strategy/analyses", json={"name": "Feb verdict", "kind": "sequential_test",
+                                                    "inputs": {**body, "failures_seen": 2, "time_seen": 471168}})
+    assert r.status_code == 200, r.text
+    assert r.json()["results"]["decision"]["verdict"] == "accept"
+    assert r.json()["headline"].startswith("Accept so far · Sequential test")
+    attr = client.post("/api/strategy/analyses", json={"name": "Pass/fail", "kind": "sequential_test", "inputs": {
+        "method": "attribute", "reliability": 0.9, "good_reliability": 0.97, "confidence": 0.9}})
+    assert attr.status_code == 200, attr.text
+    assert "units or" in attr.json()["headline"]
+    bad = client.post("/api/strategy/analyses", json={"name": "Bad", "kind": "sequential_test",
+                                                      "inputs": {"method": "mtbf", "mtbf": 1000}})
+    assert bad.status_code == 422 and "good design" in bad.json()["detail"]

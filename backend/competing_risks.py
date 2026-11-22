@@ -42,6 +42,7 @@ from backend.services.compare_groups import FailureModeError, _label, _named, _p
 from backend.services.strategy import fmt_num
 from backend.units import unit_in_text
 from backend.warn_capture import collect_warnings, ignore_warnings
+from backend.errors import client_reason
 
 # The mapping keys this model reads beyond x / c / n.
 CAUSE_KEY = "e"
@@ -141,8 +142,6 @@ def prepare(df: pd.DataFrame, mapping: dict) -> dict:
         raise CompetingRisksError(
             f"{_rows(int((~np.isfinite(x)).sum()))} no time in “{mapping['x']}”. Fill them in or delete "
             "those rows.")
-    if (x < 0).any():
-        raise CompetingRisksError(f"“{mapping['x']}” has negative times; life data starts at 0.")
     cause = [_label(v) for v in df[mapping[CAUSE_KEY]].tolist()]
 
     if mapping.get("c"):
@@ -161,6 +160,13 @@ def prepare(df: pd.DataFrame, mapping: dict) -> dict:
         c, cause = statuses_from_modes(cause, c, f"“{mapping[CAUSE_KEY]}”")
     except FailureModeError as exc:
         raise CompetingRisksError(str(exc)) from exc
+    # A time below 0, or a failure at 0, named by row as every life fit does:
+    # the all-cause Kaplan-Meier curve would otherwise start below 0.
+    from backend.fitting import nonparametric_range_message
+
+    refused = nonparametric_range_message({"x": x, "c": c}, "Kaplan-Meier", what="failure modes", ranges=False)
+    if refused:
+        raise CompetingRisksError(refused)
 
     if mapping.get("n"):
         n = pd.to_numeric(df[mapping["n"]], errors="coerce").to_numpy(dtype=float)
@@ -270,7 +276,7 @@ def eliminated(prep: dict, cause: str) -> dict:
             m = Weibull.fit(x, c=cc, n=n)
             life = life_bounds.time_at_reliability(m, [1.0 - ELIMINATED_B], 1.0 - ALPHA, "lower")
     except Exception as exc:  # noqa: BLE001 - the rest of the result stands
-        out["reason"] = f"The Weibull fit didn't converge ({str(exc) or type(exc).__name__})."
+        out["reason"] = f"The Weibull fit didn't converge ({client_reason(exc, where='competing risks')})."
         return out
     point = life["points"][0]
     out.update({

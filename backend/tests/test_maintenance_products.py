@@ -51,6 +51,22 @@ def _rebuilt_matches(m):
 
 # ---- products and designs -----------------------------------------------------------------
 
+def test_product_counts_items_of_its_part_apart_from_items_built(m):
+    """Items registered as the product's part (not built from the design) don't count as
+    built, but the product says how many of its part there are, so "0 built" can't mislead."""
+    ids = _uav(m)
+    part_id = ids["product"]["part"]["id"]
+    assert m.product(ids["root"])["items_of_part"] == 0
+    for serial in ("D1", "D2"):
+        m.create_item("UAV", serial=serial, part_id=part_id)
+    p = m.product(ids["root"])
+    assert p["items_built"] == 0 and p["items_of_part"] == 2
+    _built(m, ids["root"], "B1")
+    p = m.product(ids["root"])
+    assert p["items_built"] == 1 and p["items_of_part"] == 3
+
+
+
 def test_create_product_makes_the_part_and_the_declared_design(m):
     p = m.create_product("UAV Mk2", part_number="UAV-2", rev="C", description="Quadcopter")
     assert p["name"] == "UAV Mk2" and p["rev"] == "C" and p["description"] == "Quadcopter"
@@ -554,3 +570,30 @@ def test_products_over_mcp(env):  # noqa: F811
     assert batch["applied"] == 1
     assert no_build.is_error
     assert "products.build" in guide["guide"] and "dry_run" in guide["guide"]
+
+
+def test_an_item_built_from_a_product_leaves_its_retired_tasks_behind(m):
+    """A task a decision dropped is retired on the design: building an item doesn't copy
+    it (the dry run doesn't count it either), and the retired task reads retired, with
+    when and why."""
+    p = m.create_product("Mower", part_number="MW-1", rev="A")
+    root = p["id"]
+    fm = m.add_failure_mode(root, "Fins blocked")["id"]
+    m.decide_failure_mode(fm, "operational", {"outcomes": [
+        {"outcome": "on_condition", "task": "Daily check", "interval": 6, "interval_unit": "hours"},
+        {"outcome": "fixed_interval", "task": "Clean fins", "interval": 25, "interval_unit": "hours"}]})
+    ids = {t["name"]: t["id"] for t in m._tasks_on(root)}
+    m.decide_failure_mode(fm, "operational", {"outcome": "on_condition", "task": "Daily check", "interval": 6,
+                                              "interval_unit": "hours", "task_id": ids["Daily check"]})
+    dropped = m.explain_task(ids["Clean fins"])["task"]
+    assert dropped["retired"] is True and dropped["retired_on"] == m.today()
+    assert dropped["retired_reason"]
+    live = m.explain_task(ids["Daily check"])["task"]
+    assert (live["retired"], live["retired_on"], live["retired_reason"]) == (False, None, "")
+
+    assert m.build_item(root, "S1")["counts"]["tasks"] == 1
+    out = m.build_item(root, "S1", dry_run=False)
+    built = out["top_position_id"]
+    assert [t["name"] for t in m._tasks_on(built)] == ["Daily check"]
+    assert not [t for t in m.s.inn(m.org, built, "ON") if t["label"] == "Task" and t["name"] == "Clean fins"]
+    _rebuilt_matches(m)

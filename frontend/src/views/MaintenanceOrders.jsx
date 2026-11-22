@@ -20,10 +20,13 @@ import { DueChip, LocationPicker, Proposals, flatten, fmtDate } from "../compone
 import { ImportModal, NewPositionModal, SubjectCell, TimeZoneNudge } from "./MaintenanceHome.jsx";
 import {
   DUE_WINDOWS, ORDER_TABS, createDetail, createLabel, createPlan, daysLate, doneText, dueSearchText, dueWindow, groupDue,
-  inArea, lateText, linesText, orderKind, orderTab, ordersSummary, packagePath, splitOpen, workOrderPath,
+  inArea, lateText, linesText, orderCardMeta, orderKind, orderTab, ordersSummary, packagePath, splitOpen, workOrderPath,
 } from "../maintenanceOrders.js";
+import usePhone from "../usePhone.js";
 import { ORDERS_LABEL } from "../navigation.js";
 import "./Maintenance.css";
+import LoadFailed from "../components/LoadFailed.jsx";
+import { plainLoadError } from "../components/loadFailed.js";
 
 const HELP = { guide: "maintenance-work-orders" };
 
@@ -54,8 +57,10 @@ export default function MaintenanceOrders() {
   const [inArea, setInArea] = useState(null);
   const [digest, setDigest] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
-    getMaintenanceOverview().then(setData).catch((e) => setError(e.message));
+    setLoadError(null);
+    getMaintenanceOverview().then(setData).catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
   useEffect(() => {
@@ -98,10 +103,11 @@ export default function MaintenanceOrders() {
         primary={data?.tree?.length > 0 ? <button onClick={() => setModal("wo")}><PlusIcon /> New work order</button> : null}
         actions={<button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>}
       />
-      {error && <div className="card error">{error}</div>}
+      {error && !loadError && <div className="card error">{plainLoadError(error)}</div>}
       {data && <TimeZoneNudge zone={data.time_zone} onSet={refresh} />}
       {data === null ? (
-        <div className="card empty">Loading…</div>
+        loadError ? <LoadFailed what="Couldn't load your work orders." error={loadError} onRetry={refresh} />
+          : <div className="card empty">Loading…</div>
       ) : data.tree.length === 0 ? (
         <div className="card empty">
           <h2>Nothing here yet</h2>
@@ -117,7 +123,7 @@ export default function MaintenanceOrders() {
         <>
           <Proposals proposals={data.proposals} onDecided={refresh} />
           <p className="maint-answer">
-            {ordersSummary({ open: data.open_work_orders || [], due, horizon, today: data.today })}
+            {ordersSummary({ open: data.open_work_orders || [], due, horizon, today: data.today, late: data.late })}
           </p>
           <Tabs tabs={ORDER_TABS} value={tab} onChange={(id) => setParam("tab", id === "open" ? "" : id)}
                 label="Work orders" idPrefix="orders" />
@@ -168,6 +174,10 @@ function OpenTab({ rows, today, locations, locationId, onLocation, navigate }) {
     && matches(query, String(w.number), `#${w.number}`, w.title, w.subject?.name, w.location?.name, w.trade, w.package?.name)),
   [rows, query, kind]);
   const { overdue, open } = splitOpen(shown, today);
+  // On a phone each work order is a card row (title, then "18 days late · place"): the
+  // table's Due column fell off the side of a narrow card.
+  const phone = usePhone();
+  const List = phone ? OpenCards : OpenTable;
   return (
     <section className="card">
       <div className="tablebar section-tablebar maint-filters">
@@ -193,14 +203,14 @@ function OpenTab({ rows, today, locations, locationId, onLocation, navigate }) {
         <>
           {overdue.length > 0 && (
             <>
-              <h3 className="maint-subhead maint-overdue">Overdue ({overdue.length})</h3>
-              <OpenTable rows={overdue} today={today} navigate={navigate} />
+              <h3 className="maint-subhead maint-overdue">Late ({overdue.length})</h3>
+              <List rows={overdue} today={today} navigate={navigate} />
             </>
           )}
           {open.length > 0 && (
             <>
               {overdue.length > 0 && <h3 className="maint-subhead">Open ({open.length})</h3>}
-              <OpenTable rows={open} today={today} navigate={navigate} />
+              <List rows={open} today={today} navigate={navigate} />
             </>
           )}
         </>
@@ -239,6 +249,47 @@ function OpenTable({ rows, today, navigate }) {
         })}
       </tbody>
     </table></div>
+  );
+}
+
+// The open work orders on a phone: one card row each, "#12 Title", then when and where.
+function OpenCards({ rows, today }) {
+  return (
+    <ul className="maint-cards">
+      {rows.map((w) => {
+        const m = orderCardMeta(w, today, fmtDate);
+        return (
+          <li key={w.id}>
+            <Link to={workOrderPath(w.id)} className="maint-card-row">
+              <span className="maint-card-title">#{w.number} {w.title}
+                {w.under_warranty && <> <span className="maint-badge">warranty</span></>}</span>
+              <span className="maint-card-meta">
+                <span className={m.late ? "maint-card-late" : undefined}>{m.when}</span>
+                {[m.where, w.package?.name, linesText(w)].filter(Boolean).map((t) => ` · ${t}`).join("")}
+              </span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// The closed work orders on a phone: "#12 Title", then when it closed and what was done.
+function ClosedCards({ rows }) {
+  return (
+    <ul className="maint-cards">
+      {rows.map((w) => (
+        <li key={w.id}>
+          <Link to={workOrderPath(w.id)} className="maint-card-row">
+            <span className="maint-card-title">#{w.number} {w.title}</span>
+            <span className="maint-card-meta">
+              {[`Closed ${fmtDate(w.closed)}`, doneText(w), w.subject?.name].filter(Boolean).join(" · ")}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -369,30 +420,33 @@ function ClosedTab({ navigate }) {
   const [query, setQuery] = useState("");
   const [found, setFound] = useState(null);
   const [failed, setFailed] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
+    setFailed(null);
     const wait = setTimeout(() => {
       listMaintenanceWorkOrders({ status: "done", query, limit: CLOSED_LIMIT })
         .then((d) => { if (live) { setFound(d); setFailed(null); } })
-        .catch((e) => live && setFailed(e.message));
+        .catch((e) => live && setFailed(e));
     }, query ? 250 : 0);
     return () => { live = false; clearTimeout(wait); };
-  }, [query]);
+  }, [query, attempt]);
   const rows = found?.work_orders;
+  const phone = usePhone();
   return (
     <section className="card">
       <div className="tablebar section-tablebar maint-filters">
         <span className="count">
-          {rows == null ? "Loading…" : found.total > rows.length
+          {rows == null ? (failed ? "" : "Loading…") : found.total > rows.length
             ? `The newest ${rows.length} of ${found.total}` : `${found.total} ${found.total === 1 ? "work order" : "work orders"}`}
         </span>
         <span className="grow" />
         <ListSearch value={query} onChange={setQuery} placeholder="Search closed work orders…" />
       </div>
-      {failed && <div className="card error">{failed}</div>}
+      {failed && <LoadFailed what="Couldn't load the closed work orders." error={failed} onRetry={() => setAttempt((n) => n + 1)} />}
       {rows == null ? null : rows.length === 0 ? (
         <p className="lib-date">{query ? "Nothing closed matches." : "None closed yet."}</p>
-      ) : (
+      ) : phone ? <ClosedCards rows={rows} /> : (
         <div className="maint-scroll"><table className="lib-table">
           <thead><tr><th>#</th><th>Title</th><th>On</th><th>Closed</th><th>What was done</th></tr></thead>
           <tbody>

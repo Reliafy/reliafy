@@ -61,7 +61,8 @@ export function pickerSources(sources) {
 export function leftOutWords(leftOut) {
   const parts = [];
   if (leftOut?.prediction_model) parts.push("Handbook rates and covariate models are left out: they have no spread to be a prior, or need a position.");
-  if (leftOut?.per_demand) parts.push("Probabilities per demand are left out.");
+  if (leftOut?.per_demand) parts.push("Probabilities per demand are left out: a chance of failing each time it's "
+    + "called on doesn't say how long it lasts.");
   return parts.length ? parts.join(" ") : null;
 }
 

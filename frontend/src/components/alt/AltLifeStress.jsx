@@ -12,7 +12,8 @@ import { PlotCard, PlotPanel, ScrollCard } from "../model/ModelLayouts.jsx";
 import { COLORWAY, DATA_INK, INK, SURFACE, bandPair, fitLine } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { evaluateAlt } from "../../api.js";
-import { accelerationRows, inputStressName, kelvinWords, levelWords, shapeParam, useForModel } from "../../altFrame.js";
+import { accelerationRows, activationEnergy, enteredUnit, fromKelvin, inputStressName, plotInEnteredUnits, kelvinWords, levelWords, shapeParam, useForModel, useRangeWarning } from "../../altFrame.js";
+import ExtrapolationNote from "../ui/ExtrapolationNote.jsx";
 import { unitInText } from "../unitText.js";
 import { ciPct } from "../../levels.js";
 
@@ -155,7 +156,10 @@ function Side({ results, modelId, use, onUse, edited, state }) {
   const r = results;
   const unit = r.unit ? unitInText(r.unit) : "";
   const shape = shapeParam(r);
-  const ev = state?.ev;
+  const ea = activationEnergy(r);
+  // While a new use stress is being asked about, the last answer isn't shown:
+  // it is the life at the old stress.
+  const ev = state?.busy ? null : state?.ev;
   const lifeUse = ev?.metrics?.characteristic_life;
   const range = Number.isFinite(lifeUse) ? lifeRange(ev) : null;
   const rows = accelerationRows(r.levels, modelId ? lifeUse : null);
@@ -173,6 +177,7 @@ function Side({ results, modelId, use, onUse, edited, state }) {
             {state?.error && <p className="alt-use-hint error-text" role="alert">{state.error}</p>}
           </div>
         )}
+        {modelId && <ExtrapolationNote words={useRangeWarning(r, useForModel(r, use), ev?.acceleration_factor)} />}
         {modelId && (
           <div className="gofr">
             <span className="gk">Life at use stress</span>
@@ -180,7 +185,8 @@ function Side({ results, modelId, use, onUse, edited, state }) {
               {Number.isFinite(lifeUse) ? `${formatNumber(lifeUse)}${unit ? ` ${unit}` : ""}` : state?.busy ? "…" : "—"}
               {range && (
                 <span className="gof-sub alt-ci">
-                  {" "}{range.level == null ? "" : `${formatNumber(range.level * 100)}% `}{formatNumber(range.lower)}–{formatNumber(range.upper)}
+                  {" "}{formatNumber(range.lower)}–{formatNumber(range.upper)}
+                  {range.level == null ? " (two-sided)" : ` (${formatNumber(range.level * 100)}% two-sided)`}
                 </span>
               )}
             </span>
@@ -191,7 +197,18 @@ function Side({ results, modelId, use, onUse, edited, state }) {
             <span className="gk">{shape.label}</span>
             <span className="gv">
               {formatNumber(shape.value)}
-              {Array.isArray(shape.ci) && <span className="gof-sub alt-ci"> {ciPct(results, 0.9)} {formatNumber(shape.ci[0])}–{formatNumber(shape.ci[1])}</span>}
+              {Array.isArray(shape.ci) && <span className="gof-sub alt-ci"> {formatNumber(shape.ci[0])}–{formatNumber(shape.ci[1])} ({ciPct(results, 0.9)} two-sided)</span>}
+            </span>
+          </div>
+        )}
+        {ea && (
+          <div className="gofr">
+            <span className="gk" title="The activation energy: a (the fitted temperature coefficient, in kelvin) × Boltzmann's constant">
+              Activation energy Ea
+            </span>
+            <span className="gv">
+              {formatNumber(ea.value, { sig: 3 })} eV
+              {ea.ci && <span className="gof-sub alt-ci"> {formatNumber(ea.ci[0], { sig: 3 })}–{formatNumber(ea.ci[1], { sig: 3 })} ({ciPct(results, 0.9)} two-sided)</span>}
             </span>
           </div>
         )}
@@ -230,10 +247,16 @@ export default function AltLifeStress({ results, modelId, name, use, onUse, edit
   // model is asked at and where the chart (in kelvin) marks it.
   const numeric = useForModel(r, use);
   const state = useLifeAtUse(modelId, numeric);
-  const ev = state?.ev && state.key === JSON.stringify(numeric) ? state.ev : null;
+  // Only an answer for the use stress now in the box (not one still on its way).
+  const ev = state?.ev && !state.busy && state.key === JSON.stringify(numeric) ? state.ev : null;
   const lifeUse = ev?.metrics?.characteristic_life;
   const lines = ev?.life_lines || [];
-  const plots = [r.life_stress_plot, r.life_stress_plot_2].filter(Boolean);
+  // The charts in the user's units (°C for a temperature typed in °C); the
+  // model is asked in kelvin, so its answers are turned back for the chart.
+  const plots = [r.life_stress_plot, r.life_stress_plot_2].filter(Boolean)
+    .map((p, j) => plotInEnteredUnits(p, r.stresses, j));
+  const shown = (v, j) => (v == null ? v : fromKelvin(v, enteredUnit(r.stresses?.[j])));
+  const alongShown = (ln, j) => (ln && Array.isArray(ln.stress) ? { ...ln, stress: ln.stress.map((v) => shown(v, j)) } : ln);
   const side = <Side results={r} modelId={modelId} use={use} onUse={onUse} edited={edited} state={state} />;
   const chart = (j) => (
     <PlotCard key={j} title={plots.length > 1 ? `Life against ${plots[j].x_label}` : null}>
@@ -241,9 +264,9 @@ export default function AltLifeStress({ results, modelId, name, use, onUse, edit
         plot={plots[j]}
         unit={r.unit}
         name={name}
-        along={lines[j] || null}
-        otherUse={numeric && plots.length > 1 ? numeric[1 - j] : null}
-        usePoint={ev && numeric ? { x: numeric[j], y: lifeUse } : null}
+        along={alongShown(lines[j], j) || null}
+        otherUse={numeric && plots.length > 1 ? shown(numeric[1 - j], 1 - j) : null}
+        usePoint={ev && numeric ? { x: shown(numeric[j], j), y: lifeUse } : null}
       />
     </PlotCard>
   );

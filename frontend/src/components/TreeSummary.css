@@ -12,6 +12,13 @@
 p.td-quiet { margin: 0; }
 .td-sum .td-status { display: flex; }
 .td-sum .td-status .chip { white-space: normal; text-align: left; }
+/* A chip that opens the tab explaining it (risk now, counters): the chip is the link. */
+.td-status-go { display: inline-flex; align-items: center; text-decoration: none; border-radius: var(--radius-md); }
+.td-status-go:hover .chip { text-decoration: underline; }
+.td-status-go:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+@media (max-width: 720px) {
+  .td-status-go { min-height: var(--control-lg); }
+}
 
 /* Long text (ClampLines, ui/ClampLines.css): the Summary's description is muted. */
 .td-sum .td-desc .clampl-text { color: var(--text-secondary); font-size: var(--fs-14); line-height: var(--lh-14); }
@@ -47,7 +54,7 @@ p.td-quiet { margin: 0; }
 .td-row-chips { flex: 0 1 auto; justify-content: flex-end; margin-top: 1px; }
 .td-row button.td-go { font-size: var(--fs-14); font-weight: 500; color: var(--text); text-align: left; text-decoration: none; padding: 0; overflow-wrap: anywhere; }
 .td-row button.td-go:hover:not(:disabled) { color: var(--accent-text); text-decoration: underline; }
-.td-row a:focus-visible, .td-row button.td-go:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+.td-row a:focus-visible, .td-row button.td-go:focus-visible {  border-radius: 2px; }
 a.td-more { align-self: flex-start; font-size: var(--fs-13); }
 
 /* The sort beside "Directly inside". */

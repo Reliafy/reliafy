@@ -212,6 +212,10 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${st.id}&tab=models`);
   await headPick(page, "RBD", "Build from what's inside…");
+  // Named once first, in the table pane: nothing is saved until Build the RBD.
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue(`Station ${tag} RBD`);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Build the RBD" }).click();
   const pane = rbdPane(page);
   await expect(pane).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -246,7 +250,7 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await expect(pane).toHaveCount(0);
   await expect(row(page, st.id)).toHaveAttribute("aria-selected", "true");
   await expect(page).not.toHaveURL(/[?&](rbd|on)=/);
-  const rbd = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Station ${tag} (from the tree)` }) });
+  const rbd = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Station ${tag} RBD` }) });
   // The menu again: it opens the diagram already built (the same one) and never makes a second.
   await headMenu(page);
   await page.getByRole("menuitem", { name: "RBD", exact: true }).click();
@@ -683,7 +687,7 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await rows.getByLabel("Shape (beta) and").fill("4");
   await rows.getByLabel("Unit").selectOption("days");
   await expect(dialog.getByRole("status")).toContainText("(as stated)");
-  await expect(dialog.locator(".fit2-how")).toContainText("alpha about 400, 90% between 300 and 600; beta 90% between 1.5 and 4");
+  await expect(dialog.locator(".fit2-how")).toContainText("alpha about 400, 90% between 267 and 600 (widened from 300–600 to keep 400 in the middle); beta 90% between 1.5 and 4");
   // A bound the wrong way round is refused in words, before asking.
   await rows.getByLabel("Shape (beta) and").fill("1");
   await expect(dialog).toContainText("For Shape (beta), the low bound must be below the high one.");
@@ -939,12 +943,16 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
     const dlg = page.getByRole("dialog", { name: "New part" });
     await dlg.getByLabel("Part number").fill(pn);
     await dlg.getByLabel("Name").fill(name);
-    await dlg.getByRole("combobox", { name: "On", exact: true }).selectOption(on);
+    // The position picker is the shared searchable Select: open it, type the name, pick it.
+    await dlg.getByRole("combobox", { name: "On", exact: true }).click();
+    await page.getByRole("searchbox", { name: "Find in the list" }).fill(on.name);
+    await page.getByRole("listbox").getByRole("option")
+      .filter({ has: page.locator(".sel-option-label", { hasText: new RegExp(`^${on.name}$`) }) }).click();
     await dlg.getByLabel("Quantity").fill(String(quantity));
     await dlg.getByRole("button", { name: "Add" }).click();
     await expect(dlg).toHaveCount(0);
   };
-  await addPart(`C-${tag}`, `Capacitor ${tag}`, board.id, 2);
+  await addPart(`C-${tag}`, `Capacitor ${tag}`, board, 2);
   const rows = pane.locator(".pred2-table tbody tr");
   await expect(rows).toHaveCount(1);
   const capType = pane.getByRole("combobox", { name: `Handbook part type of Capacitor ${tag}` });
@@ -958,7 +966,7 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
   const one = await big.textContent();
 
   // A second part, on the position itself, from the foot of the table.
-  await addPart(`U-${tag}`, `Opto-isolator ${tag}`, power.id, 1);
+  await addPart(`U-${tag}`, `Opto-isolator ${tag}`, power, 1);
   await expect(rows).toHaveCount(2);
   const optoType = pane.getByRole("combobox", { name: `Handbook part type of Opto-isolator ${tag}` });
   await expect(optoType).toBeFocused();
@@ -1127,6 +1135,7 @@ test("a product's Modelling tab: Build from what's inside… opens the RBD build
       await page.getByRole("group", { name: "RBD" }).getByRole("menuitem", { name: "Open the RBD" }).click();
     } else {
       await headPick(page, "RBD", "Build from what's inside…");
+      await page.getByRole("button", { name: "Build the RBD" }).click();
     }
     const pane = rbdPane(page);
     await expect(pane.locator(".react-flow__node").filter({ hasText: `Drone battery ${tag}` })).toBeVisible();

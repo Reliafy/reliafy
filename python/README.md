@@ -65,6 +65,10 @@ rf.call("analyse", "fit", data=[120, 340, 510, 700], censored=[0, 0, 1, 0])
 rf.call("analyse", "optimal_replacement", distribution_id="weibull",
         params=[{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.5}],
         planned_cost=200, unplanned_cost=1500)
+rf.call("change", "optimal_replacement_save", name="Pump bearings", model_id="…",
+        planned_cost=200, unplanned_cost=1500)          # kept under Strategy, worked out again on the server
+rf.call("change", "model_fit_degradation", name="Liner wear", dataset_id="…", unit_id_column="pump",
+        age_column="hours", value_column="thickness_mm", threshold=10)   # readings to a failure level (Pro)
 rf.call("analyse", "maintainability", unit="minutes", lines=[   # Mct, M_max, availability from a parts list
     {"name": "Motor", "quantity": 4, "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}, "maximum": 60},
     {"name": "Flight controller", "failure_rate": 90, "mttr": 80}])
@@ -98,7 +102,7 @@ and `detail` (what Reliafy said, in plain words).
 rf.upload_dataset("bearings.xlsx", name="Bearings")      # CSV or .xlsx
 rf.add_measurements(dataset_id, "vibration.csv")         # readings on its units: unit id, age, value
 rf.import_rbd("plant.xml")                               # BlockSim, Open-PSA, Galileo, RePyability
-rf.import_excel("fmea.xlsx", target="rcm", position_id="…")  # onto a position's RCM
+rf.import_rcm("fmea.csv", position_id="…", dry_run=True)  # an RCM worksheet or task plan (CSV or .xlsx)
 rf.add_photo("nameplate.jpg", target_id="…")             # Reliafy Maintenance
 rf.add_document("manual.pdf", target_id="…", kind="manual")  # a PDF, at most 20 MB
 rf.download_document(document_id, "manual.pdf")
@@ -151,6 +155,7 @@ reliafy fit failures.csv --dist best --criterion bic   # Best fit ranked by aic 
 reliafy push model.json                          # {distribution, params | data, name?, unit?}
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml
+reliafy import rcm fmea.csv --position POSITION_ID --dry-run   # an RCM worksheet or task plan, previewed
 reliafy analyse fault_tree --fault-tree-id TREE_ID  # a saved fault tree's top event, cut sets and importance
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption Nameplate
 reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
@@ -167,6 +172,7 @@ reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007 --dry-r
 reliafy maintenance get.design_rollup --id DESIGN_POSITION_ID   # one design position across every item built
 reliafy maintenance get.item_class --id ITEM_CLASS_ID --fleet true   # a class's positions, with risk now where a model is linked
 reliafy apply ops.json --run                     # maintenance changes in one call (dry run without --run)
+reliafy list search --q "oil filter"            # anything you can open, by name, tag, serial or part number
 reliafy list library --query "check valve" --record-kind rate   # published failure data
 reliafy get library_record --id nrc-inl-2020:ckv-fto
 reliafy get library_record --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed

@@ -227,6 +227,7 @@ function Parameters({ result }) {
     const sign = ratioSign(result);
     const ratioOf = (r) => (r.part === "coefficients" && sign < 0 && r.value != null ? Math.exp(-r.value) : r.exp_value);
     const showP = table.some((r) => r.p != null);
+    const showSe = table.some((r) => r.se != null);
     return (
       <ScrollCard title="Every parameter" sub={`with ${ciPct(result)} intervals`}>
         <table className="mini-table">
@@ -234,6 +235,7 @@ function Parameters({ result }) {
             <tr>
               <th>Term</th><th className="mf-num">Estimate</th>
               {showRatio && <th className="mf-num">{ratio[0].toUpperCase() + ratio.slice(1)}</th>}
+              {showSe && <th className="mf-num" title="Standard error of the estimate">SE</th>}
               <th className="mf-num">{ciPct(result)} interval</th>{showP && <th className="mf-num">p</th>}
             </tr>
           </thead>
@@ -246,6 +248,7 @@ function Parameters({ result }) {
                   <td>{parts.length > 1 && <span className="mm-part">{PART[r.part] || r.part} · </span>}{r.name}</td>
                   <td className="mf-num">{formatNumber(r.value, { sig: 4 })}</td>
                   {showRatio && <td className="mf-num">{ratioOf(r) != null ? formatNumber(ratioOf(r), { sig: 4 }) : "—"}</td>}
+                  {showSe && <td className="mf-num">{r.se != null ? formatNumber(r.se, { sig: 3 }) : "—"}</td>}
                   <td className="mf-num">{fmtCi(ci)}</td>
                   {showP && <td className="mf-num">{fmtP(r.p)}</td>}
                 </tr>
@@ -268,24 +271,38 @@ function Parameters({ result }) {
     );
   }
   const lv = intervalLevel(result);
+  // A regression's standard errors and Wald p-values, where the fit gives them.
+  const showSe = !lv.credible && [...params, ...coefs].some((p) => p.se != null);
+  const showP = coefs.some((c) => c.p != null);
+  const se = (p) => showSe && <td className="mf-num">{p.se != null ? formatNumber(p.se, { sig: 3 }) : "—"}</td>;
+  const pCell = (p) => showP && <td className="mf-num">{p != null ? fmtP(p) : "—"}</td>;
   return (
     <ScrollCard title="Every parameter" sub={params.some((p) => p.ci) ? `with ${lv.label} intervals` : null}>
       <table className="mini-table">
-        <thead><tr><th>Parameter</th><th className="mf-num">{lv.credible ? "Median" : "Estimate"}</th><th className="mf-num">{lv.label} interval</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Parameter</th><th className="mf-num">{lv.credible ? "Median" : "Estimate"}</th>
+            {showSe && <th className="mf-num" title="Standard error of the estimate">SE</th>}
+            <th className="mf-num">{lv.label} interval</th>
+            {showP && <th className="mf-num" title="Wald test that the coefficient is 0 (no effect)">p</th>}
+          </tr>
+        </thead>
         <tbody>
           {params.map((p) => {
             const v = paramView(result.kind === "regression" ? base : result, p);
-            return <tr key={p.name}><td>{v.label}</td><td className="mf-num">{formatNumber(p.value, { sig: 4 })}</td><td className="mf-num">{v.ci || "—"}</td></tr>;
+            return <tr key={p.name}><td>{v.label}</td><td className="mf-num">{formatNumber(p.value, { sig: 4 })}</td>{se(p)}<td className="mf-num">{v.ci || "—"}</td>{pCell(null)}</tr>;
           })}
           {extra.map((p) => {
             const v = extraParamView(p.name, p.value, result.unit, (x) => formatNumber(x, { sig: 4 }));
-            return <tr key={p.name}><td>{v.label}</td><td className="mf-num">{v.value}</td><td className="mf-num">—</td></tr>;
+            return <tr key={p.name}><td>{v.label}</td><td className="mf-num">{v.value}</td>{se({})}<td className="mf-num">—</td>{pCell(null)}</tr>;
           })}
           {coefs.map((c) => (
             <tr key={`c-${c.name}`}>
               <td>{c.name}{c.covariate_unit ? <span className="mm-part"> (per {c.covariate_unit})</span> : null}</td>
               <td className="mf-num">β {formatNumber(c.value, { sig: 4 })}</td>
+              {se(c)}
               <td className="mf-num">{fmtCi(c.ci)}</td>
+              {pCell(c.p)}
             </tr>
           ))}
         </tbody>

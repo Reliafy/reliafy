@@ -89,6 +89,9 @@ export const STATUS_LABEL = {
   supported: "Supported",
   contradicted: "Contradicted",
   inconclusive: "Inconclusive",
+  // A fixed-interval task under half, or over twice, its cost-optimal interval.
+  shorter_than_evidence: "Shorter than its evidence",
+  longer_than_evidence: "Longer than its evidence",
   unevidenced: "Not linked",
   stale: "Stale link",
   linked: "Linked",
@@ -99,17 +102,23 @@ export const STATUS_LABEL = {
 // hold the working behind its performance standard): linked, not checked
 // (nothing is computed from them), so the check names what's linked and never
 // says it's supported.
-export const LINKED_LABEL = { report: "Report linked", working: "Notes linked" };
+export const LINKED_LABEL = { report: "Report linked", working: "Notes linked", model: "Model linked",
+  history: "History linked", point: "Readings linked", failure_report: "Failure report linked" };
 export const isLinkedOnly = (d) => d?.status === "linked";
 // The kinds of evidence a decision can link, as the decision dialog offers
 // them: models (a model or saved analysis, checked) when the decision expects
 // one, then a report and a function's notes and rationale (linked, not checked).
-export const EVIDENCE_KIND_LABEL = { model: "Models", report: "Reports", working: "Function notes" };
+export const EVIDENCE_KIND_LABEL = { found: "Found here", model: "Models", report: "Reports", working: "Function notes" };
+// The records on the tree a decision can link (linked, not checked): offered under Found here only.
+export const GRAPH_EVIDENCE = ["history", "point", "failure_report"];
 export const evidenceKinds = (expectedType) => [...(expectedType ? ["model"] : []), "report", "working"];
 // The kind the dialog opens on: what's linked now, else models when expected, else reports.
-export function startKind(evidence, expectedType) {
+// With a position (`found`: the picker can list what's on record there), Found here, unless
+// what's linked is a report or a function's notes.
+export function startKind(evidence, expectedType, found = false) {
   const t = evidence?.type;
   if (t === "report" || t === "working") return t;
+  if (found) return "found";
   return expectedType ? "model" : "report";
 }
 // The words for a decision's evidence check ("Supported", "Report linked"...);
@@ -123,6 +132,10 @@ export function checkLabel(d) {
 // A decision's evidence check worth showing: one with linked evidence (a
 // decision with nothing linked yet, "unevidenced", is quiet: most RCM is done
 // from judgement, and nothing is wrong with it).
+// A fixed-interval task far from its cost-optimal interval, shorter or longer.
+export const INTERVAL_DIFFERS = new Set(["shorter_than_evidence", "longer_than_evidence"]);
+// Evidence checks worth a look (the "Evidence to look at" chip).
+export const TO_LOOK_AT = new Set(["contradicted", "inconclusive", "stale", ...INTERVAL_DIFFERS]);
 export const shownStatus = (s) => (s && s !== "unevidenced" ? s : null);
 const RTF_LABEL = { random: "random", uneconomic: "not economic" };
 
@@ -132,7 +145,7 @@ export const INTERVAL_OUTCOMES = new Set(["on_condition", "fixed_interval", "fai
 
 export const blank = () => ({
   modes: 0, undecided: 0, review: 0, tasks: 0, hidden: 0, safety: 0,
-  supported: 0, contradicted: 0, unsure: 0, stale: 0, unlinked: 0,
+  supported: 0, contradicted: 0, unsure: 0, differs: 0, stale: 0, unlinked: 0,
 });
 
 // Whether what's inside a row is decided, in words: "2 to decide", then (all decided, some
@@ -160,6 +173,8 @@ export function modeCounts(m) {
     contradicted: s === "contradicted" ? 1 : 0,
     // Linked evidence that doesn't settle it (the wrong kind, a unit mismatch...).
     unsure: s === "inconclusive" ? 1 : 0,
+    // A fixed interval far from its cost-optimal one (either way): a fact, not a verdict.
+    differs: INTERVAL_DIFFERS.has(s) ? 1 : 0,
     stale: s === "stale" ? 1 : 0,
     // Nothing linked, or (a combination of tasks) nothing for some of its tasks.
     unlinked: s === "unevidenced" || s === "partly" ? 1 : 0,
@@ -167,6 +182,56 @@ export function modeCounts(m) {
 }
 
 export const hasTask = (m) => !!(m && (tasksOf(m).length || (m.decision && (String(m.decision.task || "").trim() || m.decision.interval))));
+
+// The tasks inside a row, each counted once however many failure modes it serves
+// (the persona review, Nov 2026: the RCM said "66 tasks" where Maintenance listed 17,
+// because it counted the failure modes with a task, run-to-failure ones included).
+// `ids`: the maintenance tasks (by id); `named`: decisions that name a scheduled task
+// with no maintenance task behind it yet (one each); `modes`: the failure modes served.
+// A run-to-failure decision's text is the action on failure, not a task.
+export const blankTasks = () => ({ ids: new Set(), modes: 0, named: 0 });
+
+// Adds a failure mode's tasks to a row's tally (`row.tk`, made when missing).
+export function addModeTasks(row, m) {
+  if (!hasTask(m)) return;
+  const ids = tasksOf(m).map((t) => t?.id).filter(Boolean);
+  const d = m.decision;
+  if (!ids.length && d && !isCombination(d) && !SCHEDULED_OUTCOMES.has(d.outcome)) return;
+  const tk = row.tk || (row.tk = blankTasks());
+  tk.modes += 1;
+  if (!ids.length) tk.named += 1;
+  for (const id of ids) tk.ids.add(id);
+}
+
+// Adds one tally into another (a position's own into each position above it).
+export function addTasks(into, tk) {
+  if (!tk) return;
+  for (const id of tk.ids) into.ids.add(id);
+  into.modes += tk.modes;
+  into.named += tk.named;
+}
+
+// How many tasks a row's Task cell counts: its maintenance tasks, once each, and the
+// decisions naming a task with none behind it yet. A row read without a tally (a
+// linked cause's chain) counts its failure modes with a task.
+export const taskTotal = (r) => (r.tk ? r.tk.ids.size + r.tk.named : r.sum?.tasks || 0);
+
+// The Task cell of a row with failure modes inside: "17 tasks"; for a linked cause's
+// chain, what it counts: "5 with a task".
+export function taskSumText(r) {
+  if (!r.tk) return r.sum?.tasks ? `${r.sum.tasks.toLocaleString("en-AU")} with a task` : "";
+  const n = taskTotal(r);
+  return n ? plural(n, "task") : "";
+}
+
+// Its tooltip: what is counted, in words.
+export function taskSumTip(r) {
+  if (!r.tk) return r.sum?.tasks ? `${plural(r.sum.tasks, "failure mode")} with a task` : "";
+  const n = taskTotal(r);
+  if (!n) return "";
+  return `${plural(n, "task")} ${n === 1 ? "serves" : "serve"} ${plural(r.tk.modes, "failure mode")} here. ` +
+    "A task that serves several failure modes is counted once, as the Maintenance tab counts it; run-to-failure actions aren't tasks.";
+}
 
 // A failure mode's tasks: every live task serving it, its decision's own
 // first (the server's `tasks` on the mode, also on its decision). Takes the
@@ -216,6 +281,7 @@ export function buildRcmDisplay(functions) {
   const add = (type, ref, at, parent) => {
     const key = keyFor(ref.id, type, at);
     const r = { key, type, ref, at, parent, kids: [], depth: at.length - 1, sum: blank() };
+    if (type !== "mode") r.tk = blankTasks();
     rows.set(key, r);
     (parent == null ? roots : rows.get(parent).kids).push(key);
     counts[type] += 1;
@@ -232,6 +298,8 @@ export function buildRcmDisplay(functions) {
           x.sum[k] += m.sum[k];
           f.sum[k] += m.sum[k];
         }
+        addModeTasks(x, mode);
+        addModeTasks(f, mode);
       });
     });
   });
@@ -776,7 +844,7 @@ export function phoneLine(r) {
     const s = r.sum;
     const where = r.ref.inside === false ? `no longer inside ${r.ref.effect_position || "it"}` : null;
     return [`on ${r.ref.on}`, where, s.modes ? decidedWords(s) : "no failure modes yet",
-      s.tasks ? plural(s.tasks, "task") : null].filter(Boolean).join(" · ");
+      s.tasks ? `${s.tasks.toLocaleString("en-AU")} with a task` : null].filter(Boolean).join(" · ");
   }
   if (r.type === "fail" && belowOf(r)) {
     return belowOf(r).own ? `${insideWords(r)} · ${belowDecisionText(r)}` : belowDecisionText(r);
@@ -795,6 +863,7 @@ export function checkCounts(r) {
   return [
     { kind: "contradicted", n: s.contradicted, label: "contradicted" },
     { kind: "unsure", n: s.unsure, label: "inconclusive" },
+    { kind: "differs", n: s.differs || 0, label: "interval differs" },
     { kind: "stale", n: s.stale, label: "stale" },
     { kind: "supported", n: s.supported, label: "supported" },
   ].filter((c) => c.n > 0);
@@ -813,7 +882,7 @@ const CONS_RANK = { safety: 0, environmental: 1, operational: 3, non_operational
 // Safety first; a hidden mode just before the evident ones of its category (one with none yet after the serious ones).
 const consRank = (m) => (categoryOf(m) ? CONS_RANK[categoryOf(m)] ?? null : isHidden(m) ? 2 : null) - (isHidden(m) && categoryOf(m) ? 0.5 : 0);
 const OUT_RANK = { on_condition: 0, fixed_interval: 1, failure_finding: 2, rtf: 3, redesign: 4, accept: 5 };
-const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, supported: 4, linked: 5 };
+const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, shorter_than_evidence: 3.5, longer_than_evidence: 3.5, supported: 4, linked: 5 };
 const isMode = (r) => r.type === "mode";
 const isTask = (r) => r.type === "task";
 const d = (r) => r.ref.decision || null;
@@ -867,10 +936,10 @@ export const COLUMNS = [
   },
   {
     id: "task", label: "Task", width: 190, min: 110, on: true,
-    title: "What is done (the decision's own task, and how many more), and for run-to-failure the action on failure",
+    title: "What is done (the decision's own task, and how many more), and for run-to-failure the action on failure. Above a failure mode: the tasks, each counted once however many failure modes it serves",
     text: (r) => (isTask(r) ? taskRowWords(r) : isMode(r) ? [d(r)?.task || tasksOf(r.ref)[0]?.text || "", moreTasks(r.ref)].filter(Boolean).join(" · ")
-      : [r.sum.tasks ? plural(r.sum.tasks, "task") : "", belowOf(r)?.tasks ? `${belowOf(r).tasks.toLocaleString("en-AU")} below` : ""].filter(Boolean).join(" · ")),
-    sort: (r) => (isTask(r) ? null : isMode(r) ? d(r)?.task || null : r.sum.tasks || null),
+      : [taskSumText(r), belowOf(r)?.tasks ? `${belowOf(r).tasks.toLocaleString("en-AU")} with a task below` : ""].filter(Boolean).join(" · ")),
+    sort: (r) => (isTask(r) ? null : isMode(r) ? d(r)?.task || null : taskTotal(r) || null),
     edit: "text", can: (r) => isMode(r) && TASK_OUTCOMES.has(d(r)?.outcome), field: "task", onDecision: true,
   },
   {
@@ -886,7 +955,7 @@ export const COLUMNS = [
     title: "Whether the linked analysis backs the decision, checked each time the study opens (a linked report or working isn't checked)",
     text: (r) => (isMode(r) ? checkLabel(d(r)) : checkCounts(r).map((c) => `${c.n} ${c.label}`).join(", ")),
     sort: (r) => (isMode(r) ? STATUS_RANK[d(r)?.status] ?? null
-      : r.sum.contradicted ? 0 : r.sum.stale ? 1 : r.sum.unsure ? 2 : r.sum.supported ? 4 : null),
+      : r.sum.contradicted ? 0 : r.sum.stale ? 1 : r.sum.unsure ? 2 : r.sum.differs ? 3 : r.sum.supported ? 4 : null),
   },
   {
     id: "evidence", label: "Evidence", width: 200, min: 90, on: false,
@@ -971,8 +1040,8 @@ export const CHIPS = [
   { id: "safety", label: "Safety or environment", test: (r) => isMode(r) && (categoryOf(r.ref) === "safety" || categoryOf(r.ref) === "environmental") },
   { id: "task", label: "Has a task", test: (r) => isMode(r) && hasTask(r.ref) },
   { id: "notask", label: "No task yet", test: (r) => isMode(r) && !hasTask(r.ref) },
-  { id: "check", label: "Evidence to look at", title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
-    test: (r) => isMode(r) && ["contradicted", "inconclusive", "stale"].includes(d(r)?.status) },
+  { id: "check", label: "Evidence to look at", title: "Linked evidence that contradicts the decision, doesn't settle it, sets an interval far from the task's, or has gone (a stale link)",
+    test: (r) => isMode(r) && TO_LOOK_AT.has(d(r)?.status) },
 ];
 
 export function chipCounts(display) {

@@ -1,12 +1,13 @@
 import Select from "./Select.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getDistributions, listModels, getModel, getRecurrentModel, listRecurrentModels, modelAtRate, rbdBlockModel, rbdMeanForms } from "../api.js";
+import { getDistributions, listModels, getModel, getDegradationModel, listDegradationModels, getRecurrentModel, listRecurrentModels, modelAtRate, rbdBlockModel, rbdMeanForms } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
+import { blockConversion } from "../unitConvert.js";
 import { formatNumber } from "../format.js";
-import { latestOnly, savedModelRef, twoClockAt } from "../modelNext.js";
+import { DEG, degradationLifeRef, latestOnly, savedModelRef, twoClockAt } from "../modelNext.js";
 import { clockWords, parseRate, rateHint, rateLabel, rateText } from "../twoClocks.js";
 
 // The shape or spread a mean leaves open, in the words the Mean entry uses
@@ -58,7 +59,8 @@ const REP = "rep:"; // a repairable model's id in the saved-model list
 
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
                                       preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt,
-                                      joint = null, onSource = null, repairableModels = false }) {
+                                      joint = null, onSource = null, repairableModels = false,
+                                      degradationModels = false }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
     joint && value?.kind === "joint" ? "joint" : value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
@@ -79,6 +81,8 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     value?.source === "saved" ? (value.kind === "repairable" ? REP : "") + value.modelId : initialSavedId || ""
   );
   const [repairables, setRepairables] = useState([]);
+  // Degradation models, where a tool takes one (their life to the limit), listed as "deg:<id>".
+  const [degradations, setDegradations] = useState([]);
   // Mean entry: the mean, the given shape/spread, the parameters it made
   // (shown under the inputs) and the server's reason when it can't.
   const [meanVal, setMeanVal] = useState("");
@@ -102,12 +106,16 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       .catch(() => {})
       .finally(() => setSavedLoaded(true));
     if (meanEntry) rbdMeanForms().then(setForms).catch(() => setForms({}));
+    if (degradationModels) {
+      listDegradationModels().then((d) => setDegradations((d.models || []).map((m) => ({ ...m, id: DEG + m.id }))))
+        .catch(() => {});
+    }
     if (repairableModels) {
       // A proportional-intensity model needs covariates, which a block can't give it.
       listRecurrentModels().then((d) => setRepairables((d.models || []).filter((m) => m.family !== "regression")))
         .catch(() => {});
     }
-  }, [rbdBlock, meanEntry, repairableModels]);
+  }, [rbdBlock, meanEntry, repairableModels, degradationModels]);
 
   const dist = useMemo(() => dists.find((d) => d.id === distId), [dists, distId]);
   const meanDists = useMemo(() => dists.filter((d) => forms?.[d.id]), [dists, forms]);
@@ -197,6 +205,15 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     const current = pickSeq.current();
     setSavedId(id);
     if (!id) return onChange(null);
+    if (id.startsWith(DEG)) {
+      try {
+        const doc = await getDegradationModel(id.slice(DEG.length));
+        if (current()) onChange(degradationLifeRef(doc));
+      } catch {
+        if (current()) onChange(null);
+      }
+      return;
+    }
     if (id.startsWith(REP)) {
       try {
         const doc = await getRecurrentModel(id.slice(REP.length));
@@ -244,7 +261,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     autoRef.current = true;
     // Only the model a link asked for: the newest or last-used model was
     // often an unrelated one, and Compute ran on it unnoticed.
-    const id = autoPick && wanted && saved.some((m) => m.id === wanted) ? wanted : null;
+    const id = autoPick && wanted && (saved.some((m) => m.id === wanted) || (degradationModels && wanted.startsWith(DEG))) ? wanted : null;
     if (id) onPickSaved(id);
     else if (!saved.length) setSource("params");
     // onPickSaved is this render's; the pick runs once.
@@ -374,7 +391,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
             ))}
           </div>
         </>
-      ) : saved.length === 0 && !repairables.length ? (
+      ) : saved.length === 0 && !repairables.length && !degradations.length ? (
         <p className="muted-line">No saved distribution models yet.</p>
       ) : (
         <label className="dist-field" style={{ maxWidth: 320 }}>
@@ -382,18 +399,24 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
           <Select
             value={savedId}
             onChange={onPickSaved}
-            searchable={saved.length + repairables.length > 8}
+            searchable={saved.length + repairables.length + degradations.length > 8}
             ariaLabel={label ? `${label}: saved model` : "Saved model"}
             placeholder="— choose —"
             options={[
               { value: "", label: "— choose —" },
-              ...(repairables.length ? [{ heading: "Non-repairable models" }] : []),
+              ...(repairables.length || degradations.length ? [{ heading: "Non-repairable models" }] : []),
               ...saved.map((m) => ({
                 value: m.id,
                 label: m.name,
                 // The unit too: a class's model fitted from maintenance records is in days.
                 hint: m.distribution + (m.kind === "regression" ? ", covariates" : "")
                   + (m.unit ? ` · ${unitInText(m.unit)}` : ""),
+              })),
+              ...(degradations.length ? [{ heading: "Degradation models (life to the limit)" }] : []),
+              ...degradations.map((m) => ({
+                value: m.id,
+                label: m.name,
+                hint: (m.path_model ? `${m.path_model} path` : "Degradation") + (m.unit ? ` · ${unitInText(m.unit)}` : ""),
               })),
               ...(repairables.length ? [{ heading: "Repairable models" }] : []),
               ...repairables.map((m) => ({
@@ -404,6 +427,10 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
             ]}
           />
         </label>
+      )}
+      {rbdBlock && source === "saved" && blockConversion(value, unit) && (
+        // A model fitted in another unit of the diagram's kind: converted by the analysis.
+        <p className="muted-line">{`${blockConversion(value, unit).text}: the analysis converts its life to the diagram's unit.`}</p>
       )}
       {source === "saved" && value?.kind === "two_clock" && (
         <label className="dist-field" style={{ maxWidth: 320 }}>

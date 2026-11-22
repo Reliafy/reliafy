@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  covariateParts, fleetAnswer, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
+  covariateParts, fleetAnswer, rankColumn, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
   paramGroups, parseReadings, positionFacts, positionRisk, medianLowerText, readingsText, riskBoundNote, riskTone, riskUpperText, sortColumn,
 } from "./joint.js";
 
@@ -208,4 +208,51 @@ test("each chance of failing carries its 90% upper bound, or the table says why 
   assert.match(riskBoundNote([{ risk: [0.2, 0.6], risk_upper: [0.3, 0.8] }]), /90% upper bound.*at most/);
   assert.match(riskBoundNote([{ risk: [0.2, 0.6] }]), /^No 90% bounds.*saved before.*Fit a new model/);
   assert.equal(riskBoundNote([]), "");
+});
+
+test("a rate-of-change link needs a path whose rate is finite at age 0", async () => {
+  const { linkIssue, JOINT_LINKS, jointLinkWords } = await import("./joint.js");
+  assert.deepEqual(JOINT_LINKS.map((l) => l.value), ["value", "slope", "value_slope", "cumulative"]);
+  assert.equal(linkIssue("cumulative", "logarithmic"), null); // the area is finite from new on every path
+  assert.equal(linkIssue("value", "logarithmic"), null);
+  assert.equal(linkIssue("slope", "linear"), null);
+  assert.equal(linkIssue("value_slope", "quadratic"), null);
+  assert.match(linkIssue("slope", "logarithmic"), /linear, exponential or quadratic/);
+  assert.match(linkIssue("value_slope", "power", ["linear"]), /linear/);
+  assert.equal(jointLinkWords(undefined), "the reading's current value");
+  assert.match(jointLinkWords("slope"), /how fast/);
+});
+
+test("a level to count exposure above goes with the accumulated-exposure link only", async () => {
+  const { exposureLevel, exposureUnit, jointLinkWords } = await import("./joint.js");
+  assert.deepEqual(exposureLevel("3", "cumulative"), { value: 3, error: null });
+  assert.deepEqual(exposureLevel(" ", "cumulative"), { value: null, error: null });
+  assert.deepEqual(exposureLevel("3", "value"), { value: null, error: null }); // ignored for other links
+  assert.match(exposureLevel("hot", "cumulative").error, /Enter a number/);
+  assert.equal(exposureUnit("mm/s", "Days"), "mm/s·day");
+  assert.equal(exposureUnit("", ""), "unit·time unit");
+  assert.match(jointLinkWords("cumulative"), /accumulated total/);
+});
+
+test("the ranking uses the horizon that tells the running units apart, and the words name it", () => {
+  // The feed pumps: four show "> 99.9%" over 90 days and one 99.8%, so the 90-day column can't rank
+  // them; the 30-day column can, and the headline and the table's words say 30 days.
+  const labels = ["30 days", "90 days", "365 days"];
+  const pumps = [
+    { id: "P-04", risk: [0.73, 0.998, 1], median_remaining: 17.8 },
+    { id: "P-19", risk: [0.91, 0.99995, 1], median_remaining: 10.5 },
+    { id: "P-20", risk: [0.856, 0.99993, 1], median_remaining: 12.6 },
+    { id: "P-32", risk: [0.852, 0.99992, 1], median_remaining: 13.0 },
+    { id: "P-33", risk: [0.879, 0.99994, 1], median_remaining: 11.8 },
+  ];
+  assert.equal(rankColumn(pumps, labels), 0);
+  assert.deepEqual(sortRiskRows(pumps, rankColumn(pumps, labels)).map((r) => r.id), ["P-19", "P-33", "P-20", "P-32", "P-04"]);
+  // Where the middle horizon separates them as well as any, it stays the one.
+  const spread = [{ id: "a", risk: [0.1, 0.5, 0.9] }, { id: "b", risk: [0.2, 0.6, 0.95] }];
+  assert.equal(rankColumn(spread, labels), 1);
+  assert.equal(rankColumn(spread, ["30 days"]), 0);
+  const horizons = { labels };
+  const member = (name, risk) => ({ position: { name }, scored: true, risk });
+  assert.equal(fleetAnswer({ horizons, positions: 2, scored: 2, members: [member("A", [0.5, 0.9999, 1]), member("B", [0.8, 0.99999, 1])] }),
+    "2 positions · all with risk now · highest: B, 80% in the next 30 days");
 });

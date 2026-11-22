@@ -45,7 +45,7 @@ export function mappingFields(mapping) {
 // when the server didn't say); ``decimal``: a value from the preview that
 // isn't one, for a message.
 export function columnFacts(csv) {
-  const { columns = [], dtypes, blanks, values, n_unique: nUnique, whole, nonpositive, preview = [] } = csv || {};
+  const { columns = [], dtypes, blanks, values, n_unique: nUnique, whole, nonpositive, low_rows: lowRows, preview = [] } = csv || {};
   return Object.fromEntries(
     columns.map((name, i) => {
       const sample = preview.map((r) => r[i]).filter((v) => v !== null && v !== "");
@@ -55,6 +55,7 @@ export function columnFacts(csv) {
         dtype, blanks: blanks?.[i] ?? 0, values: values?.[i] ?? null, nUnique: nUnique?.[i] ?? null, sample: sample[0],
         whole: whole?.[i] ?? (decimal !== undefined ? false : undefined), decimal,
         nonpositive: nonpositive?.[i] ?? null,
+        lowRows: lowRows?.[i] ?? null,
       }];
     })
   );
@@ -436,6 +437,36 @@ export function flagsLookSwapped(mapping, summary) {
   return { code: mapping.c_invert ? "0" : "1" };
 }
 
+// A 0/1 status column whose name says one thing and whose reading says the
+// other: "failed" (1 = failed by its name) read as 0 = failed, so a column of
+// zeros counts every unit as failed. Reliafy reads 0 as failed unless told
+// otherwise; this asks before a fit, with the flip one click away. Null when
+// the name doesn't say which way round, the column isn't plain 0/1 codes, or
+// the reading already agrees with the name. Returns { column, invert (the
+// c_invert that agrees with the name), now, flipped (the counts each way),
+// text }.
+export function flagNameContradicts(mapping, facts, nRows) {
+  const col = mapping?.c;
+  if (!col || mapping.c_map || !statusCodesOnly(facts?.[col]?.values)) return null;
+  // Only a name that says it ("failed", "Failed (1=yes)", "censored"): a bare "status" is flagQuestion's.
+  const said = flagHeaderMeaning(col);
+  if (!said) return null;
+  const invert = said === "failed";
+  if (!!mapping.c_invert === invert) return null;
+  const now = countsWay(mapping, facts, nRows, !!mapping.c_invert);
+  const flipped = countsWay(mapping, facts, nRows, invert);
+  if (!now || !flipped) return null;
+  const words = (s) => summaryParts(s).join(", ");
+  const rule = invert ? "1 = failed" : "0 = failed";
+  return {
+    column: col, invert, now, flipped,
+    text: `“${col}” sounds like ${invert ? "1 means failed" : "1 means still running"}, but it's read the other way round `
+      + `(${mapping.c_invert ? "1 = failed" : "0 = failed"}): ${words(now)}. If ${invert ? "0" : "1"} in this column means the unit `
+      + `didn't fail, read it as ${rule}: ${words(flipped)}.`,
+    action: `Read it as ${rule}`,
+  };
+}
+
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 // "15 failures, 6 still running" — numbers to show bold, as parts.
@@ -465,15 +496,60 @@ export function dataStepProblems(mapping, facts, nRows, unit = undefined) {
   return dataStepIssues(mapping, facts, nRows, unit).map((i) => i.text);
 }
 
-// What may stop some fits without stopping all, said on its column: a value
-// of 0 or less, which Kaplan-Meier takes but a Weibull refuses. [{ col, text }].
+// "row 3 (-50)" / "rows 3, 7 and 9 (-50, -2 and -1)" and "and 4 more":
+// data rows counted from 1 under the header, as a fit names them.
+function rowsPhrase(rows, count, values = null) {
+  const join = (xs) => (xs.length === 1 ? `${xs[0]}` : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+  const more = count - rows.length;
+  const vals = values ? ` (${join(values.map((v) => v.toLocaleString()))})` : "";
+  return `${rows.length === 1 && count === 1 ? "Row" : "Rows"} ${join(rows)}${vals}${more > 0 ? ` and ${more.toLocaleString()} more` : ""}`;
+}
+
+// Times below 0 in x, the range or late entry: no life model can use them
+// (no unit fails, or is removed, before it starts), so they stop the fit,
+// named, the way a blank does. [{ col, text }].
+function negativeTimeIssues(mapping, facts) {
+  const out = [];
+  for (const field of ["x", "xl", "xr", "tl", "tr"]) {
+    const col = mapping[field];
+    const low = col && facts[col]?.lowRows;
+    if (!low?.negative || out.some((o) => o.col === col)) continue;
+    const one = low.negative === 1;
+    out.push({
+      col,
+      text: `${rowsPhrase(low.negative_rows, low.negative, low.negative_values)} ${one ? "has a value" : "have values"} below 0 in “${col}”. `
+        + `No unit fails, or is removed, before it starts, so no model can use ${one ? "it" : "them"}: correct or remove ${one ? "that row" : "those rows"}.`,
+    });
+  }
+  return out;
+}
+
+// What may stop some fits without stopping all, said on its column: a 0 in
+// x. A unit still running at 0 is fine; a failure at 0 is refused by every
+// distribution and estimate, as a 0 in an export is usually a missing time.
+// [{ col, text }].
 export function dataStepNotes(mapping, facts) {
-  const n = facts[mapping.x]?.nonpositive;
-  if (!mapping.x || !n) return [];
+  const col = mapping.x;
+  const fact = col ? facts[col] : null;
+  if (!fact) return [];
+  const low = fact.lowRows;
+  if (low) {
+    if (!low.zero) return [];
+    const one = low.zero === 1;
+    return [{
+      col,
+      text: `${rowsPhrase(low.zero_rows, low.zero)} ${one ? "has" : "have"} 0 in “${col}”. A unit still running at 0 is fine, but no model `
+        + `can use a failure at 0. If 0 stands for a missing value, correct or remove ${one ? "that row" : "those rows"}; if a unit was `
+        + "dead on arrival, give it a range from 0 to its first check (xl to xr).",
+    }];
+  }
+  // An older response: only the count of values at or below 0.
+  const n = fact.nonpositive;
+  if (!n) return [];
   return [{
-    col: mapping.x,
-    text: `${plural(n, "row has", "rows have")} a value of 0 or less in “${mapping.x}”. A distribution such as Weibull can't fit `
-      + `${n === 1 ? "it" : "them"}: correct or remove ${n === 1 ? "that row" : "those rows"}, or use a non-parametric estimate.`,
+    col,
+    text: `${plural(n, "row has", "rows have")} a value of 0 or less in “${col}”. No model can use a failure at 0 or a value below 0: `
+      + `correct or remove ${n === 1 ? "that row" : "those rows"}.`,
   }];
 }
 
@@ -523,7 +599,14 @@ export function dataStepIssues(mapping, facts, nRows, unit = undefined) {
     }
   }
   if (mapping.e && (mapping.xl || mapping.xr || mapping.tl || mapping.tr)) {
-    add(mapping.e, "Failure modes take one exact value per unit: clear the range (xl, xr) and late entry (tl), or the failure mode.");
+    // ``kind``: a saved dataset keeps the two together (datasetReading.readingIssues skips it).
+    const what = [mapping.xl || mapping.xr ? "a range (xl to xr)" : "", mapping.tl ? "late entry (tl)" : "", mapping.tr ? "an end of observation (tr)" : ""]
+      .filter(Boolean).join(" and ");
+    out.push({
+      col: mapping.e, kind: "mode-exact",
+      text: `A fit by failure mode needs one exact value per unit, and this reading also has ${what}. To fit every failure as one, `
+        + "set the failure mode to none for this fit; to fit by failure mode, set those to none instead.",
+    });
   }
   numericCol(mapping.n, "counts");
   if (mapping.n && countProblem(f(mapping.n)) === "decimals") {
@@ -532,6 +615,7 @@ export function dataStepIssues(mapping, facts, nRows, unit = undefined) {
   }
   numericCol(mapping.tl, "numbers");
   numericCol(mapping.tr, "numbers");
+  for (const i of negativeTimeIssues(mapping, facts)) add(i.col, i.text);
   const s = statusSummary(mapping, facts, nRows);
   if (!out.length && s && s.failed + s.left + s.interval === 0 && s.running > 0) {
     add(mapping.c || null, "No row is marked failed, so there is nothing to fit. Check what each status means.");
@@ -553,6 +637,39 @@ export function issueRow(issue, mapping) {
 export function statusCodesOnly(values) {
   const keys = statusValues(values).map((v) => statusKey(v.label));
   return keys.length > 0 && keys.every((k) => k === "0" || k === "1");
+}
+
+// How a 0/1 status column is read, with each code's rows, failures first:
+// "0 = failed (28 rows) · 1 = still running (12 rows)", or with ``invert``
+// "1 = failed (12 rows) · 0 = still running (28 rows)". Null without values.
+// The reading in effect, counted: "Read as 30 failed · 18 still running" (and
+// how many rows still need a meaning). Null with no rows.
+export function readCounts(rows, mapping) {
+  let failed = 0;
+  let running = 0;
+  let other = 0;
+  let open = 0;
+  for (const v of rows || []) {
+    const m = statusMeaning(v.label, mapping);
+    if (m === 0) failed += v.rows;
+    else if (m === 1) running += v.rows;
+    else if (m == null) open += v.rows;
+    else other += v.rows;
+  }
+  if (!failed && !running && !other && !open) return null;
+  const n = (k) => k.toLocaleString("en-GB");
+  return [`Read as ${n(failed)} failed`, `${n(running)} still running`,
+    other ? `${n(other)} found failed or between two times` : null,
+    open ? `${n(open)} not yet read` : null].filter(Boolean).join(" · ");
+}
+
+export function codeReading(values, invert) {
+  const rows = Object.fromEntries(statusValues(values).map((v) => [statusKey(v.label), v.rows]));
+  if (!Object.keys(rows).length) return null;
+  const failed = invert ? "1" : "0";
+  const running = invert ? "0" : "1";
+  const n = (k) => `${(rows[k] || 0).toLocaleString("en-GB")} ${rows[k] === 1 ? "row" : "rows"}`;
+  return `${failed} = failed (${n(failed)}) · ${running} = still running (${n(running)})`;
 }
 
 // Failures and units still running in an uploaded or pasted file, counted
@@ -709,6 +826,22 @@ export const UNITLESS = "units";
 
 export function isUnitless(unit) {
   return ["units", "unitless", "no unit"].includes(String(unit ?? "").trim().toLowerCase());
+}
+
+// Fitting or creating a model always settles its unit: a unit, or "no unit"
+// ticked (UNITLESS). A model fitted in days and read as hours is 24 times out,
+// so there is no default. What to say while it isn't settled:
+export const UNIT_MISSING = "Say the unit of the times, or tick no unit.";
+
+// Whether a unit has been settled (typed, picked, or "no unit" ticked).
+export function unitSettled(unit) {
+  return isUnitless(unit) || String(unit ?? "").trim() !== "";
+}
+
+// The unit as one of the Data step's issues ({ col: null, row: "x", text }, by
+// the x row where the unit box is), or null once it is settled.
+export function unitIssue(unit) {
+  return unitSettled(unit) ? null : { col: null, row: "x", text: UNIT_MISSING };
 }
 
 const MEANING_WORDS = { 0: "failed", 1: "still running", "-1": "found failed", 2: "interval" };

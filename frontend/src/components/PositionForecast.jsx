@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { getPositionForecast } from "../api.js";
+import { formatChance } from "../format.js";
 import {
   besidesRoutine, costRangeText, datesText, dayText, everyText, failuresText, hoursText, moneyText, periodLabel, restsOn, sig,
 } from "../positionForecast.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import { tabPlace } from "../explorerTabs.js";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import "./PositionForecast.css";
 
@@ -116,7 +118,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   <td className="num">{fc.totals.planned_cost ? moneyText(fc.totals.planned_cost) : "—"}</td>
                   <td className="num">{failuresText(fc.totals.failures, fc.totals.failures_range)}</td>
                   <td className="num">{costRangeText(fc.totals.failure_cost, fc.totals.cost_range)}</td>
-                  <td>{fc.totals.probability != null ? `${Math.round(fc.totals.probability * 100)}% chance of at least one failure` : ""}</td>
+                  <td>{fc.totals.probability != null ? `${formatChance(fc.totals.probability)} chance of at least one failure` : ""}</td>
                 </tr>
               </tfoot>
             </table>
@@ -140,7 +142,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
             )}
           </ResultDetails>
           <ResultDetails summary={`Failures: the life models used (${fc.models.length})`} open={fc.models.length > 0 && fc.models.length <= 3}>
-            {fc.models.length === 0 && <p className="lib-date">No life model in use on a position here with an item fitted. Attach one on the Modelling tab.</p>}
+            {fc.models.length === 0 && <p className="lib-date">No life model in use on a position here with an item fitted. Attach one in {tabPlace("models")}.</p>}
             <ul className="td-rows fc-list">
               {fc.models.map((m) => (
                 <li key={m.link_id}>
@@ -148,7 +150,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   {m.placeholder && <span className="fc-flag-word"> · placeholder</span>}
                   <div>{failuresText(m.expected_failures, m.failures_range)} failures expected
                     {m.expected_cost != null ? `, ${costRangeText(m.expected_cost, m.cost_range)}` : ""}
-                    {m.probability != null ? ` · ${Math.round(m.probability * 100)}% chance of at least one` : ""}
+                    {m.probability != null ? ` · ${formatChance(m.probability)} chance of at least one` : ""}
                   </div>
                   <div className="lib-date">{m.rests_on}</div>
                 </li>

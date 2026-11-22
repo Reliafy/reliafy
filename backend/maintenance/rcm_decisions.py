@@ -34,7 +34,7 @@ from backend.services import degradation as degradation_service
 from backend.services import models as models_service
 from backend.services import strategy_store
 from backend.services.strategy import fmt_num
-from backend.units import unit_in_text
+from backend.units import unit_in_text, with_unit
 
 
 class RcmValidationError(ValueError):
@@ -116,7 +116,11 @@ def combination_ok(outcomes) -> bool:
 # then evidence that's only linked: a report, or a function's working, now its notes and rationale (its id is
 # the function's whose performance standard the working sits behind).
 CHECKED_TYPES = ("model", "strategy_analysis", "degradation_model")
-LINKED_TYPES = ("report", "working")
+#: Linked records on the maintenance graph (Nov 2026): a position's (or its class's) failure history,
+#: a measuring point's readings and a failure report. The read hands each over (the decision's
+#: ``linked``: {name, path, summary} or None once it has gone), as it does a working.
+GRAPH_TYPES = ("history", "point", "failure_report")
+LINKED_TYPES = ("report", "working") + GRAPH_TYPES
 EVIDENCE_TYPES = CHECKED_TYPES + LINKED_TYPES
 
 
@@ -354,10 +358,22 @@ def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
     """Inconclusive result when the task interval's unit contradicts the
     evidence's time unit. Units are free text, so only a definite
     disagreement (both present, different after normalisation) trips this —
-    a missing unit on either side passes.
+    a missing unit on either side passes. Two units of the same kind (an
+    analysis in hours, a task in days) are no mismatch: the evidence is read
+    in the task's unit (:func:`_unit_conversion`).
     """
+    from backend.services import running_clock
+
     task_unit = _norm_unit(decision.get("interval_unit"))
     ev_unit = _norm_unit(evidence_unit)
+    if _unit_conversion(decision, evidence_unit) is not None:
+        return None
+    clock = _clock(decision)
+    if clock is not None and running_clock.same_clock(decision.get("interval_unit"), evidence_unit):
+        return None  # flight hours and hours at a position: both its running hours
+    why = running_clock.refusal(evidence_unit, decision.get("interval_unit"), clock, "evidence")
+    if why:
+        return {"status": "inconclusive", "reason": why}
     if task_unit and ev_unit and task_unit != ev_unit:
         return {
             "status": "inconclusive",
@@ -368,6 +384,43 @@ def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
             ),
         }
     return None
+
+
+def _clock(decision: dict):
+    """The position's clock a decision is checked at (running_clock.Clock), or None off a
+    position (an RCM study): set by :func:`resolve_decision`."""
+    return decision.get("_clock")
+
+
+def _unit_conversion(decision: dict, evidence_unit) -> dict | None:
+    """``{"from", "to", "factor"}`` when the evidence's unit converts to the task interval's
+    (hours, days, weeks, months, years to each other; km and miles); None otherwise. On a
+    position, running hours (hours, operating or flight hours) meet the calendar at its duty,
+    else all the time (running_clock)."""
+    from backend.services import running_clock
+
+    return running_clock.conversion(evidence_unit, decision.get("interval_unit"), _clock(decision))
+
+
+def _with_conversion(result: dict, decision: dict, evidence_unit, amount=None) -> dict:
+    """An evidence check's result with what it converted said: "evidence in hours, task
+    interval in days: converted at 1 day = 24 hours" off a position; on one, "1,000 h ≈ 125
+    days at this position's duty (8 h a day)" (``amount``: the evidence's interval, in its
+    unit) (on the summary too)."""
+    conv = _unit_conversion(decision, evidence_unit)
+    if conv is None or result.get("status") == "inconclusive":
+        return result
+    from backend.services import running_clock
+
+    try:
+        amount = float(amount) if amount is not None else None
+    except (TypeError, ValueError):
+        amount = None
+    note = running_clock.note(conv, amount if conv.get("clock") is not None else None, "task interval", "evidence")
+    out = {**result, "unit_conversion": note}
+    if out.get("summary"):
+        out["summary"] = f"{out['summary']} ({note[:1].upper()}{note[1:]}.)"
+    return out
 
 
 # What each outcome expects as evidence (None = default action, no evidence).
@@ -411,7 +464,62 @@ def _clean_evidence(evidence) -> dict | None:
         raise RcmValidationError("Evidence needs the linked artifact's id.")
     # A type that doesn't match the outcome is allowed at write time and
     # resolves to 'inconclusive' at read — users can link first, fix later.
-    return {"type": etype, "id": eid.strip()}
+    out = {"type": etype, "id": eid.strip()}
+    window = clean_window(evidence.get("window"))
+    if window:
+        if etype not in ("model", "history"):
+            raise RcmValidationError("A date window goes with a life model or a failure history, the lives it rests on.")
+        out["window"] = window
+    return out
+
+
+def clean_window(value) -> dict | None:
+    """The lives a fit or a failure history rests on ({since?, until?}: fitment start dates, ISO days,
+    with lives? and failures?: the counts it was fitted from), or None for all of them."""
+    from datetime import date
+
+    if not value:
+        return None
+    if not isinstance(value, dict):
+        raise RcmValidationError("window is {since?, until?}: the first and last fitment start dates it uses.")
+    out: dict = {}
+    for key in ("since", "until"):
+        v = value.get(key)
+        if v in (None, ""):
+            continue
+        try:
+            out[key] = date.fromisoformat(str(v)[:10]).isoformat()
+        except ValueError:
+            raise RcmValidationError(f"window {key} is a date, e.g. 2022-01-01.") from None
+    if out.get("since") and out.get("until") and out["until"] < out["since"]:
+        raise RcmValidationError("The window's until date is before its since date.")
+    if not out:
+        return None
+    for key in ("lives", "failures"):
+        v = value.get(key)
+        if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10_000_000:
+            out[key] = v
+    return out
+
+
+def _day_words(iso: str) -> str:
+    from datetime import date
+
+    d = date.fromisoformat(iso)
+    return f"{d.day} {d.strftime('%b')} {d.year}"
+
+
+def window_words(window: dict | None) -> str:
+    """"52 lives fitted since 1 Jan 2022 (2 failed)": what a windowed fit or history rests on."""
+    if not window:
+        return ""
+    since, until = window.get("since"), window.get("until")
+    span = (f"between {_day_words(since)} and {_day_words(until)}" if since and until
+            else f"since {_day_words(since)}" if since else f"up to {_day_words(until)}")
+    lives = window.get("lives")
+    head = f"{lives:,} li{'fe' if lives == 1 else 'ves'} fitted {span}" if lives is not None else f"lives fitted {span}"
+    failed = window.get("failures")
+    return head + (f" ({failed:,} failed)" if failed is not None else "")
 
 
 def _clean_on_found(value, outcome) -> str:
@@ -676,7 +784,8 @@ def blank_rollup() -> dict:
     """A rollup's counts. needs_review: decided, but against the decision rules
     (review above), so not counted as all decided."""
     return {"modes": 0, "decided": 0, "supported": 0, "contradicted": 0,
-            "inconclusive": 0, "unevidenced": 0, "stale": 0, "partly": 0, "needs_review": 0}
+            "inconclusive": 0, "unevidenced": 0, "stale": 0, "partly": 0, "needs_review": 0,
+            SHORTER_THAN_EVIDENCE: 0, LONGER_THAN_EVIDENCE: 0}
 
 
 def rollup_state(rollup: dict) -> str:
@@ -695,15 +804,22 @@ def finish_rollup(rollup: dict) -> dict:
     return {**rollup, "undecided": max(0, rollup["modes"] - rollup["decided"]), "state": rollup_state(rollup)}
 
 
-def resolve_decision(decision: dict, fetch) -> dict:
+def resolve_decision(decision: dict, fetch, clock=None) -> dict:
     """A decision's evidence status ({status, reason or summary, artifact_name,
     artifact_link_path, expected_evidence, evidence_kind}) against what
     ``fetch`` finds. A combination of tasks is checked member by member
-    (_resolve_combination)."""
+    (_resolve_combination). ``clock``: the position's (running_clock.for_position),
+    so running hours meet a calendar interval at its duty; None off a position."""
+    if clock is not None:
+        decision = {**decision, "_clock": clock}
     if len(decision.get("outcomes") or []) > 1:
         return _resolve_combination(decision, fetch)
     out = _resolve_decision(decision, fetch)
-    kind = evidence_kind((decision.get("evidence") or {}).get("type"))
+    evidence = decision.get("evidence") or {}
+    kind = evidence_kind(evidence.get("type"))
+    if evidence.get("window"):
+        # What the evidence rests on, said where the rationale shows it.
+        out = out | {"window": evidence["window"], "window_words": window_words(evidence["window"])}
     return out | {"evidence_kind": kind} if kind else out
 
 
@@ -766,18 +882,20 @@ def _resolve_member(member: dict, decision: dict, fetch) -> dict:
     shared = decision.get("evidence")
     outcome = member["outcome"]
     if own:
-        evidence, working, source = own, member.get("working"), "own"
+        evidence, working, linked, source = own, member.get("working"), member.get("linked"), "own"
     elif shared and outcome != "redesign" and _fits(outcome, shared, fetch):
-        evidence, working, source = shared, decision.get("working"), "decision"
+        evidence, working, linked, source = shared, decision.get("working"), decision.get("linked"), "decision"
     else:
-        evidence = working = source = None
+        evidence = working = linked = source = None
     if outcome == "redesign" and not (evidence and evidence["type"] in LINKED_TYPES):
         return {"status": None}
     as_one = {"outcome": outcome, "interval": member.get("interval"), "interval_unit": member.get("interval_unit"),
-              "evidence": evidence, "working": working}
+              "evidence": evidence, "working": working, "linked": linked, "_clock": _clock(decision)}
     out = _resolve_decision(as_one, fetch)
     if evidence:
         out |= {"evidence_kind": evidence_kind(evidence["type"]), "evidence_from": source}
+        if evidence.get("window"):
+            out |= {"window": evidence["window"], "window_words": window_words(evidence["window"])}
     elif shared:
         out["reason"] = (f"No evidence for this task: the decision's {_type_label(shared['type'])} is for another "
                          "of its tasks. Link one for this task.")
@@ -801,7 +919,7 @@ def _resolve_combination(decision: dict, fetch) -> dict:
         return _member_words(m, members).capitalize()
 
     out: dict = {"outcomes": members}
-    for status in ("contradicted", "stale", "inconclusive"):
+    for status in ("contradicted", "stale", "inconclusive", *INTERVAL_DIFFERS):
         hit = next((m for m in counted if m["status"] == status), None)
         if hit is not None:
             out |= {"status": status, "reason": f"{word(hit)} task: {hit.get('summary') or hit.get('reason') or ''}"}
@@ -831,13 +949,26 @@ def _resolve_combination(decision: dict, fetch) -> dict:
     return out
 
 
-_LINKED_LABEL = {"report": "Report", "working": "Function's notes and rationale"}
+_LINKED_LABEL = {"report": "Report", "working": "Function's notes and rationale", "history": "Failure history",
+                 "point": "Condition readings", "failure_report": "Failure report"}
+_LINKED_WHAT = {"report": "report", "working": "function's notes", "history": "failure history",
+                "point": "set of readings", "failure_report": "failure report"}
 
 
 def _resolve_linked(decision: dict, evidence: dict, fetch) -> dict:
     """A report or a working: linked, not checked. "linked" while it's there to
     open, "stale" once it has gone; never supported or contradicted."""
     kind = evidence["type"]
+    if kind in GRAPH_TYPES:
+        ref = decision.get("linked")
+        if not ref:
+            return {"status": "stale", "reason": f"The linked {_LINKED_WHAT[kind]} has gone: it was deleted or "
+                                                 "retired."}
+        return {"status": "linked", "artifact_name": ref.get("name") or _LINKED_LABEL[kind],
+                "artifact_link_path": ref.get("path"),
+                "summary": f"{_LINKED_LABEL[kind]} linked{': ' + ref['summary'] if ref.get('summary') else ''}. "
+                           f"Open it to read the case; Reliafy doesn't check a {_LINKED_WHAT[kind]} against the "
+                           "decision."}
     if kind == "report":
         report = fetch("report", evidence["id"])
         if report is None:
@@ -885,6 +1016,16 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         base = {"artifact_name": artifact.name, "artifact_link_path": _link_path(evidence["type"], artifact.id)}
         return {**base, **_check_on_condition_interval(decision, artifact)}
 
+    if evidence["type"] == "model" and expected == "strategy_analysis":
+        # A fitted life model behind an interval: it says how the item fails, not what interval pays.
+        # Linked, not checked (like a report), with what would check it.
+        return {
+            "status": "linked", "evidence_kind": "model",
+            "artifact_name": artifact.name, "artifact_link_path": _link_path("model", artifact.id),
+            "summary": "Life model linked: it shows how the item fails, but not which interval pays. To check "
+                       "the interval, run Optimal replacement on this model, save it and link the analysis.",
+        }
+
     if evidence["type"] != expected:
         return {
             "status": "inconclusive",
@@ -905,7 +1046,19 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         mismatch = _unit_mismatch(decision, (artifact.results or {}).get("unit"))
         if mismatch:
             return {**base, **mismatch}
-        return {**base, **_check_replacement(artifact, want_beneficial=True)}
+        conv = _unit_conversion(decision, (artifact.results or {}).get("unit"))
+        checked = _check_replacement(artifact, want_beneficial=True, conv=conv)
+        if checked.get("status") == "supported":
+            r = artifact.results or {}
+            # Far from the cost-optimal age is a fact about the interval, not a verdict on
+            # the decision: its own neutral status, with both intervals in the summary.
+            checked = _far_shorter(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval",
+                                   status=SHORTER_THAN_EVIDENCE)
+            checked = _far_longer(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval",
+                                  status=LONGER_THAN_EVIDENCE)
+        return {**base, **_with_conversion(checked, decision,
+                                           (artifact.results or {}).get("unit"),
+                                           (artifact.results or {}).get("optimal_time"))}
     if outcome == "on_condition":
         mismatch = _unit_mismatch(decision, (artifact.results or {}).get("unit"))
         if mismatch:
@@ -925,32 +1078,35 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         if mismatch:
             return {**base, **mismatch}
         if artifact.kind == "failure_finding_interval":
-            from backend.services.rcm_intervals import DAYS_IN
-            from backend.units import normalize_unit
+            from backend.services import running_clock
 
             longest = None
-            if r.get("basis") == "target" and r.get("interval") and DAYS_IN.get(normalize_unit(r.get("unit"))):
-                longest = float(r["interval"]) * DAYS_IN[normalize_unit(r["unit"])]
+            per = running_clock.days_in(r.get("unit"), _clock(decision))
+            if r.get("basis") == "target" and r.get("interval") and per:
+                longest = float(r["interval"]) * per
             return {**base, **_interval_summary(r, decision, longest, "the longest that meets the target")}
         interval = r.get("interval")
         if interval is not None:
             unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
-            return {**base, "status": "supported",
-                    "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."}
+            checked = _far_shorter({
+                "status": "supported",
+                "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."},
+                decision, interval, r.get("unit"), "the interval that meets the availability target")
+            return {**base, **_with_conversion(checked, decision, r.get("unit"), interval)}
         return {**base, "status": "inconclusive", "reason": "The analysis has no computed interval."}
     return {**base, "status": "inconclusive", "reason": "Unrecognised decision."}
 
 
 def _task_days(decision: dict):
-    """The task's interval in days, or None when it has none or its unit isn't a time."""
-    from backend.services.rcm_intervals import DAYS_IN
-    from backend.units import normalize_unit
+    """The task's interval in days, or None when it has none or its unit isn't a time (on a
+    position, running hours are days at its duty: running_clock)."""
+    from backend.services import running_clock
 
     try:
         interval = float(decision.get("interval"))
     except (TypeError, ValueError):
         return None
-    factor = DAYS_IN.get(normalize_unit(decision.get("interval_unit")))
+    factor = running_clock.days_in(decision.get("interval_unit"), _clock(decision))
     return interval * factor if factor else None
 
 
@@ -962,7 +1118,86 @@ def _interval_summary(r: dict, decision: dict, longest_days, too_long: str) -> d
     days = _task_days(decision)
     if days is not None and longest_days is not None and days > longest_days * 1.0001:
         return {"status": "contradicted", "summary": f"The task's interval is longer than {too_long}. {r.get('summary') or ''}".strip()}
-    return {"status": "supported", "summary": r.get("summary") or "Interval calculated."}
+    return _far_shorter({"status": "supported", "summary": r.get("summary") or "Interval calculated."},
+                        decision, r.get("interval"), r.get("unit"), "the calculated interval")
+
+
+#: A task set at less than this share of the interval its evidence supports is flagged:
+#: done that much more often than the evidence needs, it costs work for no reduction in
+#: risk the evidence shows. Shorter than that (a 50 h service against a 63 h check
+#: interval) is ordinary rounding to a service plan.
+FAR_SHORTER = 0.5
+
+
+def _task_share(decision: dict, interval, evidence_unit):
+    """The task's interval as a share of the evidence's (``interval`` in
+    ``evidence_unit``), or None when either is missing or they can't be compared.
+    A unit missing on either side is read as the same unit, as the unit check does."""
+    try:
+        task = float(decision.get("interval"))
+        supported = float(interval)
+    except (TypeError, ValueError):
+        return None
+    if task <= 0 or supported <= 0:
+        return None
+    task_unit, ev_unit = _norm_unit(decision.get("interval_unit")), _norm_unit(evidence_unit)
+    if not task_unit or not ev_unit or task_unit == ev_unit:
+        return task / supported
+    conv = _unit_conversion(decision, evidence_unit)
+    if conv is None or not conv.get("factor"):
+        return None
+    return task / (supported * conv["factor"])
+
+
+#: A fixed-interval task far from its cost-optimal age (under half, or over twice, it):
+#: amber, not red. The interval differs from what the evidence supports; whether that's
+#: wrong (a warranty, a shutdown plan, a safety margin) is the analyst's call.
+SHORTER_THAN_EVIDENCE = "shorter_than_evidence"
+LONGER_THAN_EVIDENCE = "longer_than_evidence"
+INTERVAL_DIFFERS = (SHORTER_THAN_EVIDENCE, LONGER_THAN_EVIDENCE)
+
+
+def _far_shorter(result: dict, decision: dict, interval, evidence_unit, what: str,
+                 status: str = "contradicted") -> dict:
+    """A supported check made plain when the task's interval is far shorter than the
+    evidence supports (under :data:`FAR_SHORTER` of it): both intervals, how many
+    times as often the task is done, then what the evidence found. ``status``:
+    contradicted (a calculated interval: the evidence doesn't back the interval set),
+    or shorter_than_evidence (a cost-optimal age). Anything else is returned as it is."""
+    share = _task_share(decision, interval, evidence_unit)
+    if result.get("status") != "supported" or share is None or share >= FAR_SHORTER:
+        return result
+    task_unit = decision.get("interval_unit") or evidence_unit
+    ev_unit = evidence_unit or decision.get("interval_unit")
+    set_s = with_unit(fmt_num(float(decision["interval"])), unit_in_text(task_unit))
+    ev_s = with_unit(fmt_num(float(interval)), unit_in_text(ev_unit))
+    times_s = f"{round(1 / share):,}"  # at least 2: the share is under a half
+    found = result.get("summary") or ""
+    return {**result, "status": status, "interval_share": round(share, 4),
+            "summary": f"The task is set every {set_s}, far shorter than {what} its evidence supports, about "
+                       f"{ev_s}: it is done about {times_s} times as often as the evidence needs. {found}".strip()}
+
+
+def _far_longer(result: dict, decision: dict, interval, evidence_unit, what: str,
+                status: str = LONGER_THAN_EVIDENCE) -> dict:
+    """The mirror of :func:`_far_shorter`, for a fixed-interval task against its
+    cost-optimal age (the calculators flag any interval longer than theirs already):
+    a task set at more than 1 / :data:`FAR_SHORTER` times the interval its evidence
+    supports reads ``status`` (longer_than_evidence), with both intervals and how many times as long it is,
+    then what the evidence found. Anything else is returned as it is."""
+    share = _task_share(decision, interval, evidence_unit)
+    if result.get("status") != "supported" or share is None or share <= 1 / FAR_SHORTER:
+        return result
+    task_unit = decision.get("interval_unit") or evidence_unit
+    ev_unit = evidence_unit or decision.get("interval_unit")
+    set_s = with_unit(fmt_num(float(decision["interval"])), unit_in_text(task_unit))
+    ev_s = with_unit(fmt_num(float(interval)), unit_in_text(ev_unit))
+    times = round(share)  # at least 2: the share is over 2
+    times_s = "twice" if times == 2 else f"{times:,} times"
+    found = result.get("summary") or ""
+    return {**result, "status": status, "interval_share": round(share, 4),
+            "summary": f"The task is set every {set_s}, far longer than {what} its evidence supports, about "
+                       f"{ev_s}: about {times_s} as long as the evidence supports. {found}".strip()}
 
 
 def _check_on_condition_interval(decision: dict, analysis) -> dict:
@@ -975,11 +1210,10 @@ def _check_on_condition_interval(decision: dict, analysis) -> dict:
     mismatch = _unit_mismatch(decision, r.get("unit"))
     if mismatch:
         return mismatch
-    from backend.services.rcm_intervals import DAYS_IN
-    from backend.units import normalize_unit
+    from backend.services import running_clock
 
     pf_days = None
-    factor = DAYS_IN.get(normalize_unit(r.get("pf_unit")))
+    factor = running_clock.days_in(r.get("pf_unit"), _clock(decision))
     if factor and r.get("pf_interval"):
         # The net P-F interval: the warning less the time needed to act on it.
         pf_days = (float(r["pf_interval"]) - float(r.get("act_time") or 0)) * factor
@@ -1019,8 +1253,9 @@ def _check_randomness(model) -> dict:
             "reason": "No confidence interval on β — re-save the model to compute it."}
 
 
-def _check_replacement(analysis, want_beneficial: bool) -> dict:
-    """Evidence check against a saved optimal-replacement analysis."""
+def _check_replacement(analysis, want_beneficial: bool, conv: dict | None = None) -> dict:
+    """Evidence check against a saved optimal-replacement analysis. ``conv``: the analysis's
+    unit converted to the task's, so its interval is also given in the task's unit."""
     if analysis.kind != "optimal_replacement":
         return {"status": "inconclusive",
                 "reason": "The linked analysis isn't an optimal-replacement calculation."}
@@ -1030,8 +1265,11 @@ def _check_replacement(analysis, want_beneficial: bool) -> dict:
     if beneficial and want_beneficial:
         t = r.get("optimal_time")
         savings = r.get("savings") or 0
+        also = ""
+        if conv is not None and t is not None:
+            also = f", about {fmt_num(float(t) * conv['factor'])} {unit_in_text(conv['to'])}"
         return {"status": "supported",
-                "summary": f"Optimal interval ≈ {fmt_num(t)}{unit} ({savings:.0%} saving vs run-to-failure)."}
+                "summary": f"Optimal interval ≈ {fmt_num(t)}{unit}{also} ({savings:.0%} saving vs run-to-failure)."}
     if not beneficial and not want_beneficial:
         return {"status": "supported",
                 "summary": "Preventive replacement shows no cost benefit — run-to-failure is optimal."}
@@ -1051,6 +1289,9 @@ def _type_label(etype: str) -> str:
         "degradation_model": "degradation model",
         "report": "report",
         "working": "function's notes and rationale",
+        "history": "failure history",
+        "point": "set of condition readings",
+        "failure_report": "failure report",
     }.get(etype, etype)
 
 

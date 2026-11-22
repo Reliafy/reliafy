@@ -23,7 +23,8 @@ score or an effect edited on one shows on the other at once. Nothing is copied.
 
 ## Open the FME(C)A tab
 
-Open **Assets → Explorer** and pick the **FME(C)A** tab. If your tree is empty,
+Open **Assets → Explorer** and pick the **FME(C)A** tab (on a narrow screen it
+may be under **⋯** at the end of the tabs). If your tree is empty,
 add a position, or bring your hierarchy in with **Import from Excel**. Everything below
 works the same on a product's design (its **Functional structure** tab is the
 same Explorer, scoped to the design) and on your asset tree. The **RCM** tab
@@ -46,11 +47,14 @@ worksheet:
 - **S**, **O**, **D** — severity, occurrence and detection, each 1 to 10.
 - **RPN** and **AP** — the risk priority number and the action priority, worked
   out from S, O and D (below).
+- **Criticality (Cm)** — the mode criticality and the operating time it is for,
+  such as *0.004 in 100 hours* (below). A mode missing one of the figures shows
+  a dash; point at it to see which figure is missing.
 - **Recommended action**, with its **Owner**, **Due** date and **Status**
   (Open, In progress, Done).
 
-**Columns…**, in the **⋯** menu at the top right of the panel, adds the criticality columns (failure rate, mode ratio, loss
-probability, operating time, mode criticality, severity class) and the RCM's
+**Columns…**, in the **⋯** menu at the top right of the panel, adds the figures behind the criticality (failure rate, mode ratio, loss
+probability, operating time, severity class) and the RCM's
 own (Consequence, Decision, Task). Double-click a cell to edit it in place;
 click a row to open its **Details** beside the table, where the same fields
 sit in two groups, **FME(C)A** and **Criticality**, and the RPN and action
@@ -85,7 +89,11 @@ A failure mode with all three scores shows its RPN and AP; one with fewer
 shows neither. Function and position rows add up what is inside them: *2 high ·
 1 medium*, the highest RPN, and *3 of 5 scored*. The **⋯** beside the tree's
 search box filters with **Show only**: **High priority**, **Medium priority**, **Not scored** and
-**Has an action open**. Click a column header to sort the rows under each
+**Has an action open**, each with the number of failure modes it keeps beside it. **RPN at least**,
+under them, keeps only the failure modes whose RPN is that number or more: type *150* to see every
+mode at 150 and above. The rows stay in the tree's order, with the functions and positions they sit
+under, so you can still see where each one belongs. Clear the box, or choose **Reset to the usual
+view**, to see everything again. Click a column header to sort the rows under each
 function by that column (RPN, AP, severity, criticality or the due date),
 highest first; the tree stays as it is.
 
@@ -125,10 +133,13 @@ position's failure modes (and those of the positions inside it) fall there,
 shaded by the worst action priority among them. Under it, the modes are
 listed by criticality, highest first.
 
-Reliafy does not read the failure rate from a linked model for you yet: when a
-position's failure mode cites a non-repairable model as its evidence, read the
-rate off the model's page at the operating time and enter it, choosing *From a
-model* as the source.
+Leave a mode's failure rate blank and its criticality uses the position's own
+rate: its model in use when that has a constant rate, or else its parts count.
+The **Rate source** column says which. A rate you type on the mode replaces
+the position's rate for that mode only. If there's no rate, or a mode is
+missing its mode ratio, loss probability or operating time, the
+**Criticality** cell shows a dash and names the missing figure. Reliafy never
+fills in a figure for you.
 
 ## Start from a function, finish the RCM later
 

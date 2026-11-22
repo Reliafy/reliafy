@@ -112,7 +112,6 @@ def _recurrent(payload: dict) -> list[str]:
     _add(lines, "Systems", num(r.get("n_systems")))
     _add(lines, "Failures recorded", num(r.get("n_events")))
     _add(lines, "Growth shape β", num(r.get("beta")))
-    _add(lines, "Trend", r.get("growth"))
     _add(lines, "Current MTBF", _with_unit(r.get("mtbf"), unit))
     _add(lines, "Current failure rate (per " + (unit.rstrip("s") or "unit") + ")", num(r.get("rocof")))
     demo = r.get("demonstrated_mtbf") or {}
@@ -165,7 +164,7 @@ def _fleet(payload: dict) -> list[str]:
         if num(lo) is not None and num(hi) is not None:
             lvl = f.get("interval_level")
             words = f"{round(float(lvl) * 100):g}%" if isinstance(lvl, (int, float)) else "80%"
-            _add(lines, f"Likely range ({words})", f"{num(lo)} to {num(hi)}")
+            _add(lines, f"Likely range ({words} two-sided)", f"{num(lo)} to {num(hi)}")
         _add(lines, "Horizon", f"{f.get('periods')} {f.get('period_label') or 'periods'}")
         _add(lines, "Items", num(f.get("n_items")))
         _add(lines, "Non-repairable model", f.get("model_name"))

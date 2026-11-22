@@ -5,6 +5,11 @@ export const ORDERS_PATH = "/maintenance/work-orders";
 export const PACKAGES_PATH = "/maintenance/packages";
 export const packagePath = (id) => `${PACKAGES_PATH}/${encodeURIComponent(id)}`;
 export const workOrderPath = (id) => `${ORDERS_PATH}/${encodeURIComponent(id)}`;
+// Packages are made where the tasks are: the Explorer's LSA tab on the tree picked, isolated to
+// it (root=) with its top row picked so its tasks are there to tick. Without root= a built
+// item's tree opened on an empty Explorer.
+export const packageTasksOn = (id) =>
+  `/asset-register/explorer?${new URLSearchParams({ arrange: "positions", tab: "lsa", root: id, sel: id })}`;
 
 // The Orders page's tabs, in order; Open is the default.
 export const ORDER_TABS = [
@@ -50,6 +55,16 @@ export function daysLate(wo, today) {
 
 export const lateText = (days) => (days == null ? "" : days === 1 ? "1 day late" : `${days} days late`);
 
+// A work order as a phone shows it, under its "#12 Title": when, then where
+// ("18 days late · Pool Area", "Due 4 Dec 2026 · Media filter"). `late` marks the
+// first part as late (the words say it too). Where: its location, else what it's on.
+export function orderCardMeta(wo, today = null, fmt = (d) => d) {
+  const days = daysLate(wo, today);
+  const late = days != null || !!wo?.overdue;
+  const when = days != null ? lateText(days) : wo?.overdue ? "Late" : wo?.due ? `Due ${fmt(wo.due)}` : "No due date";
+  return { when, late, where: wo?.location?.name || wo?.subject?.name || "" };
+}
+
 // The Open tab's two sections: the overdue ones, most late first, then the rest
 // in the order the server gives (by due date, those with none last).
 export function splitOpen(rows = [], today = null) {
@@ -72,23 +87,30 @@ export function orderKind(wo) {
   return wo?.type === "preventive" ? "task" : "hand";
 }
 
-// The answer first, above the tabs: "3 open, 1 late by 4 days. 12 due in the next 30 days."
-export function ordersSummary({ open = [], due = null, horizon = 30, today = null } = {}) {
-  const late = open.filter((w) => w.overdue);
-  const parts = [];
-  if (!open.length) parts.push("No open work orders");
-  else {
-    let s = `${open.length} open`;
-    if (late.length === 1) {
-      const d = daysLate(late[0], today);
-      s += d ? `, 1 late by ${d === 1 ? "1 day" : `${d} days`}` : ", 1 late";
-    } else if (late.length > 1) {
-      const worst = Math.max(...late.map((w) => daysLate(w, today) || 0));
-      s += `, ${late.length} late${worst ? ` (the latest by ${worst === 1 ? "1 day" : `${worst} days`})` : ""}`;
-    }
-    parts.push(s);
-  }
-  let text = `${parts.join("")}.`;
+// The late work in the one wording Home, Orders and Assets share, from the
+// server's one count of it (Maintenance.late_counts: `late` on the overview and
+// on each asset): "27 work orders late · 5 tasks overdue with no work order".
+// A task with a work order open counts as its work order, so nothing is counted
+// twice. `worst`: the most days any is late, said after the work orders
+// ("27 work orders late (the latest by 33 days)"). "" when nothing is late.
+export function lateWorkText(late, { worst = 0 } = {}) {
+  const wos = late?.work_orders_late || 0;
+  const tasks = late?.tasks_overdue_without_work_order || 0;
+  const by = worst > 0 ? ` (the latest by ${worst === 1 ? "1 day" : `${worst} days`})` : "";
+  return [
+    wos ? `${plural(wos, "work order", "work orders")} late${by}` : null,
+    tasks ? `${plural(tasks, "task", "tasks")} overdue with no work order` : null,
+  ].filter(Boolean).join(" · ");
+}
+
+// The answer first, above the tabs: "38 open work orders. 27 work orders late (the
+// latest by 33 days) · 5 tasks overdue with no work order. 54 due in the next 30 days."
+// `late`: the overview's late counts (lateWorkText).
+export function ordersSummary({ open = [], due = null, horizon = 30, today = null, late = null } = {}) {
+  let text = open.length ? `${plural(open.length, "open work order", "open work orders")}.` : "No open work orders.";
+  const worst = Math.max(0, ...open.filter((w) => w.overdue).map((w) => daysLate(w, today) || 0));
+  const lateText = lateWorkText(late, { worst });
+  text += lateText ? ` ${lateText}.` : open.length ? " None late." : "";
   if (due) text += ` ${due.length ? due.length : "Nothing"} due in the next ${horizon} days.`;
   return text;
 }

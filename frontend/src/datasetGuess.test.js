@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   censorInverted, guessSplit, guessCompareColumns, dtypeLabel, nameSaysDistribution, parsePreview, fileStem,
-  guessLifeColumns, guessStatusMeaning, guessUnit, firstRowIsData, withGenericHeader,
+  guessLifeColumns, guessStatusMeaning, guessUnit, firstRowIsData, withGenericHeader, splitCells, sizeLines,
 } from "./datasetGuess.js";
 
 // #434: the upload that started it had no header, so "300" and "544966.3125"
@@ -61,6 +61,19 @@ test("compare picks the failed column and ticks invert", () => {
   assert.equal(g.censor, "failed");
   assert.equal(g.invert, true);
   assert.equal(g.unit, "hours");
+});
+
+test("compare reads the time from a time-named column, not the first number", () => {
+  const seal = [
+    { name: "seal", dtype: "str" }, { name: "site", dtype: "str" }, { name: "flush_plan", dtype: "str" },
+    { name: "duty_pct", dtype: "int64" }, { name: "hours", dtype: "int64" }, { name: "status", dtype: "str" },
+  ];
+  assert.equal(guessCompareColumns(seal, { distinct: { site: 3, flush_plan: 2 } }).time, "hours");
+  // The dataset's own reading wins over any guess.
+  const odd = [{ name: "duty_pct", dtype: "int64" }, { name: "run", dtype: "int64" }];
+  assert.equal(guessCompareColumns(odd, { x: "run" }).time, "run");
+  // No time-like name: the first numeric column, as before.
+  assert.equal(guessCompareColumns(odd).time, "duty_pct");
 });
 
 test("a 'censored' column is not inverted", () => {
@@ -128,6 +141,36 @@ test("the preview reads a header, or names the columns when there is none", () =
   assert.equal(n.nRows, 2);
   assert.deepEqual(n.preview[0], ["1240", "1"]);
   assert.equal(parsePreview("hours"), null);
+});
+
+// A cell in quotes keeps its commas: the preview must show "14,010" as one
+// cell in the column it belongs to, as the server reads it.
+test("the preview keeps a quoted cell with its comma in one cell", () => {
+  const p = parsePreview('Pump tag,Run hrs,Status,Comment\nSP-101,"14,010",Running,\nSP-102,"8,240",failed,"seal, then bearing"\n');
+  assert.deepEqual(p.columns, ["Pump tag", "Run hrs", "Status", "Comment"]);
+  assert.equal(p.nCols, 4);
+  assert.deepEqual(p.preview[0], ["SP-101", "14,010", "Running", ""]);
+  assert.deepEqual(p.preview[1], ["SP-102", "8,240", "failed", "seal, then bearing"]);
+});
+
+test("splitCells reads doubled quotes and leaves a delimiter in quotes alone", () => {
+  assert.deepEqual(splitCells('a,"b ""c"", d",e'), ["a", 'b "c", d', "e"]);
+  assert.deepEqual(splitCells("1\t2\t3", "\t"), ["1", "2", "3"]);
+  assert.deepEqual(splitCells(",,,"), ["", "", "", ""]);
+});
+
+test("the delimiter is found outside quotes, so a quoted header can't fool it", () => {
+  const p = parsePreview('"hours, run";status\n"1,240";failed\n');
+  assert.deepEqual(p.columns, ["hours, run", "status"]);
+  assert.deepEqual(p.preview[0], ["1,240", "failed"]);
+});
+
+test("a long size line keeps two facts first and the breakdown after", () => {
+  assert.deepEqual(sizeLines("24 pumps · 13 failed"), { head: "24 pumps · 13 failed", rest: "" });
+  assert.deepEqual(
+    sizeLines("40 valves · 15 failed · 23 failed between inspections · 2 found failed at the first inspection"),
+    { head: "40 valves · 15 failed", rest: "23 failed between inspections · 2 found failed at the first inspection" });
+  assert.deepEqual(sizeLines(""), { head: "", rest: "" });
 });
 
 // ---- Life data (#291) ------------------------------------------------------
@@ -208,4 +251,12 @@ test("guessLifeColumns: a state at detection on a failure log is never the statu
   // …a header that plainly says status doesn't.
   assert.equal(guessLifeColumns([{ name: "Hours", dtype: "int64", values: null },
     { name: "Status", dtype: "object", values: { Running: 3 } }]).c, "Status");
+});
+
+test("Compare never guesses the status or failure-mode column as the split", () => {
+  const cols = [{ name: "Hours", dtype: "int64" }, { name: "Status", dtype: "object" }, { name: "Failure mode", dtype: "object" },
+    { name: "Site", dtype: "object" }];
+  const distinct = { Hours: 60, Status: 2, "Failure mode": 2, Site: 4 };
+  assert.equal(guessCompareColumns(cols, { distinct }).group, "Status");
+  assert.equal(guessCompareColumns(cols, { distinct, exclude: ["Status", "Failure mode"] }).group, "Site");
 });

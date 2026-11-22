@@ -2,8 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  answerParts, baseLevels, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
-  intervalLevel, listN, nextTabIndex, oddUnits, plainAnswer, ppSummary, ratioSign, resolveTab, termName,
+  SHARED_SHAPE_NOTE, answerParts, baseLevels, chartRow, countsSummary, sharesShape, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
+  groupTestWords, intervalLevel, listN, nextTabIndex, oddUnits, plainAnswer, ppSummary, ratioSign, resolveTab, termName,
 } from "./modelFrame.js";
 
 const labels = (tabs) => tabs.map((t) => t.label);
@@ -95,7 +95,7 @@ test("no mean life where it can be infinite", () => {
 
 test("other kinds answer in their own terms", () => {
   assert.deepEqual(answerParts({ kind: "per_demand", per_demand: { p: 0.0075, ci: [0.00155, 0.0218], reliability: 0.9925,
-    demands: 400, failures: 3 } }), ["failure probability 0.75% per demand (0.16%–2.2%)", "reliability 99.25%", "3 failed in 400 demands"]);
+    demands: 400, failures: 3 } }), ["failure probability 0.75% per demand (95% two-sided 0.16%–2.2%)", "reliability 99.25%", "3 failed in 400 demands"]);
   const joint = answerParts({ kind: "joint", n_items: 40, n_events: 22, n_running: 18, n_readings: 300,
     marker: "vibration", risk: [{ id: "P6", risk: [0.1, 0.92] }], horizons: { labels: ["7 days", "30 days"] }, fit_ok: true });
   assert.deepEqual(joint, ["40 units (22 failed, 18 running)", "300 readings of vibration",
@@ -107,6 +107,9 @@ test("other kinds answer in their own terms", () => {
   // ... for every account: the Risk now tab it points to is always there.
   assert.deepEqual(answerParts({ kind: "joint", risk: [{ id: "P-19", risk: [0.5, 0.9999] }],
     horizons: { labels: ["30 days", "90 days"] } }, { riskNow: false }), ["highest risk: unit P-19, > 99.9% in the next 90 days"]);
+  // Every unit "> 99.9%" over 90 days: the headline ranks by and quotes the 30 days that tell them apart.
+  assert.deepEqual(answerParts({ kind: "joint", risk: [{ id: "P-04", risk: [0.73, 0.9995] }, { id: "P-19", risk: [0.91, 0.9999] }],
+    horizons: { labels: ["30 days", "90 days"] } }), ["highest risk: unit P-19, 91% in the next 30 days"]);
   const reg = answerParts({ kind: "regression", distribution: "Weibull PH", ratio_label: "hazard ratio", unit: "Hours",
     coefficients: [{ name: "temp_C", value: 0.138, ci: [0.093, 0.183] }, { name: "load", value: 0.5, ci: [-1, 2] }],
     validation: { available: true, concordance: { value: 0.868 } }, n: 32 });
@@ -119,7 +122,7 @@ test("other kinds answer in their own terms", () => {
   // By failure mode: the modes, the leading one at the horizon with its band,
   // any mode with its band, the data.
   const cr = {
-    kind: "competing_risks", unit: "Hours", horizon: 5000, failed: 50, running: 22,
+    kind: "competing_risks", unit: "Hours", horizon: 5000, failed: 50, running: 22, ci_level: 0.9,
     causes: [
       { name: "bearing wear", failures: 29, at: { cif: 0.4, lower: 0.28, upper: 0.52 } },
       { name: "seal leak", failures: 15, at: { cif: 0.21, lower: 0.12, upper: 0.31 } },
@@ -127,7 +130,7 @@ test("other kinds answer in their own terms", () => {
     curves: { x: [0, 5000], all: [0, 0.69], all_lower: [0, 0.57], all_upper: [0, 0.8] },
   };
   assert.deepEqual(answerParts(cr), [
-    "2 failure modes", "bearing wear 40% of units by 5,000 hours (28%–52%)", "any mode 69% (57%–80%)",
+    "2 failure modes", "bearing wear 40% of units by 5,000 hours (90% two-sided 28%–52%)", "any mode 69% (90% two-sided 57%–80%)",
     "50 failed, 22 running",
   ]);
   const crReg = answerParts({ ...cr, regression: { model: "Fine-Gray" } });
@@ -316,4 +319,49 @@ test("effects over the data's range when +1 misleads (load spans 0.5 to 0.9)", (
   // 205 ** 0.4 = 8.41: across the data's range, not per +1.
   assert.match(text, /across the data's range, 0\.5 to 0\.9, it multiplies it by 8\.41 \(\d+% 3\.31 to 20\.9\)/);
   assert.doesNotMatch(effectText(dusty, "hazard ratio"), /across/);
+});
+
+test("a joint model's rate-of-change effect keeps its own label and unit", () => {
+  const rows = forestRows({ kind: "joint", marker: "vibration", marker_unit: "mm/s", hazard_ratios: [
+    { name: "slope_effect", kind: "marker", hr: 3, lower: 2, upper: 4, text: "t", label: "Rate of change of vibration", unit: "mm/s per day" },
+    { name: "marker_effect", kind: "marker", hr: 2, lower: 1.5, upper: 2.5, text: "u" },
+  ] });
+  assert.deepEqual(rows.map((r) => [r.name, r.unit]), [["Rate of change of vibration", "mm/s per day"], ["vibration", "mm/s"]]);
+  assert.ok(answerParts({ kind: "joint", link: "slope", link_label: "Rate of change" }).includes("risk follows its rate of change"));
+  assert.ok(!answerParts({ kind: "joint", link: "value", link_label: "Level" }).some((p) => String(p).includes("follows")));
+});
+
+test("a regression on one grouping column names the log-rank test in its answer line", () => {
+  const g = { p_value: 0.01808, significant: true };
+  assert.equal(groupTestWords(g), "groups differ: log-rank p = 0.018");
+  assert.equal(groupTestWords({ p_value: 0.31, significant: false }), "no clear difference between groups: log-rank p = 0.31");
+  assert.equal(groupTestWords(null), null);
+  const r = { kind: "regression", distribution: "Weibull PH", ratio_label: "hazard ratio", coefficients: [], group_test: g };
+  assert.ok(answerParts(r).includes("groups differ: log-rank p = 0.018"));
+});
+
+test("a parametric regression's coefficient p-value reaches the effects", () => {
+  const r = { kind: "regression", ratio_label: "hazard ratio", coefficients: [{ name: "design[T.B]", value: -0.818, ci: [-1.37, -0.27], se: 0.334, p: 0.0142 }] };
+  assert.equal(forestRows(r)[0].p, 0.0142);
+});
+
+test("the forest chart draws a number across its data's range, so a small per-unit effect shows", () => {
+  const temp = { name: "temp_C", label: "temp_C", ratio: 1.148, lo: 1.106, hi: 1.191, unit: "°C", range: [60, 100] };
+  const c = chartRow(temp);
+  assert.equal(c.across, true);
+  assert.ok(Math.abs(c.ratio - 1.148 ** 40) < 1e-6 * c.ratio);
+  assert.ok(c.lo < c.ratio && c.ratio < c.hi);
+  assert.equal(c.label, "temp_C (60 to 100 °C)");
+  // A category, or a number with no range, is drawn as it is.
+  assert.equal(chartRow({ name: "site[T.B]", ratio: 0.7 }).across, false);
+  assert.equal(chartRow({ name: "x", ratio: 2 }).ratio, 2);
+});
+
+test("a regression with a shape says the shape is shared, beside its life figures", () => {
+  const ph = { kind: "regression", params: [{ name: "alpha" }, { name: "beta" }] };
+  assert.equal(sharesShape(ph), true);
+  assert.equal(sharesShape({ ...ph, params: [{ name: "lambda" }] }), false);
+  assert.equal(sharesShape({ ...ph, tvc: {} }), false);
+  assert.equal(sharesShape({ kind: "distribution", params: ph.params }), false);
+  assert.match(SHARED_SHAPE_NOTE, /can differ from a fit to one group/);
 });

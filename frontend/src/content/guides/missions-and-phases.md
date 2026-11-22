@@ -5,7 +5,7 @@ category: "Maintenance strategy"
 prerequisites: "A position (or a product's design) with positions inside it, or an RBD of its own."
 order: 29
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Missions tab itself and stays out of the index until Maintenance opens.
+# Models › Missions view itself and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
@@ -21,8 +21,8 @@ phase by phase.
 ## Where missions live
 
 Each mission is flown on an RBD of its own, so it belongs to the **position**
-it was added on. Open **Assets → Explorer** (or a product's page) and choose
-the **Missions** tab. The tree stays in the first column; under each position
+it was added on. Open **Assets → Explorer** (or a product's page), choose
+the **Models** tab and then **Missions**. The tree stays in the first column; under each position
 are its missions, with:
 
 - **Phases or setting**: how many phases, and their names (under a phase, a
@@ -55,8 +55,8 @@ connections and no redundancy sets), they go in series, and the mission says so
 position and the mission ("Pump station — Summer peak"), and renamed with the mission. A position with nothing
 inside and no RBD is a single block: the position's own model in use. A
 position with nothing inside and no model can't have a mission yet: its row says
-why ("needs a life model or positions inside"). Give it a life model on the
-**Modelling** tab first; a condition-and-life model can't be a block, so its row says that instead.
+why ("needs a life model or positions inside"). Give it a life model on
+**Models › Life models** first; a condition-and-life model can't be a block, so its row says that instead.
 
 ## The mission tree and its details
 
@@ -202,7 +202,7 @@ the diagram can be drawn, not a real figure. A mission that needs such a block
 says so with its answer. It names the blocks, shows the chance with the
 placeholders and the chance from the blocks with models alone, and never names
 a placeholder the weakest block. The grid marks each one **Placeholder**, and
-the Missions tab shows the result with "placeholders" beside it.
+**Models › Missions** shows the result with "placeholders" beside it.
 
 You choose what to do with them:
 

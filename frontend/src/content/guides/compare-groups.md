@@ -27,7 +27,7 @@ Reliafy answers that three ways:
 Open the dataset under [Data](/data) and press **Compare groups** at the
 top of the page. The panel on the right asks for:
 
-- **Time column**: the time to failure or removal.
+- **Time column**: the time to failure or removal. It starts at the dataset's own x (the column its reading uses for time), else a column named like a time (hours, cycles); check it before you compare.
 - **Split by**: the column that names each unit's group.
 - **Failed or still running?**: the column that says which units failed and
   which are still running. A status column the data has (say *Status*, with
@@ -71,8 +71,10 @@ runs 865 hours. The difference is 306 hours, with a 90% interval of 94 to 517
 hours. An interval that doesn't cross zero agrees with the test.
 
 The window is needed because a curve that never reaches zero has no finite
-area. By default it is the latest time every group was still being watched.
-Type a **Window** to ask about a period that matters to you, such as a warranty
+area. By default it is the latest time every group was still being watched:
+the last time seen in the group whose data ends first. The line above the
+table says which group set it, because the other groups' longer lives past it
+don't count towards their averages. Type a **Window** to ask about a period that matters to you, such as a warranty
 or an overhaul interval.
 
 The table lists each group's units, failures, median life and average life with

@@ -139,6 +139,15 @@ Each decision's **Evidence check** shows one of these:
 - **Supported** — the evidence agrees with the decision.
 - **Contradicted** — the evidence points the other way. A run-to-failure
   decision linked to a wear-out model is the common case.
+- **Shorter than its evidence** or **Longer than its evidence** — a
+  fixed-interval replacement set at less than half, or more than twice, the
+  cost-optimal interval of the analysis it links to. The line underneath gives
+  both intervals and how far apart they are, for example *set every 25 hours,
+  far shorter than the cost-optimal interval its evidence supports, about 101
+  hours: it is done about 4 times as often as the evidence needs*. It isn't a
+  verdict: a warranty, a shutdown plan or a safety margin can be good reasons.
+  Whether the difference is worth it is your call; the check shows the
+  numbers.
 - **Inconclusive** — the evidence can't decide it. The line underneath says
   why: the wrong kind of analysis, mismatched units, or a fit with no
   confidence interval.
@@ -151,8 +160,9 @@ need no evidence, so they show no status.
 
 The chips under the study's title count the linked statuses for the whole study, a
 function's row counts them for everything inside it, and
-the RCM list shows the same counts for every study. A study with no red and no
-amber is one whose every decision you can defend.
+the RCM list shows the same counts for every study (an interval far from its
+evidence counts as *interval differs*). A study with no red and no amber is one
+whose every decision you can defend.
 
 The check runs again every time the study opens. Refit a linked non-repairable model with
 new failures and the status follows the new fit. A decision that was supported

@@ -92,6 +92,10 @@ def spec_from(body: dict) -> dict:
     if path not in joint.PATHS:
         raise FitError(f"Unknown path model {path!r}: use one of {', '.join(joint.PATHS)}.")
     covariates = [str(c) for c in (body.get("covariates") or []) if c]
+    link = joint.link_id(body.get("link"))
+    joint.check_link(path, link)
+    level = joint.exposure_above(body.get("exposure_above"))
+    joint.check_exposure(link, level)
     return {
         **dataset_keys(body),
         "mapping": {k: v for k, v in (body.get("mapping") or {}).items() if k in joint.LIFE_KEYS and v},
@@ -102,6 +106,8 @@ def spec_from(body: dict) -> dict:
         "path_covariates": body.get("path_covariates"),
         "c_invert": bool(body.get("c_invert")),
         "path_model": path,
+        "link": link,
+        "exposure_above": level,
         "unit": (body.get("unit") or "").strip(),
         "marker": (body.get("marker") or "").strip() or (body.get("readings_mapping") or {}).get("value") or "",
         "marker_unit": (body.get("marker_unit") or "").strip(),
@@ -153,7 +159,8 @@ def _request(db, spec: dict, owners) -> dict:
     request = joint.fit_request(
         items, spec["covariates"], path_model=spec["path_model"], hazard_covariates=spec.get("hazard_covariates"),
         path_covariates=spec.get("path_covariates"), unit=spec.get("unit") or "", marker=spec.get("marker") or "",
-        marker_unit=spec.get("marker_unit") or "", summary=summary)
+        marker_unit=spec.get("marker_unit") or "", summary=summary, link=spec.get("link"),
+        exposure=spec.get("exposure_above"))
     if compute_queue.configured():
         size = len(json.dumps(request, separators=(",", ":"), default=float))
         if size > compute_queue.MAX_BODY_BYTES - 20_000:
@@ -286,7 +293,8 @@ def list_models(db, owners, hidden=frozenset(), shared=frozenset()) -> list[Mode
 
 
 def _fingerprint(model: Model) -> str:
-    blob = json.dumps((model.serialized or {}).get("model"), sort_keys=True, default=str)
+    blob = json.dumps([(model.serialized or {}).get("model"), (model.results or {}).get("exposure_above")],
+                      sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
@@ -300,9 +308,15 @@ def live(model: Model):
         _LIVE.move_to_end(model.id)
         return hit[1]
     try:
-        jm = joint.restore(model.serialized["model"])
+        jm = joint.restore(model.serialized["model"], (model.results or {}).get("exposure_above"))
     except Exception as exc:  # noqa: BLE001 - a saved fit SurPyval can't read back
         raise FitError(f"This model's saved fit couldn't be read back ({exc}). Fit it again.") from exc
+    # The unit is the model's own; one saved before it went into SurPyval takes the saved unit (in memory).
+    if getattr(jm, "unit", None) is None and str((model.results or {}).get("unit") or "").strip():
+        try:
+            jm.unit = str(model.results["unit"]).strip()
+        except Exception:  # noqa: BLE001 - a label only
+            pass
     _LIVE[model.id] = (fp, jm)
     while len(_LIVE) > _LIVE_MAX:
         _LIVE.popitem(last=False)
@@ -370,7 +384,8 @@ def export_python(db, model: Model, owners) -> tuple[str, str]:
         model.name, items, spec.get("covariates") or [], path_model=spec.get("path_model") or joint.DEFAULT_PATH,
         hazard_covariates=spec.get("hazard_covariates"), path_covariates=spec.get("path_covariates"),
         unit=(model.results or {}).get("unit") or spec.get("unit") or "", marker=spec.get("marker") or "",
-        horizon=h[1] if len(h) > 1 else None, versions=versions)
+        horizon=h[1] if len(h) > 1 else None, versions=versions, link=spec.get("link"),
+        exposure=spec.get("exposure_above"))
     return f"{rbd_export.slugify(model.name)}.py", source
 
 
@@ -383,6 +398,8 @@ def summary(model: Model) -> dict:
         "kind": KIND,
         "distribution": r.get("distribution"),
         "path_model": r.get("path_label"),
+        "link": r.get("link") or joint.DEFAULT_LINK,
+        "exposure_above": r.get("exposure_above"),
         "marker": r.get("marker"),
         "unit": r.get("unit") or "",
         "n_items": r.get("n_items"),

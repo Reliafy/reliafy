@@ -51,3 +51,46 @@ export function autoRangeEnd(functions, asked) {
   const step = 10 ** (Math.floor(Math.log10(want)) - 1);
   return Math.ceil(want / step) * step;
 }
+
+// The values for a new covariate combination ("Compare another"): the last
+// combination's, with its first category covariate moved to a value no
+// combination uses yet, so one click compares design B with design A rather
+// than adding a second design A to edit.
+export function nextCombinationValues(series, covariates, fallback = {}) {
+  const values = { ...(series[series.length - 1]?.values || fallback) };
+  for (const c of covariates || []) {
+    if (c.type !== "category" || !(c.options || []).length) continue;
+    const used = new Set(series.map((s) => String(s.values?.[c.name])));
+    const valueOf = (o) => (o && typeof o === "object" ? o.value : o);
+    const free = c.options.map(valueOf).find((o) => o != null && !used.has(String(o)));
+    if (free != null) {
+      values[c.name] = free;
+      break;
+    }
+  }
+  return values;
+}
+
+// ``bases``: each categorical covariate's base level ({ site: "East" }), the
+// level its effects are measured against. The calculator starts a category
+// there (numbers at their data means), so its answer reads with the Effects
+// tab; the stored curves are for the most common level, so a series that
+// starts elsewhere is marked stale and worked out again on mount.
+export function startValues(covariates, bases = {}) {
+  return Object.fromEntries((covariates || []).map((c) => [c.name,
+    c.type === "category" && !c.stratum && bases?.[c.name] != null && (c.options || []).map(String).includes(String(bases[c.name]))
+      ? String(bases[c.name]) : c.default]));
+}
+
+// Where the first combination starts, while it is untouched: "Starting at
+// each number's data mean; site at East, the base level the Effects compare
+// against." Null when nothing needs saying.
+export function startNote(covariates, values, bases = {}) {
+  const cats = (covariates || []).filter((c) => c.type === "category" && !c.stratum && bases?.[c.name] != null);
+  if (!cats.length || !values) return null;
+  const start = startValues(covariates, bases);
+  if ((covariates || []).some((c) => String(values[c.name]) !== String(start[c.name]))) return null;
+  const nums = (covariates || []).some((c) => c.type !== "category");
+  const levels = cats.map((c) => `${c.name} at ${start[c.name]}`).join(", ");
+  return `Starting at ${nums ? "each number's data mean; " : ""}${levels}: the base level${cats.length > 1 ? "s" : ""} the Effects compare against.`;
+}

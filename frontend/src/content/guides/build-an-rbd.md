@@ -147,6 +147,27 @@ Fix anything it reports, then switch to the **Calculator** tab and press
 **Calculate**. For the sample pump station (a controller in series with two
 redundant pumps) the MTTF is 849 hours and the B10 life 318 hours.
 
+## Start from today: As of now
+
+By default every block starts new, so the results describe new equipment. For
+a system already in service, tick **As of now** (*from today's ages*) beside
+**Calculate**. A table lists the blocks, each with a **State now**: **New**,
+**Running** with its age (in the diagram's unit), or **Failed**. Press
+**Calculate** and the curves, MTTF, B-lives and importance run from now: the
+remaining life of the system as it stands today.
+
+On a diagram built from the asset tree, each block's age is read from the item
+fitted where it stands, and the source is written under the block's name (its
+hours counter, its duty, or the time since it was fitted). A block with no age
+says why (*No age: this block stands for no position on the tree. Enter its
+age.*), so nothing is quietly taken as new. An age you type yourself is never
+overwritten.
+
+The result says what it assumed, block by block. Blocks still left as **New**
+are named (*Taken as new (no age given): …*), and if every block was left new
+the result says these are the figures for new equipment, not an answer from
+today's ages.
+
 ## Reading the results
 
 You get the system reliability curve over time, the **MTTF**, and system
@@ -163,7 +184,10 @@ would actually move the system, which is the question you're usually trying to
 answer. The ranking can change with time — wear-out blocks overtake
 constant-rate ones later on — so it's worked out at the time you type in
 **Evaluate at t** (a one-year mission, say), or, with none typed, where the
-system reliability falls to 90%. The table's heading says which.
+system reliability falls to 90%. The table's heading says which. When the
+time in **Evaluate at t** isn't the one the table is at (you changed it, or
+the box holds the automatic time), a note above the table says so, with a
+**Rank at** button that ranks the components at the time in the box.
 
 With **Confidence band** on, the MTTF, B-lives and design life each get a
 one-sided lower bound ("≥ 1,240 at 90%": at least that long, 90% sure), as on a
@@ -183,6 +207,28 @@ whole exercise.
 
 ![System reliability results with importance measures and cut sets](/guides/img/rbd-02-results.png)
 
+### How much of the time is it up?
+
+Reliability answers "will it last the mission?". If you repair what fails, the
+question is usually how much of the time the system is running. **Availability
+with repairs**, under the results, answers that for the diagram as drawn (a
+mission's diagram, or one built from the asset tree, too): click **Work out
+availability** and it says, for example, "Available 98.7% of the time over a
+year: about 114 hours down, mostly CV-02", with the long-run figure beside it
+and the blocks that drive the downtime.
+
+Each block needs a **mean time to repair**. The **Repair times** table shows
+where each one came from: the block's own repair time, the outages in the
+diagram's outage history, or the maintainability prediction of the position the
+block stands for. A block with none says **None yet**, and nothing is worked
+out until you type one (in hours) — a repair time is never guessed. Type over
+any of them to try another figure; **Keep them on the blocks** saves what you
+typed with the diagram. Redundancy stays as drawn: parallel paths, k-of-n
+votes and standby groups each keep their spare running while one is repaired.
+Where the positions have planned work on their tasks, the answer is the
+achieved availability, with repairs alone (the inherent figure) beside it.
+**Over** sets the period (a mission's length, or a year, by default).
+
 The other tabs ask other questions of the same diagram: **Fault tree** draws it
 as a fault tree, **Design** works out how many copies of each block give the most
 reliability within a budget (the total cost of the whole design; it shows what
@@ -194,7 +240,7 @@ history** checks the diagram against the outages it really had (see
 
 ## Take it with you: download as Python
 
-Once a diagram is saved, **Save → Download as Python** in the toolbar gives you a
+Once a diagram is saved, **⋯ → Download as Python** in the toolbar gives you a
 standalone script that rebuilds the same diagram with the open-source
 [SurPyval](https://github.com/derrynknife/SurPyval) and
 [RePyability](https://github.com/derrynknife/RePyability) libraries and runs the

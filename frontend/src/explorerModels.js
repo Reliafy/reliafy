@@ -108,6 +108,8 @@ export function headline(model) {
   const mean = byId(model, "mean");
   if (mean && model.family === "rbd") parts.unshift(`Mean life ${withBounds(mean, lv)}`);
   else if (!parts.length && mean) parts.push(`Mean life ${withBounds(mean, lv)}`);
+  // A parts count that left lines out says what it covers ("electronics only: 3 lines left out").
+  if (model.covers?.short && parts.length) parts.push(model.covers.short);
   return parts.join(" · ");
 }
 
@@ -120,7 +122,14 @@ export function countsText(model) {
   const c = model?.counts || {};
   const n = (v, one, many = `${one}s`) => `${Number(v).toLocaleString("en-AU")} ${Number(v) === 1 ? one : many}`;
   if (c.units != null) return n(c.units, "unit measured", "units measured");
-  if (c.blocks != null) return [n(c.blocks, "block"), c.placeholders ? n(c.placeholders, "placeholder") : ""].filter(Boolean).join(", ");
+  if (c.blocks != null) {
+    // Placeholders are counted through every sub-system ("27 of 27 basic blocks placeholders").
+    const basic = c.basic_blocks;
+    if (c.placeholders && basic != null && c.nested) {
+      return `${n(c.blocks, "block")}; ${Number(c.placeholders).toLocaleString("en-AU")} of ${n(basic, "basic block")} ${c.placeholders === 1 ? "is a placeholder" : "are placeholders"}`;
+    }
+    return [n(c.blocks, "block"), c.placeholders ? n(c.placeholders, "placeholder") : ""].filter(Boolean).join(", ");
+  }
   const out = [];
   if (c.failures != null) out.push(n(c.failures, "failure"));
   if (c.suspensions != null) out.push(n(c.suspensions, "suspension"));
@@ -139,8 +148,10 @@ export function usedText(link) {
 }
 
 // What a link is for: its failure modes, or every failure of the position.
+// A parts count that left lines out covers only what it counted, so it never says "All failures".
 export const forText = (link) => (link?.failure_modes?.length
-  ? link.failure_modes.map((f) => f.text).join(", ") : "All failures of this position");
+  ? link.failure_modes.map((f) => f.text).join(", ")
+  : link?.model?.covers?.words ? `the failures of what it counted. ${link.model.covers.words}` : "All failures of this position");
 
 // The tree with each position's model rows in it. The display given is left as it
 // is; position rows gain `lsum` (their own rows' counts), `lall` (theirs and every
@@ -497,4 +508,17 @@ export function enteredStart(entered) {
     values.failure_rate = String(Number((1 / Number(values.failure_rate)).toPrecision(6)));
   }
   return values;
+}
+
+// A model page's "Edit parameters": the numbers a model saved from parameters alone holds, in the
+// shape the Explorer's Edit parameters form starts from ({distribution, unit, params}), or null for
+// a model fitted to data, a per-demand model or a distribution the form doesn't take.
+const EDITABLE = ["weibull", "exponential", "lognormal", "normal", "gamma"];
+export function enteredOfModel(model) {
+  const spec = model?.spec || {};
+  const dist = model?.distribution_id || spec.distribution_id;
+  if (!model || model.read_only || model.dataset_id || !spec.params_only || spec.per_demand || model.kind !== "distribution"
+      || !EDITABLE.includes(dist)) return null;
+  const params = Object.fromEntries((model.results?.params || []).map((p) => [String(p.name), p.value]));
+  return { distribution: dist, unit: spec.unit || model.results?.unit || "", params };
 }

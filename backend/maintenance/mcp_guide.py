@@ -10,6 +10,24 @@ Reliafy Maintenance (the CMMS) is on for this account: the maintenance tool. Sta
 then maintenance guide topic start.
 """
 
+# Added to the instructions, and to the plan topic, while work management is turned off
+# (WORK_MANAGEMENT): Reliafy is reliability software here, and nothing about executing
+# work (work orders, visits, the to-do list) is offered; the run topic is gone.
+WORK_MANAGEMENT_OFF_INSTRUCTIONS = """\
+Work management is turned off here: maintenance plans are hypothetical (no work orders); a task's last done is a \
+plan input (tasks.set_last_done).
+"""
+
+PLAN_WITHOUT_WORK_MANAGEMENT = """
+Work management is turned off here, so a maintenance plan is hypothetical: tasks, intervals, packages and \
+shutdowns are groupings and dates for the forecasts and simulations, and nothing is raised, marked done or \
+overdue. Each task has an optional last done (a date, and for a task by use its counter reading), set with \
+maintenance tasks.set_last_done {task_id, on, last_done_reading?} (on 'none' clears it). It is an input only: \
+it records no work. Without it the plan counts from the day the task was added, or from a new item fitted \
+since, or from its first-due date. History goes in as data: fitments.add_past, \
+fitments.remove (how it ended), an import. Failure reports (FRACAS) work in full.
+"""
+
 TOPICS: dict[str, tuple[str, str]] = {
     "start": ("Start here: the four structures, the tool, the data rules.", """\
 Reliafy Maintenance (a CMMS): the maintenance tool. It keeps four structures. \
@@ -154,6 +172,7 @@ are all the running there is, and the background resumes after them with no gap.
 are the site's clock, to the minute.
 - plan.utilisation? (0.01 to 1): the share of the planned running that happens; every planned hour counts that \
 much. Leave it out for all of it.
+- plan.meters? [{meter: 'km', amount: 400, per: 'day'}]: use that isn't time, at a rate (km, cycles, landings; not hours or starts, which come from how it runs). A model in that unit meets the calendar at it.
 - maintenance get.operating_plan (id: a position or an item; root: the asset opened) gives its plan or the \
 nearest above it inside root (inherited_from), its own plans past and planned, hours_per_week (the background's \
 ordinary week), days: the next 14 days' runs and hours (real hours in the plan's time zone; where set runs hand \
@@ -225,10 +244,17 @@ fails), fixed_interval (replace or restore on a schedule), failure_finding (chec
 (rtf_basis random: failures don't depend on age; uneconomic: prevention doesn't pay), redesign, accept. \
 evidence {type, id}: degradation_model for on_condition, strategy_analysis for fixed_interval, failure_finding \
 and rtf uneconomic, model (a non-repairable model) for rtf random; the result's status says whether it supports \
-the decision (supported, contradicted, inconclusive, unevidenced, stale; partly for a combination) and why. Any decision can instead link \
+the decision (supported, contradicted, inconclusive, unevidenced, stale, shorter_than_evidence, \
+longer_than_evidence; partly for a combination) and why; a fixed-interval task at under half its cost-optimal \
+interval is shorter_than_evidence, over twice it longer_than_evidence (a fact, not a verdict: the analyst decides), \
+and one under half a calculated interval is contradicted, each summary giving both and interval_share. Any decision can instead link \
 a report (type report: a saved report's id) or a function's notes and rationale, where the working behind its \
 performance standard is written (type working: the function's id; it needs notes written): linked, not checked, so its status is linked \
-(evidence_kind report or working), or stale once it has gone. decide replaces the whole \
+(evidence_kind report or working), or stale once it has gone. So can a record on the tree, linked the same way: \
+type history (a position's id, or class:<class> for its pooled history), point (a measuring point's id: its \
+readings) or failure_report (a report's id). maintenance list kind rcm_evidence lists what's relevant to a mode, \
+best first. A model or a history can carry window {since?, until?} (fitment start dates): the lives it rests on; \
+fit one on those lives with models.link fit true and window. Nothing is linked until you link it. decide replaces the whole \
 decision: to add evidence, send the current one with it. A decision saved before the rules (or imported) that \
 they'd refuse is kept, and its read carries advice to relay, as does a hidden mode with no category yet; one \
 that breaks the rules (no consequence answered, refused by the rules, or rtf / accept / a lone redesign with tasks \
@@ -321,8 +347,8 @@ in the function's notes (Markdown is fine; a function's notes take up to 25,000 
 the old argument for it, still accepted: it's added to the notes under a "Working" line. Reads keep \
 standard_basis / has_basis as the notes, for older callers.
 - A functional failure caused by others: maintenance failure_modes.link_cause (functional_failure_id: the effect; cause_id: another functional failure on the same tree, usually on a position inside it, but one beside it (the pool's 'no free chlorine' from the chlorinator next to it) or on the same position counts too; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance apply batch). Refused: a failure causing itself, a loop, another tree. A failure explained by its causes needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further on), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects (each with its position), covered and explained_below. Deleting or retiring the cause, or moving either end to another tree, drops the link and says so.
-- An FMEA / RCM worksheet the user has (Excel or CSV, one row per failure mode): change upload_create (purpose excel), \
-then change import_excel target=rcm position_id=… dry_run=true: a preview (counts, functions, errors, warnings and \
+- An FMEA / RCM worksheet or task plan the user has (Excel or CSV, one row per failure mode): change import_rcm \
+position_id=… with csv (the text) or an upload_id (change upload_create, purpose excel), first with dry_run=true: a preview (counts, functions, errors, warnings and \
 unmapped_values: consequence or decision words it didn't recognise). Fix those with mapping {consequence_map, \
 outcome_map} (the column mapping guessed from the header stays unless mapping.mapping is given) and preview again; \
 show the user, then the same call with dry_run false. It only adds (same-text functions and functional failures \
@@ -400,6 +426,12 @@ it); tasks (task ids). A task has one home package: a job needed on two schedule
 (every Saturday: every 1, unit weeks, weekday saturday), weekday with nth and months (the first Saturday: unit \
 months, weekday saturday, nth 1), or day with months (the 15th). tolerance: days after the visit's date it's \
 still on time (Saturday with Sunday fine: 1); tolerance_unit hours is kept but not yet enforced.
+  - By operating hours: unit hours, every 50 (a 50 h service) on a position with an hours counter; it holds \
+tasks by operating hours (calendar tasks stay in calendar packages). Its visits come each time the counter passes \
+anchor_reading (default its reading on the anchor date) plus a multiple of every, dated through the position's \
+operating plan, else the counter's recent rate; with neither, each is due at a reading, with no date (get.package: cadence.by_hours.basis; each next visit with its \
+hours). The anchor is visit 1, so a 100 h task with visit_rule nth, every_nth 2 comes at 100 h, 200 h... No \
+layers, pattern, season or shutdown; from_last_visit counts the hours from the close.
   - Layers: a package on another (parent_id, no position or location of its own) visits on some of its parent's \
 visits, and its tasks join the parent's work order that day. The monthly check is a layer on the weekly (unit \
 months, weekday saturday, nth 1); a quarterly one sits on the monthly (every 3, the same pattern, anchor in the \
@@ -467,7 +499,7 @@ replacement; new_item, item_id or part_id is what went in), repair, inspect (fin
 ok, degraded or found_failed: found_failed records the fitted item as failed between its last good check and \
 now, interval censored in its life data), other. When the failed thing is inside the work order's position \
 (the seal in the pump), give the action position_id from get.work_order's inside_positions, for the finding and \
-the replacement alike. A failure report that isn't rejected already counts the item as failed on the day it \
+the replacement alike. A failure report that isn't rejected (or no fault found) already counts the item as failed on the day it \
 occurred; a replacement for the same failure ends the same life, never a second one. Plus readings taken (readings [{point_id, value}]: get.work_order's \
 reading_points lists what it asks for: its tasks' tools' points, a trigger's point, a counter, the settings \
 there). Example: the seasonal change-over work order records the new chlorinator output, {action: \
@@ -604,6 +636,14 @@ at today's usable stock, hold_cost from the part's unit_cost; summary says it in
 answer "what if we hold 4?". Read off the simulated demand; one site. Set a part's lead_time_days and service_level \
 (or repairable with turnaround_days: the pool covers the repair turnaround) with maintenance parts.update; without \
 a lead time 30 days is assumed and said.
+- Spares for the year: maintenance get.spares_year (id: a position and what's inside it, a location, a position \
+class, a product; none: the workspace) gives one row per part a failure or a task uses: demand (mean, p10, p90, \
+failures + planned: tasks falling due, a shutdown's "only if older" counted at its chance), hold over the lead \
+time, usable_now and counted_on, order_now, order_by ([{qty, by, for}] for planned jobs past the lead time), \
+buy_for_year and buy_high_case. Quote rule with the numbers. Costing and orders are the user's own systems: give \
+quantities and dates, never prices. maintenance get.package_parts: a package's next visit against stock, when an \
+order placed today lands, and the chance of running out first; leave_out [task ids] for "what if the shut skips \
+these?". Record a stores count with maintenance parts.count (counted on a date; counts for a whole sheet).
 - maintenance topology.generate_rbd, position_id = a system position: a reliability block diagram from the \
 positions inside it (connections wire the blocks, redundancy groups become k of n or a standby block, each \
 block takes its class's \
@@ -779,12 +819,17 @@ failure_mode_text, item_id). It's numbered FR-n and starts as reported. The item
 as a snapshot (name, serial, part, item class), so the report still says what was there after a replacement.
 - consequence uses the RCM vocabulary, so a report compares with its failure mode's decision: safety, \
 environmental, operational, non_operational, hidden, or none when not sure.
-- The failure mode: one of the position's by id (maintenance get.position lists them), or in words \
+- The failure mode: one of the position's by id (maintenance get.position lists them), one analysed on a \
+position above it (get.position's failure_modes_above: a pump set's FME(C)A covers its coupling), or in words \
 (failure_mode_text: the position's mode of that name, else a new ad-hoc one). Always name it when you can.
+- A position with nothing fitted takes a report too: it is kept at the position with no item, and its \
+life_data says it isn't in any item's life.
 - Statuses: reported → investigating → corrective_action → verifying → closed, or rejected (not a failure, \
-or a duplicate: note = the reason, duplicate_of = the other report). Move among the open four freely \
-(set_status); the investigation, actions and verification can be edited in any open status. From closed or \
-rejected the only move is back to an open status (a reopen).
+or a duplicate: note = the reason, duplicate_of = the other report), or no_fault_found (the removal was \
+tested and nothing was wrong: note = the finding, tested_with = how). No fault found keeps the report as a \
+removal but never counts it as a failure: a life it ended is censored. Move among the open four freely \
+(set_status); the investigation, actions and verification can be edited in any open status. From closed, \
+rejected or no_fault_found the only move is back to an open status (a reopen).
 - Investigate: failure_reports.investigate (notes, root_cause_category: design, material, installation, \
 operation, maintenance, wear, environment, unknown, other; root_cause in words; whys, up to 7 lines).
 - Corrective actions: add_action (what, owner, due; work_order_id links a work order here, work_order_ref is a \

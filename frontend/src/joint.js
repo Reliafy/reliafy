@@ -156,6 +156,24 @@ export function riskBoundNote(rows, level = 0.9) {
 // one, else the first.
 export const sortColumn = (labels) => ((labels || []).length > 1 ? 1 : 0);
 
+// The horizon the ranking uses: the one whose shown figures tell the units
+// apart best (the most different values), the middle one on a tie, then the
+// shorter. Where every unit is "> 99.9%" over 90 days, the 90-day column
+// can't rank them, so the ranking (and the words naming it) use the one that
+// can. ``rows``: the scored rows ({risk: [...]}).
+export function rankColumn(rows, labels) {
+  const n = (labels || []).length;
+  if (n <= 1) return 0;
+  const scored = (rows || []).filter((r) => r.risk);
+  const mid = sortColumn(labels);
+  const spread = (c) => new Set(scored.map((r) => riskText(r.risk?.[c]))).size;
+  let best = mid;
+  for (let c = 0; c < n; c += 1) {
+    if (spread(c) > spread(best)) best = c;
+  }
+  return best;
+}
+
 // A class's fleet in one line (the Explorer by Classes): how many positions,
 // how many have risk now, and the highest. Members come highest risk first.
 export function fleetAnswer(fleet) {
@@ -163,8 +181,9 @@ export function fleetAnswer(fleet) {
   const n = fleet.positions;
   const parts = [`${n.toLocaleString("en-AU")} position${n === 1 ? "" : "s"}`];
   if (fleet.scored) {
-    const top = fleet.members.find((m) => m.scored);
-    const col = sortColumn(fleet.horizons.labels);
+    const scored = fleet.members.filter((m) => m.scored);
+    const col = rankColumn(scored, fleet.horizons.labels);
+    const top = sortRiskRows(scored, col)[0];
     parts.push(`${fleet.scored === n ? "all" : fleet.scored.toLocaleString("en-AU")} with risk now`);
     if (top) parts.push(`highest: ${top.position.name || "(no name)"}, ${riskText(top.risk[col])} in the next ${fleet.horizons.labels[col]}`);
   } else {
@@ -213,7 +232,7 @@ function shownRisk(p) {
 }
 
 // The risk table's order, by one named column: the chance of failing over the
-// middle horizon (the one "Highest risk now" quotes), highest first; rows that
+// horizon the ranking uses (rankColumn; "Highest risk" quotes it), highest first; rows that
 // show the same figure there go shortest median life left first.
 export function sortRiskRows(rows, col = 1) {
   const life = (r) => (r.median_reached === false || r.median_remaining == null ? Infinity : r.median_remaining);
@@ -348,4 +367,49 @@ export function jointRequest(map, rmap, invert, covs) {
     c_invert: invert,
     ...covariateParts(covs),
   };
+}
+
+// What of the reading the risk follows, as the fit's "How it was fitted" words
+// (``link``: "value", the default, for models saved before the choice).
+export const JOINT_LINKS = [
+  { value: "value", label: "Level", title: "The risk follows where the reading is now." },
+  { value: "slope", label: "Rate of change", title: "The risk follows how fast the reading is moving, whatever its level." },
+  { value: "value_slope", label: "Level and rate of change", title: "The risk follows both where the reading is and how fast it is moving." },
+  { value: "cumulative", label: "Accumulated exposure", title: "The risk follows the reading's total so far: the area under its path since new. Time spent at a high reading adds up, and stays when the reading falls." },
+];
+// The paths a rate-of-change link can start from new on (a finite slope at age 0).
+export const SLOPE_PATHS = ["linear", "exponential", "quadratic"];
+
+export function jointLinkWords(link) {
+  if (link === "slope") return "how fast the reading is changing";
+  if (link === "value_slope") return "the reading's current value and how fast it is changing";
+  if (link === "cumulative") return "the reading's accumulated total since new (the area under its path)";
+  return "the reading's current value";
+}
+
+// Whether a link can go with a path; the reason when it can't.
+export function linkIssue(link, path, paths = SLOPE_PATHS) {
+  if (!link || !String(link).includes("slope") || paths.includes(path)) return null;
+  return "Rate of change needs a linear, exponential or quadratic path: this path's rate is infinite at age 0.";
+}
+
+// The "Count exposure above" level, for the accumulated-exposure link only:
+// { value: number | null, error: string | null }. Blank counts from 0.
+export function exposureLevel(text, link) {
+  const t = String(text ?? "").trim();
+  if (link !== "cumulative" || t === "") return { value: null, error: null };
+  const v = Number(t);
+  if (!Number.isFinite(v)) return { value: null, error: "Enter a number, or leave it blank to count from 0." };
+  return { value: v, error: null };
+}
+
+// "mm/s·day": an accumulated exposure's unit, the reading's times the time unit.
+export function exposureUnit(markerUnit, unit) {
+  return `${String(markerUnit || "").trim() || "unit"}·${timeWord(unit)}`;
+}
+
+// "day" for "Days": one of the model's time unit.
+export function timeWord(unit) {
+  const t = String(unit || "").trim().toLowerCase();
+  return !t ? "time unit" : t.endsWith("s") ? t.slice(0, -1) : t;
 }

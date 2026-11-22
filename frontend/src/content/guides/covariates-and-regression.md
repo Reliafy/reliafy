@@ -101,7 +101,9 @@ in service.
 Fit the seal data with **Weibull PH** (the sample model *Valve seal life —
 Weibull PH on temp & load* is this fit). It opens on the **Effects** tab: a
 chart of each covariate's hazard ratio with its 90% interval (1 means no
-effect), each effect in words, and the baseline beside them. The **Data** tab
+effect), each effect in words, and the baseline beside them. The chart draws
+each number across its data's range (temp_C from 60 to 100 °C, load from 0.5
+to 0.9), so the effects share one scale; the words give the effect per +1. The **Data** tab
 has every coefficient:
 
 | Covariate | β | 90% interval | Hazard ratio e^β |
@@ -118,7 +120,14 @@ load runs from 0.5 to 0.9: going from 0.5 to 0.9 multiplies the failure rate by
 e^(5.32 × 0.4) ≈ 8.4.
 
 An interval for β that doesn't include 0 (a ratio that doesn't include 1) means
-the covariate clearly matters. Both do here.
+the covariate clearly matters. Both do here. The **Data** tab also gives each
+coefficient's standard error and its p-value (the Wald test that it is 0).
+
+When the only covariate is a grouping (a text column such as a design or a
+supplier, or a 0/1 flag), the **Effects** tab adds **Do the groups really
+differ?**: the log-rank test on the data, in words ("the difference is
+unlikely to be chance: p = 0.018"), and each group's median life from its own
+data. The line under the model's name gives the same p-value.
 
 A proportional-odds model reports an **odds ratio**: per +1 of the covariate,
 the odds that a unit has already failed are multiplied by this number, and the
@@ -137,9 +146,17 @@ raised to the shape β: 1.025^5.58 ≈ 1.148.
 
 The **Calculator** tab answers for the covariate values you type in the row
 above its chart: reliability at a time, or a time at a reliability, each with
-its bound. **+ Compare another** draws another set of values on the same chart,
-such as the same seal at 60 °C and at 100 °C. The **Model characteristics** tab
-gives the B-lives and the MTTF at those values, with their bounds.
+its bound. It starts with each number at its data mean and each text covariate
+at its base level, the one the Effects tab compares against, and says so under
+the row. With **Given survived to** set, the answer has no bound yet: clear it
+for the value from new with its bound. **+ Compare another** draws another set of values on the same chart,
+such as the same seal at 60 °C and at 100 °C. With a text covariate, the new set
+starts at the next value not yet shown (design B beside design A), so comparing
+groups takes one click. The **Model characteristics** tab
+gives the B-lives and the MTTF at those values, with their bounds. A Weibull PH
+model shares one shape across every group, so its B10 for one group can differ
+from a Weibull fitted to that group alone; fit each group on its own when they
+may wear out differently.
 
 ## Check the model holds
 

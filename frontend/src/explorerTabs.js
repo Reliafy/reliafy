@@ -16,7 +16,7 @@
 // position or an item (sensor snapshots and their spectra); Modelling for a position (the
 // life models attached to it and to the positions inside it, a design's too); Condition
 // monitoring for an item class (the tree by Classes: the class's positions with their risk now,
-// ClassFleet; a class's only tab, so the one it opens on) and for a position on an asset, in
+// ClassFleet; a class's first tab, so the one it opens on; Forecast and Spares beside it) and for a position on an asset, in
 // every arrangement (that position's own risk now, PositionRisk: the same summary and charts a
 // class shows for the member chosen). A tab a kind doesn't have isn't shown (never greyed out).
 //
@@ -111,6 +111,18 @@ export const TABS = [
     titleBy: { pos: "This position's risk now: its chance of failing soon and its life left, from its item's age and readings" },
     kinds: ["cls", "pos"], asset: true,
   },
+  // An item class's forecast and spares (the persona review, Nov 2026: neither could be reached
+  // from a class). The forecast comes from each position class's fitted life model, counted at
+  // this class's positions in the tree (so an asset opened shows its own alone); spares are stock
+  // shared across the register, so their demand is the position class's. ClassForecastTab.jsx.
+  {
+    id: "forecast", label: "Forecast", title: "How many failures to expect at this class's positions, from their position classes' life models",
+    kinds: ["cls"], asset: true,
+  },
+  {
+    id: "spares", label: "Spares", title: "The spare parts this class's positions use: what's in stock and what the forecast says will be needed",
+    kinds: ["cls"], asset: true,
+  },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
   {
     id: "lsa", label: "LSA", title: "Logistic support analysis: what each task needs to be done, and how the tasks are packaged into visits",
@@ -118,7 +130,9 @@ export const TABS = [
   },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"], asset: true },
 ];
-const BY_ID = new Map(TABS.filter(offered).map((t) => [t.id, t]));
+// The tabs on offer now (the hidden ones left out): the one search lists them as places to go.
+export const OFFERED_TABS = TABS.filter(offered);
+const BY_ID = new Map(OFFERED_TABS.map((t) => [t.id, t]));
 export const DEFAULT_TAB = "summary";
 
 // Earlier tab ids and the tab they open now (Derryn, 9 Nov 2026: Packages became
@@ -171,7 +185,10 @@ export function shownTab(wanted, row) {
 }
 
 // Does the row's panel have a tab bar? With two tabs or more, and with one that isn't Summary
-// (an item class's Condition monitoring): a row with Summary alone (a group) has none.
+// (an item class's Condition monitoring): a row with Summary alone has none. That's only a group
+// made for the arrangement ("No home yet", "No class", "Elsewhere"): a position above a place's
+// positions is a group in the tree but a position in the panel (assetTree.js panelRow), with
+// every tab a position has.
 export function hasTabBar(row) {
   const tabs = tabsFor(row);
   return tabs.length > 1 || (tabs.length === 1 && tabs[0].id !== DEFAULT_TAB);
@@ -246,4 +263,124 @@ export function classesInBranch(display, branch) {
   }
   return [...count.values()]
     .sort((a, b) => a.position_class.localeCompare(b.position_class, "en", { numeric: true, sensitivity: "base" }));
+}
+
+// ---- Plain tabs with an overflow (prototype, Derryn 14 Nov 2026) -------------------------------
+//
+// The panel's tabs as one flat row, ordered by use, the ones that don't fit folded into a last
+// "⋯ N" tab (the shared Tabs with `overflow`):
+//   Summary · Maintenance · Monitoring · RCM · FME(C)A · Models · History
+// Maintenance has inner views Tasks · What it needs (the LSA tab) · Packages · Forecast (a
+// position's, on an asset); Monitoring has Readings (Measurements) · Life left (Condition
+// monitoring: the chance of failing soon and the life left); Models has Life models (the Modelling
+// tab) · Missions. History is the Failure reports; on a product's design it's "Field reports" (the
+// reports on the items built from the product).
+//
+// It's a layer over the tabs above, not a new set of them: every view is one of TABS (plus the
+// ?mview= the Maintenance and LSA bodies read), so the address still names the tab and every old
+// address (?tab=lsa, ?tab=condition, …) opens its tab and inner view (panelView). A view a row
+// hasn't (tabsFor) is left out, and a tab with no views for the row isn't shown (never greyed); the
+// order never changes. A tab no panel tab names (Parts and stock, Classes, Signals, when switched
+// on) stays a tab of its own at the end of the row. Off, the panel shows the flat TABS row.
+export const EXPLORER_PANEL_TABS = true;
+
+export const PANEL_TABS = [
+  { id: "summary", label: "Summary", views: [{ id: "summary", tab: "summary" }] },
+  {
+    id: "maintenance", label: "Maintenance", title: "The maintenance tasks here, what each needs, and how they're packaged into visits",
+    designTitle: "The maintenance programme here: its tasks and what each needs",
+    views: [
+      { id: "tasks", label: "Tasks", tab: "maintenance" },
+      { id: "needs", label: "What it needs", tab: "lsa", title: "What each task needs to be done: labour, tools, spares and method" },
+      // Packaging happens on the built items, so a design's rows haven't it (asset).
+      { id: "packages", label: "Packages", tab: "lsa", mview: "packages", asset: true, title: "The work packages here: tasks done together on one visit" },
+      // The forecast for a position and everything inside it (PositionForecast.jsx): a position's
+      // only (kinds), and not a design's (no due dates or fitted items there to forecast from).
+      { id: "forecast", label: "Forecast", tab: "maintenance", mview: "forecast", kinds: ["pos"], asset: true, title: "The work, failures and costs to come here and inside it, by month" },
+      // Spares for the year (SparesYear.jsx): the parts failures and tasks use here and inside it, against
+      // stock and lead time; on a design, the parts the items built from it (or a planned fleet) will use.
+      { id: "spares", label: "Spares", tab: "lsa", mview: "spares", kinds: ["pos", "loc"], title: "Spares for the year: what failures and tasks here will use, what to hold, order and buy" },
+    ],
+  },
+  {
+    id: "monitoring", label: "Monitoring", title: "Readings at every measuring point, and the life left",
+    views: [
+      { id: "readings", label: "Readings", tab: "measurements" },
+      { id: "risk", label: "Life left", tab: "condition" },
+    ],
+  },
+  { id: "rcm", label: "RCM", views: [{ id: "rcm", tab: "rcm" }] },
+  { id: "fmea", label: "FME(C)A", views: [{ id: "fmea", tab: "fmea" }] },
+  {
+    id: "models", label: "Models", title: "The life models on this position and the positions inside it, and the missions flown on its RBD",
+    views: [
+      { id: "life", label: "Life models", tab: "models" },
+      { id: "missions", label: "Missions", tab: "missions" },
+    ],
+  },
+  { id: "history", label: "History", designLabel: "Field reports", views: [{ id: "reports", label: "Failure reports", tab: "reports" }] },
+];
+
+// The tabs a row has: [{id, label, title, views: [{id, label, tab, mview, title}]}], each with
+// only the views the row has, and no tab without one. `preview`: MENU_PREVIEW is on (a view marked
+// `preview` shows only then; none is today). A view's `kinds` limits it to those kinds of row.
+export function panelTabsFor(row, { preview = false } = {}) {
+  const tabs = tabsFor(row);
+  const has = new Map(tabs.map((t) => [t.id, t]));
+  const design = isDesignRow(row);
+  const used = new Set();
+  const out = [];
+  for (const p of PANEL_TABS) {
+    const views = p.views.filter((v) => has.has(v.tab) && !(v.preview && !preview) && !(v.asset && design)
+      && !(v.kinds && !v.kinds.includes(row.type)))
+      .map((v) => ({ ...v, label: v.label || p.label, title: v.title || has.get(v.tab).title }));
+    if (!views.length) continue;
+    views.forEach((v) => used.add(v.tab));
+    // A tab with one view says what that view is on hover (a design's Field reports: the reports
+    // on the items built from the product; a class's Monitoring: its positions' risk).
+    const title = views.length === 1 ? views[0].title : (design && p.designTitle) || p.title;
+    out.push({ id: p.id, label: (design && p.designLabel) || p.label, title, views });
+  }
+  // A tab no panel tab names (switched back on): a tab of its own.
+  for (const t of tabs) {
+    if (!used.has(t.id)) out.push({ id: t.id, label: t.label, title: t.title, views: [{ id: t.id, label: t.label, tab: t.id, title: t.title }] });
+  }
+  return out;
+}
+
+// Where the row's panel is: {tab, view} (panel tab and inner view ids) for the tab shown (shownTab)
+// and the ?mview= in the address. A view that names an mview is picked only with that mview; else
+// the view for the tab with none. Null for a row with no tabs.
+export function panelView(tab, row, { mview = null, preview = false } = {}) {
+  const shown = shownTab(tab, row);
+  let plain = null;
+  for (const p of panelTabsFor(row, { preview })) {
+    for (const v of p.views) {
+      if (v.tab !== shown) continue;
+      if (v.mview && v.mview === mview) return { tab: p.id, view: v.id };
+      if (!v.mview && !plain) plain = { tab: p.id, view: v.id };
+    }
+  }
+  return plain;
+}
+
+// The address tab and ?mview= that open a panel tab's view: {tab, mview} (mview null: none).
+// `view` left out: the tab's first view. Null: the row hasn't that tab.
+export function viewTarget(row, tabId, viewId = null, { preview = false } = {}) {
+  const p = panelTabsFor(row, { preview }).find((x) => x.id === tabId);
+  if (!p) return null;
+  const v = (viewId && p.views.find((x) => x.id === viewId)) || p.views[0];
+  return { tab: v.tab, mview: v.mview || null };
+}
+
+// The words that name where an address tab is, for text that sends you there ("Models › Life
+// models"; with the panel tabs off, the old tab's name: "Modelling").
+export function tabPlace(tab) {
+  const old = TABS.find((t) => t.id === tab)?.label || tab;
+  if (!EXPLORER_PANEL_TABS) return old;
+  for (const p of PANEL_TABS) {
+    const v = p.views.find((x) => x.tab === tab && !x.mview);
+    if (v) return p.views.length > 1 ? `${p.label} › ${v.label}` : p.label;
+  }
+  return old;
 }

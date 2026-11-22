@@ -6,6 +6,7 @@ import { relativeTime } from "../instrument.js";
 import { itemPath } from "../navigation.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
+import LoadFailed from "../components/LoadFailed.jsx";
 import { PlusIcon, SampleGroups, itemName } from "../components/LibRows.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
@@ -21,6 +22,7 @@ const ANALYSIS_KIND = {
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
   demonstration_test: "Demonstration test",
+  sequential_test: "Sequential test",
   on_condition_interval: "Check interval (P-F)",
   failure_finding_interval: "Test interval",
 };
@@ -56,10 +58,10 @@ function Panel({ id, title, all, children }) {
 // The workspace's reports: several saved items on one page with a title and
 // notes, ready to print or share (made here, or from any item's Share dialog).
 // A team's reports are the team's: every member sees them.
-function YourReports({ rows, error, onOpen, onNew, team }) {
+function YourReports({ rows, error, onRetry, onOpen, onNew, team }) {
   return (
     <Panel id="reports-own" title={team ? `${team}'s reports` : "Your reports"}>
-      {error ? <div className="card error">{error}</div> : rows === null ? (
+      {error ? <LoadFailed what="Couldn't load your reports." error={error} onRetry={onRetry} /> : rows === null ? (
         <div className="card empty">Loading…</div>
       ) : rows.length === 0 ? (
         <div className="card empty">
@@ -104,13 +106,16 @@ function SavedAnalyses() {
   const navigate = useNavigate();
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    listStrategyAnalyses().then((d) => setRows(d.analyses || [])).catch((e) => setError(e.message));
-  }, []);
+    setError(null);
+    listStrategyAnalyses().then((d) => setRows(d.analyses || [])).catch(setError);
+  }, [attempt]);
   const open = (id) => navigate(`/strategy/analyses/${id}`);
   return (
     <Panel id="reports-analyses" title="Saved analyses" all={{ to: "/strategy", label: "Strategy" }}>
-      {error ? <div className="card error">{error}</div> : rows === null ? (
+      {error ? <LoadFailed what="Couldn't load your saved analyses." error={error} onRetry={() => setAttempt((n) => n + 1)} />
+        : rows === null ? (
         <div className="card empty">Loading…</div>
       ) : rows.length === 0 ? (
         <div className="card empty"><p>No saved analyses yet. Run a <Link to="/strategy">Strategy</Link> tool and save its result.</p></div>
@@ -152,20 +157,23 @@ function SharedLinks({ reports, inTeam }) {
   const [links, setLinks] = useState(null);
   const [names, setNames] = useState({});
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    listAllPublicLinks().then((d) => setLinks(d.links || [])).catch((e) => setError(e.message));
+    setError(null);
+    listAllPublicLinks().then((d) => setLinks(d.links || [])).catch(setError);
     listReportItems().then((d) => {
       const out = {};
       for (const it of d.items || []) out[`${it.collection}:${it.artifact_id}`] = it.name;
       setNames(out);
     }).catch(() => {});
-  }, []);
+  }, [attempt]);
   const nameOf = (l) => (l.collection === "reports"
     ? (reports || []).find((r) => r.id === l.artifact_id)?.title || "Untitled report"
     : names[`${l.collection}:${l.artifact_id}`] || "Untitled");
   return (
     <Panel id="reports-links" title="Shared links">
-      {error ? <div className="card error">{error}</div> : links === null ? (
+      {error ? <LoadFailed what="Couldn't load your shared links." error={error} onRetry={() => setAttempt((n) => n + 1)} />
+        : links === null ? (
         <div className="card empty">Loading…</div>
       ) : links.length === 0 ? (
         <div className="card empty">
@@ -276,7 +284,8 @@ export default function ReportsPage() {
   const [reports, setReports] = useState(null);
   const [error, setError] = useState(null);
   const load = useCallback(() => {
-    listReports().then((d) => setReports(d.reports || [])).catch((e) => setError(e.message));
+    setError(null);
+    listReports().then((d) => setReports(d.reports || [])).catch(setError);
   }, []);
   useEffect(() => load(), [load]);
   const openId = params.get("open") || "";
@@ -301,7 +310,7 @@ export default function ReportsPage() {
         help={HELP}
         primary={<button onClick={() => navigate(reportHref())}><PlusIcon /> New report</button>}
       />
-      <YourReports rows={reports} error={error} onOpen={(id) => navigate(reportHref({ open: id }))}
+      <YourReports rows={reports} error={error} onRetry={load} onOpen={(id) => navigate(reportHref({ open: id }))}
                    onNew={() => navigate(reportHref())} team={inTeam ? activeTeam?.name || "This team" : null} />
       <SavedAnalyses />
       <SharedLinks reports={reports} inTeam={inTeam} />

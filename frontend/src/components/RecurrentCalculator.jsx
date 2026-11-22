@@ -5,7 +5,10 @@ import Select from "./Select.jsx";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 import { calculateRecurrent, recurrentFromNow } from "../api.js";
+import { rateWords } from "../recurrentResults.js";
 import { LEVEL_TEXT } from "../levels.js";
+import { SERVICE_LEVELS } from "../sparesPlan.js";
+import { constantRateText, countRange, levelOptions, meanRange, runoutText } from "../recurrentStock.js";
 
 // Recurrent-event calculator: read off the repairable-system functions at a
 // chosen time — expected cumulative failures N(t), the rate of occurrence of
@@ -56,6 +59,8 @@ export default function RecurrentCalculator({ r, name = null, modelId = null }) 
   const gridMax = (fitted.x?.length ? fitted.x[fitted.x.length - 1] : 0) || 1;
   const [t, setT] = useState(Number((gridMax / 2).toPrecision(4)) || 0);
   const [from, setFrom] = useState("");
+  // The chance of not running out the window's stock is worked out for.
+  const [level, setLevel] = useState("0.9");
   const [active, setActive] = useState("N");
   const renewal = r.family === "renewal";
   const regression = r.family === "regression";
@@ -108,12 +113,13 @@ export default function RecurrentCalculator({ r, name = null, modelId = null }) 
     const timer = setTimeout(() => {
       calculateRecurrent(modelId, {
         t: nt, start: nFrom != null && nFrom < nt ? nFrom : null, profile: regression ? profile : null,
+        serviceLevel: Number(level),
       }).then((res) => { if (live) { setServer(res); setServerError(null); } })
         .catch((e) => { if (live) { setServer(null); setServerError(e?.message || String(e)); } });
     }, renewal ? 450 : 250);
     return () => { live = false; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelId, nt, nFrom, profileKey]);
+  }, [modelId, nt, nFrom, profileKey, level]);
   // Over a window [from, t]: the expected failures, and the average rate and
   // MTBF across it.
   const win = (() => {
@@ -155,6 +161,9 @@ export default function RecurrentCalculator({ r, name = null, modelId = null }) 
     shapes,
   };
   const ut = unit ? unitInText(unit) : "";
+  // A failure rate reads per 1,000 (or more) units of time when small, never as 9.8e-4.
+  const rocof = active === "rocof" && yv != null && Number.isFinite(yv) ? rateWords(yv, ut) : null;
+  const scaled = (ci) => (rocof && Array.isArray(ci) ? ci.map((c) => (c == null ? c : c * rocof.k)) : ci);
 
   return (
     <div className="calc">
@@ -180,12 +189,12 @@ export default function RecurrentCalculator({ r, name = null, modelId = null }) 
             />
             <span>{ut}:</span>
             <span className="calc-answer-value">
-              <b>{fmt(yv)}{active === "mtbf" && yv != null && ut ? ` ${ut}` : ""}</b>
-              {active === "rocof" && yv != null && ut && (
-                <span className="calc-answer-ci"> per {ut.replace(/s$/, "")}</span>
+              <b>{rocof ? rocof.value : fmt(yv)}{active === "mtbf" && yv != null && ut ? ` ${ut}` : ""}</b>
+              {rocof?.per && (
+                <span className="calc-answer-ci"> {rocof.per}</span>
               )}
-              {yv != null && rangeText(yci) && (
-                <span className="calc-answer-ci"> ({LEVEL_TEXT} range {rangeText(yci)})</span>
+              {yv != null && rangeText(scaled(yci)) && (
+                <span className="calc-answer-ci"> ({LEVEL_TEXT} range {rangeText(scaled(yci))})</span>
               )}
               {yv != null && ylower != null && (
                 <span className="calc-answer-ci"> · at least {fmt(ylower)}{ut ? ` ${ut}` : ""} ({LEVEL_TEXT} one-sided)</span>
@@ -223,11 +232,17 @@ export default function RecurrentCalculator({ r, name = null, modelId = null }) 
                        onChange={(e) => setFrom(e.target.value)} />
               </label>
               {(sWin || win) ? (
-                <dl className="rec-window" aria-live="polite">
-                  <div><dt>Expected failures</dt><dd>{fmt(sWin?.expected ?? win?.n)} <span className="gof-sub">per system{rangeText(sWin?.ci) ? `, ${LEVEL_TEXT} range ${rangeText(sWin.ci)}` : ""}</span></dd></div>
-                  {win && <div><dt>Average failure rate</dt><dd>{fmt(win.rate)}{ut ? <span className="gof-sub"> per {ut.replace(/s$/, "")}</span> : null}</dd></div>}
-                  {win && <div><dt>Average MTBF</dt><dd>{win.mtbf != null ? `${fmt(win.mtbf)}${ut ? ` ${ut}` : ""}` : "—"}</dd></div>}
-                </dl>
+                <>
+                  <dl className="rec-window" aria-live="polite">
+                    <div><dt>Expected failures</dt><dd>{fmt(sWin?.expected ?? win?.n)} <span className="gof-sub">{(r.n_systems ?? 1) > 1 ? "per system" : ""}</span></dd></div>
+                    {sWin && <CountRows res={sWin} unit={ut} perSystem={(r.n_systems ?? 1) > 1} />}
+                    {win && <div><dt>Average failure rate</dt><dd>{rateWords(win.rate, ut).value}{rateWords(win.rate, ut).per ? <span className="gof-sub"> {rateWords(win.rate, ut).per}</span> : null}</dd></div>}
+                    {win && <div><dt>Average MTBF</dt><dd>{win.mtbf != null ? `${fmt(win.mtbf)}${ut ? ` ${ut}` : ""}` : "—"}</dd></div>}
+                  </dl>
+                  {sWin?.stock && <LevelPicker value={level} onChange={setLevel} />}
+                  {sWin?.range_note && <p className="rs-note">{sWin.range_note}</p>}
+                  {sWin && !sWin.ci && sWin.note && <p className="rs-note">{sWin.note}</p>}
+                </>
               ) : (
                 <p className="rs-note">
                   {nFrom != null && !(nt > nFrom)
@@ -272,16 +287,17 @@ function calcNote({ r, modelId, server, serverError, active, renewal, regression
 // the systems that add most.
 function FromNow({ modelId, unit, renewal }) {
   const [h, setH] = useState("");
+  const [level, setLevel] = useState("0.9");
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const ut = unit ? unitInText(unit) : "";
-  const run = async () => {
+  const run = async (lv = level) => {
     if (!(Number(h) > 0)) return;
     setBusy(true);
     setErr(null);
     try {
-      setRes(await recurrentFromNow(modelId, Number(h)));
+      setRes(await recurrentFromNow(modelId, Number(h), Number(lv)));
     } catch (e) {
       setErr(e?.message || String(e));
       setRes(null);
@@ -298,7 +314,7 @@ function FromNow({ modelId, unit, renewal }) {
           <span className="row" style={{ gap: 8, margin: 0 }}>
             <input type="number" inputMode="decimal" min={0} step="any" placeholder="e.g. 8000" value={h}
                    onChange={(e) => setH(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run(); }} />
-            <button type="button" className="btn" onClick={run} disabled={busy || !(Number(h) > 0)}>
+            <button type="button" className="btn" onClick={() => run()} disabled={busy || !(Number(h) > 0)}>
               {busy ? (renewal ? "Simulating…" : "Working…") : "Work out"}
             </button>
           </span>
@@ -307,11 +323,15 @@ function FromNow({ modelId, unit, renewal }) {
         {res && (
           <>
             <dl className="rec-window" aria-live="polite">
-              <div><dt>Fleet failures</dt><dd>≈ {fmt(res.expected)} <span className="gof-sub">{LEVEL_TEXT} range {rangeText(res.interval)}</span></dd></div>
-              {(res.systems || []).slice(0, 3).map((s) => (
+              <div><dt>Fleet failures</dt><dd>≈ {fmt(res.expected)}</dd></div>
+              <CountRows res={{ ci: res.interval, mean_ci: res.mean_interval, stock: res.stock,
+                                constant_rate: res.constant_rate }} unit={ut} />
+              {(res.n_systems ?? 0) > 1 && (res.systems || []).slice(0, 3).map((s) => (
                 <div key={s.system}><dt>{s.system}</dt><dd>{fmt(s.expected)}</dd></div>
               ))}
             </dl>
+            {res.stock && <LevelPicker value={level} onChange={(v) => { setLevel(v); run(v); }} />}
+            {res.range_note && <p className="rs-note">{res.range_note}</p>}
             <p className="rs-note">{res.note}</p>
           </>
         )}
@@ -320,5 +340,51 @@ function FromNow({ modelId, unit, renewal }) {
         )}
       </div>
     </div>
+  );
+}
+
+// A count over a stretch: how many failures there could be (the range for
+// spares), the expected number's own range, the stock to hold and the
+// record's average rate over the same stretch.
+function CountRows({ res, unit, perSystem = false }) {
+  const each = perSystem ? " per system" : "";
+  const count = countRange(res.ci);
+  const mean = meanRange(res.mean_ci);
+  const stockLevel = res.stock ? `${Math.round(res.stock.level * 1000) / 10}%` : null;
+  return (
+    <>
+      {count && (
+        <div title="How many failures there could be: chance as well as the fit's own uncertainty">
+          <dt>How many, {LEVEL_TEXT} range</dt><dd>{count}<span className="gof-sub">{each}</span></dd>
+        </div>
+      )}
+      {mean && (
+        <div title="The range of the expected number: the fit's uncertainty only, without chance">
+          <dt>Expected number, {LEVEL_TEXT} range</dt><dd>{mean}</dd>
+        </div>
+      )}
+      {res.stock && (
+        <div>
+          <dt>Stock to hold</dt>
+          <dd>{res.stock.hold.toLocaleString("en-US")}{each} <span className="gof-sub">for a {stockLevel} chance of not running out; {runoutText(res.stock)}</span></dd>
+        </div>
+      )}
+      {res.constant_rate && (
+        <div title="The whole record's failures over its time, as a store ordering on the average would see it">
+          <dt>At the record's average rate</dt><dd>{constantRateText(res.constant_rate, unit)}</dd>
+        </div>
+      )}
+    </>
+  );
+}
+
+// The chance of not running out a stock level is worked out for.
+function LevelPicker({ value, onChange }) {
+  return (
+    <label className="calc-t">
+      <span>Chance of not running out</span>
+      <Select value={value} onChange={onChange} title="Chance of not running out"
+              options={levelOptions(SERVICE_LEVELS)} />
+    </label>
   );
 }

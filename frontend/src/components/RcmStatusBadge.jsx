@@ -3,13 +3,16 @@ import { LINKED_LABEL } from "../rcmWorksheet.js";
 
 // Evidence status of an RCM decision, as a Chip: green only when the evidence
 // supports the decision, red when it contradicts it, amber when it's
-// inconclusive; grey when nothing is linked yet (not a warning: most RCM is
+// inconclusive or a fixed interval is far from its cost-optimal one (a fact,
+// not a verdict: the analyst decides); grey when nothing is linked yet (not a warning: most RCM is
 // done from judgement) or the link has gone. A linked report or working is
 // grey too: it's linked, not checked, so it never claims to support anything.
 const STATUS = {
   supported: { label: "Supported", tone: "success" },
   contradicted: { label: "Contradicted", tone: "danger" },
   inconclusive: { label: "Inconclusive", tone: "warning" },
+  shorter_than_evidence: { label: "Shorter than its evidence", tone: "warning" },
+  longer_than_evidence: { label: "Longer than its evidence", tone: "warning" },
   unevidenced: { label: "Not linked", tone: "neutral" },
   stale: { label: "Stale link", tone: "neutral" },
   linked: { label: "Linked", tone: "neutral" },
@@ -32,6 +35,8 @@ export function RollupBadges({ rollup }) {
     ["contradicted", rollup.contradicted, "danger"],
     // Only linked evidence: a decision with nothing linked yet isn't inconclusive.
     ["inconclusive", rollup.inconclusive, "warning"],
+    // A fixed interval far from its cost-optimal one, either way.
+    ["interval differs", (rollup.shorter_than_evidence || 0) + (rollup.longer_than_evidence || 0), "warning"],
     ["stale", rollup.stale, "neutral"],
   ].filter(([, n]) => n > 0);
   if (!parts.length) return null;

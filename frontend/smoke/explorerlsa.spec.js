@@ -12,7 +12,7 @@
 // product's page.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -36,15 +36,18 @@ const rows = (page) => panel(page).locator(".pk-trow");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth);
 
 test("LSA: search and sort the tasks below, tick two and package them", async ({ page, request, problems }) => {
+  // Work management off (SMOKE_WORK_MANAGEMENT=off): a hypothetical plan says "planned", not "due".
+  const off = (await (await request.get("/api/config")).json()).work_management === false;
   const tag = `k${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
-  await page.getByRole("tab", { name: "LSA" }).click();
+  await page.getByRole("tab", { name: "Maintenance", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Maintenance: what to show" }).getByRole("radio", { name: "What it needs" }).click();
   await expect.poll(() => query(page).get("tab")).toBe("lsa");
   await expect(rows(page)).toHaveCount(3);
   await expect(panel(page).getByRole("columnheader")).toHaveText(
-    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Next due", "Package", "Labour", "People", "Tools", "Spares",
+    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", off ? "Next planned" : "Next due", "Package", "Labour", "People", "Tools", "Spares",
       "Consumables", "Method"]);
   await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Columns…", "Export CSV", "Package the tasks…", "Add a package…", "Open the full page"]);
   await page.keyboard.press("Escape");
@@ -136,6 +139,7 @@ test("LSA at 400 px: the table scrolls in its card, the bar shows, nothing scrol
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=packages`); // the old address: opens the LSA tab
+  await phoneTree(page);
   // On a phone the panel is its own screen: tap the row to open it.
   await page.getByRole("treeitem", { name: new RegExp(`^Package pump ${tag}`) }).locator(".tp-nm").click();
   await expect(rows(page)).toHaveCount(3);

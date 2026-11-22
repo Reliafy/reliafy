@@ -158,8 +158,12 @@ const CHART_PAGES = {
   "/models/joint/:id": true,
   "/forecasts/:id": true,
   "/risk/:fleetId": true,
-  // A failure-finding analysis is one interval: no chart.
-  "/strategy/analyses/:id": (analysis) => analysis.kind !== "failure_finding",
+  // A failure-finding analysis is one interval, and so is an RCM task card's interval: no chart. An
+  // overhaul-and-replace that found overhauls don't pay is one sentence. Which analyses the list
+  // holds depends on what other tests saved first, so each is judged by its own kind and headline.
+  "/strategy/analyses/:id": (analysis) =>
+    !["failure_finding", "on_condition_interval", "failure_finding_interval"].includes(analysis.kind)
+    && !(analysis.kind === "overhaul_replace" && /don't pay/.test(analysis.headline || "")),
   // A prediction's Pareto, once a line has a part type.
   "/predictions/:id": (prediction) => prediction.assigned > 0,
 };

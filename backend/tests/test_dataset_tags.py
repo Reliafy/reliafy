@@ -119,7 +119,7 @@ def test_summary_counts_failures_when_the_flag_means_1_failed():
     # Left- and interval-censored flags are kept as they are: those units were
     # found failed, with the time known only as a range.
     rows = [["M-0", 10, 1], ["M-1", 20, 0], ["M-2", 30, -1], ["M-3", 40, 2]]
-    assert tags(rows, ["unit", "hours", "failed"])["summary"] == "4 units · 1 failed · 2 failed between inspections"
+    assert tags(rows, ["unit", "hours", "failed"])["summary"] == "4 units · 1 failed · 1 failed between inspections · 1 found failed at the first inspection"
 
 
 def test_summary_reads_a_status_column_of_words():
@@ -141,13 +141,13 @@ def test_summary_counts_inspection_data_with_survivors():
     windows = [(0, 200)] * 2 + [(200, 400)] * 8 + [(400, 600)] * 15
     cols = ["valve", "last_ok_hours", "found_failed_hours"]
     blank = [[f"V{i}", lo, hi] for i, (lo, hi) in enumerate(windows)] + [[f"S{i}", 1000, None] for i in range(15)]
-    assert tags(blank, cols)["summary"] == "40 valves · 25 failed between inspections"
+    assert tags(blank, cols)["summary"] == "40 valves · 23 failed between inspections · 2 found failed at the first inspection"
     coded = ([[f"V{i}", lo, hi, 2] for i, (lo, hi) in enumerate(windows)]
              + [[f"S{i}", 1000, 1000, 1] for i in range(15)])
-    assert tags(coded, cols + ["censor_code"])["summary"] == "40 valves · 25 failed between inspections"
+    assert tags(coded, cols + ["censor_code"])["summary"] == "40 valves · 23 failed between inspections · 2 found failed at the first inspection"
     words = ([[f"V{i}", lo, hi, "F"] for i, (lo, hi) in enumerate(windows)]
              + [[f"S{i}", 1000, 1000, "S"] for i in range(15)])
-    assert tags(words, cols + ["status"])["summary"] == "40 valves · 25 failed between inspections"
+    assert tags(words, cols + ["status"])["summary"] == "40 valves · 23 failed between inspections · 2 found failed at the first inspection"
 
 
 def test_summary_weighs_rows_by_a_count_column():
@@ -285,3 +285,88 @@ def test_one_numbered_system_history_is_repairable():
     out = _saved(rows, ["system", "time", "observed_to", "cause"], reading, "reading-one-system")
     assert out["tags"] == ["Repairable"]
     assert out["summary"] == "1 system · 5 failures"
+
+
+def test_summary_and_fit_step_count_first_inspection_failures_alike():
+    # A window that opens at zero was found failed at the first look: the
+    # dataset's summary words it as the fit step does (REL-02 counted 25 here, 23 + 2 there).
+    from backend import fitting
+    windows = [(0, 200)] * 2 + [(200, 400)] * 8 + [(400, 600)] * 15
+    rows = [[f"V{i}", lo, hi] for i, (lo, hi) in enumerate(windows)] + [[f"S{i}", 1000, None] for i in range(15)]
+    cols = ["valve", "last_ok_hours", "found_failed_hours"]
+    assert tags(rows, cols)["summary"].endswith("23 failed between inspections · 2 found failed at the first inspection")
+    import pandas as pd
+    df = pd.DataFrame(rows, columns=cols)
+    fit = fitting.data_reading(df, {"xl": "last_ok_hours", "xr": "found_failed_hours"})
+    assert (fit["interval"], fit["left"], fit["running"]) == (23, 2, 15)
+
+
+def test_a_failure_mode_columns_blanks_count_as_running_on_the_card_as_in_the_fit():
+    """A dataset read with a failure-mode column and no status column: a
+    blank mode is a unit still running. The Data card's count follows the
+    fit by failure mode (and the fit step's "50 failed, 22 running"), never
+    "every row failed"."""
+    import io
+
+    import numpy as np
+
+    from backend import competing_risks
+    from backend.services import samples
+    from backend.services.datasets import count_reading_of
+
+    csv = samples._PUMP_MODES_CSV
+    df = pd.read_csv(io.StringIO(csv.decode() if isinstance(csv, bytes) else csv))
+    mapping = {"x": "hours", "e": "failure_mode", "g": "site"}
+    prep = competing_risks.prepare(df, mapping)
+    failed, running = int(np.sum(prep["c"] == 0)), int(np.sum(prep["c"] == 1))
+    assert (failed, running) == (50, 22)
+    blanks = int(df["failure_mode"].isna().sum())
+    assert blanks == running  # the hand check: one running pump per blank mode
+    # The newest model's mapping (no saved reading) and a saved reading alike.
+    card = detect_tags(df, None, count_reading_of({"mapping": mapping}))["summary"]
+    assert card == f"72 pumps · {failed} failed"
+    saved = detect_tags(df, {"x": "hours", "e": "failure_mode", "i": "pump", "unit": "Hours"})["summary"]
+    assert saved == f"72 pumps · {failed} failed"
+    # A status column, where there is one, still decides.
+    df2 = df.assign(status=0)
+    assert detect_tags(df2, {"x": "hours", "c": "status", "e": "failure_mode", "i": "pump"})["summary"] \
+        == "72 pumps · 72 failed"
+
+
+def test_a_failure_logged_twice_at_one_time_is_still_repairable():
+    """A repair history (trucks, the hours of each failure, an end of record)
+    where one failure is logged twice at the same hours: the time never goes
+    back along a truck's rows, so it is still repeat failures, not one life
+    per row ("150 lives · 150 failed")."""
+    rows = []
+    for u in range(4):
+        for k in range(1, 6):
+            rows.append([f"T{u:02d}", "West" if u % 2 else "East", 500 * k + 10 * u, "hose", 3000])
+    rows.insert(3, list(rows[2]))  # T00's third failure entered twice
+    reading = {"x": "hours", "tr": "record_end_hours", "i": "truck", "e": "cause", "unit": "hours", "z": ["depot"]}
+    cols = ["truck", "depot", "hours", "cause", "record_end_hours"]
+    out = _saved(rows, cols, reading, "reading-repairable-tie")
+    assert out["tags"][0] == "Repairable"
+    assert out["summary"] == "4 trucks · 21 failures"
+    # Guessed from the columns alone, the same.
+    assert tags(rows, cols)["tags"][0] == "Repairable"
+
+
+def test_start_stop_rows_with_late_entry_and_an_item_are_not_repairable():
+    """Start and stop rows read as x = stop, tl = start, i = motor (each row
+    starts where the motor's last one stopped): stretches of one life with
+    the load over time, not repeat failures."""
+    rows = [["M-01", 0, 2217, 0, 65], ["M-01", 2217, 4377, 0, 90], ["M-01", 4377, 11275, 1, 65],
+            ["M-02", 0, 20957, 0, 65],
+            ["M-03", 0, 1882, 0, 90], ["M-03", 1882, 8482, 1, 65]]
+    cols = ["motor", "start_h", "stop_h", "failed", "load_pct"]
+    late = {"x": "stop_h", "tl": "start_h", "i": "motor", "c": "failed", "c_invert": True, "z": ["load_pct"]}
+    out = _saved(rows, cols, late, "reading-tvc-late-entry")
+    assert out["tags"] == ["Non-repairable", "Time-varying covariates"]
+    assert out["use_for"][0] == "Non-repairable model with time-varying covariates"
+    assert out["summary"] == "3 motors · 2 failed"
+    # The same rows read as a range (xl = start, xr = stop), as the upload guesses them.
+    ranged = {"xl": "start_h", "xr": "stop_h", "i": "motor", "c": "failed", "c_invert": True, "z": ["load_pct"]}
+    out = _saved(rows, cols, ranged, "reading-tvc-range")
+    assert out["tags"] == ["Non-repairable", "Time-varying covariates"]
+    assert out["summary"] == "3 motors · 2 failed"

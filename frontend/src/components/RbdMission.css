@@ -70,3 +70,23 @@
 .mission-curve figcaption { margin-top: var(--space-1); font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); }
 /* MissionCurve.jsx's MissionProNote: a mission only a simulation can work out, without Pro. */
 .mission-pro p { margin: 0 0 var(--space-2); }
+
+/* RbdRepairAvailability.jsx: the Calculator's "Availability with repairs" section. */
+.rbd-repair-period { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
+.rbd-repair-period input { width: 7rem; font-variant-numeric: tabular-nums; }
+.rbd-repair-purpose { margin: 0 0 var(--space-3); }
+.rbd-repair-drivers, .rbd-repair-times { margin-top: var(--space-4); }
+.rbd-repair-drivers h4, .rbd-repair-times h4 { margin: 0 0 var(--space-2); font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600; color: var(--text); }
+.rbd-repair-drivers ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.rbd-repair-drivers li { position: relative; display: flex; justify-content: space-between; gap: var(--space-3); padding: 2px var(--space-2); font-size: var(--fs-13); line-height: var(--lh-13); min-width: 0; }
+.rbd-repair-drivers li > span:not(.rbd-repair-bar) { position: relative; }
+.rbd-repair-bar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-subtle); border-radius: var(--radius-sm); }
+.rbd-repair-share { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.rbd-repair-table td, .rbd-repair-table th { white-space: nowrap; }
+.rbd-repair-table thead th:first-child { text-align: left; }
+.rbd-repair-table input { width: 7rem; font-variant-numeric: tabular-nums; }
+.rbd-repair-table tr.is-missing .calc-row-label { color: var(--warning-text); }
+.rbd-repair-missing { color: var(--warning-text); }
+@media (max-width: 640px) {
+  .rbd-repair-avail .rbd-mission-head { flex-wrap: wrap; }
+}

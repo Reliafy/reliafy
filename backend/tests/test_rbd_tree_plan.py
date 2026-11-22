@@ -316,6 +316,48 @@ def test_a_sub_assembly_with_no_model_of_its_own_is_its_own_rbd_built_from_its_p
     _same_after_rebuild(m)
 
 
+def test_one_diagram_named_once_sub_diagrams_only_where_needed_and_listed_under_it(m, db):
+    """Build from what's inside saves the diagram under the name asked; a sub-assembly with no model
+    of its own gets a diagram of its own named after it (listed under the parent, not at the top of
+    the RBD list); one with a model takes it, with no diagram."""
+    from backend.schema import Rbd
+    from backend.services import rbds as rbds_service
+
+    top = m.create_position("Drone")["id"]
+    prop = m.create_position("Propulsion", parent_id=top)["id"]
+    for name in ("Motor", "Propeller"):
+        pm.link_saved(m, db, OWNERS, set(), m.create_position(name, parent_id=prop)["id"], "model", SAMPLE)
+    gimbal = m.create_position("Payload gimbal", parent_id=top)["id"]
+    m.create_position("Camera", parent_id=gimbal)
+    pm.link_saved(m, db, OWNERS, set(), gimbal, "model", SAMPLE)
+    before = db.rbds.count_documents({})
+    link = pm.build_rbd(m, db, OWNERS, set(), top, name="Drone, as designed")
+    assert db.rbds.count_documents({}) == before + 2  # the drone's and Propulsion's, none for the gimbal
+    graph = _graph(db, link["model_id"])
+    assert db.rbds.find_one({"_id": link["model_id"]})["name"] == "Drone, as designed"
+    by_label = {n["data"]["label"]: n for n in graph["nodes"] if n["type"] in ("component", "subsystem")}
+    assert by_label["Payload gimbal"]["type"] == "component"
+    assert by_label["Payload gimbal"]["data"]["model"].get("modelId") == SAMPLE
+    sub = by_label["Propulsion"]["data"]
+    assert sub["sub_diagram"] is True and db.rbds.find_one({"_id": sub["rbd"]["id"]})["name"] == "Propulsion"
+    rows = [rbds_service.from_doc(Rbd, d) for d in db.rbds.find({"owner_id": ORG})]
+    assert rbds_service.list_parents(rows) == {sub["rbd"]["id"]: link["model_id"]}
+    # A sub-diagram made before blocks were marked is found from what its block says.
+    legacy = [rbds_service.from_doc(Rbd, d) for d in db.rbds.find({"owner_id": ORG})]
+    for r in legacy:
+        for n in r.graph["nodes"]:
+            (n.get("data") or {}).pop("sub_diagram", None)
+    assert rbds_service.list_parents(legacy) == {sub["rbd"]["id"]: link["model_id"]}
+    # A diagram linked as a block by hand stays at the top; so does a loop.
+    by_hand = Rbd(id="h", name="Hand", owner_id=ORG, graph={"nodes": [{"id": "x", "data": {"rbd": {"id": link["model_id"]}}}]})
+    a = Rbd(id="a", name="A", owner_id=ORG, graph={"nodes": [{"id": "x", "data": {"rbd": {"id": "b"}, "sub_diagram": True}}]})
+    b = Rbd(id="b", name="B", owner_id=ORG, graph={"nodes": [{"id": "x", "data": {"rbd": {"id": "a"}, "sub_diagram": True}}]})
+    assert rbds_service.list_parents([by_hand, a, b, *rows]) == {sub["rbd"]["id"]: link["model_id"]}
+    # Building again opens the same one: nothing new is saved.
+    assert pm.build_rbd(m, db, OWNERS, set(), top, name="Another")["existing"] is True
+    assert db.rbds.count_documents({}) == before + 2
+
+
 def test_a_rebuild_fills_a_placeholder_once_the_position_has_a_model(m, db):
     plant = m.create_position("Line")["id"]
     a = m.create_position("Pump A", parent_id=plant)["id"]

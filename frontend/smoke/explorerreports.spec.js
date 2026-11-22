@@ -11,7 +11,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, phoneTree } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -46,7 +46,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(row(page, `Report pump ${tag}`)).toHaveAttribute("aria-selected", "true");
 
   // The tab is there for a position; empty, it says how to add one and links the guide.
-  await page.getByRole("tab", { name: "Failure reports" }).click();
+  await page.getByRole("tab", { name: "History", exact: true }).click();
   await expect.poll(() => query(page).get("tab")).toBe("reports");
   await expect(panel(page)).toContainText("No failure reports here yet");
   await expect(panel(page).getByRole("button", { name: "How failure reports work" })).toBeVisible();
@@ -131,7 +131,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await detail(page).getByRole("button", { name: "Corrective actions" }).click();
   await detail(page).getByRole("textbox", { name: /What will be done/ }).fill("Replace the seal and check alignment");
   // Work order is now a picker of real work orders (#816); a number from elsewhere is the reference.
-  await detail(page).getByRole("textbox", { name: /Or a reference kept elsewhere/ }).fill("WO-77");
+  await detail(page).getByRole("textbox", { name: /reference kept elsewhere/i }).fill("WO-77");
   await detail(page).getByRole("button", { name: "Add action" }).click();
   await expect(said(page)).toHaveText("Action added.");
   const actions = detail(page).locator("table.fr-actions");
@@ -167,6 +167,7 @@ test("Failure reports at 400 px: the ⋯ button offers Add failure report…, th
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.circ.id}`);
+  await phoneTree(page);
   const more = row(page, `Report circulation ${tag}`).getByRole("button", { name: /^Actions for / });
   await more.click();
   const menu = rowMenu(page, `Report circulation ${tag}`);
@@ -184,7 +185,7 @@ test("Failure reports at 400 px: the ⋯ button offers Add failure report…, th
   // The report, as its own screen, on the Failure reports tab.
   await expect.poll(() => query(page).get("report")).toBeTruthy();
   await expect(detail(page).locator(".fr-h2")).toContainText(/Flow dropped to half/);
-  await expect(page.getByRole("tab", { name: "Failure reports" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "History", exact: true })).toHaveAttribute("aria-selected", "true");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await shot(page, "reports-phone-report");
   await detail(page).getByRole("button", { name: "Corrective actions" }).click();

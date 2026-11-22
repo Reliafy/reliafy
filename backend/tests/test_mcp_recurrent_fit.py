@@ -38,7 +38,9 @@ def test_fit_recurrent_model_inline_crow_amsaa_matches_the_app_and_saves(env):
                      "hours", gof_test=False)
     assert out["saved"] and out["url"].endswith(f"/models/recurrent/{out['model_id']}")
     assert [p["value"] for p in out["params"]] == pytest.approx([p["value"] for p in ref["params"]])
-    assert out["growth"] == "deteriorating" and out["family"] == "nhpp"
+    assert out["family"] == "nhpp" and "growth" not in out
+    assert "failures come faster as time goes on" in out["growth_basis"] and "analyst" in out["growth_basis"]
+    assert all("trend" not in t and "significant" not in t for t in out["trend_tests"])
     assert [c["cause"] for c in out["by_cause"]] == ["valve", "bearing", "seal", "electrical"]
     doc = env.db.recurrent_models.find_one({"_id": out["model_id"]})
     assert doc["spec"]["mapping"] == {"i": "system", "x": "time", "tr": "observed_to", "mode": "cause"}
@@ -105,3 +107,22 @@ def test_fit_recurrent_model_is_pro_only():
     from backend.mcp_server import PRO_ONLY_TOOLS
 
     assert "change.model_fit_recurrent" in PRO_ONLY_TOOLS
+
+
+def test_fit_recurrent_model_from_a_dataset_with_one_end_of_test(env):
+    """With a dataset, observed_to as one number is the end of test for every
+    system: the time-terminated Crow-AMSAA answer."""
+    import math
+
+    a = env.token[A]
+    times = [5, 18, 37, 70, 112, 160, 240, 330, 450, 590, 760, 940]
+    csv = "unit,hours\n" + "".join(f"P1,{t}\n" for t in times)
+    ds = _ok(_call(a, "change", {"action": "dataset_upload", "name": "Prototype", "csv": csv}))
+    out = _ok(_call(a, "change", {"action": "model_fit_recurrent", "save": False, "model": "crow_amsaa",
+        "dataset_id": ds["id"], "system_column": "unit", "time_column": "hours", "observed_to": 1000,
+        "unit": "hours"}))
+    beta = len(times) / sum(math.log(1000 / t) for t in times)
+    assert out["mtbf"] == pytest.approx(1000 / (len(times) * beta), rel=1e-3)
+    assert out["record_ends"].startswith("time-terminated")
+    _err(_call(a, "change", {"action": "model_fit_recurrent", "save": False, "dataset_id": ds["id"],
+        "system_column": "unit", "time_column": "hours", "observed_to": [1000, 1000]}))

@@ -106,7 +106,9 @@ def test_hold_matches_a_hand_computed_poisson_case(m):
     assert st["to_order"] == 3 and st["below_reorder"]
     assert st["hold_cost"] == 3600 and st["to_order_cost"] == 2700
     assert st["summary"].startswith("Hold 4: a 95% chance of no stock-out over the lead time (60 days).")
-    assert "one for one" in st["summary"] and ("53%" in st["summary"] or "54%" in st["summary"])
+    # P(D > 1) = 0.537; each position draws its own seeded stream (by its id), so the simulated chance moves
+    # a little from one workspace to another.
+    assert "one for one" in st["summary"] and f"is {st['risk_at_stock']:.0%}." in st["summary"]
     # The risk curve reads any stock: the same chance at 1 as risk_at_stock.
     assert dict((s, p) for s, p in st["risk_curve"])[1.0] == pytest.approx(st["risk_at_stock"])
     # Constant hazard: every period's window needs the same.
@@ -396,3 +398,31 @@ def test_a_flat_need_keeps_the_plain_headline_and_steps_say_by():
     holds = [p["hold"] for p in many["per_period"]]
     assert holds[:5] == [1, 1, 2, 2, 3] and many["hold"] == 1
     assert many["summary"].startswith("Hold 1 now, rising to 3 by quarter 5: a 95% chance")
+
+
+def test_a_fleet_answer_for_the_year():
+    # Four drive-end bearings 844 days old (Weibull 1,173 days, shape 1.955), 30.4375 days of use a
+    # month, 12 months; a 5-day lead time and 2 in stock. Hand check: about 1.72 failures in the year
+    # (P10-P90 0-3); over 5 days each bearing's chance of failing is 0.006, so hold 0; buy
+    # ceil(1.72) + 0 - 2 = 0.
+    dist = surpyval.Weibull.from_params([1172.9, 1.955])
+    ages, rates = np.full(4, 844.0), np.full(4, 30.4375)
+    lead = 5 / 30.4375
+    out = fleet_service.spares_answer({"lead_time": lead, "stock": 2}, "renewals", dist, ages, rates, 12, "months")
+    year = out["year"]
+    assert year["mean"] == pytest.approx(1.72, abs=0.15) and (year["p10"], year["p90"]) == (0, 3)
+    assert out["hold"] == 0 and (year["order_now"], year["buy"]) == (0, 0) and year["buy_high_case"] == 1
+    assert year["rule"].startswith("Demand = planned replacements") and year["periods"] == 12
+    # A constant hazard: the year's demand is Poisson with the fleet's whole use.
+    flat = fleet_service.spares_answer({"lead_time": 2, "stock": 2}, "renewals", _exponential(),
+                                       np.array([10.0, 50, 80, 200]), np.full(4, 30.0), 12, "months")
+    mu = 4 * 30 * 12 * RATE
+    assert flat["year"]["mean"] == pytest.approx(mu, rel=0.05)
+    assert flat["year"]["buy"] == math.ceil(flat["year"]["mean"]) + flat["hold"] - 2
+    # First failures: exact; a repairable pool isn't bought by the year.
+    single = fleet_service.spares_answer({"lead_time": 1, "stock": 0}, "single", dist, ages, rates, 12, "months")
+    p = (dist.ff(844 + 365.25) - dist.ff(844)) / dist.sf(844)
+    assert single["year"]["mean"] == pytest.approx(4 * p, rel=1e-6)
+    pool = fleet_service.spares_answer({"repairable": True, "turnaround": 1, "stock": 1}, "renewals", dist, ages,
+                                       rates, 12, "months")
+    assert "buy" not in pool["year"]

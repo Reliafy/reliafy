@@ -2,8 +2,10 @@
 their connections say how the blocks are wired, and redundancy groups say where
 k of n is enough.
 
-* Each child position is a block. Its non-repairable model is its class's fitted model
-  (in days); with none, a placeholder, named in the notes.
+* Each child position is a block. Its model is the position's own model in use, else its
+  class's fitted model, else its parts-count rate, else (positions inside it) a sub-system
+  built from them (position_models._tree_parts); with none of these, a placeholder, named in
+  the notes and on the block.
 * A connection from A to B is an edge A -> B.
 * A redundancy group (k of its n members needed) becomes a vote node: each
   member feeds it, and it feeds whatever the members fed. A standby group of
@@ -14,6 +16,11 @@ k of n is enough.
   downstream end at the output. With no connections at all, the blocks are
   taken to be in series (every one needed), and the notes say so; a block not
   connected to the others is put in series too.
+* Positions that look alike (the same name but for a unit suffix, "Pump set 1" and "Pump set
+  2", and the same class) with no redundancy set are never quietly taken as both needed:
+  ``ask`` lists them, the app asks how they work together before building
+  (``arrangements``: parallel, standby or series), and a diagram built without an answer says
+  in its notes that they're drawn in series until the tree says otherwise.
 
 The diagram is saved as a normal Reliafy RBD (re-generating updates the same
 one), so it's analysed by RePyability like any other.
@@ -31,14 +38,88 @@ def _bid(pid: str) -> str:
     return "p" + pid[:10]
 
 
-def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -> dict:
+#: A placeholder block's own words (its tooltip), so it's never read as a result.
+PLACEHOLDER_SOURCE = ("A placeholder: this position has no model in use, no class model and no parts-count "
+                      "rate. Give it a model and rebuild")
+
+
+def _children(m: Maintenance, scope_id: str) -> list[dict]:
+    return sorted([c for c in m.s.inn(m.org, scope_id, "PART_OF")
+                   if c["label"] == "Position" and not c.get("retired")], key=lambda c: c["name"].lower())
+
+
+def suspected_sets(m: Maintenance, children: list[dict], said_series=()) -> list[dict]:
+    """Positions among ``children`` that look like units of one job (the same name but for a unit
+    suffix, as the Calculator's series-redundancy check reads labels, and the same class) and are
+    in no redundancy set: [{position_ids, names}]. ``said_series``: sets of ids the user has said
+    are all needed, left out."""
+    from backend.services.rbd_analysis import _label_stem
+
+    said = {frozenset(x) for x in said_series}
+    buckets: dict = {}
+    for c in children:
+        if m.groups_of(c["id"]):
+            continue
+        stem, tok = _label_stem(c["name"])
+        if not stem or tok is None:
+            continue
+        # The free-text class, not _class_key: on a product (and items built from it) each design
+        # position is a class of its own, so Pump set 1 and Pump set 2 would never match.
+        buckets.setdefault((stem, (c.get("position_class") or "").strip().lower()), []).append(c)
+    out = []
+    for kids in buckets.values():
+        if len(kids) < 2 or len({_label_stem(c["name"])[1] for c in kids}) < len(kids):
+            continue
+        ids = [c["id"] for c in kids]
+        if frozenset(ids) in said:
+            continue
+        out.append({"position_ids": ids, "names": [c["name"] for c in kids]})
+    return sorted(out, key=lambda x: x["names"][0].lower())
+
+
+def ask(m: Maintenance, scope_id: str) -> list[dict]:
+    """What to ask before building ``scope_id``'s diagram: its look-alike positions with no set."""
+    m._get(scope_id, "Position")
+    return suspected_sets(m, _children(m, scope_id))
+
+
+ARRANGEMENTS = ("parallel", "standby", "series")
+
+
+def apply_arrangements(m: Maintenance, scope_id: str, arrangements) -> list[frozenset]:
+    """Record how look-alike positions work together, as the user answered before building:
+    each ``{position_ids, how: parallel | standby | series, k?, standby?}``. parallel: a set where
+    any k (default 1) will do; standby: k running (default 1), the others waiting (cold unless
+    ``standby`` says warm or hot); both are redundancy sets on the tree (shown there, and used by
+    every rebuild). series: every one needed, nothing recorded. Returns the series answers."""
+    ids = {c["id"] for c in _children(m, scope_id)}
+    series: list[frozenset] = []
+    for a in arrangements or []:
+        if not isinstance(a, dict):
+            raise Invalid("Each arrangement is {position_ids, how: parallel | standby | series}.")
+        how = a.get("how")
+        members = [pid for pid in dict.fromkeys(a.get("position_ids") or []) if isinstance(pid, str)]
+        if how not in ARRANGEMENTS:
+            raise Invalid("how is parallel (any of them can do the job), standby (duty and standby) or series "
+                          "(every one needed).")
+        if len(members) < 2 or any(pid not in ids for pid in members):
+            raise Invalid("An arrangement names two or more of the positions directly inside this one.")
+        if how == "series":
+            series.append(frozenset(members))
+            continue
+        m.create_group(str(a.get("name") or ""), members, k=a.get("k") or 1,
+                       mode="active" if how == "parallel" else "standby",
+                       standby=a.get("standby") or "cold")
+    return series
+
+
+def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days", said_series=()) -> dict:
     """The compact RBD graph for a position's children, and notes on how it was built.
     ``block_model(child) -> (node fields or None, note or None)`` gives each block its model
     (the Modelling tab's "Build an RBD from what's inside": the child's model in use; None:
     a placeholder); by default the child's class model, in days."""
     scope = m._get(scope_id, "Position")
-    children = sorted([c for c in m.s.inn(m.org, scope_id, "PART_OF")
-                       if c["label"] == "Position" and not c.get("retired")], key=lambda c: c["name"].lower())
+    children = _children(m, scope_id)
     if len(children) < 1:
         raise Invalid(f"{scope['name']} has no positions inside it to make blocks from.")
     ids = {c["id"] for c in children}
@@ -50,7 +131,7 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -
             if note:
                 notes.append(note)
             if fields is None:
-                fields = {"model": dict(PLACEHOLDER)}
+                fields = {"model": dict(PLACEHOLDER), "data": {"model_source": PLACEHOLDER_SOURCE}}
                 placeholders.append(c["name"])
             # A position whose block is an RBD of its own is a sub-system block (analysed as one).
             sub = fields.get("subsystem_rbd_id") or ((fields.get("data") or {}).get("rbd") or {}).get("id")
@@ -139,10 +220,17 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -
         notes.append(f"No non-repairable model yet for {', '.join(placeholders)}: a placeholder is used. Fit one for "
                      "the position's class, or give each block a model in the RBD builder." if block_model is None else
                      f"No model in use yet for {', '.join(placeholders)}: a placeholder (flagged) stands in. Give "
-                     "each a model on the Modelling tab and rebuild, or set one in the RBD builder.")
+                     "each a model in Models › Life models and rebuild, or set one in the RBD builder.")
+    alike = suspected_sets(m, children, said_series)
+    for x in alike:
+        names = x["names"]
+        notes.append(f"{', '.join(names[:-1])} and {names[-1]} look like units of one job, but nothing says how they "
+                     "work together, so they're drawn in series (every one needed). If fewer will do, mark them as a "
+                     "set (Redundancy inside…, or answer when you build) and rebuild.")
     graph = {"nodes": nodes, "unit": unit,
              "edges": [{"source": s, "target": t} for (s, t) in sorted(edges)]}
-    return {"graph": graph, "notes": notes, "placeholders": placeholders, "scope": scope, "redundancy": used}
+    return {"graph": graph, "notes": notes, "placeholders": placeholders, "scope": scope, "redundancy": used,
+            "ask": alike}
 
 
 _WAIT = {"cold": 0.0, "hot": 1.0}
@@ -244,15 +332,30 @@ def redundancy_units(m: Maintenance, children: list[dict], nodes: list[dict], no
     return units, used
 
 
-def save(m: Maintenance, db, scope_id: str) -> dict:
-    """Build the RBD and save it to the workspace (updating the one made before)."""
+def save(m: Maintenance, db, scope_id: str, owners=None, hidden=frozenset(), arrangements=None,
+         check: bool = False) -> dict:
+    """Build the RBD and save it to the workspace (updating the one made before). Each block takes
+    what Build from what's inside gives it (the position's model in use, its class's, its
+    parts-count rate, or a sub-system of what's inside it), never a placeholder where there is one.
+    ``check``: only what to ask first ({ask}), nothing saved. ``arrangements``: the answers
+    (apply_arrangements), recorded before building."""
+    from backend.maintenance import position_models as pm
     from backend.services import rbds as rbds_service
-    from backend.services.rbd_graph import GraphError, normalize_graph
+    from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
 
-    built = build(m, scope_id)
+    if check:
+        return {"ask": ask(m, scope_id)}
+    said = apply_arrangements(m, scope_id, arrangements)
+    owners = list(owners or [m.org])
+    _, fetch, _, unit, block, nested = pm._tree_parts(m, db, owners, hidden, scope_id, owner_id=m.org)
+    built = build(m, scope_id, block_model=block, unit=unit, said_series=said)
     scope = built["scope"]
+    if nested:
+        built["notes"].append(f"Placeholders inside sub-systems: {', '.join(nested[:8])}"
+                              f"{' …' if len(nested) > 8 else ''}. Give each a model and rebuild.")
     try:
-        graph = normalize_graph(built["graph"])
+        graph = normalize_graph(built["graph"], resolve_saved_model=lambda mid: fetch("model", mid))
+        graph["nodes"] = wrap_layout(graph["nodes"])
         existing = scope.get("rbd_id")
         if existing and not db.rbds.find_one({"_id": existing, "owner_id": m.org}):
             existing = None
@@ -261,5 +364,6 @@ def save(m: Maintenance, db, scope_id: str) -> dict:
         raise Invalid(f"The diagram couldn't be made: {err}") from None
     if rbd.id != scope.get("rbd_id"):
         m._emit("position.rbd_linked", {"id": scope_id, "changes": {"rbd_id": rbd.id}})
-    return {"rbd_id": rbd.id, "name": rbd.name, "notes": built["notes"], "placeholders": built["placeholders"],
-            "blocks": sum(1 for n in built["graph"]["nodes"] if n["type"] == "component")}
+    return {"rbd_id": rbd.id, "name": rbd.name, "notes": built["notes"],
+            "placeholders": built["placeholders"] + nested, "ask": built["ask"], "unit": unit,
+            "blocks": sum(1 for n in built["graph"]["nodes"] if n["type"] in ("component", "subsystem", "standby"))}

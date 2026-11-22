@@ -7,7 +7,7 @@ import OverflowMenu from "../components/OverflowMenu.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
-import { CompareIcon, CostIcon, StrategyIcon, TestIcon } from "../components/icons.jsx";
+import { CompareIcon, CostIcon, ListIcon, StrategyIcon, TestIcon } from "../components/icons.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
 
@@ -16,6 +16,7 @@ const KIND_LABEL = {
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
   demonstration_test: "Demonstration test",
+  sequential_test: "Sequential test",
   on_condition_interval: "Check interval (P-F)",
   failure_finding_interval: "Test interval",
   calendar_replacement: "Shutdown calendar",
@@ -30,6 +31,9 @@ const TOOLS = [
   { to: "/strategy/compare", icon: <CompareIcon />, label: "Compare two models" },
   { to: "/strategy/failure-finding", icon: <StrategyIcon />, label: "Failure finding" },
   { to: "/strategy/test-planning", icon: <TestIcon />, label: "Test planning" },
+  // Spares for the year live on a saved forecast (its Spares card): how many the items will use, what
+  // to hold for the lead time, what to order now and buy over the forecast.
+  { to: "/forecasts", icon: <ListIcon />, label: "Spares for the year" },
 ];
 
 // The Strategy section's landing page: the saved analyses — persistent
@@ -43,10 +47,12 @@ export default function StrategyAnalyses() {
   const [analyses, setAnalyses] = useState(null);
   const [error, setError] = useState(null);
 
+  const [loadError, setLoadError] = useState(null);
   const refresh = useCallback(() => {
+    setLoadError(null);
     listStrategyAnalyses()
       .then((d) => setAnalyses(d.analyses))
-      .catch((e) => setError(e.message));
+      .catch(setLoadError);
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -85,6 +91,8 @@ export default function StrategyAnalyses() {
       {error && <div className="card error">{error}</div>}
 
       <SectionList
+        loadError={loadError}
+        onRetry={refresh}
         key={kind}
         rows={analyses}
         noun={["saved analysis", "saved analyses"]}

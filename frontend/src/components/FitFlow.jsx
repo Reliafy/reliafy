@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ErrorNotice } from "./StorageCap.jsx";
 import {
   getDistributions,
@@ -24,9 +25,10 @@ import { answerParts } from "../modelFrame.js";
 import { tvcProblems } from "../tvcData.js";
 import Covariates from "./Covariates.jsx";
 import {
-  EMPTY_MAPPING, columnFacts, statusSummary, summaryParts,
-  dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, mappingColumns,
+  EMPTY_MAPPING, columnFacts, statusSummary, summaryParts, flagNameContradicts,
+  dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, mappingColumns, unitSettled, UNIT_MISSING,
 } from "../lifeData.js";
+import Units from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { Select } from "./ui/Controls.jsx";
 import LibraryRecordPicker from "./LibraryRecordPicker.jsx";
@@ -36,12 +38,12 @@ import { METHOD_CHOICES, METHOD_LINE, initialFit, refusalWords, showsTrust } fro
 import {
   DATASET_PRIOR_CHOICES, priorAsksDistribution, priorBlocked, priorProblem, priorRequest,
 } from "../priorFit.js";
-import { fitDatasetWithPrior, getDataReading, getLibraryRecord, getLibrarySources, listModels } from "../api.js";
+import { fitDatasetWithPrior, getDataReading, getLibraryRecord, getLibrarySources, listModels, uploadDataset } from "../api.js";
 import { rowFromDetail } from "../libraryPicker.js";
 import NewDatasetModal from "./NewDatasetModal.jsx";
 import ReadingSummary, { ReadingChange } from "./ReadingSummary.jsx";
 import { useDatasetReading } from "../useDatasetReading.js";
-import { datasetReading, detailColumns, fitFromReading, readingIssues } from "../datasetReading.js";
+import { datasetReading, detailColumns, fitFromReading, pastedReading, readingIssues } from "../datasetReading.js";
 
 // The steps shown (``n``: the flow's own step; 2, the old column step, is gone:
 // a dataset's reading says which column is which).
@@ -70,6 +72,14 @@ export { parsePastedValues };
 // (failed between two times) takes Turnbull instead.
 const EXACT_TIMES_ONLY = ["kaplan_meier", "nelson_aalen", "fleming_harrington"];
 
+// The covariates a picked dataset carries, in words: "4 covariates (site,
+// load_kN, belt_speed_mps, dusty)". Said before Next, where the choice to use
+// them is made on the Model step.
+function zWords(z) {
+  const list = (z || []).slice(0, 4).join(", ") + ((z || []).length > 4 ? ", …" : "");
+  return `It has ${z.length} covariate${z.length === 1 ? "" : "s"} (${list})`;
+}
+
 export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit, initialSource }) {
   const [step, setStep] = useState(1);
   // Source step: "saved" (a saved dataset), "paste" (values typed / pasted in) or "upload" (a file).
@@ -87,6 +97,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [datasetId, setDatasetId] = useState(null);
   // The saved dataset being fitted (its detail): its reading says which column is which.
   const [detail, setDetail] = useState(null);
+  // A file just saved as a new dataset whose exact rows the user already has
+  // under another name or reading ({ id, name }): said once on the Model step.
+  const [sameRows, setSameRows] = useState(null);
   const rd = useDatasetReading(detail);
   // A file or pasted values: saved as a dataset first, through New dataset's reading screen.
   const [toSave, setToSave] = useState(null); // { file, name }
@@ -261,6 +274,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setDatasetId(ds.id);
     setSourceName(ds.name);
     setDetail(ds);
+    setSameRows(ds.same_rows_as || null);
     listDatasets().then((d) => setDatasets(d.datasets || []), () => {});
   };
 
@@ -297,6 +311,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setFile(null);
     setDatasetId(full.id);
     setSourceName(full.name);
+    setSameRows(null);
     setError(null);
     setDetail(full);
   };
@@ -322,7 +337,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
           const facts = columnFacts(cols);
           const { mapping: map, unit: guessedUnit } = fitFromReading(
             datasetReading(full, { ...cols, facts }).reading, facts, cols.n_rows);
-          if (map.x) {
+          // Only with its unit known: otherwise the Model step asks for it first.
+          if (map.x && unitSettled(guessedUnit)) {
             const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId, unit: guessedUnit });
             setDetail(full);
             setSplit(null);
@@ -349,8 +365,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     pickFile(e.dataTransfer.files?.[0]);
   };
 
-  // Pasted values become a small CSV file, saved as a dataset like any file.
-  const usePasted = () => {
+  // Pasted values become a small CSV file, saved as a dataset straight away:
+  // the paste already says which column is which (a time, and a 0/1 flag if
+  // given), so there is nothing to ask before the Model step, which asks the
+  // unit. The dataset's reading can still be changed there.
+  const usePasted = async () => {
     let parsed;
     setPasteFix(null);
     try {
@@ -360,7 +379,16 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       if (err.fix === "add-flags") setPasteFix(err.lines);
       return;
     }
-    pickFile(new File([parsed.csv], PASTED, { type: "text/csv" }));
+    setError(null);
+    setLoading(true);
+    try {
+      const file = new File([parsed.csv], PASTED, { type: "text/csv" });
+      onDatasetSaved(await uploadDataset(file, dataName({ fileName: PASTED }), null, null, pastedReading(parsed)));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleCovariate = (col) =>
@@ -403,13 +431,22 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     ...(reading?.tr_problem ? [reading.tr_problem.text] : [])];
   // A reading the app guessed (a dataset saved before readings) is checked once before it's fitted.
   // (A sample or a view-only share can't keep one: its guess is shown, not asked about.)
-  const unconfirmed = !!detail && rd.source !== "saved" && !autoFit && !rd.readOnly;
-  const mappingValid = readingProblems.length === 0 && !unconfirmed;
+  const unconfirmed = !!detail && rd.source === "guessed" && !autoFit && !rd.readOnly;
+  // Every fit settles its unit (a unit, or "No unit" ticked): asked beside the
+  // reading when the dataset's reading has none, with no default.
+  const askUnit = !!fromReading && !unitSettled(fromReading.unit);
+  const unitWanted = !!csv && !unitSettled(unit);
+  const mappingValid = readingProblems.length === 0 && !unconfirmed && !unitWanted;
   const summary = !csv || tvc || itemLives ? null
     : inspection ? (reading && !reading.error ? reading : null)
     : statusSummary(mapping, facts, csv.n_rows);
+  // A status column named "failed" read as 0 = failed (a column of zeros then counts every unit as
+  // failed): said beside the count, with the flip one click away. The data itself is never changed.
+  const flagClash = detail && csv && !tvc && !itemLives && !inspection
+    ? flagNameContradicts(mapping, facts, csv.n_rows) : null;
   const waitingFor = unconfirmed ? "First check how the columns are read: Looks right, or Change."
     : readingProblems.length ? "First change the reading: see the note under it."
+    : unitWanted ? UNIT_MISSING
     : null;
 
   // Cox PH's own options travel with a Cox fit only.
@@ -454,11 +491,18 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // The age asked about on the Result step: asked again a moment after it's typed.
   const priorAge = prior.age;
   const priorNeed = prior.need;
+  // The refit takes a few seconds, so the boxes say they're working (and why one didn't answer).
+  const [priorAsk, setPriorAsk] = useState({ busy: false, refused: null });
   useEffect(() => {
     if (step !== 4 || !priorResult) return undefined;
     let live = true;
+    setPriorAsk({ busy: true, refused: null });
     const t = setTimeout(() => {
-      askPrior().then((res) => live && !res.refused && setPriorResult(res), () => {});
+      askPrior().then((res) => {
+        if (!live) return;
+        if (res.refused) setPriorAsk({ busy: false, refused: refusalWords(res.refused) });
+        else { setPriorResult(res); setPriorAsk({ busy: false, refused: null }); }
+      }, (err) => live && setPriorAsk({ busy: false, refused: err.message }));
     }, 400);
     return () => { live = false; clearTimeout(t); };
   }, [priorAge, priorNeed]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -636,10 +680,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
         {source === "saved" ? (
-          <button data-wt="fit-source-next" onClick={useSaved} disabled={!picked?.detail || loading}
-                  title={picked ? undefined : "Pick a dataset first"}>
-            Next
-          </button>
+          <>
+            {!picked && !loading && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>Pick a dataset first.</span>}
+            <button data-wt="fit-source-next" onClick={useSaved} disabled={!picked?.detail || loading}
+                    title={picked ? undefined : "Pick a dataset first"}>
+              Next
+            </button>
+          </>
         ) : (
           <span className="hint" style={{ margin: 0 }}>
             {source === "paste" ? "Paste your values to continue" : "Upload a CSV or Excel file to continue"}
@@ -648,10 +695,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       </>
     );
   } else if (step === 3) {
+    // Every reason Fit is unavailable is said beside it, not only in a tooltip.
+    const fitWhy = waitingFor || (bayes ? priorWanting : groupProblem(selectedOpt, group))
+      || (!bayes && !distribution ? "Choose a model to fit first." : null);
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading || rd.saving}>Back</button>
-        {!rd.editing && waitingFor && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{waitingFor}</span>}
+        {!rd.editing && fitWhy && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{fitWhy}</span>}
         {rd.editing ? null : bayes ? (
           <button data-wt="fit-run" onClick={onFit} disabled={loading || !!priorWanting || !mappingValid} title={priorWanting || undefined}>
             {loading ? "Fitting: about 10 seconds…" : "Fit with the prior"}
@@ -666,7 +716,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     );
   } else {
     // The name and Save sit in the "isn't saved yet" banner above (#311).
-    nav = <button className="secondary" onClick={goBack} disabled={saving}>Back</button>;
+    nav = <button className="secondary" data-wt="fit-back" onClick={goBack} disabled={saving}>Back</button>;
   }
 
   return (
@@ -708,6 +758,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                           })}
                         </p>
                       ) : null}
+                      {pickedGuess.reading.z?.length > 0 && pickedGuess.problems.length === 0 && (
+                        <p className="hint" role="status" style={{ margin: 0 }}>
+                          {zWords(pickedGuess.reading.z)}: choose <b>Regression on Z</b> on the next step to
+                          see their effects. Without it, the model ignores them.
+                        </p>
+                      )}
                     </>
                   )}
                 </DatasetGlance>
@@ -801,6 +857,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               </button>
             </div>
           )}
+          {onPerDemand && (
+            <p className="muted-line" style={{ margin: "var(--space-2) 0 0" }}>
+              Condition readings (vibration, oil analysis) on the same units as well as their failures?{" "}
+              <Link to="/models/joint/new">Fit a condition and life model</Link>: it takes the lives and the readings
+              together, and adds the readings to the dataset there.
+            </p>
+          )}
         </>
       )}
 
@@ -821,6 +884,15 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             readOnly={rd.readOnly}
           />
           <ReadingChange name={sourceName} rd={rd} />
+          {!rd.editing && sameRows && (
+            <p className="hint fit-same-rows" role="status">
+              You already have these rows as <a href={`/data/${sameRows.id}`} target="_blank" rel="noreferrer">“{sameRows.name}”</a>.
+              This is a new dataset, saved with the name and reading you just chose.
+            </p>
+          )}
+          {!rd.editing && askUnit && (
+            <Units value={unit} onChange={setUnit} listId="fit-units" className="fit-unit" />
+          )}
           {!rd.editing && readingProblems.length > 0 && (
             <ul className="ds-problems" role="status">{readingProblems.map((p) => <li key={p}>{p}</li>)}</ul>
           )}
@@ -831,6 +903,15 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 return <span key={part}>{i > 0 && ", "}<b>{num}</b> {rest.join(" ")}</span>;
               })}
             </p>
+          )}
+          {!rd.editing && flagClash && (
+            <div className="fit-flag-warn" role="status">
+              <span><span aria-hidden="true">! </span>{flagClash.text}</span>
+              <button type="button" className="secondary sm" disabled={rd.saving}
+                      onClick={() => rd.keep({ ...rd.reading, c_invert: flagClash.invert, c_map: null })}>
+                {flagClash.action}
+              </button>
+            </div>
           )}
           {!rd.editing && (fromReading?.z.length > 0 || itemTimeline) && (
             <div className="fit-z" role="group" aria-label="Covariates">
@@ -923,7 +1004,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             {byMode
               ? hasCovariates
                 ? `Failure modes from “${mapping.e}”, with covariates — choose a regression by mode.`
-                : `Failure modes from “${mapping.e}” — they are fitted as competing risks. To fit every failure as one, change the reading so it has no failure mode.`
+                : `Failure modes from “${mapping.e}” — they are fitted as competing risks. To fit every failure as one, Change the reading, set the failure mode to none and use it for this fit only: the dataset keeps its failure modes.`
+              : twoClocks
+              ? `Two clocks: “${mapping.x}” and “${mapping.x2}”, so the models below use both. To fit on “${mapping.x}” alone, Change the reading, set the second clock to none and use it for this fit only: the dataset keeps both clocks.`
               : tvc
               ? "Covariates change over time — choose a regression model. Each item's covariates follow its rows."
               : hasCovariates
@@ -1008,6 +1091,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                           chart={chart} onChart={setChart} download={name || "Life model"}
                           age={prior.age} onAge={(v) => setP("age", v)}
                           need={prior.need} onNeed={(v) => setP("need", v)}
+                          asking={priorAsk.busy} askRefused={priorAsk.refused}
                           dataWords={file?.name === PASTED ? "the pasted values" : `“${(file?.name || sourceName || "the data").replace(/\.csv$/i, "")}”`} />
             </div>
           ) : (

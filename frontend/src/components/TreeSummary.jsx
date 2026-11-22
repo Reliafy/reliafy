@@ -6,13 +6,15 @@ import ClampLines from "./ui/ClampLines.jsx";
 import { fmtDate, fmtDated } from "./MaintenanceParts.jsx";
 import { RowIcon } from "./TreePane.jsx";
 import OperatingContextCard from "./OperatingContextCard.jsx";
-import { byName, insideWords, statusWords } from "../assetTree.js";
+import { byName, insideWords, summaryStatus } from "../assetTree.js";
 import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
 import { annualLsa, annualText, nextVisit } from "../lsaTab.js";
 import { explorerHere } from "../products.js";
-import { getMaintenanceLocation, getOperatingPlan } from "../api.js";
+import { tabPlace } from "../explorerTabs.js";
+import { getMaintenanceLocation, getOperatingPlan, getPositionCondition } from "../api.js";
 import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../positionClass.js";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { hoursWords, planWords } from "../operatingPlan.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
@@ -39,12 +41,52 @@ const STATUS = { open: "Open", planned: "Planned", in_progress: "In progress", w
 const n = (k, one, many = `${one}s`) => `${k.toLocaleString("en-AU")} ${k === 1 ? one : many}`;
 const quiet = (text) => <span className="td-quiet">{text}</span>;
 
-function StatusChips({ r }) {
-  const words = statusWords(r);
+// A position's risk now, the numbers its Condition monitoring tab shows (without the
+// curves): undefined while it's read, null when it couldn't be, else the read.
+function useRiskNow(positionId, version) {
+  const [state, setState] = useState({ key: null, read: undefined });
+  useEffect(() => {
+    if (!positionId) return undefined;
+    let live = true;
+    getPositionCondition(positionId, { curves: false })
+      .then((d) => live && setState({ key: positionId, read: d }), () => live && setState({ key: positionId, read: null }));
+    return () => { live = false; };
+  }, [positionId, version]);
+  return state.key === positionId ? state.read : undefined;
+}
+
+const TONE = { open: "accent", risk: "warning", unscheduled: "warning" };
+// Where a word's chip goes: the tab that explains it (and is where it's dealt with).
+const TAB = { risk: "condition", unscheduled: "measurements" };
+
+// The status badge: what's overdue, open, past an alarm, can't be scheduled
+// and at risk now (summaryStatus). The green "nothing…" only once every part
+// has answered and none applies.
+function StatusChips({ r, position, version }) {
+  const { pathname, search } = useLocation();
+  const asked = r.type === "pos";
+  const risk = useRiskNow(asked ? r.key : null, version);
+  const tasks = position?.data ? [...(position.data.tasks || []), ...(position.data.item_tasks || [])] : null;
+  const { words, clear, failed } = summaryStatus(r, { risk, riskAsked: asked, tasks });
+  // Work management off (workManagement.js): nothing is overdue or open, so only alarms are said.
+  const workManagement = useWorkManagementOn();
+  const chip = (w, i) => {
+    const tone = TONE[w.kind] || "danger";
+    const text = tone === "warning" ? `! ${w.text}` : w.text;
+    const tab = !w.inside && TAB[w.kind];
+    if (!tab) return <Chip key={i} tone={tone}>{text}</Chip>;
+    return (
+      <Link key={i} className="td-status-go" to={explorerHere(pathname, search, { sel: r.key, tab })}
+            title={w.kind === "risk" ? `Its risk now, on ${tabPlace("condition")}` : `Its counters and readings, on ${tabPlace("measurements")}`}>
+        <Chip tone={tone}>{text}</Chip>
+      </Link>
+    );
+  };
   return (
     <div className="chip-row td-status">
-      {words.length ? words.map((w, i) => <Chip key={i} tone={w.kind === "open" ? "accent" : "danger"}>{w.text}</Chip>)
-        : <Chip tone="success">✓ Nothing overdue, no open work and no alarms{r.kids.length ? ", here or inside" : ""}</Chip>}
+      {words.map(chip)}
+      {clear && <Chip tone="success">{workManagement ? "✓ Nothing overdue, no open work and no alarms" : "✓ No alarms"}{r.kids.length ? ", here or inside" : ""}</Chip>}
+      {!words.length && failed && <Chip>Its risk now couldn't be read: open {tabPlace("condition")} to try again</Chip>}
     </div>
   );
 }
@@ -193,7 +235,19 @@ const SHOWN_TASKS = 8;
 
 // "Log an event…" (the row's action, when it has one) sits at the foot of Work:
 // tasks waiting for an event are raised from here.
+// A task's line in a hypothetical plan (work management off): its next planned date and
+// when it was last done, if set; never "due" or "overdue".
+function planText(t, fmt, note = null) {
+  const last = t.last_done ? ` · last done ${fmt(t.last_done)}` : "";
+  if (t.next_due) return `Next planned ${fmt(t.next_due)}${last}`;
+  if (t.on_event) return `On an event${t.trigger?.text ? `: ${t.trigger.text}` : ""}`;
+  return note || "No planned date";
+}
+
 function Work({ r, state, today, fullPage, logEvent = null }) {
+  // Work management off (workManagement.js): the maintenance plan, hypothetical: its tasks
+  // and their next planned dates, no open work orders, nothing overdue.
+  const workOrders = useWorkManagementOn();
   // The LSA links stay in the tree on show (one asset open on its own stays so).
   const { pathname, search } = useLocation();
   const { data, error } = state;
@@ -204,7 +258,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
   else {
     const tasks = [...(data.tasks || []), ...(data.item_tasks || []).map((t) => ({ ...t, onItem: true }))]
       .sort((a, b) => (b.overdue - a.overdue) || (a.next_due || "9999").localeCompare(b.next_due || "9999"));
-    const wos = (data.work_orders || []).filter((w) => OPEN.has(w.status))
+    const wos = (workOrders ? data.work_orders || [] : []).filter((w) => OPEN.has(w.status))
       .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
     count = tasks.length + wos.length;
     // In a work package: the next visit that does any of its tasks.
@@ -212,7 +266,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
     // Its tasks' LSA over a year (hours × 365.25 ÷ interval; event and by-use tasks left out, and said).
     const annual = annualText(annualLsa(tasks));
     if (!count) {
-      body = <p className="td-quiet">No tasks or open work on this position itself.{r.kids.length ? " What's inside it has its own: see Directly inside." : ""}</p>;
+      body = <p className="td-quiet">{workOrders ? "No tasks or open work on this position itself." : "No planned tasks on this position itself."}{r.kids.length ? " What's inside it has its own: see Directly inside." : ""}</p>;
     } else {
       body = (
         <>
@@ -237,7 +291,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
           )}
           {visit && (
             <p className="td-quiet td-next-visit">
-              Next visit: <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
+              {workOrders ? "Next visit" : "Next planned visit"}: <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
             </p>
           )}
           {annual && (
@@ -253,9 +307,9 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
                   const note = (t.limits || []).map((l) => l.note).find(Boolean);
                   return (
                     <Row key={`${t.onItem ? "i" : "p"}${t.id}`} title={t.name}
-                         meta={taskDueText(t, fmtDate, note)}
-                         chips={(t.overdue || t.onItem || t.on_event) ? <>
-                           {t.overdue && <Chip tone="danger">Overdue</Chip>}
+                         meta={workOrders ? taskDueText(t, fmtDate, note) : planText(t, fmtDate, note)}
+                         chips={((t.overdue && workOrders) || t.onItem || t.on_event) ? <>
+                           {t.overdue && workOrders && <Chip tone="danger">Overdue</Chip>}
                            {t.on_event && <Chip>On event</Chip>}
                            {t.onItem && <Chip>On the item</Chip>}
                          </> : null} />
@@ -272,7 +326,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
     }
   }
   return (
-    <Section title="Work" count={count || null}>
+    <Section title={workOrders ? "Work" : "Maintenance plan"} count={count || null}>
       {body}
       {logEvent && (
         <button type="button" className="link td-more" disabled={logEvent.disabled} title={logEvent.reason || undefined}
@@ -291,10 +345,10 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
 const SORTS = [
   { id: "tree", label: "As in the tree" },
   { id: "name", label: "Name" },
-  { id: "overdue", label: "Most overdue", get: (r) => r.sum.overdue, desc: true },
-  { id: "open", label: "Most open work", get: (r) => r.sum.open_work, desc: true },
+  { id: "overdue", label: "Most overdue", get: (r) => r.sum.overdue, desc: true, work: true },
+  { id: "open", label: "Most open work", get: (r) => r.sum.open_work, desc: true, work: true },
   { id: "alarms", label: "Most alarms", get: (r) => r.sum.alarms, desc: true },
-  { id: "due", label: "Next due first", get: (r) => r.sum.next_due || "￿" },
+  { id: "due", label: "Next due first", planLabel: "Next planned first", get: (r) => r.sum.next_due || "￿" },
   { id: "inside", label: "Most positions inside", get: (r) => r.sum.positions, desc: true, positionsOnly: true },
 ];
 const SHOWN_INSIDE = 500;
@@ -314,8 +368,11 @@ function insideChips(k) {
 
 function Inside({ r, display, onSelect, add, here = null, design = false }) {
   const [sort, setSort] = useState("tree");
+  // Work management off (workManagement.js): no sort by overdue or open work.
+  const workOrders = useWorkManagementOn();
   const ofItems = r.kids.length > 0 && r.kids.every((k) => display.rows.get(k).type === "item");
-  const sorts = SORTS.filter((s) => !(ofItems && s.positionsOnly) && !(design && s.get && !s.positionsOnly));
+  const sorts = SORTS.filter((s) => !(ofItems && s.positionsOnly) && !(design && s.get && !s.positionsOnly)
+    && (workOrders || !s.work)).map((s) => (!workOrders && s.planLabel ? { ...s, label: s.planLabel } : s));
   const kids = useMemo(() => {
     const rows = r.kids.map((k) => display.rows.get(k));
     const s = SORTS.find((x) => x.id === sort);
@@ -486,6 +543,7 @@ function Footer({ actions }) {
 // Directly inside, the rest the footer.
 export default function TreeSummary({
   row, display, today, onSelect, position, fullPage, onContextSaved, actions = [], design = false, facts = null, children = null,
+  version = null,
 }) {
   const add = actions.find((a) => a.id === "tree-new") || null;
   const logEvent = actions.find((a) => a.id === "event-log") || null;
@@ -494,7 +552,7 @@ export default function TreeSummary({
   const rest = actions.filter((a) => a.id !== "tree-new" && a.id !== "event-log" && a.id !== "pos-here");
   return (
     <div className="td-sum">
-      {!design && <StatusChips r={row} />}
+      {!design && <StatusChips r={row} position={row.type === "pos" ? position : null} version={version} />}
       {row.type === "pos" && position.data?.description && (
         <ClampLines className="td-desc" text={position.data.description} what="the description" />
       )}
