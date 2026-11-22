@@ -10,7 +10,7 @@ hidden: true
 ---
 
 The LSA (logistic support analysis) holds the *how* of your maintenance. In
-the Explorer it's part of the **Maintenance** tab: each task's **What it needs**. The RCM says what is done and why; the LSA says what each task
+the Explorer it's part of the **Maintenance** tab: a **What it needs** section in each task's details. The RCM says what is done and why; the LSA says what each task
 needs to be done: who does it and for how long, the tools and instruments, the
 spares and consumables to bring, access and downtime, and the method. It's
 also where tasks are packaged into visits.
@@ -106,11 +106,12 @@ it's **Spares for the year…** alone.
 
 ## Say what a task needs
 
-Right-click a task (or press its **⋯**) and choose **What it needs…**, or open
-the task and follow **What it needs (LSA)** in its cost. Its LSA opens beside
-the table (**← The task** goes back to its form). It shows the task's kind,
-interval, position and the failure modes it serves, then a section for each
-thing it needs. Each section saves when you leave it and says **✓ Saved**:
+Open a task (double-click its row, or choose **Open…** from its **⋯**). Its
+details have a **What it needs** section, folded to one line of totals (the
+labour hours, people and materials cost) until you choose **Show**. Opened, it
+lists the failure modes the task serves, then a group for each thing it needs.
+There is no Save of its own: change what you like and use the details' **Save**
+at the foot, which saves the task and what it needs together:
 
 - **Labour** — a line per trade: how many people and the hours each, plus the
   elapsed hours of the job.

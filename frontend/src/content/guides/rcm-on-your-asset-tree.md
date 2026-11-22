@@ -185,7 +185,7 @@ fields, then the quieter things at the foot:
   **Based on**, its evidence; **Serves**, the failure modes it serves here, each
   a link with **Remove** at its right, and **Link to another failure mode…**;
   and **Logistics**, its labour hours, tools and method from its LSA record,
-  with **What it needs**, which opens it beside the Maintenance tab. How it's done (its instructions) belongs to the LSA,
+  with **What it needs**, which opens the task's details on the Maintenance tab with that section open. How it's done (its instructions) belongs to the LSA,
   not here. At its foot, **Retire the task** (when it serves only this failure
   mode) or **Remove from this failure mode** (when it serves others too).
 

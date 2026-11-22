@@ -212,8 +212,6 @@ export const TASK_ADD_TO = "mtask-add-to";
 export const TASK_CLEAR = "mtask-clear";
 // Select: starts picking rows by tap (a phone has no Shift or Ctrl).
 export const TASK_SELECT = "mtask-select";
-// What it needs…: the task's LSA (labour, tools, spares, consumables, access, method) beside the table.
-export const TASK_NEEDS = "mtask-needs";
 // Package the tasks… on a level: drafts packages from its tasks in none, in the table area.
 export const TASK_DRAFT = "mtask-draft";
 // A task row's menu: Open…, Optimise… (this row's task), then Package… and Add to package… for the tasks selected (the row
@@ -221,7 +219,6 @@ export const TASK_DRAFT = "mtask-draft";
 // `tasks`: the task-table rows it acts on; `canPackage`: false on a product's design, or view only.
 export function taskRowActions(r, { tasks = null, canPackage = true, canSelect = false } = {}) {
   const out = [{ id: TASK_OPEN, label: "Open…" },
-    { id: TASK_NEEDS, label: "What it needs…", title: "Its labour, tools, spares, consumables, access and method (its LSA)" },
     { id: TASK_OPTIMISE, label: "Optimise…", title: "How often to do it, worked out from the life model of the failure modes it prevents" }];
   if (canSelect) out.push({ id: TASK_SELECT, label: "Select", title: "Pick this task, then tap others to add them" });
   if (!canPackage) return out;

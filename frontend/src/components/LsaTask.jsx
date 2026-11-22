@@ -39,7 +39,7 @@ function Section({ title, hint, state, onLeave, children }) {
 
 // One input with its label shown above it (not only a placeholder): a typed value
 // can't land in a field you can't name.
-function Cell({ label, className = "", children }) {
+export function Cell({ label, className = "", children }) {
   return (
     <label className={`lsa-cell ${className}`.trim()}>
       <span className="lsa-cell-label">{label}</span>
@@ -48,7 +48,7 @@ function Cell({ label, className = "", children }) {
   );
 }
 
-function Rows({ rows, onRows, blank, addLabel, render, label }) {
+export function Rows({ rows, onRows, blank, addLabel, render, label }) {
   return (
     <>
       {rows.length > 0 && (

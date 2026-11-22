@@ -138,21 +138,21 @@ test("click picks one task, Shift-click a range of tasks as drawn, Ctrl-click on
   assert.equal(keepShown(less.picked, index), less.picked);
 });
 
-test("a task's menu: Open…, What it needs…, Optimise…, then Package… and Add to package… for the tasks picked, greyed with the reason", () => {
+test("a task's menu: Open…, Optimise…, then Package… and Add to package… for the tasks picked, greyed with the reason", () => {
   const r = { ref: { task: mower[0] } };
   const items = taskRowActions(r);
-  assert.deepEqual(items.filter((i) => i.id).map((i) => i.label), ["Open…", "What it needs…", "Optimise…", "Package…", "Add to package…"]);
+  assert.deepEqual(items.filter((i) => i.id).map((i) => i.label), ["Open…", "Optimise…", "Package…", "Add to package…"]);
   assert.ok(!items.some((i) => i.label === "Select"));
-  assert.equal(taskRowActions(r, { canSelect: true }).filter((i) => i.id).map((i) => i.label)[3], "Select");
+  assert.equal(taskRowActions(r, { canSelect: true }).filter((i) => i.id).map((i) => i.label)[2], "Select");
   const two = taskRowActions(r, { tasks: [mower[0], mower[1]] }).map((i) => i.id).filter(Boolean);
-  assert.deepEqual(two, ["mtask-open", "mtask-needs", "mtask-optimise", TASK_PACKAGE, TASK_ADD_TO, TASK_CLEAR]);
+  assert.deepEqual(two, ["mtask-open", "mtask-optimise", TASK_PACKAGE, TASK_ADD_TO, TASK_CLEAR]);
   const inOne = taskRowActions({ ref: { task: mower[2] } }).find((i) => i.id === TASK_PACKAGE);
   assert.equal(inOne.disabled, true);
   assert.match(inOne.reason, /in a package already/);
   const cant = taskRowActions({ ref: { task: { ...mower[0], why_not: "a round: it stays on its own" } } }).find((i) => i.id === TASK_ADD_TO);
   assert.match(cant.reason, /can't join a package: a round/);
-  // A product's design (or view only): Open…, What it needs… and Optimise… alone.
-  assert.deepEqual(taskRowActions(r, { canPackage: false }).map((i) => i.label), ["Open…", "What it needs…", "Optimise…"]);
+  // A product's design (or view only): Open… and Optimise… alone.
+  assert.deepEqual(taskRowActions(r, { canPackage: false }).map((i) => i.label), ["Open…", "Optimise…"]);
 });
 
 test("Add to package…: the packages that fit first, the same interval before the rest; one that can't says why", () => {
