@@ -395,3 +395,31 @@ export function bridgeEdges(edges, removedIds) {
 // The Calculator's "Evaluate at t" (a number, or null), told to the builder so
 // Download as Python ranks importance at the same time.
 export const RBD_EVALUATE_AT_EVENT = "reliafy:rbd-evaluate-at";
+
+// "Parallel (two units, 1 of 2)" on a repairable diagram, where a block standing for n identical
+// units can't go (each unit is repaired on its own, so each is its own block): two components
+// side by side, merged through a junction. On an empty diagram they're wired from Input to Output;
+// with one block selected, in series after it; otherwise they land at ``pos`` with only their
+// junction wired, ready to connect. ``a`` and ``b`` are the two blocks, ``junctionId`` the merge's
+// id, ``look`` the new connections' options. { nodes, edges, wired }.
+export function addParallelPair({ nodes, edges }, a, b, { junctionId, look = {}, pos = { x: 240, y: 40 } } = {}) {
+  const picked = nodes.filter((n) => n.selected);
+  let base = insertFirst({ nodes, edges }, a, look);
+  if (!base && picked.length === 1 && !isEnd(picked[0]) && !isGate(picked[0])
+      && edges.some((e) => e.source === picked[0].id)) {
+    base = insertAfter({ nodes, edges }, picked[0].id, a);
+  }
+  if (base) {
+    const out = insertAlongside(base, [a.id], b, { junctionId });
+    return { ...out, wired: true };
+  }
+  const taken = new Set(edges.map((e) => e.id));
+  const pa = place(nodes, a, pos);
+  const pb = place([...pa.nodes, { ...a, position: pa.position }], b, { x: pos.x, y: pos.y + STEP_Y });
+  const junction = { id: junctionId, type: "knode", data: { n: 1, k: 2 }, position: { x: 0, y: 0 } };
+  const placedSoFar = [...pb.nodes, { ...b, position: pb.position }];
+  const pj = place(placedSoFar, junction, { x: pos.x + STEP_X, y: pos.y + STEP_Y / 2 });
+  const outNodes = [...pj.nodes, { ...junction, position: pj.position }];
+  const outEdges = [...edges, link(look, a.id, junctionId, taken), link(look, b.id, junctionId, taken)];
+  return { nodes: selectOnly(outNodes, a.id), edges: unselectEdges(outEdges), wired: false };
+}

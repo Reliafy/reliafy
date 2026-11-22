@@ -1420,6 +1420,26 @@ def rbd_tree_plan(body: dict = Body(...), session=Depends(get_session), ctx: Acc
     return _run(run)
 
 
+@router.post("/rbd-ages-now")
+def rbd_ages_now(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                 m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Each block's age now, from the item fitted at the position it stands for (the Calculator's
+    "As of now"): rbd_id, and graph (the diagram as it stands; default the saved one). Per block:
+    {age, basis (counter, plan, duty, continuous or calendar), note, item, fitted_on} or {reason};
+    ``unlinked`` lists the blocks that stand for no position. Reads only."""
+    from backend.maintenance import rbd_tree_plan as tp
+    from backend.maintenance.position_models import fetcher
+
+    def run():
+        doc = fetcher(session, ctx.read_owners, ctx.hidden)("rbd", str(body.get("rbd_id") or ""))
+        if doc is None:
+            raise NotFound("RBD")
+        graph = body.get("graph") if isinstance(body.get("graph"), dict) else doc.graph or {}
+        return {"rbd_id": doc.id, **tp.ages_for_graph(m, doc.id, graph)}
+
+    return _run(run)
+
+
 @router.get("/rbd-plan-uses")
 def rbd_plan_uses(task_ids: str = "", session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
                   m: Maintenance = Depends(maintenance)) -> JSONResponse:

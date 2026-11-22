@@ -172,7 +172,8 @@ On **Risk now**, **Running units' risk** lists every unit still in service, high
 with its chance of failing in the next **30, 90 and 365 days** (for a model in
 hours, days, weeks, months or years; other units get horizons in their own
 terms) and its **Median life left**: the time by which it has an even chance of
-having failed.
+having failed. The table ranks by the horizon that tells the units apart best
+(the line above it names it), and **Rank by** lets you pick another.
 
 ![The risk table: each running unit's chance of failing, from its own readings](/guides/img/cbr-02-risk.png)
 

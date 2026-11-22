@@ -160,3 +160,21 @@ def test_mixtures_work_across_the_paper_transforms(dist):
                     options={"mixture_distribution": dist})
     assert r["mixture"] == 2
     assert len(r["plot"]["scatter"]["x"]) > 0
+
+
+def test_mixture_takes_inspection_windows():
+    """Failures found between inspections (interval-censored) fit as a
+    mixture too, plotted on Turnbull's positions (Nelson-Aalen refuses them)."""
+    rng = np.random.default_rng(0)
+    x = np.round(np.concatenate([
+        sp.Weibull.random(200, 300, 4.0, random_state=rng),
+        sp.Weibull.random(200, 1500, 1.2, random_state=rng),
+    ]), 2)
+    lo, hi = x.copy(), x.copy()
+    lo[:30] = np.floor(x[:30] / 100) * 100
+    hi[:30] = lo[:30] + 100
+    r = fitting.fit("mixture", pd.DataFrame({"lo": lo, "hi": hi}), {"xl": "lo", "xr": "hi"})
+    assert r["distribution_id"] == "mixture"
+    alphas = sorted(p["value"] for p in r["params"] if p["name"].startswith("alpha"))
+    assert 250 < alphas[0] < 380 and 1200 < alphas[1] < 2200
+    assert r["plot"]["empirical"]["method"] == "Turnbull"

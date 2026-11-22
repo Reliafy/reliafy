@@ -119,3 +119,30 @@ def test_a_model_saved_before_gets_it_from_its_dataset(client):
     assert got["results"]["split"] == {"failed": 5, "running": 7, "other": 0}
     # Nothing is written back to the saved model.
     assert "split" not in client.db.models.find_one({"_id": body["id"]})["results"]
+
+
+# ---- Where the data sit in time (the Calculator's extrapolation note) -----------------------
+
+
+def test_a_fit_records_the_first_failure_and_the_oldest_age_seen():
+    r = fitting.fit("weibull", _df(), _MAPPING, unit="hours")
+    assert r["data_range"] == {"first_failure": 120.0, "last_seen": 700.0}
+    # A unit still running past every failure sets the oldest age; zero-count rows don't count.
+    df = pd.DataFrame({"t": [50, 100, 300, 400, 900], "c": [1, 0, 0, 0, 1], "n": [3, 2, 1, 2, 4]})
+    assert fitting.fit("weibull", df, {"x": "t", "c": "c", "n": "n"})["data_range"] == {
+        "first_failure": 100.0, "last_seen": 900.0}
+    assert model_split.range_of_inputs({"x": np.array([100.0, 900.0]), "c": np.array([0, 1]),
+                                        "n": np.array([2, 0])}) == {"first_failure": 100.0, "last_seen": 100.0}
+
+
+def test_inspection_data_put_the_first_failure_at_the_earliest_check_that_found_one():
+    # Found failed between checks; one unit passed its last check at 2,000 (running).
+    df = pd.DataFrame({"lo": [1000.0, 1500.0, 1500.0, 2000.0], "hi": [1500.0, 2000.0, 2500.0, np.inf],
+                       "c": [0, 0, 0, 1]})
+    span = model_split.range_of_inputs({"xl": df.lo.values, "xr": df.hi.values, "c": df.c.values})
+    assert span == {"first_failure": 1500.0, "last_seen": 2500.0}
+
+
+def test_no_failures_or_no_times_give_no_range():
+    assert model_split.range_of_inputs({"x": np.array([10.0, 20.0]), "c": np.array([1, 1])}) is None
+    assert model_split.range_of_inputs({}) is None

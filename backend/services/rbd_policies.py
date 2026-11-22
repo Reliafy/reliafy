@@ -309,6 +309,15 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
     from backend.services import rbd_unavailability
 
     out["margin"] = rbd_unavailability.margin(out["pfd_avg"], out["target_sil"], out["sil"])
+    # Hardware fault tolerance per subsystem, from the diagram's cut sets (architecture only).
+    from backend.services import rbd_hft
+
+    try:
+        hft = rbd_hft.fault_tolerance(rbd, graph)
+    except Exception:  # noqa: BLE001 - never lose the PFDavg
+        hft = None
+    if hft:
+        out["fault_tolerance"] = hft
     if source is not None and pfd is not None:
         # Each element's share of the PFDavg and of the dangerous failures (#298).
         from backend.services import rbd_safety_shares

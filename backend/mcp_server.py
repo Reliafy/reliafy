@@ -7337,7 +7337,8 @@ def optimal_overhaul(
 ) -> dict[str, Any]:
     """The optimal overhaul interval of a repairable system (minimal repair between
     overhauls) from a saved minimal-repair recurrent model; only a deteriorating system (β > 1) has one. For a
-    Crow-AMSAA fit, shape_uncertainty answers at each end of β's interval: relay uncertainty_note."""
+    Crow-AMSAA fit, shape_uncertainty answers at each end of β's interval: relay uncertainty_note, and
+    beyond_data.note when the interval is past the longest record."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     if t_max is not None and (not np.isfinite(t_max) or t_max <= 0):
@@ -7347,7 +7348,8 @@ def optimal_overhaul(
         raise ToolError("Recurrent model not found — analyse optimal_overhaul needs a recurrent (repairable-system) "
                         "model id from list kind models (model_type recurrent).")
     live = recurrent_service.get_live_model(db, model_id, owners)
-    out = recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max)
+    out = recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max,
+                                         data_end=(getattr(doc, "results", None) or {}).get("end_of_observation"))
     out.update(_overhaul_shape_uncertainty(db, doc, cost_repair, cost_overhaul, t_max, out))
     return _maybe_curve(out, include_curve)
 

@@ -5,7 +5,7 @@ import { ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { DatasetRows } from "./model/DataTab.jsx";
 import { formatNumber } from "../format.js";
 import {
-  ciText, familyOf, fitSystemsHref, orderedParams, pct, ratioCiText, ratioText, scaledParam, terminationText,
+  boundsWords, ciText, familyOf, fitSystemsHref, orderedParams, pct, ratioCiText, ratioText, scaledParam, terminationText,
 } from "../recurrentResults.js";
 import { ciPct } from "../levels.js";
 
@@ -32,8 +32,8 @@ export function howWords(r) {
   if (r.mcf?.fitted?.simulated) out.push("Its curve of expected failures is simulated (a fixed seed), so the calculator reads it within the fitted range.");
   if (r.bounds_method) {
     out.push(r.bounds_method === "crow"
-      ? "Rate bounds: Crow's exact bounds (MIL-HDBK-189C), as the test design allows."
-      : "Rate bounds: Wald (delta method).");
+      ? "Rate bounds: Crow's exact bounds (MIL-HDBK-189C), as the test design allows: 90% two-sided intervals, and a 90% one-sided lower bound on the MTBF now."
+      : "Rate bounds: Wald (delta method): 90% two-sided intervals, and a 90% one-sided lower bound on the MTBF now.");
   }
   if (r.windows) {
     out.push(`Observed in ${r.windows.windows} windows; ${r.windows.systems_with_gaps} system${r.windows.systems_with_gaps === 1 ? " has" : "s have"} gaps (${formatNumber(r.windows.gap_time)}${r.unit ? ` ${String(r.unit).toLowerCase()}` : ""} not observed).`);
@@ -216,6 +216,7 @@ function Parameters({ r }) {
           ))}
         </tbody>
       </table>
+      {boundsWords(r).map((w) => <p className="param-ci-note" key={w}>{w}</p>)}
       {coefs.length > 0 && (
         <p className="mf-note">
           The baseline is a system with every covariate at 0 and each text covariate at its reference level; a

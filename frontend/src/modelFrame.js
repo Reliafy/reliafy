@@ -11,7 +11,7 @@ import { formatNumber, formatPercent } from "./format.js";
 import { hasMeanLife, meanLifeAnswer } from "./meanLife.js";
 import { unitInText } from "./components/unitText.js";
 import { anyAt } from "./competingRisks.js";
-import { riskText } from "./joint.js";
+import { rankColumn, riskText, sortRiskRows } from "./joint.js";
 import { LEVEL_TEXT, ciLevelOf, ciPct, levelPct } from "./levels.js";
 
 export const TAB_LABELS = {
@@ -255,10 +255,12 @@ export function answerParts(result, { split = null, saved = null } = {}) {
       add(r.n_items != null && `${r.n_items} units (${r.n_events} failed, ${r.n_running} running)`);
       add(r.n_readings != null && `${Number(r.n_readings).toLocaleString("en-US")} readings of ${r.marker || "the reading"}`);
       add(r.link && r.link !== "value" && `risk follows its ${String(r.link_label || "rate of change").toLowerCase()}`);
-      const top = (r.risk || [])[0];
-      const mid = r.horizons?.labels?.[1];
-      // The Risk now table's words: "> 99.9%", never "100%".
-      if (top && mid) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[1])} in the next ${mid}`);
+      // The horizon and order the Risk now table ranks by (rankColumn), in its words: "> 99.9%", never "100%".
+      const labels = r.horizons?.labels || [];
+      const scored = (r.risk || []).filter((x) => x.risk);
+      const col = rankColumn(scored, labels);
+      const top = sortRiskRows(scored, col)[0];
+      if (top && labels[col]) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[col])} in the next ${labels[col]}`);
       add(r.fit_ok === false && "fit not verified");
       break;
     }

@@ -3,6 +3,8 @@
 // handbooks. The words, the grouping and the filtering behind the pages (views/Libraries.jsx,
 // views/PublicLibraryPage.jsx and components/LibraryEntries.jsx).
 
+import { formatNumber } from "./format.js";
+
 export const LIBRARIES_PATH = "/libraries";
 export const libraryPath = (id) => `${LIBRARIES_PATH}/${encodeURIComponent(id)}`;
 // An entry's place on its library's page: the row's anchor.
@@ -92,11 +94,21 @@ export function filterEntries(entries = [], { kind = "", tag = "", q = "" } = {}
     && (!t || entryText(e).includes(t)));
 }
 
-// A model entry's headline: the server's sentence (a B-life with its bound), or its
-// distribution and unit when it has none.
+// A model entry's headline: its B-life with its bound, rounded and worded as the model's own page
+// says it ("B10 5,980 hours (≥ 4,830 at 90%)"), so a shared copy reads the same as its original;
+// else the server's sentence; else its distribution and unit.
 export function modelHeadline(model) {
   if (!model) return "";
-  if (model.headline?.text) return model.headline.text;
+  const h = model.headline;
+  if (h && Number.isFinite(Number(h.value)) && h.label) {
+    const u = h.unit && h.unit !== "units" ? ` ${String(h.unit).toLowerCase()}` : "";
+    const level = Math.round(Number(h.confidence || 0.9) * 100);
+    const bound = h.lower != null && Number.isFinite(Number(h.lower))
+      ? ` (≥ ${formatNumber(h.lower)} at ${level}%)`
+      : " (no confidence bound: not fitted to data)";
+    return `${h.label} ${formatNumber(h.value)}${u}${bound}`;
+  }
+  if (h?.text) return h.text;
   return [model.distribution, model.unit && `in ${model.unit}`].filter(Boolean).join(", ");
 }
 

@@ -52,23 +52,30 @@ export function PerDemandPanel({ result }) {
       <div className="result-head">
         <Chip dot={color}>Per-demand</Chip>
       </div>
+      {exact && d.reliability_lower != null && (
+        <p className="pd-answer" data-testid="pd-answer">
+          {c}% confident it works on at least <b>{pct(d.reliability_lower)}</b> of demands
+          (a one-sided bound: the low end only, the figure to check against a requirement).
+        </p>
+      )}
       <div className="params">
         <div className="stat">
           <div className="value">{pct(d.p)}</div>
           <div className="name">failure probability / demand</div>
-          {d.ci && <div className="param-ci">{level} CI [{pct(d.ci[0])}, {pct(d.ci[1])}]</div>}
+          {d.ci && <div className="param-ci">{level} two-sided: {pct(d.ci[0])} to {pct(d.ci[1])}</div>}
         </div>
         <div className="stat">
           <div className="value">{pct(d.reliability)}</div>
           <div className="name">reliability / demand</div>
           {d.reliability_ci && (
-            <div className="param-ci">{level} CI [{pct(d.reliability_ci[0])}, {pct(d.reliability_ci[1])}]</div>
+            <div className="param-ci">{level} two-sided: {pct(d.reliability_ci[0])} to {pct(d.reliability_ci[1])}</div>
           )}
         </div>
         {exact && d.reliability_lower != null && (
           <div className="stat">
             <div className="value">≥ {pct(d.reliability_lower)}</div>
-            <div className="name">reliability @ {c}% conf. (one-sided)</div>
+            <div className="name">reliability, lower bound</div>
+            <div className="param-ci">{c}% one-sided</div>
           </div>
         )}
         <div className="stat">
@@ -105,7 +112,8 @@ export function PerDemandPanel({ result }) {
         <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
           Estimated from {d.failures} failure{d.failures === 1 ? "" : "s"} in {d.demands} demands
           {batches.length > 1 ? `, pooled over ${batches.length} batches (one failure probability for all)` : ""}.
-          Bounds are exact (Clopper-Pearson) at {c}% confidence. {PER_DEMAND_USE}
+          Bounds are exact (Clopper-Pearson) at {c}% confidence: the ranges are two-sided, the lower bound
+          one-sided. {PER_DEMAND_USE}
         </p>
       ) : (
         <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
@@ -261,6 +269,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
           ciNote={result.method === "library" || intervalLevel(result).credible ? result.ci_note : null}
           credible={intervalLevel(result).credible}
           spread={rateSpread(result)}
+          dataRange={result.data_range || null}
         />
       );
       break;

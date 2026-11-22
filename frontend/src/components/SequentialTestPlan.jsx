@@ -4,7 +4,8 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { Assumptions, ComputeButton, Field, PlanAnswer, usePlan } from "./TestPlanShared.jsx";
+import { Assumptions, ComputeButton, Field, PlanAnswer, TestPlanPythonButton, usePlan } from "./TestPlanShared.jsx";
+import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
 import { DANGER, INK, SUCCESS, SURFACE, fitLine } from "../plotTheme.js";
 import { given, num } from "../testPlanning.js";
@@ -105,6 +106,51 @@ function OcCharts({ result }) {
   );
 }
 
+// The name a saved rule starts with: what it shows, against what ("Sequential test: MTBF 60,000 vs 120,000 hours").
+function seqName(i) {
+  if (i.method === "mtbf") {
+    return `Sequential test: MTBF ${formatNumber(i.mtbf)} vs ${formatNumber(i.good_mtbf)}${i.unit ? ` ${i.unit}` : ""}`;
+  }
+  return `Sequential test: reliability ${pct(i.reliability)} vs ${pct(i.good_reliability)}`;
+}
+
+// The plan's answer: the verdict so far (if failures were given), the lines,
+// the operating characteristic and the assumptions. Shown on the tool and,
+// read-only, on a saved sequential test (``actions`` are the tool's buttons).
+export function SequentialResult({ result, actions = null }) {
+  const u = result?.unit ? unitInText(result.unit) : "";
+  const stats = result.method === "mtbf"
+    ? [
+        { label: "Good design, on average", value: formatWithUnit(result.expected.at_good, u) },
+        { label: "Fixed-length test", value: formatWithUnit(result.expected.fixed_length, u) },
+        { label: "Longest it runs", value: formatWithUnit(result.max_time, u) },
+        { label: "Most failures", value: String(result.max_failures) },
+      ]
+    : [
+        { label: "Good design, on average", value: `${formatNumber(result.expected.at_good)} units` },
+        { label: "Fixed-length test", value: `${formatNumber(result.expected.fixed_length, { sig: 7 })} units` },
+        { label: "Most units", value: formatNumber(result.max_units, { sig: 7 }) },
+        { label: "Most failures", value: String(result.max_failures) },
+      ];
+  const verdict = result.decision;
+  const tone = verdict ? { accept: "good", reject: "bad", continue: "caveat" }[verdict.verdict] : "neutral";
+  return (
+    <>
+      <PlanAnswer
+        result={result}
+        stats={stats}
+        tone={tone}
+        note={verdict ? <b>{verdict.text}</b> : `Risks as run: a design at the target passes ${pct(
+          result.consumer_risk)} of the time; a good design fails ${pct(result.producer_risk)}.`}
+      />
+      {actions}
+      <BoundaryChart result={result} />
+      <OcCharts result={result} />
+      <Assumptions items={result.assumptions} />
+    </>
+  );
+}
+
 export default function SequentialTestPlan() {
   const [method, setMethod] = useState("mtbf");
   const [target, setTarget] = useState("1000");
@@ -133,23 +179,6 @@ export default function SequentialTestPlan() {
     }
     run(body);
   };
-
-  const u = result?.unit ? unitInText(result.unit) : "";
-  const stats = result && (result.method === "mtbf"
-    ? [
-        { label: "Good design, on average", value: formatWithUnit(result.expected.at_good, u) },
-        { label: "Fixed-length test", value: formatWithUnit(result.expected.fixed_length, u) },
-        { label: "Longest it runs", value: formatWithUnit(result.max_time, u) },
-        { label: "Most failures", value: String(result.max_failures) },
-      ]
-    : [
-        { label: "Good design, on average", value: `${formatNumber(result.expected.at_good)} units` },
-        { label: "Fixed-length test", value: `${formatNumber(result.expected.fixed_length, { sig: 7 })} units` },
-        { label: "Most units", value: formatNumber(result.max_units, { sig: 7 }) },
-        { label: "Most failures", value: String(result.max_failures) },
-      ]);
-  const verdict = result?.decision;
-  const tone = verdict ? { accept: "good", reject: "bad", continue: "caveat" }[verdict.verdict] : "neutral";
 
   return (
     <div className="strategy-tool">
@@ -208,18 +237,12 @@ export default function SequentialTestPlan() {
 
       {error && <div className="error">{error}</div>}
       {result && (
-        <>
-          <PlanAnswer kind="sequential" inputs={inputs}
-            result={result}
-            stats={stats}
-            tone={tone}
-            note={verdict ? <b>{verdict.text}</b> : `Risks as run: a design at the target passes ${pct(
-              result.consumer_risk)} of the time; a good design fails ${pct(result.producer_risk)}.`}
-          />
-          <BoundaryChart result={result} />
-          <OcCharts result={result} />
-          <Assumptions items={result.assumptions} />
-        </>
+        <SequentialResult result={result} actions={inputs && (
+          <div className="row tp-actions">
+            <SaveAnalysisButton kind="sequential_test" inputs={inputs} defaultName={seqName(inputs)} />
+            <TestPlanPythonButton kind="sequential" inputs={inputs} />
+          </div>
+        )} />
       )}
     </div>
   );

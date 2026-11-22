@@ -16,10 +16,26 @@ import { unitInText } from "./unitText.js";
 
 const MODEL_OPTIONS = Object.fromEntries(Object.entries(PLAN_LIFE_MODELS).map(([k, v]) => [k, v.label]));
 const MODEL_HINT = {
-  arrhenius: "Life = b·exp(a / T), T in kelvin.",
-  eyring: "A thermal model from reaction-rate theory, an alternative to Arrhenius. T in kelvin.",
+  arrhenius: "Life = b·exp(a / T), T in kelvin (type temperatures in °C if you prefer: they're converted).",
+  eyring: "A thermal model from reaction-rate theory, an alternative to Arrhenius. T in kelvin (or type °C).",
   inverse_power: "Life = 1 / (a·Vⁿ).",
 };
+// The thermal models read kelvin; their temperatures can be typed in K or °C.
+const THERMAL = new Set(["arrhenius", "eyring"]);
+const TEMP_UNITS = { K: "K", "°C": "°C" };
+const isCelsius = (u) => ["°c", "c", "degc", "celsius"].includes(String(u || "").trim().toLowerCase());
+// A temperature moved between K and °C, as the field shows it.
+const moveTemp = (v, toC) => {
+  const t = Number(v);
+  if (String(v).trim() === "" || !Number.isFinite(t)) return v;
+  return String(Number((toC ? t - 273.15 : t + 273.15).toPrecision(8)));
+};
+// "40 °C is 313.15 K, as the model reads it", for a use stress typed in °C.
+export function kelvinNote(useStress, stressUnit) {
+  const t = Number(useStress);
+  if (!isCelsius(stressUnit) || String(useStress).trim() === "" || !Number.isFinite(t)) return null;
+  return `${t} °C is ${Number((t + 273.15).toPrecision(8))} K, as the model reads it.`;
+}
 // A worked example: a part lasting about 6,500 hours (B10) at 50 °C, tested
 // up to 120 °C.
 const EXAMPLE = {
@@ -108,6 +124,17 @@ export default function AcceleratedTestPlan({ modelId = null, useStress: carried
   }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const names = PLAN_LIFE_MODELS[lifeModel].params;
+  const thermal = THERMAL.has(lifeModel);
+  // K ↔ °C: the temperatures already typed move with the unit, so they keep meaning the same.
+  const pickTempUnit = (next) => {
+    const toC = isCelsius(next);
+    if (toC !== isCelsius(stressUnit)) {
+      setUseStress((v) => moveTemp(v, toC));
+      setHighStress((v) => moveTemp(v, toC));
+      setStresses((v) => String(v).split(/,\s*/).map((x) => moveTemp(x, toC)).join(", "));
+    }
+    setStressUnit(next);
+  };
   const pcts = readPercents("acceleratedTest", { confidence, bLife });
   const compute = () => {
     const body = {
@@ -121,7 +148,7 @@ export default function AcceleratedTestPlan({ modelId = null, useStress: carried
       b_life: num(bLife),
       confidence: pcts.fractions.confidence,
       unit: unit.trim() || null,
-      stress_unit: stressUnit.trim() || null,
+      stress_unit: thermal ? (isCelsius(stressUnit) ? "°C" : "K") : (stressUnit.trim() || null),
     };
     if (mode === "plan") Object.assign(body, { high_stress: num(highStress), units: num(units), levels: num(levels) });
     else Object.assign(body, { stresses: list(stresses), units_at: list(unitsAt) });
@@ -134,7 +161,7 @@ export default function AcceleratedTestPlan({ modelId = null, useStress: carried
     { label: "Lowest stress", value: `${formatNumber(result.rows[0].stress, { sig: 4 })}${su}` },
     { label: "Units", value: formatNumber(Math.round(result.rows.reduce((t, r) => t + r.units, 0)), { sig: 7 }) },
     { label: "Expected failures", value: formatNumber(result.total_expected_failures) },
-    { label: "Within a factor of", value: formatNumber(result.precision) },
+    { label: `Within a factor of (${formatPercent(result.confidence)} two-sided)`, value: formatNumber(result.precision) },
   ];
   const alt = result?.alternatives?.[0];
   // The answer on screen came from the other mode's form.
@@ -177,6 +204,7 @@ export default function AcceleratedTestPlan({ modelId = null, useStress: carried
           <Field label={distribution === "weibull" ? "Shape β" : "σ (log-scale spread)"} value={shape} onChange={setShape} min="0" />
         </div>
         <p className="hint">{MODEL_HINT[lifeModel]} Planning values are your best guess before the test: a similar part&apos;s accelerated life fit gives them.</p>
+        {thermal && kelvinNote(useStress, stressUnit) && <p className="hint">{kelvinNote(useStress, stressUnit)}</p>}
         <div className="strategy-costs">
           <Field label="Use stress" value={useStress} onChange={setUseStress} />
           {mode === "plan" ? (
@@ -193,7 +221,11 @@ export default function AcceleratedTestPlan({ modelId = null, useStress: carried
             </>
           )}
           <Field label="Test length" value={censorTime} onChange={setCensorTime} min="0" />
-          <Field label="Stress unit" type="text" value={stressUnit} onChange={setStressUnit} placeholder="e.g. K" />
+          {thermal ? (
+            <Choice label="Temperature in" value={isCelsius(stressUnit) ? "°C" : "K"} onChange={pickTempUnit} options={TEMP_UNITS} />
+          ) : (
+            <Field label="Stress unit" type="text" value={stressUnit} onChange={setStressUnit} placeholder="e.g. kV" />
+          )}
           <Field label="Time unit" type="text" value={unit} onChange={setUnit} placeholder="e.g. hours" />
           <PercentField label="B-life (% failed)" value={bLife} onChange={setBLife} check={pcts.checks.bLife} />
           <PercentField label="Confidence" value={confidence} onChange={setConfidence} check={pcts.checks.confidence} />
